@@ -17,6 +17,9 @@ npm run test:web
 echo "== tests serveur desktop =="
 npm run test:desktop:unit
 
+echo "== tests scripts release =="
+node --test scripts/*.test.mjs
+
 echo "== build =="
 npm run build
 
