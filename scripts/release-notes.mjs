@@ -45,7 +45,16 @@ export function previousTag(tag, allTags) {
 
 export function subjectsBetween(prev, tag) {
   const range = prev ? `${prev}..${tag}` : tag;
-  const out = execFileSync('git', ['log', range, '--no-merges', '--format=%s'], { cwd: root, encoding: 'utf8' });
+  try {
+    return splitSubjects(execFileSync('git', ['log', range, '--no-merges', '--format=%s'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  } catch {
+    // Aperçu local avant de taguer : le tag n'existe pas encore, on lit jusqu'à HEAD.
+    if (!prev) throw new Error(`Ni tag ${tag} ni HEAD lisibles`);
+    return splitSubjects(execFileSync('git', ['log', `${prev}..HEAD`, '--no-merges', '--format=%s'], { cwd: root, encoding: 'utf8' }));
+  }
+}
+
+function splitSubjects(out) {
   return out.split('\n').map((s) => s.trim()).filter(Boolean);
 }
 
