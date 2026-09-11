@@ -1,21 +1,25 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-11 · **Version :** web V2 + desktop **0.2.0 en cours, non publié**
-> **État :** travail interrompu à la demande de l’utilisateur, **desktop/CI non terminés**.
+> **Mise à jour :** 2026-09-11 (reprise) · **Version :** web V2 + desktop **0.2.0 en cours, non publié**
+> **État :** `./scripts/check.sh` est **vert**, desktop compris. Les trois paquets Linux
+> s'installent et fonctionnent sur les trois cibles CI. **Reste une recette manuelle sur une
+> vraie session desktop et l'exécution réelle des workflows GitHub avant de taguer.**
 > **Branche :** `codex/linux-desktop-releases`.
 > **Reprise prioritaire : [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md).**
 
 ## Point d’arrêt desktop/CI
 
-Le socle web était vert **avant ce lot** : 60 API + 52 front + 12 navigateur, soit 124 tests.
-Ce résultat historique **ne certifie pas la branche actuelle**.
-
-Electron 44.3.0 et electron-builder 26.15.3 ont été explicitement approuvés. La fenêtre
-démarre ; sauvegarde à la fermeture, thème persistant, isolation du renderer et génération
-PDF ont passé leurs tests. **Le téléchargement échoue encore dans le test Playwright** :
-timeout en attendant `download` sur une pièce jointe via `worklogs://app`. L’upload et le
-nom accentué sont visibles. Il reste à distinguer une panne du téléchargement d’une limite
-d’observation par Playwright. L’export JSON, plus loin dans ce test, reste à vérifier.
+Le socle web était vert **avant le lot desktop** : 60 API + 52 front + 12 navigateur, soit
+124 tests. Un second agent a repris le lot bloqué (voir `06-DESKTOP-CICD.md` pour le détail
+complet) : le blocage du téléchargement Electron était une limite d'observation de Playwright,
+pas une panne — corrigé, avec trois autres bugs trouvés en creusant (nom de fichier suggéré
+cassé pour les téléchargements Electron via protocole personnalisé, en-tête `Content-Disposition`
+trop pauvre côté API, et surtout **un bug qui empêchait l'app de démarrer du tout une fois
+installée sur Ubuntu 24.04/Mint 22.x** — mauvaise résolution de la dépendance ALSA). `check.sh`
+est maintenant vert, et les paquets DEB/RPM/AppImage ont été installés et testés avec succès
+dans des conteneurs jetables reproduisant les trois cibles de la CI. Ce qui manque encore :
+une recette manuelle sur une vraie session graphique, et l'exécution réelle des workflows
+GitHub Actions (jamais lancés, ni par le premier ni par le second agent).
 
 Les workflows sont écrits, pas validés sur GitHub. Aucun RPM ni essai d’installation
 Mint/Fedora n’a été validé. Les paquets DEB/AppImage exploratoires doivent être reconstruits.

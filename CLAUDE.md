@@ -1,11 +1,11 @@
 # WorkLogs
 
-**Reprise 2026-09-11 :** desktop Linux/CI en cours sur
-`codex/linux-desktop-releases`, interrompu à la demande de l’utilisateur. Lire
-`docs/00-HANDOVER.md` puis **`docs/06-DESKTOP-CICD.md`**. Le test de téléchargement
-est encore rouge et la CI/les installations restent à vérifier. Les mentions de
-124 tests ci-dessous décrivent le socle web avant ce lot, pas une validation actuelle.
-Electron 44.3.0 et electron-builder 26.15.3 ont été explicitement approuvés.
+**Reprise 2026-09-11 :** desktop Linux/CI sur `codex/linux-desktop-releases`. Lire
+`docs/00-HANDOVER.md` puis **`docs/06-DESKTOP-CICD.md`**. `./scripts/check.sh` est vert
+(desktop compris) et les paquets DEB/RPM/AppImage sont installés/testés avec succès sur les
+trois cibles CI. Reste une recette manuelle sur une vraie session desktop et l'exécution
+réelle des workflows GitHub avant de taguer. Electron 44.3.0 et electron-builder 26.15.3 ont
+été explicitement approuvés.
 
 Journal de travail personnel, 100 % local, **sur un seul écran** : journal à gauche, écriture
 au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + Vite + TS (`web/`).

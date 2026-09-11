@@ -16,7 +16,28 @@ main ; le bridge IPC se limite à la fermeture après sauvegarde.
 Docker est prévu **seulement pour tester les installations dans la CI**, pas pour lancer
 l’application. Les décisions historiques sur les trois étages de tests et l’absence de
 Docker décrivent le socle web avant cette demande. Le travail a ensuite été interrompu
-à la demande de l’utilisateur pour sauvegarde sur GitHub et reprise ultérieure.
+à la demande de l’utilisateur pour sauvegarde sur GitHub, puis repris par un second agent
+(2026-09-11) qui a débloqué `check.sh` et validé les paquets sur les trois cibles CI — détail
+dans [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md). Trois décisions techniques en ont découlé,
+valables tant qu'Electron et Ubuntu se comportent ainsi :
+
+- **Observer `will-download` sur `session.defaultSession`, pas `page.waitForEvent('download')`,
+  dans les tests desktop.** Pour un téléchargement servi par un protocole personnalisé
+  (`protocol.handle`), l'API haut niveau de Playwright ne voit jamais l'événement, alors que
+  le téléchargement fonctionne réellement côté Electron. Ne pas revenir à `page.waitForEvent`
+  en pensant « corriger » le test.
+- **Construire nous-mêmes l'en-tête `Content-Disposition` (`attachmentHeader` dans `app.js`)
+  plutôt que `res.download()`.** La bibliothèque sous-jacente n'émet `filename*=UTF-8''…`
+  que si le nom n'est pas représentable en Latin-1 — jamais le cas des accents français —
+  et Electron ne décode correctement ni l'un ni l'autre format pour un téléchargement via
+  protocole personnalisé. `desktop/main.mjs` relit cet en-tête lui-même pour corriger le nom
+  proposé dans la boîte de dialogue de sauvegarde.
+- **Dépendance Debian `'libasound2t64 | libasound2'`, pas `libasound2` seul.** Sur Ubuntu
+  24.04/Mint 22.x, `libasound2` (virtuel) peut être satisfait par `liboss4-salsa-asound2`, une
+  couche de compatibilité OSS incomplète qui empêche l'application de démarrer
+  (`undefined symbol`). Un bug Ubuntu connu, pas une erreur de configuration locale.
+
+Ces trois points, et le détail complet des investigations, sont dans `06-DESKTOP-CICD.md`.
 
 Pourquoi c'est comme ça. À lire avant de proposer une « amélioration » : la plupart des choses
 qui manquent manquent **exprès**.

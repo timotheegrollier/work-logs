@@ -18,6 +18,23 @@ const orNull = (v) => (str(v) === '' ? null : str(v));
 const pick = (body, key, current, transform = (v) => v) =>
   body[key] === undefined ? current : transform(body[key]);
 
+const CONTROL_OR_QUOTE_RE = /[\x00-\x1f\x7f"\\]/g;
+const NON_ASCII_RE = /[^\x20-\x7e]/g;
+const EXTRA_ENCODE_RE = /['()]/g;
+/**
+ * En-tête Content-Disposition fournissant systématiquement `filename` (repli
+ * ASCII) et `filename*` (UTF-8, RFC 6266). Le module `content-disposition`
+ * utilisé par `res.download` omet `filename*` dès que le nom est représentable
+ * en Latin-1 (cas courant des accents français) ; or Chromium/Electron ne
+ * décodent alors correctement ce nom qu'avec un `referrer_charset` que les
+ * téléchargements desktop ne fournissent pas (jshttp/content-disposition#27).
+ */
+const attachmentHeader = (filename) => {
+  const ascii = filename.replace(CONTROL_OR_QUOTE_RE, '_').replace(NON_ASCII_RE, '_');
+  const utf8 = encodeURIComponent(filename).replace(EXTRA_ENCODE_RE, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  return 'attachment; filename="' + ascii + '"; filename*=UTF-8\'\'' + utf8;
+};
+
 export function createApp({ db, uploadDir, staticDir = null }) {
   fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -299,7 +316,8 @@ export function createApp({ db, uploadDir, staticDir = null }) {
     const att = db.prepare('SELECT * FROM attachments WHERE stored=?').get(stored);
     const file = path.join(uploadDir, stored);
     if (!att || !fs.existsSync(file)) return notFound(res, 'fichier introuvable');
-    res.download(file, att.filename);
+    res.setHeader('Content-Disposition', attachmentHeader(att.filename));
+    res.sendFile(path.resolve(file)); // res.download() résolvait ce chemin ; sendFile l'exige déjà absolu.
   });
 
   app.delete('/api/attachments/:id', (req, res) => {

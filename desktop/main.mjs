@@ -29,6 +29,22 @@ function external(url) {
   if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
 }
 
+/**
+ * Electron ne décode pas filename/filename* (RFC 6266) pour les téléchargements
+ * servis par un protocole personnalisé : le nom suggéré retombe sur « download ».
+ * L’en-tête est pourtant correct (cf. attachmentHeader côté API) ; on le relit
+ * nous-mêmes pour corriger le nom proposé dans le dialogue d’enregistrement.
+ */
+function suggestedFilename(item) {
+  const header = item.getContentDisposition();
+  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header || '');
+  if (star) {
+    try { return decodeURIComponent(star[1]); } catch { /* nom mal encodé : on garde le repli */ }
+  }
+  const plain = /filename\s*=\s*"([^"]*)"/i.exec(header || '');
+  return plain ? plain[1] : item.getFilename();
+}
+
 function finishClose(error) {
   clearTimeout(closeTimer);
   closePending = false;
@@ -69,6 +85,9 @@ if (!app.requestSingleInstanceLock()) {
       const browserSession = session.defaultSession;
       browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
       browserSession.setPermissionCheckHandler(() => false);
+      browserSession.on('will-download', (_event, item) => {
+        item.setSaveDialogOptions({ defaultPath: path.join(app.getPath('downloads'), suggestedFilename(item)) });
+      });
       browserSession.protocol.handle('worklogs', async (request) => {
         const url = new URL(request.url);
         if (url.host !== 'app') return new Response('Adresse inconnue', { status: 404 });

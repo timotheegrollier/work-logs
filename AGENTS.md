@@ -1,12 +1,14 @@
 # WorkLogs — règles agents
 
 ## Reprise actuelle — 2026-09-11
-- Lot desktop/CI **inachevé**, arrêté à la demande de l’utilisateur et sauvegardé sur
-  `codex/linux-desktop-releases`. Lire `docs/06-DESKTOP-CICD.md` après le handover.
+- Lot desktop/CI sur `codex/linux-desktop-releases`. `./scripts/check.sh` est **vert**
+  (desktop compris) ; DEB/RPM/AppImage installés et testés avec succès sur les trois cibles
+  CI (Ubuntu 24.04, Fedora 43, Fedora 44) dans des conteneurs jetables. Détail et bugs
+  corrigés : `docs/06-DESKTOP-CICD.md`.
 - Electron **44.3.0** et electron-builder **26.15.3** : ajout explicitement approuvé.
   Ne pas redemander cet accord ; les autres ajouts restent soumis aux règles ci-dessous.
-- Le test desktop de téléchargement est rouge ; rétablir `check.sh` avant de livrer.
-- Ne pas taguer/publier 0.2.0 tant que tests et installations ne sont pas validés.
+- Ne pas taguer/publier 0.2.0 avant une recette manuelle sur une vraie session desktop et
+  l'exécution réelle des workflows GitHub (jamais lancés à ce jour, voir `06-DESKTOP-CICD.md`).
 - Desktop : origine `worklogs://app`, serveur privé sur 127.0.0.1 et port éphémère,
   données `~/.local/share/worklogs/`, profil `~/.config/worklogs/` par défaut.
 - Ne pas committer `.desktop-app/`, `release/`, les profils et les données de tests.

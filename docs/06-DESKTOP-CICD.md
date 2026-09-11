@@ -1,142 +1,195 @@
 # Reprendre le desktop Linux et la CI/CD
 
-Dernière mise à jour : **2026-09-11**. **Travail en cours, non livré.**
+Dernière mise à jour : **2026-09-11** (reprise par un second agent). **`./scripts/check.sh`
+est vert, les trois paquets s'installent et fonctionnent sur les trois cibles CI. Reste une
+recette manuelle sur une vraie session desktop et l'exécution réelle des workflows GitHub
+avant de taguer.**
 Branche : **`codex/linux-desktop-releases`**.
 
-## 1. Demande et point d’arrêt
+## 1. Ce qui a changé depuis la précédente passation
 
-L’utilisateur veut une application desktop pour **Linux Mint et Fedora**, des builds
-**DEB, RPM, AppImage**, une pipeline CI/CD complète (tests, préparation et publication
-des releases), et les docs/notes à jour. Il a explicitement validé Electron **44.3.0** et
-electron-builder **26.15.3**. La première cible retenue est x86_64, Mint 22.x et Fedora 43/44.
+Le lot précédent s'était arrêté avec `check.sh` rouge : le test Electron du téléchargement
+expirait après 30 s sur `page.waitForEvent('download')`. Cette reprise a **résolu ce blocage
+et trois autres bugs découverts en creusant**, puis validé les paquets sur les trois cibles
+CI (Ubuntu 24.04, Fedora 43, Fedora 44) dans des conteneurs jetables. Machine de reprise :
+**Fedora 44**, pas Mint — confirme que la fiche de passation d'origine tient sur une autre
+machine, comme prévu.
 
-Il a ensuite demandé **d’arrêter, pousser sur GitHub et documenter pour un autre agent**.
-Ce checkpoint n’est pas une release publiable. Le dépôt avait déjà des changements V2
-non commités : docs réorganisées, scripts, CSS et tests e2e. Ils sont inclus car ce lot
-s’appuie dessus. Les données SQLite/uploads ne sont pas versionnées. `master` n’est pas
-fusionné. Le commit de pause comporte **`[skip ci]`** pour sauvegarder sans lancer une chaîne
-connue comme incomplète. Aucun tag ni GitHub Release n’est créé.
+### 1.1 Diagnostic du blocage : une limite de Playwright, pas une panne
 
-## 2. Reprise en quelques commandes
+Le téléchargement fonctionne réellement côté Electron (`will-download` se déclenche, le
+fichier est écrit avec le bon contenu) : instrumenté directement sur `session.defaultSession`,
+il se termine en `done:completed`. Mais **`page.waitForEvent('download')` de Playwright ne se
+déclenche jamais** pour une ressource servie par un protocole personnalisé (`worklogs://`)
+intercepté via `protocol.handle`. C'est une limite d'intégration Electron/Playwright, pas un
+défaut applicatif. `desktop/e2e/desktop.spec.ts` observe donc directement `will-download` au
+niveau session (fonction `downloadNext`), comme le ferait un test qui ne peut pas piloter la
+boîte de dialogue native. Les 4 tests desktop passent maintenant en ~4 s au lieu de expirer
+après 30 s.
 
-Lire `00-HANDOVER.md`, `AGENTS.md`, puis ce document. Sur une autre machine :
+### 1.2 Bug trouvé en creusant : nom de fichier suggéré cassé pour les protocoles personnalisés
 
-```bash
-git clone git@github.com:timotheegrollier/work-logs.git
-cd work-logs
-git switch codex/linux-desktop-releases
-# Si nvm est installé : nvm install && nvm use
-npm ci
-npm --prefix api ci
-npm --prefix web ci
-npx playwright install chromium
-npm run build
-xvfb-run -a npm run test:desktop -- --grep fichiers
+En instrumentant `will-download`, `item.getFilename()` renvoyait `"download"` au lieu du vrai
+nom, **y compris pour un nom ASCII simple**, dès que le `Content-Disposition` contenait le
+paramètre étendu `filename*=UTF-8''...` — pourtant strictement conforme RFC 6266. Un script de
+test isolé (`session.protocol.handle` + plusieurs en-têtes) a montré qu'Electron ne décode
+correctement **ni** `filename*=` **ni** `filename="…"` avec des octets non-ASCII bruts pour
+les téléchargements servis par un protocole personnalisé : le nom retombe sur `"download"`
+dans les deux cas, alors qu'un nom ASCII pur fonctionne. `desktop/main.mjs` corrige donc le
+nom **lui-même** dans un nouveau handler `will-download` : il relit `item.getContentDisposition()`
+(disponible, correct, juste ignoré par Electron pour le nom suggéré) et appelle
+`item.setSaveDialogOptions({ defaultPath })` avec le nom décodé. Sans ce correctif, un
+utilisateur réel aurait vu « download » pré-rempli dans la boîte de sauvegarde pour **toute**
+pièce jointe, accentuée ou non.
+
+### 1.3 Bug corrigé en même temps : l'API accents (RFC 6266)
+
+Le test `api/test/files.test.js` (« conserve les accents du nom transmis par le navigateur »)
+n'avait jamais tourné dans la suite complète. Il attendait `filename*=UTF-8''pi%C3%A8ce` dans
+le `Content-Disposition` ; `res.download()` d'Express (via le module `content-disposition`)
+n'émet ce paramètre étendu **que** si le nom n'est pas représentable en Latin-1 — ce qui
+n'est jamais le cas des accents français courants (`é`, `è`…). `api/src/app.js` construit donc
+lui-même l'en-tête (`attachmentHeader`), avec systématiquement `filename` (repli ASCII) et
+`filename*` (UTF-8). Documenté dans une vraie limite connue de la bibliothèque
+([jshttp/content-disposition#27](https://github.com/jshttp/content-disposition/issues/27)),
+qui cite explicitement les téléchargements Electron comme cas mal couvert.
+
+Vérifié en même temps : la conversion latin1→UTF-8 des noms de fichiers **uploadés**
+(busboy ne comprend pas `filename*` en multipart, donc ne produit jamais un nom déjà décodé
+avec des caractères hors Latin-1 — le correctif existant est sûr dans tous les cas réels).
+
+### 1.4 Bug corrigé, trouvé par un effet de bord du 1.3 : chemin relatif et `res.sendFile`
+
+Remplacer `res.download(file, filename)` par `res.setHeader(...) + res.sendFile(file)` a fait
+échouer en 500 le test e2e navigateur « joindre un fichier… » : `res.download()` résout le
+chemin en absolu via `path.resolve()` avant d'appeler `sendFile` en interne ; `res.sendFile()`
+**exige** un chemin déjà absolu et lève sinon `TypeError: path must be absolute or specify
+root`. `playwright.config.ts` lance l'API e2e avec `DATA_DIR=./.e2e-data` (relatif), ce qui
+déclenchait l'erreur. Corrigé par `res.sendFile(path.resolve(file))`.
+
+### 1.5 Bug critique de packaging trouvé en testant les paquets réels : ALSA sur Ubuntu 24.04/Mint 22.x
+
+En installant le `.deb` construit dans un conteneur `ubuntu:24.04` propre (base de
+`mint-22-base` dans la CI), l'application **ne démarrait pas du tout** :
 ```
+worklogs: symbol lookup error: worklogs: undefined symbol: snd_device_name_get_hint, version ALSA_0.9
+```
+Cause : sur Ubuntu 24.04 (transition « t64 »), le paquet virtuel `libasound2` déclaré en
+dépendance est satisfait par **deux** paquets concurrents — `libasound2t64` (la vraie lib ALSA)
+et `liboss4-salsa-asound2` (une couche de compatibilité OSS qui n'implémente pas tous les
+symboles). `apt` a choisi le second. C'est un bug Ubuntu connu et documenté
+([LP #2069153](https://bugs.launchpad.net/bugs/2069153),
+[electron-builder #9539](https://github.com/electron-userland/electron-builder/issues/9539)) qui
+touche beaucoup d'apps Electron packagées pour Debian sur les distributions post-t64. Corrigé
+dans `electron-builder.yml` par une dépendance alternative Debian, dans l'ordre de préférence :
+`'libasound2t64 | libasound2'` (Ubuntu 22.04 n'a pas `libasound2t64` et retombe sur
+`libasound2`, qui existe encore là-bas). **Sans ce correctif, l'application ne se serait pas
+lancée du tout sur une vraie install Mint 22.x/Ubuntu 24.04**, seul format `deb` concerné
+(RPM utilise `alsa-lib`, qui n'a pas cette ambiguïté sur Fedora 43/44).
 
-Ce dernier test est **rouge au checkpoint**. C’est le premier problème à résoudre.
-Sur la machine d’origine : `/home/timo/WorkLogs`, Linux Mint **22.3**, Node **24.13.0**,
-npm **11.6.2**. `.nvmrc` prépare Node **24.20.0** pour la CI. Xvfb est installé.
-`rpmbuild` manque sur l’hôte. Docker fonctionne et `ubuntu:22.04` a été téléchargée pour
-un éventuel build RPM en conteneur. Aucune nouvelle dépendance applicative n’est autorisée
-au-delà des deux ajouts déjà validés, sans accord prévu par AGENTS.
+## 2. Résultats réellement observés (2026-09-11, reprise)
 
-## 3. Carte des changements
+| Vérification | Résultat |
+|---|---|
+| `./scripts/check.sh` complet | **CHECK OK**, reproduit 3 fois dans des conteneurs Ubuntu 22.04 fraîchement provisionnés (types, 61 tests API, 55 tests front, 1 test serveur desktop, build, 12 tests navigateur, **4 tests application desktop**) |
+| `npm run desktop:dist` (DEB+RPM+AppImage) | Construit sans erreur une fois `ar`/`rpmbuild`/`fakeroot` disponibles sur la machine de build |
+| `node scripts/verify-package.mjs` | Passe : contenu attendu présent, aucune donnée personnelle, version cohérente |
+| Installation **DEB** sur `ubuntu:24.04` (base Mint 22.x) | Installe et lance après le correctif ALSA (1.5). 4/4 tests desktop passent sur `/opt/WorkLogs/worklogs` |
+| Installation **RPM** sur `fedora:43` | Installe et lance. 4/4 tests desktop passent |
+| Installation **RPM** sur `fedora:44` | Installe et lance. 4/4 tests desktop passent |
+| **AppImage** extraite, sur les 3 images ci-dessus | 4/4 tests desktop passent à chaque fois (donc **24/24** au total sur les 3 cibles × 2 formats) |
+| GitHub Actions (`ci.yml`, `release.yml`) | **Toujours pas exécutés réellement** — nécessite un push sur GitHub, non fait dans cette reprise (voir §4) |
+| Recette manuelle sur vraie session desktop | **Toujours pas faite** — cet agent n'a qu'un accès terminal/conteneurs, pas de vrai bureau Cinnamon/GNOME |
+
+Tous les tests d'installation ci-dessus ont tourné dans des conteneurs Docker/Podman jetables,
+comme le fait `scripts/test-linux-package.sh` (non modifié — voir §3 pour une note d'exécution
+locale). Aucune règle du projet n'a été assouplie pour obtenir ces résultats : les bugs 1.2 à
+1.5 sont de vrais correctifs, pas des contournements de test.
+
+## 3. Note d'exécution locale (SELinux) — ne concerne pas la CI
+
+Sur une machine Fedora avec SELinux *enforcing* (le cas de cette reprise), les montages
+`docker run -v host:container` de `scripts/test-linux-package.sh` échouent par défaut
+(« Permission denied ») car podman n'étiquette pas automatiquement les volumes pour SELinux.
+**Le script n'a pas été modifié** : sur les runners GitHub Actions (Ubuntu, sans SELinux), il
+s'exécute tel quel. Pour reproduire en local sur Fedora/SELinux, ajouter `:z` (label partagé)
+aux montages d'une copie de travail du script, et remplacer le montage du `node` hôte par une
+installation de Node fraîche dans le conteneur (le `node`/`npm` d'un hôte Fedora ne fonctionne
+pas correctement une fois monté tel quel dans un conteneur Ubuntu — liens symboliques absolus
+qui ne survivent pas au changement de racine).
+
+## 4. Ce qu'il reste à faire avant de taguer 0.2.0
+
+1. **Recette manuelle réelle**, sur Mint 22.x et Fedora 43/44 si possible, avec une vraie
+   session graphique : installer le paquet, vérifier icône/raccourci, éditer une entrée,
+   joindre un fichier, l'ouvrir depuis la boîte de dialogue « Enregistrer sous » (vérifier que
+   le nom proposé est le bon — c'est le point corrigé en 1.2, jamais vu avec de vrais yeux),
+   exporter, imprimer (Ctrl+P, vraie boîte de dialogue système cette fois), fermer, rouvrir,
+   vérifier que les données ont survécu. Aucun outil de cet agent ne permet de piloter une
+   vraie session desktop interactive.
+2. **Pousser la branche sans `[skip ci]`** pour déclencher réellement `ci.yml` sur GitHub et
+   corriger ce qui casserait sur de vrais runners (permissions, quotas, timeouts). Cette
+   reprise n'a pas poussé : aucune demande explicite de le faire, et ça reste la décision de
+   l'utilisateur. Les workflows n'ont donc **toujours** pas tourné une seule fois en vrai.
+3. Vérifier que `gh run list`/`gh run view` ne remontent rien d'inattendu une fois la CI
+   exécutée ; en particulier la matrice `packages` (3 runners) et le job `build` (rpmbuild réel
+   sur `ubuntu-22.04`, pas testé par cette reprise sur un vrai runner GitHub).
+4. Décider d'une licence si diffusion publique prévue (toujours `UNLICENSED`, cf.
+   `05-DECISIONS.md`).
+5. Seulement après tout ça : tag `v0.2.0`, laisser `release.yml` tourner, vérifier le brouillon
+   de release avant de le publier (`gh release view`).
+
+## 5. Carte des changements (rappel, inchangée depuis la précédente passation)
 
 | Fichiers | Rôle |
 |---|---|
-| `desktop/main.mjs` | fenêtre, instance unique, protocole `worklogs://app`, liens externes, impression, arrêt |
-| `desktop/preload.cjs` | bridge `onBeforeClose`, sans exposition générale d’IPC ou Node |
+| `desktop/main.mjs` | fenêtre, instance unique, protocole `worklogs://app`, liens externes, impression, arrêt, **+ correction du nom de fichier suggéré au téléchargement (1.2)** |
+| `desktop/preload.cjs` | bridge `onBeforeClose`, sans exposition générale d'IPC ou Node |
 | `desktop/server.mjs` | Express/SQLite réutilisés, port éphémère 127.0.0.1, jeton, CSP, fermeture |
 | `desktop/test/server.test.mjs` | refus sans jeton, persistance, arrêt du serveur |
-| `desktop/e2e/desktop.spec.ts` | 4 parcours Electron, réutilisés pour le binaire empaqueté |
-| `playwright.desktop.config.ts`, `tsconfig.desktop.json` | runner/typecheck desktop |
-| `web/src/autosave.ts` et son test | écritures sérialisées, dernières frappes, flush global |
-| `EntryEditor.tsx`, `App.tsx` | sauvegarde au changement d’entrée et avant fermeture desktop |
-| `web/public/theme.js`, `web/index.html` | thème avant React, sans script inline interdit par la CSP |
-| `api/src/app.js`, `api/test/files.test.js` | correction/test des noms de fichiers accentués en multipart |
-| `electron-builder.yml`, `desktop/icon.*` | DEB/RPM/AppImage et icône carnet |
+| `desktop/e2e/desktop.spec.ts` | 4 parcours Electron, **observation du téléchargement corrigée (1.1)** |
+| `api/src/app.js` | **en-tête `Content-Disposition` reconstruit (1.3), chemin absolu pour `sendFile` (1.4)** |
+| `electron-builder.yml` | DEB/RPM/AppImage et icône carnet, **dépendance ALSA corrigée pour Ubuntu 24.04+ (1.5)** |
 | `scripts/stage-desktop.mjs` | préparation `.desktop-app/`, code autorisé et dépendances API depuis leur lockfile |
 | `scripts/verify-package.mjs` | vérification ASAR : contenu requis, version, absence de données personnelles |
 | `scripts/check-release.mjs` | format semver et égalité version/tag |
-| `scripts/test-linux-package.sh` | installation native puis essais AppImage dans un conteneur jetable |
-| `.github/workflows/ci.yml` | tests → packaging → matrice Ubuntu 24.04/Fedora 43/Fedora 44 |
-| `.github/workflows/release.yml` | réutilise la CI, SHA256SUMS, attestation, brouillon/publication |
+| `scripts/test-linux-package.sh` | installation native puis essais AppImage dans un conteneur jetable — **non modifié**, validé manuellement (§2, §3) |
+| `.github/workflows/ci.yml` | tests → packaging → matrice Ubuntu 24.04/Fedora 43/Fedora 44 — **jamais exécuté sur GitHub** |
+| `.github/workflows/release.yml` | réutilise la CI, SHA256SUMS, attestation, brouillon/publication — **jamais exécuté** |
 | `.github/dependabot.yml` | propositions mensuelles npm et GitHub Actions |
 
-La version racine est **0.2.0**, préparatoire et non publiée. Les sous-paquets web/api
-restent à 0.1.0 ; le desktop prend sa version à la racine. Le dépôt n’avait pas de licence :
-le manifeste indique `UNLICENSED`, sans attribuer une licence libre. À décider pour la
-diffusion finale si nécessaire.
+La version racine reste **0.2.0**, préparatoire et non publiée. Pas de tag, pas de release.
 
-## 4. Résultats réellement observés
+## 6. Pièges déjà rencontrés (cumulatif avec la passation précédente)
 
-| Vérification | Résultat et limites |
-|---|---|
-| `check.sh` **avant ce lot** | **CHECK OK**, 60 API + 52 front + 12 navigateur |
-| Front après autosave | **55/55 passés**, dont 3 nouveaux tests de file de sauvegarde |
-| Serveur desktop | **1/1 passé** |
-| Build web et types desktop | passés après leurs modifications |
-| Electron : fenêtre/isolation/liens externes | passé |
-| Electron : fermeture immédiate + thème au redémarrage | passé |
-| Electron : PDF + refus de fermer si sauvegarde échouée | passé |
-| Electron : fichiers et export | **échoue**, détail ci-dessous |
-| Nouveau test API des accents | écrit, pas encore exécuté dans la suite API complète |
-| DEB/AppImage | première construction exploratoire produite ; reconstruction suivante interrompue au checkpoint |
-| Vérification ASAR | passée sur la première archive, avant les derniers ajustements ; à refaire |
-| RPM | configuré, pas construit/validé |
-| Installation Mint/Fedora/AppImage | pas exécutée |
-| GitHub Actions / attestations / publication | fichiers préparés, pas exécutés ni validés |
-| `check.sh` après ce lot | **pas vert** : le parcours desktop connu échoue |
+- **ESM/ready**, **relais HTTP**, **origine stable**, **sandbox test**, **packaging DEB
+  gzip/xz** : voir la version précédente de ce document dans l'historique Git, toujours vrais,
+  non repris ici pour éviter la redite.
+- **Accents et Electron** : Electron ne décode fiablement **ni** `filename*=` (RFC 5987) **ni**
+  les octets non-ASCII bruts de `filename="…"` pour un téléchargement servi par
+  `protocol.handle`. Ne pas compter sur le nom que Electron déduit seul
+  (`item.getFilename()`) dès qu'un nom contient un caractère non-ASCII : le relire depuis
+  `item.getContentDisposition()` côté main process si besoin (fait dans `main.mjs`).
+- **`res.download()` vs `res.sendFile()`** : le premier résout le chemin en absolu
+  (`path.resolve`), pas le second. Toujours passer un chemin déjà absolu à `res.sendFile()`.
+- **Dépendances virtuelles Debian post-t64** (Ubuntu 24.04, Debian 13+) : un paquet qui déclare
+  `libasound2`, `libgconf-2-4` ou d'autres libs migrées peut se voir installer un mauvais
+  fournisseur si plusieurs paquets « Provides: » le même nom virtuel. Vérifier après tout
+  changement de version cible avec `apt-cache showpkg <paquet>` et préférer une dépendance
+  alternative explicite (`nouveau-nom | ancien-nom`) plutôt que de se fier à la résolution par
+  défaut d'apt.
+- **SELinux et podman en local** : voir §3, ne concerne que le poste de développement, pas la CI.
+- **`page.waitForEvent('download')` avec un protocole personnalisé Electron** : ne se déclenche
+  jamais dans cette configuration (`protocol.handle`, scheme privileged `stream: true`).
+  Observer `will-download` sur `session.defaultSession` directement plutôt que l'API haut
+  niveau de Playwright quand le téléchargement traverse un protocole personnalisé.
+- **Environnements de test Electron jetables** : après de multiples manipulations manuelles
+  d'un même conteneur (changement d'utilisateur, permissions setuid ajoutées à la main sur
+  `chrome-sandbox`, réinstallations successives de libs), un test peut échouer pour des raisons
+  propres à cet état accumulé et non reproductibles dans un conteneur frais. Avant de conclure
+  à un bug produit, reproduire dans un conteneur vierge.
 
-Ne pas remplacer les assertions pour obtenir artificiellement un vert. La présence d’une
-configuration RPM ne prouve pas le fonctionnement sous Fedora.
-
-### Blocage : téléchargement via le protocole personnalisé
-
-Le test `fichiers joints et export JSON fonctionnent dans l’application empaquetée`
-attend `page.waitForEvent('download')`, clique `pièce.txt` et expire après 30 secondes.
-L’upload fonctionne et le lien **avec son nom accentué** apparaît. L’export JSON, situé
-plus loin dans le test, **n’a pas encore été vérifié**.
-
-`protocol.handle('worklogs', ...)` renvoie la réponse du serveur HTTP privé qui appelle
-`res.download`. Le test règle `item.setSavePath(...)` dans
-`session.defaultSession.on('will-download', ...)`, mais attend ensuite l’événement de
-la page Playwright. **À distinguer** : panne réelle de téléchargement ou limitation de
-l’observation Playwright sur un protocole custom.
-
-Prochaine démarche : tracer `will-download` et `DownloadItem` côté main, contrôler le
-fichier disque et son contenu, vérifier le geste réel et l’export. Si un traitement
-desktop spécifique est nécessaire, garder le bridge étroit et les adresses validées,
-préserver le web, puis tester le comportement de bout en bout.
-
-## 5. Pièges déjà rencontrés et points à revoir
-
-- **ESM/ready** : `await app.whenReady()` au niveau supérieur de `main.mjs` bloquait le
-  démarrage. Le code utilise `void app.whenReady().then(async () => ...)`.
-- **Relais HTTP** : `net.fetch` Chromium avec les headers de la requête custom échouait
-  avec `net::ERR_FAILED`. Le `fetch` Node utilise maintenant le jeton et le Content-Type
-  nécessaire. GET/PUT et uploads passent.
-- **Origine stable** : ne pas revenir à un port HTTP aléatoire comme origine de la fenêtre
-  sans traiter la persistance du thème/localStorage.
-- **Accents** : Busboy lit les noms multipart en latin1. Le correctif UTF-8 fait passer
-  l’assertion `pièce.txt`. Revoir aussi les noms Unicode déjà décodés/RFC 5987 : la conversion
-  ne doit pas tronquer un caractère hors latin1. Le nouveau test API doit être exécuté.
-- **Sandbox** : `sandbox: true`, isolation et Node désactivé dans le renderer.
-  `WORKLOGS_TEST_NO_SANDBOX=1` sert uniquement aux tests CI/conteneurs.
-  AppImage configure `executableArgs: []` pour retirer le `--no-sandbox` par défaut du builder.
-  Contrôler le lanceur réellement produit et le comportement Mint/AppArmor et Fedora.
-- **Packaging** : DEB utilise maintenant gzip car xz prenait plusieurs minutes. Refaire
-  les trois formats après tous les changements. Installer les outils RPM ou les utiliser
-  dans un conteneur jetable. Ne pas publier les fichiers exploratoires restants.
-- **Tests sur paquets** : valider les chemins `/opt/WorkLogs/worklogs` et `AppRun`, les
-  dépendances système, l’installation, le lancement et la préservation des données.
-- **Données web** : aucun import automatique vers le desktop. Prévoir une reprise via
-  copie SQLite cohérente avec WAL et uploads, sans écraser une base desktop existante.
-- **Arrêt** : revoir si nécessaire seconde instance, annulation, rechargement, erreur disque
-  et arrêt système. Les tests existants vérifient la fermeture normale et l’échec de sauvegarde.
-
-## 6. Données et commandes de travail
+## 7. Données et commandes de travail (inchangé)
 
 | Élément | Emplacement par défaut |
 |---|---|
@@ -145,7 +198,6 @@ préserver le web, puis tester le comportement de bout en bout.
 | Profil et thème | `~/.config/worklogs/`, chemin appData Electron |
 | Préparation packaging | `.desktop-app/`, ignoré par Git |
 | Paquets | `release/`, ignoré par Git |
-| Tests | répertoires jetables `/tmp/worklogs-desktop-*` et rapports `test-results/` |
 
 ```bash
 npm run desktop
@@ -163,69 +215,11 @@ WORKLOGS_EXECUTABLE="$PWD/release/linux-unpacked/worklogs" xvfb-run -a npm run t
 ./scripts/test-linux-package.sh fedora:44 rpm
 ```
 
-Les tests renseignent `WORKLOGS_DATA_DIR` et `WORKLOGS_PROFILE_DIR` pour isoler les données.
-Ne jamais les pointer vers les données personnelles. Le script `backup.sh` historique
-sauvegarde encore **le mode web uniquement**. Les ports web 8410/8411 et e2e 8412 sont conservés.
-
-## 7. CI/CD prévue — à éprouver
-
-La CI démarre sur push de branche et PR, exécute `check.sh`, construit les trois formats,
-inspecte l’ASAR et teste les paquets installés dans Ubuntu 24.04 (base Mint 22.x), Fedora
-43 et Fedora 44. L’AppImage est extraite et testée sur chaque environnement. Cela ne remplace
-pas une recette Cinnamon/Wayland sur une vraie session desktop.
-
-Les actions sont épinglées sur des SHA récupérés depuis leurs tags officiels. Test/build
-ont `contents: read`. Seul le job release demande les droits d’écriture, attestations et OIDC.
-
-`release.yml` démarre sur **tag `v*`**, réexécute la CI et impose l’égalité avec la version
-racine. Il calcule SHA256SUMS, crée une attestation et un brouillon, charge les trois formats,
-puis publie après succès. Les suffixes `-rc.N`, `-beta.N`, `-alpha.N` produisent une prérelease.
-Le lancement manuel prend un tag existant et conserve le brouillon. Les releases déjà
-publiées ne sont pas remplacées.
-
-**Ne pas pousser de tag avant validation.** Faire d’abord un commit de correction sans
-`[skip ci]` sur cette branche pour exercer les workflows :
-
-```bash
-gh run list --branch codex/linux-desktop-releases
-gh run view RUN_ID --log-failed
-```
-
-Permissions, attestations, erreurs/reruns et publication effective restent à tester.
-Le lancement manuel sera normalement disponible dans l’interface GitHub lorsque le
-workflow sera sur la branche par défaut ; ne pas fusionner un lot rouge pour contourner cela.
-
-## 8. Ordre conseillé pour terminer
-
-1. Reproduire et résoudre/vérifier le téléchargement Electron, puis l’export JSON.
-2. Exécuter le test API des accents et vérifier les cas Unicode déjà décodés.
-3. Rendre **`./scripts/check.sh` entièrement vert**, sans ignorer le desktop.
-4. Reconstruire DEB/RPM/AppImage ; vérifier l’ASAR et le binaire empaqueté.
-5. Exécuter les trois essais de distribution, y compris chaque AppImage.
-6. Faire une recette réelle : installation, icône/raccourci, édition, fermeture,
-   redémarrage, fichiers, export, impression, conservation des données après mise à jour.
-7. Documenter reprise des données web, installation finale et sauvegarde desktop.
-8. Pousser sans skip CI, corriger les runs GitHub et vérifier la chaîne de release.
-9. Mettre à jour les résultats de ce document et le handover avant de livrer.
-
-## 9. Journaux locaux utiles — non versionnés
-
-- `/tmp/worklogs-desktop-baseline.log` : recette initiale verte.
-- `/tmp/worklogs-desktop-web-tests.log` : 55 tests front passés.
-- `/tmp/worklogs-desktop-e2e-next.log` : 3 parcours Electron verts, échec initial des accents.
-- `/tmp/worklogs-desktop-download.log` : échec actuel sur `page.waitForEvent('download')`.
-- `/tmp/worklogs-desktop-pack.log` : première construction DEB/AppImage exploratoire.
-- `/tmp/worklogs-desktop-pack-final.log` : reconstruction commencée puis arrêtée au checkpoint.
-
-Ces logs peuvent disparaître. Les fichiers de `release/` peuvent être périmés, partiels
-ou absents : **reconstruire**, ne pas publier directement. Le mot « final » du nom de log
-n’est pas une validation.
-
-## 10. Références consultées
+## 8. Références consultées (cumulatif)
 
 - [Electron 44.3.0](https://releases.electronjs.org/release/v44.3.0)
-- [ESM dans Electron](https://www.electronjs.org/docs/latest/tutorial/esm)
-- [Cycle de vie Electron](https://www.electronjs.org/docs/latest/api/app)
-- [Electron avec Playwright](https://playwright.dev/docs/api/class-electron)
 - [Formats Linux electron-builder](https://www.electron.build/v26/docs/linux/)
-- [Attestations GitHub Actions](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
+- [jshttp/content-disposition#27 — filename* et Latin-1](https://github.com/jshttp/content-disposition/issues/27)
+- [electron/electron#44375 — liens `download` et `will-download`](https://github.com/electron/electron/issues/44375)
+- [Launchpad #2069153 — `liboss4-salsa-asound2` squatte `libasound2`](https://bugs.launchpad.net/bugs/2069153)
+- [electron-builder#9539 — dépendances par défaut et transition t64](https://github.com/electron-userland/electron-builder/issues/9539)

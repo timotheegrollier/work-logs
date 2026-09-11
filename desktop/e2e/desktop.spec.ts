@@ -7,6 +7,24 @@ let directory: string;
 let application: ElectronApplication | undefined;
 let page: Page;
 
+/**
+ * `page.waitForEvent('download')` n'observe jamais les téléchargements servis par
+ * le protocole personnalisé `worklogs://` (limite de l'intégration Electron de
+ * Playwright, pas une panne applicative : `will-download` se déclenche bien côté
+ * Electron, cf. docs/06-DESKTOP-CICD.md). On observe donc directement la session.
+ */
+function downloadNext(target: string): Promise<void> {
+  return application!.evaluate(({ session }, savePath) => new Promise<void>((resolve, reject) => {
+    session.defaultSession.once('will-download', (_event, item) => {
+      item.setSavePath(savePath);
+      item.once('done', (_e, state) => {
+        if (state === 'completed') resolve();
+        else reject(new Error('téléchargement en échec : ' + state));
+      });
+    });
+  }), target);
+}
+
 async function launch() {
   const env = Object.fromEntries(Object.entries(process.env).filter((item): item is [string, string] =>
     item[1] !== undefined && item[0] !== 'ELECTRON_RUN_AS_NODE'));
@@ -69,19 +87,18 @@ test('fermer immédiatement sauve le texte et le thème survit au redémarrage',
 test('fichiers joints et export JSON fonctionnent dans l’application empaquetée', async () => {
   await page.getByLabel('Joindre un fichier').setInputFiles({ name: 'pièce.txt', mimeType: 'text/plain', buffer: Buffer.from('contenu desktop') });
   await expect(page.getByRole('link', { name: 'pièce.txt' })).toBeVisible();
-  await application!.evaluate(({ session }, dir) => {
-    session.defaultSession.on('will-download', (_event, item) => item.setSavePath(dir + '/' + item.getFilename()));
-  }, directory);
-  const fileDownload = page.waitForEvent('download');
+
+  const fileTarget = path.join(directory, 'pièce.txt');
+  const fileDownload = downloadNext(fileTarget);
   await page.getByRole('link', { name: 'pièce.txt' }).click();
-  const file = await fileDownload;
-  expect(await file.failure()).toBeNull();
-  expect(fs.readFileSync((await file.path())!, 'utf8')).toBe('contenu desktop');
-  const exportDownload = page.waitForEvent('download');
+  await fileDownload;
+  expect(fs.readFileSync(fileTarget, 'utf8')).toBe('contenu desktop');
+
+  const exportTarget = path.join(directory, 'export.json');
+  const exportDownload = downloadNext(exportTarget);
   await page.getByRole('link', { name: 'Exporter' }).click();
-  const exported = await exportDownload;
-  expect(await exported.failure()).toBeNull();
-  expect(JSON.parse(fs.readFileSync((await exported.path())!, 'utf8')).entries[0].title).toBe('Comment ça marche');
+  await exportDownload;
+  expect(JSON.parse(fs.readFileSync(exportTarget, 'utf8')).entries[0].title).toBe('Comment ça marche');
 });
 
 test('impression PDF et refus de fermeture si l’enregistrement échoue', async () => {
