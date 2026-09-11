@@ -7,7 +7,7 @@
 - Electron **44.3.0** et electron-builder **26.15.3** : ajout explicitement approuvé.
   Ne pas redemander cet accord ; les autres ajouts restent soumis aux règles ci-dessous.
 - Dependabot : jsdom 30, TS 7, types/node 26, concurrently 10 mergés ; **Express reste
-  en 4** (la 5 casse les téléchargements — voir `07-RELEASES.md` §7).
+  en 4** (la 5 casse les téléchargements — voir `07-RELEASES.md` §8).
 - Recette manuelle sur vraie session desktop toujours à faire un jour (icône, dialogue
   « Enregistrer sous », Ctrl+P, persistance).
 

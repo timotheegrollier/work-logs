@@ -86,7 +86,53 @@ Testé : `scripts/release-notes.test.mjs` (4 tests, exécutés dans `check.sh` v
 - Logique `precheck` rejouable en local : voir §4 (deux appels `gh`, ~10 s).
 - YAML : `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml'))"`.
 
-## 7. Pièges connus (vécus, ne pas réintroduire)
+## 7. Mises à jour sans tout retélécharger (depuis la 0.5.0)
+
+Trois circuits selon le format installé (détecté par `installKind()` dans
+`desktop/update.mjs` : variable `APPIMAGE`, chemin sous `/opt`, sinon dev) :
+
+| Installé via | Mise à jour | Téléchargé |
+|---|---|---|
+| `.rpm` + dépôt configuré | `sudo dnf update worklogs` (proposé dans le dialogue d'ouverture) | paquet complet (~83 Mo) |
+| `.AppImage` | dialogue « Mettre à jour » → téléchargement **différentiel** → « Redémarrer » | seuls les blocs modifiés (~1–5 Mo) |
+| `.deb` / sans dépôt | page de téléchargement (comme avant) | paquet complet |
+
+### Dépôt dnf
+
+- Contenu : tous les `.rpm` gardés + `repodata/` + `worklogs.repo`, sur la branche
+  `gh-pages` (servi par GitHub Pages : `https://timotheegrollier.github.io/work-logs/rpm/`).
+- Construction : `scripts/build-rpm-repo.sh <dir>` (`createrepo_c --update`).
+- Workflow `rpm-repo.yml` : sur chaque release publiée (et `dispatch` pour regarnir),
+  il télécharge le RPM de la release + celui de la précédente, construit le repodata,
+  **teste install + update dans un conteneur Fedora jetable**, puis pousse sur `gh-pages`.
+- **Pas de delta RPMs** : `makedeltarpm` ne lit pas les payloads produits par fpm
+  (« payload read failed », vérifié avec 0.4.1/0.4.2 alors que `rpm -K` les valide).
+  Le dépôt apporte quand même l'essentiel : plus de navigateur ni de réinstall manuelle.
+- Dépôt non signé (`gpgcheck=0`, usage personnel) — la signature GPG reste une piste.
+- Activation côté utilisateur (une fois) :
+  ```bash
+  sudo curl -o /etc/yum.repos.d/worklogs.repo https://timotheegrollier.github.io/work-logs/rpm/worklogs.repo
+  sudo dnf update worklogs
+  ```
+
+### AppImage auto (electron-updater, dépendance approuvée)
+
+- `electron-builder.yml` déclare `publish: github` → génère `latest-linux.yml` à
+  chaque build. Le `.blockmap` externe (indispensable au delta : sans lui,
+  repli silencieux sur le téléchargement complet) est produit par
+  `scripts/appimage-blockmap.mjs` (réutilise le module du builder, 7 s, ~130 Ko).
+- CI : `desktop:dist` → blockmap → assert `latest-linux.yml` + `*.blockmap` →
+  artefact `linux-packages`. La release les uploade et les atteste avec le reste.
+- `desktop/main.mjs` (AppImage packagée uniquement) : `checkForUpdates` à
+  l'ouverture → dialogue « Mettre à jour » → `downloadUpdate` (différentiel) →
+  dialogue « Redémarrer » → `quitAndInstall`. Échec → repli sur le dialogue
+  classique. Contournements ESM documentés dans le code (electron-builder#7976).
+- `stage-desktop.mjs` fusionne `electron-updater` + fermeture transitive depuis le
+  lock racine (flat ou niché selon les versions, comme npm) — `verify-package.mjs`
+  exige `/node_modules/electron-updater/package.json` dans l'asar (garde-fou
+  ajouté après l'incident `update.mjs` manquant de la 0.3.0).
+
+## 8. Pièges connus (vécus, ne pas réintroduire)
 
 - **Liste fermée de `stage-desktop.mjs`** : tout nouveau fichier sous `desktop/` doit y
   être ajouté, sinon l'app installée plante à l'import (fenêtres jamais ouvertes,
