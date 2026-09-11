@@ -1,76 +1,106 @@
-# 🤝 WorkLogs — Fiche de relève agent (LIRE EN PREMIER)
+# 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Date de rédaction :** 2026-09-11 · **Version :** V1 fonctionnelle
-> **Auteur :** Cline (agent précédent) · **Pour :** Timo + prochain agent
-> **État :** ✅ App qui tourne en local, validée API + build web OK
-> **Git :** repo initialisé, commit `d7d8660` « V1 WorkLogs… » (37 fichiers, DB/uploads/locks exclus — voir `.gitignore`)
+> **Mise à jour :** 2026-09-11 · **Version :** web V2 + desktop **0.2.0 en cours, non publié**
+> **État :** travail interrompu à la demande de l’utilisateur, **desktop/CI non terminés**.
+> **Branche :** `codex/linux-desktop-releases`.
+> **Reprise prioritaire : [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md).**
+
+## Point d’arrêt desktop/CI
+
+Le socle web était vert **avant ce lot** : 60 API + 52 front + 12 navigateur, soit 124 tests.
+Ce résultat historique **ne certifie pas la branche actuelle**.
+
+Electron 44.3.0 et electron-builder 26.15.3 ont été explicitement approuvés. La fenêtre
+démarre ; sauvegarde à la fermeture, thème persistant, isolation du renderer et génération
+PDF ont passé leurs tests. **Le téléchargement échoue encore dans le test Playwright** :
+timeout en attendant `download` sur une pièce jointe via `worklogs://app`. L’upload et le
+nom accentué sont visibles. Il reste à distinguer une panne du téléchargement d’une limite
+d’observation par Playwright. L’export JSON, plus loin dans ce test, reste à vérifier.
+
+Les workflows sont écrits, pas validés sur GitHub. Aucun RPM ni essai d’installation
+Mint/Fedora n’a été validé. Les paquets DEB/AppImage exploratoires doivent être reconstruits.
+`check.sh` inclut maintenant le desktop et **n’est pas certifié vert**. Ne pas créer de tag
+`v*` avant validation : il déclencherait la publication. Aucun tag ou release n’a été créé.
+
+L’utilisateur a demandé d’arrêter, documenter et pousser pour reprendre avec un autre agent.
+Les sections suivantes décrivent le web V2 ; le document 06 fait foi pour le lot en cours.
 
 ## 1. C'est quoi ?
-Cockpit perso 100% local fusionnant **Trello (kanban) + Jira (types/priorités/projets à clé) + TodoList (inbox) + Agenda + Drive/Docs (fichiers + notes Markdown)**.
-Aucun cloud, aucune auth (mono-utilisateur local).
+Un journal de travail local. On y **écrit** ce qu'on a fait (Markdown, belle mise en page,
+impression PDF propre) et on y **suit** ses tâches. Tout tient sur un écran : journal à
+gauche, écriture au centre, tâches à droite. Ni onglet, ni menu, ni cloud, ni compte.
 
-## 2. Où est le code ?
-Racine : `/home/timo/WorkLogs` (vide au départ, tout a été scaffoldé le 2026-09-11).
-
-```
-WorkLogs/
-├── README.md               ← accueil, démarrage 2 commandes
-├── AGENTS.md               ← consignes pour agents (conventions, pièges)
-├── package.json            ← scripts racine (concurrently)
-├── docs/                   ← CE DOSSIER : toute la doc de relève
-│   ├── 00-HANDOVER.md      ← ce fichier
-│   ├── 01-ARCHITECTURE.md
-│   ├── 02-API.md
-│   ├── 03-GUIDE-DEV.md
-│   ├── 04-GUIDE-UTILISATEUR.md
-│   └── 05-ROADMAP-V2.md
-├── scripts/                ← dev.sh, check.sh, backup.sh, stop.sh
-├── api/                    ← backend Node+Express+SQLite
-│   ├── src/db.js           ← schéma + seed
-│   └── src/server.js       ← routes REST + uploads
-└── web/                    ← frontend React+Vite+TS
-    └── src/{App.tsx,lib.ts,pages/,components/}
-```
-
-## 3. État des services (au moment de la relève)
-| Service | Port | Lancement | Vérif |
-|---|---|---|---|
-| API | 8410 | `screen -S wl-api` → `PORT=8410 node src/server.js` | `curl -s localhost:8410/api/health` → `{"ok":true,...}` |
-| Web | 8411 | `screen -S wl-web` → `npm run dev` | `curl -s -o /dev/null -w %{http_code} localhost:8411/` → `200` |
-
-> ⚠️ Les `screen` ne survivent pas au reboot. Relance via `npm run dev` (voir §5).
-
-## 4. Données
-- SQLite : `api/data/worklogs.db` (+ `-wal`, `-shm` en mode WAL) — **non versionné** (voir `.gitignore`).
-- Uploads : `api/data/uploads/` — **non versionné** (sauf `.gitkeep`).
-- Seed initial : 2 projets (`PERSO`, `PRO`), 5 tâches, 1 event, 1 doc — inséré une seule fois si table `projects` vide.
-
-## 5. Reprise en 3 commandes (pour le prochain agent)
+## 2. Reprise en 3 commandes
 ```bash
 cd /home/timo/WorkLogs
-npm run install:all        # racine + api + web (une seule fois)
-npm run dev                # API :8410 + Web :8411 (concurrently)
-# puis :
-./scripts/check.sh         # health + stats + build web → tout doit être vert
+npm run install:all     # une seule fois
+npm run dev             # API :8410 + web :8411 → http://localhost:8411
+./scripts/check.sh      # recette complète, doit finir par « CHECK OK »
 ```
 
-Ouvrir http://localhost:8411, tester : ajout rapide dashboard → drag & drop kanban → check todo.
+## 3. Où est le code
+```
+WorkLogs/
+├── api/
+│   ├── src/db.js        schéma V2, migration V1→V2, données d'amorçage
+│   ├── src/app.js       createApp({db, uploadDir, staticDir}) — toutes les routes
+│   ├── src/server.js    ouvre la base, écoute, sert web/dist en prod
+│   └── test/            6 fichiers, 60 tests node:test
+├── web/src/
+│   ├── App.tsx          l'écran : en-tête + 3 colonnes
+│   ├── lib.ts           types, client API, helpers purs
+│   ├── markdown.ts      marked + DOMPurify
+│   ├── components/      EntryList · EntryEditor · TaskBoard · ProjectBar
+│   ├── styles.css       thèmes clair/sombre, typographie du document, feuille d'impression
+│   └── *.test.ts(x)     52 tests vitest
+├── e2e/                 12 parcours Playwright
+└── docs/                cette doc
+```
 
-## 6. Ce qui a été validé le 2026-09-11
-- [x] `tsc -b` web : 0 erreur · `vite build` : 25 modules, OK
-- [x] CRUD tâche : POST → PATCH `/move` → PUT done → DELETE : OK
-- [x] POST event / doc / upload + DELETE de nettoyage : OK
-- [x] Stats finales : `total:5, overdue:1, urgent:3, upcomingEvents:1`
-- [x] Bug trouvé+corrigé : INSERT tasks avec 12 `?` pour 13 colonnes (voir `03-GUIDE-DEV.md § Pièges`)
+## 4. Ce qui a changé depuis la V1 (2026-09-11)
+| V1 | V2 |
+|---|---|
+| 7 onglets (Dashboard, Kanban, Todos, Agenda, Docs, Fichiers, Projets) | **1 écran** |
+| 5 tables, tâches à 13 colonnes façon Jira | 4 tables, tâches à 9 colonnes |
+| 4 statuts, 4 priorités, 5 types de tâche | 3 statuts, épingle oui/non |
+| Markdown maison en 10 lignes de regex | marked + DOMPurify (tableaux, code, cases à cocher) |
+| Enregistrement par bouton | enregistrement automatique + `Ctrl+S` |
+| Aucun test | 124 tests, `./scripts/check.sh` |
+| Agenda séparé | supprimé — un événement est une entrée datée |
 
-## 7. Check-list de prise en main (15 min)
-1. Lire `AGENTS.md` (conventions + interdits).
-2. Lire `01-ARCHITECTURE.md` (schéma DB + flux).
-3. Lancer `./scripts/check.sh`, ouvrir l'UI.
-4. Lire `05-ROADMAP-V2.md` et choisir le lot à implémenter.
-5. Travailler par petits diffs, valider `tsc` + `curl` à chaque étape.
+La migration est automatique et **sans perte** : les docs, les événements et les descriptions
+de tâches V1 deviennent des entrées de journal. Elle tourne à la première ouverture de la base.
 
-## 8. Contact / contexte machine
-- OS : Linux Mint 22.3 (base Ubuntu Noble) · Node v24.13.0 · npm 11.6.2
-- Ports réservés au projet : **8410 (API), 8411 (web)** — ne pas changer sans mettre à jour `web/vite.config.ts` + `README` + ce dossier.
-- Pas de Docker pour WorkLogs (choix volontaire : zéro infra). Stacks Docker voisines (`murgat_management`) ignorées.
+## 5. Données
+- `api/data/worklogs.db` (+ `-wal`, `-shm`) — non versionnée.
+- `api/data/uploads/` — non versionné (sauf `.gitkeep`).
+- Amorçage : 2 projets, 1 entrée « Comment ça marche », 3 tâches — seulement si la base est vide.
+- Sauvegarde : `./scripts/backup.sh`. Export JSON : bouton « Exporter » ou `GET /api/export`.
+
+## 6. Check-list de prise en main (15 min)
+1. `./scripts/check.sh` → doit finir par `CHECK OK`. Si ce n'est pas le cas, s'arrêter là et
+   régler ça d'abord : c'est le filet de tout le reste.
+2. Ouvrir <http://localhost:8411>, créer une entrée, taper du Markdown, `Ctrl+P`. Dix minutes
+   d'usage réel valent mieux que toute la doc.
+3. Lire `AGENTS.md` (les règles) puis `05-DECISIONS.md` (**pourquoi** c'est comme ça).
+4. Ouvrir `04-RECETTES.md` à la recette qui correspond à la tâche à faire.
+5. Travailler par petits diffs : le test d'abord, `check.sh` vert à la fin.
+
+### La doc, dans l'ordre
+| Fichier | À lire quand |
+|---|---|
+| `00-HANDOVER.md` | en arrivant (ce fichier) |
+| `AGENTS.md` · `CLAUDE.md` | avant la première modification |
+| `05-DECISIONS.md` | avant de proposer quoi que ce soit de nouveau |
+| `04-RECETTES.md` | au moment de faire |
+| `01-ARCHITECTURE.md` | pour le schéma de base, l'API, la carte du front |
+| `02-DEV.md` | pour les tests, les conventions, les pièges |
+| `03-UTILISATION.md` | pour comprendre l'usage attendu côté utilisateur |
+
+## 7. Pistes suivantes (non engagées)
+Recherche plein texte FTS5 · import du JSON exporté · modèles d'entrée (compte rendu, décision) ·
+export PDF sans passer par l'impression · rappels sur échéance.
+
+## 8. Machine
+Linux Mint 22.3 · Node v24.13.0 · npm 11.6.2 · pas de Docker (choix assumé).
+Services lancés en `screen` (`wl-api`, `wl-web`) — ils ne survivent pas au redémarrage.

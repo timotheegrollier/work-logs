@@ -284,9 +284,13 @@ export function createApp({ db, uploadDir, staticDir = null }) {
       return bad(res, 'entry_id requis et valide');
     }
     const id = uid('at_');
+    // Les navigateurs transmettent les noms en UTF-8, Busboy les lit en latin1.
+    // Conserver le nom initial si ce n’est pas une séquence UTF-8 valide.
+    let filename = req.file.originalname;
+    try { filename = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(filename, 'latin1')); } catch {}
     db.prepare(
       'INSERT INTO attachments (id,filename,stored,mime,size,entry_id,created_at) VALUES (?,?,?,?,?,?,?)'
-    ).run(id, req.file.originalname, req.file.filename, req.file.mimetype || '', req.file.size, entryId, nowISO());
+    ).run(id, filename, req.file.filename, req.file.mimetype || '', req.file.size, entryId, nowISO());
     res.status(201).json(db.prepare('SELECT * FROM attachments WHERE id=?').get(id));
   });
 

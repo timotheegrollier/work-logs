@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, formatSize, type Attachment, type Entry, type Project } from '../lib';
 import { renderMarkdown } from '../markdown';
+import { Autosave } from '../autosave';
 
 type SaveState = 'saved' | 'dirty' | 'saving' | 'error';
 const LABELS: Record<SaveState, string> = {
@@ -40,34 +41,33 @@ export function EntryEditor({
   const [error, setError] = useState('');
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const changedRef = useRef(onChanged);
+  changedRef.current = onChanged;
+  const [autosave] = useState(() => new Autosave<typeof draft>(async (body) => {
+    if (!body.title.trim()) throw new Error('Le titre de l’entrée est requis.');
+    await api.updateEntry(entry.id, { ...body, project_id: body.project_id || null });
+    changedRef.current();
+  }));
 
   const update = (patch: Partial<typeof draft>) => {
-    setDraft((prev) => ({ ...prev, ...patch }));
-    setSave('dirty');
+    const next = { ...draftRef.current, ...patch };
+    draftRef.current = next;
+    setDraft(next);
+    autosave.update(next);
   };
 
   const persist = async () => {
-    const body = draftRef.current;
-    if (!body.title.trim()) return; // l'API refuserait : on laisse l'utilisateur finir de taper
-    setSave('saving');
-    try {
-      await api.updateEntry(entry.id, { ...body, project_id: body.project_id || null });
-      setSave('saved');
-      setError('');
-      onChanged();
-    } catch (e) {
-      setSave('error');
-      setError((e as Error).message);
-    }
+    await autosave.flush().catch(() => {});
   };
 
-  // Enregistrement automatique : l'utilisateur n'a jamais de bouton à chercher.
+  // Changer d’entrée termine aussi l’écriture du brouillon précédent.
   useEffect(() => {
-    if (save !== 'dirty') return;
-    const timer = setTimeout(persist, 600);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, save]);
+    autosave.onState = (state, message) => { setSave(state); setError(message || ''); };
+    return () => {
+      autosave.onState = () => {};
+      void autosave.flush().catch(() => {});
+    };
+  }, [autosave]);
 
   // Ctrl+S enregistre tout de suite, par réflexe.
   useEffect(() => {
@@ -102,6 +102,7 @@ export function EntryEditor({
 
   const remove = async () => {
     if (!confirm(`Supprimer l’entrée « ${draft.title} » et ses fichiers ?`)) return;
+    await autosave.flush();
     await api.deleteEntry(entry.id);
     onDeleted();
   };

@@ -1,1 +1,36 @@
-{"name":"worklogs","private":true,"version":"0.1.0","description":"Cockpit perso Trello x Jira x Todo x Agenda x Docs","scripts":{"install:all":"npm --prefix api install && npm --prefix web install","dev":"concurrently -n api,web -c blue,green \"npm --prefix api run dev\" \"npm --prefix web run dev\"","dev:api":"npm --prefix api run dev","dev:web":"npm --prefix web run dev","build":"npm --prefix web run build","start:api":"npm --prefix api start"},"devDependencies":{"@playwright/test":"^1.63.0","concurrently":"^9.1.2"}}
+{
+  "name": "worklogs",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Journal de travail local : écrire, mettre en page, organiser — sur un seul écran.",
+  "scripts": {
+    "install:all": "npm install && npm --prefix api install && npm --prefix web install",
+    "dev": "concurrently -n api,web -c blue,green \"npm --prefix api run dev\" \"npm --prefix web run dev\"",
+    "dev:api": "npm --prefix api run dev",
+    "dev:web": "npm --prefix web run dev",
+    "build": "npm --prefix web run build",
+    "start": "npm --prefix web run build && npm --prefix api start",
+    "test": "npm --prefix api test && npm --prefix web test",
+    "test:api": "npm --prefix api test",
+    "test:web": "npm --prefix web test",
+    "test:e2e": "npm run build && playwright test",
+    "test:all": "./scripts/check.sh",
+    "start:api": "npm --prefix api start",
+    "desktop": "npm run build && electron desktop/main.mjs",
+    "test:desktop:unit": "node --test desktop/test/*.test.mjs",
+    "typecheck:desktop": "web/node_modules/.bin/tsc --noEmit -p tsconfig.desktop.json",
+    "test:desktop": "playwright test -c playwright.desktop.config.ts",
+    "desktop:stage": "node scripts/stage-desktop.mjs",
+    "desktop:pack": "npm run build && npm run desktop:stage && electron-builder --linux --x64 --dir --publish never",
+    "desktop:dist": "npm run build && npm run desktop:stage && electron-builder --linux --x64 --publish never"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "concurrently": "^9.1.2",
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3"
+  },
+  "author": "Timothée Grollier <timotheegrollier@gmail.com>",
+  "homepage": "https://github.com/timotheegrollier/work-logs",
+  "license": "UNLICENSED"
+}

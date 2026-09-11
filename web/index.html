@@ -4,11 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WorkLogs</title>
-    <script>
-      // Applique le thème avant le premier rendu pour éviter un flash clair.
-      document.documentElement.dataset.theme =
-        localStorage.getItem('worklogs-theme') === 'light' ? 'light' : 'dark';
-    </script>
+    <script src="/theme.js"></script>
   </head>
   <body>
     <div id="root"></div>

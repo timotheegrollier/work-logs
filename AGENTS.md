@@ -1,21 +1,41 @@
-# WorkLogs — règles agents (relève)
+# WorkLogs — règles agents
+
+## Reprise actuelle — 2026-09-11
+- Lot desktop/CI **inachevé**, arrêté à la demande de l’utilisateur et sauvegardé sur
+  `codex/linux-desktop-releases`. Lire `docs/06-DESKTOP-CICD.md` après le handover.
+- Electron **44.3.0** et electron-builder **26.15.3** : ajout explicitement approuvé.
+  Ne pas redemander cet accord ; les autres ajouts restent soumis aux règles ci-dessous.
+- Le test desktop de téléchargement est rouge ; rétablir `check.sh` avant de livrer.
+- Ne pas taguer/publier 0.2.0 tant que tests et installations ne sont pas validés.
+- Desktop : origine `worklogs://app`, serveur privé sur 127.0.0.1 et port éphémère,
+  données `~/.local/share/worklogs/`, profil `~/.config/worklogs/` par défaut.
+- Ne pas committer `.desktop-app/`, `release/`, les profils et les données de tests.
 
 ## Contexte
-- App perso 100% locale : React+Vite+TS (`web/`) + Node+Express+SQLite natif (`api/`).
-- Ports réservés : API **8410**, web **8411**. DB `api/data/worklogs.db` (non versionnée).
-- Doc de référence : `docs/00-HANDOVER.md` (lire en premier), puis `docs/01..05`.
+- Journal de travail perso, 100 % local, **un seul écran** (pas d'onglets, pas de routeur).
+- `api/` : Node + Express + `node:sqlite`. `web/` : React + Vite + TS.
+- Ports : API **8410**, web **8411**, e2e **8412**. Base : `api/data/worklogs.db`.
+- Lire `docs/00-HANDOVER.md` en premier, puis `05-DECISIONS.md` (pourquoi c'est comme ça)
+  et `04-RECETTES.md` (comment faire). `01-ARCHITECTURE.md` pour le schéma et l'API.
 
-## Conventions obligatoires
-- Petits diffs incrémentaux, jamais de refonte silencieuse ; une fonctionnalité = un test `curl` + `tsc` vert.
-- Zéro nouvelle dépendance sans accord explicite (socle minimal volontaire).
-- API : ESM, erreurs `{error}` en français, validation serveur, `""` → NULL pour FK/optionnels.
-- Web : TS strict, formulaires string→conversion à l'envoi, `useRefresh` + `reload()` après mutation, styles dans `styles.css` uniquement.
-- Ne jamais committer `api/data/*.db*` ni `api/data/uploads/*` (sauf `.gitkeep`).
-- Ne pas toucher aux ports sans MAJ `web/vite.config.ts` + `README.md` + `docs/`.
+## Règles
+- **Aucune fonctionnalité sans test.** Un endpoint → un test dans `api/test/` ; un geste
+  utilisateur → un test dans `web/src/App.test.tsx` ou `e2e/`.
+- `./scripts/check.sh` doit être vert avant et après chaque lot.
+- Petits diffs. Pas de refonte silencieuse.
+- **Zéro nouvelle dépendance sans accord explicite.** Socle actuel : express, cors, multer /
+  react, marked, dompurify. Tests : node:test, vitest, playwright.
+- Rester simple : toute nouveauté qui ajoute un onglet ou un mode est probablement à refuser.
+- API : ESM, erreurs `{error}` en français, validation serveur, `""` → NULL.
+- Web : TS strict, styles dans `styles.css` uniquement, requêtes via `lib.ts`.
+- Ne jamais committer `api/data/*.db*` ni `api/data/uploads/*`.
+- Changer un port → mettre à jour `web/vite.config.ts`, `playwright.config.ts`, `README.md`, `docs/`.
 
 ## Commandes
-- `npm run install:all` · `npm run dev` (8410+8411) · `npm run build` (tsc+vite) · `./scripts/check.sh` (recette) · `./scripts/backup.sh` (sauvegarde).
-- Inspecter la DB via `python3` + `sqlite3` (pas de CLI `sqlite3` sur la machine).
+`npm run install:all` · `npm run dev` · `npm start` · `npm test` · `npm run test:e2e` ·
+`./scripts/check.sh` · `./scripts/backup.sh` · `./scripts/stop.sh`
 
-## Pièges (détaillés dans `docs/03-GUIDE-DEV.md`)
-`node:sqlite` expérimental (warning normal) · WAL `-wal/-shm` · INSERT tasks = 13 `?` · Vite 8 imposé par plugin-react 6 · `@types/node` requis par `tsconfig.node.json` · `screen` meurt avec la session `run_commands` (relancer au besoin).
+## Pièges
+Détaillés dans `docs/02-DEV.md` : migration V1→V2 et `legacy_alter_table`, index créés après
+migration, `node:sqlite` expérimental, WAL, glisser-déposer HTML5 dans les tests, `screen` qui
+meurt avec la session.

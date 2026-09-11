@@ -7,3 +7,10 @@ api/data/*.db-wal
 api/data/uploads/*
 !api/data/uploads/.gitkeep
 .env
+
+.e2e-data/
+test-results/
+playwright-report/
+
+.desktop-app/
+release/

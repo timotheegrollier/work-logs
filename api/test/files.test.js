@@ -9,6 +9,15 @@ describe('pièces jointes', () => {
   before(async () => { api = await startApi(); });
   after(() => api.close());
 
+  test('conserve les accents du nom transmis par le navigateur', async () => {
+    const entry = await make.entry(api);
+    const uploaded = await api.upload('pièce jointe été.txt', 'contenu', { entry_id: entry.id });
+    assert.equal(uploaded.status, 201);
+    assert.equal(uploaded.body.filename, 'pièce jointe été.txt');
+    const downloaded = await fetch(`${api.base}/api/files/${uploaded.body.stored}`);
+    assert.match(downloaded.headers.get('content-disposition'), /filename\*=UTF-8''pi%C3%A8ce/);
+  });
+
   test('attache un fichier à une entrée et le relit', async () => {
     const entry = await make.entry(api);
     const up = await api.upload('compte rendu.txt', 'contenu du fichier', { entry_id: entry.id });

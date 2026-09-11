@@ -1,80 +1,85 @@
-# WorkLogs — cockpit perso (Trello × Jira × Todo × Agenda × Drive/Docs)
+# WorkLogs
 
-Centralise tâches, avancement, agenda, docs et fichiers au même endroit.
-Stack 100% locale, sans cloud : **React + Vite + TypeScript** (front) + **Node + Express + SQLite** (API, `node:sqlite` natif — zéro compilation).
+> **Desktop Linux en cours — version 0.2.0 non publiée.** Branche
+> [`codex/linux-desktop-releases`](https://github.com/timotheegrollier/work-logs/tree/codex/linux-desktop-releases).
+> Le travail a été interrompu à la demande de l’utilisateur. Un test de téléchargement
+> desktop échoue encore ; les paquets et la CI restent à valider.
+> **Reprise : [passation desktop et CI/CD](docs/06-DESKTOP-CICD.md).**
 
-> 🆕 **Tu prends le relais (humain ou agent) ?** Commence par **`docs/00-HANDOVER.md`** (fiche de relève, 5 min), puis `AGENTS.md` (règles).
+Le prototype se lance avec `npm run install:all`, puis `npm run desktop`. Il utilise
+`~/.local/share/worklogs/` pour ses données et `~/.config/worklogs/` pour son profil.
+Les données web ne sont pas importées automatiquement. Cibles prévues : Mint 22.x et
+Fedora 43/44 x86_64, en DEB, RPM et AppImage.
 
-## Démarrage rapide (Linux Mint / Debian)
+Journal de travail 100 % local. **Un seul écran** : le journal à gauche, l'écriture au
+centre, les tâches à droite. Aucun onglet, aucun menu, aucun cloud.
+
+```
+┌───────────────────────────────────────────────────────────────────────────┐
+│ WorkLogs   [rechercher…]        4 entrées cette semaine · 3 à faire   ☀ ⬇ │
+├───────────────┬───────────────────────────────────┬───────────────────────┤
+│ Tout · Perso  │  Compte rendu chantier            │ [nouvelle tâche…]     │
+│ + Nouvelle    │  [date] [projet] [Écrire│Lire]    │ À FAIRE  3            │
+│               │  ─────────────────────────────    │  ☐ Relancer le devis  │
+│ AUJOURD'HUI   │                                   │ EN COURS 1            │
+│ • Compte rendu│  ## Points                        │  ☐ Bug export         │
+│ • Note du jour│  - Devis signé                    │ TERMINÉ  2            │
+│               │  📎 devis.pdf                     │  ☑ Trier la boîte     │
+└───────────────┴───────────────────────────────────┴───────────────────────┘
+```
+
+## Démarrer
 
 ```bash
 cd /home/timo/WorkLogs
-
-# 1) tout installer (racine + api + web)
-npm run install:all
-
-# 2) lancer API (port 8410) + Web (port 8411)
-npm run dev
-# ou : ./scripts/dev.sh
-
-# Web  → http://localhost:8411
-# API  → http://localhost:8410/api/health
+npm run install:all     # une seule fois
+npm run dev             # API :8410 + web :8411 → http://localhost:8411
 ```
 
-Services déjà lancés sur cette machine (sessions `screen`) :
-- `wl-api` → API :8410 · `screen -r wl-api` pour voir, `./scripts/stop.sh` pour arrêter
-- `wl-web` → Web :8411 (`npm run dev`) · `screen -r wl-web`
+En un seul processus (le serveur sert aussi le front) : `npm start` → http://localhost:8410
 
-Scripts racine : `npm run dev`, `npm run dev:api`, `npm run dev:web`, `npm run build`.
-Utilitaires : `./scripts/check.sh` (recette complète), `./scripts/backup.sh` (sauvegarde DB+uploads), `./scripts/stop.sh`.
+## Utiliser
+
+| Geste | Effet |
+|---|---|
+| **+ Nouvelle entrée** | crée l'entrée du jour et place le curseur dans le titre |
+| Écrire dans la zone Markdown | **enregistrement automatique**, `Ctrl+S` pour forcer |
+| **Écrire / Lire** | édition côte à côte avec l'aperçu, ou lecture pleine largeur |
+| **Imprimer** (ou `Ctrl+P`) | sort l'entrée seule, mise en page propre, prête pour un PDF |
+| 📎 **Joindre un fichier** | attache un document à l'entrée ouverte |
+| Taper + `Entrée` dans « Nouvelle tâche » | ajoute une tâche à la colonne À faire |
+| Cocher une carte · la glisser | la termine · la change de colonne |
+| Clic sur un projet | filtre **le journal et les tâches** en même temps |
+| **Rechercher** | cherche dans les titres, le corps des entrées et les tâches |
+| **Exporter** | télécharge toute la base en JSON |
+
+Markdown géré : titres, gras/italique, listes, **cases à cocher**, **tableaux**,
+citations, blocs de code, liens, images.
+
+## Tester
+
+```bash
+npm test            # API (node:test) + front (vitest)
+npm run test:e2e    # parcours réels dans un navigateur (playwright)
+./scripts/check.sh  # tout : types + tests + build + navigateur
+```
+
+## Sauvegarder
+
+```bash
+./scripts/backup.sh     # → ~/WorkLogs-backups/worklogs-AAAAMMJJ-HHMMSS/
+```
 
 ## Documentation
+
 | Doc | Pour qui | Contenu |
 |---|---|---|
-| `docs/00-HANDOVER.md` | **tous (lire en 1er)** | fiche de relève : état, reprise en 3 commandes, check-list |
-| `docs/01-ARCHITECTURE.md` | agents/dev | schéma DB, flux, choix assumés |
-| `docs/02-API.md` | agents/dev | référence REST + exemples curl |
-| `docs/03-GUIDE-DEV.md` | agents/dev | install, conventions, pièges, recette |
-| `docs/04-GUIDE-UTILISATEUR.md` | Timo | usage quotidien des 7 onglets + rituel |
-| `docs/05-ROADMAP-V2.md` | Timo + agents | lots V2 chiffrés + dette technique |
-| `AGENTS.md` | agents | règles courtes (conventions, interdits, commandes) |
+| `docs/00-HANDOVER.md` | **tous, en premier** | état du projet, reprise en 3 commandes, check-list |
+| `docs/01-ARCHITECTURE.md` | dev / agent | schéma de la base, référence de l'API, structure du front |
+| `docs/02-DEV.md` | dev / agent | installation, tests, conventions, pièges |
+| `docs/03-UTILISATION.md` | Timo | l'écran, le Markdown, l'impression, les sauvegardes |
+| `docs/04-RECETTES.md` | dev / agent | « comment faire X » : ajouter un champ, migrer, dépanner, livrer |
+| `docs/05-DECISIONS.md` | dev / agent | **pourquoi** c'est comme ça, et ce qui a été retiré exprès |
+| `AGENTS.md` · `CLAUDE.md` | agents | les règles, en une page |
 
-## Fonctionnalités V1
-- **Dashboard** : stats (par statut, urgentes, en retard, agenda 7j), ajout rapide.
-- **Projets** : CRUD, code clé (ex. `PERSO`), couleur.
-- **Kanban** : colonnes À faire / En cours / Revue / Terminé, drag & drop natif, filtres projet/priorité/recherche, création/édition complète (type Jira : task/bug/story/epic/subtask, priorité, échéance, estimation).
-- **Todos** : inbox rapide, check/uncheck, échéances, priorités, suppression.
-- **Agenda** : événements liés optionnellement à tâche/projet, vue 7 jours + liste.
-- **Docs** : notes Markdown liées à projet/tâche, aperçu simple.
-- **Fichiers** : upload local (`api/data/uploads`), liaison tâche/projet/doc, téléchargement/suppression.
-
-## API REST
-`GET /api/health` · `/api/stats` · `/api/search?q=`
-CRUD : `/api/projects` · `/api/tasks` (filtres `?project_id=&status=&priority=&type=&search=`) · `PATCH /api/tasks/:id/move` `{status,position}` · `/api/events` (`?from=&to=`) · `/api/docs`
-Fichiers : `POST /api/uploads` (multipart `file` + `project_id/task_id/doc_id`) · `GET /api/attachments` · `GET /api/files/:stored` · `DELETE /api/attachments/:id`
-→ détail + exemples : `docs/02-API.md`.
-
-Données : `api/data/worklogs.db` (SQLite, non versionnée), fichiers : `api/data/uploads/` (non versionnés).
-
-## Roadmap V2
-Sprints + vélocité (lot B recommandé en premier), Gantt/rappels, FTS5 + export/import, PWA offline, Docker → voir `docs/05-ROADMAP-V2.md`.
-
-
-## Fonctionnalités V1
-- **Dashboard** : stats (par statut, urgentes, en retard, agenda 7j), ajout rapide.
-- **Projets** : CRUD, code clé (ex. `PERSO`), couleur.
-- **Kanban** : colonnes À faire / En cours / Revue / Terminé, drag & drop natif, filtres projet/priorité/recherche, création/édition complète (type Jira : task/bug/story/epic/subtask, priorité, échéance, estimation).
-- **Todos** : inbox rapide, check/uncheck, échéances, priorités, suppression.
-- **Agenda** : événements liés optionnellement à tâche/projet, vue 7 jours + liste.
-- **Docs** : notes Markdown liées à projet/tâche, aperçu simple.
-- **Fichiers** : upload local (`api/data/uploads`), liaison tâche/projet/doc, téléchargement/suppression.
-
-## API REST
-`GET /api/health` · `/api/stats` · `/api/search?q=`
-CRUD : `/api/projects` · `/api/tasks` (filtres `?project_id=&status=&priority=&type=&search=`) · `PATCH /api/tasks/:id/move` `{status,position}` · `/api/events` (`?from=&to=`) · `/api/docs`
-Fichiers : `POST /api/uploads` (multipart `file` + `project_id/task_id/doc_id`) · `GET /api/attachments` · `GET /api/files/:stored` · `DELETE /api/attachments/:id`
-
-Données : `api/data/worklogs.db` (SQLite), fichiers : `api/data/uploads/`.
-
-## Roadmap V2
-Auth multi-user, sprints/velocity Jira, Gantt, rappels, sync CalDAV/Google, recherche full-text FTS5, export/import, PWA offline, Docker.
+Données : `api/data/worklogs.db` (SQLite) et `api/data/uploads/` — jamais versionnées.

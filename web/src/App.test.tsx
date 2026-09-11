@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { seedData, useRealApi } from './test/server';
+import { flushPendingSaves } from './autosave';
 
 let api: Awaited<ReturnType<typeof useRealApi>>;
 
@@ -12,6 +13,7 @@ beforeEach(async () => {
   vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
 afterEach(async () => {
+  await flushPendingSaves();
   vi.restoreAllMocks();
   await api.close();
 });
@@ -148,6 +150,7 @@ describe('écrire une entrée', () => {
     await user.click(within(journal()).getByText('B'));
 
     expect(await screen.findByLabelText('Titre de l’entrée')).toHaveValue('B');
+    await waitFor(() => expect(row(api.db, 'SELECT title FROM entries WHERE id=?', 'en_a').title).toBe('A modifié'));
   });
 
   test('supprime une entrée et ouvre la suivante', async () => {

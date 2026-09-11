@@ -1,0 +1,51 @@
+appId: fr.worklogs.desktop
+productName: WorkLogs
+directories:
+  app: .desktop-app
+  output: release
+  buildResources: desktop
+files:
+  - desktop/*.mjs
+  - desktop/preload.cjs
+  - desktop/icon.png
+  - api/src/**
+  - api/package.json
+  - web/dist/**
+  - package.json
+asar: true
+npmRebuild: false
+electronLanguages:
+  - fr
+  - en-US
+linux:
+  syncDesktopName: true
+  executableName: worklogs
+  icon: desktop/icon.png
+  category: Office
+  synopsis: Journal de travail personnel
+  description: Journal Markdown et suivi de tâches, sur un seul écran, entièrement local.
+  maintainer: Timothée Grollier <timotheegrollier@gmail.com>
+  artifactName: WorkLogs-${version}-linux-${arch}.${ext}
+  target:
+    - target: deb
+      arch: [x64]
+    - target: rpm
+      arch: [x64]
+    - target: AppImage
+      arch: [x64]
+  desktop:
+    entry:
+      Name: WorkLogs
+      Comment: Journal de travail et tâches
+      Keywords: journal;notes;markdown;tâches;
+      StartupWMClass: worklogs
+deb:
+  compression: gz
+  depends: [libgtk-3-0, libnss3, libxss1, libxtst6, libatspi2.0-0, libdrm2, libgbm1, libasound2, xdg-utils]
+  recommends: []
+rpm:
+  depends: [gtk3, nss, libXScrnSaver, libXtst, at-spi2-core, libdrm, mesa-libgbm, alsa-lib, xdg-utils]
+  compression: xz
+appImage:
+  executableArgs: []
+publish: null

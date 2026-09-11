@@ -5,6 +5,7 @@ import { EntryList } from './components/EntryList';
 import { EntryEditor } from './components/EntryEditor';
 import { TaskBoard } from './components/TaskBoard';
 import { ProjectBar } from './components/ProjectBar';
+import { flushPendingSaves, hasPendingSaves } from './autosave';
 
 export default function App() {
   const [state, setState] = useState<AppState | null>(null);
@@ -18,6 +19,15 @@ export default function App() {
   const [theme, setTheme] = useState(readTheme);
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
+
+  useEffect(() => {
+    const unsubscribe = window.worklogsDesktop?.onBeforeClose(flushPendingSaves);
+    const guard = (event: BeforeUnloadEvent) => {
+      if (hasPendingSaves()) event.preventDefault();
+    };
+    window.addEventListener('beforeunload', guard);
+    return () => { unsubscribe?.(); window.removeEventListener('beforeunload', guard); };
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
