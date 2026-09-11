@@ -149,7 +149,11 @@ describe('écrire une entrée', () => {
     await user.type(await screen.findByLabelText('Titre de l’entrée'), ' modifié');
     await user.click(within(journal()).getByText('B'));
 
-    expect(await screen.findByLabelText('Titre de l’entrée')).toHaveValue('B');
+    // Le changement d’entrée recharge l’éditeur via l’API : attendre le nouveau
+    // rendu au lieu d’affirmer sur l’éditeur précédent encore monté.
+    await waitFor(() =>
+      expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('B')
+    );
     await waitFor(() => expect(row(api.db, 'SELECT title FROM entries WHERE id=?', 'en_a').title).toBe('A modifié'));
   });
 
