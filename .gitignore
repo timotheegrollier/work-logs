@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+api/data/*.db*
+api/data/*.db-shm
+api/data/*.db-wal
+api/data/uploads/*
+!api/data/uploads/.gitkeep
+.env
