@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
+import { checkForUpdate } from './update.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const origin = 'worklogs://app';
@@ -43,6 +44,25 @@ function suggestedFilename(item) {
   }
   const plain = /filename\s*=\s*"([^"]*)"/i.exec(header || '');
   return plain ? plain[1] : item.getFilename();
+}
+
+/**
+ * Vérifie les mises à jour à chaque ouverture et propose la nouveauté
+ * immédiatement : un clic ouvre la page de release dans le navigateur.
+ * Silencieux si tout est à jour ou sans réseau — le démarrage n'attend pas.
+ */
+async function notifyUpdateIfAvailable() {
+  // Coupe-circuit pour les tests e2e : pas de réseau pendant la recette.
+  if (process.env.WORKLOGS_SKIP_UPDATE_CHECK === '1') return;
+  const found = await checkForUpdate({ currentVersion: app.getVersion() });
+  if (!found || !window || window.isDestroyed()) return;
+  const choice = dialog.showMessageBoxSync(window, {
+    type: 'info', title: 'WorkLogs', buttons: ['Télécharger la mise à jour', 'Plus tard'],
+    defaultId: 0, cancelId: 1,
+    message: `WorkLogs ${found.version} est disponible (tu as la ${app.getVersion()}).`,
+    detail: 'Le téléchargement s’ouvre dans ton navigateur : installe le paquet, puis relance l’application.',
+  });
+  if (choice === 0) external(found.url);
 }
 
 function finishClose(error) {
@@ -108,7 +128,10 @@ if (!app.requestSingleInstanceLock()) {
           nodeIntegration: false, contextIsolation: true, sandbox: true,
         },
       });
-      window.once('ready-to-show', () => window.show());
+      window.once('ready-to-show', () => {
+        window.show();
+        void notifyUpdateIfAvailable();
+      });
       window.webContents.setWindowOpenHandler(({ url }) => {
         external(url);
         return { action: 'deny' };

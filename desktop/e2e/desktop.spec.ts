@@ -33,7 +33,7 @@ async function launch() {
       : { args: [path.resolve('desktop/main.mjs')] }),
     // Uniquement les environnements CI/conteneurs sans sandbox Chromium utilisable.
     chromiumSandbox: process.env.WORKLOGS_TEST_NO_SANDBOX !== '1',
-    env: { ...env, WORKLOGS_DATA_DIR: path.join(directory, 'data'), WORKLOGS_PROFILE_DIR: path.join(directory, 'profile') },
+    env: { ...env, WORKLOGS_DATA_DIR: path.join(directory, 'data'), WORKLOGS_PROFILE_DIR: path.join(directory, 'profile'), WORKLOGS_SKIP_UPDATE_CHECK: '1' },
   });
   page = await application.firstWindow();
   await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Comment ça marche');
