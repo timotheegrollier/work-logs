@@ -19,6 +19,7 @@ commit sur master ──► CI Linux ──► tag vX.Y.Z ──► Release Linu
 
 Fast path habituel (tag posé juste après une CI verte) : **tag → publié en ~2 min**.
 Sans fast path : ~8 min. Les deux chemins publient exactement les mêmes artefacts.
+Mesuré sur la v0.4.1 : dispatch 20:51:42 → brouillon complet 20:52:45 (~63 s).
 
 ## 2. Règles de versionnage
 
@@ -57,6 +58,13 @@ vérifie ce fait via l'API GitHub (commit du tag → run `CI Linux` en succès s
 
 Permissions minimales : `precheck`/`release` ajoutent `actions: read` (lecture des runs
 et téléchargement inter-runs), indispensable au fast path.
+
+Deux leçons de la mise au point (v0.4.1, ne pas réintroduire) :
+- `precheck` n'a pas de checkout (volontaire : 0 s) — donc `gh` n'a aucun contexte
+  de dépôt : `gh run list` exige `-R "$GITHUB_REPOSITORY"`, sinon
+  « failed to determine base repo ».
+- En revanche `gh api` ne connaît pas `-R` (l'endpoint contient déjà le dépôt) —
+  passer `-R` à `gh api` échoue avec « unknown shorthand flag ».
 
 ## 5. Notes de release (`scripts/release-notes.mjs`)
 
