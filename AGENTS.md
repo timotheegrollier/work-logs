@@ -1,17 +1,15 @@
 # WorkLogs — règles agents
 
 ## Reprise actuelle — 2026-09-11
-- Lot desktop/CI sur `codex/linux-desktop-releases`. `./scripts/check.sh` est **vert**
-  (desktop compris) ; DEB/RPM/AppImage installés et testés avec succès sur les trois cibles
-  CI (Ubuntu 24.04, Fedora 43, Fedora 44) dans des conteneurs jetables. Détail et bugs
-  corrigés : `docs/06-DESKTOP-CICD.md`.
+- Releases **v0.2.0 → v0.4.0 publiées** (DEB/RPM/AppImage + SHA256 + attestation).
+  Process : `docs/07-RELEASES.md` (fast path ~2 min, notes anglaises auto).
+- `./scripts/check.sh` est **vert** (desktop compris).
 - Electron **44.3.0** et electron-builder **26.15.3** : ajout explicitement approuvé.
   Ne pas redemander cet accord ; les autres ajouts restent soumis aux règles ci-dessous.
-- Ne pas taguer/publier 0.2.0 avant une recette manuelle sur une vraie session desktop et
-  l'exécution réelle des workflows GitHub (jamais lancés à ce jour, voir `06-DESKTOP-CICD.md`).
-- Desktop : origine `worklogs://app`, serveur privé sur 127.0.0.1 et port éphémère,
-  données `~/.local/share/worklogs/`, profil `~/.config/worklogs/` par défaut.
-- Ne pas committer `.desktop-app/`, `release/`, les profils et les données de tests.
+- Dependabot : jsdom 30, TS 7, types/node 26, concurrently 10 mergés ; **Express reste
+  en 4** (la 5 casse les téléchargements — voir `07-RELEASES.md` §7).
+- Recette manuelle sur vraie session desktop toujours à faire un jour (icône, dialogue
+  « Enregistrer sous », Ctrl+P, persistance).
 
 ## Contexte
 - Journal de travail perso, 100 % local, **un seul écran** (pas d'onglets, pas de routeur).
@@ -31,7 +29,7 @@
 - API : ESM, erreurs `{error}` en français, validation serveur, `""` → NULL.
 - Web : TS strict, styles dans `styles.css` uniquement, requêtes via `lib.ts`.
 - Ne jamais committer `api/data/*.db*` ni `api/data/uploads/*`.
-- Changer un port → mettre à jour `web/vite.config.ts`, `playwright.config.ts`, `README.md`, `docs/`.
+- Changer un port → mettre à jour `web/vite.config.ts`, `playwright.config.ts`, `README.md`, `README.fr.md`, `docs/`.
 
 ## Commandes
 `npm run install:all` · `npm run dev` · `npm start` · `npm test` · `npm run test:e2e` ·

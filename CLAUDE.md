@@ -1,11 +1,9 @@
 # WorkLogs
 
-**Reprise 2026-09-11 :** desktop Linux/CI sur `codex/linux-desktop-releases`. Lire
-`docs/00-HANDOVER.md` puis **`docs/06-DESKTOP-CICD.md`**. `./scripts/check.sh` est vert
-(desktop compris) et les paquets DEB/RPM/AppImage sont installés/testés avec succès sur les
-trois cibles CI. Reste une recette manuelle sur une vraie session desktop et l'exécution
-réelle des workflows GitHub avant de taguer. Electron 44.3.0 et electron-builder 26.15.3 ont
-été explicitement approuvés.
+**Reprise 2026-09-11 :** releases v0.2.0 → v0.4.0 publiées, process en
+`docs/07-RELEASES.md`. Lire `docs/00-HANDOVER.md` puis **`docs/07-RELEASES.md`**.
+`./scripts/check.sh` est vert (desktop compris). Electron 44.3.0 et electron-builder 26.15.3 ont
+été explicitement approuvés. Express reste en 4 (la 5 casse les téléchargements).
 
 Journal de travail personnel, 100 % local, **sur un seul écran** : journal à gauche, écriture
 au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + Vite + TS (`web/`).

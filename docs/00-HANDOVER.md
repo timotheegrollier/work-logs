@@ -1,11 +1,11 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-11 (reprise) · **Version :** web V2 + desktop **0.2.0 en cours, non publié**
-> **État :** `./scripts/check.sh` est **vert**, desktop compris. Les trois paquets Linux
-> s'installent et fonctionnent sur les trois cibles CI. **Reste une recette manuelle sur une
-> vraie session desktop et l'exécution réelle des workflows GitHub avant de taguer.**
-> **Branche :** `codex/linux-desktop-releases`.
-> **Reprise prioritaire : [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md).**
+> **Mise à jour :** 2026-09-11 · **Version :** web V2 + desktop **0.4.0 publié**
+> **État :** `./scripts/check.sh` est **vert**, desktop compris. Releases v0.2.0 → v0.4.0
+> publiées (DEB/RPM/AppImage + SHA256 + attestation), CI réellement exécutée sur GitHub.
+> **Reste une recette manuelle sur une vraie session desktop.**
+> **Reprise prioritaire : [07-RELEASES.md](07-RELEASES.md)** (process de release),
+> puis [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md) (dossier technique du desktop).**
 
 ## Point d’arrêt desktop/CI
 

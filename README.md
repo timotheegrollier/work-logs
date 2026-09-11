@@ -1,70 +1,80 @@
 # WorkLogs
 
-> **Desktop Linux en cours — version 0.2.0 non publiée.** Branche
-> [`codex/linux-desktop-releases`](https://github.com/timotheegrollier/work-logs/tree/codex/linux-desktop-releases).
-> Le travail a été interrompu à la demande de l’utilisateur. Un test de téléchargement
-> desktop échoue encore ; les paquets et la CI restent à valider.
-> **Reprise : [passation desktop et CI/CD](docs/06-DESKTOP-CICD.md).**
-
-Le prototype se lance avec `npm run install:all`, puis `npm run desktop`. Il utilise
-`~/.local/share/worklogs/` pour ses données et `~/.config/worklogs/` pour son profil.
-Les données web ne sont pas importées automatiquement. Cibles prévues : Mint 22.x et
-Fedora 43/44 x86_64, en DEB, RPM et AppImage.
-
-Journal de travail 100 % local. **Un seul écran** : le journal à gauche, l'écriture au
-centre, les tâches à droite. Aucun onglet, aucun menu, aucun cloud.
+A 100% local work journal. **One screen**: journal on the left, writing in the
+center, tasks on the right. No tabs, no menu, no cloud, no account.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
-│ WorkLogs   [rechercher…]        4 entrées cette semaine · 3 à faire   ☀ ⬇ │
+│ WorkLogs   [search…]            4 entries this week · 3 todo          ☀ ⬇ │
 ├───────────────┬───────────────────────────────────┬───────────────────────┤
-│ Tout · Perso  │  Compte rendu chantier            │ [nouvelle tâche…]     │
-│ + Nouvelle    │  [date] [projet] [Écrire│Lire]    │ À FAIRE  3            │
-│               │  ─────────────────────────────    │  ☐ Relancer le devis  │
-│ AUJOURD'HUI   │                                   │ EN COURS 1            │
-│ • Compte rendu│  ## Points                        │  ☐ Bug export         │
-│ • Note du jour│  - Devis signé                    │ TERMINÉ  2            │
-│               │  📎 devis.pdf                     │  ☑ Trier la boîte     │
+│ All · Personal│  Site visit report                │ [new task…]           │
+│ + New         │  [date] [project] [Write│Read]    │ TODO  3               │
+│               │  ─────────────────────────────    │  ☐ Chase the quote    │
+│ TODAY         │                                   │ DOING 1               │
+│ • Report      │  ## Points                        │  ☐ Fix export         │
+│ • Daily note  │  - Quote signed                   │ DONE 2                │
+│               │  📎 quote.pdf                     │  ☑ Tidy inbox         │
 └───────────────┴───────────────────────────────────┴───────────────────────┘
 ```
 
-## Démarrer
+## Install (Linux)
+
+Download the latest release from
+[GitHub Releases](https://github.com/timotheegrollier/work-logs/releases)
+(English release notes on every version) and verify it:
+
+| File | For |
+|---|---|
+| `WorkLogs-*-linux-amd64.deb` | Ubuntu 24.04, Linux Mint 22.x and other Debian-based distros |
+| `WorkLogs-*-linux-x86_64.rpm` | Fedora 43 / 44 and other RPM-based distros |
+| `WorkLogs-*-linux-x86_64.AppImage` | Any 64-bit distro, no install needed |
 
 ```bash
-cd /home/timo/WorkLogs
-npm run install:all     # une seule fois
+sha256sum -c SHA256SUMS
+```
+
+Data lives in `~/.local/share/worklogs/`, profile and theme in
+`~/.config/worklogs/`. The app checks for updates on launch and offers the
+download in one click (see `docs/07-RELEASES.md` for how releases are built).
+
+## Develop
+
+```bash
+cd /home/timo/dev/work-logs
+npm run install:all     # once
 npm run dev             # API :8410 + web :8411 → http://localhost:8411
 ```
 
-En un seul processus (le serveur sert aussi le front) : `npm start` → http://localhost:8410
+Single process (the server also serves the front): `npm start` → http://localhost:8410.
+Desktop app: `npm run desktop`.
 
-## Utiliser
+## Use
 
-| Geste | Effet |
+| Gesture | Effect |
 |---|---|
-| **+ Nouvelle entrée** | crée l'entrée du jour et place le curseur dans le titre |
-| Écrire dans la zone Markdown | **enregistrement automatique**, `Ctrl+S` pour forcer |
-| **Écrire / Lire** | édition côte à côte avec l'aperçu, ou lecture pleine largeur |
-| **Imprimer** (ou `Ctrl+P`) | sort l'entrée seule, mise en page propre, prête pour un PDF |
-| 📎 **Joindre un fichier** | attache un document à l'entrée ouverte |
-| Taper + `Entrée` dans « Nouvelle tâche » | ajoute une tâche à la colonne À faire |
-| Cocher une carte · la glisser | la termine · la change de colonne |
-| Clic sur un projet | filtre **le journal et les tâches** en même temps |
-| **Rechercher** | cherche dans les titres, le corps des entrées et les tâches |
-| **Exporter** | télécharge toute la base en JSON |
+| **+ New entry** | creates today's entry and focuses the title |
+| Write in the Markdown area | **autosaves**, `Ctrl+S` to force |
+| **Write / Read** | side-by-side editing with preview, or full-width reading |
+| **Print** (or `Ctrl+P`) | prints the entry alone, clean layout, PDF-ready |
+| 📎 **Attach a file** | attaches a document to the open entry |
+| Type + `Enter` in “New task” | adds a task to the Todo column |
+| Check a card · drag it | finishes it · moves it across columns |
+| Click a project | filters **journal and tasks** at the same time |
+| **Search** | searches entry titles, bodies and tasks |
+| **Export** | downloads the whole database as JSON |
 
-Markdown géré : titres, gras/italique, listes, **cases à cocher**, **tableaux**,
-citations, blocs de code, liens, images.
+Supported Markdown: headings, bold/italic, lists, **check boxes**, **tables**,
+quotes, code blocks, links, images.
 
-## Tester
+## Test
 
 ```bash
 npm test            # API (node:test) + front (vitest)
-npm run test:e2e    # parcours réels dans un navigateur (playwright)
-./scripts/check.sh  # tout : types + tests + build + navigateur
+npm run test:e2e    # real browser journeys (playwright)
+./scripts/check.sh  # everything: types + tests + build + browser + desktop
 ```
 
-## Sauvegarder
+## Back up
 
 ```bash
 ./scripts/backup.sh     # → ~/WorkLogs-backups/worklogs-AAAAMMJJ-HHMMSS/
@@ -72,14 +82,19 @@ npm run test:e2e    # parcours réels dans un navigateur (playwright)
 
 ## Documentation
 
-| Doc | Pour qui | Contenu |
-|---|---|---|
-| `docs/00-HANDOVER.md` | **tous, en premier** | état du projet, reprise en 3 commandes, check-list |
-| `docs/01-ARCHITECTURE.md` | dev / agent | schéma de la base, référence de l'API, structure du front |
-| `docs/02-DEV.md` | dev / agent | installation, tests, conventions, pièges |
-| `docs/03-UTILISATION.md` | Timo | l'écran, le Markdown, l'impression, les sauvegardes |
-| `docs/04-RECETTES.md` | dev / agent | « comment faire X » : ajouter un champ, migrer, dépanner, livrer |
-| `docs/05-DECISIONS.md` | dev / agent | **pourquoi** c'est comme ça, et ce qui a été retiré exprès |
-| `AGENTS.md` · `CLAUDE.md` | agents | les règles, en une page |
+Most docs are in French (the author's language); release notes and this file
+are in English. French version of this file: [`README.fr.md`](README.fr.md).
 
-Données : `api/data/worklogs.db` (SQLite) et `api/data/uploads/` — jamais versionnées.
+| Doc | For | Content |
+|---|---|---|
+| `docs/00-HANDOVER.md` | **everyone, first** | project state, 3-command pickup, checklist |
+| `docs/01-ARCHITECTURE.md` | dev / agent | DB schema, API reference, front structure |
+| `docs/02-DEV.md` | dev / agent | setup, tests, conventions, pitfalls |
+| `docs/03-UTILISATION.md` | Timo | the screen, Markdown, printing, backups |
+| `docs/04-RECETTES.md` | dev / agent | “how to do X”: add a field, migrate, debug, ship |
+| `docs/05-DECISIONS.md` | dev / agent | **why** things are the way they are, and what was removed on purpose |
+| `docs/06-DESKTOP-CICD.md` | dev / agent | Linux desktop record: bugs found, packaging, CI |
+| `docs/07-RELEASES.md` | dev / agent | **release process**: versioning, fast path, notes, checklist |
+| `AGENTS.md` · `CLAUDE.md` | agents | the rules, on one page |
+
+Data: `api/data/worklogs.db` (SQLite) and `api/data/uploads/` — never committed.
