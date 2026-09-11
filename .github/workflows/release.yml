@@ -40,7 +40,7 @@ jobs:
     steps:
       - id: check
         run: |
-          SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$TAG" -R "$GITHUB_REPOSITORY" --jq '.[0].object.sha')"
+          SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$TAG" --jq '.[0].object.sha')"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           RUN_ID="$(gh run list --commit "$SHA" --workflow 'CI Linux' -R "$GITHUB_REPOSITORY" \
             --json databaseId,conclusion,headBranch \
