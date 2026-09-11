@@ -37,6 +37,11 @@ jobs:
             api/package-lock.json
             web/package-lock.json
       - run: npm ci && npm --prefix api ci && npm --prefix web ci
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
       - run: npx playwright install --with-deps chromium
       - run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: ./scripts/check.sh
@@ -68,6 +73,13 @@ jobs:
             web/package-lock.json
       - run: sudo apt-get update && sudo apt-get install -y rpm
       - run: npm ci && npm --prefix api ci && npm --prefix web ci
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
       - name: Vérifier la version
         env:
           REQUESTED_REF: ${{ inputs.ref || github.ref }}
