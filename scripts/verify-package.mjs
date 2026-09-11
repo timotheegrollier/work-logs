@@ -10,7 +10,7 @@ const files = listPackage(archive);
 for (const file of files) {
   assert.doesNotMatch(file, /(?:^|\/)(?:api\/data|\.env|\.git)(?:\/|$)|\.db(?:-|$)|\.sqlite(?:$|\/)/, `Donnée privée empaquetée : ${file}`);
 }
-for (const required of ['/desktop/main.mjs', '/desktop/preload.cjs', '/api/src/app.js', '/web/dist/index.html', '/node_modules/express/package.json'])
+for (const required of ['/desktop/main.mjs', '/desktop/preload.cjs', '/desktop/icon.png', '/api/src/app.js', '/web/dist/index.html', '/node_modules/express/package.json'])
   assert.ok(files.includes(required), `Fichier manquant : ${required}`);
 const packaged = JSON.parse(extractFile(archive, 'package.json'));
 assert.equal(packaged.version, JSON.parse(fs.readFileSync('package.json')).version);

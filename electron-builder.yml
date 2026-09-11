@@ -20,7 +20,7 @@ electronLanguages:
 linux:
   syncDesktopName: true
   executableName: worklogs
-  icon: desktop/icon.png
+  icon: desktop/icons
   category: Office
   synopsis: Journal de travail personnel
   description: Journal Markdown et suivi de tâches, sur un seul écran, entièrement local.
