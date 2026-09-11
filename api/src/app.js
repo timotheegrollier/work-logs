@@ -1,0 +1,363 @@
+import express from 'express';
+import cors from 'cors';
+import multer from 'multer';
+import fs from 'node:fs';
+import path from 'node:path';
+import { uid, nowISO, today } from './db.js';
+
+export const STATUSES = ['todo', 'doing', 'done'];
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const bad = (res, msg) => res.status(400).json({ error: msg });
+const notFound = (res, msg = 'introuvable') => res.status(404).json({ error: msg });
+const str = (v) => (typeof v === 'string' ? v.trim() : '');
+/** `""` et `undefined` → NULL, sinon la valeur nettoyée. */
+const orNull = (v) => (str(v) === '' ? null : str(v));
+
+/** Un champ optionnel n'est écrasé que s'il est explicitement fourni. */
+const pick = (body, key, current, transform = (v) => v) =>
+  body[key] === undefined ? current : transform(body[key]);
+
+export function createApp({ db, uploadDir, staticDir = null }) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+
+  const app = express();
+  app.use(cors());
+  app.use(express.json({ limit: '5mb' }));
+
+  const upload = multer({
+    storage: multer.diskStorage({
+      destination: (_req, _file, cb) => cb(null, uploadDir),
+      filename: (_req, file, cb) =>
+        cb(null, Date.now().toString(36) + '_' + file.originalname.replace(/[^\w.\-]+/g, '_')),
+    }),
+    limits: { fileSize: 100 * 1024 * 1024 },
+  });
+
+  const getEntry = (id) => db.prepare('SELECT * FROM entries WHERE id=?').get(id);
+  const getTask = (id) => db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
+  const getProject = (id) => db.prepare('SELECT * FROM projects WHERE id=?').get(id);
+
+  app.get('/api/health', (_req, res) => res.json({ ok: true, ts: nowISO() }));
+
+  // ---------------------------------------------------------------- état global
+  // Un seul appel alimente tout l'écran : projets, entrées (sans le corps),
+  // tâches et compteurs. Le front recharge cet endpoint après chaque mutation.
+  app.get('/api/state', (req, res) => {
+    const q = str(req.query.q);
+    const projectId = str(req.query.project_id);
+    const where = [];
+    const args = [];
+    if (projectId) {
+      where.push('project_id=?');
+      args.push(projectId);
+    }
+
+    const entryWhere = [...where];
+    const entryArgs = [...args];
+    if (q) {
+      entryWhere.push('(title LIKE ? OR content_md LIKE ?)');
+      entryArgs.push(`%${q}%`, `%${q}%`);
+    }
+    const entries = db
+      .prepare(
+        `SELECT id, title, entry_date, project_id, updated_at,
+                substr(content_md, 1, 240) excerpt,
+                (SELECT COUNT(*) FROM attachments a WHERE a.entry_id = entries.id) attachments
+         FROM entries
+         ${entryWhere.length ? 'WHERE ' + entryWhere.join(' AND ') : ''}
+         ORDER BY entry_date DESC, updated_at DESC
+         LIMIT 500`
+      )
+      .all(...entryArgs);
+
+    const taskWhere = [...where];
+    const taskArgs = [...args];
+    if (q) {
+      taskWhere.push('title LIKE ?');
+      taskArgs.push(`%${q}%`);
+    }
+    const tasks = db
+      .prepare(
+        `SELECT * FROM tasks
+         ${taskWhere.length ? 'WHERE ' + taskWhere.join(' AND ') : ''}
+         ORDER BY position ASC, updated_at DESC
+         LIMIT 500`
+      )
+      .all(...taskArgs);
+
+    res.json({
+      projects: db
+        .prepare(
+          `SELECT *,
+                  (SELECT COUNT(*) FROM entries e WHERE e.project_id = projects.id) entries,
+                  (SELECT COUNT(*) FROM tasks t WHERE t.project_id = projects.id AND t.status != 'done') open_tasks
+           FROM projects ORDER BY name`
+        )
+        .all(),
+      entries,
+      tasks,
+      stats: stats(db),
+    });
+  });
+
+  // ---------------------------------------------------------------- entrées
+  app.get('/api/entries/:id', (req, res) => {
+    const entry = getEntry(req.params.id);
+    if (!entry) return notFound(res, 'entrée introuvable');
+    entry.attachments = db
+      .prepare('SELECT * FROM attachments WHERE entry_id=? ORDER BY created_at DESC')
+      .all(entry.id);
+    res.json(entry);
+  });
+
+  app.post('/api/entries', (req, res) => {
+    const b = req.body || {};
+    const title = str(b.title);
+    if (!title) return bad(res, 'titre requis');
+    const date = str(b.entry_date) || today();
+    if (!DATE_RE.test(date)) return bad(res, 'date invalide (AAAA-MM-JJ attendu)');
+    if (orNull(b.project_id) && !getProject(str(b.project_id)))
+      return bad(res, 'projet introuvable');
+
+    const id = uid('en_');
+    const t = nowISO();
+    db.prepare(
+      'INSERT INTO entries (id,title,content_md,entry_date,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)'
+    ).run(id, title, typeof b.content_md === 'string' ? b.content_md : '', date, orNull(b.project_id), t, t);
+    res.status(201).json(getEntry(id));
+  });
+
+  app.put('/api/entries/:id', (req, res) => {
+    const cur = getEntry(req.params.id);
+    if (!cur) return notFound(res, 'entrée introuvable');
+    const b = req.body || {};
+
+    const title = pick(b, 'title', cur.title, str);
+    if (!title) return bad(res, 'titre requis');
+    const date = pick(b, 'entry_date', cur.entry_date, (v) => str(v) || cur.entry_date);
+    if (!DATE_RE.test(date)) return bad(res, 'date invalide (AAAA-MM-JJ attendu)');
+    const projectId = pick(b, 'project_id', cur.project_id, orNull);
+    if (projectId && !getProject(projectId)) return bad(res, 'projet introuvable');
+
+    db.prepare(
+      'UPDATE entries SET title=?, content_md=?, entry_date=?, project_id=?, updated_at=? WHERE id=?'
+    ).run(
+      title,
+      pick(b, 'content_md', cur.content_md, (v) => (typeof v === 'string' ? v : cur.content_md)),
+      date,
+      projectId,
+      nowISO(),
+      cur.id
+    );
+    res.json(getEntry(cur.id));
+  });
+
+  app.delete('/api/entries/:id', (req, res) => {
+    const cur = getEntry(req.params.id);
+    if (!cur) return notFound(res, 'entrée introuvable');
+    for (const a of db.prepare('SELECT stored FROM attachments WHERE entry_id=?').all(cur.id)) {
+      fs.rmSync(path.join(uploadDir, a.stored), { force: true });
+    }
+    db.prepare('DELETE FROM entries WHERE id=?').run(cur.id);
+    res.json({ ok: true });
+  });
+
+  // ---------------------------------------------------------------- tâches
+  app.post('/api/tasks', (req, res) => {
+    const b = req.body || {};
+    const title = str(b.title);
+    if (!title) return bad(res, 'titre requis');
+    const status = str(b.status) || 'todo';
+    if (!STATUSES.includes(status)) return bad(res, 'statut invalide');
+    if (orNull(b.project_id) && !getProject(str(b.project_id)))
+      return bad(res, 'projet introuvable');
+
+    const id = uid('tk_');
+    const t = nowISO();
+    const position = db
+      .prepare('SELECT COALESCE(MAX(position),-1)+1 p FROM tasks WHERE status=?')
+      .get(status).p;
+    db.prepare(
+      'INSERT INTO tasks (id,title,status,due_date,pinned,position,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)'
+    ).run(id, title, status, orNull(b.due_date), b.pinned ? 1 : 0, position, orNull(b.project_id), t, t);
+    res.status(201).json(getTask(id));
+  });
+
+  app.put('/api/tasks/:id', (req, res) => {
+    const cur = getTask(req.params.id);
+    if (!cur) return notFound(res, 'tâche introuvable');
+    const b = req.body || {};
+
+    const title = pick(b, 'title', cur.title, str);
+    if (!title) return bad(res, 'titre requis');
+    const status = pick(b, 'status', cur.status, (v) => str(v) || cur.status);
+    if (!STATUSES.includes(status)) return bad(res, 'statut invalide');
+    const projectId = pick(b, 'project_id', cur.project_id, orNull);
+    if (projectId && !getProject(projectId)) return bad(res, 'projet introuvable');
+
+    db.prepare(
+      'UPDATE tasks SET title=?, status=?, due_date=?, pinned=?, project_id=?, updated_at=? WHERE id=?'
+    ).run(
+      title,
+      status,
+      pick(b, 'due_date', cur.due_date, orNull),
+      pick(b, 'pinned', cur.pinned, (v) => (v ? 1 : 0)),
+      projectId,
+      nowISO(),
+      cur.id
+    );
+    res.json(getTask(cur.id));
+  });
+
+  // Déplacement kanban : insère la carte à `position` dans la colonne `status`,
+  // puis renumérote la colonne pour garder 0,1,2… sans trou.
+  app.patch('/api/tasks/:id/move', (req, res) => {
+    const cur = getTask(req.params.id);
+    if (!cur) return notFound(res, 'tâche introuvable');
+    const { status, position } = req.body || {};
+    if (!STATUSES.includes(status)) return bad(res, 'statut invalide');
+    const target = Number.isFinite(Number(position)) ? Math.max(0, Number(position)) : 0;
+
+    db.prepare('UPDATE tasks SET status=?, position=?, updated_at=? WHERE id=?').run(
+      status,
+      target - 0.5,
+      nowISO(),
+      cur.id
+    );
+    renumber(db, status);
+    if (cur.status !== status) renumber(db, cur.status);
+    res.json(getTask(cur.id));
+  });
+
+  app.delete('/api/tasks/:id', (req, res) => {
+    const cur = getTask(req.params.id);
+    if (!cur) return notFound(res, 'tâche introuvable');
+    db.prepare('DELETE FROM tasks WHERE id=?').run(cur.id);
+    renumber(db, cur.status);
+    res.json({ ok: true });
+  });
+
+  // ---------------------------------------------------------------- projets
+  app.post('/api/projects', (req, res) => {
+    const b = req.body || {};
+    const name = str(b.name);
+    if (!name) return bad(res, 'nom requis');
+    const id = uid('pr_');
+    db.prepare('INSERT INTO projects (id,name,color,created_at) VALUES (?,?,?,?)').run(
+      id,
+      name,
+      str(b.color) || '#4f7cff',
+      nowISO()
+    );
+    res.status(201).json(getProject(id));
+  });
+
+  app.put('/api/projects/:id', (req, res) => {
+    const cur = getProject(req.params.id);
+    if (!cur) return notFound(res, 'projet introuvable');
+    const b = req.body || {};
+    const name = pick(b, 'name', cur.name, str);
+    if (!name) return bad(res, 'nom requis');
+    db.prepare('UPDATE projects SET name=?, color=? WHERE id=?').run(
+      name,
+      pick(b, 'color', cur.color, (v) => str(v) || cur.color),
+      cur.id
+    );
+    res.json(getProject(cur.id));
+  });
+
+  // Les entrées et tâches sont conservées, simplement détachées (ON DELETE SET NULL).
+  app.delete('/api/projects/:id', (req, res) => {
+    const cur = getProject(req.params.id);
+    if (!cur) return notFound(res, 'projet introuvable');
+    db.prepare('DELETE FROM projects WHERE id=?').run(cur.id);
+    res.json({ ok: true });
+  });
+
+  // ---------------------------------------------------------------- fichiers
+  app.post('/api/uploads', upload.single('file'), (req, res) => {
+    if (!req.file) return bad(res, 'fichier requis (multipart "file")');
+    const entryId = orNull((req.body || {}).entry_id);
+    if (!entryId || !getEntry(entryId)) {
+      fs.rmSync(path.join(uploadDir, req.file.filename), { force: true });
+      return bad(res, 'entry_id requis et valide');
+    }
+    const id = uid('at_');
+    db.prepare(
+      'INSERT INTO attachments (id,filename,stored,mime,size,entry_id,created_at) VALUES (?,?,?,?,?,?,?)'
+    ).run(id, req.file.originalname, req.file.filename, req.file.mimetype || '', req.file.size, entryId, nowISO());
+    res.status(201).json(db.prepare('SELECT * FROM attachments WHERE id=?').get(id));
+  });
+
+  app.get('/api/files/:stored', (req, res) => {
+    const stored = path.basename(req.params.stored);
+    const att = db.prepare('SELECT * FROM attachments WHERE stored=?').get(stored);
+    const file = path.join(uploadDir, stored);
+    if (!att || !fs.existsSync(file)) return notFound(res, 'fichier introuvable');
+    res.download(file, att.filename);
+  });
+
+  app.delete('/api/attachments/:id', (req, res) => {
+    const att = db.prepare('SELECT * FROM attachments WHERE id=?').get(req.params.id);
+    if (!att) return notFound(res, 'pièce jointe introuvable');
+    fs.rmSync(path.join(uploadDir, att.stored), { force: true });
+    db.prepare('DELETE FROM attachments WHERE id=?').run(att.id);
+    res.json({ ok: true });
+  });
+
+  // ---------------------------------------------------------------- export
+  app.get('/api/export', (_req, res) => {
+    res.json({
+      version: 2,
+      exported_at: nowISO(),
+      projects: db.prepare('SELECT * FROM projects ORDER BY name').all(),
+      entries: db.prepare('SELECT * FROM entries ORDER BY entry_date DESC').all(),
+      tasks: db.prepare('SELECT * FROM tasks ORDER BY status, position').all(),
+      attachments: db.prepare('SELECT * FROM attachments').all(),
+    });
+  });
+
+  app.use('/api', (_req, res) => notFound(res, 'route inconnue'));
+
+  // En production, l'API sert aussi le front construit : une seule URL.
+  // En dev, Vite s'en charge sur :8411 et proxifie /api vers ici.
+  if (staticDir && fs.existsSync(staticDir)) {
+    app.use(express.static(staticDir));
+    app.get(/.*/, (_req, res) => res.sendFile(path.join(staticDir, 'index.html')));
+  }
+
+  // Toute erreur (dont les rejets multer : fichier trop gros, etc.) sort en {error}.
+  app.use((err, _req, res, _next) => {
+    const status = err.status || (err.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
+    res.status(status).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'fichier trop volumineux (100 Mo max)' : err.message });
+  });
+
+  return app;
+}
+
+/** Réécrit les positions d'une colonne en 0,1,2… (ordre courant conservé). */
+function renumber(db, status) {
+  const rows = db
+    .prepare('SELECT id FROM tasks WHERE status=? ORDER BY position ASC, updated_at DESC')
+    .all(status);
+  const set = db.prepare('UPDATE tasks SET position=? WHERE id=?');
+  rows.forEach((row, i) => set.run(i, row.id));
+}
+
+function stats(db) {
+  const byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0]));
+  for (const r of db.prepare('SELECT status, COUNT(*) n FROM tasks GROUP BY status').all()) {
+    if (r.status in byStatus) byStatus[r.status] = r.n;
+  }
+  const day = today();
+  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  return {
+    entries: db.prepare('SELECT COUNT(*) n FROM entries').get().n,
+    entriesThisWeek: db.prepare('SELECT COUNT(*) n FROM entries WHERE entry_date >= ?').get(weekAgo).n,
+    tasks: byStatus,
+    overdue: db
+      .prepare("SELECT COUNT(*) n FROM tasks WHERE status!='done' AND due_date IS NOT NULL AND due_date < ?")
+      .get(day).n,
+  };
+}

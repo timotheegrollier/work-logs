@@ -1,69 +1,173 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import './styles.css';
-import { api, type Project } from './lib';
-import { GlobalSearch } from './components/ui';
-import Dashboard from './pages/Dashboard';
-import Kanban from './pages/Kanban';
-import Todos from './pages/Todos';
-import Agenda from './pages/Agenda';
-import Docs from './pages/Docs';
-import { Files } from './pages/Projects';
-import Projects from './pages/Projects';
-
-type Tab = 'dash' | 'kanban' | 'todos' | 'agenda' | 'docs' | 'files' | 'projects';
-const NAV: { id: Tab; label: string; icon: string }[] = [
-  { id: 'dash', label: 'Dashboard', icon: '🏠' },
-  { id: 'kanban', label: 'Kanban', icon: '📋' },
-  { id: 'todos', label: 'Todos', icon: '✓' },
-  { id: 'agenda', label: 'Agenda', icon: '📅' },
-  { id: 'docs', label: 'Docs', icon: '📝' },
-  { id: 'files', label: 'Fichiers', icon: '📎' },
-  { id: 'projects', label: 'Projets', icon: '📁' },
-];
+import { api, todayISO, type AppState, type Entry } from './lib';
+import { EntryList } from './components/EntryList';
+import { EntryEditor } from './components/EntryEditor';
+import { TaskBoard } from './components/TaskBoard';
+import { ProjectBar } from './components/ProjectBar';
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('dash');
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [err, setErr] = useState('');
-  const [tick, setTick] = useState(0);
+  const [state, setState] = useState<AppState | null>(null);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [projectId, setProjectId] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [entry, setEntry] = useState<Entry | null>(null);
+  const [freshEntry, setFreshEntry] = useState(false);
+  const [theme, setTheme] = useState(readTheme);
+  const selectedRef = useRef<string | null>(null);
+  selectedRef.current = selectedId;
 
   useEffect(() => {
-    api.projects().then(setProjects).catch((e) => setErr(e.message + ' — API injoignable ? lance `npm run dev:api` (port 8410).'));
-  }, [tick]);
-  const reloadAll = () => setTick((t) => t + 1);
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('worklogs-theme', theme);
+  }, [theme]);
+
+  // La recherche attend une pause de frappe avant d'interroger l'API.
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(search.trim()), 200);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const reload = useCallback(async () => {
+    try {
+      const next = await api.state(query, projectId);
+      setState(next);
+      setError('');
+      // Rien de sélectionné (premier chargement, ou entrée supprimée) : on ouvre la plus récente.
+      const stillThere = next.entries.some((e) => e.id === selectedRef.current);
+      if (!stillThere) setSelectedId(next.entries[0]?.id ?? null);
+    } catch {
+      setError('API injoignable. Lance `npm run dev` dans /home/timo/WorkLogs.');
+    }
+  }, [query, projectId]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setEntry(null);
+      return;
+    }
+    let alive = true;
+    api
+      .entry(selectedId)
+      .then((loaded) => alive && setEntry(loaded))
+      .catch(() => alive && setEntry(null));
+    return () => {
+      alive = false;
+    };
+  }, [selectedId]);
+
+  const createEntry = async () => {
+    const created = await api.createEntry({
+      title: 'Sans titre',
+      entry_date: todayISO(),
+      project_id: projectId || null,
+    });
+    setSearch('');
+    setFreshEntry(true);
+    setSelectedId(created.id);
+    setEntry({ ...created, attachments: [] });
+    reload();
+  };
+
+  const stats = state?.stats;
 
   return (
     <div className="app">
-      <aside className="side">
-        <div className="logo">Work<span>Logs</span></div>
-        <nav className="nav">
-          {NAV.map((n) => (
-            <button key={n.id} className={tab === n.id ? 'on' : ''} onClick={() => setTab(n.id)}>
-              <span>{n.icon}</span><span className="lbl">{n.label}</span>
-            </button>
-          ))}
-        </nav>
-        <div style={{ flex: 1 }} />
-        <div className="lbl" style={{ color: '#93a0bb', fontSize: 12, padding: '0 8px' }}>
-          {projects.length} projet(s)<br />100% local · SQLite
-        </div>
-      </aside>
-      <main className="main">
-        <div className="top">
-          <GlobalSearch onGo={(t) => setTab(t as Tab)} />
-          <div className="sp" />
-          <small style={{ color: '#93a0bb' }}>cockpit perso · Trello × Jira × Todo × Agenda × Drive</small>
-        </div>
-        {err && <div className="err">{err}</div>}
-        {tab === 'dash' && <Dashboard projects={projects} reloadAll={reloadAll} />}
-        {tab === 'kanban' && <Kanban projects={projects} reloadAll={reloadAll} />}
-        {tab === 'todos' && <Todos projects={projects} reloadAll={reloadAll} />}
-        {tab === 'agenda' && <Agenda projects={projects} />}
-        {tab === 'docs' && <Docs projects={projects} />}
-        {tab === 'files' && <Files projects={projects} />}
-        {tab === 'projects' && <Projects projects={projects} reloadAll={reloadAll} />}
-        <div className="foot">WorkLogs V1 · données en local (`api/data/worklogs.db`) · API :8410 · Web :8411</div>
-      </main>
+      <header className="head no-print">
+        <h1 className="logo">
+          Work<span>Logs</span>
+        </h1>
+        <input
+          className="search"
+          type="search"
+          aria-label="Rechercher"
+          placeholder="Rechercher dans tout…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <span className="grow" />
+        {stats && (
+          <p className="stats">
+            <b>{stats.entriesThisWeek}</b> entrée(s) cette semaine · <b>{stats.tasks.todo}</b> à
+            faire
+            {stats.overdue > 0 && (
+              <>
+                {' · '}
+                <b className="late">{stats.overdue}</b> en retard
+              </>
+            )}
+          </p>
+        )}
+        <button
+          className="ghost"
+          aria-label="Changer de thème"
+          onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+        >
+          {theme === 'dark' ? '☀' : '☾'}
+        </button>
+        <a className="ghost" href="/api/export" download="worklogs.json">
+          Exporter
+        </a>
+      </header>
+
+      {error && <p className="error banner no-print">{error}</p>}
+
+      <div className="columns">
+        <aside className="left no-print">
+          <ProjectBar
+            projects={state?.projects ?? []}
+            selected={projectId}
+            onSelect={setProjectId}
+            onChanged={reload}
+          />
+          <EntryList
+            entries={state?.entries ?? []}
+            projects={state?.projects ?? []}
+            selectedId={selectedId}
+            onSelect={(id) => {
+              setFreshEntry(false);
+              setSelectedId(id);
+            }}
+            onCreate={createEntry}
+            searching={query !== ''}
+          />
+        </aside>
+
+        <main className="center">
+          {entry && state ? (
+            <EntryEditor
+              key={entry.id}
+              entry={entry}
+              projects={state.projects}
+              autoFocusTitle={freshEntry}
+              onChanged={reload}
+              onDeleted={() => {
+                setSelectedId(null);
+                reload();
+              }}
+            />
+          ) : (
+            <section className="editor placeholder">
+              <p>Choisis une entrée à gauche, ou crée-en une nouvelle.</p>
+            </section>
+          )}
+        </main>
+
+        <aside className="right no-print">
+          <TaskBoard tasks={state?.tasks ?? []} projectId={projectId} onChanged={reload} />
+        </aside>
+      </div>
     </div>
   );
+}
+
+function readTheme() {
+  if (typeof localStorage === 'undefined') return 'dark';
+  return localStorage.getItem('worklogs-theme') === 'light' ? 'light' : 'dark';
 }
