@@ -53,4 +53,7 @@ rpm:
   compression: xz
 appImage:
   executableArgs: []
-publish: null
+publish:
+  provider: github
+  owner: timotheegrollier
+  repo: work-logs

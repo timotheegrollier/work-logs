@@ -3,7 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
-import { checkForUpdate, installKind, RPM_REPO_URL } from './update.mjs';
+import { checkForUpdate, installKind, isNewer, RPM_REPO_URL } from './update.mjs';
+// electron-updater est CommonJS : contournement ESM documenté
+// (electron-builder#7976) — destructurer après import par défaut.
+import electronUpdater from 'electron-updater';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const origin = 'worklogs://app';
@@ -53,7 +56,49 @@ function suggestedFilename(item) {
  */
 async function notifyUpdateIfAvailable() {
   // Coupe-circuit pour les tests e2e : pas de réseau pendant la recette.
-  if (process.env.WORKLOGS_SKIP_UPDATE_CHECK === '1') return;
+  // Hors paquet (dev) : rien à mettre à jour.
+  if (process.env.WORKLOGS_SKIP_UPDATE_CHECK === '1' || !app.isPackaged) return;
+  if (installKind() === 'appimage') {
+    await updateAppImage();
+    return;
+  }
+  await fallbackNotify();
+}
+
+/**
+ * AppImage : vraie mise à jour sur place via electron-updater (téléchargement
+ * différentiel grâce au blockmap publié avec la release). Consentement explicite
+ * avant le téléchargement, redémarrage proposé une fois prête. En cas d'échec,
+ * repli sur le dialogue de téléchargement manuel.
+ */
+async function updateAppImage() {
+  const { autoUpdater } = electronUpdater;
+  try {
+    autoUpdater.autoDownload = false;
+    const found = await autoUpdater.checkForUpdates();
+    const next = found?.updateInfo?.version;
+    if (!next || !isNewer(next, app.getVersion())) return;
+    const download = dialog.showMessageBoxSync(window, {
+      type: 'info', title: 'WorkLogs', buttons: ['Mettre à jour', 'Plus tard'],
+      defaultId: 0, cancelId: 1,
+      message: `WorkLogs ${next} est disponible (tu as la ${app.getVersion()}).`,
+      detail: 'Seuls les blocs modifiés sont téléchargés, puis l’application redémarre sur la nouvelle version.',
+    });
+    if (download !== 0) return;
+    await autoUpdater.downloadUpdate();
+    const restart = dialog.showMessageBoxSync(window, {
+      type: 'info', title: 'WorkLogs', buttons: ['Redémarrer', 'Plus tard'],
+      defaultId: 0, cancelId: 1,
+      message: `WorkLogs ${next} est prête.`,
+      detail: 'Redémarre pour basculer sur la nouvelle version.',
+    });
+    if (restart === 0) autoUpdater.quitAndInstall(false, true);
+  } catch {
+    await fallbackNotify();
+  }
+}
+
+async function fallbackNotify() {
   const found = await checkForUpdate({ currentVersion: app.getVersion() });
   if (!found || !window || window.isDestroyed()) return;
   const kind = installKind();

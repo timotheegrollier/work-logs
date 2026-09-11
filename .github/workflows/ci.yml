@@ -62,6 +62,11 @@ jobs:
       - run: npm run desktop:dist
       - name: Vérifier le contenu empaqueté
         run: node scripts/verify-package.mjs
+      - name: Blockmap différentiel de l’AppImage
+        run: |
+          node scripts/appimage-blockmap.mjs
+          test -f release/latest-linux.yml
+          test -n "$(ls release/*.blockmap)"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-packages
@@ -69,6 +74,8 @@ jobs:
             release/*.deb
             release/*.rpm
             release/*.AppImage
+            release/*.blockmap
+            release/latest-linux.yml
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
