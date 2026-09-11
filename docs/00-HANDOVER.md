@@ -3,6 +3,7 @@
 > **Date de rédaction :** 2026-09-11 · **Version :** V1 fonctionnelle
 > **Auteur :** Cline (agent précédent) · **Pour :** Timo + prochain agent
 > **État :** ✅ App qui tourne en local, validée API + build web OK
+> **Git :** repo initialisé, commit `d7d8660` « V1 WorkLogs… » (37 fichiers, DB/uploads/locks exclus — voir `.gitignore`)
 
 ## 1. C'est quoi ?
 Cockpit perso 100% local fusionnant **Trello (kanban) + Jira (types/priorités/projets à clé) + TodoList (inbox) + Agenda + Drive/Docs (fichiers + notes Markdown)**.
