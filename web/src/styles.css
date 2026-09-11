@@ -163,9 +163,22 @@ button:disabled {
   font-size: 17px;
   font-weight: 750;
   letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .logo span {
   color: var(--accent);
+}
+.logo svg {
+  flex: none;
+  border-radius: 6px;
+}
+.logo .version {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0;
 }
 .search {
   width: min(380px, 36vw);

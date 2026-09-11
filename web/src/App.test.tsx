@@ -35,6 +35,14 @@ describe('écran unique', () => {
     expect(await screen.findByRole('region', { name: 'Entrée' })).toBeInTheDocument();
   });
 
+  test('affiche le logo et la version dans l’en-tête', async () => {
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Première entrée' }] });
+    render(<App />);
+
+    expect(await screen.findByRole('img', { name: 'Logo WorkLogs' })).toBeInTheDocument();
+    expect(screen.getByTitle('Version de l’application')).toHaveTextContent(/\d+\.\d+\.\d+/);
+  });
+
   test('ouvre l’entrée la plus récente au démarrage', async () => {
     seedData(api.db, {
       entries: [

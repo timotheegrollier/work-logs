@@ -1,9 +1,16 @@
 /// <reference types="vitest/config" />
+import fs from 'node:fs';
+import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// La version affichée dans l'interface est celle du paquet racine — la même
+// que l'application desktop compare aux releases GitHub pour les mises à jour.
+const rootVersion = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8')).version;
+
 export default defineConfig({
   plugins: [react()],
+  define: { __WORKLOGS_VERSION__: JSON.stringify(rootVersion) },
   server: { port: 8411, proxy: { '/api': 'http://localhost:8410' } },
   preview: { port: 8411 },
   test: {
