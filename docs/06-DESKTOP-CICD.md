@@ -149,7 +149,7 @@ qui ne survivent pas au changement de racine).
 | `desktop/test/server.test.mjs` | refus sans jeton, persistance, arrêt du serveur |
 | `desktop/e2e/desktop.spec.ts` | 4 parcours Electron, **observation du téléchargement corrigée (1.1)** |
 | `api/src/app.js` | **en-tête `Content-Disposition` reconstruit (1.3), chemin absolu pour `sendFile` (1.4)** |
-| `electron-builder.yml` | DEB/RPM/AppImage et icône carnet, **dépendance ALSA corrigée pour Ubuntu 24.04+ (1.5)** |
+| `electron-builder.yml` | DEB/RPM/AppImage et jeu d'icônes hicolor (16→512 px depuis `desktop/icon.svg`), **dépendance ALSA corrigée pour Ubuntu 24.04+ (1.5)** |
 | `scripts/stage-desktop.mjs` | préparation `.desktop-app/`, code autorisé et dépendances API depuis leur lockfile |
 | `scripts/verify-package.mjs` | vérification ASAR : contenu requis, version, absence de données personnelles |
 | `scripts/check-release.mjs` | format semver et égalité version/tag |
