@@ -6,7 +6,9 @@ name: Dépôt RPM
 # payloads fpm (documenté dans scripts/build-rpm-repo.sh).
 on:
   release:
-    types: [published]
+    # `published` (release directe) + `released` (brouillon publié — notre cas :
+    # release.yml crée un brouillon puis le publie via `gh release edit`).
+    types: [published, released]
   workflow_dispatch:
     inputs:
       tag:
