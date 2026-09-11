@@ -45,7 +45,7 @@ jobs:
           ls repo/rpm/
       - name: Construire le repodata
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq createrepo_c
+          sudo apt-get update -qq && sudo apt-get install -y -qq createrepo-c
           bash scripts/build-rpm-repo.sh repo/rpm
           cat > repo/rpm/worklogs.repo <<EOF
           [worklogs]
