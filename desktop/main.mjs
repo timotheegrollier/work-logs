@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
-import { checkForUpdate } from './update.mjs';
+import { checkForUpdate, installKind, RPM_REPO_URL } from './update.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const origin = 'worklogs://app';
@@ -56,11 +56,20 @@ async function notifyUpdateIfAvailable() {
   if (process.env.WORKLOGS_SKIP_UPDATE_CHECK === '1') return;
   const found = await checkForUpdate({ currentVersion: app.getVersion() });
   if (!found || !window || window.isDestroyed()) return;
+  const kind = installKind();
+  // Paquet système (deb/rpm) : la mise à jour passe par le gestionnaire de
+  // paquets, pas par un téléchargement manuel — root oblige.
+  const hasDnf = fs.existsSync('/usr/bin/dnf');
+  const detail = kind === 'system'
+    ? (hasDnf
+      ? `Dépôt configuré : lance « sudo dnf update worklogs ». Sinon, ajoute-le une fois (voir ${RPM_REPO_URL}/worklogs.repo), ou télécharge le paquet.`
+      : 'Mets à jour via ton gestionnaire de paquets (dnf/apt), ou télécharge le paquet.')
+    : 'Le téléchargement s’ouvre dans ton navigateur : installe le paquet, puis relance l’application.';
   const choice = dialog.showMessageBoxSync(window, {
     type: 'info', title: 'WorkLogs', buttons: ['Télécharger la mise à jour', 'Plus tard'],
     defaultId: 0, cancelId: 1,
     message: `WorkLogs ${found.version} est disponible (tu as la ${app.getVersion()}).`,
-    detail: 'Le téléchargement s’ouvre dans ton navigateur : installe le paquet, puis relance l’application.',
+    detail,
   });
   if (choice === 0) external(found.url);
 }

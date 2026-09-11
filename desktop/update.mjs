@@ -11,6 +11,18 @@
 
 export const UPDATE_REPO = 'timotheegrollier/work-logs';
 export const RELEASES_URL = `https://github.com/${UPDATE_REPO}/releases`;
+export const RPM_REPO_URL = 'https://timotheegrollier.github.io/work-logs/rpm';
+
+/**
+ * D'où vient l'exécutable : 'appimage' (variable APPIMAGE posée par le
+ * runtime), 'system' (paquet deb/rpm sous /opt) ou 'dev' (sources, unpacked).
+ * Paramètres injectables pour les tests.
+ */
+export function installKind({ appimage = process.env.APPIMAGE, execPath = process.execPath } = {}) {
+  if (appimage) return 'appimage';
+  if (execPath.startsWith('/opt/')) return 'system';
+  return 'dev';
+}
 
 /** « v1.2.3 » → [1, 2, 3], ou null si le tag n'est pas une version stable. */
 export function parseVersion(tag) {

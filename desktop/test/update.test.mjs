@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkForUpdate, isNewer, parseVersion } from '../update.mjs';
+import { checkForUpdate, installKind, isNewer, parseVersion } from '../update.mjs';
 
 const stubFetch = (payload, ok = true) => async () => ({ ok, json: async () => payload });
 
@@ -18,6 +18,12 @@ test('isNewer compare chaque segment', () => {
   assert.equal(isNewer('v0.2.0', '0.2.0'), false);
   assert.equal(isNewer('v0.1.9', '0.2.0'), false);
   assert.equal(isNewer('v0.10.0', '0.9.0'), true);
+});
+
+test('installKind distingue AppImage, paquet système et dev', () => {
+  assert.equal(installKind({ appimage: '/tmp/Wl.AppImage', execPath: '/tmp/x' }), 'appimage');
+  assert.equal(installKind({ appimage: '', execPath: '/opt/WorkLogs/worklogs' }), 'system');
+  assert.equal(installKind({ appimage: undefined, execPath: '/home/timo/app' }), 'dev');
 });
 
 test('checkForUpdate signale une release plus récente', async () => {

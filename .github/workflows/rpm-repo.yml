@@ -1,0 +1,86 @@
+name: Dépôt RPM
+
+# Publie les RPMs sur GitHub Pages en dépôt dnf (`dnf update worklogs`).
+# Tourne après chaque release publiée, ou à la main pour regarnir (backfill).
+# Voir docs/07-RELEASES.md §8. Pas de delta RPMs : makedeltarpm ne lit pas les
+# payloads fpm (documenté dans scripts/build-rpm-repo.sh).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag de la release à publier (ex. v0.4.2)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rpm-repo
+  cancel-in-progress: false
+
+jobs:
+  repo:
+    name: Construire, publier et tester le dépôt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      PAGES_URL: https://timotheegrollier.github.io/work-logs/rpm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Récupérer les RPMs (version + précédente)
+        run: |
+          PREV="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | grep -B1 "^$TAG$" | head -1)"
+          mkdir -p repo/rpm
+          gh release download "$TAG" -p '*.rpm' -D repo/rpm
+          if [[ -n "$PREV" && "$PREV" != "$TAG" ]]; then
+            gh release download "$PREV" -p '*.rpm' -D repo/rpm || true
+          fi
+          ls repo/rpm/
+      - name: Construire le repodata
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq createrepo_c
+          bash scripts/build-rpm-repo.sh repo/rpm
+          cat > repo/rpm/worklogs.repo <<EOF
+          [worklogs]
+          name=WorkLogs
+          baseurl=$PAGES_URL
+          enabled=1
+          gpgcheck=0
+          EOF
+      - name: Tester install + update depuis le dépôt (Fedora jetable)
+        run: |
+          PREV="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | grep -B1 "^$TAG$" | head -1)"
+          docker run --rm -i -v "$PWD/repo:/repo:ro" \
+            -e TAG="$TAG" -e PREV="$PREV" fedora:44 bash -s <<'CONTAINER'
+          set -euo pipefail
+          cat > /etc/yum.repos.d/worklogs.repo <<EOF
+          [worklogs]
+          name=WorkLogs (test)
+          baseurl=file:///repo/rpm
+          enabled=1
+          gpgcheck=0
+          EOF
+          if [[ -n "${PREV:-}" && "$PREV" != "$TAG" ]]; then
+            dnf install -y -q "worklogs-${PREV#v}" && rpm -q worklogs
+          fi
+          dnf install -y -q worklogs && rpm -q worklogs
+          test -x /opt/WorkLogs/worklogs && echo DEPOT-OK
+          CONTAINER
+      - name: Publier sur gh-pages
+        run: |
+          rm -rf .pages && git clone -q --branch gh-pages --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" .pages
+          mkdir -p .pages/rpm
+          cp repo/rpm/*.rpm repo/rpm/*.repo .pages/rpm/
+          cp -r repo/rpm/repodata .pages/rpm/
+          cd .pages
+          git add -A rpm
+          git -c user.name='github-actions[bot]' -c user.email='github-actions[bot]@users.noreply.github.com' \
+            commit -m "depot: RPMs $TAG" || { echo "rien de neuf"; exit 0; }
+          git push origin gh-pages
