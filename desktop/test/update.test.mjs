@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, parseVersion, pkconInstallArgs, pkconRefreshArgs, pkconUpdatesArgs, releaseAgeMinutes, shouldOfferUpdate, startPoll } from '../update.mjs';
+import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, parsePkconProgress, parseVersion, pkconInstallArgs, pkconRefreshArgs, pkconUpdatesArgs, releaseAgeMinutes, shouldOfferUpdate, startPoll } from '../update.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -67,7 +67,7 @@ test('checkForUpdate reste silencieuse quand il n’y a rien à signaler', async
 test('hasPackageKit détecte pkcon, pkconInstallArgs vise le paquet', () => {
   assert.equal(hasPackageKit({ existsSync: () => true }), true);
   assert.equal(hasPackageKit({ existsSync: () => false }), false);
-  assert.deepEqual(pkconInstallArgs(), ['--noninteractive', '--cache-age', '1', 'install', 'worklogs']);
+  assert.deepEqual(pkconInstallArgs(), ['--noninteractive', '--cache-age', '1', 'update', 'worklogs']);
   assert.deepEqual(pkconUpdatesArgs(), ['--noninteractive', '--plain', 'get-updates']);
   assert.deepEqual(pkconRefreshArgs(), ['--noninteractive', 'refresh', 'force']);
 });
@@ -149,4 +149,18 @@ test('releaseAgeMinutes mesure la fraîcheur dune release', () => {
   assert.equal(releaseAgeMinutes(null, now), null);
   assert.equal(releaseAgeMinutes('nawak', now), null);
   assert.equal(releaseAgeMinutes('2026-09-12T22:00:00Z', now), null);
+});
+
+test('parsePkconProgress lit le statut et le pourcentage', () => {
+  assert.deepEqual(
+    parsePkconProgress('Status: \tDownloading packages\nPercentage:\t42\n'),
+    { phase: 'download', percent: 42 },
+  );
+  assert.deepEqual(
+    parsePkconProgress('Status: \tQuerying\nStatus: \tRunning\nPercentage:\t100\nStatus: \tFinished\n'),
+    { phase: 'install', percent: 100 },
+  );
+  assert.deepEqual(parsePkconProgress('Status: \tWaiting in queue\n'), { phase: 'install', percent: null });
+  assert.equal(parsePkconProgress('Results:\n'), null);
+  assert.equal(parsePkconProgress(''), null);
 });

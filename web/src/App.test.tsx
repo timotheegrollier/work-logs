@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { seedData, useRealApi } from './test/server';
@@ -438,5 +438,33 @@ describe('confort', () => {
     const stats = await screen.findByText(/entrée\(s\) cette semaine/);
     expect(stats).toHaveTextContent('1 entrée(s) cette semaine');
     expect(stats).toHaveTextContent('1 à faire');
+  });
+});
+
+describe('barre de progression des mises à jour', () => {
+  test('affiche téléchargement puis disparaît', async () => {
+    let listener: ((payload: { phase: string; percent?: number }) => void) | null = null;
+    (window as unknown as { worklogsDesktop: unknown }).worklogsDesktop = {
+      onBeforeClose: () => () => {},
+      onUpdateProgress: (callback: (payload: { phase: string; percent?: number }) => void) => {
+        listener = callback;
+        return () => { listener = null; };
+      },
+    };
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Première entrée' }] });
+    render(<App />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    await act(async () => { listener?.({ phase: 'download', percent: 42 }); });
+    const bar = await screen.findByRole('status');
+    expect(bar).toHaveTextContent(/42/);
+    expect(bar.firstElementChild).toHaveStyle({ width: '42%' });
+
+    await act(async () => { listener?.({ phase: 'install' }); });
+    expect(await screen.findByText('Installation…')).toBeInTheDocument();
+
+    await act(async () => { listener?.({ phase: 'idle' }); });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    delete (window as unknown as { worklogsDesktop?: unknown }).worklogsDesktop;
   });
 });

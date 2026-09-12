@@ -6,5 +6,8 @@ interface Window {
   worklogsDesktop?: {
     onBeforeClose: (callback: () => Promise<void>) => () => void;
     checkUpdatesNow?: () => Promise<string | null>;
+    onUpdateProgress?: (
+      callback: (payload: import('./components/UpdateBar').UpdateProgress) => void,
+    ) => () => void;
   };
 }

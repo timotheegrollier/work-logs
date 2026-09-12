@@ -1,10 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell } from 'electron';
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
-import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, pkconInstallArgs, pkconRefreshArgs, pkconUpdatesArgs, releaseAgeMinutes, RPM_REPO_URL, shouldOfferUpdate, startPoll, SYSTEM_PACKAGE } from './update.mjs';
+import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, parsePkconProgress, pkconInstallArgs, pkconRefreshArgs, pkconUpdatesArgs, releaseAgeMinutes, RPM_REPO_URL, shouldOfferUpdate, startPoll, SYSTEM_PACKAGE } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
 import electronUpdater from 'electron-updater';
@@ -42,6 +42,11 @@ function external(url) {
 /** Journal des vérifications : sans lui, un échec silencieux est indiagnosticable. */
 function logUpdate(message) {
   logUpdateEvent(dataDir, message);
+}
+
+/** Pousse l'avancement vers la barre de progression de l'interface. */
+function sendProgress(payload) {
+  if (window && !window.isDestroyed()) window.webContents.send('worklogs:update-progress', payload);
 }
 
 /**
@@ -100,9 +105,21 @@ async function updateAppImage(force = false) {
     });
     if (download !== 0) {
       dismissedVersion = next;
+      sendProgress({ phase: 'idle' });
       return;
     }
-    await autoUpdater.downloadUpdate();
+    const onProgress = (info) => sendProgress({
+      phase: 'download',
+      percent: Math.max(0, Math.min(100, Math.round(info.percent))),
+      label: `Mise à jour ${next} — téléchargement`,
+    });
+    autoUpdater.on('download-progress', onProgress);
+    try {
+      await autoUpdater.downloadUpdate();
+    } finally {
+      autoUpdater.removeListener('download-progress', onProgress);
+    }
+    sendProgress({ phase: 'done' });
     const restart = dialog.showMessageBoxSync(window, {
       type: 'info', title: 'WorkLogs', buttons: ['Redémarrer', 'Plus tard'],
       defaultId: 0, cancelId: 1,
@@ -160,6 +177,7 @@ async function offerSystemUpdate(next) {
     return;
   }
   systemUpdating = true;
+  sendProgress({ phase: 'download', percent: 0, label: `Mise à jour ${next} — préparation` });
   // Pré-vol en deux temps, prouvé en conteneur Fedora : `refresh force`
   // recharge vraiment les métadonnées (`get-updates`, même avec `--cache-age 1`,
   // relit sinon un cache périmé), puis `get-updates` dit CE qui serait installé.
@@ -172,6 +190,7 @@ async function offerSystemUpdate(next) {
   logUpdate(`pré-vol PackageKit : ${probe.code === 0 ? (candidate ?? 'aucune mise à jour listée') : 'interrogation impossible'}`);
   if (probe.code === 0 && candidate !== next) {
     systemUpdating = false;
+    sendProgress({ phase: 'idle' });
     // Cas courant : la release GitHub vient de sortir, le dépôt rpm la reçoit
     // quelques minutes plus tard (workflow + Pages). On le dit au lieu de
     // laisser croire à un gestionnaire cassé.
@@ -188,8 +207,7 @@ async function offerSystemUpdate(next) {
     });
     return;
   }
-  new Notification({ title: 'WorkLogs', body: `Installation de la ${next}… ne ferme pas l’application.` }).show();
-  const error = await runPackageKitUpdate();
+  const error = await runPackageKitUpdate(next);
   // Le cache PackageKit peut mentir : on ne propose le redémarrage que si la
   // version sur disque est vraiment celle attendue. Sinon, erreur explicite
   // au lieu d'un faux succès suivi d'un « downgrade » apparent.
@@ -224,20 +242,41 @@ function installedSystemVersion() {
   }
 }
 
-/** `pkcon install worklogs`, sans interaction (polkit s'en charge, `--cache-age 1`
- * force des métadonnées fraîches). Résout vers null si OK, sinon un message court. */
-async function runPackageKitUpdate() {
-  const { code, output } = await runPkcon(pkconInstallArgs());
-  if (code === 0) return null;
+/** `pkcon update worklogs`, sans interaction (polkit s'en charge, `--cache-age 1`
+ * force des métadonnées fraîches). Pousse la progression vers l'interface au
+ * fil de la transaction. Résout vers null si OK, sinon un message court. */
+async function runPackageKitUpdate(next) {
+  const { code, output } = await runPkcon(pkconInstallArgs(), (cumulative) => {
+    const progress = parsePkconProgress(cumulative);
+    if (!progress) return;
+    sendProgress({
+      phase: progress.phase,
+      ...(progress.percent === null ? {} : { percent: progress.percent }),
+      label: `Mise à jour ${next} — ${progress.phase === 'download' ? 'téléchargement' : 'installation'}`,
+    });
+  });
+  if (code === 0) {
+    sendProgress({ phase: 'done' });
+    return null;
+  }
+  sendProgress({ phase: 'error' });
   return output.trim().split('\n').slice(-3).join(' ').slice(0, 300) || `code ${code}`;
 }
 
-function runPkcon(args) {
+function runPkcon(args, onChunk = null) {
   return new Promise((resolve) => {
     const child = spawn('pkcon', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
-    child.stdout.on('data', (chunk) => { output += chunk; });
-    child.stderr.on('data', (chunk) => { output += chunk; });
+    const collect = (chunk) => {
+      output += chunk;
+      if (onChunk) {
+        try {
+          onChunk(output);
+        } catch { /* la progression ne doit jamais casser la transaction */ }
+      }
+    };
+    child.stdout.on('data', collect);
+    child.stderr.on('data', collect);
     child.on('error', (error) => resolve({ code: -1, output: String(error.message || error).slice(0, 300) }));
     child.on('close', (code) => resolve({ code: code ?? -1, output }));
   });

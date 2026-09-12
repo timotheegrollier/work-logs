@@ -94,13 +94,12 @@ export function hasPackageKit({ existsSync = fs.existsSync } = {}) {
 }
 
 /**
- * Transaction non interactive : installe la dernière version du dépôt.
- * `--cache-age 1` force le rechargement des métadonnées — le cache PackageKit
- * peut dater d'avant la release et servir une vieille version (vécu : 0.5.0
- * resservie après la 0.6.1).
+ * Transaction de mise à jour (`update`, pas `install` : le paquet est déjà
+ * installé puisqu'on tourne depuis — prouvé en conteneur, `install` créait
+ * des conflits de fichiers).
  */
 export function pkconInstallArgs() {
-  return ['--noninteractive', '--cache-age', '1', 'install', SYSTEM_PACKAGE];
+  return ['--noninteractive', '--cache-age', '1', 'update', SYSTEM_PACKAGE];
 }
 
 /**
@@ -108,6 +107,25 @@ export function pkconInstallArgs() {
  */
 export function pkconUpdatesArgs() {
   return ['--noninteractive', '--plain', 'get-updates'];
+}
+
+/**
+ * Lit la progression d'une transaction pkcon depuis sa sortie cumulée
+ * (lignes `Status: …` et `Percentage: NN`, observées en conteneur Fedora).
+ * Résout vers `{ phase, percent }` ou null si rien d'exploitable.
+ * `phase` vaut 'download' pendant le téléchargement, 'install' sinon.
+ */
+export function parsePkconProgress(output) {
+  let status = null;
+  let percent = null;
+  for (const line of String(output).split('\n')) {
+    const statusMatch = /^\s*Status:\s*(.+?)\s*$/.exec(line);
+    if (statusMatch) status = statusMatch[1];
+    const percentMatch = /^\s*Percentage:\s*(\d+)\s*$/.exec(line);
+    if (percentMatch) percent = Math.min(100, Math.max(0, Number(percentMatch[1])));
+  }
+  if (status === null && percent === null) return null;
+  return { phase: /download/i.test(status ?? '') ? 'download' : 'install', percent };
 }
 
 /** Recharge les métadonnées (prouvé en conteneur : `get-updates`, même avec

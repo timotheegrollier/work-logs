@@ -4,6 +4,7 @@ import { api, todayISO, type AppState, type Entry } from './lib';
 import { EntryList } from './components/EntryList';
 import { EntryEditor } from './components/EntryEditor';
 import { Logo } from './components/Logo';
+import { UpdateBar } from './components/UpdateBar';
 import { TaskBoard } from './components/TaskBoard';
 import { ProjectBar } from './components/ProjectBar';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
@@ -90,6 +91,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <UpdateBar />
       <header className="head no-print">
         <h1 className="logo">
           <Logo />

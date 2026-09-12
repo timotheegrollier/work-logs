@@ -18,4 +18,9 @@ contextBridge.exposeInMainWorld('worklogsDesktop', {
   checkUpdatesNow() {
     return ipcRenderer.invoke('worklogs:check-updates-now');
   },
+  onUpdateProgress(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('worklogs:update-progress', listener);
+    return () => ipcRenderer.removeListener('worklogs:update-progress', listener);
+  },
 });
