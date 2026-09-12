@@ -1,14 +1,13 @@
 name: Dépôt RPM
 
-# Publie les RPMs sur GitHub Pages en dépôt dnf (`dnf update worklogs`).
-# Tourne après chaque release publiée, ou à la main pour regarnir (backfill).
-# Voir docs/07-RELEASES.md §8. Pas de delta RPMs : makedeltarpm ne lit pas les
-# payloads fpm (documenté dans scripts/build-rpm-repo.sh).
+# Se déclenche quand « Release Linux » finit : les publications sont faites avec
+# GITHUB_TOKEN, dont les événements `release` ne redéclenchent jamais de workflow
+# (anti-boucle GitHub). `workflow_run`, lui, part dans tous les cas — on vérifie
+# ensuite que la release est vraiment publiée (pas un brouillon de dispatch).
 on:
-  release:
-    # `published` (release directe) + `released` (brouillon publié — notre cas :
-    # release.yml crée un brouillon puis le publie via `gh release edit`).
-    types: [published, released]
+  workflow_run:
+    workflows: ['Release Linux']
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -26,16 +25,22 @@ concurrency:
 jobs:
   repo:
     name: Construire, publier et tester le dépôt
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
       PAGES_URL: https://timotheegrollier.github.io/work-logs/rpm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - name: 'Garde-fou : release vraiment publiée avec un RPM'
+        run: |
+          [[ "$TAG" == v* ]] || { echo "pas un tag ($TAG), arrêt"; exit 0; }
+          test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = false || { echo "$TAG encore en brouillon, arrêt"; exit 0; }
+          gh release view "$TAG" --json assets --jq -e '.assets[].name | select(endswith(".rpm"))' > /dev/null || { echo "pas de RPM dans $TAG, arrêt"; exit 0; }
       - name: Récupérer les RPMs (version + précédente)
         run: |
           PREV="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | grep -B1 "^$TAG$" | head -1)"
