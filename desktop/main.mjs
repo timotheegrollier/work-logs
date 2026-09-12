@@ -1,9 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, protocol, session, shell } from 'electron';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
-import { checkForUpdate, installKind, isNewer, RPM_REPO_URL } from './update.mjs';
+import { checkForUpdate, hasPackageKit, installKind, isNewer, pkconInstallArgs, RPM_REPO_URL, startPoll } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
 import electronUpdater from 'electron-updater';
@@ -28,6 +29,11 @@ let backend;
 let stopping = false;
 let closePending = false;
 let closeTimer;
+// Version refusée via « Plus tard » : on ne la repropose qu'à la suivante.
+// Mise à jour système en cours : le polling ne doit pas doubler la proposition.
+let dismissedVersion = null;
+let systemUpdating = false;
+let pollStop = null;
 
 function external(url) {
   if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
@@ -50,9 +56,10 @@ function suggestedFilename(item) {
 }
 
 /**
- * Vérifie les mises à jour à chaque ouverture et propose la nouveauté
- * immédiatement : un clic ouvre la page de release dans le navigateur.
- * Silencieux si tout est à jour ou sans réseau — le démarrage n'attend pas.
+ * Vérifie les mises à jour à l'ouverture, puis en tâche de fond toutes les
+ * POLL_INTERVAL_MS : une nouveauté est proposée dès qu'elle est vue, pas
+ * seulement au lancement. Silencieux si à jour, hors ligne, ou version déjà
+ * refusée — le démarrage et l'usage n'attendent jamais.
  */
 async function notifyUpdateIfAvailable() {
   // Coupe-circuit pour les tests e2e : pas de réseau pendant la recette.
@@ -62,7 +69,7 @@ async function notifyUpdateIfAvailable() {
     await updateAppImage();
     return;
   }
-  await fallbackNotify();
+  await offerSystemOrManualUpdate();
 }
 
 /**
@@ -77,14 +84,17 @@ async function updateAppImage() {
     autoUpdater.autoDownload = false;
     const found = await autoUpdater.checkForUpdates();
     const next = found?.updateInfo?.version;
-    if (!next || !isNewer(next, app.getVersion())) return;
+    if (!next || !isNewer(next, app.getVersion()) || dismissedVersion === next) return;
     const download = dialog.showMessageBoxSync(window, {
       type: 'info', title: 'WorkLogs', buttons: ['Mettre à jour', 'Plus tard'],
       defaultId: 0, cancelId: 1,
       message: `WorkLogs ${next} est disponible (tu as la ${app.getVersion()}).`,
       detail: 'Seuls les blocs modifiés sont téléchargés, puis l’application redémarre sur la nouvelle version.',
     });
-    if (download !== 0) return;
+    if (download !== 0) {
+      dismissedVersion = next;
+      return;
+    }
     await autoUpdater.downloadUpdate();
     const restart = dialog.showMessageBoxSync(window, {
       type: 'info', title: 'WorkLogs', buttons: ['Redémarrer', 'Plus tard'],
@@ -93,14 +103,76 @@ async function updateAppImage() {
       detail: 'Redémarre pour basculer sur la nouvelle version.',
     });
     if (restart === 0) autoUpdater.quitAndInstall(false, true);
+    else dismissedVersion = next;
   } catch {
-    await fallbackNotify();
+    await offerSystemOrManualUpdate();
   }
 }
 
-async function fallbackNotify() {
+/**
+ * Paquet système (deb/rpm) : si PackageKit est là, un clic suffit — polkit
+ * demande le mot de passe, le gestionnaire installe, on propose de relancer.
+ * Sinon, consigne dnf/apt + page de release (comportement historique).
+ */
+async function offerSystemOrManualUpdate() {
   const found = await checkForUpdate({ currentVersion: app.getVersion() });
   if (!found || !window || window.isDestroyed()) return;
+  if (dismissedVersion === found.version) return;
+  if (installKind() === 'system' && hasPackageKit() && !systemUpdating) {
+    await offerSystemUpdate(found.version);
+    return;
+  }
+  await fallbackNotify(found);
+}
+
+async function offerSystemUpdate(next) {
+  const choice = dialog.showMessageBoxSync(window, {
+    type: 'info', title: 'WorkLogs', buttons: ['Mettre à jour maintenant', 'Plus tard'],
+    defaultId: 0, cancelId: 1,
+    message: `WorkLogs ${next} est disponible (tu as la ${app.getVersion()}).`,
+    detail: 'Installation par le gestionnaire de paquets : ton mot de passe sera demandé une fois, puis tu redémarres l’application.',
+  });
+  if (choice !== 0) {
+    dismissedVersion = next;
+    return;
+  }
+  systemUpdating = true;
+  new Notification({ title: 'WorkLogs', body: `Installation de la ${next}… ne ferme pas l’application.` }).show();
+  const error = await runPackageKitUpdate();
+  systemUpdating = false;
+  if (error) {
+    dialog.showMessageBoxSync(window, {
+      type: 'error', title: 'WorkLogs', buttons: ['Compris'],
+      message: `La mise à jour a échoué : ${error}`,
+      detail: 'Tu peux aussi mettre à jour à la main : sudo dnf update worklogs (ou via apt), ou depuis la page des releases.',
+    });
+    return;
+  }
+  const restart = dialog.showMessageBoxSync(window, {
+    type: 'info', title: 'WorkLogs', buttons: ['Redémarrer', 'Plus tard'],
+    defaultId: 0, cancelId: 1,
+    message: `WorkLogs ${next} est installée.`,
+    detail: 'Redémarre pour basculer sur la nouvelle version.',
+  });
+  if (restart === 0) {
+    app.relaunch();
+    app.quit();
+  }
+}
+
+/** `pkcon install worklogs`, sans interaction (polkit s'en charge). Résout vers null si OK, sinon un message d'erreur court. */
+function runPackageKitUpdate() {
+  return new Promise((resolve) => {
+    const child = spawn('pkcon', pkconInstallArgs(), { stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = '';
+    child.stdout.on('data', (chunk) => { output += chunk; });
+    child.stderr.on('data', (chunk) => { output += chunk; });
+    child.on('error', (error) => resolve(String(error.message || error).slice(0, 300)));
+    child.on('close', (code) => resolve(code === 0 ? null : output.trim().split('\n').slice(-3).join(' ').slice(0, 300) || `code ${code}`));
+  });
+}
+
+async function fallbackNotify(found) {
   const kind = installKind();
   // Paquet système (deb/rpm) : la mise à jour passe par le gestionnaire de
   // paquets, pas par un téléchargement manuel — root oblige.
@@ -117,6 +189,7 @@ async function fallbackNotify() {
     detail,
   });
   if (choice === 0) external(found.url);
+  else dismissedVersion = found.version;
 }
 
 function finishClose(error) {
@@ -185,6 +258,9 @@ if (!app.requestSingleInstanceLock()) {
       window.once('ready-to-show', () => {
         window.show();
         void notifyUpdateIfAvailable();
+        // Puis en tâche de fond : une release publiée pendant l'usage est
+        // proposée sans attendre la prochaine ouverture.
+        pollStop ??= startPoll({ tick: () => notifyUpdateIfAvailable() });
       });
       window.webContents.setWindowOpenHandler(({ url }) => {
         external(url);

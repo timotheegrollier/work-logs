@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkForUpdate, installKind, isNewer, parseVersion } from '../update.mjs';
+import { checkForUpdate, hasPackageKit, installKind, isNewer, parseVersion, pkconInstallArgs, startPoll } from '../update.mjs';
 
 const stubFetch = (payload, ok = true) => async () => ({ ok, json: async () => payload });
 
@@ -58,4 +58,31 @@ test('checkForUpdate reste silencieuse quand il n’y a rien à signaler', async
     await checkForUpdate({ currentVersion: '0.3.0', fetchImpl: stubFetch({ pas_de_tag: true }) }),
     null,
   );
+});
+
+test('hasPackageKit détecte pkcon, pkconInstallArgs vise le paquet', () => {
+  assert.equal(hasPackageKit({ existsSync: () => true }), true);
+  assert.equal(hasPackageKit({ existsSync: () => false }), false);
+  assert.deepEqual(pkconInstallArgs(), ['--noninteractive', 'install', 'worklogs']);
+});
+
+test('startPoll espace les ticks et ignore les chevauchements', async () => {
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const timers = [];
+  const timer = {
+    setInterval(fn) { timers.push(fn); return timers.length; },
+    clearInterval(id) { timers[id - 1] = null; },
+  };
+  const stop = startPoll({ intervalMs: 1, tick: async () => { calls++; await gate; }, timer });
+  const first = timers[0]();
+  timers[0](); // chevauchement : ignoré
+  assert.equal(calls, 1);
+  release();
+  await first;
+  await timers[0]();
+  assert.equal(calls, 2);
+  stop();
+  assert.equal(timers[0], null);
 });

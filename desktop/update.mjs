@@ -1,17 +1,20 @@
 /**
- * Vérification des mises à jour au démarrage, sans dépendance externe.
- *
- * Pourquoi pas electron-updater : ce serait une nouvelle dépendance (accord
- * requis par les règles du projet) pour un gain nul sur deb/rpm, qu'une
- * application ne peut pas auto-installer sans les droits root — la mise à
- * jour passe de toute façon par apt/dnf ou par le téléchargement manuel.
- * Ce module se contente donc de signaler la nouveauté et d'ouvrir la page
- * de release en un clic, quel que soit le format installé.
+ * Stratégie de mise à jour par format installé (voir docs/07-RELEASES.md §7) :
+ * - AppImage : electron-updater (différentiel via blockmap) — voir main.mjs.
+ * - Paquet système (deb/rpm) : PackageKit (`pkcon`) si présent — polkit demande
+ *   le mot de passe, un clic suffit ; sinon consigne dnf/apt + page de release.
+ * - Dev (sources) : simple signalement.
+ * Ce module reste sans dépendance : détection, planification et décision.
  */
+import fs from 'node:fs';
 
 export const UPDATE_REPO = 'timotheegrollier/work-logs';
 export const RELEASES_URL = `https://github.com/${UPDATE_REPO}/releases`;
 export const RPM_REPO_URL = 'https://timotheegrollier.github.io/work-logs/rpm';
+/** Nom du paquet système (deb et rpm — vérifié : `rpm -q worklogs`, `--name worklogs` côté fpm). */
+export const SYSTEM_PACKAGE = 'worklogs';
+/** Revérification périodique en tâche de fond (l'ouverture vérifie déjà). */
+export const POLL_INTERVAL_MS = 4 * 3600 * 1000;
 
 /**
  * D'où vient l'exécutable : 'appimage' (variable APPIMAGE posée par le
@@ -67,4 +70,33 @@ export async function checkForUpdate({ currentVersion, fetchImpl = fetch, timeou
   }
   if (!release || typeof release.tag_name !== 'string' || !isNewer(release.tag_name, currentVersion)) return null;
   return { version: release.tag_name.replace(/^v/, ''), url: `${RELEASES_URL}/tag/${release.tag_name}` };
+}
+
+/** PackageKit présent = mise à jour système en un clic (polkit gère le mot de passe). */
+export function hasPackageKit({ existsSync = fs.existsSync } = {}) {
+  return existsSync('/usr/bin/pkcon');
+}
+
+/** Transaction non interactive : installe la dernière version du dépôt. */
+export function pkconInstallArgs() {
+  return ['--noninteractive', 'install', SYSTEM_PACKAGE];
+}
+
+/**
+ * Revérifie `tick` toutes les `intervalMs` sans chevauchement (un tick lent
+ * ne déclenche jamais deux vérifications en parallèle). Résout vers une
+ * fonction d'arrêt. `timer` n'existe que pour les tests.
+ */
+export function startPoll({ intervalMs = POLL_INTERVAL_MS, tick, timer = { setInterval, clearInterval } } = {}) {
+  let busy = false;
+  const id = timer.setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      await tick();
+    } finally {
+      busy = false;
+    }
+  }, intervalMs);
+  return () => timer.clearInterval(id);
 }
