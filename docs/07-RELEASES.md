@@ -93,7 +93,7 @@ Trois circuits selon le format installé (détecté par `installKind()` dans
 
 | Installé via | Mise à jour | Téléchargé |
 |---|---|---|
-| `.rpm` + dépôt configuré | `sudo dnf update worklogs` (proposé dans le dialogue d'ouverture) | paquet complet (~83 Mo) |
+| `.rpm` + dépôt configuré | dialogue « Mettre à jour maintenant » → PackageKit (`pkcon`, mot de passe via polkit) → « Redémarrer » ; revérifié toutes les 4 h en tâche de fond, pas seulement à l'ouverture | paquet complet (~83 Mo) |
 | `.AppImage` | dialogue « Mettre à jour » → téléchargement **différentiel** → « Redémarrer » | seuls les blocs modifiés (~1–5 Mo) |
 | `.deb` / sans dépôt | page de téléchargement (comme avant) | paquet complet |
 
@@ -102,8 +102,9 @@ Trois circuits selon le format installé (détecté par `installKind()` dans
 - Contenu : tous les `.rpm` gardés + `repodata/` + `worklogs.repo`, sur la branche
   `gh-pages` (servi par GitHub Pages : `https://timotheegrollier.github.io/work-logs/rpm/`).
 - Construction : `scripts/build-rpm-repo.sh <dir>` (`createrepo_c --update`).
-- Workflow `rpm-repo.yml` : sur chaque release publiée (et `dispatch` pour regarnir),
-  il télécharge le RPM de la release + celui de la précédente, construit le repodata,
+- Workflow `rpm-repo.yml` : déclenché par la FIN de « Release Linux »
+  (`workflow_run`, pas `release`) — voir pièges. Il télécharge le RPM de la
+  release + celui de la précédente, construit le repodata,
   **teste install + update dans un conteneur Fedora jetable**, puis pousse sur `gh-pages`.
 - **Pas de delta RPMs** : `makedeltarpm` ne lit pas les payloads produits par fpm
   (« payload read failed », vérifié avec 0.4.1/0.4.2 alors que `rpm -K` les valide).
@@ -133,6 +134,13 @@ Trois circuits selon le format installé (détecté par `installKind()` dans
   ajouté après l'incident `update.mjs` manquant de la 0.3.0).
 
 ## 8. Pièges connus (vécus, ne pas réintroduire)
+
+- **Events stériles de GITHUB_TOKEN** : une release créée/publiée avec GITHUB_TOKEN
+  ne redéclenche AUCUN workflow (anti-boucle GitHub). `rpm-repo.yml` écoute donc la
+  fin de « Release Linux » (`workflow_run` + garde-fou : conclusion success, tag `v*`,
+  release non-brouillon avec RPM), jamais `release: published/released`.
+- **Polling update** (`desktop/update.mjs` + `main.mjs`, depuis la 0.6.0) : `startPoll`
+  sans chevauchement, mémoire du refus (`dismissedVersion`), garde `systemUpdating`.
 
 - **Liste fermée de `stage-desktop.mjs`** : tout nouveau fichier sous `desktop/` doit y
   être ajouté, sinon l'app installée plante à l'import (fenêtres jamais ouvertes,
