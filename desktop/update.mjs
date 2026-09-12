@@ -92,6 +92,24 @@ export function pkconInstallArgs() {
   return ['--noninteractive', '--cache-age', '1', 'install', SYSTEM_PACKAGE];
 }
 
+/**
+ * Interroge les mises à jour via PackageKit (même vue que l'installateur).
+ * `--cache-age 1` force des métadonnées fraîches dans la même transaction.
+ */
+export function pkconUpdatesArgs() {
+  return ['--noninteractive', '--cache-age', '1', '--plain', 'get-updates'];
+}
+
+/**
+ * Extrait la version candidate de `worklogs` de la sortie `pkcon -p get-updates`
+ * (identifiants `nom;version-release;arch;dépôt`), ou null si aucune mise à
+ * jour n'est proposée.
+ */
+export function parsePkconCandidate(output) {
+  const match = /worklogs;(\d[\w.]*?)(?:-\d+)?;[^\s;]*;[^\s]*/.exec(String(output));
+  return match ? match[1] : null;
+}
+
 /** La version installée correspond-elle à celle attendue ? (`rpm -q` ne sort qu'une ligne). */
 export function installedMatches(rpmOutput, expected) {
   return String(rpmOutput).trim().split('\n')[0]?.trim() === expected;

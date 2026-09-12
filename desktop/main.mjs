@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
-import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, pkconInstallArgs, RPM_REPO_URL, shouldOfferUpdate, startPoll, SYSTEM_PACKAGE } from './update.mjs';
+import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, pkconInstallArgs, pkconUpdatesArgs, RPM_REPO_URL, shouldOfferUpdate, startPoll, SYSTEM_PACKAGE } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
 import electronUpdater from 'electron-updater';
@@ -160,6 +160,24 @@ async function offerSystemUpdate(next) {
     return;
   }
   systemUpdating = true;
+  // Pré-vol : on demande au gestionnaire CE qu'il va installer, dans sa vue
+  // à lui (métadonnées forcées fraîches). Jamais d'install aveugle : si le
+  // candidat n'est pas la version attendue, on s'arrête AVANT de toucher
+  // au système — c'est ce garde-fou qui manquait lors du « downgrade » 0.5.0.
+  const probe = await runPkcon(pkconUpdatesArgs());
+  const candidate = probe.code === 0 ? parsePkconCandidate(probe.output) : null;
+  logUpdate(`pré-vol PackageKit : ${probe.code === 0 ? (candidate ?? 'aucune mise à jour listée') : 'interrogation impossible'}`);
+  if (probe.code === 0 && candidate !== next) {
+    systemUpdating = false;
+    dialog.showMessageBoxSync(window, {
+      type: 'warning', title: 'WorkLogs', buttons: ['Compris'],
+      message: candidate
+        ? `Le gestionnaire propose la ${candidate} au lieu de la ${next}.`
+        : 'Le gestionnaire ne voit aucune mise à jour.',
+      detail: 'Ses métadonnées sont périmées malgré le rechargement. Mets à jour à la main : sudo dnf clean expire-cache && sudo dnf update worklogs.',
+    });
+    return;
+  }
   new Notification({ title: 'WorkLogs', body: `Installation de la ${next}… ne ferme pas l’application.` }).show();
   const error = await runPackageKitUpdate();
   // Le cache PackageKit peut mentir : on ne propose le redémarrage que si la
@@ -198,8 +216,10 @@ function installedSystemVersion() {
 
 /** `pkcon install worklogs`, sans interaction (polkit s'en charge, `--cache-age 1`
  * force des métadonnées fraîches). Résout vers null si OK, sinon un message court. */
-function runPackageKitUpdate() {
-  return runPkcon(pkconInstallArgs());
+async function runPackageKitUpdate() {
+  const { code, output } = await runPkcon(pkconInstallArgs());
+  if (code === 0) return null;
+  return output.trim().split('\n').slice(-3).join(' ').slice(0, 300) || `code ${code}`;
 }
 
 function runPkcon(args) {
@@ -208,8 +228,8 @@ function runPkcon(args) {
     let output = '';
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.stderr.on('data', (chunk) => { output += chunk; });
-    child.on('error', (error) => resolve(String(error.message || error).slice(0, 300)));
-    child.on('close', (code) => resolve(code === 0 ? null : output.trim().split('\n').slice(-3).join(' ').slice(0, 300) || `code ${code}`));
+    child.on('error', (error) => resolve({ code: -1, output: String(error.message || error).slice(0, 300) }));
+    child.on('close', (code) => resolve({ code: code ?? -1, output }));
   });
 }
 
