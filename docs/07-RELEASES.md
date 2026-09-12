@@ -141,6 +141,10 @@ Trois circuits selon le format installé (détecté par `installKind()` dans
   release non-brouillon avec RPM), jamais `release: published/released`.
 - **Polling update** (`desktop/update.mjs` + `main.mjs`, depuis la 0.6.0) : `startPoll`
   sans chevauchement, mémoire du refus (`dismissedVersion`), garde `systemUpdating`.
+- **Cache PackageKit menteur** (vécu : 0.5.0 resservie après la 0.6.1) : `pkcon install`
+  part avec `--cache-age 1` (métadonnées fraîches dans la même transaction), et le
+  redémarrage n'est proposé qu'après vérification `rpm -q == version attendue`
+  (`installedMatches`, testé) — sinon erreur explicite, jamais de faux succès.
 
 - **Liste fermée de `stage-desktop.mjs`** : tout nouveau fichier sous `desktop/` doit y
   être ajouté, sinon l'app installée plante à l'import (fenêtres jamais ouvertes,
