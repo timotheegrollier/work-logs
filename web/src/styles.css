@@ -176,9 +176,15 @@ button:disabled {
 }
 .logo .version {
   font-size: 11px;
-  font-weight: 500;
-  color: var(--muted);
-  letter-spacing: 0;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid transparent;
+  border-radius: 99px;
+  padding: 1px 8px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .search {
   width: min(380px, 36vw);
@@ -239,6 +245,7 @@ button:disabled {
 }
 .chip:hover {
   color: var(--text);
+  border-color: var(--accent);
 }
 .chip.is-on {
   background: var(--accent-soft);
@@ -297,9 +304,14 @@ button:disabled {
   font-weight: 600;
   padding: 9px 12px;
   width: 100%;
+  box-shadow: 0 6px 16px -10px var(--accent);
+  transition: filter 0.12s ease, transform 0.12s ease;
 }
 .new-entry:hover {
   filter: brightness(1.08);
+}
+.new-entry:active {
+  transform: translateY(1px);
 }
 .days,
 .days ul {
@@ -328,6 +340,7 @@ button:disabled {
 }
 .entry:hover {
   background: var(--surface-2);
+  border-color: var(--line);
 }
 .entry.is-selected {
   background: var(--accent-soft);
@@ -386,6 +399,13 @@ button:disabled {
 }
 .save-saved {
   color: var(--ok);
+}
+.save-dirty {
+  color: var(--accent);
+}
+.save-saving {
+  color: var(--accent);
+  opacity: 0.75;
 }
 .save-error {
   color: var(--danger);
@@ -651,9 +671,12 @@ button:disabled {
   border-radius: 10px;
   padding: 7px 9px;
   cursor: grab;
+  transition: border-color 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
 }
 .card:hover {
   border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
 }
 .card.is-pinned {
   box-shadow: inset 3px 0 0 var(--accent);
@@ -708,6 +731,25 @@ button:disabled {
 }
 
 /* ------------------------------------------------------------ adaptatif */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 99px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
 @media (max-width: 1180px) {
   .columns {
     grid-template-columns: 250px minmax(0, 1fr) 280px;
