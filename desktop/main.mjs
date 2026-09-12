@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
-import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, pkconInstallArgs, pkconRefreshArgs, pkconUpdatesArgs, RPM_REPO_URL, shouldOfferUpdate, startPoll, SYSTEM_PACKAGE } from './update.mjs';
+import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, pkconInstallArgs, pkconRefreshArgs, pkconUpdatesArgs, releaseAgeMinutes, RPM_REPO_URL, shouldOfferUpdate, startPoll, SYSTEM_PACKAGE } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
 import electronUpdater from 'electron-updater';
@@ -172,12 +172,19 @@ async function offerSystemUpdate(next) {
   logUpdate(`pré-vol PackageKit : ${probe.code === 0 ? (candidate ?? 'aucune mise à jour listée') : 'interrogation impossible'}`);
   if (probe.code === 0 && candidate !== next) {
     systemUpdating = false;
+    // Cas courant : la release GitHub vient de sortir, le dépôt rpm la reçoit
+    // quelques minutes plus tard (workflow + Pages). On le dit au lieu de
+    // laisser croire à un gestionnaire cassé.
+    const age = releaseAgeMinutes(found.publishedAt);
+    const fresh = age !== null && age < 20
+      ? ` La ${next} est sortie il y a ${age} min : le dépôt la reçoit dans quelques minutes, réessaie ou clique la pastille de version.`
+      : '';
     dialog.showMessageBoxSync(window, {
       type: 'warning', title: 'WorkLogs', buttons: ['Compris'],
       message: candidate
         ? `Le gestionnaire propose la ${candidate} au lieu de la ${next}.`
         : 'Le gestionnaire ne voit aucune mise à jour.',
-      detail: 'Ses métadonnées sont périmées malgré le rechargement. Mets à jour à la main : sudo dnf clean expire-cache && sudo dnf update worklogs.',
+      detail: `Ses métadonnées sont périmées malgré le rechargement.${fresh} Sinon, mets à jour à la main : sudo dnf clean expire-cache && sudo dnf update worklogs.`,
     });
     return;
   }

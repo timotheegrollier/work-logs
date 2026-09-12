@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, parseVersion, pkconInstallArgs, pkconRefreshArgs, pkconUpdatesArgs, shouldOfferUpdate, startPoll } from '../update.mjs';
+import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, parseVersion, pkconInstallArgs, pkconRefreshArgs, pkconUpdatesArgs, releaseAgeMinutes, shouldOfferUpdate, startPoll } from '../update.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -37,6 +37,7 @@ test('checkForUpdate signale une release plus récente', async () => {
   assert.deepEqual(found, {
     version: '0.3.0',
     url: 'https://github.com/timotheegrollier/work-logs/releases/tag/v0.3.0',
+    publishedAt: null,
   });
 });
 
@@ -128,4 +129,24 @@ test('logUpdateEvent écrit et pivote sans casser', () => {
   logUpdateEvent(dir, 'check: current=0.6.4');
   assert.ok(fs.statSync(path.join(dir, 'update.log')).size < 60 * 1024);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('checkForUpdate expose la date de publication', async () => {
+  const found = await checkForUpdate({
+    currentVersion: '0.6.9',
+    fetchImpl: async () => ({ ok: true, json: async () => ({ tag_name: 'v0.6.10', published_at: '2026-09-12T21:00:00Z' }) }),
+  });
+  assert.deepEqual(found, {
+    version: '0.6.10',
+    url: 'https://github.com/timotheegrollier/work-logs/releases/tag/v0.6.10',
+    publishedAt: '2026-09-12T21:00:00Z',
+  });
+});
+
+test('releaseAgeMinutes mesure la fraîcheur dune release', () => {
+  const now = Date.parse('2026-09-12T21:10:00Z');
+  assert.equal(releaseAgeMinutes('2026-09-12T21:00:00Z', now), 10);
+  assert.equal(releaseAgeMinutes(null, now), null);
+  assert.equal(releaseAgeMinutes('nawak', now), null);
+  assert.equal(releaseAgeMinutes('2026-09-12T22:00:00Z', now), null);
 });

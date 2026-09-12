@@ -74,7 +74,18 @@ export async function checkForUpdate({ currentVersion, fetchImpl = fetch, timeou
     return null;
   }
   if (!release || typeof release.tag_name !== 'string' || !isNewer(release.tag_name, currentVersion)) return null;
-  return { version: release.tag_name.replace(/^v/, ''), url: `${RELEASES_URL}/tag/${release.tag_name}` };
+  return {
+    version: release.tag_name.replace(/^v/, ''),
+    url: `${RELEASES_URL}/tag/${release.tag_name}`,
+    publishedAt: typeof release.published_at === 'string' ? release.published_at : null,
+  };
+}
+
+/** Âge en minutes d'une release, ou null si inconnu/futur. */
+export function releaseAgeMinutes(publishedAt, nowMs = Date.now()) {
+  if (!publishedAt) return null;
+  const age = Math.floor((nowMs - Date.parse(publishedAt)) / 60000);
+  return Number.isFinite(age) && age >= 0 ? age : null;
 }
 
 /** PackageKit présent = mise à jour système en un clic (polkit gère le mot de passe). */
