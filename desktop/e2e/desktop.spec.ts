@@ -49,10 +49,10 @@ test.afterEach(async () => {
   fs.rmSync(directory, { recursive: true, force: true });
 });
 
-test('démarre directement en plein écran', async () => {
+test('démarre en fenêtre maximisée', async () => {
   await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
   await expect.poll(() => application!.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].isFullScreen()
+    BrowserWindow.getAllWindows()[0].isMaximized()
   )).toBe(true);
 });
 

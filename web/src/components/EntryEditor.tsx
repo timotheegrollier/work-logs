@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatSize, type Attachment, type Entry, type Project } from '../lib';
 import { renderMarkdown } from '../markdown';
 import { Autosave } from '../autosave';
@@ -55,6 +55,11 @@ export function EntryEditor({
     setDraft(next);
     autosave.update(next);
   };
+
+  // L'aperçu Markdown (marked + DOMPurify) est le rendu le plus coûteux :
+  // on ne le recalcule qu'à contenu changeant, pas à chaque changement
+  // d'état de sauvegarde qui re-rend l'éditeur.
+  const previewHtml = useMemo(() => renderMarkdown(draft.content_md), [draft.content_md]);
 
   const persist = async () => {
     await autosave.flush().catch(() => {});
@@ -184,7 +189,7 @@ export function EntryEditor({
         <article
           className="prose"
           aria-label="Aperçu"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(draft.content_md) }}
+          dangerouslySetInnerHTML={{ __html: previewHtml }}
         />
       </div>
 

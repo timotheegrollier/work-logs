@@ -313,13 +313,14 @@ if (!app.requestSingleInstanceLock()) {
       Menu.setApplicationMenu(null);
       window = new BrowserWindow({
         title: 'WorkLogs', width: 1440, height: 950, minWidth: 900, minHeight: 620,
-        show: false, fullscreen: true, backgroundColor: '#0e1118', icon: path.join(root, 'desktop', 'icon.png'),
+        show: false, backgroundColor: '#0e1118', icon: path.join(root, 'desktop', 'icon.png'),
         webPreferences: {
           preload: path.join(root, 'desktop', 'preload.cjs'),
           nodeIntegration: false, contextIsolation: true, sandbox: true,
         },
       });
       window.once('ready-to-show', () => {
+        window.maximize();
         window.show();
         void notifyUpdateIfAvailable();
         // Puis en tâche de fond : une release publiée pendant l'usage est
