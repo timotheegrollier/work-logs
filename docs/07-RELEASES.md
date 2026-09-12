@@ -142,11 +142,12 @@ Trois circuits selon le format installé (détecté par `installKind()` dans
 - **Polling update** (`desktop/update.mjs` + `main.mjs`, depuis la 0.6.0 ; toutes les
   5 min depuis la 0.6.4) : `startPoll`
   sans chevauchement, mémoire du refus (`dismissedVersion`), garde `systemUpdating`.
-- **Cache PackageKit menteur** (vécu : 0.5.0 resservie après la 0.6.1) : `pkcon install`
-  part avec `--cache-age 1` (métadonnées fraîches dans la même transaction), un
-  **pré-vol** `pkcon -p get-updates` refuse d'installer si le candidat
-  (`parsePkconCandidate`, testé) n'est pas la version attendue, et le redémarrage
-  n'est proposé qu'après vérification `rpm -q == version attendue`
+- **Cache PackageKit menteur** (vécu deux fois) : prouvé en conteneur Fedora que
+  `get-updates`, même avec `--cache-age 1`, relit un cache périmé — seul
+  `pkcon refresh force` recharge vraiment. Le pré-vol fait donc refresh puis
+  `get-updates`, et `parsePkconCandidate` lit le vrai format texte
+  (`worklogs-0.6.8-1.x86_64 (wl)`, pas des `;`) : sans candidat exact, aucune
+  installation. Le redémarrage n'est proposé qu'après `rpm -q == attendu`
   (`installedMatches`, testé) — sinon erreur explicite, jamais de faux succès.
 
 - **Liste fermée de `stage-desktop.mjs`** : tout nouveau fichier sous `desktop/` doit y

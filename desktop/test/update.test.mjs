@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, parseVersion, pkconInstallArgs, pkconUpdatesArgs, shouldOfferUpdate, startPoll } from '../update.mjs';
+import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, parseVersion, pkconInstallArgs, pkconRefreshArgs, pkconUpdatesArgs, shouldOfferUpdate, startPoll } from '../update.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -67,12 +67,13 @@ test('hasPackageKit détecte pkcon, pkconInstallArgs vise le paquet', () => {
   assert.equal(hasPackageKit({ existsSync: () => true }), true);
   assert.equal(hasPackageKit({ existsSync: () => false }), false);
   assert.deepEqual(pkconInstallArgs(), ['--noninteractive', '--cache-age', '1', 'install', 'worklogs']);
-  assert.deepEqual(pkconUpdatesArgs(), ['--noninteractive', '--cache-age', '1', '--plain', 'get-updates']);
+  assert.deepEqual(pkconUpdatesArgs(), ['--noninteractive', '--plain', 'get-updates']);
+  assert.deepEqual(pkconRefreshArgs(), ['--noninteractive', 'refresh', 'force']);
 });
 
 test('parsePkconCandidate lit la version proposée par PackageKit', () => {
-  assert.equal(parsePkconCandidate('available\tworklogs;0.6.6-1;x86_64;worklogs\t\n'), '0.6.6');
-  assert.equal(parsePkconCandidate('available\tfirefox;144.0-1;x86_64;fedora\t\navailable\tworklogs;0.6.5-1;x86_64;worklogs\t\n'), '0.6.5');
+  assert.equal(parsePkconCandidate('Available\tworklogs-0.6.8-1.x86_64 (wl)\n'), '0.6.8');
+  assert.equal(parsePkconCandidate('Available\tfirefox-144.0-1.x86_64 (fedora)\nAvailable\tworklogs-0.6.5-1.x86_64 (worklogs)\n'), '0.6.5');
   assert.equal(parsePkconCandidate('There are no updates available\n'), null);
   assert.equal(parsePkconCandidate(''), null);
 });

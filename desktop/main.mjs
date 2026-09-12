@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
-import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, pkconInstallArgs, pkconUpdatesArgs, RPM_REPO_URL, shouldOfferUpdate, startPoll, SYSTEM_PACKAGE } from './update.mjs';
+import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, pkconInstallArgs, pkconRefreshArgs, pkconUpdatesArgs, RPM_REPO_URL, shouldOfferUpdate, startPoll, SYSTEM_PACKAGE } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
 import electronUpdater from 'electron-updater';
@@ -160,10 +160,13 @@ async function offerSystemUpdate(next) {
     return;
   }
   systemUpdating = true;
-  // Pré-vol : on demande au gestionnaire CE qu'il va installer, dans sa vue
-  // à lui (métadonnées forcées fraîches). Jamais d'install aveugle : si le
-  // candidat n'est pas la version attendue, on s'arrête AVANT de toucher
-  // au système — c'est ce garde-fou qui manquait lors du « downgrade » 0.5.0.
+  // Pré-vol en deux temps, prouvé en conteneur Fedora : `refresh force`
+  // recharge vraiment les métadonnées (`get-updates`, même avec `--cache-age 1`,
+  // relit sinon un cache périmé), puis `get-updates` dit CE qui serait installé.
+  // Si le candidat n'est pas la version attendue, on s'arrête AVANT de toucher
+  // au système — jamais d'install aveugle.
+  const refreshed = await runPkcon(pkconRefreshArgs());
+  if (refreshed.code !== 0) logUpdate(`refresh PackageKit : ${refreshed.output.trim().split('\n').slice(-1)[0]?.slice(0, 200)}`);
   const probe = await runPkcon(pkconUpdatesArgs());
   const candidate = probe.code === 0 ? parsePkconCandidate(probe.output) : null;
   logUpdate(`pré-vol PackageKit : ${probe.code === 0 ? (candidate ?? 'aucune mise à jour listée') : 'interrogation impossible'}`);

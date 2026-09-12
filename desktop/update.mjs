@@ -94,19 +94,24 @@ export function pkconInstallArgs() {
 
 /**
  * Interroge les mises à jour via PackageKit (même vue que l'installateur).
- * `--cache-age 1` force des métadonnées fraîches dans la même transaction.
  */
 export function pkconUpdatesArgs() {
-  return ['--noninteractive', '--cache-age', '1', '--plain', 'get-updates'];
+  return ['--noninteractive', '--plain', 'get-updates'];
+}
+
+/** Recharge les métadonnées (prouvé en conteneur : `get-updates`, même avec
+ * `--cache-age 1`, relit sinon un cache périmé — seul `refresh force` recharge). */
+export function pkconRefreshArgs() {
+  return ['--noninteractive', 'refresh', 'force'];
 }
 
 /**
  * Extrait la version candidate de `worklogs` de la sortie `pkcon -p get-updates`
- * (identifiants `nom;version-release;arch;dépôt`), ou null si aucune mise à
- * jour n'est proposée.
+ * (format texte `Available\\tworklogs-0.6.8-1.x86_64 (wl)`), ou null si aucune
+ * mise à jour n'est proposée.
  */
 export function parsePkconCandidate(output) {
-  const match = /worklogs;(\d[\w.]*?)(?:-\d+)?;[^\s;]*;[^\s]*/.exec(String(output));
+  const match = /worklogs-(\d[\w.]*)-\d+\.\w+ \(/.exec(String(output));
   return match ? match[1] : null;
 }
 
