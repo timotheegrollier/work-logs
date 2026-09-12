@@ -139,7 +139,8 @@ Trois circuits selon le format installé (détecté par `installKind()` dans
   ne redéclenche AUCUN workflow (anti-boucle GitHub). `rpm-repo.yml` écoute donc la
   fin de « Release Linux » (`workflow_run` + garde-fou : conclusion success, tag `v*`,
   release non-brouillon avec RPM), jamais `release: published/released`.
-- **Polling update** (`desktop/update.mjs` + `main.mjs`, depuis la 0.6.0) : `startPoll`
+- **Polling update** (`desktop/update.mjs` + `main.mjs`, depuis la 0.6.0 ; toutes les
+  5 min depuis la 0.6.4) : `startPoll`
   sans chevauchement, mémoire du refus (`dismissedVersion`), garde `systemUpdating`.
 - **Cache PackageKit menteur** (vécu : 0.5.0 resservie après la 0.6.1) : `pkcon install`
   part avec `--cache-age 1` (métadonnées fraîches dans la même transaction), et le

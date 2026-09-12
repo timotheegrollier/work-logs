@@ -14,7 +14,7 @@ export const RPM_REPO_URL = 'https://timotheegrollier.github.io/work-logs/rpm';
 /** Nom du paquet système (deb et rpm — vérifié : `rpm -q worklogs`, `--name worklogs` côté fpm). */
 export const SYSTEM_PACKAGE = 'worklogs';
 /** Revérification périodique en tâche de fond (l'ouverture vérifie déjà). */
-export const POLL_INTERVAL_MS = 4 * 3600 * 1000;
+export const POLL_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
  * D'où vient l'exécutable : 'appimage' (variable APPIMAGE posée par le

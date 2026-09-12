@@ -1,7 +1,7 @@
 {
   "name": "worklogs",
   "private": true,
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Journal de travail local : écrire, mettre en page, organiser — sur un seul écran.",
   "scripts": {
     "install:all": "npm install && npm --prefix api install && npm --prefix web install",

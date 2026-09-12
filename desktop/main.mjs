@@ -267,7 +267,7 @@ if (!app.requestSingleInstanceLock()) {
       Menu.setApplicationMenu(null);
       window = new BrowserWindow({
         title: 'WorkLogs', width: 1440, height: 950, minWidth: 900, minHeight: 620,
-        show: false, backgroundColor: '#0e1118', icon: path.join(root, 'desktop', 'icon.png'),
+        show: false, fullscreen: true, backgroundColor: '#0e1118', icon: path.join(root, 'desktop', 'icon.png'),
         webPreferences: {
           preload: path.join(root, 'desktop', 'preload.cjs'),
           nodeIntegration: false, contextIsolation: true, sandbox: true,
