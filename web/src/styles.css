@@ -195,6 +195,8 @@ button:disabled {
 }
 .search {
   width: min(380px, 36vw);
+  border-radius: 99px;
+  padding-left: 14px;
 }
 .stats {
   margin: 0;
@@ -399,9 +401,9 @@ button:disabled {
 }
 .title {
   flex: 1;
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 28px;
+  font-weight: 750;
+  letter-spacing: -0.025em;
   background: none !important;
   border: none !important;
   padding: 4px 0 !important;
@@ -662,9 +664,11 @@ button:disabled {
 }
 .column .count {
   font-variant-numeric: tabular-nums;
-  background: var(--surface-2);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
   border-radius: 99px;
-  padding: 0 6px;
+  padding: 0 7px;
   letter-spacing: 0;
 }
 .column ul {
