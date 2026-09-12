@@ -99,3 +99,4 @@ describe('groupByDay', () => {
     expect(groupByDay([])).toEqual([]);
   });
 });
+
