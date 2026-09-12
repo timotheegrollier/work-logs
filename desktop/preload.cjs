@@ -15,4 +15,7 @@ contextBridge.exposeInMainWorld('worklogsDesktop', {
     beforeClose = callback;
     return () => { beforeClose = async () => {}; };
   },
+  checkUpdatesNow() {
+    return ipcRenderer.invoke('worklogs:check-updates-now');
+  },
 });

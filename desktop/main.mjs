@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
-import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, pkconInstallArgs, RPM_REPO_URL, startPoll, SYSTEM_PACKAGE } from './update.mjs';
+import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, pkconInstallArgs, RPM_REPO_URL, shouldOfferUpdate, startPoll, SYSTEM_PACKAGE } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
 import electronUpdater from 'electron-updater';
@@ -39,6 +39,11 @@ function external(url) {
   if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
 }
 
+/** Journal des vérifications : sans lui, un échec silencieux est indiagnosticable. */
+function logUpdate(message) {
+  logUpdateEvent(dataDir, message);
+}
+
 /**
  * Electron ne décode pas filename/filename* (RFC 6266) pour les téléchargements
  * servis par un protocole personnalisé : le nom suggéré retombe sur « download ».
@@ -61,15 +66,16 @@ function suggestedFilename(item) {
  * seulement au lancement. Silencieux si à jour, hors ligne, ou version déjà
  * refusée — le démarrage et l'usage n'attendent jamais.
  */
-async function notifyUpdateIfAvailable() {
+async function notifyUpdateIfAvailable({ force = false } = {}) {
   // Coupe-circuit pour les tests e2e : pas de réseau pendant la recette.
   // Hors paquet (dev) : rien à mettre à jour.
   if (process.env.WORKLOGS_SKIP_UPDATE_CHECK === '1' || !app.isPackaged) return;
+  logUpdate(`check (${force ? 'manuel' : 'auto'}) : version ${app.getVersion()}`);
   if (installKind() === 'appimage') {
-    await updateAppImage();
+    await updateAppImage(force);
     return;
   }
-  await offerSystemOrManualUpdate();
+  await offerSystemOrManualUpdate(force);
 }
 
 /**
@@ -78,13 +84,14 @@ async function notifyUpdateIfAvailable() {
  * avant le téléchargement, redémarrage proposé une fois prête. En cas d'échec,
  * repli sur le dialogue de téléchargement manuel.
  */
-async function updateAppImage() {
+async function updateAppImage(force = false) {
   const { autoUpdater } = electronUpdater;
   try {
     autoUpdater.autoDownload = false;
     const found = await autoUpdater.checkForUpdates();
     const next = found?.updateInfo?.version;
-    if (!next || !isNewer(next, app.getVersion()) || dismissedVersion === next) return;
+    logUpdate(next ? `trouvé : ${next}` : 'à jour (electron-updater)');
+    if (!next || !shouldOfferUpdate(next, app.getVersion(), force ? null : dismissedVersion)) return;
     const download = dialog.showMessageBoxSync(window, {
       type: 'info', title: 'WorkLogs', buttons: ['Mettre à jour', 'Plus tard'],
       defaultId: 0, cancelId: 1,
@@ -104,8 +111,9 @@ async function updateAppImage() {
     });
     if (restart === 0) autoUpdater.quitAndInstall(false, true);
     else dismissedVersion = next;
-  } catch {
-    await offerSystemOrManualUpdate();
+  } catch (error) {
+    logUpdate(`erreur electron-updater : ${String(error?.message || error).slice(0, 200)}`);
+    await offerSystemOrManualUpdate(force);
   }
 }
 
@@ -114,10 +122,25 @@ async function updateAppImage() {
  * demande le mot de passe, le gestionnaire installe, on propose de relancer.
  * Sinon, consigne dnf/apt + page de release (comportement historique).
  */
-async function offerSystemOrManualUpdate() {
-  const found = await checkForUpdate({ currentVersion: app.getVersion() });
-  if (!found || !window || window.isDestroyed()) return;
-  if (dismissedVersion === found.version) return;
+async function offerSystemOrManualUpdate(force = false) {
+  const found = await checkForUpdate({
+    currentVersion: app.getVersion(),
+    onError: (message) => logUpdate(`échec : ${message}`),
+  });
+  if (!found) {
+    logUpdate('à jour ou injoignable (GitHub)');
+    if (force && window && !window.isDestroyed()) {
+      dialog.showMessageBoxSync(window, {
+        type: 'info', title: 'WorkLogs', buttons: ['Fermer'],
+        message: `WorkLogs ${app.getVersion()} est à jour.`,
+        detail: 'Vérifié à l’instant. Détail des vérifications : ~/.local/share/worklogs/update.log.',
+      });
+    }
+    return;
+  }
+  logUpdate(`trouvé : ${found.version}`);
+  if (!force && dismissedVersion === found.version) return;
+  if (!window || window.isDestroyed()) return;
   if (installKind() === 'system' && hasPackageKit() && !systemUpdating) {
     await offerSystemUpdate(found.version);
     return;
@@ -315,6 +338,13 @@ if (!app.requestSingleInstanceLock()) {
       ipcMain.on('worklogs:close-ready', (event, error) => {
         if (event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame && closePending)
           finishClose(error);
+      });
+      // Clic sur la pastille de version : revérifie tout de suite, même si la
+      // version a déjà été refusée (force ignore dismissedVersion).
+      ipcMain.handle('worklogs:check-updates-now', async (event) => {
+        if (event.sender !== window.webContents) return null;
+        await notifyUpdateIfAvailable({ force: true });
+        return app.getVersion();
       });
       await window.loadURL(origin + '/');
     } catch (error) {

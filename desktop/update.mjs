@@ -51,21 +51,26 @@ export function isNewer(latest, current) {
  * bloque jamais le démarrage pour ça). `fetchImpl` n'existe que pour
  * les tests.
  */
-export async function checkForUpdate({ currentVersion, fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
+export async function checkForUpdate({ currentVersion, fetchImpl = fetch, timeoutMs = 10_000, onError = () => {} } = {}) {
   let response;
   try {
     response = await fetchImpl(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'worklogs-desktop' },
       signal: AbortSignal.timeout(timeoutMs),
     });
-  } catch {
+  } catch (error) {
+    onError(`réseau: ${String(error?.message || error).slice(0, 200)}`);
     return null;
   }
-  if (!response.ok) return null;
+  if (!response.ok) {
+    onError(`HTTP ${response.status}`);
+    return null;
+  }
   let release;
   try {
     release = await response.json();
-  } catch {
+  } catch (error) {
+    onError(`JSON: ${String(error?.message || error).slice(0, 200)}`);
     return null;
   }
   if (!release || typeof release.tag_name !== 'string' || !isNewer(release.tag_name, currentVersion)) return null;
@@ -109,4 +114,31 @@ export function startPoll({ intervalMs = POLL_INTERVAL_MS, tick, timer = { setIn
     }
   }, intervalMs);
   return () => timer.clearInterval(id);
+}
+
+/** Faut-il proposer `found` à un utilisateur en `current` ayant refusé `dismissed` ? */
+export function shouldOfferUpdate(found, current, dismissed) {
+  return Boolean(found) && found !== dismissed && isNewer(found, current);
+}
+
+/**
+ * Journal des vérifications (`update.log` dans le dossier de données) : sans ça,
+ * un échec silencieux est indiagnosticable. Rotation simple à ~50 Ko.
+ */
+export function logUpdateEvent(dataDir, message) {
+  try {
+    fs.mkdirSync(dataDir, { recursive: true });
+    const file = `${dataDir}/update.log`;
+    let existing = '';
+    try {
+      const stat = fs.statSync(file);
+      if (stat.size > 50 * 1024) {
+        const tail = fs.readFileSync(file, 'utf8').slice(-4000);
+        existing = tail.slice(tail.indexOf('\n') + 1);
+      } else {
+        existing = fs.readFileSync(file, 'utf8');
+      }
+    } catch { /* premier lancement : le fichier n'existe pas */ }
+    fs.writeFileSync(file, `${existing}[${new Date().toISOString()}] ${message}\n`);
+  } catch { /* le log ne doit jamais casser l'application */ }
 }

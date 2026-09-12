@@ -94,7 +94,14 @@ export default function App() {
         <h1 className="logo">
           <Logo />
           Work<span>Logs</span>
-          <small className="version" title="Version de l’application">{__WORKLOGS_VERSION__}</small>
+          <button
+            className="version"
+            type="button"
+            title="Vérifier les mises à jour"
+            onClick={() => void window.worklogsDesktop?.checkUpdatesNow?.()}
+          >
+            {__WORKLOGS_VERSION__}
+          </button>
         </h1>
         <input
           className="search"

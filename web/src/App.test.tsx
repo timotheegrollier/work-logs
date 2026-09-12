@@ -40,7 +40,22 @@ describe('écran unique', () => {
     render(<App />);
 
     expect(await screen.findByRole('img', { name: 'Logo WorkLogs' })).toBeInTheDocument();
-    expect(screen.getByTitle('Version de l’application')).toHaveTextContent(/\d+\.\d+\.\d+/);
+    expect(screen.getByTitle('Vérifier les mises à jour')).toHaveTextContent(/\d+\.\d+\.\d+/);
+  });
+
+  test('un clic sur la version déclenche une vérification immédiate', async () => {
+    const user = userEvent.setup();
+    const checkUpdatesNow = vi.fn().mockResolvedValue('0.6.4');
+    (window as unknown as { worklogsDesktop: unknown }).worklogsDesktop = {
+      onBeforeClose: () => () => {},
+      checkUpdatesNow,
+    };
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Première entrée' }] });
+    render(<App />);
+
+    await user.click(await screen.findByTitle('Vérifier les mises à jour'));
+    expect(checkUpdatesNow).toHaveBeenCalledTimes(1);
+    delete (window as unknown as { worklogsDesktop?: unknown }).worklogsDesktop;
   });
 
   test('ouvre l’entrée la plus récente au démarrage', async () => {
