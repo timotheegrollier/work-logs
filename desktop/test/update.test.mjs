@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkForUpdate, hasPackageKit, installKind, isNewer, parseVersion, pkconInstallArgs, startPoll } from '../update.mjs';
+import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, parseVersion, pkconInstallArgs, startPoll } from '../update.mjs';
 
 const stubFetch = (payload, ok = true) => async () => ({ ok, json: async () => payload });
 
@@ -63,7 +63,13 @@ test('checkForUpdate reste silencieuse quand il n’y a rien à signaler', async
 test('hasPackageKit détecte pkcon, pkconInstallArgs vise le paquet', () => {
   assert.equal(hasPackageKit({ existsSync: () => true }), true);
   assert.equal(hasPackageKit({ existsSync: () => false }), false);
-  assert.deepEqual(pkconInstallArgs(), ['--noninteractive', 'install', 'worklogs']);
+  assert.deepEqual(pkconInstallArgs(), ['--noninteractive', '--cache-age', '1', 'install', 'worklogs']);
+});
+
+test('installedMatches refuse une version surprise après install', () => {
+  assert.equal(installedMatches('0.6.2\n', '0.6.2'), true);
+  assert.equal(installedMatches('0.5.0\n', '0.6.2'), false);
+  assert.equal(installedMatches('', '0.6.2'), false);
 });
 
 test('startPoll espace les ticks et ignore les chevauchements', async () => {

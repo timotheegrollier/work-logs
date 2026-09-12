@@ -1,10 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, protocol, session, shell } from 'electron';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
-import { checkForUpdate, hasPackageKit, installKind, isNewer, pkconInstallArgs, RPM_REPO_URL, startPoll } from './update.mjs';
+import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, pkconInstallArgs, RPM_REPO_URL, startPoll, SYSTEM_PACKAGE } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
 import electronUpdater from 'electron-updater';
@@ -139,12 +139,16 @@ async function offerSystemUpdate(next) {
   systemUpdating = true;
   new Notification({ title: 'WorkLogs', body: `Installation de la ${next}… ne ferme pas l’application.` }).show();
   const error = await runPackageKitUpdate();
+  // Le cache PackageKit peut mentir : on ne propose le redémarrage que si la
+  // version sur disque est vraiment celle attendue. Sinon, erreur explicite
+  // au lieu d'un faux succès suivi d'un « downgrade » apparent.
+  const installed = installedSystemVersion();
   systemUpdating = false;
-  if (error) {
+  if (error || !installedMatches(installed ?? '', next)) {
     dialog.showMessageBoxSync(window, {
       type: 'error', title: 'WorkLogs', buttons: ['Compris'],
-      message: `La mise à jour a échoué : ${error}`,
-      detail: 'Tu peux aussi mettre à jour à la main : sudo dnf update worklogs (ou via apt), ou depuis la page des releases.',
+      message: error ?? `La version installée (${installed ?? 'illisible'}) n’est pas la ${next}.`,
+      detail: 'Le gestionnaire a servi une version périmée. Relance la vérification ou mets à jour à la main : sudo dnf update worklogs.',
     });
     return;
   }
@@ -160,10 +164,24 @@ async function offerSystemUpdate(next) {
   }
 }
 
-/** `pkcon install worklogs`, sans interaction (polkit s'en charge). Résout vers null si OK, sinon un message d'erreur court. */
+/** Version du paquet système installé, ou null si illisible. */
+function installedSystemVersion() {
+  try {
+    return execFileSync('rpm', ['-q', '--qf', '%{VERSION}', SYSTEM_PACKAGE], { encoding: 'utf8' }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** `pkcon install worklogs`, sans interaction (polkit s'en charge, `--cache-age 1`
+ * force des métadonnées fraîches). Résout vers null si OK, sinon un message court. */
 function runPackageKitUpdate() {
+  return runPkcon(pkconInstallArgs());
+}
+
+function runPkcon(args) {
   return new Promise((resolve) => {
-    const child = spawn('pkcon', pkconInstallArgs(), { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('pkcon', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.stderr.on('data', (chunk) => { output += chunk; });

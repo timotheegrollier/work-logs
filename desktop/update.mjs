@@ -77,9 +77,19 @@ export function hasPackageKit({ existsSync = fs.existsSync } = {}) {
   return existsSync('/usr/bin/pkcon');
 }
 
-/** Transaction non interactive : installe la dernière version du dépôt. */
+/**
+ * Transaction non interactive : installe la dernière version du dépôt.
+ * `--cache-age 1` force le rechargement des métadonnées — le cache PackageKit
+ * peut dater d'avant la release et servir une vieille version (vécu : 0.5.0
+ * resservie après la 0.6.1).
+ */
 export function pkconInstallArgs() {
-  return ['--noninteractive', 'install', SYSTEM_PACKAGE];
+  return ['--noninteractive', '--cache-age', '1', 'install', SYSTEM_PACKAGE];
+}
+
+/** La version installée correspond-elle à celle attendue ? (`rpm -q` ne sort qu'une ligne). */
+export function installedMatches(rpmOutput, expected) {
+  return String(rpmOutput).trim().split('\n')[0]?.trim() === expected;
 }
 
 /**
