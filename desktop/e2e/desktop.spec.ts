@@ -50,6 +50,10 @@ test.afterEach(async () => {
 });
 
 test('démarre en fenêtre maximisée', async () => {
+  // Sous Xvfb sans gestionnaire de fenêtres (CI), personne n'applique
+  // maximize() : on ne peut l'affirmer que là où un WM tourne.
+  test.skip(!process.env.XDG_CURRENT_DESKTOP && !process.env.DESKTOP_SESSION && !process.env.GDMSESSION,
+    'pas de gestionnaire de fenêtres');
   await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
   await expect.poll(() => application!.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].isMaximized()
