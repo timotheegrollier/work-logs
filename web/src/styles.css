@@ -275,9 +275,31 @@ button:disabled {
   color: var(--muted);
   margin-top: 8px;
 }
+/* Le dépliant se lisait comme une légende : personne ne trouvait comment créer
+   ou renommer un projet. Il reprend donc la forme des pastilles de filtre. */
 .manage summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 4px 11px;
+  border: 1px dashed var(--line);
+  border-radius: 99px;
+  color: var(--muted);
   cursor: pointer;
-  padding: 2px 0;
+  list-style: none;
+}
+.manage summary::-webkit-details-marker {
+  display: none;
+}
+.manage summary:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.manage[open] summary {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--text);
 }
 .manage ul {
   list-style: none;

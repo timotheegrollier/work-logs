@@ -394,6 +394,49 @@ describe('projets', () => {
     await waitFor(() => expect(row(api.db, 'SELECT * FROM projects').name).toBe('Après'));
   });
 
+  test('Entrée valide le renommage', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Avant' }] });
+    render(<App />);
+
+    await user.click(await screen.findByText('Gérer les projets'));
+    const field = screen.getByLabelText('Nom de Avant');
+    await user.clear(field);
+    await user.type(field, 'Après{Enter}');
+
+    // Sans cette validation au clavier, le renommage n'était enregistré qu'en
+    // cliquant ailleurs — l'utilisateur croyait la fonction cassée.
+    await waitFor(() => expect(row(api.db, 'SELECT * FROM projects').name).toBe('Après'));
+    expect(await within(filters()).findByRole('button', { name: /Après/ })).toBeInTheDocument();
+  });
+
+  test('Échap annule le renommage en cours', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Avant' }] });
+    render(<App />);
+
+    await user.click(await screen.findByText('Gérer les projets'));
+    const field = screen.getByLabelText('Nom de Avant');
+    await user.clear(field);
+    await user.type(field, 'Jamais enregistré{Escape}');
+
+    expect(field).toHaveValue('Avant');
+    expect(row(api.db, 'SELECT * FROM projects').name).toBe('Avant');
+  });
+
+  test('le panneau de gestion s’annonce comme un contrôle cliquable', async () => {
+    render(<App />);
+
+    const summary = await screen.findByText('Gérer les projets');
+    const details = summary.closest('details')!;
+    expect(details).not.toHaveAttribute('open');
+    expect(summary.closest('summary')).toBeInTheDocument();
+
+    // Fermé, le panneau ne doit rien laisser d'utilisable : c'est ce qui rendait
+    // la création introuvable quand le dépliant passait pour une simple légende.
+    expect(screen.queryByLabelText('Nom du nouveau projet')).not.toBeVisible();
+  });
+
   test('supprimer un projet garde ses entrées', async () => {
     const user = userEvent.setup();
     seedData(api.db, {

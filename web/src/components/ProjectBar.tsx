@@ -53,7 +53,10 @@ export function ProjectBar({
       </div>
 
       <details className="manage">
-        <summary>Gérer les projets</summary>
+        <summary>
+          <span aria-hidden="true">＋</span>
+          <span>Gérer les projets</span>
+        </summary>
         <ul>
           {projects.map((project) => (
             <li key={project.id}>
@@ -70,6 +73,15 @@ export function ProjectBar({
                   const value = e.target.value.trim();
                   if (value && value !== project.name)
                     api.updateProject(project.id, { name: value }).then(onChanged);
+                }}
+                // Entrée est le geste attendu pour valider ; sans ça le renommage
+                // ne partait qu'en cliquant ailleurs, et paraissait donc cassé.
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur();
+                  if (e.key === 'Escape') {
+                    e.currentTarget.value = project.name;
+                    e.currentTarget.blur();
+                  }
                 }}
               />
               <button className="icon" aria-label={`Supprimer ${project.name}`} onClick={() => remove(project)}>
