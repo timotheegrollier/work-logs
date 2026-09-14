@@ -1,8 +1,8 @@
 # 🧑‍🍳 WorkLogs — recettes
 
-> Pour reprendre le lot desktop/CI interrompu, commencer par
-> [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md), notamment son ordre de reprise.
-> Le test rouge de téléchargement est connu et doit être résolu en premier.
+> Pour **publier une version**, la marche à suivre est dans
+> [07-RELEASES.md](07-RELEASES.md) §3 — pas ici. Pour toucher au desktop ou au packaging,
+> lire d'abord [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md).
 
 Comment faire les choses qu'on a réellement besoin de faire. Chaque recette donne les fichiers
 dans l'ordre où on les touche, et la commande qui prouve que ça marche.

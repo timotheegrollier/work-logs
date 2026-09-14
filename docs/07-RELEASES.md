@@ -1,6 +1,7 @@
 # Releases — processus complet (lire avant de publier)
 
-Dernière mise à jour : **2026-09-11**. Releases publiées : `v0.2.0`, `v0.3.0`, `v0.4.0`.
+Dernière mise à jour : **2026-09-14**. **19 releases publiées**, de `v0.2.0` (11/09) à
+`v0.6.12` (12/09) — `gh release list` fait foi.
 Notes de release **en anglais**, générées par `scripts/release-notes.mjs`.
 
 ## 1. Carte du pipeline
@@ -12,7 +13,7 @@ commit sur master ──► CI Linux ──► tag vX.Y.Z ──► Release Linu
 
 | Étape | Workflow | Durée typique |
 |---|---|---|
-| CI sur `master` (job `validate` : types, 61 tests API, 55 tests front, scripts, build, 12 tests navigateur, 4 tests desktop, `desktop:dist`, `verify-package` ; puis matrice `packages` : install + lancement sur Ubuntu 24.04 / Fedora 43 / 44, natif + AppImage) | `ci.yml` | ~6 min |
+| CI sur `master` (job `validate` : types, 61 tests API, 61 tests front, 16 tests serveur desktop, 10 tests scripts, build, 12 tests navigateur, 5 tests desktop, `desktop:dist`, `verify-package` ; puis matrice `packages` : install + lancement sur Ubuntu 24.04 / Fedora 43 / 44, natif + AppImage) | `ci.yml` | ~6 min |
 | `precheck` : le commit tagué a-t-il déjà une CI verte sur master ? | `release.yml` | ~20 s |
 | `validate` (pleine) : **seulement si `precheck` répond non** | `ci.yml` réutilisé | ~6 min |
 | `release` : SHA256SUMS, attestation de provenance, notes, upload, publication | `release.yml` | ~1–2 min |
@@ -24,6 +25,11 @@ Mesuré sur la v0.4.1 : dispatch 20:51:42 → brouillon complet 20:52:45 (~63 s)
 ## 2. Règles de versionnage
 
 - `package.json` racine seule fait foi (`api`/`web` restent en `0.1.0`).
+- **`package-lock.json` doit suivre.** Il porte la version à deux endroits et npm ne les met à
+  jour que via `npm version` : un bump à la main dans `package.json` laisse le lock en arrière.
+  C'est arrivé — constaté le 2026-09-14 avec **huit versions d'écart** (lock en `0.4.2`,
+  manifeste en `0.6.12`). `scripts/check-release.mjs` refuse désormais ce cas, avec la commande
+  de remédiation dans le message (6 tests dans `scripts/check-release.test.mjs`).
 - `vX.Y.Z` : Y+1 pour une fonctionnalité (icône, mise à jour au démarrage…), Z+1 pour
   correctifs/docs/process. `scripts/check-release.mjs` refuse un tag ≠ version.
 - Ne jamais réécrire une release publiée : le workflow refuse d'écraser (`isDraft` testé).
@@ -33,12 +39,17 @@ Mesuré sur la v0.4.1 : dispatch 20:51:42 → brouillon complet 20:52:45 (~63 s)
 ```bash
 ./scripts/check.sh                                  # doit finir par « CHECK OK »
 git commit … && git push origin master              # 1. CI verte sur master (attendre)
-node scripts/check-release.mjs vX.Y.Z               # 2. cohérence version/tag
-# 3. bump de version dans package.json + push (CI re-valide le bump)
-git tag vX.Y.Z && git push origin vX.Y.Z            # 4. déclenche Release Linux
+npm version X.Y.Z --no-git-tag-version              # 2. bump package.json ET package-lock.json
+node scripts/check-release.mjs vX.Y.Z               # 3. semver, tag, lockfile synchronisé
+git commit -am "release: passe en X.Y.Z" && git push # 4. la CI re-valide le bump (attendre)
+git tag vX.Y.Z && git push origin vX.Y.Z            # 5. déclenche Release Linux
 gh run watch <id>                                   #    fast path : ~2 min
 gh release view vX.Y.Z --json assets --jq '.assets[].name'
 ```
+
+Ne pas éditer `package.json` à la main : `npm version` met les deux fichiers d'accord, et
+`--no-git-tag-version` l'empêche de commiter et de taguer tout seul (le tag doit venir
+**après** une CI verte, c'est ce qui rend le fast path sûr — §4).
 
 La note est générée, pas écrite à la main. Vérifier le rendu après publication ;
 retouche possible sans republier : `gh release edit vX.Y.Z --notes-file /tmp/notes.md`.

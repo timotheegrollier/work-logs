@@ -1,10 +1,10 @@
 # 🛠️ WorkLogs — guide développeur
 
-> **Desktop/CI en pause :** suivre [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md).
-> `check.sh` comprend désormais les types desktop, son test serveur et les parcours Electron.
-> Les anciens nombres de tests ci-dessous décrivent la V2 avant ce lot. Un test desktop
-> est encore rouge. Xvfb est nécessaire sans affichage ; `rpm` (Ubuntu/Mint) ou `rpm-build`
-> (Fedora) est requis pour construire les RPM. `npm run desktop` lance le prototype.
+> **Desktop inclus :** `check.sh` enchaîne aussi les types desktop, ses 16 tests serveur et
+> ses 5 parcours Electron — **165 tests au total**, tous verts. Les décomptes par étage plus
+> bas ne couvrent que le socle web. Sans affichage, Xvfb est nécessaire (`check.sh` bascule
+> tout seul) ; `rpm` (Ubuntu/Mint) ou `rpm-build` (Fedora) est requis pour construire les RPM.
+> `npm run desktop` lance l'application. Publication : [07-RELEASES.md](07-RELEASES.md).
 
 ## Installer et lancer
 ```bash

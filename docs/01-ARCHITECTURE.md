@@ -1,9 +1,9 @@
 # 🏗️ WorkLogs — architecture
 
-> Extension desktop 0.2.0 **en cours, non finalisée** :
-> [état et reprise](06-DESKTOP-CICD.md). Les ports fixes décrits ensuite concernent le web.
+> Application desktop **publiée** (0.6.12) : [dossier technique](06-DESKTOP-CICD.md).
+> Les ports fixes décrits ensuite concernent le web ; le desktop écoute sur un port éphémère.
 
-## Extension desktop en cours
+## Application desktop
 
 `desktop/main.mjs` lance une `BrowserWindow` et le serveur de `desktop/server.mjs`.
 Celui-ci réutilise `createApp()`/`openDb()`, écoute sur 127.0.0.1 à un port éphémère et

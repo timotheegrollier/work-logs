@@ -1,7 +1,7 @@
 # WorkLogs — règles agents
 
-## Reprise actuelle — 2026-09-11
-- Releases **v0.2.0 → v0.4.0 publiées** (DEB/RPM/AppImage + SHA256 + attestation).
+## Reprise actuelle — 2026-09-14
+- Releases **v0.2.0 → v0.6.12 publiées**, 19 au total (DEB/RPM/AppImage + SHA256 + attestation).
   Process : `docs/07-RELEASES.md` (fast path ~2 min, notes anglaises auto).
 - `./scripts/check.sh` est **vert** (desktop compris).
 - Electron **44.3.0** et electron-builder **26.15.3** : ajout explicitement approuvé.

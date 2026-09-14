@@ -1,8 +1,9 @@
 # 🧭 WorkLogs — décisions
 
-> Desktop 0.2.0 **en cours, non publié** : [état détaillé](06-DESKTOP-CICD.md).
+> Desktop **publié** depuis la 0.2.0, aujourd'hui en 0.6.12 :
+> [dossier technique](06-DESKTOP-CICD.md), [process de release](07-RELEASES.md).
 
-## Extension desktop demandée le 2026-09-11
+## Extension desktop, demandée le 2026-09-11
 
 L’utilisateur demande Mint, Fedora, AppImage et une pipeline de tests/releases. Il a
 explicitement approuvé **Electron 44.3.0 + electron-builder 26.15.3**. Ce choix réutilise
@@ -13,13 +14,16 @@ Les données desktop restent dans un dossier utilisateur, hors paquets. Une orig
 `worklogs://app` conserve le thème malgré le port privé variable. Le jeton reste dans le
 main ; le bridge IPC se limite à la fermeture après sauvegarde.
 
-Docker est prévu **seulement pour tester les installations dans la CI**, pas pour lancer
-l’application. Les décisions historiques sur les trois étages de tests et l’absence de
-Docker décrivent le socle web avant cette demande. Le travail a ensuite été interrompu
-à la demande de l’utilisateur pour sauvegarde sur GitHub, puis repris par un second agent
-(2026-09-11) qui a débloqué `check.sh` et validé les paquets sur les trois cibles CI — détail
-dans [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md). Trois décisions techniques en ont découlé,
-valables tant qu'Electron et Ubuntu se comportent ainsi :
+Docker sert **uniquement à essayer les installations**, jamais à lancer l'application : la
+décision historique « pas de Docker » portait sur l'exécution, elle tient toujours. Les
+décisions sur les trois étages de tests décrivent le socle web ; le desktop en ajoute deux
+(tests serveur `node:test` et parcours Electron).
+
+Le lot a été mené en trois temps : interrompu une première fois pour sauvegarde sur GitHub,
+repris par un second agent qui a débloqué `check.sh` et validé les paquets sur les trois
+cibles CI, puis mené jusqu'à la publication continue (19 releases, `v0.2.0` → `v0.6.12`).
+Détail dans [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md). Trois décisions techniques en ont
+découlé, valables tant qu'Electron et Ubuntu se comportent ainsi :
 
 - **Observer `will-download` sur `session.defaultSession`, pas `page.waitForEvent('download')`,
   dans les tests desktop.** Pour un téléchargement servi par un protocole personnalisé

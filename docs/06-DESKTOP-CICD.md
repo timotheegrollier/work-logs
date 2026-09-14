@@ -1,12 +1,16 @@
-# Reprendre le desktop Linux et la CI/CD
+# Desktop Linux et CI/CD — dossier technique
 
-Dernière mise à jour : **2026-09-11** (reprise par un second agent). **`./scripts/check.sh`
-est vert, les trois paquets s'installent et fonctionnent sur les trois cibles CI. Reste une
-recette manuelle sur une vraie session desktop et l'exécution réelle des workflows GitHub
-avant de taguer.**
-Branche : **`codex/linux-desktop-releases`**.
+Dernière mise à jour : **2026-09-14**. **Le lot est terminé et en production** : 19 releases
+publiées (`v0.2.0` → `v0.6.12`), les trois workflows tournent réellement sur GitHub, les
+paquets s'installent sur les trois cibles CI. Tout est sur **`master`** (la branche
+`codex/linux-desktop-releases` a été absorbée). Seule la **recette manuelle sur une vraie
+session graphique** reste à faire — voir §4.
 
-## 1. Ce qui a changé depuis la précédente passation
+Pour **publier**, ce n'est pas ici : [07-RELEASES.md](07-RELEASES.md).
+Les sections §1 et §6 gardent leur valeur : ce sont les bugs réels et les pièges vécus,
+à ne pas réintroduire.
+
+## 1. Bugs résolus lors du déblocage initial
 
 Le lot précédent s'était arrêté avec `check.sh` rouge : le test Electron du téléchargement
 expirait après 30 s sur `page.waitForEvent('download')`. Cette reprise a **résolu ce blocage
@@ -87,19 +91,23 @@ dans `electron-builder.yml` par une dépendance alternative Debian, dans l'ordre
 lancée du tout sur une vraie install Mint 22.x/Ubuntu 24.04**, seul format `deb` concerné
 (RPM utilise `alsa-lib`, qui n'a pas cette ambiguïté sur Fedora 43/44).
 
-## 2. Résultats réellement observés (2026-09-11, reprise)
+## 2. Résultats réellement observés
+
+Décomptes du **2026-09-14** pour `check.sh` ; le reste date de la campagne de validation
+du 2026-09-11 et n'a pas été rejoué depuis.
 
 | Vérification | Résultat |
 |---|---|
-| `./scripts/check.sh` complet | **CHECK OK**, reproduit 3 fois dans des conteneurs Ubuntu 22.04 fraîchement provisionnés (types, 61 tests API, 55 tests front, 1 test serveur desktop, build, 12 tests navigateur, **4 tests application desktop**) |
+| `./scripts/check.sh` complet | **CHECK OK** — types, 61 tests API, 61 tests front, 16 tests serveur desktop, 10 tests des scripts de release, build, 12 tests navigateur, **5 tests application desktop** (165 au total). Reproduit aussi dans des conteneurs Ubuntu 22.04 fraîchement provisionnés lors de la validation initiale |
 | `npm run desktop:dist` (DEB+RPM+AppImage) | Construit sans erreur une fois `ar`/`rpmbuild`/`fakeroot` disponibles sur la machine de build |
 | `node scripts/verify-package.mjs` | Passe : contenu attendu présent, aucune donnée personnelle, version cohérente |
 | Installation **DEB** sur `ubuntu:24.04` (base Mint 22.x) | Installe et lance après le correctif ALSA (1.5). 4/4 tests desktop passent sur `/opt/WorkLogs/worklogs` |
 | Installation **RPM** sur `fedora:43` | Installe et lance. 4/4 tests desktop passent |
 | Installation **RPM** sur `fedora:44` | Installe et lance. 4/4 tests desktop passent |
 | **AppImage** extraite, sur les 3 images ci-dessus | 4/4 tests desktop passent à chaque fois (donc **24/24** au total sur les 3 cibles × 2 formats) |
-| GitHub Actions (`ci.yml`, `release.yml`) | **Toujours pas exécutés réellement** — nécessite un push sur GitHub, non fait dans cette reprise (voir §4) |
-| Recette manuelle sur vraie session desktop | **Toujours pas faite** — cet agent n'a qu'un accès terminal/conteneurs, pas de vrai bureau Cinnamon/GNOME |
+| GitHub Actions (`ci.yml`, `release.yml`, `rpm-repo.yml`) | **Exécutés en continu depuis le 2026-09-11** : 29 succès sur les 30 derniers runs (l'échec du 12/09 sur « fenêtre maximisée » a été corrigé par le commit suivant, `435645a`) |
+| Releases publiées | **19**, de `v0.2.0` (11/09 18:54) à `v0.6.12` (12/09 23:18), avec SHA256SUMS et attestation de provenance |
+| Recette manuelle sur vraie session desktop | **Toujours pas faite** — aucun agent n'a eu accès à un vrai bureau Cinnamon/GNOME (voir §4) |
 
 Tous les tests d'installation ci-dessus ont tourné dans des conteneurs Docker/Podman jetables,
 comme le fait `scripts/test-linux-package.sh` (non modifié — voir §3 pour une note d'exécution
@@ -118,26 +126,22 @@ installation de Node fraîche dans le conteneur (le `node`/`npm` d'un hôte Fedo
 pas correctement une fois monté tel quel dans un conteneur Ubuntu — liens symboliques absolus
 qui ne survivent pas au changement de racine).
 
-## 4. Ce qu'il reste à faire avant de taguer 0.2.0
+## 4. Ce qu'il reste à faire
 
-1. **Recette manuelle réelle**, sur Mint 22.x et Fedora 43/44 si possible, avec une vraie
-   session graphique : installer le paquet, vérifier icône/raccourci, éditer une entrée,
-   joindre un fichier, l'ouvrir depuis la boîte de dialogue « Enregistrer sous » (vérifier que
-   le nom proposé est le bon — c'est le point corrigé en 1.2, jamais vu avec de vrais yeux),
-   exporter, imprimer (Ctrl+P, vraie boîte de dialogue système cette fois), fermer, rouvrir,
-   vérifier que les données ont survécu. Aucun outil de cet agent ne permet de piloter une
-   vraie session desktop interactive.
-2. **Pousser la branche sans `[skip ci]`** pour déclencher réellement `ci.yml` sur GitHub et
-   corriger ce qui casserait sur de vrais runners (permissions, quotas, timeouts). Cette
-   reprise n'a pas poussé : aucune demande explicite de le faire, et ça reste la décision de
-   l'utilisateur. Les workflows n'ont donc **toujours** pas tourné une seule fois en vrai.
-3. Vérifier que `gh run list`/`gh run view` ne remontent rien d'inattendu une fois la CI
-   exécutée ; en particulier la matrice `packages` (3 runners) et le job `build` (rpmbuild réel
-   sur `ubuntu-22.04`, pas testé par cette reprise sur un vrai runner GitHub).
-4. Décider d'une licence si diffusion publique prévue (toujours `UNLICENSED`, cf.
-   `05-DECISIONS.md`).
-5. Seulement après tout ça : tag `v0.2.0`, laisser `release.yml` tourner, vérifier le brouillon
-   de release avant de le publier (`gh release view`).
+1. **Recette manuelle réelle** — le seul point de la liste d'origine encore ouvert, et le plus
+   important. Sur Mint 22.x et Fedora 43/44 si possible, avec une vraie session graphique :
+   installer le paquet, vérifier icône et raccourci, éditer une entrée, joindre un fichier,
+   l'ouvrir depuis la boîte « Enregistrer sous » (**vérifier que le nom proposé est le bon** —
+   c'est le correctif 1.2, jamais vu avec de vrais yeux), exporter, imprimer via la vraie boîte
+   système, fermer, rouvrir, vérifier que les données ont survécu, puis dérouler un cycle de
+   mise à jour complet depuis le dépôt dnf. Tout le reste a été validé en conteneur ou sous
+   Xvfb, ce qui ne dit rien du rendu ni des dialogues natifs.
+2. **Node aligné sur `.nvmrc`** : le fichier demande 24.20.0, la machine de développement a
+   24.13.0, `jsdom@30` réclame ≥ 24.15.0. Les tests passent malgré l'avertissement
+   `EBADENGINE`, mais l'écart finira par coûter une session de débogage.
+3. **Licence** : toujours `UNLICENSED` (cf. `05-DECISIONS.md`). À trancher avant toute
+   diffusion publique.
+4. **Signature GPG du dépôt dnf** : aujourd'hui `gpgcheck=0`, acceptable en usage personnel.
 
 ## 5. Carte des changements (rappel, inchangée depuis la précédente passation)
 
@@ -154,11 +158,16 @@ qui ne survivent pas au changement de racine).
 | `scripts/verify-package.mjs` | vérification ASAR : contenu requis, version, absence de données personnelles |
 | `scripts/check-release.mjs` | format semver et égalité version/tag |
 | `scripts/test-linux-package.sh` | installation native puis essais AppImage dans un conteneur jetable — **non modifié**, validé manuellement (§2, §3) |
-| `.github/workflows/ci.yml` | tests → packaging → matrice Ubuntu 24.04/Fedora 43/Fedora 44 — **jamais exécuté sur GitHub** |
-| `.github/workflows/release.yml` | réutilise la CI, SHA256SUMS, attestation, brouillon/publication — **jamais exécuté** |
+| `.github/workflows/ci.yml` | tests → packaging → matrice Ubuntu 24.04/Fedora 43/Fedora 44 — **en service** |
+| `.github/workflows/release.yml` | réutilise la CI, SHA256SUMS, attestation, brouillon/publication — **en service** |
+| `.github/workflows/rpm-repo.yml` | dépôt dnf sur `gh-pages`, déclenché par la fin de « Release Linux » |
 | `.github/dependabot.yml` | propositions mensuelles npm et GitHub Actions |
+| `desktop/update.mjs` | détection du format installé, PackageKit (`pkcon`), electron-updater |
+| `scripts/check-release.mjs` | semver, égalité version/tag, **et synchronisation de `package-lock.json`** |
 
-La version racine reste **0.2.0**, préparatoire et non publiée. Pas de tag, pas de release.
+Cette carte décrit le déblocage initial ; les fonctionnalités ajoutées ensuite
+(mise à jour intégrée, dépôt dnf, polish de l'interface) sont documentées dans
+[07-RELEASES.md](07-RELEASES.md) §7.
 
 ## 6. Pièges déjà rencontrés (cumulatif avec la passation précédente)
 

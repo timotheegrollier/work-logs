@@ -1,33 +1,40 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-11 · **Version :** web V2 + desktop **0.4.0 publié**
-> **État :** `./scripts/check.sh` est **vert**, desktop compris. Releases v0.2.0 → v0.4.0
-> publiées (DEB/RPM/AppImage + SHA256 + attestation), CI réellement exécutée sur GitHub.
-> **Reste une recette manuelle sur une vraie session desktop.**
+> **Mise à jour :** 2026-09-14 · **Version :** web V2 + desktop **0.6.12 publié**
+> **État :** `./scripts/check.sh` **vert** (165 tests, desktop compris) · **19 releases**
+> publiées, `v0.2.0` → `v0.6.12` · CI, publication et dépôt RPM tournent réellement sur
+> GitHub Actions.
 > **Reprise prioritaire : [07-RELEASES.md](07-RELEASES.md)** (process de release),
-> puis [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md) (dossier technique du desktop).**
+> puis [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md) (dossier technique du desktop).
 
-## Point d’arrêt desktop/CI
+## État au 2026-09-14
 
-Le socle web était vert **avant le lot desktop** : 60 API + 52 front + 12 navigateur, soit
-124 tests. Un second agent a repris le lot bloqué (voir `06-DESKTOP-CICD.md` pour le détail
-complet) : le blocage du téléchargement Electron était une limite d'observation de Playwright,
-pas une panne — corrigé, avec trois autres bugs trouvés en creusant (nom de fichier suggéré
-cassé pour les téléchargements Electron via protocole personnalisé, en-tête `Content-Disposition`
-trop pauvre côté API, et surtout **un bug qui empêchait l'app de démarrer du tout une fois
-installée sur Ubuntu 24.04/Mint 22.x** — mauvaise résolution de la dépendance ALSA). `check.sh`
-est maintenant vert, et les paquets DEB/RPM/AppImage ont été installés et testés avec succès
-dans des conteneurs jetables reproduisant les trois cibles de la CI. Ce qui manque encore :
-une recette manuelle sur une vraie session graphique, et l'exécution réelle des workflows
-GitHub Actions (jamais lancés, ni par le premier ni par le second agent).
+Le lot desktop est **terminé et en production**. WorkLogs est distribué en DEB, RPM et
+AppImage (SHA256 + attestation de provenance), avec mise à jour intégrée : PackageKit pour
+RPM/DEB, delta electron-updater pour l'AppImage, et un dépôt dnf servi par GitHub Pages.
 
-Les workflows sont écrits, pas validés sur GitHub. Aucun RPM ni essai d’installation
-Mint/Fedora n’a été validé. Les paquets DEB/AppImage exploratoires doivent être reconstruits.
-`check.sh` inclut maintenant le desktop et **n’est pas certifié vert**. Ne pas créer de tag
-`v*` avant validation : il déclencherait la publication. Aucun tag ou release n’a été créé.
+| | Vérifié |
+|---|---|
+| `./scripts/check.sh` | **CHECK OK** — 61 API · 61 front · 16 serveur desktop · 10 scripts release · 12 navigateur · 5 application desktop |
+| Workflows GitHub | `ci.yml`, `release.yml`, `rpm-repo.yml` exécutés réellement et régulièrement (29 succès sur les 30 derniers runs ; l'échec du 12/09 a été corrigé par le commit suivant) |
+| Releases | 19 publiées, de `v0.2.0` (11/09) à `v0.6.12` (12/09) |
+| Paquets | DEB/RPM/AppImage installés et lancés sur Ubuntu 24.04, Fedora 43 et Fedora 44 |
 
-L’utilisateur a demandé d’arrêter, documenter et pousser pour reprendre avec un autre agent.
-Les sections suivantes décrivent le web V2 ; le document 06 fait foi pour le lot en cours.
+**Ce qui reste ouvert**, par ordre d'utilité :
+
+1. **Recette manuelle sur une vraie session graphique** — jamais faite. Tout a été validé en
+   conteneur ou sous Xvfb. Il reste à vérifier de vrais yeux : icône et raccourci dans le menu,
+   boîte « Enregistrer sous » (nom de fichier suggéré, cf. `06-DESKTOP-CICD.md` §1.2),
+   impression via la vraie boîte système, et un cycle complet de mise à jour depuis le dépôt.
+2. **Node en retard sur `.nvmrc`** — le fichier demande 24.20.0, la machine a 24.13.0, et
+   `jsdom@30` réclame ≥ 24.15.0 (avertissement `EBADENGINE` à l'installation). Les tests
+   passent, mais c'est une panne en sursis.
+3. **Licence** — toujours `UNLICENSED`. À trancher si diffusion publique (cf. `05-DECISIONS.md`).
+4. **Dépôt RPM non signé** (`gpgcheck=0`) — acceptable en usage personnel, la signature GPG
+   reste une piste.
+5. **Express reste en 4** : la 5 casse le téléchargement des pièces jointes. Migration à faire
+   dans un lot dédié (`07-RELEASES.md` §8).
+
 
 ## 1. C'est quoi ?
 Un journal de travail local. On y **écrit** ce qu'on a fait (Markdown, belle mise en page,
@@ -49,15 +56,26 @@ WorkLogs/
 │   ├── src/db.js        schéma V2, migration V1→V2, données d'amorçage
 │   ├── src/app.js       createApp({db, uploadDir, staticDir}) — toutes les routes
 │   ├── src/server.js    ouvre la base, écoute, sert web/dist en prod
-│   └── test/            6 fichiers, 60 tests node:test
+│   └── test/            6 fichiers, 61 tests node:test
 ├── web/src/
 │   ├── App.tsx          l'écran : en-tête + 3 colonnes
 │   ├── lib.ts           types, client API, helpers purs
 │   ├── markdown.ts      marked + DOMPurify
-│   ├── components/      EntryList · EntryEditor · TaskBoard · ProjectBar
+│   ├── autosave.ts      cadence d'enregistrement automatique
+│   ├── components/      EntryList · EntryEditor · TaskBoard · ProjectBar · UpdateBar · Logo
 │   ├── styles.css       thèmes clair/sombre, typographie du document, feuille d'impression
-│   └── *.test.ts(x)     52 tests vitest
-├── e2e/                 12 parcours Playwright
+│   └── *.test.ts(x)     4 fichiers, 61 tests vitest
+├── desktop/
+│   ├── main.mjs         fenêtre Electron, protocole worklogs://, téléchargements, impression
+│   ├── server.mjs       API + SQLite sur port éphémère local, protégés par jeton
+│   ├── update.mjs       détection du format installé, PackageKit, electron-updater
+│   ├── preload.cjs      bridge minimal : fermeture après sauvegarde
+│   ├── test/            16 tests node:test (serveur + mises à jour)
+│   └── e2e/             5 parcours Playwright sur l'app packagée
+├── e2e/                 12 parcours Playwright (web)
+├── scripts/             check.sh · backup.sh · stage-desktop · verify-package ·
+│                        check-release · release-notes · blockmap  (+ 10 tests)
+├── .github/workflows/   ci.yml · release.yml · rpm-repo.yml
 └── docs/                cette doc
 ```
 
@@ -69,7 +87,7 @@ WorkLogs/
 | 4 statuts, 4 priorités, 5 types de tâche | 3 statuts, épingle oui/non |
 | Markdown maison en 10 lignes de regex | marked + DOMPurify (tableaux, code, cases à cocher) |
 | Enregistrement par bouton | enregistrement automatique + `Ctrl+S` |
-| Aucun test | 124 tests, `./scripts/check.sh` |
+| Aucun test | 165 tests, `./scripts/check.sh` |
 | Agenda séparé | supprimé — un événement est une entrée datée |
 
 La migration est automatique et **sans perte** : les docs, les événements et les descriptions
@@ -100,11 +118,15 @@ de tâches V1 deviennent des entrées de journal. Elle tourne à la première ou
 | `01-ARCHITECTURE.md` | pour le schéma de base, l'API, la carte du front |
 | `02-DEV.md` | pour les tests, les conventions, les pièges |
 | `03-UTILISATION.md` | pour comprendre l'usage attendu côté utilisateur |
+| `07-RELEASES.md` | **avant toute publication** : pipeline, versionnage, pièges vécus |
+| `06-DESKTOP-CICD.md` | dossier technique du desktop : Electron, packaging, bugs résolus |
 
 ## 7. Pistes suivantes (non engagées)
 Recherche plein texte FTS5 · import du JSON exporté · modèles d'entrée (compte rendu, décision) ·
 export PDF sans passer par l'impression · rappels sur échéance.
 
 ## 8. Machine
-Linux Mint 22.3 · Node v24.13.0 · npm 11.6.2 · pas de Docker (choix assumé).
-Services lancés en `screen` (`wl-api`, `wl-web`) — ils ne survivent pas au redémarrage.
+Linux Mint 22.3 · Node v24.13.0 (`.nvmrc` demande **24.20.0**, cf. point ouvert n°2) · npm 11.6.2.
+L'application ne tourne dans aucun conteneur ; Docker/Podman ne sert qu'à **essayer les paquets**
+dans des images jetables (`scripts/test-linux-package.sh`, et la matrice de `ci.yml`).
+Services web lancés en `screen` (`wl-api`, `wl-web`) — ils ne survivent pas au redémarrage.
