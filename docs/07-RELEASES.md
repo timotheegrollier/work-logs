@@ -121,6 +121,13 @@ sudo apt update && sudo apt install --only-upgrade worklogs
 ```
 Dépôt **plat** (`Packages` + `Release` à la racine, d'où le `/` final dans le `.list`),
 non signé — `[trusted=yes]`, même choix que `gpgcheck=0` côté dnf.
+
+> **Contrainte à surveiller.** GitHub refuse tout fichier de plus de **100 Mo** dans un dépôt
+> git. Le `.deb` en gzip pesait 116 Mo : impossible à publier, donc pas de dépôt apt. Il est
+> passé en **xz** (`electron-builder.yml`) et tombe à **93 Mo** — il ne reste que **7 Mo de
+> marge**, et le build gagne ~3 min. Si une version dépasse la limite, le workflow publie
+> quand même le dépôt dnf, saute le dépôt apt et **finit en rouge** pour le signaler.
+> Il faudra alors alléger le paquet ou héberger les `.deb` hors de gh-pages.
 Construit par `scripts/build-deb-repo.sh`, testé install **puis** upgrade dans un
 conteneur `ubuntu:24.04` (la base de Mint 22.x) à chaque release.
 

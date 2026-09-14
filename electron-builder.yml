@@ -40,7 +40,11 @@ linux:
       Keywords: journal;notes;markdown;tâches;
       StartupWMClass: worklogs
 deb:
-  compression: gz
+  # xz, pas gz : GitHub refuse tout fichier de plus de 100 Mo dans un dépôt git,
+  # et le .deb en gzip pesait 116 Mo — impossible à publier sur gh-pages, donc
+  # pas de dépôt apt ni de mise à jour en un clic sur Debian/Mint. En xz il
+  # tombe à ~87 Mo, au niveau du RPM, au prix de quelques minutes de build.
+  compression: xz
   # libasound2t64 d'abord : sur Ubuntu 24.04+/Debian 13+ (transition « t64 »),
   # le paquet virtuel libasound2 est « squatté » par liboss4-salsa-asound2, une
   # couche de compatibilité OSS qui n'implémente pas tous les symboles ALSA et

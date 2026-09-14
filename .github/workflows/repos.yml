@@ -60,6 +60,29 @@ jobs:
           gh release download "$TAG" -p '*.rpm' -D .pages/rpm --clobber
           gh release download "$TAG" -p '*.deb' -D .pages/deb --clobber
 
+      # GitHub refuse tout fichier de plus de 100 Mo dans un dépôt git. Le .deb
+      # est passé en xz pour tenir (93 Mo contre 116 en gzip), mais la marge est
+      # mince : si une version la dépasse, on publie quand même le dépôt dnf —
+      # Fedora ne doit pas être bloquée par la taille du paquet Debian — et le
+      # job finit en rouge pour qu'on le sache.
+      - name: 'Garde-fou : le .deb tient-il dans la limite git ?'
+        run: |
+          LIMIT=$((100 * 1024 * 1024))
+          BIG=""
+          for file in .pages/deb/*.deb; do
+            [[ -e "$file" ]] || continue
+            size=$(stat -c%s "$file")
+            printf '%s : %d Mo\n' "$(basename "$file")" "$((size / 1048576))"
+            [[ "$size" -lt "$LIMIT" ]] || BIG="$BIG $(basename "$file")"
+          done
+          if [[ -n "$BIG" ]]; then
+            echo "::error::Paquet(s) au-delà de 100 Mo, dépôt apt non publié :$BIG"
+            rm -f .pages/deb/*.deb
+            echo "DEB_OK=false" >> "$GITHUB_ENV"
+          else
+            echo "DEB_OK=true" >> "$GITHUB_ENV"
+          fi
+
       # Rétention : on garde les KEEP versions les plus récentes, sinon le dépôt
       # grossit sans fin (il avait atteint 1,3 Go, 16 RPM jamais purgés).
       - name: Ne garder que les dernières versions
@@ -68,14 +91,14 @@ jobs:
           node scripts/prune-repo.mjs .pages/deb deb "$KEEP"
           ls .pages/rpm/*.rpm .pages/deb/*.deb | xargs -n1 basename
 
-      - name: Construire les deux index
+      - name: Construire les index
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq createrepo-c dpkg-dev
           # Les métadonnées précédentes sont refaites de zéro : `createrepo_c --update`
           # laissait s'accumuler les anciens fichiers de repodata.
           rm -rf .pages/rpm/repodata
           bash scripts/build-rpm-repo.sh .pages/rpm
-          bash scripts/build-deb-repo.sh .pages/deb
+          [[ "$DEB_OK" == true ]] && bash scripts/build-deb-repo.sh .pages/deb || echo "dépôt apt ignoré"
           cat > .pages/rpm/worklogs.repo <<EOF
           [worklogs]
           name=WorkLogs
@@ -104,6 +127,7 @@ jobs:
 
       # Mint 22.x repose sur Ubuntu 24.04 : c'est la cible réelle du .deb.
       - name: Tester le dépôt apt (Ubuntu jetable)
+        if: env.DEB_OK == 'true'
         run: |
           PREV="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | grep -B1 "^$TAG$" | head -1)"
           docker run --rm -i -v "$PWD/.pages/deb:/repo:ro" -e TAG="$TAG" -e PREV="$PREV" ubuntu:24.04 bash -s <<'CONTAINER'
@@ -129,3 +153,10 @@ jobs:
             commit -m "depots: $TAG (dnf + apt, $KEEP versions gardées)" || { echo "rien de neuf"; exit 0; }
           git push origin gh-pages
           du -sh rpm deb
+
+      - name: 'Échec explicite si le dépôt apt a été sauté'
+        if: env.DEB_OK != 'true'
+        run: |
+          echo "Le dépôt dnf est publié, pas le dépôt apt : le .deb dépasse la limite git de 100 Mo."
+          echo "Piste : réduire le paquet, ou héberger les .deb hors de gh-pages."
+          exit 1
