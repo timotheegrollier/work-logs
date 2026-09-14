@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, formatSize, type Attachment, type Entry, type Project } from '../lib';
+import { api, formatSize, googleHelpUrl, type Attachment, type Entry, type Project } from '../lib';
 import { renderMarkdown } from '../markdown';
 import { Autosave } from '../autosave';
 import { RichEditor } from './RichEditor';
@@ -45,6 +45,7 @@ export function EntryEditor({
   const [syncing, setSyncing] = useState(false);
   const [richVersion, setRichVersion] = useState(0);
   const [syncMessage, setSyncMessage] = useState('');
+  const [googleHelp, setGoogleHelp] = useState('');
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const changedRef = useRef(onChanged);
@@ -122,7 +123,7 @@ export function EntryEditor({
   const synchronize = async (pull = false) => {
     if (!draftRef.current.content_json) return;
     if (pull && !confirm('Remplacer le contenu local par la version Google ? Les modifications locales non synchronisées seront perdues.')) return;
-    setSyncing(true); setError(''); setSyncMessage('');
+    setSyncing(true); setError(''); setGoogleHelp(''); setSyncMessage('');
     try {
       await autosave.flush();
       const expected = draftRef.current.content_json;
@@ -139,7 +140,7 @@ export function EntryEditor({
       }
       setGoogleSync(updated.google_sync ? { ...updated.google_sync, dirty: updated.google_sync.dirty || (!pull && draftRef.current.content_json !== expected) } : null);
       onChanged();
-    } catch (e) { setError((e as Error).message); } finally { setSyncing(false); }
+    } catch (e) { setError((e as Error).message); setGoogleHelp(googleHelpUrl(e)); } finally { setSyncing(false); }
   };
 
   const keepCopy = async () => {
@@ -212,6 +213,7 @@ export function EntryEditor({
       </div>
 
       {error && <p className="error no-print">{error}</p>}
+      {error && googleHelp && <a className="no-print" href={googleHelp} target="_blank" rel="noopener noreferrer">Activer l’API dans Google Cloud</a>}
       {syncMessage && <p className="rich-count no-print" role="status">{syncMessage}</p>}
       {draft.content_json && <div className="google-sync no-print" aria-label="Synchronisation Google Drive">
         <span>{syncing ? 'Synchronisation…' : googleSync ? googleSync.dirty ? 'Modifications locales à envoyer' : 'Enregistré sur Google Drive' : 'Document enregistré sur cet appareil'}</span>

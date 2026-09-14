@@ -1,6 +1,6 @@
 # 🧭 WorkLogs — décisions
 
-> Desktop **publié** depuis la 0.2.0, aujourd'hui en 0.6.12 :
+> Desktop **publié** depuis la 0.2.0, dernière release vérifiée : 0.7.4 :
 > [dossier technique](06-DESKTOP-CICD.md), [process de release](07-RELEASES.md).
 
 ## Extension desktop, demandée le 2026-09-11
@@ -245,6 +245,20 @@ Les anciennes entrées restent en Markdown. Sauvegarde locale via la même file
 manuelle explicite, révision requise et refus des contenus incompatibles avant écriture.
 Pas de conversion globale Markdown ni de promesse de parité avec l’éditeur Google.
 
-**Reprise.** La recette sur un vrai compte Google reste à effectuer. Les tests couvrent
-les échanges simulés, les conflits, la sauvegarde et l’édition. Configuration et limites :
-`08-GOOGLE-DOCS.md`.
+**Recette réelle validée le 14/09.** OAuth était déjà configuré, mais Drive API et Docs API
+étaient désactivées. Les réponses `SERVICE_DISABLED` doivent proposer l’activation de
+l’API concernée, jamais être présentées comme un défaut de permission du document.
+Après activation par l’utilisateur : liste, lecture, création, envoi, conflit et rechargement
+réels réussis sur un document temporaire ensuite mis à la corbeille.
+
+**Onglets Google.** Un document peut en contenir plusieurs, imbriqués. Un choix dans le
+panneau Drive ouvre une entrée distincte pour chaque onglet, sans ajouter de navigation
+à l’application. La clé de l’association devient `(document_id, tab_id)` ; la révision
+reste celle du document et chaque opération transmet le `tabId`. Les autres onglets ne
+sont pas réécrits. Un changement distant conserve la règle de conflit explicite.
+
+**Éditeur.** Recherche/remplacement avec les primitives ProseMirror déjà installées,
+recherche littérale entre marques, positions UTF-16, une transaction d’annulation,
+limite de 2 000 décorations avec remplacement global désactivé au-delà. Les liens
+s’éditent dans un formulaire intégré. Les commandes de tableau restent contextuelles.
+Aucune dépendance supplémentaire. Configuration et limites : `08-GOOGLE-DOCS.md`.

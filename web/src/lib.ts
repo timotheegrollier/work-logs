@@ -26,7 +26,7 @@ export interface Entry {
   title: string;
   content_md: string;
   content_json?: RichDocument | null;
-  google_sync?: { document_id: string; synced_at: string | null; dirty: boolean } | null;
+  google_sync?: { document_id: string; tab_id?: string; synced_at: string | null; dirty: boolean } | null;
   entry_date: string;
   project_id: string | null;
   created_at: string;
@@ -38,6 +38,7 @@ export interface GoogleStatus {
   selectedIds: string[]; secureStorage?: boolean;
 }
 export interface GoogleFile { id: string; name: string; modifiedTime: string }
+export interface GoogleTab { id: string; title: string; depth: number; editable?: boolean; reason?: string }
 export interface Task {
   id: string;
   title: string;
@@ -77,6 +78,15 @@ export const COLUMNS: { id: Status; label: string }[] = [
   { id: 'done', label: 'Terminé' },
 ];
 
+export class ApiError extends Error {
+  constructor(message: string, public code?: string, public helpUrl?: string) { super(message); }
+}
+
+export function googleHelpUrl(error: unknown): string {
+  const url = error instanceof ApiError ? error.helpUrl : undefined;
+  return url && /^https:\/\/console\.cloud\.google\.com\/apis\/library\/(drive|docs)\.googleapis\.com(?:\?project=\d+)?$/.test(url) ? url : '';
+}
+
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -84,7 +94,7 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const payload = await res.json().catch(() => null);
-    throw new Error(payload?.error || `Erreur ${res.status}`);
+    throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code, payload?.help_url);
   }
   return res.json() as Promise<T>;
 }
@@ -96,8 +106,10 @@ export const api = {
   configureGoogle: (configuration: unknown) => send<GoogleStatus>('POST', '/api/google/configure', configuration),
   connectGoogle: () => send<GoogleStatus>('POST', '/api/google/connect'),
   disconnectGoogle: () => send<GoogleStatus>('POST', '/api/google/disconnect'),
-  googleDocuments: (pageToken = '') => req<{ files: GoogleFile[]; nextPageToken?: string }>('/api/google/documents' + (pageToken ? '?page_token=' + encodeURIComponent(pageToken) : '')),
-  openGoogleDocument: (document_id: string) => send<Entry>('POST', '/api/google/documents/open', { document_id }),
+  googleDocuments: (pageToken = '') => req<{ files: GoogleFile[]; nextPageToken?: string; warnings?: string[] }>('/api/google/documents' + (pageToken ? '?page_token=' + encodeURIComponent(pageToken) : '')),
+  createGoogleDocument: (title: string) => send<Entry>('POST', '/api/google/documents', { title }),
+  googleDocumentTabs: (id: string) => req<{ tabs: GoogleTab[] }>(`/api/google/documents/${encodeURIComponent(id)}/tabs`),
+  openGoogleDocument: (document_id: string, tab_id?: string) => send<Entry>('POST', '/api/google/documents/open', { document_id, ...(tab_id ? { tab_id } : {}) }),
   pushGoogleDocument: (id: string) => send<Entry>('POST', `/api/entries/${id}/google/push`),
   pullGoogleDocument: (id: string, expected_content_json: RichDocument) => send<Entry>('POST', `/api/entries/${id}/google/pull`, { expected_content_json }),
   state: (q = '', projectId = '') => {

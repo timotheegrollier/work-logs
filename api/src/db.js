@@ -193,13 +193,25 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   db.exec(INDEXES);
   // Migration additive V2 : les entrées Markdown et leurs pièces jointes restent intactes.
   if (!columns(db, 'entries').includes('content_json')) db.exec('ALTER TABLE entries ADD COLUMN content_json TEXT');
-  db.exec(`CREATE TABLE IF NOT EXISTS google_documents (
+  const googleSchema = `CREATE TABLE IF NOT EXISTS google_documents (
     entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
-    document_id TEXT NOT NULL UNIQUE,
+    document_id TEXT NOT NULL,
+    tab_id TEXT NOT NULL DEFAULT '',
     revision_id TEXT NOT NULL,
     synced_content_json TEXT NOT NULL,
-    synced_at TEXT
-  )`);
+    synced_at TEXT,
+    UNIQUE(document_id, tab_id)
+  )`;
+  if (hasTable(db, 'google_documents') && !columns(db, 'google_documents').includes('tab_id')) {
+    db.exec('BEGIN');
+    try {
+      db.exec('ALTER TABLE google_documents RENAME TO google_documents_previous');
+      db.exec(googleSchema);
+      db.exec(`INSERT INTO google_documents (entry_id,document_id,revision_id,synced_content_json,synced_at)
+        SELECT entry_id,document_id,revision_id,synced_content_json,synced_at FROM google_documents_previous`);
+      db.exec('DROP TABLE google_documents_previous; COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+  } else db.exec(googleSchema);
   db.exec('PRAGMA foreign_keys = ON;');
   if (withSeed) seed(db);
   return db;

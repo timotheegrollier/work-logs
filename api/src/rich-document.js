@@ -1,13 +1,14 @@
 /** Format JSON de l'éditeur riche. Indépendant de la bibliothèque d'affichage. */
+const BLOCKS = ['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'codeBlock', 'horizontalRule', 'table', 'image'];
 const CHILDREN = {
-  doc: ['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'codeBlock', 'horizontalRule', 'table', 'image'],
+  doc: BLOCKS,
   paragraph: ['text', 'hardBreak', 'image'], heading: ['text', 'hardBreak'],
   bulletList: ['listItem'], orderedList: ['listItem'],
-  listItem: ['paragraph', 'bulletList', 'orderedList', 'blockquote'],
-  blockquote: ['paragraph', 'heading', 'bulletList', 'orderedList'], codeBlock: ['text'],
+  listItem: BLOCKS,
+  blockquote: BLOCKS, codeBlock: ['text'],
   table: ['tableRow'], tableRow: ['tableCell', 'tableHeader'],
-  tableCell: ['paragraph', 'heading', 'bulletList', 'orderedList', 'image'],
-  tableHeader: ['paragraph', 'heading', 'bulletList', 'orderedList'],
+  tableCell: BLOCKS,
+  tableHeader: BLOCKS,
   text: [], hardBreak: [], horizontalRule: [], image: [],
 };
 const MARKS = new Set(['bold', 'italic', 'underline', 'strike', 'code', 'link', 'textStyle', 'highlight']);

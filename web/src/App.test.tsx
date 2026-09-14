@@ -364,7 +364,7 @@ describe('organiser les tâches', () => {
     fireEvent.drop(doing, { dataTransfer });
 
     await waitFor(() => expect(row(api.db, 'SELECT * FROM tasks').status).toBe('doing'));
-    expect(within(doing).getByText('À déplacer')).toBeInTheDocument();
+    expect(await within(doing).findByText('À déplacer')).toBeInTheDocument();
   });
 });
 

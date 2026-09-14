@@ -2,14 +2,16 @@
 
 ## Reprise actuelle — 2026-09-14
 - Lot en cours : **éditeur riche intégré + Google Drive facultatif**, branche
-  `codex/integrated-documents`. Lire `docs/08-GOOGLE-DOCS.md` pour le périmètre,
-  la configuration OAuth et la recette réelle Google restant à faire.
+  `codex/rich-editor-drive`. Lire `docs/08-GOOGLE-DOCS.md` pour le périmètre,
+  le diagnostic Google résolu, la recette réelle validée et les limites restantes.
 - **Tiptap 3.31.3 approuvé explicitement** : core, react, pm, starter-kit,
   extension-table, extension-image, extension-text-align, extension-text-style,
   extension-highlight. Ne pas redemander cet accord.
-- Releases **v0.2.0 → v0.6.12 publiées**, 19 au total (DEB/RPM/AppImage + SHA256 + attestation).
+- Dernière release vérifiée : **v0.7.4 publiée** (DEB/RPM/AppImage + SHA256 + attestation).
   Process : `docs/07-RELEASES.md` (fast path ~2 min, notes anglaises auto).
-- `./scripts/check.sh` est **vert** (desktop compris).
+- Nouveau lot sans bump/release : création directe de Google Docs, choix d’onglet,
+  diagnostic API, recherche/remplacement et éditeur enrichi. Bilan : `docs/08-GOOGLE-DOCS.md`.
+- `./scripts/check.sh` reste la validation requise (desktop compris).
 - Electron **44.3.0** et electron-builder **26.15.3** : ajout explicitement approuvé.
   Ne pas redemander cet accord ; les autres ajouts restent soumis aux règles ci-dessous.
 - Dependabot : jsdom 30, TS 7, types/node 26, concurrently 10 mergés ; **Express reste

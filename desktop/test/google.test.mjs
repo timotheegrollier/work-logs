@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createGoogleClient } from '../google.mjs';
+import { createGoogleClient, googleApiError } from '../google.mjs';
 
 const scope = 'https://www.googleapis.com/auth/drive.file';
 function fixture({ backend = 'gnome_libsecret', token = {}, response = 200 } = {}) {
@@ -55,8 +55,27 @@ test('OAuth desktop : navigateur système, PKCE, état contrôlé et jetons hors
     const file = fs.readFileSync(path.join(f.dir, 'google-tokens.enc'), 'utf8');
     assert.ok(!file.includes('test-refresh'));
     assert.equal(fs.statSync(path.join(f.dir, 'google-tokens.enc')).mode & 0o777, 0o600);
+    const restored = createGoogleClient({ profileDir: f.dir, openExternal: async () => {},
+      secureStorage: { isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'gnome_libsecret',
+        decryptString: value => Buffer.from(value.toString(), 'base64').toString() } });
+    assert.deepEqual(restored.status().selectedIds, ['doc-test'], 'retrouve la sélection après redémarrage');
+    restored.close();
     await assert.rejects(f.client.request('https://example.com'), /non autorisée/);
   } finally { f.close(); }
+});
+
+test('distingue API désactivée, scope, quota et droits du fichier sans exposer le message brut Google', () => {
+  for (const service of ['drive', 'docs']) {
+    const error = googleApiError(403, { error: { details: [{ reason: 'SERVICE_DISABLED', metadata: {
+      service: `${service}.googleapis.com`, consumer: 'projects/1234', activationUrl: 'https://untrusted.example' } }] } }, `/${service}/v1/documents`);
+    assert.equal(error.code, 'GOOGLE_API_DISABLED');
+    assert.match(error.message, /désactivée/);
+    assert.equal(error.help_url, `https://console.cloud.google.com/apis/library/${service}.googleapis.com?project=1234`);
+  }
+  assert.equal(googleApiError(403, { error: { errors: [{ reason: 'accessNotConfigured' }] } }, '/drive/v3/files', '1234-client.apps.googleusercontent.com').code, 'GOOGLE_API_DISABLED');
+  assert.equal(googleApiError(403, { error: { errors: [{ reason: 'userRateLimitExceeded' }] } }, '/drive/v3/files').code, 'GOOGLE_RATE_LIMIT');
+  assert.equal(googleApiError(403, { error: { details: [{ reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' }] } }, '/docs/v1/documents').code, 'GOOGLE_SCOPE_REQUIRED');
+  assert.match(googleApiError(403, { error: { message: 'private upstream detail' } }, '/drive/v3/files').message, /droit de modification/);
 });
 
 test('refuse le stockage Linux basic_text avant de lancer la connexion', async () => {

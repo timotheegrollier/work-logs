@@ -400,7 +400,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
   // Toute erreur (dont les rejets multer : fichier trop gros, etc.) sort en {error}.
   app.use((err, _req, res, _next) => {
     const status = err.status || (err.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
-    res.status(status).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'fichier trop volumineux (100 Mo max)' : err.message });
+    res.status(status).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'fichier trop volumineux (100 Mo max)' : err.message,
+      ...(err.code?.startsWith('GOOGLE_') ? { code: err.code, ...(err.help_url ? { help_url: err.help_url } : {}) } : {}) });
   });
 
   return app;
