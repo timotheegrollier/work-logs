@@ -4,6 +4,8 @@ import multer from 'multer';
 import fs from 'node:fs';
 import path from 'node:path';
 import { uid, nowISO, today } from './db.js';
+import { decodeEntry, documentText, validateDocument } from './rich-document.js';
+import { googleLink, registerGoogleRoutes } from './google-routes.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -35,7 +37,7 @@ const attachmentHeader = (filename) => {
   return 'attachment; filename="' + ascii + '"; filename*=UTF-8\'\'' + utf8;
 };
 
-export function createApp({ db, uploadDir, staticDir = null }) {
+export function createApp({ db, uploadDir, staticDir = null, google = null }) {
   fs.mkdirSync(uploadDir, { recursive: true });
 
   const app = express();
@@ -51,7 +53,10 @@ export function createApp({ db, uploadDir, staticDir = null }) {
     limits: { fileSize: 100 * 1024 * 1024 },
   });
 
-  const getEntry = (id) => db.prepare('SELECT * FROM entries WHERE id=?').get(id);
+  const getEntry = (id) => {
+    const row = db.prepare('SELECT * FROM entries WHERE id=?').get(id);
+    return row ? { ...decodeEntry(row), google_sync: googleLink(db, row) } : row;
+  };
   const getTask = (id) => db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
   const getProject = (id) => db.prepare('SELECT * FROM projects WHERE id=?').get(id);
 
@@ -139,9 +144,10 @@ export function createApp({ db, uploadDir, staticDir = null }) {
 
     const id = uid('en_');
     const t = nowISO();
+    const rich = b.content_json == null ? null : validateDocument(b.content_json);
     db.prepare(
-      'INSERT INTO entries (id,title,content_md,entry_date,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)'
-    ).run(id, title, typeof b.content_md === 'string' ? b.content_md : '', date, orNull(b.project_id), t, t);
+      'INSERT INTO entries (id,title,content_md,entry_date,project_id,created_at,updated_at,content_json) VALUES (?,?,?,?,?,?,?,?)'
+    ).run(id, title, rich ? documentText(rich) : typeof b.content_md === 'string' ? b.content_md : '', date, orNull(b.project_id), t, t, rich ? JSON.stringify(rich) : null);
     res.status(201).json(getEntry(id));
   });
 
@@ -157,14 +163,19 @@ export function createApp({ db, uploadDir, staticDir = null }) {
     const projectId = pick(b, 'project_id', cur.project_id, orNull);
     if (projectId && !getProject(projectId)) return bad(res, 'projet introuvable');
 
+    const rich = b.content_json === undefined ? cur.content_json : b.content_json;
+    if (rich !== null) validateDocument(rich);
+    if (cur.content_json && rich === null) return bad(res, 'la conversion d’un document riche en Markdown n’est pas prise en charge');
+
     db.prepare(
-      'UPDATE entries SET title=?, content_md=?, entry_date=?, project_id=?, updated_at=? WHERE id=?'
+      'UPDATE entries SET title=?, content_md=?, entry_date=?, project_id=?, updated_at=?, content_json=? WHERE id=?'
     ).run(
       title,
-      pick(b, 'content_md', cur.content_md, (v) => (typeof v === 'string' ? v : cur.content_md)),
+      rich ? documentText(rich) : pick(b, 'content_md', cur.content_md, (v) => (typeof v === 'string' ? v : cur.content_md)),
       date,
       projectId,
       nowISO(),
+      rich ? JSON.stringify(rich) : null,
       cur.id
     );
     res.json(getEntry(cur.id));
@@ -178,6 +189,42 @@ export function createApp({ db, uploadDir, staticDir = null }) {
     }
     db.prepare('DELETE FROM entries WHERE id=?').run(cur.id);
     res.json({ ok: true });
+  });
+
+  app.post('/api/entries/:id/copy', (req, res) => {
+    const original = getEntry(req.params.id);
+    if (!original) return notFound(res, 'entrée introuvable');
+    const id = uid('en_'), time = nowISO(), written = [];
+    const rich = original.content_json ? structuredClone(original.content_json) : null;
+    let markdown = original.content_md;
+    const replaceImage = (node, from, to) => {
+      if (node.attrs?.src === from) node.attrs.src = to;
+      for (const child of node.content || []) replaceImage(child, from, to);
+    };
+    db.exec('BEGIN');
+    try {
+      db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)')
+        .run(id, `${original.title} — copie locale`, markdown, rich ? JSON.stringify(rich) : null, original.entry_date, original.project_id, time, time);
+      for (const attachment of db.prepare('SELECT * FROM attachments WHERE entry_id=?').all(original.id)) {
+        const stored = uid('copy_') + path.extname(attachment.stored);
+        const target = path.join(uploadDir, stored);
+        fs.copyFileSync(path.join(uploadDir, attachment.stored), target);
+        written.push(target);
+        db.prepare('INSERT INTO attachments (id,filename,stored,mime,size,entry_id,created_at) VALUES (?,?,?,?,?,?,?)')
+          .run(uid('at_'), attachment.filename, stored, attachment.mime, attachment.size, id, time);
+        const from = `/api/files/${attachment.stored}`, to = `/api/files/${stored}`;
+        markdown = markdown.split(from).join(to);
+        if (rich) replaceImage(rich, from, to);
+      }
+      db.prepare('UPDATE entries SET content_md=?,content_json=? WHERE id=?')
+        .run(rich ? documentText(rich) : markdown, rich ? JSON.stringify(rich) : null, id);
+      db.exec('COMMIT');
+      res.status(201).json(getEntry(id));
+    } catch (e) {
+      db.exec('ROLLBACK');
+      for (const file of written) fs.rmSync(file, { force: true });
+      throw e;
+    }
   });
 
   // ---------------------------------------------------------------- tâches
@@ -334,12 +381,13 @@ export function createApp({ db, uploadDir, staticDir = null }) {
       version: 2,
       exported_at: nowISO(),
       projects: db.prepare('SELECT * FROM projects ORDER BY name').all(),
-      entries: db.prepare('SELECT * FROM entries ORDER BY entry_date DESC').all(),
+      entries: db.prepare('SELECT * FROM entries ORDER BY entry_date DESC').all().map(decodeEntry),
       tasks: db.prepare('SELECT * FROM tasks ORDER BY status, position').all(),
       attachments: db.prepare('SELECT * FROM attachments').all(),
     });
   });
 
+  registerGoogleRoutes(app, { db, google });
   app.use('/api', (_req, res) => notFound(res, 'route inconnue'));
 
   // En production, l'API sert aussi le front construit : une seule URL.

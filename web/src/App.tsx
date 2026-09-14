@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './styles.css';
-import { api, todayISO, type AppState, type Entry } from './lib';
+import { api, emptyDocument, todayISO, type AppState, type Entry } from './lib';
 import { EntryList } from './components/EntryList';
 import { EntryEditor } from './components/EntryEditor';
 import { Logo } from './components/Logo';
 import { UpdateBar } from './components/UpdateBar';
 import { TaskBoard } from './components/TaskBoard';
 import { ProjectBar } from './components/ProjectBar';
+import { GoogleDrive } from './components/GoogleDrive';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
   const [freshEntry, setFreshEntry] = useState(false);
   const [theme, setTheme] = useState(readTheme);
   const selectedRef = useRef<string | null>(null);
+  const reloadSequence = useRef(0);
   selectedRef.current = selectedId;
 
   useEffect(() => {
@@ -43,8 +45,10 @@ export default function App() {
   }, [search]);
 
   const reload = useCallback(async () => {
+    const sequence = ++reloadSequence.current;
     try {
       const next = await api.state(query, projectId);
+      if (sequence !== reloadSequence.current) return;
       setState(next);
       setError('');
       // Rien de sélectionné (premier chargement, ou entrée supprimée) : on ouvre la plus récente.
@@ -74,11 +78,12 @@ export default function App() {
     };
   }, [selectedId]);
 
-  const createEntry = async () => {
+  const createEntry = async (rich = false) => {
     const created = await api.createEntry({
       title: 'Sans titre',
       entry_date: todayISO(),
       project_id: projectId || null,
+      ...(rich ? { content_json: emptyDocument() } : {}),
     });
     setSearch('');
     setFreshEntry(true);
@@ -156,9 +161,17 @@ export default function App() {
               setFreshEntry(false);
               setSelectedId(id);
             }}
-            onCreate={createEntry}
+            onCreate={() => void createEntry()}
+            onCreateDocument={() => void createEntry(true)}
             searching={query !== ''}
           />
+          <GoogleDrive onOpen={(opened) => {
+            const sequence = ++reloadSequence.current;
+            setSearch(''); setQuery(''); setProjectId(''); setFreshEntry(false);
+            selectedRef.current = opened.id;
+            setSelectedId(opened.id); setEntry(opened);
+            void api.state().then(next => { if (sequence === reloadSequence.current) setState(next); }).catch(() => {});
+          }} />
         </aside>
 
         <main className="center">

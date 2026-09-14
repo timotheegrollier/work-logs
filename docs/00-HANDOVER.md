@@ -1,11 +1,11 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-14 · **Version :** web V2 + desktop **0.6.12 publié**
-> **État :** `./scripts/check.sh` **vert** (165 tests, desktop compris) · **19 releases**
+> **Mise à jour :** 2026-09-14 · **Version du manifeste :** 0.6.13 · documents riches sur `codex/integrated-documents`
+> **État :** `./scripts/check.sh` **vert** (188 tests, desktop compris) · **19 releases**
 > publiées, `v0.2.0` → `v0.6.12` · CI, publication et dépôt RPM tournent réellement sur
 > GitHub Actions.
-> **Reprise prioritaire : [07-RELEASES.md](07-RELEASES.md)** (process de release),
-> puis [06-DESKTOP-CICD.md](06-DESKTOP-CICD.md) (dossier technique du desktop).
+> **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** (nouveau lot),
+> puis [07-RELEASES.md](07-RELEASES.md) avant toute publication.
 
 ## État au 2026-09-14
 
@@ -15,7 +15,7 @@ RPM/DEB, delta electron-updater pour l'AppImage, et un dépôt dnf servi par Git
 
 | | Vérifié |
 |---|---|
-| `./scripts/check.sh` | **CHECK OK** — 61 API · 61 front · 16 serveur desktop · 10 scripts release · 12 navigateur · 5 application desktop |
+| `./scripts/check.sh` | **CHECK OK** — 71 API · 64 front · 21 serveur desktop/OAuth · 10 scripts release · 16 navigateur · 6 application desktop |
 | Workflows GitHub | `ci.yml`, `release.yml`, `rpm-repo.yml` exécutés réellement et régulièrement (29 succès sur les 30 derniers runs ; l'échec du 12/09 a été corrigé par le commit suivant) |
 | Releases | 19 publiées, de `v0.2.0` (11/09) à `v0.6.12` (12/09) |
 | Paquets | DEB/RPM/AppImage installés et lancés sur Ubuntu 24.04, Fedora 43 et Fedora 44 |
@@ -36,10 +36,25 @@ RPM/DEB, delta electron-updater pour l'AppImage, et un dépôt dnf servi par Git
    dans un lot dédié (`07-RELEASES.md` §8).
 
 
+## Documents riches et Google Drive — lot non publié
+
+L’utilisateur a choisi **l’édition dans WorkLogs** et approuvé Tiptap 3.31.3. Le lot
+est implémenté sur `codex/integrated-documents` : éditeur riche local, connexion Drive
+desktop facultative, ouverture, envoi explicite et rechargement avec conflits protégés.
+La recette complète passe avec **188 tests**. L’intégration Google est testée avec des
+réponses simulées ; aucun vrai compte/client OAuth n’a été configuré pendant ce lot.
+
+**Prochaine action :** suivre [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md) pour configurer un
+client OAuth desktop et valider un aller-retour réel sur un document Google de test.
+Le sous-ensemble Google initial couvre texte, titres, styles et listes simples ; les
+documents complexes sont refusés avant import/écriture. Tableaux et images fonctionnent
+localement. Aucun nouveau tag ni release n’a été créé pour ce lot. Le bump du manifeste
+à 0.6.13 présent dans le dépôt a été conservé.
+
 ## 1. C'est quoi ?
 Un journal de travail local. On y **écrit** ce qu'on a fait (Markdown, belle mise en page,
 impression PDF propre) et on y **suit** ses tâches. Tout tient sur un écran : journal à
-gauche, écriture au centre, tâches à droite. Ni onglet, ni menu, ni cloud, ni compte.
+gauche, écriture au centre, tâches à droite. Ni onglet ni routeur ; aucun compte requis en local. Google Drive est facultatif en desktop.
 
 ## 2. Reprise en 3 commandes
 ```bash
@@ -56,23 +71,24 @@ WorkLogs/
 │   ├── src/db.js        schéma V2, migration V1→V2, données d'amorçage
 │   ├── src/app.js       createApp({db, uploadDir, staticDir}) — toutes les routes
 │   ├── src/server.js    ouvre la base, écoute, sert web/dist en prod
-│   └── test/            6 fichiers, 61 tests node:test
+│   └── test/            8 fichiers de tests, 71 tests node:test
 ├── web/src/
 │   ├── App.tsx          l'écran : en-tête + 3 colonnes
 │   ├── lib.ts           types, client API, helpers purs
 │   ├── markdown.ts      marked + DOMPurify
 │   ├── autosave.ts      cadence d'enregistrement automatique
-│   ├── components/      EntryList · EntryEditor · TaskBoard · ProjectBar · UpdateBar · Logo
+│   ├── components/      EntryList · EntryEditor · RichEditor · GoogleDrive · TaskBoard · ProjectBar · UpdateBar · Logo
 │   ├── styles.css       thèmes clair/sombre, typographie du document, feuille d'impression
-│   └── *.test.ts(x)     4 fichiers, 61 tests vitest
+│   └── *.test.ts(x)     5 fichiers, 64 tests vitest
 ├── desktop/
 │   ├── main.mjs         fenêtre Electron, protocole worklogs://, téléchargements, impression
 │   ├── server.mjs       API + SQLite sur port éphémère local, protégés par jeton
 │   ├── update.mjs       détection du format installé, PackageKit, electron-updater
+│   ├── google.mjs       OAuth desktop, trousseau, appels Google
 │   ├── preload.cjs      bridge minimal : fermeture après sauvegarde
-│   ├── test/            16 tests node:test (serveur + mises à jour)
-│   └── e2e/             5 parcours Playwright sur l'app packagée
-├── e2e/                 12 parcours Playwright (web)
+│   ├── test/            21 tests node:test (serveur + mises à jour + OAuth)
+│   └── e2e/             6 parcours Playwright (sources ou paquet via WORKLOGS_EXECUTABLE)
+├── e2e/                 16 parcours Playwright (web)
 ├── scripts/             check.sh · backup.sh · stage-desktop · verify-package ·
 │                        check-release · release-notes · blockmap  (+ 10 tests)
 ├── .github/workflows/   ci.yml · release.yml · rpm-repo.yml
@@ -87,7 +103,7 @@ WorkLogs/
 | 4 statuts, 4 priorités, 5 types de tâche | 3 statuts, épingle oui/non |
 | Markdown maison en 10 lignes de regex | marked + DOMPurify (tableaux, code, cases à cocher) |
 | Enregistrement par bouton | enregistrement automatique + `Ctrl+S` |
-| Aucun test | 165 tests, `./scripts/check.sh` |
+| Aucun test | 188 tests avec le lot documents riches, `./scripts/check.sh` |
 | Agenda séparé | supprimé — un événement est une entrée datée |
 
 La migration est automatique et **sans perte** : les docs, les événements et les descriptions
@@ -120,6 +136,7 @@ de tâches V1 deviennent des entrées de journal. Elle tourne à la première ou
 | `03-UTILISATION.md` | pour comprendre l'usage attendu côté utilisateur |
 | `07-RELEASES.md` | **avant toute publication** : pipeline, versionnage, pièges vécus |
 | `06-DESKTOP-CICD.md` | dossier technique du desktop : Electron, packaging, bugs résolus |
+| `08-GOOGLE-DOCS.md` | documents riches/Drive : fonctionnement, configuration, limites et recette réelle restante |
 
 ## 7. Pistes suivantes (non engagées)
 Recherche plein texte FTS5 · import du JSON exporté · modèles d'entrée (compte rendu, décision) ·

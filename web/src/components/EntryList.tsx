@@ -6,6 +6,7 @@ export function EntryList({
   selectedId,
   onSelect,
   onCreate,
+  onCreateDocument,
   searching,
 }: {
   entries: EntrySummary[];
@@ -13,6 +14,7 @@ export function EntryList({
   selectedId: string | null;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  onCreateDocument: () => void;
   searching: boolean;
 }) {
   const colors = new Map(projects.map((p) => [p.id, p.color]));
@@ -22,6 +24,7 @@ export function EntryList({
       <button className="new-entry" onClick={onCreate}>
         <span aria-hidden="true">＋</span> Nouvelle entrée
       </button>
+      <button className="new-document" onClick={onCreateDocument}>＋ Nouveau document</button>
 
       {entries.length === 0 && (
         <p className="empty">
