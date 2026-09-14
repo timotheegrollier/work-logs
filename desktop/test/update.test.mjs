@@ -67,7 +67,7 @@ test('checkForUpdate reste silencieuse quand il n’y a rien à signaler', async
 test('hasPackageKit détecte pkcon, pkconInstallArgs vise le paquet', () => {
   assert.equal(hasPackageKit({ existsSync: () => true }), true);
   assert.equal(hasPackageKit({ existsSync: () => false }), false);
-  assert.deepEqual(pkconInstallArgs(), ['--noninteractive', '--cache-age', '1', 'update', 'worklogs']);
+  assert.deepEqual(pkconInstallArgs(), ['--cache-age', '1', 'update', 'worklogs']);
   assert.deepEqual(pkconUpdatesArgs(), ['--noninteractive', '--plain', 'get-updates']);
   assert.deepEqual(pkconRefreshArgs(), ['--noninteractive', 'refresh', 'force']);
 });
@@ -126,6 +126,20 @@ test('packageManager et repoHint parlent la langue du système', () => {
 test('installedVersionCommand interroge la bonne base de paquets', () => {
   assert.deepEqual(installedVersionCommand('apt'), { file: 'dpkg-query', args: ['-W', '-f', '${Version}', 'worklogs'] });
   assert.deepEqual(installedVersionCommand('dnf'), { file: 'rpm', args: ['-q', '--qf', '%{VERSION}', 'worklogs'] });
+});
+
+test('la transaction de mise à jour laisse polkit demander le mot de passe', () => {
+  // `system-update` est en `auth_admin_keep` : avec --noninteractive, polkit
+  // refuse sans afficher de dialogue et la mise à jour échoue en silence.
+  // C'est ce qui rendait la mise à jour in-app inopérante sur une vraie session.
+  assert.equal(pkconInstallArgs().includes('--noninteractive'), false);
+  assert.deepEqual(pkconInstallArgs(), ['--cache-age', '1', 'update', 'worklogs']);
+
+  // Les deux étapes de lecture n'exigent aucune autorisation
+  // (`system-sources-refresh` est en `implicit active: yes`) : elles peuvent
+  // rester non interactives, et doivent le rester pour ne jamais bloquer.
+  assert.ok(pkconRefreshArgs().includes('--noninteractive'));
+  assert.ok(pkconUpdatesArgs().includes('--noninteractive'));
 });
 
 test('installedMatches refuse une version surprise après install', () => {

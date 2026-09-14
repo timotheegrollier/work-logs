@@ -220,10 +220,18 @@ async function offerSystemUpdate(next) {
   const installed = installedSystemVersion();
   systemUpdating = false;
   if (error || !installedMatches(installed ?? '', next)) {
+    // Refus d'autorisation : cas distinct d'un dépôt en retard, et le seul que
+    // l'utilisateur peut corriger lui-même. Le nommer évite de le laisser
+    // chercher du côté du dépôt.
+    const denied = /not authoriz|non autoris|authentication|authentification/i.test(error ?? '');
     dialog.showMessageBoxSync(window, {
       type: 'error', title: 'WorkLogs', buttons: ['Compris'],
-      message: error ?? `La version installée (${installed ?? 'illisible'}) n’est pas la ${next}.`,
-      detail: `Le gestionnaire a servi une version périmée. Relance la vérification ou mets à jour à la main : ${hint.update}.`,
+      message: denied
+        ? 'Mise à jour refusée : autorisation administrateur non accordée.'
+        : error ?? `La version installée (${installed ?? 'illisible'}) n’est pas la ${next}.`,
+      detail: denied
+        ? `Installer une mise à jour système demande ton mot de passe. Si aucune fenêtre ne te l’a demandé, passe par le gestionnaire de mises à jour de ton système, ou en console : ${hint.update}.`
+        : `Le gestionnaire a servi une version périmée. Relance la vérification ou mets à jour à la main : ${hint.update}.`,
     });
     return;
   }
@@ -263,18 +271,29 @@ async function runPackageKitUpdate(next) {
       ...(progress.percent === null ? {} : { percent: progress.percent }),
       label: `Mise à jour ${next} — ${progress.phase === 'download' ? 'téléchargement' : 'installation'}`,
     });
-  });
+  }, { answer: 'y\n' });
   if (code === 0) {
     sendProgress({ phase: 'done' });
+    logUpdate(`installation PackageKit : succès (${next})`);
     return null;
   }
   sendProgress({ phase: 'error' });
-  return output.trim().split('\n').slice(-3).join(' ').slice(0, 300) || `code ${code}`;
+  const reason = output.trim().split('\n').slice(-3).join(' ').slice(0, 300) || `code ${code}`;
+  // Sans cette ligne, le journal s'arrêtait au pré-vol : impossible de savoir si
+  // l'installation avait réussi, échoué, ou attendait une autorisation.
+  logUpdate(`installation PackageKit : échec (code ${code}) — ${reason}`);
+  return reason;
 }
 
-function runPkcon(args, onChunk = null) {
+function runPkcon(args, onChunk = null, { answer = null } = {}) {
   return new Promise((resolve) => {
-    const child = spawn('pkcon', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    // stdin ouvert : sans `--noninteractive`, pkcon peut demander confirmation
+    // en console. Sans entrée il lirait EOF et abandonnerait la transaction.
+    const child = spawn('pkcon', args, { stdio: [answer === null ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    if (answer !== null) {
+      child.stdin.on('error', () => { /* pkcon n'a rien demandé : sans conséquence */ });
+      child.stdin.end(answer);
+    }
     let output = '';
     const collect = (chunk) => {
       output += chunk;

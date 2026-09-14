@@ -184,6 +184,15 @@ conteneur `ubuntu:24.04` (la base de Mint 22.x) à chaque release.
   installation. Le redémarrage n'est proposé qu'après `rpm -q == attendu`
   (`installedMatches`, testé) — sinon erreur explicite, jamais de faux succès.
 
+- **Jamais `--noninteractive` sur la transaction d'installation.** La politique polkit de
+  `org.freedesktop.packagekit.system-update` est `auth_admin_keep` : un mot de passe est
+  exigé. Ce drapeau marque la transaction comme non interactive, polkit refuse alors **sans
+  afficher de dialogue**, et la mise à jour échoue en silence. Prouvé sur Mint :
+  `pkcheck --action-id org.freedesktop.packagekit.system-update --process $$` →
+  « Authorization requires authentication » (code 2). Les conteneurs de recette tournent en
+  root, sans polkit : ils ne peuvent pas révéler ce défaut — d'où une mise à jour in-app qui
+  n'a jamais fonctionné sur une vraie session, sur aucune distribution. `refresh` et
+  `get-updates` restent non interactifs (`system-sources-refresh` est en `implicit active: yes`).
 - **`pkcon get-updates` sort en 5 quand il n'y a rien à installer** (« nothing useful
   was done »), pas en 0. Le pré-vol traitait tout code non nul comme « interrogation
   impossible » **et sautait sa propre garde**, puis tentait quand même l'installation :

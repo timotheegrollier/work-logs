@@ -98,9 +98,20 @@ export function hasPackageKit({ existsSync = fs.existsSync } = {}) {
  * Transaction de mise à jour (`update`, pas `install` : le paquet est déjà
  * installé puisqu'on tourne depuis — prouvé en conteneur, `install` créait
  * des conflits de fichiers).
+ *
+ * **Surtout pas `--noninteractive` ici.** La politique polkit de
+ * `org.freedesktop.packagekit.system-update` est `auth_admin_keep` : un mot de
+ * passe administrateur est exigé. `--noninteractive` marque la transaction comme
+ * non interactive, polkit refuse alors *sans afficher de dialogue*, et la mise à
+ * jour échoue en silence. Vérifié sur Linux Mint :
+ *   pkcheck --action-id org.freedesktop.packagekit.system-update --process $$
+ *   → « Authorization requires authentication and -u wasn't passed. » (code 2)
+ * Les conteneurs de recette tournent en root, sans polkit : ils ne pouvaient pas
+ * révéler ce défaut. `system-sources-refresh` reste, lui, autorisé sans mot de
+ * passe (`implicit active: yes`), d'où un pré-vol qui réussissait.
  */
 export function pkconInstallArgs() {
-  return ['--noninteractive', '--cache-age', '1', 'update', SYSTEM_PACKAGE];
+  return ['--cache-age', '1', 'update', SYSTEM_PACKAGE];
 }
 
 /**
