@@ -104,9 +104,25 @@ Trois circuits selon le format installé (détecté par `installKind()` dans
 
 | Installé via | Mise à jour | Téléchargé |
 |---|---|---|
-| `.rpm` + dépôt configuré | dialogue « Mettre à jour maintenant » → PackageKit (`pkcon`, mot de passe via polkit) → « Redémarrer » ; revérifié toutes les 4 h en tâche de fond, pas seulement à l'ouverture | paquet complet (~83 Mo) |
+| `.rpm` + dépôt dnf | dialogue « Mettre à jour maintenant » → PackageKit (`pkcon`, mot de passe via polkit) → « Redémarrer » ; revérifié toutes les 5 min en tâche de fond | paquet complet (~83 Mo) |
+| `.deb` + dépôt apt **(depuis la 0.6.14)** | même circuit, dorsale apt de PackageKit | paquet complet (~121 Mo) |
 | `.AppImage` | dialogue « Mettre à jour » → téléchargement **différentiel** → « Redémarrer » | seuls les blocs modifiés (~1–5 Mo) |
-| `.deb` / sans dépôt | page de téléchargement (comme avant) | paquet complet |
+| Paquet système sans dépôt activé | page de téléchargement, avec la commande d'activation du dépôt | paquet complet |
+
+Le workflow **« Dépôts »** (`repos.yml`, ex-`rpm-repo.yml`) publie les deux dépôts à chaque
+release et **ne garde que les 3 dernières versions** (`scripts/prune-repo.mjs`).
+
+### Dépôt apt (Debian, Ubuntu, Linux Mint)
+
+```bash
+sudo curl -fsSL -o /etc/apt/sources.list.d/worklogs.list \
+  https://timotheegrollier.github.io/work-logs/deb/worklogs.list
+sudo apt update && sudo apt install --only-upgrade worklogs
+```
+Dépôt **plat** (`Packages` + `Release` à la racine, d'où le `/` final dans le `.list`),
+non signé — `[trusted=yes]`, même choix que `gpgcheck=0` côté dnf.
+Construit par `scripts/build-deb-repo.sh`, testé install **puis** upgrade dans un
+conteneur `ubuntu:24.04` (la base de Mint 22.x) à chaque release.
 
 ### Dépôt dnf
 
@@ -161,6 +177,20 @@ Trois circuits selon le format installé (détecté par `installKind()` dans
   installation. Le redémarrage n'est proposé qu'après `rpm -q == attendu`
   (`installedMatches`, testé) — sinon erreur explicite, jamais de faux succès.
 
+- **`pkcon get-updates` sort en 5 quand il n'y a rien à installer** (« nothing useful
+  was done »), pas en 0. Le pré-vol traitait tout code non nul comme « interrogation
+  impossible » **et sautait sa propre garde**, puis tentait quand même l'installation :
+  c'est ce qui cassait Mint. `pkconProbeOutcome` décide désormais ready/none/mismatch,
+  et « none » bascule sur le repli manuel. Ne jamais revenir à un test sur le seul code
+  de sortie.
+- **Le format de `get-updates` diffère selon la dorsale** — relevé en conteneur :
+  dnf `worklogs-0.6.8-1.x86_64 (wl)`, apt `worklogs-0.6.13.amd64 (worklogs-stable-)`.
+  L'expression d'origine exigeait la révision `-1` et ne trouvait donc jamais rien sur
+  Debian. Toute évolution du parseur doit couvrir les deux formats (tests dédiés).
+- **Rétention des dépôts** : sans purge, gh-pages avait atteint **1,3 Go** (16 RPM jamais
+  supprimés), au-delà de la limite d'1 Go d'un site GitHub Pages. `prune-repo.mjs` garde
+  les 3 dernières versions ; son tri est en semver, pas en texte (sinon `0.6.9` passerait
+  après `0.6.10` et la purge supprimerait la mauvaise).
 - **Liste fermée de `stage-desktop.mjs`** : tout nouveau fichier sous `desktop/` doit y
   être ajouté, sinon l'app installée plante à l'import (fenêtres jamais ouvertes,
   timeouts `firstWindow` dans les 3 jobs paquets — vu sur la 0.3.0).

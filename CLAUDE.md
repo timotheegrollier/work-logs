@@ -27,8 +27,9 @@ au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + V
 - **Aucune fonctionnalité sans test.** Route API → test dans `api/test/`. Geste utilisateur →
   test dans `web/src/App.test.tsx`, ou dans `e2e/` si ça dépend d'un vrai navigateur.
 - **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 71 tests API, 64 tests front,
-  21 tests serveur desktop/OAuth, 10 tests des scripts de release, build, 16 parcours navigateur et
-  6 parcours de l'application desktop — **188 tests**, et finit par `CHECK OK`.
+  25 tests serveur desktop/OAuth/mise à jour, 16 tests des scripts de release, build,
+  16 parcours navigateur et 6 parcours de l'application desktop — **198 tests**,
+  et finit par `CHECK OK`.
 - **Rien de nouveau sans accord** : ni dépendance, ni onglet, ni mode. La valeur de cette
   application est qu'elle tient sur un écran.
 
@@ -40,7 +41,7 @@ npm run desktop      # l'application Electron
 npm test             # API + front (~20 s)
 npm run test:e2e     # build + Playwright (web)
 npm run test:desktop # parcours Electron (xvfb-run si pas d'affichage)
-./scripts/check.sh   # tout, 188 tests
+./scripts/check.sh   # tout, 198 tests
 ./scripts/backup.sh  # sauvegarde base + fichiers joints
 ```
 
@@ -54,3 +55,6 @@ npm run test:desktop # parcours Electron (xvfb-run si pas d'affichage)
 - Données desktop : `~/.local/share/worklogs/` (base + uploads), profil dans `~/.config/worklogs/`.
 - Publier = bumper avec `npm version X.Y.Z --no-git-tag-version` (synchronise le lockfile),
   pousser, attendre la CI verte, puis taguer. Détail et pièges : `docs/07-RELEASES.md`.
+- Deux dépôts de mise à jour sur gh-pages : **dnf** (Fedora) et **apt** (Debian/Mint), publiés
+  par `repos.yml`, rétention 3 versions. Ne jamais tester PackageKit sur le seul code de
+  sortie : `pkcon get-updates` sort en 5 quand il n'y a rien à installer.

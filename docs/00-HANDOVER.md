@@ -1,45 +1,50 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-14 · **Version du manifeste :** 0.6.13 · documents riches sur `codex/integrated-documents`
-> **État :** `./scripts/check.sh` **vert** (188 tests, desktop compris) · **19 releases**
-> publiées, `v0.2.0` → `v0.6.12` · CI, publication et dépôt RPM tournent réellement sur
-> GitHub Actions.
-> **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** (nouveau lot),
+> **Mise à jour :** 2026-09-14 · **Version du manifeste :** 0.6.13
+> **État :** `./scripts/check.sh` **vert — 198 tests**, desktop compris.
+> Deux lots intégrés et prêts à publier : **documents riches + Google Drive**, et
+> **mise à jour en un clic sur Debian/Mint** (dépôt apt).
+> **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** (recette OAuth réelle),
 > puis [07-RELEASES.md](07-RELEASES.md) avant toute publication.
 
 ## État au 2026-09-14
 
 Le lot desktop est **terminé et en production**. WorkLogs est distribué en DEB, RPM et
 AppImage (SHA256 + attestation de provenance), avec mise à jour intégrée : PackageKit pour
-RPM/DEB, delta electron-updater pour l'AppImage, et un dépôt dnf servi par GitHub Pages.
+RPM/DEB, delta electron-updater pour l'AppImage, et **deux dépôts** servis par GitHub Pages
+(dnf pour Fedora, apt pour Debian/Ubuntu/Mint).
 
 | | Vérifié |
 |---|---|
-| `./scripts/check.sh` | **CHECK OK** — 71 API · 64 front · 21 serveur desktop/OAuth · 10 scripts release · 16 navigateur · 6 application desktop |
-| Workflows GitHub | `ci.yml`, `release.yml`, `rpm-repo.yml` exécutés réellement et régulièrement (29 succès sur les 30 derniers runs ; l'échec du 12/09 a été corrigé par le commit suivant) |
+| `./scripts/check.sh` | **CHECK OK** — 71 API · 64 front · 25 serveur desktop/OAuth/màj · 16 scripts release · 16 navigateur · 6 application desktop |
+| Workflows GitHub | `ci.yml`, `release.yml`, `repos.yml` exécutés réellement et régulièrement |
+| Mise à jour Mint | dépôt apt construit et testé (install **puis** upgrade) en conteneur `ubuntu:24.04` |
 | Releases | 19 publiées, de `v0.2.0` (11/09) à `v0.6.12` (12/09) |
 | Paquets | DEB/RPM/AppImage installés et lancés sur Ubuntu 24.04, Fedora 43 et Fedora 44 |
 
 **Ce qui reste ouvert**, par ordre d'utilité :
 
-1. **Recette manuelle sur une vraie session graphique** — jamais faite. Tout a été validé en
+1. **Aller-retour Google réel** — le seul point du lot documents qui ne peut pas être fait
+   sans toi : il faut un client OAuth de bureau créé dans **ton** Google Cloud. Tous les
+   tests Google utilisent des réponses simulées. Marche à suivre : `08-GOOGLE-DOCS.md`.
+2. **Recette manuelle sur une vraie session graphique** — jamais faite. Tout a été validé en
    conteneur ou sous Xvfb. Il reste à vérifier de vrais yeux : icône et raccourci dans le menu,
    boîte « Enregistrer sous » (nom de fichier suggéré, cf. `06-DESKTOP-CICD.md` §1.2),
    impression via la vraie boîte système, et un cycle complet de mise à jour depuis le dépôt.
-2. **Node en retard sur `.nvmrc`** — le fichier demande 24.20.0, la machine a 24.13.0, et
+3. **Node en retard sur `.nvmrc`** — le fichier demande 24.20.0, la machine a 24.13.0, et
    `jsdom@30` réclame ≥ 24.15.0 (avertissement `EBADENGINE` à l'installation). Les tests
    passent, mais c'est une panne en sursis.
-3. **Licence** — toujours `UNLICENSED`. À trancher si diffusion publique (cf. `05-DECISIONS.md`).
-4. **Dépôt RPM non signé** (`gpgcheck=0`) — acceptable en usage personnel, la signature GPG
-   reste une piste.
-5. **Express reste en 4** : la 5 casse le téléchargement des pièces jointes. Migration à faire
+4. **Licence** — toujours `UNLICENSED`. À trancher si diffusion publique (cf. `05-DECISIONS.md`).
+5. **Dépôts non signés** (`gpgcheck=0` côté dnf, `[trusted=yes]` côté apt) — acceptable en
+   usage personnel, la signature GPG reste une piste.
+6. **Express reste en 4** : la 5 casse le téléchargement des pièces jointes. Migration à faire
    dans un lot dédié (`07-RELEASES.md` §8).
 
 
-## Documents riches et Google Drive — lot non publié
+## Documents riches et Google Drive — intégré, prêt à publier
 
 L’utilisateur a choisi **l’édition dans WorkLogs** et approuvé Tiptap 3.31.3. Le lot
-est implémenté sur `codex/integrated-documents` : éditeur riche local, connexion Drive
+est fusionné avec le lot « mise à jour Mint » : éditeur riche local, connexion Drive
 desktop facultative, ouverture, envoi explicite et rechargement avec conflits protégés.
 La recette complète passe avec **188 tests**. L’intégration Google est testée avec des
 réponses simulées ; aucun vrai compte/client OAuth n’a été configuré pendant ce lot.

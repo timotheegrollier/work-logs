@@ -34,10 +34,25 @@ Télécharger la dernière release sur
 sha256sum -c SHA256SUMS
 ```
 
+### Mise à jour en un clic
+
+Une fois le dépôt activé, l'application installe les versions suivantes toute seule,
+après ta confirmation et ton mot de passe.
+
+```bash
+# Debian, Ubuntu, Linux Mint
+sudo curl -fsSL -o /etc/apt/sources.list.d/worklogs.list \
+  https://timotheegrollier.github.io/work-logs/deb/worklogs.list
+
+# Fedora et dérivées RPM
+sudo curl -fsSL -o /etc/yum.repos.d/worklogs.repo \
+  https://timotheegrollier.github.io/work-logs/rpm/worklogs.repo
+```
+
+L'AppImage, elle, se met à jour seule et en différentiel — rien à activer.
+
 Données dans `~/.local/share/worklogs/`, profil et thème dans
-`~/.config/worklogs/`. L'application vérifie les mises à jour à l'ouverture
-et propose le téléchargement en un clic (construction des releases :
-`docs/07-RELEASES.md`).
+`~/.config/worklogs/` (construction des releases : `docs/07-RELEASES.md`).
 
 ## Développer
 
