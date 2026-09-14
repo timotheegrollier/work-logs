@@ -6,16 +6,6 @@ const rgb = (hex) => {
   if (!/^#[\da-f]{6}$/i.test(hex || '')) unsupported('cette couleur (utilise le sélecteur de couleurs)');
   return { red: parseInt(hex.slice(1, 3), 16) / 255, green: parseInt(hex.slice(3, 5), 16) / 255, blue: parseInt(hex.slice(5, 7), 16) / 255 };
 };
-/**
- * Noir « par défaut » de Google Docs. Les valeurs très sombres sont traitées
- * comme une absence de choix : c'est ce que produit un document jamais colorié.
- */
-export function isDefaultInk(hex) {
-  const match = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex || '');
-  if (!match) return false;
-  return match.slice(1).every((part) => parseInt(part, 16) <= 0x22);
-}
-
 const alignment = { START: 'left', CENTER: 'center', END: 'right', JUSTIFIED: 'justify' };
 const alignmentBack = { left: 'START', center: 'CENTER', right: 'END', justify: 'JUSTIFIED' };
 
@@ -52,47 +42,6 @@ export function selectDocumentTab(source, tabId = '') {
   return { ...source, tabs: [{ ...chosen, childTabs: [] }] };
 }
 
-/**
- * Texte brut d'un onglet, sans jamais échouer. Sert de repli : un onglet dont
- * le contenu n'est pas convertible fidèlement reste consultable en lecture
- * seule plutôt que d'être refusé. Aucune écriture n'en découle.
- */
-export function tabPlainText(tab) {
-  const lines = [];
-  const walk = (content) => {
-    for (const element of content || []) {
-      if (element.paragraph) {
-        const text = (element.paragraph.elements || [])
-          .map((run) => run.textRun?.content || '')
-          .join('')
-          .replace(/\n+$/, '');
-        lines.push(text);
-      }
-      if (element.table) {
-        for (const row of element.table.tableRows || []) {
-          const cells = (row.tableCells || []).map((cell) => {
-            const before = lines.length;
-            walk(cell.content);
-            return lines.splice(before).join(' ').trim();
-          });
-          lines.push(cells.join(' | '));
-        }
-      }
-      if (element.tableOfContents) walk(element.tableOfContents.content);
-    }
-  };
-  walk(tab?.documentTab?.body?.content ?? tab?.body?.content);
-  return lines;
-}
-
-/** Document riche minimal, en paragraphes, pour l'affichage en lecture seule. */
-export function plainTextDocument(lines) {
-  const content = lines.map((line) => (line.trim()
-    ? { type: 'paragraph', content: [{ type: 'text', text: line }] }
-    : { type: 'paragraph' }));
-  return { type: 'doc', content: content.length ? content : [{ type: 'paragraph' }] };
-}
-
 export function documentBody(source) {
   if (source.tabs) {
     if (source.tabs.length !== 1 || source.tabs[0].childTabs?.length) unsupported('les documents Google à plusieurs onglets');
@@ -123,12 +72,7 @@ function readMarks(style = {}) {
   if (style.weightedFontFamily?.fontFamily) attrs.fontFamily = style.weightedFontFamily.fontFamily;
   if (style.fontSize?.magnitude) attrs.fontSize = `${style.fontSize.magnitude}${style.fontSize.unit?.toLowerCase() || 'pt'}`;
   const foreground = color(style.foregroundColor?.color?.rgbColor);
-  // Le noir par défaut de Google n'est pas importé : sans couleur explicite, le
-  // texte prend celle du thème et reste lisible en sombre comme en clair. À
-  // l'écriture, l'absence de couleur laisse Google sur son noir — le document
-  // d'origine n'est donc pas modifié. Seules les couleurs vraiment choisies
-  // sont conservées.
-  if (foreground && !isDefaultInk(foreground)) attrs.color = foreground;
+  if (foreground) attrs.color = foreground;
   const background = color(style.backgroundColor?.color?.rgbColor);
   if (background) attrs.backgroundColor = background;
   if (Object.keys(attrs).length) marks.push({ type: 'textStyle', attrs });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, formatSize, googleHelpUrl, type Attachment, type Entry, type EntrySummary, type Project } from '../lib';
+import { api, formatSize, googleHelpUrl, type Attachment, type Entry, type Project } from '../lib';
 import { renderMarkdown } from '../markdown';
 import { Autosave } from '../autosave';
 import { RichEditor } from './RichEditor';
@@ -18,16 +18,12 @@ const LABELS: Record<SaveState, string> = {
  * entrée à l'autre.
  */
 export function EntryEditor({
-  tabs = [],
-  onSelectTab = () => {},
   entry,
   projects,
   onChanged,
   onDeleted,
   autoFocusTitle = false,
 }: {
-  tabs?: EntrySummary[];
-  onSelectTab?: (id: string) => void;
   entry: Entry;
   projects: Project[];
   onChanged: () => void;
@@ -230,30 +226,6 @@ export function EntryEditor({
 
       <h1 className="print-only print-title">{draft.title}</h1>
 
-      {tabs.length > 1 && (
-        // Les onglets du document se parcourent ici : un seul document dans le
-        // journal, tous ses onglets sous la main, comme dans Google Docs.
-        <nav className="doc-tabs" role="tablist" aria-label="Onglets du document">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              role="tab"
-              aria-selected={tab.id === entry.id}
-              className={'doc-tab' + (tab.id === entry.id ? ' is-on' : '')}
-              title={tab.google_readonly || undefined}
-              onClick={() => onSelectTab(tab.id)}
-            >
-              {tab.google_tab_title || 'Onglet'}
-              {tab.google_readonly ? <span className="doc-tab-lock" aria-label="lecture seule"> 🔒</span> : null}
-            </button>
-          ))}
-        </nav>
-      )}
-      {googleSync?.readonly && (
-        <p className="error no-print">
-          Onglet en lecture seule : {googleSync.readonly} Tu peux le consulter ; les modifications ne seront pas renvoyées.
-        </p>
-      )}
       {draft.content_json ? <RichEditor key={richVersion} entryId={entry.id} content={draft.content_json} onChange={(content_json) => update({ content_json })} /> : <div className={'sheet' + (writing ? ' is-split' : '')}>
         {writing && (
           <textarea

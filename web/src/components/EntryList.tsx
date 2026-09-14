@@ -1,4 +1,4 @@
-import { dayLabel, groupByDay, groupTabs, plainText, type EntrySummary, type Project } from '../lib';
+import { dayLabel, groupByDay, plainText, type EntrySummary, type Project } from '../lib';
 
 export function EntryList({
   entries,
@@ -37,10 +37,10 @@ export function EntryList({
           <li key={date}>
             <h2 className="day">{dayLabel(date)}</h2>
             <ul>
-              {groupTabs(ofDay).map(({ entry, title, tabs }) => (
+              {ofDay.map((entry) => (
                 <li key={entry.id}>
                   <button
-                    className={'entry' + (tabs.some((t) => t.id === selectedId) || entry.id === selectedId ? ' is-selected' : '')}
+                    className={'entry' + (entry.id === selectedId ? ' is-selected' : '')}
                     aria-current={entry.id === selectedId ? 'true' : undefined}
                     onClick={() => onSelect(entry.id)}
                   >
@@ -52,12 +52,7 @@ export function EntryList({
                           aria-hidden="true"
                         />
                       )}
-                      {title}
-                      {/* Un document Google compte pour une ligne, quel que soit
-                          son nombre d'onglets : ils s'ouvrent dans l'éditeur. */}
-                      {tabs.length > 1 && (
-                        <span className="count" title={`${tabs.length} onglets`}>{tabs.length}</span>
-                      )}
+                      {entry.title}
                     </span>
                     <span className="entry-excerpt">
                       {plainText(entry.excerpt) || 'Vide'}

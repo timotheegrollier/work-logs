@@ -212,19 +212,6 @@ export function openDb(dbPath, { withSeed = true } = {}) {
       db.exec('DROP TABLE google_documents_previous; COMMIT');
     } catch (e) { db.exec('ROLLBACK'); throw e; }
   } else db.exec(googleSchema);
-  // Ajouts additifs : pas de reconstruction de table, donc aucun risque sur les
-  // clés étrangères. Ils portent les libellés nécessaires pour regrouper les
-  // onglets d'un même document Google sous une seule entrée du journal.
-  for (const [name, definition] of [
-    ['document_title', "TEXT NOT NULL DEFAULT ''"],
-    ['tab_title', "TEXT NOT NULL DEFAULT ''"],
-    ['tab_order', 'INTEGER NOT NULL DEFAULT 0'],
-    ['readonly_reason', "TEXT NOT NULL DEFAULT ''"],
-  ]) {
-    if (!columns(db, 'google_documents').includes(name)) {
-      db.exec(`ALTER TABLE google_documents ADD COLUMN ${name} ${definition}`);
-    }
-  }
   db.exec('PRAGMA foreign_keys = ON;');
   if (withSeed) seed(db);
   return db;
