@@ -380,6 +380,40 @@ describe('projets', () => {
     expect(row(api.db, 'SELECT * FROM projects').name).toBe('Nouveau chantier');
   });
 
+  test('cliquer « Créer » à vide explique au lieu de ne rien faire', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha' }] });
+    render(<App />);
+
+    await user.click(await screen.findByText('Gérer les projets'));
+    // Le bouton était désactivé : sans projet à l'écran, il se lisait comme cassé.
+    const bouton = screen.getByRole('button', { name: 'Créer' });
+    expect(bouton).toBeEnabled();
+
+    await user.click(bouton);
+    expect(await screen.findByText('Donne un nom au projet.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Nom du nouveau projet')).toHaveFocus();
+    expect(row(api.db, 'SELECT COUNT(*) n FROM projects').n).toBe(1);
+
+    await user.type(screen.getByLabelText('Nom du nouveau projet'), 'Atelier');
+    expect(screen.queryByText('Donne un nom au projet.')).not.toBeInTheDocument();
+    await user.click(bouton);
+    await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM projects WHERE name=?', 'Atelier').n).toBe(1));
+  });
+
+  test('sans aucun projet, le panneau dit quoi faire et reste utilisable', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByText('Gérer les projets'));
+    expect(screen.getByText(/Aucun projet/)).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Nom du nouveau projet'), 'Premier projet{Enter}');
+
+    expect(await within(filters()).findByRole('button', { name: /Premier projet/ })).toBeInTheDocument();
+    expect(screen.queryByText(/Aucun projet/)).not.toBeInTheDocument();
+  });
+
   test('renomme un projet', async () => {
     const user = userEvent.setup();
     seedData(api.db, { projects: [{ id: 'pr_a', name: 'Avant' }] });

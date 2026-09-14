@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { api, type Project } from '../lib';
 
 export function ProjectBar({
@@ -13,11 +13,21 @@ export function ProjectBar({
   onChanged: () => void;
 }) {
   const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const field = useRef<HTMLInputElement>(null);
 
+  // Le bouton n'est plus désactivé : grisé et sans explication, il se lisait
+  // comme « cassé » — surtout quand il ne reste aucun projet et que le panneau
+  // est vide. Un clic à vide dit maintenant ce qui manque et rend la main au champ.
   const create = async () => {
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setError('Donne un nom au projet.');
+      field.current?.focus();
+      return;
+    }
     await api.createProject({ name: name.trim(), color: nextColor(projects.length) });
     setName('');
+    setError('');
     onChanged();
   };
 
@@ -90,18 +100,26 @@ export function ProjectBar({
             </li>
           ))}
         </ul>
+        {projects.length === 0 && (
+          <p className="empty">Aucun projet. Donne-lui un nom ci-dessous pour le créer.</p>
+        )}
         <div className="add-project">
           <input
+            ref={field}
             aria-label="Nom du nouveau projet"
             placeholder="Nouveau projet…"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (error) setError('');
+            }}
             onKeyDown={(e) => e.key === 'Enter' && create()}
           />
-          <button className="ghost" onClick={create} disabled={!name.trim()}>
+          <button className="ghost" onClick={create}>
             Créer
           </button>
         </div>
+        {error && <p className="error">{error}</p>}
       </details>
     </nav>
   );
