@@ -178,13 +178,14 @@ async function offerSystemOrManualUpdate(force = false) {
   if (!force && dismissedVersion === found.version) return;
   if (!window || window.isDestroyed()) return;
   if (installKind() === 'system' && hasPackageKit() && !systemUpdating) {
-    await offerSystemUpdate(found.version);
+    await offerSystemUpdate(found);
     return;
   }
   await fallbackNotify(found);
 }
 
-async function offerSystemUpdate(next) {
+async function offerSystemUpdate(found) {
+  const next = found.version;
   const choice = ask(window, {
     type: 'info', title: 'WorkLogs', buttons: ['Mettre à jour maintenant', 'Plus tard'],
     defaultId: 0, cancelId: 1,
@@ -239,8 +240,9 @@ async function offerSystemUpdate(next) {
   if (error || !installedMatches(installed ?? '', next)) {
     // Refus d'autorisation : cas distinct d'un dépôt en retard, et le seul que
     // l'utilisateur peut corriger lui-même. Le nommer évite de le laisser
-    // chercher du côté du dépôt.
-    const denied = /not authoriz|non autoris|authentication|authentification/i.test(error ?? '');
+    // chercher du côté du dépôt. « declined » couvre l'annulation polkit et
+    // l'abandon de la simulation PackageKit (confirmation restée sans réponse).
+    const denied = /not authoriz|non autoris|authentication|authentification|declined|annul/i.test(error ?? '');
     ask(window, {
       type: 'error', title: 'WorkLogs', buttons: ['Compris'],
       message: denied
@@ -304,12 +306,19 @@ async function runPackageKitUpdate(next) {
 
 function runPkcon(args, onChunk = null, { answer = null } = {}) {
   return new Promise((resolve) => {
-    // stdin ouvert : sans `--noninteractive`, pkcon peut demander confirmation
-    // en console. Sans entrée il lirait EOF et abandonnerait la transaction.
+    // stdin en pipe maintenu ouvert : pkcon peut poser sa confirmation en deux
+    // temps (simulation puis transaction). Un seul « y » suivi d'EOF faisait
+    // échouer la seconde lecture (« user declined simulation ») et, derrière,
+    // la vérification d'après install tombait sur une version périmée.
     const child = spawn('pkcon', args, { stdio: [answer === null ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    let answerTimer = null;
     if (answer !== null) {
       child.stdin.on('error', () => { /* pkcon n'a rien demandé : sans conséquence */ });
-      child.stdin.end(answer);
+      try { child.stdin.write(answer); } catch { /* sans conséquence */ }
+      answerTimer = setInterval(() => {
+        try { child.stdin.write(answer); } catch { /* sans conséquence */ }
+      }, 500);
+      answerTimer.unref?.();
     }
     let output = '';
     const collect = (chunk) => {
@@ -322,8 +331,16 @@ function runPkcon(args, onChunk = null, { answer = null } = {}) {
     };
     child.stdout.on('data', collect);
     child.stderr.on('data', collect);
-    child.on('error', (error) => resolve({ code: -1, output: String(error.message || error).slice(0, 300) }));
-    child.on('close', (code) => resolve({ code: code ?? -1, output }));
+    child.on('error', (error) => {
+      if (answerTimer) clearInterval(answerTimer);
+      try { child.stdin.end(); } catch { /* sans conséquence */ }
+      resolve({ code: -1, output: String(error.message || error).slice(0, 300) });
+    });
+    child.on('close', (code) => {
+      if (answerTimer) clearInterval(answerTimer);
+      try { child.stdin.end(); } catch { /* sans conséquence */ }
+      resolve({ code: code ?? -1, output });
+    });
   });
 }
 
