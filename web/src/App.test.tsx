@@ -488,6 +488,27 @@ describe('projets', () => {
 });
 
 describe('confort', () => {
+  test('quitter la page envoie ce qui n’est pas encore enregistré', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Brouillon' }] });
+    render(<App />);
+
+    const titre = await screen.findByLabelText('Titre de l’entrée');
+    await user.clear(titre);
+    await user.type(titre, 'Sauvé de justesse');
+    // Sans attendre la cadence d'enregistrement : la page s'en va maintenant.
+    expect(row(api.db, 'SELECT * FROM entries WHERE id=?', 'en_1').title).toBe('Brouillon');
+
+    window.dispatchEvent(new Event('pagehide'));
+
+    // L'écriture doit partir immédiatement, sinon ces frappes seraient perdues
+    // à chaque rechargement ou fermeture.
+    await waitFor(() =>
+      expect(row(api.db, 'SELECT * FROM entries WHERE id=?', 'en_1').title).toBe('Sauvé de justesse')
+    );
+  });
+
+
   test('bascule et retient le thème clair', async () => {
     const user = userEvent.setup();
     render(<App />);
