@@ -20,18 +20,69 @@ export interface EntrySummary {
   updated_at: string;
   excerpt: string;
   attachments: number;
+  /** Renseignés pour les onglets d'un document Google, sinon nuls. */
+  google_document_id?: string | null;
+  google_tab_id?: string | null;
+  google_document_title?: string | null;
+  google_tab_title?: string | null;
+  google_tab_order?: number | null;
+  google_readonly?: string | null;
+}
+
+/** Une ligne du journal : une entrée simple, ou un document Google et ses onglets. */
+export interface JournalItem {
+  entry: EntrySummary;
+  title: string;
+  tabs: EntrySummary[];
+}
+
+/**
+ * Regroupe les onglets d'un même document Google sous une seule ligne, pour ne
+ * pas multiplier les documents dans le journal. L'ordre d'origine est conservé.
+ */
+export function groupTabs(entries: EntrySummary[]): JournalItem[] {
+  const items: JournalItem[] = [];
+  const byDocument = new Map<string, JournalItem>();
+  for (const entry of entries) {
+    const documentId = entry.google_document_id;
+    if (!documentId) {
+      items.push({ entry, title: entry.title, tabs: [] });
+      continue;
+    }
+    const known = byDocument.get(documentId);
+    if (known) {
+      known.tabs.push(entry);
+      continue;
+    }
+    const item: JournalItem = {
+      entry,
+      title: entry.google_document_title || entry.title,
+      tabs: [entry],
+    };
+    byDocument.set(documentId, item);
+    items.push(item);
+  }
+  for (const item of byDocument.values()) {
+    item.tabs.sort((a, b) => (a.google_tab_order ?? 0) - (b.google_tab_order ?? 0));
+    item.entry = item.tabs[0];
+  }
+  return items;
 }
 export interface Entry {
   id: string;
   title: string;
   content_md: string;
   content_json?: RichDocument | null;
-  google_sync?: { document_id: string; tab_id?: string; synced_at: string | null; dirty: boolean } | null;
+  google_sync?: GoogleSync | null;
   entry_date: string;
   project_id: string | null;
   created_at: string;
   updated_at: string;
   attachments: Attachment[];
+}
+export interface GoogleSync {
+  document_id: string; tab_id?: string; synced_at: string | null; dirty: boolean;
+  document_title?: string; tab_title?: string; tab_order?: number; readonly?: string;
 }
 export interface GoogleStatus {
   available: boolean; configured: boolean; connected: boolean; pending: boolean; error: string;

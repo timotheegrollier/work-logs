@@ -75,20 +75,25 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
       args.push(projectId);
     }
 
-    const entryWhere = [...where];
+    // Les entrées sont jointes à google_documents : leurs colonnes doivent être
+    // qualifiées, alors que la requête des tâches partage le même filtre brut.
+    const entryWhere = where.map((clause) => 'entries.' + clause);
     const entryArgs = [...args];
     if (q) {
-      entryWhere.push('(title LIKE ? OR content_md LIKE ?)');
+      entryWhere.push('(entries.title LIKE ? OR entries.content_md LIKE ?)');
       entryArgs.push(`%${q}%`, `%${q}%`);
     }
     const entries = db
       .prepare(
-        `SELECT id, title, entry_date, project_id, updated_at,
-                substr(content_md, 1, 240) excerpt,
-                (SELECT COUNT(*) FROM attachments a WHERE a.entry_id = entries.id) attachments
-         FROM entries
+        `SELECT entries.id, entries.title, entries.entry_date, entries.project_id, entries.updated_at,
+                substr(entries.content_md, 1, 240) excerpt,
+                (SELECT COUNT(*) FROM attachments a WHERE a.entry_id = entries.id) attachments,
+                g.document_id google_document_id, g.tab_id google_tab_id,
+                g.document_title google_document_title, g.tab_title google_tab_title,
+                g.tab_order google_tab_order, g.readonly_reason google_readonly
+         FROM entries LEFT JOIN google_documents g ON g.entry_id = entries.id
          ${entryWhere.length ? 'WHERE ' + entryWhere.join(' AND ') : ''}
-         ORDER BY entry_date DESC, updated_at DESC
+         ORDER BY entries.entry_date DESC, entries.updated_at DESC
          LIMIT 500`
       )
       .all(...entryArgs);

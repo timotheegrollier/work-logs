@@ -195,7 +195,14 @@ test('onglets Google : choix explicite, brouillons distincts et toutes les écri
     const tabs = await api.get('/api/google/documents/google-123/tabs');
     assert.equal(tabs.body.tabs.length, 2);
     assert.equal(tabs.body.tabs[1].editable, true);
-    assert.equal((await api.post('/api/google/documents/open', { document_id: 'google-123' })).status, 422);
+    // Ouvrir sans préciser d'onglet ne refuse plus : tous les onglets du
+    // document sont créés d'un coup et forment un seul document dans le journal.
+    const tout = await api.post('/api/google/documents/open', { document_id: 'google-123' });
+    assert.equal(tout.status, 201);
+    const ouverts = api.db.prepare('SELECT tab_id, tab_title, tab_order FROM google_documents WHERE document_id=? ORDER BY tab_order').all('google-123');
+    assert.deepEqual(ouverts.map(o => o.tab_id), ['t.0', 't.child']);
+    assert.equal(ouverts[1].tab_title, 'Deuxième');
+
     const first = await api.post('/api/google/documents/open', { document_id: 'google-123', tab_id: 't.0' });
     const child = await api.post('/api/google/documents/open', { document_id: 'google-123', tab_id: 't.child' });
     assert.equal(child.status, 201);
@@ -244,4 +251,42 @@ test('un texte en noir par défaut arrive sans marque de couleur', () => {
   // Une vraie couleur, elle, doit survivre à l'import.
   run.textRun.textStyle = { foregroundColor: { color: { rgbColor: { red: 1, green: 0, blue: 0 } } } };
   assert.match(JSON.stringify(googleToDocument(source)), /"color":"#ff0000"/);
+});
+
+
+test('un onglet non convertible s’ouvre en lecture seule au lieu d’être refusé', async () => {
+  const google = stub();
+  const source = doc('Premier onglet');
+  // Deuxième onglet avec un tableau : le convertisseur le refuse, car il ne
+  // saurait le réécrire fidèlement dans Google.
+  const second = doc('Ignoré').tabs[0];
+  second.tabProperties = { tabId: 't.tableau', title: 'Chiffres' };
+  second.documentTab.body.content = [
+    { paragraph: { elements: [{ textRun: { content: 'Budget\n' } }] } },
+    { table: { tableRows: [{ tableCells: [
+      { content: [{ paragraph: { elements: [{ textRun: { content: 'Toiture\n' } }] } }] },
+      { content: [{ paragraph: { elements: [{ textRun: { content: '12 400 €\n' } }] } }] },
+    ] }] } },
+  ];
+  source.tabs.push(second);
+  google.setSource(source);
+
+  const api = await startApi({ google });
+  try {
+    assert.equal((await api.post('/api/google/documents/open', { document_id: 'google-123' })).status, 201);
+    const liens = api.db.prepare('SELECT entry_id, tab_id, readonly_reason FROM google_documents ORDER BY tab_order').all();
+    assert.equal(liens.length, 2);
+    assert.equal(liens[0].readonly_reason, '', 'l’onglet convertible reste modifiable');
+    assert.match(liens[1].readonly_reason, /tableaux/, 'la raison du refus est conservée');
+
+    // Consultable : le texte est là, tableau aplati, donc l'onglet n'est plus inaccessible.
+    const lecture = await api.get(`/api/entries/${liens[1].entry_id}`);
+    assert.match(lecture.body.content_md, /Budget/);
+    assert.match(lecture.body.content_md, /Toiture/);
+    assert.match(lecture.body.content_md, /12 400/);
+    assert.equal(lecture.body.google_sync.readonly, liens[1].readonly_reason);
+    assert.equal(lecture.body.google_sync.tab_title, 'Chiffres');
+  } finally {
+    await api.close();
+  }
 });

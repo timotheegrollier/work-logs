@@ -572,6 +572,12 @@ button:disabled {
 }
 
 /* --- le rendu du document : la partie qu'on lit et qu'on imprime --- */
+/* `.prose` est défini après `.rich-content` : à spécificité égale, c'est lui
+   qui gagnait et l'éditeur restait bridé à la largeur de lecture. */
+.prose.rich-content {
+  max-width: none;
+  width: 100%;
+}
 .prose {
   max-width: 72ch;
   font-size: 16px;
@@ -1029,3 +1035,18 @@ button:disabled {
     margin: 18mm;
   }
 }
+
+/* ------------------------------------------------- onglets d'un document Google */
+.doc-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 0; }
+.doc-tab {
+  padding: 4px 11px;
+  border: 1px solid var(--line);
+  border-bottom-color: transparent;
+  border-radius: 8px 8px 0 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 13px;
+}
+.doc-tab:hover { color: var(--text); }
+.doc-tab.is-on { background: var(--surface); border-color: var(--accent); color: var(--text); }
+.doc-tab-lock { opacity: 0.7; }
