@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
 import { createGoogleClient } from './google.mjs';
-import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, parsePkconProgress, pkconInstallArgs, pkconRefreshArgs, pkconUpdatesArgs, releaseAgeMinutes, RPM_REPO_URL, shouldOfferUpdate, startPoll, SYSTEM_PACKAGE } from './update.mjs';
+import { checkForUpdate, hasPackageKit, installedVersionCommand, installKind, installedMatches, isNewer, logUpdateEvent, packageManager, parsePkconProgress, pkconInstallArgs, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
 import electronUpdater from 'electron-updater';
@@ -188,24 +188,28 @@ async function offerSystemUpdate(next) {
   const refreshed = await runPkcon(pkconRefreshArgs());
   if (refreshed.code !== 0) logUpdate(`refresh PackageKit : ${refreshed.output.trim().split('\n').slice(-1)[0]?.slice(0, 200)}`);
   const probe = await runPkcon(pkconUpdatesArgs());
-  const candidate = probe.code === 0 ? parsePkconCandidate(probe.output) : null;
-  logUpdate(`pré-vol PackageKit : ${probe.code === 0 ? (candidate ?? 'aucune mise à jour listée') : 'interrogation impossible'}`);
-  if (probe.code === 0 && candidate !== next) {
+  const outcome = pkconProbeOutcome({ code: probe.code, output: probe.output, expected: next });
+  const hint = repoHint(packageManager());
+  logUpdate(`pré-vol PackageKit : ${outcome.candidate ?? (outcome.probeFailed ? 'aucune mise à jour listée (code ' + probe.code + ')' : 'aucune mise à jour listée')}`);
+  if (outcome.decision !== 'ready') {
     systemUpdating = false;
     sendProgress({ phase: 'idle' });
-    // Cas courant : la release GitHub vient de sortir, le dépôt rpm la reçoit
-    // quelques minutes plus tard (workflow + Pages). On le dit au lieu de
-    // laisser croire à un gestionnaire cassé.
+    // Sans candidat, on ne tente **jamais** l'installation : elle échouerait.
+    // C'est ce qui cassait Mint, où `get-updates` sort en 5 faute de dépôt apt.
+    if (outcome.decision === 'none') {
+      await fallbackNotify({ version: next, url: found.url, publishedAt: found.publishedAt });
+      return;
+    }
+    // Candidat différent : dépôt en retard. Fréquent dans les minutes qui
+    // suivent une release, le temps que le workflow et Pages passent.
     const age = releaseAgeMinutes(found.publishedAt);
     const fresh = age !== null && age < 20
       ? ` La ${next} est sortie il y a ${age} min : le dépôt la reçoit dans quelques minutes, réessaie ou clique la pastille de version.`
       : '';
     dialog.showMessageBoxSync(window, {
       type: 'warning', title: 'WorkLogs', buttons: ['Compris'],
-      message: candidate
-        ? `Le gestionnaire propose la ${candidate} au lieu de la ${next}.`
-        : 'Le gestionnaire ne voit aucune mise à jour.',
-      detail: `Ses métadonnées sont périmées malgré le rechargement.${fresh} Sinon, mets à jour à la main : sudo dnf clean expire-cache && sudo dnf update worklogs.`,
+      message: `Le gestionnaire propose la ${outcome.candidate} au lieu de la ${next}.`,
+      detail: `Ses métadonnées sont périmées malgré le rechargement.${fresh} Sinon, mets à jour à la main : ${hint.update}.`,
     });
     return;
   }
@@ -219,7 +223,7 @@ async function offerSystemUpdate(next) {
     dialog.showMessageBoxSync(window, {
       type: 'error', title: 'WorkLogs', buttons: ['Compris'],
       message: error ?? `La version installée (${installed ?? 'illisible'}) n’est pas la ${next}.`,
-      detail: 'Le gestionnaire a servi une version périmée. Relance la vérification ou mets à jour à la main : sudo dnf update worklogs.',
+      detail: `Le gestionnaire a servi une version périmée. Relance la vérification ou mets à jour à la main : ${hint.update}.`,
     });
     return;
   }
@@ -237,8 +241,11 @@ async function offerSystemUpdate(next) {
 
 /** Version du paquet système installé, ou null si illisible. */
 function installedSystemVersion() {
+  // rpm sur Fedora, dpkg-query sur Debian/Mint : sans ce second cas, la
+  // vérification d'après installation échouait toujours hors RPM.
+  const { file, args } = installedVersionCommand(packageManager());
   try {
-    return execFileSync('rpm', ['-q', '--qf', '%{VERSION}', SYSTEM_PACKAGE], { encoding: 'utf8' }).trim() || null;
+    return execFileSync(file, args, { encoding: 'utf8' }).trim() || null;
   } catch {
     return null;
   }
@@ -288,11 +295,12 @@ async function fallbackNotify(found) {
   const kind = installKind();
   // Paquet système (deb/rpm) : la mise à jour passe par le gestionnaire de
   // paquets, pas par un téléchargement manuel — root oblige.
-  const hasDnf = fs.existsSync('/usr/bin/dnf');
+  const manager = packageManager();
+  const hint = repoHint(manager);
   const detail = kind === 'system'
-    ? (hasDnf
-      ? `Dépôt configuré : lance « sudo dnf update worklogs ». Sinon, ajoute-le une fois (voir ${RPM_REPO_URL}/worklogs.repo), ou télécharge le paquet.`
-      : 'Mets à jour via ton gestionnaire de paquets (dnf/apt), ou télécharge le paquet.')
+    ? (manager
+      ? `Si le dépôt WorkLogs est activé : « ${hint.update} ». Sinon, active-le une fois — ${hint.enable} — ou télécharge le paquet.`
+      : 'Mets à jour via ton gestionnaire de paquets, ou télécharge le paquet.')
     : 'Le téléchargement s’ouvre dans ton navigateur : installe le paquet, puis relance l’application.';
   const choice = dialog.showMessageBoxSync(window, {
     type: 'info', title: 'WorkLogs', buttons: ['Télécharger la mise à jour', 'Plus tard'],
