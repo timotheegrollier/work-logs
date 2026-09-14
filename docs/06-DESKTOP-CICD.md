@@ -197,6 +197,13 @@ Cette carte décrit le déblocage initial ; les fonctionnalités ajoutées ensui
   et `window.on('focus')` redonne la main au contenu. **Non validé** : sous Playwright,
   `window.focus()` lui-même reste sans effet — l'environnement automatisé ne gère pas le focus
   X11, et les frappes injectées court-circuitent cette couche. Seul un usage réel tranchera.
+- **Recette « titres 4–6 » instable (ouverte)** : après `page.reload()`, l'éditeur de
+  document est parfois absent — une autre entrée s'ouvre. **1 échec sur 80** sur poste de
+  développement, nettement plus sur les agents CI. Deux correctifs ont été mesurés puis
+  abandonnés (rouvrir le document explicitement ; attendre la version finale côté serveur) :
+  tous deux ajoutent une écriture de titre qui porte le taux à **5 sur 80**. La version
+  d'origine est la moins fragile ; deux réessais lui sont accordés, à elle seule. À élucider :
+  pourquoi l'entrée rouverte n'est pas toujours le document le plus récemment modifié.
 - **SELinux et podman en local** : voir §3, ne concerne que le poste de développement, pas la CI.
 - **`page.waitForEvent('download')` avec un protocole personnalisé Electron** : ne se déclenche
   jamais dans cette configuration (`protocol.handle`, scheme privileged `stream: true`).

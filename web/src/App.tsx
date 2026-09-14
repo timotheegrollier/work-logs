@@ -26,11 +26,26 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = window.worklogsDesktop?.onBeforeClose(flushPendingSaves);
+    // Le garde se contentait d'un preventDefault() : il demandait confirmation
+    // sans jamais **envoyer** ce qui était en attente. Recharger ou fermer
+    // perdait donc les frappes des dernières centaines de millisecondes.
+    // On déclenche l'écriture tout de suite — la requête part avant que la page
+    // ne disparaisse — et on retarde la sortie le temps qu'elle aboutisse.
+    const flushNow = () => { if (hasPendingSaves()) void flushPendingSaves(); };
     const guard = (event: BeforeUnloadEvent) => {
-      if (hasPendingSaves()) event.preventDefault();
+      if (!hasPendingSaves()) return;
+      flushNow();
+      event.preventDefault();
     };
     window.addEventListener('beforeunload', guard);
-    return () => { unsubscribe?.(); window.removeEventListener('beforeunload', guard); };
+    window.addEventListener('pagehide', flushNow);
+    document.addEventListener('visibilitychange', flushNow);
+    return () => {
+      unsubscribe?.();
+      window.removeEventListener('beforeunload', guard);
+      window.removeEventListener('pagehide', flushNow);
+      document.removeEventListener('visibilitychange', flushNow);
+    };
   }, []);
 
   useEffect(() => {
