@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { dayLabel, formatSize, groupByDay, isOverdue, plainText, type Task } from './lib';
+import { dayLabel, formatSize, groupByDay, groupTabs, isOverdue, plainText, type EntrySummary, type Task } from './lib';
 
 const task = (over: Partial<Task>): Task => ({
   id: 'tk_1',
@@ -100,3 +100,47 @@ describe('groupByDay', () => {
   });
 });
 
+
+
+describe('groupTabs', () => {
+  const entry = (over: Partial<EntrySummary>): EntrySummary => ({
+    id: 'en_1', title: 'Titre', entry_date: '2026-09-14', project_id: null,
+    updated_at: '2026-09-14T10:00:00.000Z', excerpt: '', attachments: 0, ...over,
+  });
+
+  test('laisse les entrées ordinaires telles quelles', () => {
+    const items = groupTabs([entry({ id: 'a', title: 'Note' }), entry({ id: 'b', title: 'Autre' })]);
+    expect(items.map((i) => [i.title, i.tabs.length])).toEqual([['Note', 0], ['Autre', 0]]);
+  });
+
+  test('réunit les onglets d’un même document sous une seule ligne', () => {
+    // Sans ce regroupement, chaque onglet Google apparaissait comme un document
+    // distinct : le journal se remplissait d'un même fichier répété.
+    const items = groupTabs([
+      entry({ id: 'a', google_document_id: 'doc1', google_tab_id: 't.0', google_document_title: 'Chantier', google_tab_title: 'Devis', google_tab_order: 0 }),
+      entry({ id: 'c', title: 'Note libre' }),
+      entry({ id: 'b', google_document_id: 'doc1', google_tab_id: 't.1', google_document_title: 'Chantier', google_tab_title: 'Suivi', google_tab_order: 1 }),
+    ]);
+
+    expect(items).toHaveLength(2);
+    expect(items[0].title).toBe('Chantier');
+    expect(items[0].tabs.map((t) => t.google_tab_title)).toEqual(['Devis', 'Suivi']);
+    expect(items[1].title).toBe('Note libre');
+  });
+
+  test('ouvre le document sur son premier onglet, quel que soit l’ordre reçu', () => {
+    const items = groupTabs([
+      entry({ id: 'second', google_document_id: 'd', google_tab_order: 2, google_document_title: 'D' }),
+      entry({ id: 'premier', google_document_id: 'd', google_tab_order: 0, google_document_title: 'D' }),
+    ]);
+    expect(items[0].entry.id).toBe('premier');
+  });
+
+  test('sépare deux documents Google différents', () => {
+    const items = groupTabs([
+      entry({ id: 'a', google_document_id: 'doc1', google_document_title: 'Un' }),
+      entry({ id: 'b', google_document_id: 'doc2', google_document_title: 'Deux' }),
+    ]);
+    expect(items.map((i) => i.title)).toEqual(['Un', 'Deux']);
+  });
+});

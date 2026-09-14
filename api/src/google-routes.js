@@ -1,6 +1,6 @@
 import { uid, nowISO, today } from './db.js';
 import { decodeEntry, documentText } from './rich-document.js';
-import { buildGoogleUpdate, documentBody, documentTabs, googleToDocument, selectDocumentTab } from './google-document.js';
+import { buildGoogleUpdate, documentBody, documentTabs, googleToDocument, plainTextDocument, selectDocumentTab, tabPlainText } from './google-document.js';
 
 const blankSource = { body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } };
 
@@ -11,7 +11,12 @@ const fileId = (value) => {
 };
 export function googleLink(db, entry) {
   const link = db.prepare('SELECT * FROM google_documents WHERE entry_id=?').get(entry.id);
-  return link ? { document_id: link.document_id, tab_id: link.tab_id, synced_at: link.synced_at, dirty: entry.content_json !== link.synced_content_json } : null;
+  return link ? {
+    document_id: link.document_id, tab_id: link.tab_id, synced_at: link.synced_at,
+    document_title: link.document_title, tab_title: link.tab_title, tab_order: link.tab_order,
+    readonly: link.readonly_reason || '',
+    dirty: entry.content_json !== link.synced_content_json,
+  } : null;
 }
 
 export function registerGoogleRoutes(app, { db, google }) {
@@ -26,6 +31,30 @@ export function registerGoogleRoutes(app, { db, google }) {
     if (!value) fail('entrée introuvable', 404);
     return value;
   };
+  /** Lecture brute : contrôle des commentaires, sans valider la conversion. */
+  const readSource = async (id) => {
+    fileId(id);
+    const [source, comments] = await Promise.all([
+      google.request(`/docs/v1/documents/${id}?includeTabsContent=true`),
+      google.request(`/drive/v3/files/${id}/comments?fields=comments(id)&pageSize=1&includeDeleted=false`),
+    ]);
+    if (comments.comments?.length) fail('Ce document contient des commentaires Google. L’édition synchronisée de ces documents n’est pas encore prise en charge ; l’original reste intact.', 422);
+    return source;
+  };
+
+  /** Nœud d'un onglet, pour en extraire le texte brut sans conversion. */
+  const chosenTab = (source, tabId) => {
+    let found;
+    const visit = (nodes) => {
+      for (const tab of nodes || []) {
+        if (!tabId || tab.tabProperties?.tabId === tabId) found ??= tab;
+        visit(tab.childTabs);
+      }
+    };
+    visit(source.tabs);
+    return found ?? source;
+  };
+
   const read = async (id, tabId = '') => {
     fileId(id);
     const [source, comments] = await Promise.all([
@@ -111,33 +140,56 @@ export function registerGoogleRoutes(app, { db, google }) {
   });
   route('post', '/api/google/documents/open', async (req, res) => {
     const documentId = fileId(req.body?.document_id);
-    const tabId = req.body?.tab_id ?? '';
-    if (typeof tabId !== 'string' || (tabId && !/^[\w.-]{1,200}$/.test(tabId))) fail('Identifiant d’onglet Google invalide.');
+    const wanted = req.body?.tab_id ?? '';
+    if (typeof wanted !== 'string' || (wanted && !/^[\w.-]{1,200}$/.test(wanted))) fail('Identifiant d’onglet Google invalide.');
     await exclusive(documentId, async () => {
-      const existing = db.prepare('SELECT entry_id FROM google_documents WHERE document_id=? AND tab_id=?').get(documentId, tabId);
-      if (existing) { res.json(reply(existing.entry_id)); return; }
-      const source = await read(documentId, tabId);
-      const actualTab = documentBody(source).tabId || '';
-      const previous = db.prepare('SELECT entry_id FROM google_documents WHERE document_id=? AND tab_id=?').get(documentId, actualTab);
-      if (previous) { res.json(reply(previous.entry_id)); return; }
-      // Les associations v0.7.x n'enregistraient pas l'onglet ; on les retrouve si le document en a toujours un seul.
-      if (!tabId) {
-        const legacy = db.prepare("SELECT entry_id FROM google_documents WHERE document_id=? AND tab_id='' ").get(documentId);
-        if (legacy) { res.json(reply(legacy.entry_id)); return; }
+      const source = await readSource(documentId);
+      const tabs = documentTabs(source);
+      const list = tabs.length ? tabs : [{ id: '', title: source.title || 'Document', depth: 0 }];
+      const documentTitle = source.title || 'Document Google';
+      const time = nowISO();
+      let first = null;
+      let asked = null;
+
+      // Tous les onglets sont ouverts d'un coup : ils forment un seul document
+      // dans le journal, avec une barre d'onglets dans l'éditeur. Un onglet
+      // impossible à convertir fidèlement reste **consultable en lecture
+      // seule** au lieu d'être refusé — on n'écrira jamais dessus.
+      for (const [order, tab] of list.entries()) {
+        const existing = db.prepare('SELECT entry_id FROM google_documents WHERE document_id=? AND tab_id=?').get(documentId, tab.id)
+          ?? (tab.id && order === 0 ? db.prepare("SELECT entry_id FROM google_documents WHERE document_id=? AND tab_id=''").get(documentId) : undefined);
+        if (existing) {
+          db.prepare('UPDATE google_documents SET document_title=?, tab_title=?, tab_order=? WHERE entry_id=?')
+            .run(documentTitle, tab.title, order, existing.entry_id);
+          first ??= existing.entry_id;
+          if (tab.id === wanted) asked = existing.entry_id;
+          continue;
+        }
+        let rich;
+        let readonly = '';
+        try {
+          rich = googleToDocument(selectDocumentTab(source, tab.id));
+        } catch (error) {
+          if (error?.status !== 422) throw error;
+          readonly = error.message;
+          rich = plainTextDocument(tabPlainText(chosenTab(source, tab.id)));
+        }
+        const id = uid('en_');
+        db.exec('BEGIN');
+        try {
+          db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
+            .run(id, list.length > 1 ? `${documentTitle} — ${tab.title}` : documentTitle, documentText(rich), JSON.stringify(rich), today(), time, time);
+          db.prepare('INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json,synced_at,document_title,tab_title,tab_order,readonly_reason) VALUES (?,?,?,?,?,?,?,?,?,?)')
+            .run(id, documentId, tab.id, source.revisionId || '', JSON.stringify(rich), readonly ? null : time, documentTitle, tab.title, order, readonly);
+          db.exec('COMMIT');
+        } catch (e) { db.exec('ROLLBACK'); throw e; }
+        first ??= id;
+        if (tab.id === wanted) asked = id;
       }
-      const rich = googleToDocument(source);
-      const id = uid('en_'), time = nowISO();
-      db.exec('BEGIN');
-      try {
-        db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
-          .run(id, (source.title || 'Document Google') + (tabId ? ` — ${documentTabs(source)[0]?.title || 'Onglet'}` : ''), documentText(rich), JSON.stringify(rich), today(), time, time);
-        db.prepare('INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json,synced_at) VALUES (?,?,?,?,?,?)')
-          .run(id, documentId, actualTab, source.revisionId || '', JSON.stringify(rich), time);
-        db.exec('COMMIT');
-      } catch (e) { db.exec('ROLLBACK'); throw e; }
-      res.status(201).json(reply(id));
+      res.status(201).json(reply(asked ?? first));
     });
   });
+
   route('post', '/api/entries/:id/google/push', async (req, res) => {
     const id = req.params.id;
     await exclusive(id, async () => {

@@ -107,6 +107,15 @@ export default function App() {
     reload();
   };
 
+  // Onglets du même document Google que l'entrée ouverte : ils forment la barre
+  // d'onglets de l'éditeur, pour tout consulter sans quitter le document.
+  const siblingTabs = (() => {
+    const documentId = state?.entries.find((e) => e.id === selectedId)?.google_document_id;
+    if (!documentId) return [];
+    const tabs = (state?.entries ?? []).filter((e) => e.google_document_id === documentId);
+    return tabs.length > 1 ? [...tabs].sort((a, b) => (a.google_tab_order ?? 0) - (b.google_tab_order ?? 0)) : [];
+  })();
+
   const stats = state?.stats;
 
   return (
@@ -193,6 +202,8 @@ export default function App() {
           {entry && state ? (
             <EntryEditor
               key={entry.id}
+              tabs={siblingTabs}
+              onSelectTab={setSelectedId}
               entry={entry}
               projects={state.projects}
               autoFocusTitle={freshEntry}
