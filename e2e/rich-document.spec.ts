@@ -8,10 +8,13 @@ test.beforeEach(async ({ page }) => {
 });
 test.afterEach(async ({ page }) => {
   const field = page.getByLabel('Titre de l’entrée');
-  if (await field.count()) {
-    page.once('dialog', dialog => dialog.accept());
-    await page.getByRole('region', { name: 'Entrée' }).getByRole('button', { name: 'Supprimer', exact: true }).click();
-  }
+  if (!(await field.count())) return;
+  const name = await field.inputValue();
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('region', { name: 'Entrée' }).getByRole('button', { name: 'Supprimer', exact: true }).click();
+  // Attendre la disparition effective : sans ça, la recette suivante démarre
+  // pendant la suppression et voit encore le document dans le journal.
+  await expect(page.getByRole('region', { name: 'Journal' }).getByText(name, { exact: true })).toHaveCount(0);
 });
 
 test('édition riche : styles, raccourcis, persistance et impression', async ({ page }, testInfo) => {

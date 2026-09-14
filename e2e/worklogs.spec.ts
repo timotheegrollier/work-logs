@@ -35,6 +35,10 @@ test('tout tient sur un écran, sans navigation', async ({ page }) => {
 });
 
 test('la première visite montre le mode d’emploi', async ({ page }) => {
+  // On sélectionne l'entrée explicitement : les recettes de `rich-document.spec.ts`
+  // s'exécutent avant celle-ci dans la même base et y laissent des documents plus
+  // récents, donc l'amorçage n'est pas forcément ce qui s'ouvre au démarrage.
+  await journal(page).getByText('Comment ça marche').click();
   await expect(title(page)).toHaveValue('Comment ça marche');
   await expect(editor(page).getByRole('heading', { name: 'Écrire' })).toBeVisible();
 });
