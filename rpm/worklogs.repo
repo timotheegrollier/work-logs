@@ -1,0 +1,5 @@
+[worklogs]
+name=WorkLogs
+baseurl=https://timotheegrollier.github.io/work-logs/rpm
+enabled=1
+gpgcheck=0
