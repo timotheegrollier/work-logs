@@ -116,6 +116,10 @@ test('recherche et remplacement : casse, navigation, annulation et sauvegarde du
 
 test('titres 4–6, plan, couleurs et effacement du format', async ({ page }, testInfo) => {
   const content = page.getByRole('textbox', { name: 'Contenu du document' });
+  // Titre distinct : après le rechargement plus bas, on rouvre ce document
+  // explicitement. S'en remettre à « le plus récent s'ouvre » rendait le test
+  // dépendant du temps — vert en local, rouge sur un agent CI plus lent.
+  await page.getByLabel('Titre de l’entrée').fill('Plan et couleurs');
   await content.fill('Prochaines étapes');
   await content.press('Control+a');
   await page.getByLabel('Style du paragraphe').selectOption('4');
@@ -135,6 +139,7 @@ test('titres 4–6, plan, couleurs et effacement du format', async ({ page }, te
   await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('rich-editor-expanded.png'), fullPage: true });
   await page.reload();
+  await page.getByRole('region', { name: 'Journal' }).getByText('Plan et couleurs', { exact: true }).click();
   await expect(content.locator('h4 mark')).toHaveText('Prochaines étapes');
   await expect(content.locator('h6')).toHaveText('Préparer la prochaine version');
   await content.click();
