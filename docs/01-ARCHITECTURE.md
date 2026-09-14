@@ -45,7 +45,8 @@ attachments(id, filename, stored, mime, size,
             entry_id → entries ON DELETE CASCADE, created_at)
 
 google_documents(entry_id → entries ON DELETE CASCADE PRIMARY KEY,
-                 document_id UNIQUE, revision_id, synced_content_json, synced_at)
+                 document_id, tab_id DEFAULT '', revision_id, synced_content_json, synced_at,
+                 UNIQUE(document_id, tab_id))
 ```
 
 - **IDs** : chaînes `préfixe + base36(horodatage) + 6 aléatoires` (`en_`, `tk_`, `pr_`, `at_`).
@@ -83,6 +84,8 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | POST · PUT · DELETE | `/api/entries[/:id]` | créer · modifier · supprimer |
 | POST | `/api/entries/:id/copy` | copie locale indépendante, fichiers compris |
 | GET · POST | `/api/google/*` | état, configuration desktop, connexion, déconnexion, liste et ouverture |
+| POST | `/api/google/documents` | crée un Google Docs nommé et son entrée locale associée |
+| GET | `/api/google/documents/:id/tabs` | onglets, imbrication et compatibilité d’édition |
 | POST | `/api/entries/:id/google/push` · `pull` | envoyer ou recharger avec contrôle de révision/brouillon |
 | POST · PUT · DELETE | `/api/tasks[/:id]` | créer · modifier · supprimer |
 | PATCH | `/api/tasks/:id/move` | `{status, position}` puis renumérotation |
@@ -121,3 +124,8 @@ un brouillon ne peut pas fuir d'une entrée à l'autre (test dédié dans `App.t
 - Pas d'authentification : usage mono-poste.
 - Front : react, marked, dompurify, complétés par Tiptap et ses extensions approuvées.
 - `node:sqlite` natif, synchrone : parfait en local, à ne pas exposer à du trafic.
+
+Les erreurs Google peuvent ajouter `code` et `help_url` au champ français `error`.
+La liste Drive remet les dernières sélections en tête, complète les fichiers absents
+de l’index et renvoie `warnings` pour les autorisations perdues. L’ouverture accepte
+`tab_id` ; le brouillon et la révision existants ne sont jamais écrasés par une réouverture.

@@ -1,6 +1,8 @@
 import { uid, nowISO, today } from './db.js';
 import { decodeEntry, documentText } from './rich-document.js';
-import { buildGoogleUpdate, googleToDocument } from './google-document.js';
+import { buildGoogleUpdate, documentBody, documentTabs, googleToDocument, selectDocumentTab } from './google-document.js';
+
+const blankSource = { body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } };
 
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const fileId = (value) => {
@@ -9,7 +11,7 @@ const fileId = (value) => {
 };
 export function googleLink(db, entry) {
   const link = db.prepare('SELECT * FROM google_documents WHERE entry_id=?').get(entry.id);
-  return link ? { document_id: link.document_id, synced_at: link.synced_at, dirty: entry.content_json !== link.synced_content_json } : null;
+  return link ? { document_id: link.document_id, tab_id: link.tab_id, synced_at: link.synced_at, dirty: entry.content_json !== link.synced_content_json } : null;
 }
 
 export function registerGoogleRoutes(app, { db, google }) {
@@ -24,15 +26,16 @@ export function registerGoogleRoutes(app, { db, google }) {
     if (!value) fail('entrée introuvable', 404);
     return value;
   };
-  const read = async (id) => {
+  const read = async (id, tabId = '') => {
     fileId(id);
     const [source, comments] = await Promise.all([
       google.request(`/docs/v1/documents/${id}?includeTabsContent=true`),
       google.request(`/drive/v3/files/${id}/comments?fields=comments(id)&pageSize=1&includeDeleted=false`),
     ]);
     if (comments.comments?.length) fail('Ce document contient des commentaires Google. L’édition synchronisée de ces documents n’est pas encore prise en charge ; l’original reste intact.', 422);
-    googleToDocument(source);
-    return source;
+    const selected = selectDocumentTab(source, tabId);
+    googleToDocument(selected);
+    return selected;
   };
   const linked = (id) => {
     const link = db.prepare('SELECT * FROM google_documents WHERE entry_id=?').get(id);
@@ -54,25 +57,82 @@ export function registerGoogleRoutes(app, { db, google }) {
   route('post', '/api/google/configure', (req, res) => res.json(google.configure(req.body)));
   route('post', '/api/google/connect', async (_req, res) => res.json(await google.connect()));
   route('post', '/api/google/disconnect', async (_req, res) => res.json(await google.disconnect()));
+  route('get', '/api/google/documents/:id/tabs', async (req, res) => {
+    const id = fileId(req.params.id);
+    const source = await google.request(`/docs/v1/documents/${id}?includeTabsContent=true`);
+    res.json({ tabs: documentTabs(source).map(tab => {
+      try { googleToDocument(selectDocumentTab(source, tab.id)); return { ...tab, editable: true }; }
+      catch (e) { if (e.status !== 422) throw e; return { ...tab, editable: false, reason: e.message }; }
+    }) });
+  });
   route('get', '/api/google/documents', async (req, res) => {
-    const params = new URLSearchParams({ q: "mimeType='application/vnd.google-apps.document' and trashed=false", fields: 'files(id,name,modifiedTime),nextPageToken', orderBy: 'modifiedTime desc', pageSize: '100' });
+    const params = new URLSearchParams({ q: "mimeType='application/vnd.google-apps.document' and trashed=false", fields: 'files(id,name,modifiedTime),nextPageToken', orderBy: 'modifiedTime desc', pageSize: '100', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true' });
     if (typeof req.query.page_token === 'string' && req.query.page_token.length < 5000) params.set('pageToken', req.query.page_token);
-    res.json(await google.request(`/drive/v3/files?${params}`));
+    const result = await google.request(`/drive/v3/files?${params}`);
+    const files = result.files || [];
+    const selectedIds = google.status().selectedIds || [];
+    const warnings = [];
+    if (!params.has('pageToken')) {
+      // La sélection OAuth peut ne pas encore être indexée dans files.list.
+      for (const id of selectedIds.slice(0, 100)) {
+        fileId(id);
+        if (files.some(file => file.id === id)) continue;
+        try {
+          const file = await google.request(`/drive/v3/files/${id}?fields=id,name,modifiedTime,mimeType,trashed&supportsAllDrives=true`);
+          if (!file.trashed && file.mimeType === 'application/vnd.google-apps.document') files.push(file);
+        } catch (e) {
+          if (e.code || ![403, 404].includes(e.status)) throw e;
+          warnings.push('Un document sélectionné n’est plus accessible. Sélectionne-le à nouveau dans Drive.');
+        }
+      }
+    }
+    files.sort((a, b) => Number(selectedIds.includes(b.id)) - Number(selectedIds.includes(a.id)));
+    res.json({ ...result, files, warnings: [...new Set(warnings)] });
+  });
+  route('post', '/api/google/documents', async (req, res) => {
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+    if (!title || title.length > 240) fail('Le titre doit contenir entre 1 et 240 caractères.');
+    await exclusive('create-document', async () => {
+      const created = await google.request('/docs/v1/documents', { method: 'POST', body: JSON.stringify({ title }) });
+      const documentId = fileId(created.documentId);
+      const rich = googleToDocument(created.body?.content || created.tabs?.length ? selectDocumentTab(created) : blankSource), serialized = JSON.stringify(rich);
+      const id = uid('en_'), time = nowISO();
+      // Associer immédiatement le fichier : une panne réseau après création ne doit pas le masquer.
+      db.exec('BEGIN');
+      try {
+        db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
+          .run(id, title, '', serialized, today(), time, time);
+        db.prepare('INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json,synced_at) VALUES (?,?,?,?,?,?)')
+          .run(id, documentId, documentTabs(created)[0]?.id || '', created.revisionId || '', serialized, time);
+        db.exec('COMMIT');
+      } catch (e) { db.exec('ROLLBACK'); throw e; }
+      res.status(201).json(reply(id));
+    });
   });
   route('post', '/api/google/documents/open', async (req, res) => {
     const documentId = fileId(req.body?.document_id);
+    const tabId = req.body?.tab_id ?? '';
+    if (typeof tabId !== 'string' || (tabId && !/^[\w.-]{1,200}$/.test(tabId))) fail('Identifiant d’onglet Google invalide.');
     await exclusive(documentId, async () => {
-      const existing = db.prepare('SELECT entry_id FROM google_documents WHERE document_id=?').get(documentId);
+      const existing = db.prepare('SELECT entry_id FROM google_documents WHERE document_id=? AND tab_id=?').get(documentId, tabId);
       if (existing) { res.json(reply(existing.entry_id)); return; }
-      const source = await read(documentId);
+      const source = await read(documentId, tabId);
+      const actualTab = documentBody(source).tabId || '';
+      const previous = db.prepare('SELECT entry_id FROM google_documents WHERE document_id=? AND tab_id=?').get(documentId, actualTab);
+      if (previous) { res.json(reply(previous.entry_id)); return; }
+      // Les associations v0.7.x n'enregistraient pas l'onglet ; on les retrouve si le document en a toujours un seul.
+      if (!tabId) {
+        const legacy = db.prepare("SELECT entry_id FROM google_documents WHERE document_id=? AND tab_id='' ").get(documentId);
+        if (legacy) { res.json(reply(legacy.entry_id)); return; }
+      }
       const rich = googleToDocument(source);
       const id = uid('en_'), time = nowISO();
       db.exec('BEGIN');
       try {
         db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
-          .run(id, source.title || 'Document Google', documentText(rich), JSON.stringify(rich), today(), time, time);
-        db.prepare('INSERT INTO google_documents (entry_id,document_id,revision_id,synced_content_json,synced_at) VALUES (?,?,?,?,?)')
-          .run(id, documentId, source.revisionId || '', JSON.stringify(rich), time);
+          .run(id, (source.title || 'Document Google') + (tabId ? ` — ${documentTabs(source)[0]?.title || 'Onglet'}` : ''), documentText(rich), JSON.stringify(rich), today(), time, time);
+        db.prepare('INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json,synced_at) VALUES (?,?,?,?,?,?)')
+          .run(id, documentId, actualTab, source.revisionId || '', JSON.stringify(rich), time);
         db.exec('COMMIT');
       } catch (e) { db.exec('ROLLBACK'); throw e; }
       res.status(201).json(reply(id));
@@ -92,12 +152,13 @@ export function registerGoogleRoutes(app, { db, google }) {
         const source = await read(created.documentId);
         // L'entrée peut avoir été supprimée pendant la requête Google.
         entry(id);
-        db.prepare('INSERT INTO google_documents (entry_id,document_id,revision_id,synced_content_json) VALUES (?,?,?,?)')
-          .run(id, created.documentId, source.revisionId || '', JSON.stringify(googleToDocument(source)));
+        db.prepare('INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json) VALUES (?,?,?,?,?)')
+          .run(id, created.documentId, documentBody(source).tabId || '', source.revisionId || '', JSON.stringify(googleToDocument(source)));
         link = linked(id);
       }
-      const source = await read(link.document_id);
-      if (source.revisionId !== link.revision_id) fail('Le document a changé sur Google Drive. Ton brouillon local est conservé. Recharge la version Google ou garde une copie locale avant de continuer.', 409);
+      const source = await read(link.document_id, link.tab_id);
+      const unchangedNewDocument = !link.revision_id && JSON.stringify(googleToDocument(source)) === link.synced_content_json;
+      if (!unchangedNewDocument && source.revisionId !== link.revision_id) fail('Le document a changé sur Google Drive. Ton brouillon local est conservé. Recharge la version Google ou garde une copie locale avant de continuer.', 409);
       const update = buildGoogleUpdate(source, rich);
       const result = await google.request(`/docs/v1/documents/${link.document_id}:batchUpdate`, { method: 'POST', body: JSON.stringify(update) });
       const revision = result.writeControl?.requiredRevisionId;
@@ -112,7 +173,7 @@ export function registerGoogleRoutes(app, { db, google }) {
     await exclusive(id, async () => {
       const current = entry(id), link = linked(id);
       if (JSON.stringify(req.body?.expected_content_json) !== current.content_json) fail('Le brouillon a changé. Enregistre-le avant de recharger Google.', 409);
-      const source = await read(link.document_id), rich = googleToDocument(source);
+      const source = await read(link.document_id, link.tab_id), rich = googleToDocument(source);
       if (entry(id).content_json !== current.content_json) fail('Tu as modifié le brouillon pendant le rechargement. Il a été conservé.', 409);
       const serialized = JSON.stringify(rich), time = nowISO();
       db.exec('BEGIN');

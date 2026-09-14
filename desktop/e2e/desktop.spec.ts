@@ -107,6 +107,17 @@ test('document riche : fermeture, reprise et panneau Drive dans Electron', async
   application = undefined;
   await launch('Sans titre');
   await expect(page.getByRole('textbox', { name: 'Contenu du document' }).locator('strong')).toHaveText('Texte riche conservé');
+  const reopened = page.getByRole('textbox', { name: 'Contenu du document' });
+  await reopened.click();
+  await reopened.press('Control+h');
+  const search = page.getByRole('search', { name: 'Rechercher dans le document' });
+  await search.getByLabel('Rechercher', { exact: true }).fill('conservé');
+  await search.getByLabel('Remplacer par').fill('retrouvé');
+  await search.getByRole('button', { name: 'Tout remplacer' }).click();
+  await search.getByRole('button', { name: 'Fermer la recherche' }).click();
+  await expect(reopened.locator('strong')).toHaveText('Texte riche retrouvé');
+  await reopened.press('Control+s');
+  await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Google Drive', exact: false }).click();
   await expect(page.getByLabel('Configuration Google JSON')).toBeAttached();
   await expect(page.getByRole('link', { name: 'Ouvrir Google Cloud' })).toBeVisible();

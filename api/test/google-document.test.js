@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildGoogleUpdate, googleToDocument } from '../src/google-document.js';
+import { buildGoogleUpdate, documentTabs, googleToDocument, selectDocumentTab } from '../src/google-document.js';
 import { startApi, make } from './helpers.js';
 
 const doc = (text = 'Bonjour') => ({ documentId: 'google-123', title: 'Document Google', revisionId: 'r1',
@@ -114,5 +114,105 @@ test('mode web : Drive indisponible sans exposer de connexion privilégiée', as
   try {
     assert.equal((await api.get('/api/google/status')).body.available, false);
     assert.equal((await api.post('/api/google/connect')).status, 503);
+  } finally { await api.close(); }
+});
+
+test('création directe : titre validé, association immédiate, premier envoi protégé même sans révision de création', async () => {
+  const google = stub();
+  const blank = { documentId: 'new-google', title: 'Projet', body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } };
+  google.setSource(blank);
+  const api = await startApi({ google });
+  try {
+    for (const title of ['', ' ', 'a'.repeat(241), 123]) assert.equal((await api.post('/api/google/documents', { title })).status, 400);
+    assert.equal(google.calls.length, 0);
+    const created = await api.post('/api/google/documents', { title: ' Projet ' });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.title, 'Projet');
+    assert.equal(created.body.google_sync.document_id, 'new-google');
+    assert.equal(google.calls.length, 1, 'ne dépend pas d’une seconde lecture réseau pour retrouver le fichier créé');
+    assert.equal((await api.post('/api/google/documents/open', { document_id: 'new-google' })).body.id, created.body.id);
+    await api.put(`/api/entries/${created.body.id}`, { content_json: googleToDocument(doc('Mon brouillon')) });
+    google.setSource({ ...blank, revisionId: 'r1' });
+    assert.equal((await api.post(`/api/entries/${created.body.id}/google/push`)).status, 200);
+    const write = google.calls.find(call => call.url.endsWith(':batchUpdate'));
+    assert.equal(JSON.parse(write.options.body).writeControl.requiredRevisionId, 'r1');
+  } finally { await api.close(); }
+});
+
+test('création sans révision : une modification distante avant le premier envoi conserve le brouillon', async () => {
+  const google = stub();
+  google.setSource({ documentId: 'new-google' });
+  const api = await startApi({ google });
+  try {
+    const created = await api.post('/api/google/documents', { title: 'Nouveau' });
+    google.setSource(doc('Quelqu’un écrit déjà sur Google'));
+    assert.equal((await api.post(`/api/entries/${created.body.id}/google/push`)).status, 409);
+    assert.equal(google.calls.filter(call => call.url.endsWith(':batchUpdate')).length, 0);
+  } finally { await api.close(); }
+});
+
+test('liste : retrouve un fichier sélectionné absent de l’index, le place en tête et signale les accès perdus', async () => {
+  const google = stub(), original = google.request;
+  google.status = () => ({ selectedIds: ['selected', 'revoked'] });
+  google.request = async (url, options) => {
+    if (url.startsWith('/drive/v3/files/selected?')) return { id: 'selected', name: 'Sélection récente', mimeType: 'application/vnd.google-apps.document' };
+    if (url.startsWith('/drive/v3/files/revoked?')) throw Object.assign(new Error('refus'), { status: 403 });
+    return original(url, options);
+  };
+  const api = await startApi({ google });
+  try {
+    const result = await api.get('/api/google/documents');
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body.files.map(file => file.id), ['selected', 'google-123']);
+    assert.match(result.body.warnings[0], /sélectionné/);
+    assert.match(google.calls[0].url, /includeItemsFromAllDrives=true/);
+  } finally { await api.close(); }
+});
+
+test('propage une API désactivée avec son action et ne crée aucune entrée si Google échoue', async () => {
+  const google = stub();
+  google.request = async () => { throw Object.assign(new Error('API désactivée'), { status: 403, code: 'GOOGLE_API_DISABLED', help_url: 'https://console.cloud.google.com/apis/library/docs.googleapis.com' }); };
+  const api = await startApi({ google });
+  try {
+    const result = await api.post('/api/google/documents', { title: 'Nouveau' });
+    assert.equal(result.status, 403);
+    assert.equal(result.body.code, 'GOOGLE_API_DISABLED');
+    assert.match(result.body.help_url, /docs.googleapis.com$/);
+    assert.equal(api.db.prepare('SELECT count(*) n FROM entries').get().n, 0);
+  } finally { await api.close(); }
+});
+
+test('onglets Google : choix explicite, brouillons distincts et toutes les écritures ciblées sur le sous-onglet', async () => {
+  const google = stub(), source = doc('Premier');
+  const second = doc('Sous-onglet').tabs[0];
+  second.tabProperties = { tabId: 't.child', title: 'Deuxième' };
+  source.tabs[0].childTabs = [second];
+  google.setSource(source);
+  assert.deepEqual(documentTabs(source).map(t => t.depth), [0, 1]);
+  assert.throws(() => selectDocumentTab(source), /choisis un onglet/);
+  const api = await startApi({ google });
+  try {
+    const tabs = await api.get('/api/google/documents/google-123/tabs');
+    assert.equal(tabs.body.tabs.length, 2);
+    assert.equal(tabs.body.tabs[1].editable, true);
+    assert.equal((await api.post('/api/google/documents/open', { document_id: 'google-123' })).status, 422);
+    const first = await api.post('/api/google/documents/open', { document_id: 'google-123', tab_id: 't.0' });
+    const child = await api.post('/api/google/documents/open', { document_id: 'google-123', tab_id: 't.child' });
+    assert.equal(child.status, 201);
+    assert.notEqual(first.body.id, child.body.id);
+    assert.equal(child.body.google_sync.tab_id, 't.child');
+    assert.match(child.body.content_md, /Sous-onglet/);
+    assert.equal((await api.post('/api/google/documents/open', { document_id: 'google-123', tab_id: 't.child' })).body.id, child.body.id);
+    await api.put(`/api/entries/${child.body.id}`, { content_json: googleToDocument(doc('Modifié')) });
+    assert.equal((await api.post(`/api/entries/${child.body.id}/google/push`)).status, 200);
+    const write = JSON.parse(google.calls.find(c => c.url.endsWith(':batchUpdate')).options.body);
+    for (const request of write.requests) {
+      const operation = Object.values(request)[0];
+      assert.equal((operation.range || operation.location).tabId, 't.child');
+    }
+    assert.match((await api.get(`/api/entries/${first.body.id}`)).body.content_md, /Premier/);
+    source.tabs[0].childTabs = []; google.setSource(source);
+    assert.equal((await api.post(`/api/entries/${child.body.id}/google/pull`, { expected_content_json: googleToDocument(doc('Modifié')) })).status, 422);
+    assert.match((await api.get(`/api/entries/${child.body.id}`)).body.content_md, /Modifié/);
   } finally { await api.close(); }
 });

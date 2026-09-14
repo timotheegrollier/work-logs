@@ -10,6 +10,42 @@ import { validateDocument } from '../src/rich-document.js';
 
 const document = { type: 'doc', content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Décisions', marks: [{ type: 'bold' }] }] }] };
 
+test('migration des associations Google v0.7 : conserve la révision et autorise plusieurs onglets sans doublons', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-tabs-migration-'));
+  const file = path.join(dir, 'old.db');
+  const initial = openDb(file, { withSeed: false });
+  initial.exec(`INSERT INTO entries (id,title,entry_date,created_at,updated_at) VALUES ('old','Original','2026-09-14','',''), ('second','Deuxième','2026-09-14','','');
+    DROP TABLE google_documents;
+    CREATE TABLE google_documents (entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE, document_id TEXT NOT NULL UNIQUE, revision_id TEXT NOT NULL, synced_content_json TEXT NOT NULL, synced_at TEXT);
+    INSERT INTO google_documents VALUES ('old','doc-123','revision-originale','{}','2026-09-14');`);
+  initial.close();
+  const migrated = openDb(file, { withSeed: false });
+  try {
+    const original = migrated.prepare('SELECT * FROM google_documents WHERE entry_id=?').get('old');
+    assert.equal(original.tab_id, '');
+    assert.equal(original.revision_id, 'revision-originale');
+    assert.equal(original.synced_content_json, '{}');
+    migrated.prepare('INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json) VALUES (?,?,?,?,?)').run('second', 'doc-123', 't.other', 'r2', '{}');
+    assert.throws(() => migrated.exec("UPDATE google_documents SET tab_id='' WHERE entry_id='second'"), /UNIQUE/);
+    migrated.exec("DELETE FROM entries WHERE id='second'");
+    assert.equal(migrated.prepare('SELECT count(*) n FROM google_documents').get().n, 1);
+    assert.deepEqual(migrated.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally { migrated.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('les blocs riches dans une cellule ou une citation et les dimensions d’image restent persistants', async () => {
+  const api = await startApi();
+  try {
+    const rich = { type: 'doc', content: [{ type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableHeader', attrs: { colspan: 2, rowspan: 1, colwidth: [120, 180] }, content: [
+      { type: 'blockquote', content: [{ type: 'codeBlock', attrs: { language: null }, content: [{ type: 'text', text: 'const x = 1' }] }] },
+      { type: 'image', attrs: { src: 'https://example.com/image.png', alt: 'Diagramme', width: 240, height: null } },
+    ] }] }] }] };
+    const saved = await api.post('/api/entries', { title: 'Blocs', content_json: rich });
+    assert.equal(saved.status, 201);
+    assert.deepEqual((await api.get(`/api/entries/${saved.body.id}`)).body.content_json, rich);
+  } finally { await api.close(); }
+});
+
 test('une base V2 antérieure reçoit la colonne riche sans perdre ses entrées', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-rich-migration-'));
   const file = path.join(dir, 'old.db');

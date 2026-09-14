@@ -7,6 +7,29 @@ const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 
+/** Google renvoie aussi 403 quand une API est désactivée, pas seulement pour les droits d'un fichier. */
+export function googleApiError(status, body, apiPath, clientId = '') {
+  const details = body.error?.details || [];
+  const reasons = [...(body.error?.errors || []).map(e => e.reason), ...details.map(e => e.reason)];
+  if (reasons.some(reason => ['SERVICE_DISABLED', 'accessNotConfigured'].includes(reason))) {
+    const service = apiPath.startsWith('/docs/') ? 'docs.googleapis.com' : 'drive.googleapis.com';
+    const consumer = details.find(d => d.metadata?.service === service)?.metadata?.consumer;
+    const project = /^projects\/(\d+)$/.exec(consumer || '')?.[1] || /^(\d+)-/.exec(clientId)?.[1];
+    const help = new URL(`https://console.cloud.google.com/apis/library/${service}`);
+    if (project) help.searchParams.set('project', project);
+    return Object.assign(fail(`L’API Google ${service.startsWith('docs') ? 'Docs' : 'Drive'} est désactivée dans ton projet Google Cloud. Active-la, attends quelques instants, puis réessaie.`, status),
+      { code: 'GOOGLE_API_DISABLED', help_url: help.href });
+  }
+  if (reasons.some(reason => ['rateLimitExceeded', 'userRateLimitExceeded', 'quotaExceeded', 'RESOURCE_EXHAUSTED'].includes(reason)) || status === 429)
+    return Object.assign(fail('La limite de requêtes Google est atteinte. Réessaie dans quelques instants.', status), { code: 'GOOGLE_RATE_LIMIT' });
+  if (reasons.some(reason => ['ACCESS_TOKEN_SCOPE_INSUFFICIENT', 'insufficientPermissions'].includes(reason)))
+    return Object.assign(fail('L’autorisation Google est incomplète. Reconnecte Google Drive et accorde l’accès aux documents sélectionnés.', status), { code: 'GOOGLE_SCOPE_REQUIRED' });
+  const messages = { 401: 'Autorisation Google expirée. Reconnecte Google Drive.',
+    403: 'Accès au document refusé : sélectionne-le avec « Choisir des documents dans Drive » et vérifie ton droit de modification.',
+    404: 'Document Google introuvable ou non autorisé.' };
+  return fail(messages[status] || 'Google a refusé la requête. Recharge le document avant de réessayer.', status);
+}
+
 /** OAuth desktop : navigateur système + PKCE, aucun jeton dans le renderer. */
 export function createGoogleClient({ profileDir, secureStorage, openExternal, fetchImpl = fetch, timeoutMs = 300_000 }) {
   const configPath = path.join(profileDir, 'google-client.json');
@@ -22,7 +45,10 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
 
   const protectedStorage = () => secureStorage.isEncryptionAvailable() && secureStorage.getSelectedStorageBackend() !== 'basic_text';
   if (protectedStorage()) {
-    try { tokens = JSON.parse(secureStorage.decryptString(fs.readFileSync(tokenPath))); }
+    try {
+      tokens = JSON.parse(secureStorage.decryptString(fs.readFileSync(tokenPath)));
+      selected = Array.isArray(tokens.selected_ids) ? tokens.selected_ids.filter(id => typeof id === 'string' && /^[\w-]{1,200}$/.test(id)) : [];
+    }
     catch { if (fs.existsSync(tokenPath)) error = 'Reconnecte Google Drive : les identifiants enregistrés ne sont plus lisibles.'; }
   }
   function persist() {
@@ -73,9 +99,7 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (response.status === 401) { tokens = null; fs.rmSync(tokenPath, { force: true }); }
-      const messages = { 401: 'Autorisation Google expirée. Reconnecte Google Drive.', 403: 'Accès Google refusé : sélectionne ce document avec le sélecteur Drive et vérifie ton droit de modification.',
-        404: 'Document Google introuvable ou non autorisé.', 429: 'Google reçoit trop de requêtes. Réessaie dans un instant.' };
-      throw fail(messages[response.status] || 'Google a refusé la mise à jour. Recharge le document avant de réessayer.', response.status);
+      throw googleApiError(response.status, body, apiPath, config.client_id);
     }
     return body;
   }
@@ -115,8 +139,8 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
           const next = await tokenRequest({ code, code_verifier: verifier, redirect_uri: redirect, grant_type: 'authorization_code' });
           if (currentGeneration !== generation) throw fail('Connexion Google annulée.');
           // Ne pas réutiliser le refresh token d'un autre compte sélectionné.
-          tokens = next; persist();
           selected = (url.searchParams.get('picked_file_ids') || '').split(',').filter(id => /^[\w-]{1,200}$/.test(id));
+          tokens = { ...next, selected_ids: selected }; persist();
           res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }).end('Google Drive est connecté. Tu peux fermer cette page et revenir dans WorkLogs.');
         } catch (e) {
           if (currentGeneration === generation) error = e.message || 'Connexion Google impossible.';

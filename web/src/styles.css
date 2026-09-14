@@ -417,23 +417,50 @@ button:disabled {
 .drive-files { list-style: none; padding: 0; margin: 0; max-height: 260px; overflow: auto; }
 .drive-files button { width: 100%; text-align: left; overflow-wrap: anywhere; }
 .drive-hint { color: var(--muted); }
+.drive-create, .drive-tab-choice { display: grid; gap: 8px; padding: 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; }
+.drive-create label { display: grid; gap: 5px; }
+.drive-create input, .drive-content > input { min-width: 0; width: 100%; }
+.drive-files small { display: block; padding: 0 8px 6px; color: var(--muted); font-size: 11px; }
+.drive-tab-choice button { text-align: left; overflow-wrap: anywhere; }
+.drive-tab-choice small { color: var(--muted); }
 .google-sync { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
 .google-sync span { color: var(--muted); margin-right: auto; }
 .google-sync button { font-size: 12px; }
-.rich-toolbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.rich-toolbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .rich-toolbar button, .rich-toolbar select, .rich-toolbar .file-button { font-size: 12px; padding: 5px 7px; }
 .rich-toolbar .is-on { background: var(--accent); color: white; }
+.rich-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding-right: 6px; border-right: 1px solid var(--line); }
+.rich-tools:last-child { border-right: 0; }
+.rich-tools button { min-width: 28px; }
+.rich-tools select { max-width: 160px; }
+.rich-context { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px; background: var(--surface-2); border-radius: 6px; margin-top: 6px; font-size: 12px; }
+.rich-context button { font-size: 12px; padding: 5px 7px; }
+.rich-context label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rich-context input:not([type="checkbox"]) { min-width: 80px; max-width: 230px; }
+.rich-context input[type="number"] { width: 90px; }
+.rich-context input[type="checkbox"] { width: auto; }
+.rich-search { border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; padding-bottom: 6px; }
+.rich-search .rich-context { margin: 0; background: transparent; }
+.rich-outline { display: grid; gap: 4px; padding: 12px; margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; max-height: 220px; overflow: auto; }
+.rich-outline button { text-align: left; border: 0; font-size: 13px; }
+.rich-outline [data-level="2"] { margin-left: 12px; }
+.rich-outline [data-level="3"], .rich-outline [data-level="4"], .rich-outline [data-level="5"], .rich-outline [data-level="6"] { margin-left: 24px; }
 .rich-color { display: inline-flex; align-items: center; gap: 3px; padding: 0 4px; }
 .rich-color input { width: 24px; height: 24px; padding: 0; border: 0; }
 .rich-content { min-height: 480px; padding: 28px; margin-top: 12px; outline: none; border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; background: var(--surface); }
 .rich-content:focus { border-color: var(--accent); }
 .rich-content p { min-height: 1.5em; }
 .rich-content table { table-layout: fixed; width: 100%; }
+.rich-content .tableWrapper { overflow-x: auto; }
 .rich-content td, .rich-content th { min-width: 40px; position: relative; }
+.rich-content .column-resize-handle { position: absolute; right: -2px; top: 0; bottom: -2px; width: 4px; background: var(--accent); pointer-events: none; }
+.rich-content.resize-cursor { cursor: col-resize; }
+.rich-content .search-match { background: #fff59d; color: #252525; }
+.rich-content .search-current { background: #ffcc80; outline: 2px solid #b56700; }
 .rich-content .selectedCell { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 .rich-content img.ProseMirror-selectednode { outline: 2px solid var(--accent); }
 .rich-count { color: var(--muted); font-size: 12px; text-align: right; }
-@media print { .rich-content { border: 0; padding: 0; min-height: 0; } }
+@media print { .rich-content { border: 0; padding: 0; min-height: 0; } .rich-content .search-match { background: transparent; color: inherit; outline: none; } }
 
 /* ------------------------------------------------------------ éditeur */
 .editor {

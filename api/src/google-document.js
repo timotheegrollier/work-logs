@@ -9,6 +9,39 @@ const rgb = (hex) => {
 const alignment = { START: 'left', CENTER: 'center', END: 'right', JUSTIFIED: 'justify' };
 const alignmentBack = { left: 'START', center: 'CENTER', right: 'END', justify: 'JUSTIFIED' };
 
+export function documentTabs(source) {
+  const result = [];
+  function visit(tabs, depth = 0) {
+    for (const tab of tabs || []) {
+      result.push({ id: tab.tabProperties.tabId, title: tab.tabProperties.title || 'Onglet', depth });
+      visit(tab.childTabs, depth + 1);
+    }
+  }
+  visit(source.tabs);
+  return result;
+}
+
+/** Réduit le travail à l'onglet choisi ; chaque écriture conserve son tabId explicite. */
+export function selectDocumentTab(source, tabId = '') {
+  if (!source.tabs?.length) {
+    if (tabId) unsupported('cet onglet Google introuvable');
+    return source;
+  }
+  const tabs = documentTabs(source);
+  if (!tabId && tabs.length > 1) unsupported('les documents Google à plusieurs onglets : choisis un onglet dans la liste Drive');
+  const chosenId = tabId || tabs[0].id;
+  let chosen;
+  function visit(nodes) {
+    for (const tab of nodes || []) {
+      if (tab.tabProperties.tabId === chosenId) chosen = tab;
+      visit(tab.childTabs);
+    }
+  }
+  visit(source.tabs);
+  if (!chosen) unsupported('cet onglet supprimé ou inaccessible');
+  return { ...source, tabs: [{ ...chosen, childTabs: [] }] };
+}
+
 export function documentBody(source) {
   if (source.tabs) {
     if (source.tabs.length !== 1 || source.tabs[0].childTabs?.length) unsupported('les documents Google à plusieurs onglets');
