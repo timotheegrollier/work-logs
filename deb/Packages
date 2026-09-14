@@ -36,3 +36,22 @@ Description: Journal de travail personnel
 License: UNLICENSED
 Vendor: Timothée Grollier <timotheegrollier@gmail.com>
 
+Package: worklogs
+Version: 0.7.3
+Architecture: amd64
+Maintainer: Timothée Grollier <timotheegrollier@gmail.com>
+Installed-Size: 285319
+Depends: libgtk-3-0, libnss3, libxss1, libxtst6, libatspi2.0-0, libdrm2, libgbm1, libasound2t64 | libasound2, xdg-utils
+Filename: ./WorkLogs-0.7.3-linux-amd64.deb
+Size: 98111464
+MD5sum: 64b6ffc29b204cbaccb44142c124bdff
+SHA1: dcfab1e25cbba50f5d6fdef37fa407ced6eb8b4a
+SHA256: bf1cc2a07bf6dee0257dcf31936bb9b04cca12141dcb4d6b01e528cf69c9c2b4
+Section: default
+Priority: optional
+Homepage: https://github.com/timotheegrollier/work-logs
+Description: Journal de travail personnel
+  Journal Markdown et suivi de tâches, sur un seul écran, entièrement local.
+License: UNLICENSED
+Vendor: Timothée Grollier <timotheegrollier@gmail.com>
+
