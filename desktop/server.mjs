@@ -5,10 +5,10 @@ import { createApp } from '../api/src/app.js';
 import { openDb } from '../api/src/db.js';
 
 /** Serveur privé de la fenêtre desktop, indépendant des ports du mode web. */
-export async function startDesktopServer({ dataDir, staticDir, withSeed = true }) {
+export async function startDesktopServer({ dataDir, staticDir, withSeed = true, google = null }) {
   const db = openDb(path.join(dataDir, 'worklogs.db'), { withSeed });
   const token = randomBytes(32).toString('hex');
-  const application = createApp({ db, uploadDir: path.join(dataDir, 'uploads'), staticDir });
+  const application = createApp({ db, uploadDir: path.join(dataDir, 'uploads'), staticDir, google });
   const server = createServer((req, res) => {
     if (req.headers['x-worklogs-token'] !== token) {
       res.writeHead(403, { 'Content-Type': 'application/json' });

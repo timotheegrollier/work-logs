@@ -1,4 +1,7 @@
+import type { JSONContent } from '@tiptap/core';
 export type Status = 'todo' | 'doing' | 'done';
+export type RichDocument = JSONContent;
+export const emptyDocument = (): RichDocument => ({ type: 'doc', content: [{ type: 'paragraph' }] });
 
 export interface Project {
   id: string;
@@ -22,12 +25,19 @@ export interface Entry {
   id: string;
   title: string;
   content_md: string;
+  content_json?: RichDocument | null;
+  google_sync?: { document_id: string; synced_at: string | null; dirty: boolean } | null;
   entry_date: string;
   project_id: string | null;
   created_at: string;
   updated_at: string;
   attachments: Attachment[];
 }
+export interface GoogleStatus {
+  available: boolean; configured: boolean; connected: boolean; pending: boolean; error: string;
+  selectedIds: string[]; secureStorage?: boolean;
+}
+export interface GoogleFile { id: string; name: string; modifiedTime: string }
 export interface Task {
   id: string;
   title: string;
@@ -82,6 +92,14 @@ const send = <T>(method: string, url: string, body?: unknown) =>
   req<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
 
 export const api = {
+  googleStatus: () => req<GoogleStatus>('/api/google/status'),
+  configureGoogle: (configuration: unknown) => send<GoogleStatus>('POST', '/api/google/configure', configuration),
+  connectGoogle: () => send<GoogleStatus>('POST', '/api/google/connect'),
+  disconnectGoogle: () => send<GoogleStatus>('POST', '/api/google/disconnect'),
+  googleDocuments: (pageToken = '') => req<{ files: GoogleFile[]; nextPageToken?: string }>('/api/google/documents' + (pageToken ? '?page_token=' + encodeURIComponent(pageToken) : '')),
+  openGoogleDocument: (document_id: string) => send<Entry>('POST', '/api/google/documents/open', { document_id }),
+  pushGoogleDocument: (id: string) => send<Entry>('POST', `/api/entries/${id}/google/push`),
+  pullGoogleDocument: (id: string, expected_content_json: RichDocument) => send<Entry>('POST', `/api/entries/${id}/google/pull`, { expected_content_json }),
   state: (q = '', projectId = '') => {
     const params = new URLSearchParams();
     if (q) params.set('q', q);
@@ -93,6 +111,7 @@ export const api = {
   createEntry: (body: Partial<Entry>) => send<Entry>('POST', '/api/entries', body),
   updateEntry: (id: string, body: Partial<Entry>) => send<Entry>('PUT', `/api/entries/${id}`, body),
   deleteEntry: (id: string) => send<{ ok: true }>('DELETE', `/api/entries/${id}`),
+  copyEntry: (id: string) => send<Entry>('POST', `/api/entries/${id}/copy`),
 
   createTask: (body: Partial<Task>) => send<Task>('POST', '/api/tasks', body),
   updateTask: (id: string, body: Partial<Task>) => send<Task>('PUT', `/api/tasks/${id}`, body),
