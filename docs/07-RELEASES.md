@@ -105,7 +105,7 @@ Trois circuits selon le format installé (détecté par `installKind()` dans
 | Installé via | Mise à jour | Téléchargé |
 |---|---|---|
 | `.rpm` + dépôt dnf | dialogue « Mettre à jour maintenant » → PackageKit (`pkcon`, mot de passe via polkit) → « Redémarrer » ; revérifié toutes les 5 min en tâche de fond | paquet complet (~83 Mo) |
-| `.deb` + dépôt apt **(depuis la 0.6.14)** | même circuit, dorsale apt de PackageKit | paquet complet (~121 Mo) |
+| `.deb` + dépôt apt **(depuis la 0.7.0)** | même circuit, dorsale apt de PackageKit | paquet complet (~121 Mo) |
 | `.AppImage` | dialogue « Mettre à jour » → téléchargement **différentiel** → « Redémarrer » | seuls les blocs modifiés (~1–5 Mo) |
 | Paquet système sans dépôt activé | page de téléchargement, avec la commande d'activation du dépôt | paquet complet |
 
