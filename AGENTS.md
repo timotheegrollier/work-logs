@@ -1,6 +1,12 @@
 # WorkLogs — règles agents
 
 ## Reprise actuelle — 2026-09-14
+- Lot en cours : **éditeur riche intégré + Google Drive facultatif**, branche
+  `codex/integrated-documents`. Lire `docs/08-GOOGLE-DOCS.md` pour le périmètre,
+  la configuration OAuth et la recette réelle Google restant à faire.
+- **Tiptap 3.31.3 approuvé explicitement** : core, react, pm, starter-kit,
+  extension-table, extension-image, extension-text-align, extension-text-style,
+  extension-highlight. Ne pas redemander cet accord.
 - Releases **v0.2.0 → v0.6.12 publiées**, 19 au total (DEB/RPM/AppImage + SHA256 + attestation).
   Process : `docs/07-RELEASES.md` (fast path ~2 min, notes anglaises auto).
 - `./scripts/check.sh` est **vert** (desktop compris).
@@ -12,7 +18,8 @@
   « Enregistrer sous », Ctrl+P, persistance).
 
 ## Contexte
-- Journal de travail perso, 100 % local, **un seul écran** (pas d'onglets, pas de routeur).
+- Journal de travail perso, local par défaut avec Drive facultatif en desktop,
+  **un seul écran** (pas d'onglets, pas de routeur).
 - `api/` : Node + Express + `node:sqlite`. `web/` : React + Vite + TS.
 - Ports : API **8410**, web **8411**, e2e **8412**. Base : `api/data/worklogs.db`.
 - Lire `docs/00-HANDOVER.md` en premier, puis `05-DECISIONS.md` (pourquoi c'est comme ça)

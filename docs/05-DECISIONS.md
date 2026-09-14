@@ -228,3 +228,23 @@ d'une refonte, c'est mélanger deux sources de panne.
 **Quand la rouvrir.** Dans un lot dédié, avec `./scripts/check.sh` comme filet. Points à
 vérifier : les motifs de route (`app.get(/.*/)`), `req.query` devenu non modifiable, le
 middleware d'erreur.
+
+
+## 12. Documents riches intégrés et Drive facultatif — 2026-09-14
+
+**Demande explicite.** Ouvrir/éditer des documents Google dans WorkLogs. L’utilisateur
+retient l’éditeur intégré et approuve Tiptap 3.31.3 avec les extensions d’`AGENTS.md`.
+Le principe « sans cloud » devient « local par défaut, Drive facultatif ».
+
+**Décision.** Nouveau document riche dans le journal existant, sans onglet ni routeur.
+Les anciennes entrées restent en Markdown. Sauvegarde locale via la même file
+`Autosave`, JSON validé côté serveur, copie locale incluant les fichiers.
+
+**Google.** OAuth desktop avec PKCE, navigateur système et trousseau Linux, scope
+`drive.file`. API disponibles seulement dans le serveur desktop protégé. Synchronisation
+manuelle explicite, révision requise et refus des contenus incompatibles avant écriture.
+Pas de conversion globale Markdown ni de promesse de parité avec l’éditeur Google.
+
+**Reprise.** La recette sur un vrai compte Google reste à effectuer. Les tests couvrent
+les échanges simulés, les conflits, la sauvegarde et l’édition. Configuration et limites :
+`08-GOOGLE-DOCS.md`.

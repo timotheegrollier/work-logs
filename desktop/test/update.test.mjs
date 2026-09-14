@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkForUpdate, hasPackageKit, installKind, installedMatches, isNewer, logUpdateEvent, parsePkconCandidate, parsePkconProgress, parseVersion, pkconInstallArgs, pkconRefreshArgs, pkconUpdatesArgs, releaseAgeMinutes, shouldOfferUpdate, startPoll } from '../update.mjs';
+import { checkForUpdate, hasPackageKit, installedVersionCommand, installKind, installedMatches, isNewer, logUpdateEvent, packageManager, parsePkconCandidate, parsePkconProgress, parseVersion, pkconInstallArgs, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from '../update.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -79,10 +79,62 @@ test('parsePkconCandidate lit la version proposée par PackageKit', () => {
   assert.equal(parsePkconCandidate(''), null);
 });
 
+test('parsePkconCandidate lit aussi le format apt (Debian/Mint)', () => {
+  // Relevé en conteneur ubuntu:24.04 : pas de révision `-1`, arch collée à la
+  // version. L'ancienne expression exigeait la révision et ne trouvait rien.
+  assert.equal(parsePkconCandidate('Normal       worklogs-0.6.13.amd64 (worklogs-stable-)\n'), '0.6.13');
+  assert.equal(
+    parsePkconCandidate('Bug fix      libc6-2.39-0ubuntu8.9.amd64 (ubuntu-noble-updates-main)\nNormal       worklogs-0.7.0.amd64 (worklogs-stable-)\n'),
+    '0.7.0'
+  );
+});
+
+test('pkconProbeOutcome n’autorise l’installation qu’avec le bon candidat', () => {
+  const probe = (code, output) => pkconProbeOutcome({ code, output, expected: '0.6.13' });
+
+  assert.equal(probe(0, 'Normal worklogs-0.6.13.amd64 (wl)').decision, 'ready');
+  assert.equal(probe(0, 'Available\tworklogs-0.6.13-1.x86_64 (wl)').decision, 'ready');
+
+  // Le cas Mint : `get-updates` sort en 5 quand il n'y a rien à installer.
+  // Il faut un repli manuel, surtout pas une tentative d'installation.
+  const nothing = probe(5, 'There are no updates available');
+  assert.equal(nothing.decision, 'none');
+  assert.equal(nothing.probeFailed, true);
+  assert.equal(probe(0, 'There are no updates available').decision, 'none');
+
+  // Dépôt en retard : on s'arrête et on le dit, sans rien installer.
+  assert.deepEqual(
+    { ...probe(0, 'Available\tworklogs-0.6.11-1.x86_64 (wl)') },
+    { decision: 'mismatch', candidate: '0.6.11' }
+  );
+});
+
+test('packageManager et repoHint parlent la langue du système', () => {
+  const dnf = packageManager({ existsSync: (p) => p === '/usr/bin/dnf' });
+  const apt = packageManager({ existsSync: (p) => p === '/usr/bin/apt-get' });
+  assert.equal(dnf, 'dnf');
+  assert.equal(apt, 'apt');
+  assert.equal(packageManager({ existsSync: () => false }), null);
+
+  assert.match(repoHint(dnf).update, /dnf update worklogs/);
+  assert.match(repoHint(dnf).enable, /yum\.repos\.d/);
+  assert.match(repoHint(apt).update, /apt install --only-upgrade worklogs/);
+  assert.match(repoHint(apt).enable, /sources\.list\.d/);
+  assert.match(repoHint(apt).url, /\/deb$/);
+});
+
+test('installedVersionCommand interroge la bonne base de paquets', () => {
+  assert.deepEqual(installedVersionCommand('apt'), { file: 'dpkg-query', args: ['-W', '-f', '${Version}', 'worklogs'] });
+  assert.deepEqual(installedVersionCommand('dnf'), { file: 'rpm', args: ['-q', '--qf', '%{VERSION}', 'worklogs'] });
+});
+
 test('installedMatches refuse une version surprise après install', () => {
   assert.equal(installedMatches('0.6.2\n', '0.6.2'), true);
   assert.equal(installedMatches('0.5.0\n', '0.6.2'), false);
   assert.equal(installedMatches('', '0.6.2'), false);
+  // dpkg-query peut ajouter la révision Debian : même version, pas un échec.
+  assert.equal(installedMatches('0.6.2-1\n', '0.6.2'), true);
+  assert.equal(installedMatches('0.6.1-9\n', '0.6.2'), false);
 });
 
 test('startPoll espace les ticks et ignore les chevauchements', async () => {

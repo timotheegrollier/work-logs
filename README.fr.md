@@ -1,8 +1,8 @@
 # WorkLogs
 
-Journal de travail 100 % local. **Un seul écran** : le journal à gauche,
-l'écriture au centre, les tâches à droite. Aucun onglet, aucun menu, aucun
-cloud, aucun compte.
+Journal de travail enregistré localement par défaut. **Un seul écran** : le journal
+à gauche, l’écriture au centre, les tâches à droite. Aucun compte requis en usage local.
+La branche de développement ajoute les documents riches et Google Drive facultatif.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
@@ -34,10 +34,25 @@ Télécharger la dernière release sur
 sha256sum -c SHA256SUMS
 ```
 
+### Mise à jour en un clic
+
+Une fois le dépôt activé, l'application installe les versions suivantes toute seule,
+après ta confirmation et ton mot de passe.
+
+```bash
+# Debian, Ubuntu, Linux Mint
+sudo curl -fsSL -o /etc/apt/sources.list.d/worklogs.list \
+  https://timotheegrollier.github.io/work-logs/deb/worklogs.list
+
+# Fedora et dérivées RPM
+sudo curl -fsSL -o /etc/yum.repos.d/worklogs.repo \
+  https://timotheegrollier.github.io/work-logs/rpm/worklogs.repo
+```
+
+L'AppImage, elle, se met à jour seule et en différentiel — rien à activer.
+
 Données dans `~/.local/share/worklogs/`, profil et thème dans
-`~/.config/worklogs/`. L'application vérifie les mises à jour à l'ouverture
-et propose le téléchargement en un clic (construction des releases :
-`docs/07-RELEASES.md`).
+`~/.config/worklogs/` (construction des releases : `docs/07-RELEASES.md`).
 
 ## Développer
 
@@ -55,6 +70,7 @@ http://localhost:8410. Application desktop : `npm run desktop`.
 | Geste | Effet |
 |---|---|
 | **+ Nouvelle entrée** | crée l'entrée du jour et place le curseur dans le titre |
+| **+ Nouveau document** | éditeur riche : styles, listes, liens, tableaux et images locales |
 | Écrire dans la zone Markdown | **enregistrement automatique**, `Ctrl+S` pour forcer |
 | **Écrire / Lire** | édition côte à côte avec l'aperçu, ou lecture pleine largeur |
 | **Imprimer** (ou `Ctrl+P`) | sort l'entrée seule, mise en page propre, prête pour un PDF |
@@ -67,6 +83,16 @@ http://localhost:8410. Application desktop : `npm run desktop`.
 
 Markdown géré : titres, gras/italique, listes, **cases à cocher**, **tableaux**,
 citations, blocs de code, liens, images.
+
+Les documents riches s’enregistrent automatiquement en local ; l’export JSON conserve
+leur mise en forme. En desktop, ouvre **Google Drive**, importe le JSON du client OAuth
+desktop créé dans Google Cloud, puis connecte-toi et autorise tes documents.
+L’édition se fait dans WorkLogs ; Google utilise le navigateur pour la connexion et
+l’autorisation des fichiers. **Enregistrer sur Drive** envoie les changements.
+La première synchronisation couvre texte, titres, styles usuels et listes simples.
+Les documents Google complexes sont refusés avant import/écriture ; tableaux et images
+fonctionnent localement. OAuth et les API sont testés avec des réponses simulées ;
+la recette sur un vrai compte reste à faire. [Configuration et limites](docs/08-GOOGLE-DOCS.md).
 
 ## Tester
 

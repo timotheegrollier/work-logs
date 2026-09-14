@@ -18,7 +18,7 @@ for (const name of ['api/src', 'api/package.json', 'web/dist']) {
   fs.cpSync(path.join(root, name), path.join(stage, name), { recursive: true });
 }
 fs.mkdirSync(path.join(stage, 'desktop'), { recursive: true });
-for (const name of ['main.mjs', 'preload.cjs', 'server.mjs', 'update.mjs', 'icon.png'])
+for (const name of ['main.mjs', 'preload.cjs', 'server.mjs', 'update.mjs', 'google.mjs', 'icon.png'])
   fs.copyFileSync(path.join(root, 'desktop', name), path.join(stage, 'desktop', name));
 const manifest = {
   name: 'worklogs', productName: 'WorkLogs', desktopName: 'worklogs.desktop', version: project.version,

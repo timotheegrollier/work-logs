@@ -11,6 +11,7 @@ import fs from 'node:fs';
 export const UPDATE_REPO = 'timotheegrollier/work-logs';
 export const RELEASES_URL = `https://github.com/${UPDATE_REPO}/releases`;
 export const RPM_REPO_URL = 'https://timotheegrollier.github.io/work-logs/rpm';
+export const DEB_REPO_URL = 'https://timotheegrollier.github.io/work-logs/deb';
 /** Nom du paquet système (deb et rpm — vérifié : `rpm -q worklogs`, `--name worklogs` côté fpm). */
 export const SYSTEM_PACKAGE = 'worklogs';
 /** Revérification périodique en tâche de fond (l'ouverture vérifie déjà). */
@@ -135,18 +136,83 @@ export function pkconRefreshArgs() {
 }
 
 /**
- * Extrait la version candidate de `worklogs` de la sortie `pkcon -p get-updates`
- * (format texte `Available\\tworklogs-0.6.8-1.x86_64 (wl)`), ou null si aucune
- * mise à jour n'est proposée.
+ * Extrait la version candidate de `worklogs` de la sortie `pkcon -p get-updates`,
+ * ou null si aucune mise à jour n'est proposée.
+ *
+ * Les deux dorsales ne écrivent pas pareil — relevé en conteneur :
+ *   dnf  : `Available   worklogs-0.6.8-1.x86_64 (wl)`        (révision `-1` puis arch)
+ *   apt  : `Normal      worklogs-0.6.13.amd64 (worklogs-stable-)`  (pas de révision)
+ * L'ancienne expression exigeait la révision : elle ne pouvait rien trouver sur
+ * Debian/Mint, même dépôt apt configuré.
  */
 export function parsePkconCandidate(output) {
-  const match = /worklogs-(\d[\w.]*)-\d+\.\w+ \(/.exec(String(output));
+  const match = new RegExp(`\\b${SYSTEM_PACKAGE}-(\\d+\\.\\d+\\.\\d+)(?:-\\d+)?\\.[a-z0-9_]+\\s*\\(`, 'i')
+    .exec(String(output));
   return match ? match[1] : null;
 }
 
-/** La version installée correspond-elle à celle attendue ? (`rpm -q` ne sort qu'une ligne). */
-export function installedMatches(rpmOutput, expected) {
-  return String(rpmOutput).trim().split('\n')[0]?.trim() === expected;
+/**
+ * Que faire après le pré-vol PackageKit. Isolé ici parce que c'est exactement
+ * là que Mint cassait : `pkcon get-updates` sort en **5** quand il n'y a rien à
+ * installer (« nothing useful was done »), et le code traitait tout code non nul
+ * comme « interrogation impossible » — puis tentait quand même l'installation,
+ * qui échouait forcément.
+ *
+ * - 'ready'    : le gestionnaire propose bien la version attendue, on peut installer.
+ * - 'none'     : rien de proposé (aucun dépôt configuré, ou déjà à jour) — repli manuel.
+ * - 'mismatch' : il propose autre chose, métadonnées périmées — on s'arrête.
+ */
+export function pkconProbeOutcome({ code, output, expected }) {
+  const candidate = parsePkconCandidate(output);
+  if (candidate === expected) return { decision: 'ready', candidate };
+  if (candidate) return { decision: 'mismatch', candidate };
+  // Rien trouvé : pas de dépôt configuré, ou déjà à jour, ou pkcon a refusé de
+  // répondre. Les trois mènent au même repli, jamais à une installation.
+  return { decision: 'none', candidate: null, probeFailed: code !== 0 };
+}
+
+/**
+ * Gestionnaire de paquets du système, pour parler la bonne langue dans les
+ * messages et proposer la bonne commande. `existsSync` injectable pour les tests.
+ */
+export function packageManager({ existsSync = fs.existsSync } = {}) {
+  if (existsSync('/usr/bin/dnf')) return 'dnf';
+  if (existsSync('/usr/bin/apt-get')) return 'apt';
+  return null;
+}
+
+/** Commande qui lit la version installée du paquet système, selon la dorsale. */
+export function installedVersionCommand(manager) {
+  return manager === 'apt'
+    ? { file: 'dpkg-query', args: ['-W', '-f', '${Version}', SYSTEM_PACKAGE] }
+    : { file: 'rpm', args: ['-q', '--qf', '%{VERSION}', SYSTEM_PACKAGE] };
+}
+
+/** URL du dépôt à proposer, et commande d'activation, selon la dorsale. */
+export function repoHint(manager) {
+  if (manager === 'apt') {
+    return {
+      url: DEB_REPO_URL,
+      update: 'sudo apt update && sudo apt install --only-upgrade worklogs',
+      enable: `sudo curl -fsSL -o /etc/apt/sources.list.d/worklogs.list ${DEB_REPO_URL}/worklogs.list`,
+    };
+  }
+  return {
+    url: RPM_REPO_URL,
+    update: 'sudo dnf update worklogs',
+    enable: `sudo curl -fsSL -o /etc/yum.repos.d/worklogs.repo ${RPM_REPO_URL}/worklogs.repo`,
+  };
+}
+
+/**
+ * La version installée correspond-elle à celle attendue ?
+ * `rpm -q --qf %{VERSION}` sort `0.6.13` ; `dpkg-query -W -f ${Version}` peut
+ * sortir `0.6.13` ou `0.6.13-1` selon l'empaqueteur — on compare donc la partie
+ * amont, sans la révision Debian.
+ */
+export function installedMatches(output, expected) {
+  const found = String(output).trim().split('\n')[0]?.trim() ?? '';
+  return found === expected || found.replace(/-\d+$/, '') === expected;
 }
 
 /**

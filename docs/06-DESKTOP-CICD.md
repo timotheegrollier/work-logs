@@ -160,7 +160,8 @@ qui ne survivent pas au changement de racine).
 | `scripts/test-linux-package.sh` | installation native puis essais AppImage dans un conteneur jetable — **non modifié**, validé manuellement (§2, §3) |
 | `.github/workflows/ci.yml` | tests → packaging → matrice Ubuntu 24.04/Fedora 43/Fedora 44 — **en service** |
 | `.github/workflows/release.yml` | réutilise la CI, SHA256SUMS, attestation, brouillon/publication — **en service** |
-| `.github/workflows/rpm-repo.yml` | dépôt dnf sur `gh-pages`, déclenché par la fin de « Release Linux » |
+| `.github/workflows/repos.yml` | dépôts **dnf et apt** sur `gh-pages`, déclenché par la fin de « Release Linux », rétention 3 versions |
+| `scripts/build-deb-repo.sh` · `scripts/prune-repo.mjs` | index apt plat · purge des versions au-delà des 3 dernières |
 | `.github/dependabot.yml` | propositions mensuelles npm et GitHub Actions |
 | `desktop/update.mjs` | détection du format installé, PackageKit (`pkcon`), electron-updater |
 | `scripts/check-release.mjs` | semver, égalité version/tag, **et synchronisation de `package-lock.json`** |

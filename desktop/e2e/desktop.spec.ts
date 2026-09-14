@@ -25,7 +25,7 @@ function downloadNext(target: string): Promise<void> {
   }), target);
 }
 
-async function launch() {
+async function launch(expectedTitle = 'Comment ça marche') {
   const env = Object.fromEntries(Object.entries(process.env).filter((item): item is [string, string] =>
     item[1] !== undefined && item[0] !== 'ELECTRON_RUN_AS_NODE'));
   application = await _electron.launch({
@@ -36,7 +36,7 @@ async function launch() {
     env: { ...env, WORKLOGS_DATA_DIR: path.join(directory, 'data'), WORKLOGS_PROFILE_DIR: path.join(directory, 'profile'), WORKLOGS_SKIP_UPDATE_CHECK: '1' },
   });
   page = await application.firstWindow();
-  await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Comment ça marche');
+  await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(expectedTitle);
 }
 
 test.beforeEach(async () => {
@@ -93,6 +93,23 @@ test('fermer immédiatement sauve le texte et le thème survit au redémarrage',
   await launch();
   await expect(page.getByRole('heading', { name: 'Dernière frappe avant fermeture' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
+test('document riche : fermeture, reprise et panneau Drive dans Electron', async () => {
+  await page.getByRole('button', { name: 'Nouveau document', exact: false }).click();
+  const content = page.getByRole('textbox', { name: 'Contenu du document' });
+  await content.fill('Texte riche conservé');
+  await content.press('Control+a');
+  await page.getByRole('button', { name: 'Gras', exact: true }).click();
+  const closed = application!.waitForEvent('close');
+  await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  await closed;
+  application = undefined;
+  await launch('Sans titre');
+  await expect(page.getByRole('textbox', { name: 'Contenu du document' }).locator('strong')).toHaveText('Texte riche conservé');
+  await page.getByRole('button', { name: 'Google Drive', exact: false }).click();
+  await expect(page.getByLabel('Configuration Google JSON')).toBeAttached();
+  await expect(page.getByRole('link', { name: 'Ouvrir Google Cloud' })).toBeVisible();
 });
 
 test('fichiers joints et export JSON fonctionnent dans l’application empaquetée', async () => {

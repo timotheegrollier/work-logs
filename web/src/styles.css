@@ -401,6 +401,34 @@ button:disabled {
   white-space: nowrap;
 }
 
+.new-document { width: 100%; margin: 0 0 12px; }
+.drive-panel { border-top: 1px solid var(--line); margin-top: 12px; }
+.drive-toggle { display: flex; justify-content: space-between; width: 100%; }
+.drive-content { display: grid; gap: 8px; padding: 10px; font-size: 13px; }
+.drive-content p { margin: 0; }
+.drive-setup { display: grid; gap: 10px; }
+.drive-setup .file-button { white-space: normal; }
+.drive-files { list-style: none; padding: 0; margin: 0; max-height: 260px; overflow: auto; }
+.drive-files button { width: 100%; text-align: left; overflow-wrap: anywhere; }
+.drive-hint { color: var(--muted); }
+.google-sync { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+.google-sync span { color: var(--muted); margin-right: auto; }
+.google-sync button { font-size: 12px; }
+.rich-toolbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.rich-toolbar button, .rich-toolbar select, .rich-toolbar .file-button { font-size: 12px; padding: 5px 7px; }
+.rich-toolbar .is-on { background: var(--accent); color: white; }
+.rich-color { display: inline-flex; align-items: center; gap: 3px; padding: 0 4px; }
+.rich-color input { width: 24px; height: 24px; padding: 0; border: 0; }
+.rich-content { min-height: 480px; padding: 28px; margin-top: 12px; outline: none; border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; background: var(--surface); }
+.rich-content:focus { border-color: var(--accent); }
+.rich-content p { min-height: 1.5em; }
+.rich-content table { table-layout: fixed; width: 100%; }
+.rich-content td, .rich-content th { min-width: 40px; position: relative; }
+.rich-content .selectedCell { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.rich-content img.ProseMirror-selectednode { outline: 2px solid var(--accent); }
+.rich-count { color: var(--muted); font-size: 12px; text-align: right; }
+@media print { .rich-content { border: 0; padding: 0; min-height: 0; } }
+
 /* ------------------------------------------------------------ éditeur */
 .editor {
   max-width: 1100px;

@@ -1,7 +1,8 @@
 # WorkLogs
 
-A 100% local work journal. **One screen**: journal on the left, writing in the
-center, tasks on the right. No tabs, no menu, no cloud, no account.
+A work journal stored locally by default. **One screen**: journal on the left,
+writing in the center, tasks on the right. No account is required for local use.
+The development branch adds rich documents and optional Google Drive integration.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
@@ -33,6 +34,23 @@ Download the latest release from
 sha256sum -c SHA256SUMS
 ```
 
+### One-click updates
+
+Once the repository is enabled, the app installs later versions on its own, after
+your confirmation and password.
+
+```bash
+# Debian, Ubuntu, Linux Mint
+sudo curl -fsSL -o /etc/apt/sources.list.d/worklogs.list \
+  https://timotheegrollier.github.io/work-logs/deb/worklogs.list
+
+# Fedora and other RPM distros
+sudo curl -fsSL -o /etc/yum.repos.d/worklogs.repo \
+  https://timotheegrollier.github.io/work-logs/rpm/worklogs.repo
+```
+
+The AppImage updates itself, differentially — nothing to enable.
+
 Data lives in `~/.local/share/worklogs/`, profile and theme in
 `~/.config/worklogs/`. The app checks for updates on launch and offers the
 download in one click (see `docs/07-RELEASES.md` for how releases are built).
@@ -53,6 +71,7 @@ Desktop app: `npm run desktop`.
 | Gesture | Effect |
 |---|---|
 | **+ New entry** | creates today's entry and focuses the title |
+| **+ New document** | rich editor: styles, lists, links, tables and local images |
 | Write in the Markdown area | **autosaves**, `Ctrl+S` to force |
 | **Write / Read** | side-by-side editing with preview, or full-width reading |
 | **Print** (or `Ctrl+P`) | prints the entry alone, clean layout, PDF-ready |
@@ -65,6 +84,15 @@ Desktop app: `npm run desktop`.
 
 Supported Markdown: headings, bold/italic, lists, **check boxes**, **tables**,
 quotes, code blocks, links, images.
+
+Rich documents autosave locally and retain formatting in JSON exports. In the desktop
+app, expand **Google Drive**, import your Google Cloud desktop OAuth client JSON, then
+connect and authorize documents. Editing happens inside WorkLogs; Google sign-in and
+file authorization use the system browser. **Save to Drive** sends changes explicitly.
+Initial Drive support covers text, headings, basic styles and flat lists; complex Google
+documents are rejected before import/write. Tables and images work locally. OAuth/API
+tests use simulated responses; a real-account round trip remains to be verified.
+[Setup, limitations and implementation](docs/08-GOOGLE-DOCS.md).
 
 ## Test
 

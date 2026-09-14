@@ -29,12 +29,12 @@ automatique depuis la base web dans ce lot.
 En production, `npm start` construit le front et l'API le sert elle-même : **une seule URL**
 (`http://localhost:8410`). En développement, Vite proxifie `/api` vers `:8410`.
 
-## Base — 4 tables
+## Base — 5 tables (branche documents riches)
 
 ```sql
 projects(id, name, color, created_at)
 
-entries(id, title, content_md, entry_date 'AAAA-MM-JJ',
+entries(id, title, content_md, content_json JSON|NULL, entry_date 'AAAA-MM-JJ',
         project_id → projects ON DELETE SET NULL, created_at, updated_at)
 
 tasks(id, title, status ∈ {todo, doing, done}, due_date 'AAAA-MM-JJ'|NULL,
@@ -43,6 +43,9 @@ tasks(id, title, status ∈ {todo, doing, done}, due_date 'AAAA-MM-JJ'|NULL,
 
 attachments(id, filename, stored, mime, size,
             entry_id → entries ON DELETE CASCADE, created_at)
+
+google_documents(entry_id → entries ON DELETE CASCADE PRIMARY KEY,
+                 document_id UNIQUE, revision_id, synced_content_json, synced_at)
 ```
 
 - **IDs** : chaînes `préfixe + base36(horodatage) + 6 aléatoires` (`en_`, `tk_`, `pr_`, `at_`).
@@ -51,6 +54,12 @@ attachments(id, filename, stored, mime, size,
   **renumérotée 0,1,2…** (`renumber()` dans `app.js`) : jamais de trou ni de doublon.
 - Supprimer un projet **détache** entrées et tâches (`SET NULL`), il ne les perd pas.
   Supprimer une entrée supprime ses pièces jointes, lignes **et** fichiers disque.
+
+`content_json` est une colonne TEXT nullable contenant le document riche sérialisé.
+La migration est additive ; les entrées Markdown gardent NULL. Pour un document riche,
+`content_md` contient le texte de recherche et le JSON fait autorité. `google_documents`
+suit les révisions et le dernier contenu envoyé ; aucun jeton OAuth n’est stocké dans
+SQLite. Supprimer une entrée locale ne supprime jamais le fichier Google.
 
 ### Migration V1 → V2
 `migrate()` dans `db.js` s'exécute à l'ouverture si les tables V1 sont détectées, **sans perte** :
@@ -72,6 +81,9 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET | `/api/state?q=&project_id=` | **tout l'écran en un appel** : projets, entrées (extrait seul), tâches, compteurs |
 | GET | `/api/entries/:id` | l'entrée complète + ses pièces jointes |
 | POST · PUT · DELETE | `/api/entries[/:id]` | créer · modifier · supprimer |
+| POST | `/api/entries/:id/copy` | copie locale indépendante, fichiers compris |
+| GET · POST | `/api/google/*` | état, configuration desktop, connexion, déconnexion, liste et ouverture |
+| POST | `/api/entries/:id/google/push` · `pull` | envoyer ou recharger avec contrôle de révision/brouillon |
 | POST · PUT · DELETE | `/api/tasks[/:id]` | créer · modifier · supprimer |
 | PATCH | `/api/tasks/:id/move` | `{status, position}` puis renumérotation |
 | POST · PUT · DELETE | `/api/projects[/:id]` | créer · renommer/recolorer · supprimer |
@@ -95,6 +107,8 @@ la rejoue après chaque mutation. C'est ce qui permet à `App.tsx` de tenir en ~
 | `markdown.ts` | `marked` (GFM, `breaks`) puis `DOMPurify` — le rendu part en `dangerouslySetInnerHTML` |
 | `components/EntryList.tsx` | journal groupé par jour, extrait sur une ligne |
 | `components/EntryEditor.tsx` | titre, date, projet, Écrire/Lire, enregistrement auto, pièces jointes |
+| `components/RichEditor.tsx` | éditeur Tiptap et barre de mise en forme |
+| `components/GoogleDrive.tsx` | panneau Drive repliable, configuration et documents autorisés |
 | `components/TaskBoard.tsx` | ajout rapide, 3 colonnes, glisser-déposer HTML5, édition en place |
 | `components/ProjectBar.tsx` | pastilles de filtre + panneau de gestion repliable |
 | `styles.css` | thèmes clair/sombre par variables, typographie du document, feuille d'impression |
@@ -105,5 +119,5 @@ un brouillon ne peut pas fuir d'une entrée à l'autre (test dédié dans `App.t
 ## Choix assumés
 - **Un seul écran, pas de routeur** : tout ce qui ajouterait un onglet est à discuter avant.
 - Pas d'authentification : usage mono-poste.
-- Dépendances front limitées à react, marked, dompurify.
+- Front : react, marked, dompurify, complétés par Tiptap et ses extensions approuvées.
 - `node:sqlite` natif, synchrone : parfait en local, à ne pas exposer à du trafic.

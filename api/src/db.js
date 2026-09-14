@@ -191,6 +191,15 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   migrate(db);
   db.exec(SCHEMA);
   db.exec(INDEXES);
+  // Migration additive V2 : les entrées Markdown et leurs pièces jointes restent intactes.
+  if (!columns(db, 'entries').includes('content_json')) db.exec('ALTER TABLE entries ADD COLUMN content_json TEXT');
+  db.exec(`CREATE TABLE IF NOT EXISTS google_documents (
+    entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+    document_id TEXT NOT NULL UNIQUE,
+    revision_id TEXT NOT NULL,
+    synced_content_json TEXT NOT NULL,
+    synced_at TEXT
+  )`);
   db.exec('PRAGMA foreign_keys = ON;');
   if (withSeed) seed(db);
   return db;

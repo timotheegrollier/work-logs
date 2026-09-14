@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatSize, type Attachment, type Entry, type Project } from '../lib';
 import { renderMarkdown } from '../markdown';
 import { Autosave } from '../autosave';
+import { RichEditor } from './RichEditor';
 
 type SaveState = 'saved' | 'dirty' | 'saving' | 'error';
 const LABELS: Record<SaveState, string> = {
@@ -32,6 +33,7 @@ export function EntryEditor({
   const [draft, setDraft] = useState({
     title: entry.title,
     content_md: entry.content_md,
+    content_json: entry.content_json ?? null,
     entry_date: entry.entry_date,
     project_id: entry.project_id ?? '',
   });
@@ -39,6 +41,10 @@ export function EntryEditor({
   const [save, setSave] = useState<SaveState>('saved');
   const [writing, setWriting] = useState(autoFocusTitle);
   const [error, setError] = useState('');
+  const [googleSync, setGoogleSync] = useState(entry.google_sync);
+  const [syncing, setSyncing] = useState(false);
+  const [richVersion, setRichVersion] = useState(0);
+  const [syncMessage, setSyncMessage] = useState('');
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const changedRef = useRef(onChanged);
@@ -54,6 +60,7 @@ export function EntryEditor({
     draftRef.current = next;
     setDraft(next);
     autosave.update(next);
+    if (patch.content_json) setGoogleSync(current => current ? { ...current, dirty: true } : current);
   };
 
   // L'aperçu Markdown (marked + DOMPurify) est le rendu le plus coûteux :
@@ -112,6 +119,38 @@ export function EntryEditor({
     onDeleted();
   };
 
+  const synchronize = async (pull = false) => {
+    if (!draftRef.current.content_json) return;
+    if (pull && !confirm('Remplacer le contenu local par la version Google ? Les modifications locales non synchronisées seront perdues.')) return;
+    setSyncing(true); setError(''); setSyncMessage('');
+    try {
+      await autosave.flush();
+      const expected = draftRef.current.content_json;
+      const updated = pull ? await api.pullGoogleDocument(entry.id, expected) : await api.pushGoogleDocument(entry.id);
+      if (pull) {
+        // Les frappes arrivées pendant le réseau restent prioritaires côté interface.
+        if (draftRef.current.content_json !== expected) {
+          autosave.update(draftRef.current);
+          await autosave.flush();
+          throw new Error('Ton brouillon a changé pendant le rechargement et a été conservé.');
+        }
+        const next = { ...draftRef.current, content_json: updated.content_json ?? null, content_md: updated.content_md };
+        draftRef.current = next; setDraft(next); setRichVersion(v => v + 1);
+      }
+      setGoogleSync(updated.google_sync ? { ...updated.google_sync, dirty: updated.google_sync.dirty || (!pull && draftRef.current.content_json !== expected) } : null);
+      onChanged();
+    } catch (e) { setError((e as Error).message); } finally { setSyncing(false); }
+  };
+
+  const keepCopy = async () => {
+    try {
+      await autosave.flush();
+      await api.copyEntry(entry.id);
+      setSyncMessage('Copie locale créée dans le journal, avec ses fichiers.');
+      onChanged();
+    } catch (e) { setError((e as Error).message); }
+  };
+
   return (
     <section className="editor" aria-label="Entrée">
       <div className="editor-bar no-print">
@@ -146,7 +185,7 @@ export function EntryEditor({
           ))}
         </select>
 
-        <div className="modes" role="group" aria-label="Mode d’affichage">
+        {!draft.content_json && <div className="modes" role="group" aria-label="Mode d’affichage">
           <button
             className={writing ? 'is-on' : ''}
             aria-pressed={writing}
@@ -161,7 +200,7 @@ export function EntryEditor({
           >
             Lire
           </button>
-        </div>
+        </div>}
 
         <span className="grow" />
         <button className="ghost" onClick={() => window.print()}>
@@ -173,10 +212,19 @@ export function EntryEditor({
       </div>
 
       {error && <p className="error no-print">{error}</p>}
+      {syncMessage && <p className="rich-count no-print" role="status">{syncMessage}</p>}
+      {draft.content_json && <div className="google-sync no-print" aria-label="Synchronisation Google Drive">
+        <span>{syncing ? 'Synchronisation…' : googleSync ? googleSync.dirty ? 'Modifications locales à envoyer' : 'Enregistré sur Google Drive' : 'Document enregistré sur cet appareil'}</span>
+        <button disabled={syncing} onClick={() => void synchronize()}>{googleSync ? 'Enregistrer sur Drive' : 'Synchroniser avec Drive'}</button>
+        {googleSync && <>
+          <button className="ghost" disabled={syncing} onClick={() => void synchronize(true)}>Recharger depuis Google</button>
+          <button className="ghost" disabled={syncing} onClick={() => void keepCopy()}>Garder une copie locale</button>
+        </>}
+      </div>}
 
       <h1 className="print-only print-title">{draft.title}</h1>
 
-      <div className={'sheet' + (writing ? ' is-split' : '')}>
+      {draft.content_json ? <RichEditor key={richVersion} entryId={entry.id} content={draft.content_json} onChange={(content_json) => update({ content_json })} /> : <div className={'sheet' + (writing ? ' is-split' : '')}>
         {writing && (
           <textarea
             className="source no-print"
@@ -191,7 +239,7 @@ export function EntryEditor({
           aria-label="Aperçu"
           dangerouslySetInnerHTML={{ __html: previewHtml }}
         />
-      </div>
+      </div>}
 
       <div className="files no-print">
         <label className="ghost file-button">
