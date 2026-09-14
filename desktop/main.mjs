@@ -11,6 +11,23 @@ import { checkForUpdate, hasPackageKit, installedVersionCommand, installKind, in
 import electronUpdater from 'electron-updater';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+/**
+ * Tout dialogue natif passe par ici. Après un `showMessageBoxSync`, la fenêtre
+ * reste à `webContents.isFocused() === false` et **rien ne le rétablit** : les
+ * frappes de l'utilisateur, qui passent par le serveur graphique, tombent alors
+ * dans le vide. Cliquer ailleurs n'y change rien, seul un redémarrage débloque.
+ * Mesuré sur Mint le 2026-09-14. Les tests automatisés ne le voyaient pas :
+ * Playwright injecte les événements clavier et court-circuite cette couche.
+ */
+function ask(window, options) {
+  const choice = dialog.showMessageBoxSync(window, options);
+  if (window && !window.isDestroyed()) {
+    window.focus();
+    window.webContents.focus();
+  }
+  return choice;
+}
 const origin = 'worklogs://app';
 app.setName('worklogs');
 const profileDir = process.env.WORKLOGS_PROFILE_DIR || path.join(app.getPath('appData'), 'worklogs');
@@ -99,7 +116,7 @@ async function updateAppImage(force = false) {
     const next = found?.updateInfo?.version;
     logUpdate(next ? `trouvé : ${next}` : 'à jour (electron-updater)');
     if (!next || !shouldOfferUpdate(next, app.getVersion(), force ? null : dismissedVersion)) return;
-    const download = dialog.showMessageBoxSync(window, {
+    const download = ask(window, {
       type: 'info', title: 'WorkLogs', buttons: ['Mettre à jour', 'Plus tard'],
       defaultId: 0, cancelId: 1,
       message: `WorkLogs ${next} est disponible (tu as la ${app.getVersion()}).`,
@@ -122,7 +139,7 @@ async function updateAppImage(force = false) {
       autoUpdater.removeListener('download-progress', onProgress);
     }
     sendProgress({ phase: 'done' });
-    const restart = dialog.showMessageBoxSync(window, {
+    const restart = ask(window, {
       type: 'info', title: 'WorkLogs', buttons: ['Redémarrer', 'Plus tard'],
       defaultId: 0, cancelId: 1,
       message: `WorkLogs ${next} est prête.`,
@@ -149,7 +166,7 @@ async function offerSystemOrManualUpdate(force = false) {
   if (!found) {
     logUpdate('à jour ou injoignable (GitHub)');
     if (force && window && !window.isDestroyed()) {
-      dialog.showMessageBoxSync(window, {
+      ask(window, {
         type: 'info', title: 'WorkLogs', buttons: ['Fermer'],
         message: `WorkLogs ${app.getVersion()} est à jour.`,
         detail: 'Vérifié à l’instant. Détail des vérifications : ~/.local/share/worklogs/update.log.',
@@ -168,7 +185,7 @@ async function offerSystemOrManualUpdate(force = false) {
 }
 
 async function offerSystemUpdate(next) {
-  const choice = dialog.showMessageBoxSync(window, {
+  const choice = ask(window, {
     type: 'info', title: 'WorkLogs', buttons: ['Mettre à jour maintenant', 'Plus tard'],
     defaultId: 0, cancelId: 1,
     message: `WorkLogs ${next} est disponible (tu as la ${app.getVersion()}).`,
@@ -206,7 +223,7 @@ async function offerSystemUpdate(next) {
     const fresh = age !== null && age < 20
       ? ` La ${next} est sortie il y a ${age} min : le dépôt la reçoit dans quelques minutes, réessaie ou clique la pastille de version.`
       : '';
-    dialog.showMessageBoxSync(window, {
+    ask(window, {
       type: 'warning', title: 'WorkLogs', buttons: ['Compris'],
       message: `Le gestionnaire propose la ${outcome.candidate} au lieu de la ${next}.`,
       detail: `Ses métadonnées sont périmées malgré le rechargement.${fresh} Sinon, mets à jour à la main : ${hint.update}.`,
@@ -224,7 +241,7 @@ async function offerSystemUpdate(next) {
     // l'utilisateur peut corriger lui-même. Le nommer évite de le laisser
     // chercher du côté du dépôt.
     const denied = /not authoriz|non autoris|authentication|authentification/i.test(error ?? '');
-    dialog.showMessageBoxSync(window, {
+    ask(window, {
       type: 'error', title: 'WorkLogs', buttons: ['Compris'],
       message: denied
         ? 'Mise à jour refusée : autorisation administrateur non accordée.'
@@ -235,7 +252,7 @@ async function offerSystemUpdate(next) {
     });
     return;
   }
-  const restart = dialog.showMessageBoxSync(window, {
+  const restart = ask(window, {
     type: 'info', title: 'WorkLogs', buttons: ['Redémarrer', 'Plus tard'],
     defaultId: 0, cancelId: 1,
     message: `WorkLogs ${next} est installée.`,
@@ -321,7 +338,7 @@ async function fallbackNotify(found) {
       ? `Si le dépôt WorkLogs est activé : « ${hint.update} ». Sinon, active-le une fois — ${hint.enable} — ou télécharge le paquet.`
       : 'Mets à jour via ton gestionnaire de paquets, ou télécharge le paquet.')
     : 'Le téléchargement s’ouvre dans ton navigateur : installe le paquet, puis relance l’application.';
-  const choice = dialog.showMessageBoxSync(window, {
+  const choice = ask(window, {
     type: 'info', title: 'WorkLogs', buttons: ['Télécharger la mise à jour', 'Plus tard'],
     defaultId: 0, cancelId: 1,
     message: `WorkLogs ${found.version} est disponible (tu as la ${app.getVersion()}).`,
@@ -335,7 +352,7 @@ function finishClose(error) {
   clearTimeout(closeTimer);
   closePending = false;
   if (error && window && !window.isDestroyed()) {
-    dialog.showMessageBoxSync(window, {
+    ask(window, {
       type: 'error', title: 'WorkLogs', buttons: ['Revenir à l’entrée'],
       message: 'L’entrée n’a pas pu être enregistrée. La fenêtre reste ouverte.',
       detail: String(error).slice(0, 1000),
@@ -421,6 +438,11 @@ if (!app.requestSingleInstanceLock()) {
           window.webContents.print({ printBackground: true });
         }
       });
+      // Le gestionnaire de fenêtres rend le focus à la fenêtre, mais pas forcément
+      // au contenu web : sans ça, la fenêtre paraît active et rien ne réagit.
+      window.on('focus', () => {
+        if (!window.isDestroyed()) window.webContents.focus();
+      });
       window.on('close', (event) => {
         event.preventDefault();
         if (closePending) return;
@@ -428,7 +450,7 @@ if (!app.requestSingleInstanceLock()) {
         window.webContents.send('worklogs:prepare-close');
         closeTimer = setTimeout(() => {
           closePending = false;
-          const choice = dialog.showMessageBoxSync(window, {
+          const choice = ask(window, {
             type: 'warning', title: 'WorkLogs', buttons: ['Attendre', 'Fermer sans enregistrer'],
             defaultId: 0, cancelId: 0,
             message: 'L’enregistrement ne répond pas. Attendre ou fermer la fenêtre ?',

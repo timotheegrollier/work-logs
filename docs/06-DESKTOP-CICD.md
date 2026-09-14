@@ -188,6 +188,15 @@ Cette carte décrit le déblocage initial ; les fonctionnalités ajoutées ensui
   changement de version cible avec `apt-cache showpkg <paquet>` et préférer une dépendance
   alternative explicite (`nouveau-nom | ancien-nom`) plutôt que de se fier à la résolution par
   défaut d'apt.
+- **Focus clavier après un dialogue natif (piste, non prouvée)** : signalé le 2026-09-14 —
+  le champ « Nouvelle tâche » refuse parfois le curseur, et seul un redémarrage débloque.
+  Rien ne recouvre le champ (vérifié par `document.elementFromPoint` et par l'inventaire des
+  éléments positionnés : aucun), le composant n'est jamais démonté. Le symptôme décrit — clic
+  sans curseur, insensible au clic ailleurs — désigne le focus clavier au niveau fenêtre.
+  Les 10 `showMessageBoxSync` ne restauraient aucun focus ; ils passent maintenant par `ask()`,
+  et `window.on('focus')` redonne la main au contenu. **Non validé** : sous Playwright,
+  `window.focus()` lui-même reste sans effet — l'environnement automatisé ne gère pas le focus
+  X11, et les frappes injectées court-circuitent cette couche. Seul un usage réel tranchera.
 - **SELinux et podman en local** : voir §3, ne concerne que le poste de développement, pas la CI.
 - **`page.waitForEvent('download')` avec un protocole personnalisé Electron** : ne se déclenche
   jamais dans cette configuration (`protocol.handle`, scheme privileged `stream: true`).
