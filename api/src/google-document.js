@@ -6,6 +6,16 @@ const rgb = (hex) => {
   if (!/^#[\da-f]{6}$/i.test(hex || '')) unsupported('cette couleur (utilise le sélecteur de couleurs)');
   return { red: parseInt(hex.slice(1, 3), 16) / 255, green: parseInt(hex.slice(3, 5), 16) / 255, blue: parseInt(hex.slice(5, 7), 16) / 255 };
 };
+/**
+ * Noir « par défaut » de Google Docs. Les valeurs très sombres sont traitées
+ * comme une absence de choix : c'est ce que produit un document jamais colorié.
+ */
+export function isDefaultInk(hex) {
+  const match = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex || '');
+  if (!match) return false;
+  return match.slice(1).every((part) => parseInt(part, 16) <= 0x22);
+}
+
 const alignment = { START: 'left', CENTER: 'center', END: 'right', JUSTIFIED: 'justify' };
 const alignmentBack = { left: 'START', center: 'CENTER', right: 'END', justify: 'JUSTIFIED' };
 
@@ -72,7 +82,12 @@ function readMarks(style = {}) {
   if (style.weightedFontFamily?.fontFamily) attrs.fontFamily = style.weightedFontFamily.fontFamily;
   if (style.fontSize?.magnitude) attrs.fontSize = `${style.fontSize.magnitude}${style.fontSize.unit?.toLowerCase() || 'pt'}`;
   const foreground = color(style.foregroundColor?.color?.rgbColor);
-  if (foreground) attrs.color = foreground;
+  // Le noir par défaut de Google n'est pas importé : sans couleur explicite, le
+  // texte prend celle du thème et reste lisible en sombre comme en clair. À
+  // l'écriture, l'absence de couleur laisse Google sur son noir — le document
+  // d'origine n'est donc pas modifié. Seules les couleurs vraiment choisies
+  // sont conservées.
+  if (foreground && !isDefaultInk(foreground)) attrs.color = foreground;
   const background = color(style.backgroundColor?.color?.rgbColor);
   if (background) attrs.backgroundColor = background;
   if (Object.keys(attrs).length) marks.push({ type: 'textStyle', attrs });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildGoogleUpdate, documentTabs, googleToDocument, selectDocumentTab } from '../src/google-document.js';
+import { buildGoogleUpdate, documentTabs, googleToDocument, selectDocumentTab, isDefaultInk } from '../src/google-document.js';
 import { startApi, make } from './helpers.js';
 
 const doc = (text = 'Bonjour') => ({ documentId: 'google-123', title: 'Document Google', revisionId: 'r1',
@@ -215,4 +215,33 @@ test('onglets Google : choix explicite, brouillons distincts et toutes les écri
     assert.equal((await api.post(`/api/entries/${child.body.id}/google/pull`, { expected_content_json: googleToDocument(doc('Modifié')) })).status, 422);
     assert.match((await api.get(`/api/entries/${child.body.id}`)).body.content_md, /Modifié/);
   } finally { await api.close(); }
+});
+
+
+test('le noir par défaut de Google n’est pas importé comme couleur', () => {
+  // En thème sombre, un texte noir explicite est illisible. Un document Google
+  // jamais colorié arrive pourtant en #000000 : on le traite comme « pas de
+  // couleur », le thème s'applique, et l'écriture ne touche pas l'original.
+  assert.equal(isDefaultInk('#000000'), true);
+  assert.equal(isDefaultInk('#111111'), true);
+  assert.equal(isDefaultInk('#222222'), true);
+  // Une couleur réellement choisie reste une couleur.
+  assert.equal(isDefaultInk('#232323'), false);
+  assert.equal(isDefaultInk('#1a73e8'), false);
+  assert.equal(isDefaultInk('#ff0000'), false);
+  assert.equal(isDefaultInk(''), false);
+  assert.equal(isDefaultInk(null), false);
+});
+
+test('un texte en noir par défaut arrive sans marque de couleur', () => {
+  const source = doc('Texte');
+  const run = source.tabs[0].documentTab.body.content[1].paragraph.elements[0];
+  run.textRun.textStyle = { foregroundColor: { color: { rgbColor: { red: 0, green: 0, blue: 0 } } } };
+  const rich = googleToDocument(source);
+  const marks = JSON.stringify(rich);
+  assert.equal(marks.includes('"color"'), false, 'aucune couleur ne doit être posée');
+
+  // Une vraie couleur, elle, doit survivre à l'import.
+  run.textRun.textStyle = { foregroundColor: { color: { rgbColor: { red: 1, green: 0, blue: 0 } } } };
+  assert.match(JSON.stringify(googleToDocument(source)), /"color":"#ff0000"/);
 });
