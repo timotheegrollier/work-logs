@@ -1,6 +1,6 @@
 # WorkLogs
 
-**Lot en cours : éditeur Google Docs natif** sur `codex/google-docs-integrated-editor`.
+**Lot publié en v0.12.0 : éditeur Google Docs natif** (`codex/google-docs-integrated-editor`).
 Lire `docs/08-GOOGLE-DOCS.md` : la vraie page Google s'affiche dans la colonne centrale,
 dans une vue Electron isolée ; l'autorisation OAuth des API garde le navigateur système.
 Tiptap 3.31.3 et ses extensions listées dans `AGENTS.md` ont été explicitement approuvés.

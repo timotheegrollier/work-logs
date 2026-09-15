@@ -25,6 +25,77 @@ const filters = () => screen.getByRole('group', { name: 'Filtrer par projet' });
 const row = (db: typeof api.db, sql: string, ...args: unknown[]) =>
   db.prepare(sql).get(...args) as Record<string, unknown>;
 
+describe('contrôles de largeur des colonnes', () => {
+  test('les contrôles affichent les valeurs lues depuis localStorage', async () => {
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }, { id: 'en_2', title: 'Deuxième' }] });
+    render(<App />);
+
+    await screen.findByRole('region', { name: 'Journal' });
+    expect(screen.getByLabelText('Largeur de la colonne de gauche (px)')).toHaveValue(290);
+    expect(screen.getByLabelText('Largeur de la colonne de droite (px)')).toHaveValue(320);
+  });
+
+  test('changer la largeur gauche met à jour la variable CSS et localStorage', async () => {
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+
+    const leftInput = screen.getByLabelText('Largeur de la colonne de gauche (px)');
+    fireEvent.change(leftInput, { target: { value: '400' } });
+    expect(globalThis.localStorage.getItem('worklogs-col-left')).toBe('400');
+    await waitFor(() =>
+      expect(document.documentElement.style.getPropertyValue('--col-left')).toBe('400px')
+    );
+  });
+
+  test('changer la largeur droite met à jour la variable CSS et localStorage', async () => {
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+
+    const rightInput = screen.getByLabelText('Largeur de la colonne de droite (px)');
+    fireEvent.change(rightInput, { target: { value: '480' } });
+    expect(globalThis.localStorage.getItem('worklogs-col-right')).toBe('480');
+    await waitFor(() =>
+      expect(document.documentElement.style.getPropertyValue('--col-right')).toBe('480px')
+    );
+  });
+
+  test('les valeurs hors plage sont ramenées aux bornes', async () => {
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+
+    const leftInput = screen.getByLabelText('Largeur de la colonne de gauche (px)');
+    const rightInput = screen.getByLabelText('Largeur de la colonne de droite (px)');
+
+    fireEvent.change(leftInput, { target: { value: '80' } });
+    expect(leftInput).toHaveValue(120);
+    expect(globalThis.localStorage.getItem('worklogs-col-left')).toBe('120');
+
+    fireEvent.change(rightInput, { target: { value: '900' } });
+    expect(rightInput).toHaveValue(600);
+    expect(globalThis.localStorage.getItem('worklogs-col-right')).toBe('600');
+  });
+
+  test('le bouton Par défaut restaure les largeurs d’origine', async () => {
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
+    globalThis.localStorage.setItem('worklogs-col-left', '360');
+    globalThis.localStorage.setItem('worklogs-col-right', '420');
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+
+    expect(screen.getByLabelText('Largeur de la colonne de gauche (px)')).toHaveValue(360);
+    expect(screen.getByLabelText('Largeur de la colonne de droite (px)')).toHaveValue(420);
+
+    fireEvent.click(screen.getByRole('button', { name: /Largeurs par défaut/ }));
+    expect(screen.getByLabelText('Largeur de la colonne de gauche (px)')).toHaveValue(290);
+    expect(screen.getByLabelText('Largeur de la colonne de droite (px)')).toHaveValue(320);
+    expect(globalThis.localStorage.getItem('worklogs-col-left')).toBe('290');
+    expect(globalThis.localStorage.getItem('worklogs-col-right')).toBe('320');
+  });
+});
+
 describe('écran unique', () => {
   test('affiche les trois zones côte à côte', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Première entrée' }] });
