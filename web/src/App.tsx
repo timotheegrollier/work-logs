@@ -27,6 +27,8 @@ export default function App() {
   const documentRef = useRef<string | undefined>(undefined);
   documentRef.current = entry?.google_sync?.document_id;
   const [theme, setTheme] = useState(readTheme);
+  const [colLeft, setColLeft] = useState(readColLeft);
+  const [colRight, setColRight] = useState(readColRight);
   const selectedRef = useRef<string | null>(null);
   const reloadSequence = useRef(0);
   selectedRef.current = selectedId;
@@ -64,6 +66,13 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('worklogs-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--col-left', `${colLeft}px`);
+    document.documentElement.style.setProperty('--col-right', `${colRight}px`);
+    localStorage.setItem('worklogs-col-left', String(colLeft));
+    localStorage.setItem('worklogs-col-right', String(colRight));
+  }, [colLeft, colRight]);
 
   // La recherche attend une pause de frappe avant d'interroger l'API.
   useEffect(() => {
@@ -170,6 +179,45 @@ export default function App() {
         >
           {theme === 'dark' ? '☀' : '☾'}
         </button>
+        <div className="col-widths">
+          <div className="col-width-control">
+            <label htmlFor="col-left-width">Gauche</label>
+            <input
+              id="col-left-width"
+              type="number"
+              min={120}
+              max={600}
+              value={colLeft}
+              onChange={(e) => setColLeft(Math.max(120, Math.min(600, Number(e.target.value) || 290)))}
+              aria-label="Largeur de la colonne de gauche (px)"
+            />
+            <span aria-hidden="true">px</span>
+          </div>
+          <div className="col-width-control">
+            <label htmlFor="col-right-width">Droite</label>
+            <input
+              id="col-right-width"
+              type="number"
+              min={120}
+              max={600}
+              value={colRight}
+              onChange={(e) => setColRight(Math.max(120, Math.min(600, Number(e.target.value) || 320)))}
+              aria-label="Largeur de la colonne de droite (px)"
+            />
+            <span aria-hidden="true">px</span>
+          </div>
+          <button
+            className="col-width-reset"
+            type="button"
+            onClick={() => {
+              setColLeft(290);
+              setColRight(320);
+            }}
+            aria-label="Largeurs par défaut"
+          >
+            Par défaut
+          </button>
+        </div>
         <a className="ghost" href="/api/export" download="worklogs.json">
           Exporter
         </a>
@@ -249,4 +297,19 @@ function readSelected() {
 function readTheme() {
   if (typeof localStorage === 'undefined') return 'dark';
   return localStorage.getItem('worklogs-theme') === 'light' ? 'light' : 'dark';
+}
+
+const COL_LS_KEY = 'worklogs-col-left';
+const COL_RS_KEY = 'worklogs-col-right';
+
+function readColLeft() {
+  if (typeof localStorage === 'undefined') return 290;
+  const v = Number(localStorage.getItem(COL_LS_KEY));
+  return Number.isFinite(v) && v >= 120 && v <= 600 ? v : 290;
+}
+
+function readColRight() {
+  if (typeof localStorage === 'undefined') return 320;
+  const v = Number(localStorage.getItem(COL_RS_KEY));
+  return Number.isFinite(v) && v >= 120 && v <= 600 ? v : 320;
 }
