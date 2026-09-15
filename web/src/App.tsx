@@ -16,13 +16,22 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [projectId, setProjectId] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // L'entrée ouverte survit au rechargement et au redémarrage : on retrouve le
+  // document qu'on éditait, au lieu de retomber sur « le plus récent ». C'est
+  // aussi ce qui rend les recettes déterministes — elles pariaient jusqu'ici sur
+  // l'ordre des entrées après un rechargement.
+  const [selectedId, setSelectedId] = useState<string | null>(readSelected);
   const [entry, setEntry] = useState<Entry | null>(null);
   const [freshEntry, setFreshEntry] = useState(false);
   const [theme, setTheme] = useState(readTheme);
   const selectedRef = useRef<string | null>(null);
   const reloadSequence = useRef(0);
   selectedRef.current = selectedId;
+
+  useEffect(() => {
+    if (selectedId) localStorage.setItem(SELECTED_KEY, selectedId);
+    else localStorage.removeItem(SELECTED_KEY);
+  }, [selectedId]);
 
   useEffect(() => {
     const unsubscribe = window.worklogsDesktop?.onBeforeClose(flushPendingSaves);
@@ -226,6 +235,13 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+const SELECTED_KEY = 'worklogs-entry';
+
+function readSelected() {
+  if (typeof localStorage === 'undefined') return null;
+  return localStorage.getItem(SELECTED_KEY);
 }
 
 function readTheme() {

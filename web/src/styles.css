@@ -1050,3 +1050,13 @@ button:disabled {
 .doc-tab:hover { color: var(--text); }
 .doc-tab.is-on { background: var(--surface); border-color: var(--accent); color: var(--text); }
 .doc-tab-lock { opacity: 0.7; }
+
+.notice {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+}

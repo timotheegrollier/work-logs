@@ -240,18 +240,20 @@ export function EntryEditor({
               role="tab"
               aria-selected={tab.id === entry.id}
               className={'doc-tab' + (tab.id === entry.id ? ' is-on' : '')}
-              title={tab.google_readonly || undefined}
+              title={tab.google_sync_blocked || undefined}
               onClick={() => onSelectTab(tab.id)}
             >
               {tab.google_tab_title || 'Onglet'}
-              {tab.google_readonly ? <span className="doc-tab-lock" aria-label="lecture seule"> 🔒</span> : null}
+              {tab.google_sync_blocked ? <span className="doc-tab-lock" aria-label="envoi bloqué"> ⚠</span> : null}
             </button>
           ))}
         </nav>
       )}
-      {googleSync?.readonly && (
-        <p className="error no-print">
-          Onglet en lecture seule : {googleSync.readonly} Tu peux le consulter ; les modifications ne seront pas renvoyées.
+      {googleSync?.sync_blocked && (
+        // Modifiable, mais non renvoyé : c'est un avertissement, pas une erreur.
+        <p className="notice no-print">
+          <b>Envoi vers Google bloqué pour cet onglet.</b> {googleSync.sync_blocked} Tu peux
+          l’éditer ici : ta version locale est conservée et enregistrée.
         </p>
       )}
       {draft.content_json ? <RichEditor key={richVersion} entryId={entry.id} content={draft.content_json} onChange={(content_json) => update({ content_json })} /> : <div className={'sheet' + (writing ? ' is-split' : '')}>

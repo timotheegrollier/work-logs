@@ -43,6 +43,28 @@ découlé, valables tant qu'Electron et Ubuntu se comportent ainsi :
 
 Ces trois points, et le détail complet des investigations, sont dans `06-DESKTOP-CICD.md`.
 
+## Onglets Google : tout est modifiable, seul l'envoi peut être bloqué
+
+**Décision.** Ouvrir un document Google crée **tous** ses onglets d'un coup, sous une seule
+ligne du journal. Chaque onglet est **modifiable**, sans exception. Quand un onglet contient un
+élément que le convertisseur ne sait pas réécrire (tableau, image, note de bas de page,
+suggestion, retrait personnalisé…), c'est **l'envoi vers Google** qui est refusé, pas l'édition.
+
+**Pourquoi.** L'écriture vers Google remplace le contenu de l'onglet. Renvoyer un onglet dont
+nous ne savons pas reproduire un élément l'effacerait **du vrai document**. Le refus protège
+donc le document d'origine — mais il n'y a aucune raison d'empêcher de travailler en local :
+la version locale est conservée et enregistrée normalement.
+
+**Ce que ça coûte.** Un onglet marqué ⚠ diverge de Google tant que le convertisseur ne sait pas
+le réécrire. L'utilisateur le voit : un bandeau dit quel élément bloque.
+
+**Quand la rouvrir.** En étendant le convertisseur dans les deux sens. Les tableaux et les
+images existent déjà dans le modèle local : ce sont les meilleurs candidats. Ne **jamais**
+lever un refus sans savoir réécrire l'élément — ce serait une perte de données chez
+l'utilisateur, pas un test qui passe.
+
+---
+
 Pourquoi c'est comme ça. À lire avant de proposer une « amélioration » : la plupart des choses
 qui manquent manquent **exprès**.
 

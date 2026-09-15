@@ -254,7 +254,7 @@ test('un texte en noir par défaut arrive sans marque de couleur', () => {
 });
 
 
-test('un onglet non convertible s’ouvre en lecture seule au lieu d’être refusé', async () => {
+test('un onglet non convertible s’ouvre et reste modifiable ; seul l’envoi est bloqué', async () => {
   const google = stub();
   const source = doc('Premier onglet');
   // Deuxième onglet avec un tableau : le convertisseur le refuse, car il ne
@@ -284,8 +284,20 @@ test('un onglet non convertible s’ouvre en lecture seule au lieu d’être ref
     assert.match(lecture.body.content_md, /Budget/);
     assert.match(lecture.body.content_md, /Toiture/);
     assert.match(lecture.body.content_md, /12 400/);
-    assert.equal(lecture.body.google_sync.readonly, liens[1].readonly_reason);
+    assert.equal(lecture.body.google_sync.sync_blocked, liens[1].readonly_reason);
     assert.equal(lecture.body.google_sync.tab_title, 'Chiffres');
+
+    // Modifiable : l'entrée s'écrit normalement en local.
+    const modifie = await api.put(`/api/entries/${liens[1].entry_id}`, { title: 'Chiffres revus' });
+    assert.equal(modifie.status, 200);
+    assert.equal(modifie.body.title, 'Chiffres revus');
+
+    // Mais l'envoi vers Google est refusé, en disant pourquoi : c'est ce refus
+    // qui protège le document d'origine, pas un blocage de l'édition.
+    const envoi = await api.post(`/api/entries/${liens[1].entry_id}/google/push`);
+    assert.equal(envoi.status, 422);
+    assert.match(envoi.body.error, /tableaux/);
+    assert.match(envoi.body.error, /version locale est conservée/);
   } finally {
     await api.close();
   }

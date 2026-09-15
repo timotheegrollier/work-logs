@@ -14,7 +14,7 @@ export function googleLink(db, entry) {
   return link ? {
     document_id: link.document_id, tab_id: link.tab_id, synced_at: link.synced_at,
     document_title: link.document_title, tab_title: link.tab_title, tab_order: link.tab_order,
-    readonly: link.readonly_reason || '',
+    sync_blocked: link.readonly_reason || '',
     dirty: entry.content_json !== link.synced_content_json,
   } : null;
 }
@@ -152,9 +152,10 @@ export function registerGoogleRoutes(app, { db, google }) {
       let asked = null;
 
       // Tous les onglets sont ouverts d'un coup : ils forment un seul document
-      // dans le journal, avec une barre d'onglets dans l'éditeur. Un onglet
-      // impossible à convertir fidèlement reste **consultable en lecture
-      // seule** au lieu d'être refusé — on n'écrira jamais dessus.
+      // dans le journal, avec une barre d'onglets dans l'éditeur. Un onglet que
+      // le convertisseur ne sait pas réécrire s'ouvre quand même et reste
+      // **modifiable** ; seul l'envoi vers Google est bloqué, pour ne pas
+      // effacer ce qu'on ne sait pas reproduire.
       for (const [order, tab] of list.entries()) {
         const existing = db.prepare('SELECT entry_id FROM google_documents WHERE document_id=? AND tab_id=?').get(documentId, tab.id)
           ?? (tab.id && order === 0 ? db.prepare("SELECT entry_id FROM google_documents WHERE document_id=? AND tab_id=''").get(documentId) : undefined);
@@ -197,6 +198,12 @@ export function registerGoogleRoutes(app, { db, google }) {
       if (!current.content_json) fail('Crée un document riche pour le synchroniser avec Google Drive.');
       const rich = JSON.parse(current.content_json);
       let link = db.prepare('SELECT * FROM google_documents WHERE entry_id=?').get(id);
+      // Cet onglet contient un élément que le convertisseur ne sait pas réécrire
+      // fidèlement. On l'édite librement en local ; seul l'envoi est refusé,
+      // car il effacerait cet élément du document Google.
+      if (link?.readonly_reason) {
+        fail(`${link.readonly_reason} Tu peux continuer à l’éditer ici : ta version locale est conservée, mais elle ne sera pas renvoyée.`, 422);
+      }
       if (!link) {
         // Vérifier le format AVANT de créer un fichier distant.
         buildGoogleUpdate({ revisionId: 'check', body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } }, rich);
