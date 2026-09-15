@@ -1,7 +1,7 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-14 · **Dernière release publiée : v0.7.4** (`bba6205`).
-> **Lot courant :** `codex/rich-editor-drive`, sans bump ni nouvelle release.
+> **Mise à jour :** 2026-09-15 · **Dernière release publiée : v0.10.0**.
+> **Lot courant :** terminé — `codex/google-docs-layout-sync` mergé sur master et publié en v0.10.0.
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 

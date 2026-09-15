@@ -1,6 +1,6 @@
 # Google Docs — onglets et synchronisation, bilan du 2026-09-15
 
-**Branche : `codex/google-docs-layout-sync`, sources 0.9.1. Pas de nouvelle release.**
+**Branche `codex/google-docs-layout-sync` mergée sur master, publiée en v0.10.0.**
 Aucune dépendance ajoutée ; Tiptap déjà approuvé est réutilisé.
 
 ## Ce qui change

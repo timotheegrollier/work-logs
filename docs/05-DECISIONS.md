@@ -1,6 +1,6 @@
 # 🧭 WorkLogs — décisions
 
-> Desktop **publié** depuis la 0.2.0, dernière release vérifiée : 0.7.4 :
+> Desktop **publié** depuis la 0.2.0, dernière release vérifiée : 0.10.0 :
 > [dossier technique](06-DESKTOP-CICD.md), [process de release](07-RELEASES.md).
 
 ## Extension desktop, demandée le 2026-09-11

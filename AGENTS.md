@@ -1,11 +1,10 @@
 # WorkLogs — règles agents
 
 ## Reprise actuelle — 2026-09-15
-- Lot courant : `codex/google-docs-layout-sync`, sources 0.9.1, sans nouvelle release.
-  Navigation verticale et synchronisation ciblée : bilan en tête de `docs/08-GOOGLE-DOCS.md`.
-  Aucune dépendance ajoutée. Recette Google réelle validée sur document temporaire ;
-  11 onglets existants vérifiés en lecture seule. Objets natifs conservés, pas réécrits.
-  `./scripts/check.sh` reste requis.
+- Lot `codex/google-docs-layout-sync` terminé et publié : **v0.10.0 sur master**
+  (navigation verticale et synchronisation ciblée Google Docs).
+  Bilan en tête de `docs/08-GOOGLE-DOCS.md`. Aucune dépendance ajoutée.
+  `./scripts/check.sh` vert en local et CI master verte.
 
 ## Repères précédents — 2026-09-14
 - Lot en cours : **éditeur riche intégré + Google Drive facultatif**, branche
@@ -14,7 +13,7 @@
 - **Tiptap 3.31.3 approuvé explicitement** : core, react, pm, starter-kit,
   extension-table, extension-image, extension-text-align, extension-text-style,
   extension-highlight. Ne pas redemander cet accord.
-- Dernière release vérifiée : **v0.7.4 publiée** (DEB/RPM/AppImage + SHA256 + attestation).
+- Dernière release vérifiée : **v0.10.0 publiée** (DEB/RPM/AppImage + SHA256 + attestation).
   Process : `docs/07-RELEASES.md` (fast path ~2 min, notes anglaises auto).
 - Nouveau lot sans bump/release : création directe de Google Docs, choix d’onglet,
   diagnostic API, recherche/remplacement et éditeur enrichi. Bilan : `docs/08-GOOGLE-DOCS.md`.
