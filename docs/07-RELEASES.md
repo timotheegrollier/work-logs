@@ -104,8 +104,8 @@ Trois circuits selon le format installé (détecté par `installKind()` dans
 
 | Installé via | Mise à jour | Téléchargé |
 |---|---|---|
-| `.rpm` + dépôt dnf | dialogue « Mettre à jour maintenant » → PackageKit (`pkcon`, mot de passe via polkit) → « Redémarrer » ; revérifié toutes les 5 min en tâche de fond | paquet complet (~83 Mo) |
-| `.deb` + dépôt apt **(depuis la 0.7.0)** | même circuit, dorsale apt de PackageKit | paquet complet (~121 Mo) |
+| `.rpm` + dépôt dnf | dialogue « Mettre à jour maintenant » → pré-vol PackageKit (`pkcon`, sans autorisation) → installation `pkexec dnf upgrade` (mot de passe via polkit) → « Redémarrer » ; revérifié toutes les 5 min en tâche de fond | paquet complet (~83 Mo) |
+| `.deb` + dépôt apt **(depuis la 0.7.0)** | même circuit, installation `pkexec apt-get install --only-upgrade` | paquet complet (~121 Mo) |
 | `.AppImage` | dialogue « Mettre à jour » → téléchargement **différentiel** → « Redémarrer » | seuls les blocs modifiés (~1–5 Mo) |
 | Paquet système sans dépôt activé | page de téléchargement, avec la commande d'activation du dépôt | paquet complet |
 
@@ -184,15 +184,38 @@ conteneur `ubuntu:24.04` (la base de Mint 22.x) à chaque release.
   installation. Le redémarrage n'est proposé qu'après `rpm -q == attendu`
   (`installedMatches`, testé) — sinon erreur explicite, jamais de faux succès.
 
-- **Jamais `--noninteractive` sur la transaction d'installation.** La politique polkit de
-  `org.freedesktop.packagekit.system-update` est `auth_admin_keep` : un mot de passe est
-  exigé. Ce drapeau marque la transaction comme non interactive, polkit refuse alors **sans
-  afficher de dialogue**, et la mise à jour échoue en silence. Prouvé sur Mint :
-  `pkcheck --action-id org.freedesktop.packagekit.system-update --process $$` →
-  « Authorization requires authentication » (code 2). Les conteneurs de recette tournent en
-  root, sans polkit : ils ne peuvent pas révéler ce défaut — d'où une mise à jour in-app qui
-  n'a jamais fonctionné sur une vraie session, sur aucune distribution. `refresh` et
-  `get-updates` restent non interactifs (`system-sources-refresh` est en `implicit active: yes`).
+- **`pkcon` ne peut pas installer depuis une application graphique** (corrigé en 0.9.1).
+  Ses deux formes sont sans issue — reproduit sur Linux Mint 22, session Cinnamon avec
+  un agent polkit bien enregistré (`polkitd: Registered Authentication Agent for
+  unix-session:c2 … [cinnamon]`) :
+
+  ```
+  printf 'y\n' | pkcon --cache-age 1 update worklogs
+    → Erreur fatale: user declined simulation            (code 7, en 0,5 s)
+  pkcon --noninteractive --cache-age 1 update worklogs
+    → État: Attente de l'authentification
+      Erreur fatale: Failed to obtain authentication      (code 7)
+  ```
+
+  Sans `--noninteractive`, pkcon exige un **vrai terminal** pour sa confirmation :
+  alimenter son entrée standard ne suffit pas (la 0.7.5 réécrivait « y » toutes les
+  500 ms — ça ne pouvait pas marcher), il refuse sa propre simulation avant même de
+  parler à polkit. Avec, il marque la transaction non interactive et polkit refuse
+  sans jamais afficher de dialogue. Il n'y a pas de troisième forme : **ne pas
+  réessayer ce chemin**. L'installation passe désormais par `pkexec` + le
+  gestionnaire natif (`privilegedInstallCommand`), qui est fait pour ça : il demande
+  l'autorisation à l'agent polkit de la session puis exécute en root. `refresh` et
+  `get-updates` restent sur pkcon, non interactifs et sans mot de passe
+  (`system-sources-refresh` est en `implicit active: yes`).
+
+  Les conteneurs de recette tournent en root, sans polkit : ils ne peuvent révéler
+  aucun de ces défauts. **La seule preuve qui compte est une vraie session graphique.**
+- **« user declined simulation » n'est pas un refus d'autorisation.** L'expression qui
+  qualifiait l'échec attrapait `declined` et annonçait « autorisation administrateur non
+  accordée » à quelqu'un à qui aucune fenêtre n'avait rien demandé — deux heures de
+  recherche du mauvais côté. `isAuthorizationFailure` distingue désormais les deux, et
+  un test l'ancre. Attention aussi au 127 de `pkexec` : `man pkexec` le donne pour
+  « not authorized » **et** pour une erreur d'exécution ; seul le message tranche.
 - **`pkcon get-updates` sort en 5 quand il n'y a rien à installer** (« nothing useful
   was done »), pas en 0. Le pré-vol traitait tout code non nul comme « interrogation
   impossible » **et sautait sa propre garde**, puis tentait quand même l'installation :

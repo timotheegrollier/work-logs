@@ -86,7 +86,7 @@ WorkLogs/
 ├── desktop/
 │   ├── main.mjs         fenêtre Electron, protocole worklogs://, téléchargements, impression
 │   ├── server.mjs       API + SQLite sur port éphémère local, protégés par jeton
-│   ├── update.mjs       détection du format installé, PackageKit, electron-updater
+│   ├── update.mjs       format installé, pré-vol PackageKit, installation pkexec, electron-updater
 │   ├── google.mjs       OAuth desktop, trousseau, appels Google
 │   ├── preload.cjs      bridge minimal : fermeture après sauvegarde
 │   ├── test/            tests node:test (serveur + mises à jour + OAuth)

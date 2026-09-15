@@ -284,3 +284,44 @@ recherche littérale entre marques, positions UTF-16, une transaction d’annula
 limite de 2 000 décorations avec remplacement global désactivé au-delà. Les liens
 s’éditent dans un formulaire intégré. Les commandes de tableau restent contextuelles.
 Aucune dépendance supplémentaire. Configuration et limites : `08-GOOGLE-DOCS.md`.
+
+## 13. La mise à jour in-app installe via `pkexec`, pas via `pkcon` — 2026-09-15
+
+**Ce qu'on a essayé, et pourquoi ça ne pouvait pas marcher.** Trois versions de suite ont
+tenté d'installer par une transaction PackageKit (`pkcon update worklogs`) : la 0.7.3 en
+retirant `--noninteractive`, la 0.7.5 en réécrivant « y » sur l'entrée standard toutes les
+500 ms. Les deux formes sont sans issue depuis une application graphique, reproduit sur
+Linux Mint 22 dans une session Cinnamon dont l'agent polkit est bien enregistré :
+
+```
+printf 'y\n' | pkcon --cache-age 1 update worklogs
+  → Erreur fatale: user declined simulation            (code 7, en 0,5 s)
+pkcon --noninteractive --cache-age 1 update worklogs
+  → État: Attente de l'authentification
+    Erreur fatale: Failed to obtain authentication      (code 7)
+```
+
+Sans le drapeau, pkcon veut un **vrai terminal** pour sa confirmation et renonce seul.
+Avec, il interdit à polkit d'afficher le moindre dialogue. Il n'existe pas de troisième
+forme — c'est pourquoi ce chemin est fermé pour de bon, et documenté comme tel dans
+`07-RELEASES.md` §8.
+
+**Ce qui est en place.** `pkcon` garde ce qu'il fait bien : lire les mises à jour sans
+demander d'autorisation (`refresh force` puis `get-updates`, action polkit
+`system-sources-refresh` en `implicit active: yes`). L'installation passe à `pkexec` + le
+gestionnaire natif — `apt-get install -y --only-upgrade worklogs`, `dnf upgrade -y
+worklogs` —, l'outil précisément conçu pour demander l'autorisation à l'agent polkit de la
+session puis exécuter en root. Chemins absolus obligatoires : `pkexec` nettoie
+l'environnement. `Dpkg::Use-Pty=0` évite que dpkg noie la sortie sous des retours chariot.
+
+**Pourquoi ça n'avait été vu par personne.** Les conteneurs de recette tournent en root,
+sans polkit : ils ne peuvent révéler aucun de ces défauts, et rendaient les trois
+tentatives « vertes ». La seule preuve qui compte ici est une vraie session graphique —
+0.8.0 → 0.9.0 → 0.8.0 → 0.9.0, pré-vol et installation compris, sur la machine de
+production.
+
+**Le message d'erreur comptait autant que le mécanisme.** L'expression qui qualifiait
+l'échec attrapait `declined`, donc « user declined simulation » était annoncé comme
+« autorisation administrateur non accordée » — à quelqu'un à qui aucune fenêtre n'avait
+rien demandé. Un diagnostic faux coûte plus cher qu'un message vague.
+`isAuthorizationFailure` sépare les deux cas et un test l'ancre.

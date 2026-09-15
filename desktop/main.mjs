@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
 import { createGoogleClient } from './google.mjs';
-import { checkForUpdate, hasPackageKit, installedVersionCommand, installKind, installedMatches, isNewer, logUpdateEvent, packageManager, parsePkconProgress, pkconInstallArgs, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from './update.mjs';
+import { checkForUpdate, hasPackageKit, hasPkexec, installedVersionCommand, installKind, installedMatches, isAuthorizationFailure, isNewer, logUpdateEvent, packageManager, parseManagerProgress, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, privilegedInstallCommand, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
 import electronUpdater from 'electron-updater';
@@ -177,7 +177,7 @@ async function offerSystemOrManualUpdate(force = false) {
   logUpdate(`trouvé : ${found.version}`);
   if (!force && dismissedVersion === found.version) return;
   if (!window || window.isDestroyed()) return;
-  if (installKind() === 'system' && hasPackageKit() && !systemUpdating) {
+  if (installKind() === 'system' && hasPackageKit() && hasPkexec() && !systemUpdating) {
     await offerSystemUpdate(found);
     return;
   }
@@ -197,15 +197,15 @@ async function offerSystemUpdate(found) {
     return;
   }
   systemUpdating = true;
-  sendProgress({ phase: 'download', percent: 0, label: `Mise à jour ${next} — préparation` });
+  sendProgress({ phase: 'download', label: `Mise à jour ${next} — préparation` });
   // Pré-vol en deux temps, prouvé en conteneur Fedora : `refresh force`
   // recharge vraiment les métadonnées (`get-updates`, même avec `--cache-age 1`,
   // relit sinon un cache périmé), puis `get-updates` dit CE qui serait installé.
   // Si le candidat n'est pas la version attendue, on s'arrête AVANT de toucher
   // au système — jamais d'install aveugle.
-  const refreshed = await runPkcon(pkconRefreshArgs());
+  const refreshed = await runCommand('pkcon', pkconRefreshArgs());
   if (refreshed.code !== 0) logUpdate(`refresh PackageKit : ${refreshed.output.trim().split('\n').slice(-1)[0]?.slice(0, 200)}`);
-  const probe = await runPkcon(pkconUpdatesArgs());
+  const probe = await runCommand('pkcon', pkconUpdatesArgs());
   const outcome = pkconProbeOutcome({ code: probe.code, output: probe.output, expected: next });
   const hint = repoHint(packageManager());
   logUpdate(`pré-vol PackageKit : ${outcome.candidate ?? (outcome.probeFailed ? 'aucune mise à jour listée (code ' + probe.code + ')' : 'aucune mise à jour listée')}`);
@@ -231,25 +231,24 @@ async function offerSystemUpdate(found) {
     });
     return;
   }
-  const error = await runPackageKitUpdate(next);
-  // Le cache PackageKit peut mentir : on ne propose le redémarrage que si la
+  const failure = await runSystemUpdate(next);
+  // Le cache du gestionnaire peut mentir : on ne propose le redémarrage que si la
   // version sur disque est vraiment celle attendue. Sinon, erreur explicite
   // au lieu d'un faux succès suivi d'un « downgrade » apparent.
   const installed = installedSystemVersion();
   systemUpdating = false;
-  if (error || !installedMatches(installed ?? '', next)) {
+  if (failure || !installedMatches(installed ?? '', next)) {
     // Refus d'autorisation : cas distinct d'un dépôt en retard, et le seul que
     // l'utilisateur peut corriger lui-même. Le nommer évite de le laisser
-    // chercher du côté du dépôt. « declined » couvre l'annulation polkit et
-    // l'abandon de la simulation PackageKit (confirmation restée sans réponse).
-    const denied = /not authoriz|non autoris|authentication|authentification|declined|annul/i.test(error ?? '');
+    // chercher du côté du dépôt — mais seulement quand c'en est vraiment un.
+    const denied = failure?.denied === true;
     ask(window, {
       type: 'error', title: 'WorkLogs', buttons: ['Compris'],
       message: denied
         ? 'Mise à jour refusée : autorisation administrateur non accordée.'
-        : error ?? `La version installée (${installed ?? 'illisible'}) n’est pas la ${next}.`,
+        : failure?.reason ?? `La version installée (${installed ?? 'illisible'}) n’est pas la ${next}.`,
       detail: denied
-        ? `Installer une mise à jour système demande ton mot de passe. Si aucune fenêtre ne te l’a demandé, passe par le gestionnaire de mises à jour de ton système, ou en console : ${hint.update}.`
+        ? `Installer une mise à jour système demande ton mot de passe. Réessaie et saisis-le dans la fenêtre d’authentification, ou mets à jour en console : ${hint.update}.`
         : `Le gestionnaire a servi une version périmée. Relance la vérification ou mets à jour à la main : ${hint.update}.`,
     });
     return;
@@ -278,48 +277,44 @@ function installedSystemVersion() {
   }
 }
 
-/** `pkcon update worklogs`, sans interaction (polkit s'en charge, `--cache-age 1`
- * force des métadonnées fraîches). Pousse la progression vers l'interface au
- * fil de la transaction. Résout vers null si OK, sinon un message court. */
-async function runPackageKitUpdate(next) {
-  const { code, output } = await runPkcon(pkconInstallArgs(), (cumulative) => {
-    const progress = parsePkconProgress(cumulative);
+/**
+ * Installe la mise à jour : `pkexec` demande l'autorisation à l'agent polkit de
+ * la session, puis apt/dnf installe en root. Pousse la phase vers l'interface au
+ * fil de la sortie. Résout vers null si OK, sinon `{ reason, denied }`.
+ */
+async function runSystemUpdate(next) {
+  const manager = packageManager();
+  const { file, args } = privilegedInstallCommand(manager);
+  const { code, output } = await runCommand(file, args, (cumulative) => {
+    const progress = parseManagerProgress(cumulative);
     if (!progress) return;
     sendProgress({
       phase: progress.phase,
-      ...(progress.percent === null ? {} : { percent: progress.percent }),
       label: `Mise à jour ${next} — ${progress.phase === 'download' ? 'téléchargement' : 'installation'}`,
     });
-  }, { answer: 'y\n' });
+  });
   if (code === 0) {
     sendProgress({ phase: 'done' });
-    logUpdate(`installation PackageKit : succès (${next})`);
+    logUpdate(`installation ${manager} : succès (${next})`);
     return null;
   }
   sendProgress({ phase: 'error' });
+  const denied = isAuthorizationFailure({ code, output });
   const reason = output.trim().split('\n').slice(-3).join(' ').slice(0, 300) || `code ${code}`;
   // Sans cette ligne, le journal s'arrêtait au pré-vol : impossible de savoir si
   // l'installation avait réussi, échoué, ou attendait une autorisation.
-  logUpdate(`installation PackageKit : échec (code ${code}) — ${reason}`);
-  return reason;
+  logUpdate(`installation ${manager} : échec (code ${code})${denied ? ' — autorisation refusée' : ''} — ${reason}`);
+  return { reason, denied };
 }
 
-function runPkcon(args, onChunk = null, { answer = null } = {}) {
+/** Lance une commande, cumule sa sortie, résout `{ code, output }` sans jamais rejeter. */
+function runCommand(file, args, onChunk = null) {
   return new Promise((resolve) => {
-    // stdin en pipe maintenu ouvert : pkcon peut poser sa confirmation en deux
-    // temps (simulation puis transaction). Un seul « y » suivi d'EOF faisait
-    // échouer la seconde lecture (« user declined simulation ») et, derrière,
-    // la vérification d'après install tombait sur une version périmée.
-    const child = spawn('pkcon', args, { stdio: [answer === null ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
-    let answerTimer = null;
-    if (answer !== null) {
-      child.stdin.on('error', () => { /* pkcon n'a rien demandé : sans conséquence */ });
-      try { child.stdin.write(answer); } catch { /* sans conséquence */ }
-      answerTimer = setInterval(() => {
-        try { child.stdin.write(answer); } catch { /* sans conséquence */ }
-      }, 500);
-      answerTimer.unref?.();
-    }
+    // Entrée standard fermée : ni pkcon ni apt ne doivent croire qu'un terminal
+    // les écoute. L'ancienne version tenait stdin ouverte pour répondre « y » à
+    // la confirmation de pkcon — elle n'a jamais pu fonctionner, pkcon exige un
+    // vrai terminal (voir privilegedInstallCommand).
+    const child = spawn(file, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     const collect = (chunk) => {
       output += chunk;
@@ -332,13 +327,9 @@ function runPkcon(args, onChunk = null, { answer = null } = {}) {
     child.stdout.on('data', collect);
     child.stderr.on('data', collect);
     child.on('error', (error) => {
-      if (answerTimer) clearInterval(answerTimer);
-      try { child.stdin.end(); } catch { /* sans conséquence */ }
       resolve({ code: -1, output: String(error.message || error).slice(0, 300) });
     });
     child.on('close', (code) => {
-      if (answerTimer) clearInterval(answerTimer);
-      try { child.stdin.end(); } catch { /* sans conséquence */ }
       resolve({ code: code ?? -1, output });
     });
   });

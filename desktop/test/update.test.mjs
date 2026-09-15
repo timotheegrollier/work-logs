@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkForUpdate, hasPackageKit, installedVersionCommand, installKind, installedMatches, isNewer, logUpdateEvent, packageManager, parsePkconCandidate, parsePkconProgress, parseVersion, pkconInstallArgs, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from '../update.mjs';
+import { checkForUpdate, hasPackageKit, hasPkexec, installedVersionCommand, installKind, installedMatches, isAuthorizationFailure, isNewer, logUpdateEvent, packageManager, parseManagerProgress, parsePkconCandidate, parseVersion, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, privilegedInstallCommand, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from '../update.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -64,10 +64,11 @@ test('checkForUpdate reste silencieuse quand il n’y a rien à signaler', async
   );
 });
 
-test('hasPackageKit détecte pkcon, pkconInstallArgs vise le paquet', () => {
+test('hasPackageKit et hasPkexec détectent les deux outils du chemin de mise à jour', () => {
   assert.equal(hasPackageKit({ existsSync: () => true }), true);
   assert.equal(hasPackageKit({ existsSync: () => false }), false);
-  assert.deepEqual(pkconInstallArgs(), ['--cache-age', '1', 'update', 'worklogs']);
+  assert.equal(hasPkexec({ existsSync: (p) => p === '/usr/bin/pkexec' }), true);
+  assert.equal(hasPkexec({ existsSync: () => false }), false);
   assert.deepEqual(pkconUpdatesArgs(), ['--noninteractive', '--plain', 'get-updates']);
   assert.deepEqual(pkconRefreshArgs(), ['--noninteractive', 'refresh', 'force']);
 });
@@ -128,18 +129,50 @@ test('installedVersionCommand interroge la bonne base de paquets', () => {
   assert.deepEqual(installedVersionCommand('dnf'), { file: 'rpm', args: ['-q', '--qf', '%{VERSION}', 'worklogs'] });
 });
 
-test('la transaction de mise à jour laisse polkit demander le mot de passe', () => {
-  // `system-update` est en `auth_admin_keep` : avec --noninteractive, polkit
-  // refuse sans afficher de dialogue et la mise à jour échoue en silence.
-  // C'est ce qui rendait la mise à jour in-app inopérante sur une vraie session.
-  assert.equal(pkconInstallArgs().includes('--noninteractive'), false);
-  assert.deepEqual(pkconInstallArgs(), ['--cache-age', '1', 'update', 'worklogs']);
+test('l’installation passe par pkexec, jamais par une transaction pkcon', () => {
+  // Les deux formes de `pkcon update` sont sans issue depuis une application
+  // graphique : sans --noninteractive il exige un vrai terminal pour sa
+  // confirmation (« user declined simulation »), avec il interdit à polkit
+  // d'afficher le moindre dialogue (« Failed to obtain authentication »).
+  // `pkexec` demande l'autorisation à l'agent polkit de la session, puis
+  // installe en root. Reproduit sur Mint 22, corrigé en 0.9.1.
+  const apt = privilegedInstallCommand('apt');
+  assert.equal(apt.file, 'pkexec');
+  assert.deepEqual(apt.args, ['/usr/bin/apt-get', '-o', 'Dpkg::Use-Pty=0', 'install', '-y', '--only-upgrade', 'worklogs']);
+
+  const dnf = privilegedInstallCommand('dnf');
+  assert.equal(dnf.file, 'pkexec');
+  assert.deepEqual(dnf.args, ['/usr/bin/dnf', 'upgrade', '-y', 'worklogs']);
+
+  // Chemin absolu obligatoire : pkexec nettoie l'environnement, un nom court
+  // dépendrait d'un PATH qui n'est plus celui de la session.
+  for (const manager of ['apt', 'dnf']) {
+    assert.ok(privilegedInstallCommand(manager).args[0].startsWith('/usr/bin/'));
+    assert.equal(privilegedInstallCommand(manager).args.includes('--noninteractive'), false);
+  }
 
   // Les deux étapes de lecture n'exigent aucune autorisation
   // (`system-sources-refresh` est en `implicit active: yes`) : elles peuvent
   // rester non interactives, et doivent le rester pour ne jamais bloquer.
   assert.ok(pkconRefreshArgs().includes('--noninteractive'));
   assert.ok(pkconUpdatesArgs().includes('--noninteractive'));
+});
+
+test('isAuthorizationFailure ne confond pas refus d’autorisation et abandon de pkcon', () => {
+  // 126 : pkexec n'a pas obtenu l'autorisation (dialogue fermé, mot de passe faux).
+  assert.equal(isAuthorizationFailure({ code: 126, output: '' }), true);
+  assert.equal(isAuthorizationFailure({ code: 1, output: 'Error executing command as another user: Not authorized' }), true);
+  assert.equal(isAuthorizationFailure({ code: 7, output: 'Erreur fatale: Failed to obtain authentication' }), true);
+
+  // Le piège corrigé : ce message n'a rien d'une autorisation refusée, c'est
+  // pkcon qui renonce faute de terminal. Annoncer « autorisation administrateur
+  // non accordée » envoyait chercher du mauvais côté — signalé en 0.9.0.
+  assert.equal(isAuthorizationFailure({ code: 7, output: 'Erreur fatale: user declined simulation' }), false);
+  // 127 est ambigu chez pkexec : refus d'autorisation *ou* erreur d'exécution.
+  // Seul le message tranche, sinon toute panne serait annoncée comme un refus.
+  assert.equal(isAuthorizationFailure({ code: 127, output: 'pkexec: /usr/bin/apt-get: No such file or directory' }), false);
+  assert.equal(isAuthorizationFailure({ code: 127, output: 'Error executing command as another user: Not authorized' }), true);
+  assert.equal(isAuthorizationFailure({ code: 100, output: 'E: Impossible de récupérer worklogs' }), false);
 });
 
 test('installedMatches refuse une version surprise après install', () => {
@@ -217,16 +250,20 @@ test('releaseAgeMinutes mesure la fraîcheur dune release', () => {
   assert.equal(releaseAgeMinutes('2026-09-12T22:00:00Z', now), null);
 });
 
-test('parsePkconProgress lit le statut et le pourcentage', () => {
+test('parseManagerProgress lit la phase d’une installation apt ou dnf', () => {
+  // Sortie relevée sur la machine de production (locale française, via pkexec).
   assert.deepEqual(
-    parsePkconProgress('Status: \tDownloading packages\nPercentage:\t42\n'),
-    { phase: 'download', percent: 42 },
+    parseManagerProgress('Réception de :1 https://…/deb ./ worklogs 0.9.0 [98,1 MB]\n'),
+    { phase: 'download', percent: null },
   );
   assert.deepEqual(
-    parsePkconProgress('Status: \tQuerying\nStatus: \tRunning\nPercentage:\t100\nStatus: \tFinished\n'),
-    { phase: 'install', percent: 100 },
+    parseManagerProgress('Réception de :1 …\nPréparation du dépaquetage de …/worklogs_0.9.0_amd64.deb ...\nDépaquetage de worklogs (0.9.0) sur (0.8.0) ...\n'),
+    { phase: 'install', percent: null },
   );
-  assert.deepEqual(parsePkconProgress('Status: \tWaiting in queue\n'), { phase: 'install', percent: null });
-  assert.equal(parsePkconProgress('Results:\n'), null);
-  assert.equal(parsePkconProgress(''), null);
+  // Et en anglais : la commande hérite de la locale système, pas de la nôtre.
+  assert.deepEqual(parseManagerProgress('Get:1 https://…\n'), { phase: 'download', percent: null });
+  assert.deepEqual(parseManagerProgress('Running transaction\n'), { phase: 'install', percent: null });
+  assert.deepEqual(parseManagerProgress('Upgrading   : worklogs-0.9.0-1.x86_64\n'), { phase: 'install', percent: null });
+  assert.equal(parseManagerProgress('Lecture des listes de paquets…\n'), null);
+  assert.equal(parseManagerProgress(''), null);
 });
