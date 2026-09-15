@@ -26,7 +26,7 @@ est en [05-DECISIONS.md §14](05-DECISIONS.md).
   système (politique Google). Permissions refusées par défaut.
 - Une seule vue Google vivante : ouvrir le document suivant libère le précédent,
   sauf s’il enregistre encore — sans dialogue, puisqu’on n’a pas demandé sa fermeture.
-- `./scripts/check.sh` : **265 tests**, `CHECK OK`, desktop compris.
+- `./scripts/check.sh` : **270 tests**, `CHECK OK`, desktop compris.
 
 **Connexion Google dans la vue intégrée : vérifiée par Timo le 15/09** sur sa session —
 c’était le risque qui pouvait condamner le lot. L’`userAgent` d’Electron n’est pas déguisé

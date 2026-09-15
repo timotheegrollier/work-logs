@@ -79,7 +79,7 @@ Reste à passer sur une vraie session, avec un vrai document :
 
 ## Validation de ce lot
 
-`./scripts/check.sh` : **265 tests** (99 API, 87 front, 32 desktop unitaires, 16 scripts,
+`./scripts/check.sh` : **270 tests** (99 API, 92 front, 32 desktop unitaires, 16 scripts,
 21 navigateur, 10 Electron), `CHECK OK`. Aucun compte Google réel, aucun jeton, aucun
 contenu privé n’a été utilisé ni ajouté au dépôt.
 
