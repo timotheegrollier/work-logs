@@ -90,7 +90,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
                 (SELECT COUNT(*) FROM attachments a WHERE a.entry_id = entries.id) attachments,
                 g.document_id google_document_id, g.tab_id google_tab_id,
                 g.document_title google_document_title, g.tab_title google_tab_title,
-                g.tab_order google_tab_order, g.readonly_reason google_readonly
+                g.tab_order google_tab_order, g.readonly_reason google_sync_blocked
          FROM entries LEFT JOIN google_documents g ON g.entry_id = entries.id
          ${entryWhere.length ? 'WHERE ' + entryWhere.join(' AND ') : ''}
          ORDER BY entries.entry_date DESC, entries.updated_at DESC

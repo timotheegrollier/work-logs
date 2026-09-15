@@ -26,7 +26,7 @@ export interface EntrySummary {
   google_document_title?: string | null;
   google_tab_title?: string | null;
   google_tab_order?: number | null;
-  google_readonly?: string | null;
+  google_sync_blocked?: string | null;
 }
 
 /** Une ligne du journal : une entrée simple, ou un document Google et ses onglets. */
@@ -82,7 +82,7 @@ export interface Entry {
 }
 export interface GoogleSync {
   document_id: string; tab_id?: string; synced_at: string | null; dirty: boolean;
-  document_title?: string; tab_title?: string; tab_order?: number; readonly?: string;
+  document_title?: string; tab_title?: string; tab_order?: number; sync_blocked?: string;
 }
 export interface GoogleStatus {
   available: boolean; configured: boolean; connected: boolean; pending: boolean; error: string;
