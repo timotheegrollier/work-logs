@@ -374,6 +374,18 @@ aucune question, parce que l'utilisateur n'a pas demandé la fermeture de ce doc
 seule une fermeture explicite (copie locale, fenêtre) affiche l'avertissement.
 
 **Testable hors Electron.** `google-view.mjs` importe `electron` par défaut au lieu de ses
-exports nommés : le module reste chargeable par `node --test`, donc ses trois contrôles
-(adresse, navigation, dimensions) ont de vrais tests unitaires et ne dépendent pas d'un
-parcours graphique pour être vérifiés.
+exports nommés : le module reste chargeable par `node --test`, donc ses contrôles
+(adresse, navigation, dimensions, focus) ont de vrais tests unitaires et ne dépendent pas
+d'un parcours graphique pour être vérifiés.
+
+**Le clavier appartient à qui l'avait.** Une `WebContentsView` garde le focus même
+masquée, réduite à zéro ou détruite : les frappes continuent d'y partir et les champs
+WorkLogs — recherche, nouveau projet, nouvelle tâche — restent muets. Rien ne le rétablit,
+sauf minimiser puis rouvrir la fenêtre, ce qui refait le choix de la cible et déguisait
+donc le défaut en remède. `focusTarget()` tranche désormais en un seul endroit, testable :
+la vue rend le clavier dès qu'elle cesse d'être visible, et au retour de la fenêtre elle ne
+le reprend que si elle l'avait et qu'elle est encore affichée — jamais au détriment d'un
+clic, qui a tranché avant nous. C'est la **deuxième** fois que ce piège mord ici : `ask()`
+dans `main.mjs` le corrige déjà pour les dialogues natifs. Les tests automatisés ne le
+voient pas tout seuls, Playwright injectant les frappes sans traverser cette couche : le
+parcours de non-régression mesure donc `webContents.isFocused()` côté Electron.

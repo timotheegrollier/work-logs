@@ -452,9 +452,10 @@ if (!app.requestSingleInstanceLock()) {
         }
       });
       // Le gestionnaire de fenêtres rend le focus à la fenêtre, mais pas forcément
-      // au contenu web : sans ça, la fenêtre paraît active et rien ne réagit.
+      // au contenu web : sans ça, la fenêtre paraît active et rien ne réagit. Le choix
+      // de la cible appartient à la vue Google, qui seule sait si elle tient le clavier.
       window.on('focus', () => {
-        if (!window.isDestroyed() && !googleView.focus()) window.webContents.focus();
+        if (!window.isDestroyed()) googleView.restoreFocus();
       });
       window.on('close', (event) => {
         event.preventDefault();

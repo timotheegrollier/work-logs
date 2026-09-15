@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allowedGoogleNavigation, googleViewUrl, viewBounds } from '../google-view.mjs';
+import { allowedGoogleNavigation, focusTarget, googleViewUrl, viewBounds } from '../google-view.mjs';
 
 test('googleViewUrl compose l’adresse de l’onglet demandé et refuse tout le reste', () => {
   assert.equal(googleViewUrl('google-123'), 'https://docs.google.com/document/d/google-123/edit');
@@ -37,4 +37,21 @@ test('viewBounds garde la vue Google à l’intérieur de la fenêtre', () => {
   assert.deepEqual(viewBounds({ x: 10, y: 10, width: -5, height: -5 }, [1440, 900]), { x: 10, y: 10, width: 0, height: 0 });
   for (const bad of [null, undefined, {}, { x: 0, y: 0, width: 10 }, { x: NaN, y: 0, width: 1, height: 1 }, { x: Infinity, y: 0, width: 1, height: 1 }])
     assert.throws(() => viewBounds(bad, [1440, 900]), /Zone du document invalide/, JSON.stringify(bad));
+});
+
+test('focusTarget rend le clavier aux champs WorkLogs dès que Google ne l’a plus', () => {
+  const base = { windowFocused: false, viewFocused: false, viewVisible: true, holder: 'view' };
+  // Le défaut d'origine : la vue Google masquée gardait le clavier, et les champs
+  // « recherche », « nouveau projet » et « nouvelle tâche » restaient muets.
+  assert.equal(focusTarget({ ...base, viewVisible: false }), 'window');
+  // Document Google affiché qui tenait le clavier : il le retrouve au retour.
+  assert.equal(focusTarget(base), 'view');
+  // Il ne l'avait pas : le voler ici, c'était casser la frappe dans les champs.
+  assert.equal(focusTarget({ ...base, holder: 'window' }), 'window');
+  // Un clic a déjà tranché avant nous : ne jamais écraser le choix de l'utilisateur.
+  assert.equal(focusTarget({ ...base, windowFocused: true }), 'none');
+  assert.equal(focusTarget({ ...base, viewFocused: true }), 'none');
+  assert.equal(focusTarget({ ...base, holder: 'window', windowFocused: true }), 'none');
+  // Sans document affiché, la fenêtre reprend toujours la main.
+  assert.equal(focusTarget({ windowFocused: false, viewFocused: false, viewVisible: false, holder: 'window' }), 'window');
 });

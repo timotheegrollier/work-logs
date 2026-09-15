@@ -25,7 +25,7 @@ est en [05-DECISIONS.md §14](05-DECISIONS.md).
   système (politique Google). Permissions refusées par défaut.
 - Une seule vue Google vivante : ouvrir le document suivant libère le précédent,
   sauf s’il enregistre encore — sans dialogue, puisqu’on n’a pas demandé sa fermeture.
-- `./scripts/check.sh` : **263 tests**, `CHECK OK`, desktop compris.
+- `./scripts/check.sh` : **265 tests**, `CHECK OK`, desktop compris.
 
 **Connexion Google dans la vue intégrée : vérifiée par Timo le 15/09** sur sa session —
 c’était le risque qui pouvait condamner le lot. L’`userAgent` d’Electron n’est pas déguisé
@@ -144,7 +144,7 @@ WorkLogs/
 │   ├── google-view.mjs  vue Google Docs isolée dans le canevas : adresses, navigation, fermeture
 │   ├── preload.cjs      bridge minimal : fermeture après sauvegarde, vue Google
 │   ├── test/            tests node:test (serveur + mises à jour + OAuth + vue Google)
-│   └── e2e/             9 parcours Playwright (sources ou paquet via WORKLOGS_EXECUTABLE)
+│   └── e2e/            10 parcours Playwright (sources ou paquet via WORKLOGS_EXECUTABLE)
 ├── e2e/                 21 parcours Playwright (web)
 ├── scripts/             check.sh · backup.sh · stage-desktop · verify-package ·
 │                        check-release · release-notes · blockmap  (+ 16 tests)

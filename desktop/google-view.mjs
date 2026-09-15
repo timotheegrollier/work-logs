@@ -23,6 +23,23 @@ export function allowedGoogleNavigation(value) {
   } catch { return false; }
 }
 
+/**
+ * Qui reprend le clavier quand la fenêtre redevient active.
+ *
+ * Le focus reste attaché à la vue Google jusque dans l’invisible : masquée, réduite à
+ * zéro ou détruite, elle continue de recevoir les frappes et les champs WorkLogs
+ * (recherche, nouveau projet, nouvelle tâche) restent muets. Rien ne le rétablit — seul
+ * minimiser puis rouvrir la fenêtre refait ce choix, ce qui déguisait le défaut en
+ * remède. Deux règles : ne jamais écraser un focus déjà attribué, parce qu’un clic de
+ * l’utilisateur a tranché avant nous, et ne rendre la main au document Google que s’il
+ * l’avait et qu’il est encore affiché. Même angle mort que les dialogues natifs
+ * (`ask` dans `main.mjs`) : Playwright injecte les frappes sans traverser cette couche.
+ */
+export function focusTarget({ windowFocused, viewFocused, viewVisible, holder }) {
+  if (windowFocused || viewFocused) return 'none';
+  return viewVisible && holder === 'view' ? 'view' : 'window';
+}
+
 export function viewBounds(bounds, size) {
   if (!bounds || !['x', 'y', 'width', 'height'].every(key => Number.isFinite(bounds[key]))) throw new Error('Zone du document invalide.');
   const x = Math.max(0, Math.min(size[0], Math.round(bounds.x)));
@@ -41,7 +58,9 @@ export function installGoogleView(window) {
       type: 'question', title: 'Google Docs dans WorkLogs',
       message: permission === 'media' ? 'Autoriser Google Docs à utiliser le microphone ou la caméra ?' : 'Autoriser Google Docs à accéder au presse-papiers ?',
       buttons: ['Refuser', 'Autoriser'], defaultId: 0, cancelId: 0,
-    }).then(result => callback(result.response === 1), () => callback(false));
+    }).then(result => callback(result.response === 1), () => callback(false))
+      // Un dialogue natif laisse la fenêtre sans clavier, comme `ask` dans `main.mjs`.
+      .finally(() => restoreFocus());
   });
   googleSession.on('will-download', (_event, item) => {
     item.setSaveDialogOptions({ defaultPath: path.join(app.getPath('downloads'), path.basename(item.getFilename())) });
@@ -49,13 +68,34 @@ export function installGoogleView(window) {
   const views = new Map();
   let active;
   let closing = false;
+  // Dernier contenu à avoir tenu le clavier, pour le lui rendre au retour de la fenêtre.
+  let holder = 'window';
+  window.webContents.on('focus', () => { holder = 'window'; });
+  const holdsKeyboard = record => {
+    const contents = record?.view.webContents;
+    return Boolean(contents) && !contents.isDestroyed() && contents.isFocused();
+  };
+  /** Une vue Google qui disparaît emporte le clavier avec elle : le reprendre. */
+  const takeBackKeyboard = () => {
+    // Sauf fenêtre réduite : le renderer masque aussi la vue sur `document.hidden`, et
+    // rendre le focus ici rouvrirait la fenêtre que l'utilisateur vient de réduire.
+    // Personne n'y tape en attendant ; `restoreFocus` tranchera à son retour.
+    if (window.isDestroyed() || window.isMinimized() || !window.isVisible()) return;
+    holder = 'window';
+    window.webContents.focus();
+  };
+  const setVisible = (record, visible) => {
+    const releasing = !visible && holdsKeyboard(record);
+    record.view.setVisible(visible);
+    if (releasing) takeBackKeyboard();
+  };
   const trusted = event => event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame
     && event.senderFrame.url.startsWith('worklogs://app/');
   const emit = record => {
     if (active?.record === record && !window.isDestroyed()) window.webContents.send(channel, { ...record.state, token: active.token });
   };
   function hide() {
-    if (active) active.record.view.setVisible(false);
+    if (active) setVisible(active.record, false);
     active = undefined;
   }
   function create(documentId) {
@@ -81,6 +121,7 @@ export function installGoogleView(window) {
     };
     contents.on('will-navigate', navigate);
     contents.on('will-redirect', (event, url, _inPlace, isMainFrame) => { if (isMainFrame) navigate(event, url); });
+    contents.on('focus', () => { holder = 'view'; });
     contents.on('will-attach-webview', event => event.preventDefault());
     contents.setWindowOpenHandler(({ url }) => {
       if (sameDocument(url)) void contents.loadURL(url).catch(() => {});
@@ -113,7 +154,11 @@ export function installGoogleView(window) {
       });
       if (choice === 1) event.preventDefault();
       else record.cancelClose?.();
-      if (!window.isDestroyed()) { window.focus(); contents.focus(); }
+      if (window.isDestroyed()) return;
+      window.focus();
+      // Le document ne reprend le clavier que s'il reste : sinon il l'emporterait.
+      if (choice === 1) window.webContents.focus();
+      else contents.focus();
     });
     contents.on('destroyed', () => {
       if (views.get(documentId) === record) views.delete(documentId);
@@ -133,10 +178,11 @@ export function installGoogleView(window) {
   }
   function closeRecord(record) {
     if (record.closePromise) return record.closePromise;
+    const hadKeyboard = holdsKeyboard(record);
     record.closePromise = new Promise(resolve => {
       const contents = record.view.webContents;
       const done = result => { contents.removeListener('destroyed', destroyed); record.cancelClose = undefined; resolve(result); };
-      const destroyed = () => done(true);
+      const destroyed = () => { if (hadKeyboard) takeBackKeyboard(); done(true); };
       record.cancelClose = () => done(false);
       contents.once('destroyed', destroyed);
       contents.close({ waitForBeforeUnload: true });
@@ -167,7 +213,7 @@ export function installGoogleView(window) {
     if (!trusted(event) || active?.token !== request?.token) return;
     try {
       active.record.view.setBounds(viewBounds(request.bounds, window.getContentSize()));
-      active.record.view.setVisible(Boolean(request.visible));
+      setVisible(active.record, Boolean(request.visible));
     } catch { /* Les dimensions périmées ne doivent pas fermer le document. */ }
   });
   ipcMain.on(`${channel}:hide`, (event, token) => { if (trusted(event) && active?.token === token) hide(); });
@@ -179,6 +225,21 @@ export function installGoogleView(window) {
   ipcMain.handle(`${channel}:reload`, (event, token) => {
     if (trusted(event) && active?.token === token) active.record.view.webContents.reload();
   });
+  /** Rendre le clavier à qui l'avait — sans écraser un clic qui a tranché avant nous. */
+  function restoreFocus() {
+    if (window.isDestroyed()) return 'none';
+    const contents = active?.record.view.getVisible() ? active.record.view.webContents : undefined;
+    const live = contents && !contents.isDestroyed() ? contents : undefined;
+    const target = focusTarget({
+      windowFocused: window.webContents.isFocused(),
+      viewFocused: Boolean(live?.isFocused()),
+      viewVisible: Boolean(live),
+      holder,
+    });
+    if (target === 'view') live.focus();
+    else if (target === 'window') window.webContents.focus();
+    return target;
+  }
   function print() {
     if (!active) return false;
     const contents = active.record.view.webContents;
@@ -190,7 +251,7 @@ export function installGoogleView(window) {
   }
   ipcMain.handle(`${channel}:print`, event => { if (trusted(event)) print(); });
   return {
-    focus() { if (active && active.record.view.getVisible()) { active.record.view.webContents.focus(); return true; } return false; },
+    restoreFocus,
     print,
     async close() {
       closing = true;

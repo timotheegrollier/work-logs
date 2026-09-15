@@ -289,3 +289,49 @@ test('Google intégré : une vue d’arrière-plan se libère seule, sauf si Goo
   await expect.poll(live).toBe(2);
   expect(await application!.evaluate(() => (globalThis as unknown as DialogCount).worklogsDialogs)).toBe(0);
 });
+
+test('Google intégré : masquer le document rend le clavier aux champs WorkLogs', async () => {
+  await application!.evaluate(({ session }) => session.fromPartition('persist:google-docs').protocol.handle('https', () => new Response(
+    '<div contenteditable="true" role="textbox">Document natif</div>', { headers: { 'content-type': 'text/html' } },
+  )));
+  // Qui tient réellement le clavier, mesuré côté Electron : les frappes injectées par
+  // Playwright court-circuitent cette couche et ne verraient jamais le défaut.
+  const keyboard = () => application!.evaluate(({ BrowserWindow, webContents }) => {
+    const google = webContents.getAllWebContents().find(w => w.getURL().includes('/document/d/'));
+    return { worklogs: BrowserWindow.getAllWindows()[0].webContents.isFocused(), google: Boolean(google?.isFocused()) };
+  });
+  const focusGoogle = () => application!.evaluate(({ webContents }) => {
+    webContents.getAllWebContents().find(w => w.getURL().includes('/document/d/'))!.focus();
+  });
+  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!
+    .open({ documentId: 'focus-doc', tabId: '', token: 'focus', bounds: { x: 300, y: 300, width: 600, height: 300 } }));
+  await expect.poll(() => application!.context().pages().some(p => p.url().includes('/document/d/focus-doc/'))).toBe(true);
+
+  await focusGoogle();
+  await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
+  // Le défaut : la vue masquée gardait le clavier et rien ne le rétablissait — seul
+  // minimiser puis rouvrir la fenêtre rendait la main aux champs WorkLogs.
+  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.hide('focus'));
+  await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
+
+  // Masquage sans fermeture — une boîte de dialogue s'ouvre par-dessus le document.
+  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!
+    .open({ documentId: 'focus-doc', tabId: '', token: 'focus', bounds: { x: 300, y: 300, width: 600, height: 300 } }));
+  await focusGoogle();
+  await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
+  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!
+    .bounds({ token: 'focus', bounds: { x: 300, y: 300, width: 600, height: 300 }, visible: false }));
+  await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
+
+  // Document réaffiché mais clavier aux champs WorkLogs : le retour de la fenêtre ne
+  // doit pas le lui reprendre, sinon la frappe de l'utilisateur part dans le document.
+  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!
+    .bounds({ token: 'focus', bounds: { x: 300, y: 300, width: 600, height: 300 }, visible: true }));
+  await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit('focus'));
+  await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
+
+  // Le document qui tenait le clavier le retrouve, lui, au retour de la fenêtre.
+  await focusGoogle();
+  await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit('focus'));
+  await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
+});
