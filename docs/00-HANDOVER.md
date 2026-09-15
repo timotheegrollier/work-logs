@@ -1,8 +1,9 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-15 · **Dernière release publiée : v0.10.0**.
-> **Lot courant :** `codex/google-docs-integrated-editor` — l’éditeur Google Docs natif
-> dans la colonne centrale. Code et tests terminés, **pas encore mergé ni publié**.
+> **Mise à jour :** 2026-09-15 · **Dernière release publiée : v0.12.0**.
+> **Lot courant :** terminé — `codex/google-docs-integrated-editor` mergé sur master et
+> publié en v0.12.0, avec le réglage de largeur des colonnes ajouté dans le même train.
+> **Trois courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
@@ -93,6 +94,31 @@ contenu privé n’a été ajouté au dépôt. La connexion desktop existante a 
 `./scripts/check.sh` avant tout nouveau lot.
 
 ## Ce qui reste à faire
+
+0. **Trois courses non élucidées dans les recettes e2e** — sorties le 15/09, aucune
+   reproductible en local, toutes vues sous contention CPU sur agent CI :
+   | Recette | Symptôme observé |
+   |---|---|
+   | `e2e/rich-document.spec.ts:134` titres 4–6 | la frappe s'insère **au début** du titre au lieu de la ligne suivante ; les deux paragraphes fusionnent |
+   | `e2e/rich-document.spec.ts:87` recherche/remplacement | « Remplacer » s'applique **deux fois**, avec l'ancienne puis la nouvelle valeur (`<b>$&</b> Salut BONJOUR` au lieu de `Salut bonjour BONJOUR`) |
+   | `desktop/e2e/desktop.spec.ts:105` document riche | le titre relu vaut `"Sans titrere"` au lieu de `"Sans titre"` |
+
+   Mesures déjà faites, à ne pas refaire : 36 répétitions bridées à 1 cœur après le lot
+   contre 18 avant — **aucune différence significative**, le signal « 2 contre 0 » initial
+   était du bruit. Deux hypothèses de mécanisme ont été **infirmées par sonde** : le focus
+   est bien dans l'éditeur immédiatement après le clic du plan, et la sélection DOM est
+   bien posée (offset 0 → 17 après `End`, 3/3). La recette `titres 4–6` était déjà flaky
+   sur master avant le lot (run `34968387999`, commit `4c9f506`, rattrapée au retry #1).
+
+   Les trois exigent un enchaînement **sous le frame** — remplir un champ et cliquer dans
+   la même milliseconde, presser `End` dans le frame du clic — que Playwright produit et
+   qu'un humain ne produit pas. C'est pourquoi la v0.12.0 a été publiée malgré elles.
+   **Ce n'est pas une preuve qu'elles sont inatteignables à la main.**
+
+   Piste pour le lot dédié : instrumenter plutôt que deviner — journaliser chaque appel à
+   `replaceMatches` (valeur + horodatage) et chaque `update({title})` dans une build de
+   recette, puis boucler la suite sous contention jusqu'à capture. Les traces des runs CI
+   en échec sont téléchargeables 14 jours (`gh run download <id> -n test-reports`).
 
 1. Étendre la conversion Google pour les tableaux, images, retraits personnalisés,
    commentaires et suggestions, avec tests de conservation. Ne jamais retirer les

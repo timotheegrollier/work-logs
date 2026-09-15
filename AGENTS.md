@@ -1,8 +1,9 @@
 # WorkLogs — règles agents
 
 ## Reprise actuelle — 2026-09-15
-- Lot en cours : **éditeur Google Docs natif dans WorkLogs**, branche
-  `codex/google-docs-integrated-editor`, sur les sources 0.10.0. Pas encore mergé.
+- Lot terminé et **publié en v0.12.0** : **éditeur Google Docs natif dans WorkLogs**
+  (branche `codex/google-docs-integrated-editor`, mergée), plus le réglage de largeur
+  des colonnes ajouté par Timo dans le même train.
   La vraie page Google s'affiche dans la colonne centrale (`desktop/google-view.mjs`,
   `WebContentsView` isolée) ; `api/src/google-merge.js` réconcilie les corrections
   indépendantes. Bilan en tête de `docs/08-GOOGLE-DOCS.md`, pourquoi en `05-DECISIONS.md` §14.
@@ -10,8 +11,10 @@
   Connexion d'un compte Google *dans la vue intégrée* : **vérifiée par Timo le 15/09**.
   **Ne jamais déguiser l'`userAgent`** si Google referme ce chemin : c'est un contrôle de
   sécurité du fournisseur ; consigner le refus à la place.
-- Lot précédent terminé et publié : **v0.10.0 sur master** (navigation verticale et
-  synchronisation ciblée Google Docs). CI master verte.
+- **Trois courses e2e non élucidées** sont sorties le 15/09 et restent ouvertes :
+  détail, mesures déjà faites et hypothèses **infirmées** dans `docs/00-HANDOVER.md`
+  § « Ce qui reste à faire », point 0. Ne pas relancer la CI en boucle pour les masquer.
+- Lot précédent publié : **v0.10.0** (navigation verticale et synchronisation ciblée).
 
 ## Repères précédents — 2026-09-14
 - Lot en cours : **éditeur riche intégré + Google Drive facultatif**, branche
