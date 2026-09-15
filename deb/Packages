@@ -18,16 +18,16 @@ License: UNLICENSED
 Vendor: Timothée Grollier <timotheegrollier@gmail.com>
 
 Package: worklogs
-Version: 0.9.0
+Version: 0.12.0
 Architecture: amd64
 Maintainer: Timothée Grollier <timotheegrollier@gmail.com>
-Installed-Size: 285350
+Installed-Size: 285409
 Depends: libgtk-3-0, libnss3, libxss1, libxtst6, libatspi2.0-0, libdrm2, libgbm1, libasound2t64 | libasound2, xdg-utils
-Filename: ./WorkLogs-0.9.0-linux-amd64.deb
-Size: 98118980
-MD5sum: 90226c119b2356c33da07a3bbea1b08a
-SHA1: 1e2799c6861ee61cb221704b47cab2d065fa9c22
-SHA256: 842af6424461eb91e256ee26b6c74bfddfdc93b61f63ba137e14fec34e056c74
+Filename: ./WorkLogs-0.12.0-linux-amd64.deb
+Size: 98133580
+MD5sum: dab7ff8bacffe401ed916f03b88eacf9
+SHA1: baa1f48f61cf54f128af45e3726d014b68030e43
+SHA256: c422075eb81c30a765d9826d338adaca1479c35bb0dd0a9ade6661b81432161e
 Section: default
 Priority: optional
 Homepage: https://github.com/timotheegrollier/work-logs
