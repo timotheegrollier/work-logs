@@ -8,9 +8,10 @@ import { TextStyleKit } from '@tiptap/extension-text-style';
 import Highlight from '@tiptap/extension-highlight';
 import { api, type RichDocument } from '../lib';
 import { RichSearch, replaceMatches, searchKey, setSearch } from '../rich-search';
+import { GoogleBlock, GoogleFormatting, GoogleInline, PreserveGoogleObjects } from '../google-content';
 
-export function RichEditor({ content, entryId, onChange }: {
-  content: RichDocument; entryId: string; onChange: (document: RichDocument) => void;
+export function RichEditor({ content, entryId, onChange, googleLinked = false }: {
+  googleLinked?: boolean; content: RichDocument; entryId: string; onChange: (document: RichDocument) => void;
 }) {
   const change = useRef(onChange);
   change.current = onChange;
@@ -31,6 +32,7 @@ export function RichEditor({ content, entryId, onChange }: {
       TableKit.configure({ table: { resizable: true } }), Image.configure({ allowBase64: false }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TextStyleKit.configure({ lineHeight: false }), Highlight.configure({ multicolor: true }), RichSearch,
+      GoogleFormatting, GoogleInline, GoogleBlock, PreserveGoogleObjects.configure({ enabled: googleLinked, onBlocked: () => setError('Cet élément est conservé dans Google. Pour le modifier ou le supprimer, utilise « Ouvrir dans Google Docs ».') }),
     ],
     content,
     shouldRerenderOnTransaction: true,
@@ -94,10 +96,13 @@ export function RichEditor({ content, entryId, onChange }: {
         {action('Plan du document', () => setOutline(!outline), outline, false, 'Plan')}
       </div>
       <div className="rich-tools" role="group" aria-label="Style du texte">
-        <select aria-label="Style du paragraphe" value={editor.isActive('heading') ? editor.getAttributes('heading').level : 'paragraph'}
-          onChange={e => e.target.value === 'paragraph' ? editor.chain().focus().setParagraph().run()
-            : editor.chain().focus().setHeading({ level: Number(e.target.value) as 1 | 2 | 3 | 4 | 5 | 6 }).run()}>
-          <option value="paragraph">Texte normal</option>{[1, 2, 3, 4, 5, 6].map(level => <option key={level} value={level}>Titre {level}</option>)}
+        <select aria-label="Style du paragraphe" value={editor.isActive('heading') ? editor.getAttributes('heading').level : editor.getAttributes('paragraph').googleNamedStyle || 'paragraph'}
+          onChange={e => {
+            const value = e.target.value;
+            if (['paragraph', 'TITLE', 'SUBTITLE'].includes(value)) editor.chain().focus().setParagraph().updateAttributes('paragraph', { googleNamedStyle: value === 'paragraph' ? null : value }).run();
+            else editor.chain().focus().setHeading({ level: Number(value) as 1 | 2 | 3 | 4 | 5 | 6 }).updateAttributes('heading', { googleNamedStyle: null }).run();
+          }}>
+          <option value="paragraph">Texte normal</option><option value="TITLE">Titre du document</option><option value="SUBTITLE">Sous-titre</option>{[1, 2, 3, 4, 5, 6].map(level => <option key={level} value={level}>Titre {level}</option>)}
         </select>
         <select aria-label="Police" value={textStyle.fontFamily || ''}
           onChange={e => e.target.value ? editor.chain().focus().setFontFamily(e.target.value).run() : editor.chain().focus().unsetFontFamily().run()}>

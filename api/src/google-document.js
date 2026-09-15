@@ -99,7 +99,7 @@ export function documentBody(source) {
     const tab = source.tabs[0];
     return { ...tab.documentTab, tabId: tab.tabProperties.tabId };
   }
-  return { body: source.body, lists: source.lists };
+  return { body: source.body, lists: source.lists, inlineObjects: source.inlineObjects };
 }
 
 function rejectSuggestions(value) {
@@ -110,16 +110,17 @@ function rejectSuggestions(value) {
   }
 }
 
-function readMarks(style = {}) {
+export function readMarks(style = {}, preserve = false) {
   const marks = [];
   for (const [key, type] of [['bold', 'bold'], ['italic', 'italic'], ['underline', 'underline'], ['strikethrough', 'strike']]) if (style[key]) marks.push({ type });
-  if (style.baselineOffset && style.baselineOffset !== 'NORMAL') unsupported('les exposants et indices');
-  if (style.weightedFontFamily?.weight && ![400, 700].includes(style.weightedFontFamily.weight)) unsupported('les graisses de police intermédiaires');
+  if (!preserve && style.baselineOffset && style.baselineOffset !== 'NORMAL') unsupported('les exposants et indices');
+  if (!preserve && style.weightedFontFamily?.weight && ![400, 700].includes(style.weightedFontFamily.weight)) unsupported('les graisses de police intermédiaires');
   if (style.link) {
-    if (!style.link.url) unsupported('les liens vers un signet ou un titre interne');
-    marks.push({ type: 'link', attrs: { href: style.link.url } });
+    if (!style.link.url && !preserve) unsupported('les liens vers un signet ou un titre interne');
+    if (style.link.url) marks.push({ type: 'link', attrs: { href: style.link.url } });
   }
   const attrs = {};
+  if (preserve && ['SUPERSCRIPT', 'SUBSCRIPT'].includes(style.baselineOffset)) attrs.baselineOffset = style.baselineOffset;
   if (style.weightedFontFamily?.fontFamily) attrs.fontFamily = style.weightedFontFamily.fontFamily;
   if (style.fontSize?.magnitude) attrs.fontSize = `${style.fontSize.magnitude}${style.fontSize.unit?.toLowerCase() || 'pt'}`;
   const foreground = color(style.foregroundColor?.color?.rgbColor);
@@ -174,7 +175,7 @@ export function googleToDocument(source) {
   return validateDocument({ type: 'doc', content: content.length ? content : [{ type: 'paragraph' }] });
 }
 
-function textStyle(marks = []) {
+export function textStyle(marks = []) {
   const style = {};
   for (const mark of marks) {
     if (['bold', 'italic', 'underline'].includes(mark.type)) style[mark.type] = true;
@@ -184,6 +185,7 @@ function textStyle(marks = []) {
     else if (mark.type === 'highlight') style.backgroundColor = { color: { rgbColor: rgb(mark.attrs?.color || '#fff59d') } };
     else if (mark.type === 'textStyle') {
       const a = mark.attrs || {};
+      if (a.baselineOffset) style.baselineOffset = a.baselineOffset;
       if (a.color) style.foregroundColor = { color: { rgbColor: rgb(a.color) } };
       if (a.backgroundColor) style.backgroundColor = { color: { rgbColor: rgb(a.backgroundColor) } };
       if (a.fontFamily) style.weightedFontFamily = { fontFamily: a.fontFamily };

@@ -1,3 +1,75 @@
+# Google Docs — onglets et synchronisation, bilan du 2026-09-15
+
+**Branche : `codex/google-docs-layout-sync`, sources 0.9.1. Pas de nouvelle release.**
+Aucune dépendance ajoutée ; Tiptap déjà approuvé est réutilisé.
+
+## Ce qui change
+
+- Un clic Drive ouvre tous les onglets. Le sélecteur qui désactivait les onglets
+  complexes a été retiré. Navigation verticale, recherche, noms complets, profondeur,
+  clavier, indicateur de brouillon et dernier onglet retenu au redémarrage.
+- Un fichier reste une ligne du journal même si ses onglets ont des dates différentes.
+  Les filtres ne retirent plus les autres onglets du document ouvert.
+- Document plus large, tâches repliables, détails secondaires regroupés, états
+  local/Google distincts, barre de mise en forme persistante et petits écrans adaptés.
+- Les tableaux et objets Google restent dans le document ; les cellules sont éditables.
+  Les suggestions deviennent des blocs conservés, sans bloquer les autres paragraphes.
+  La présence de commentaires ne refuse plus tout l’import.
+- Les patches modifient seulement les plages et styles concernés, de la fin vers le
+  début, avec indices UTF-16 et `requiredRevisionId`. Pas de reset global des styles.
+- Une écriture WorkLogs avance les associations d’onglets lues à cette même révision,
+  ce qui évite un faux conflit sur l’onglet suivant.
+- Réouvrir depuis Drive récupère les anciens imports aplatis intacts. Un brouillon
+  modifié est conservé et nécessite une copie/relecture explicite.
+
+## Périmètre exact
+
+| Contenu / opération | Comportement |
+|---|---|
+| Texte, titres 1–6, Titre/Sous-titre Google, styles courants, liens web | Édition et envoi ciblé |
+| Cellules de tableaux existants | Texte/styles éditables ; structure native conservée |
+| Nouveaux paragraphes dans une région/cellule compatible | Synchronisés sans aplatir le tableau |
+| Retraits, exposants/indices, listes imbriquées | Import/conservation ; édition du texte |
+| Commentaires | Restent dans Google ; ne bloquent plus les autres modifications |
+| Menus déroulants, puces enrichies, images, objets intégrés | Repères conservés ; texte autour éditable et synchronisable |
+| Suggestions actives, table des matières, sauts de section | Blocs conservés ; édition exacte dans Google Docs |
+| Lignes/colonnes/fusions/en-têtes/largeurs de tableaux, nouveaux tableaux/images, certains changements de listes | Pas encore synchronisés ; erreur explicite et brouillon conservé |
+| Collaboration en temps réel / envoi automatique en arrière-plan | Non ; envoi explicite |
+
+L’[API Docs décrit les éléments de paragraphe](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents#ParagraphElement)
+et les [opérations d’écriture disponibles](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/request).
+Elle ne fournit pas d’opération pour modifier les options d’un menu déroulant. Le lien
+« Ouvrir dans Google Docs » reste nécessaire pour ces éléments. Les caractères privés
+renvoyés pour les widgets sont des repères : Google les supprime lors d’insertText,
+ils ne doivent donc jamais être renvoyés comme du texte.
+
+## Validation de ce lot
+
+`./scripts/check.sh` : **244 tests** (92 API, 81 front, 28 desktop unitaires, 16 scripts,
+21 navigateur, 6 Electron). Le test historique de surlignage/rechargement peut être
+intermittent ; cela était également observé avant le lot. Rendu inspecté à 1440 px
+(sombre) et 390 px (clair).
+
+**Vraie API Google validée le 15/09 :** création d’un document temporaire avec texte,
+emoji, style Titre, retrait et tableau à deux cellules. Modification du texte et du
+montant d’une cellule puis ajout d’un paragraphe dans la cellule. La relecture confirme
+contenu, style, retrait et commentaire conservé. Document temporaire mis à la corbeille.
+
+**Document existant, lecture seule :** **11 onglets** importés, **54 éléments natifs**
+conservés. Chaque import inchangé produit zéro requête d’écriture. Aucun original
+modifié, aucun contenu privé ni identifiant Google ajouté au dépôt. Les jetons de
+recette sont restés chiffrés dans un profil temporaire, puis retirés.
+
+Fichiers principaux : `api/src/google-preserve.js`, `api/src/google-routes.js`,
+`web/src/google-content.ts`, `web/src/components/DocumentTabs.tsx`, `EntryEditor.tsx`
+et `styles.css`. La migration ajoute uniquement `google_documents.tab_depth`.
+
+---
+
+## Historique du lot initial (2026-09-14)
+
+Le périmètre et la validation ci-dessus remplacent les limites historiques ci-dessous.
+
 # Documents riches et Google Drive — reprise du 2026-09-14
 
 **Branche : `codex/integrated-documents`. Implémentation locale, pas de release publiée pour ce lot.**

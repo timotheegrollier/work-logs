@@ -254,7 +254,7 @@ test('un texte en noir par défaut arrive sans marque de couleur', () => {
 });
 
 
-test('un onglet non convertible s’ouvre et reste modifiable ; seul l’envoi est bloqué', async () => {
+test('un onglet avec tableau s’ouvre en conservant les cellules et peut être synchronisé', async () => {
   const google = stub();
   const source = doc('Premier onglet');
   // Deuxième onglet avec un tableau : le convertisseur le refuse, car il ne
@@ -277,9 +277,9 @@ test('un onglet non convertible s’ouvre et reste modifiable ; seul l’envoi e
     const liens = api.db.prepare('SELECT entry_id, tab_id, readonly_reason FROM google_documents ORDER BY tab_order').all();
     assert.equal(liens.length, 2);
     assert.equal(liens[0].readonly_reason, '', 'l’onglet convertible reste modifiable');
-    assert.match(liens[1].readonly_reason, /tableaux/, 'la raison du refus est conservée');
+    assert.equal(liens[1].readonly_reason, '', 'le tableau ne bloque plus l’onglet');
 
-    // Consultable : le texte est là, tableau aplati, donc l'onglet n'est plus inaccessible.
+    // Le texte et les cellules du tableau sont conservés.
     const lecture = await api.get(`/api/entries/${liens[1].entry_id}`);
     assert.match(lecture.body.content_md, /Budget/);
     assert.match(lecture.body.content_md, /Toiture/);
@@ -292,13 +292,75 @@ test('un onglet non convertible s’ouvre et reste modifiable ; seul l’envoi e
     assert.equal(modifie.status, 200);
     assert.equal(modifie.body.title, 'Chiffres revus');
 
-    // Mais l'envoi vers Google est refusé, en disant pourquoi : c'est ce refus
-    // qui protège le document d'origine, pas un blocage de l'édition.
+    // L’envoi sans changement de contenu est un succès sans réécriture du tableau.
     const envoi = await api.post(`/api/entries/${liens[1].entry_id}/google/push`);
-    assert.equal(envoi.status, 422);
-    assert.match(envoi.body.error, /tableaux/);
-    assert.match(envoi.body.error, /version locale est conservée/);
+    assert.equal(envoi.status, 200);
+    assert.equal(lecture.body.content_json.content[1].type, 'table');
   } finally {
     await api.close();
   }
+});
+
+
+test('les commentaires ne bloquent plus l’import et les onglets restent accessibles après filtrage', async () => {
+  const google = stub(), source = doc('Premier');
+  const child = doc('Autre contenu').tabs[0];
+  child.tabProperties = { tabId: 'child', title: 'Sous-onglet' };
+  source.tabs[0].childTabs = [child];
+  source.comments = [{ id: 'comment-1' }];
+  google.setSource(source);
+  const api = await startApi({ google });
+  try {
+    const opened = await api.post('/api/google/documents/open', { document_id: 'google-123' });
+    assert.equal(opened.status, 201);
+    const state = await api.get('/api/state?q=Premier');
+    assert.equal(state.body.entries.length, 1);
+    const entry = await api.get(`/api/entries/${opened.body.id}`);
+    assert.equal(entry.body.google_sync.tabs.length, 2);
+    assert.equal(entry.body.google_sync.tabs[1].google_tab_depth, 1);
+    assert.equal(google.calls.some(call => call.url.includes('/comments?')), false);
+    assert.equal((await api.post('/api/google/documents/open', { document_id: 'google-123', tab_id: 'missing' })).status, 404);
+  } finally { await api.close(); }
+});
+
+test('enregistrer deux onglets successivement ne provoque pas de faux conflit de révision', async () => {
+  const google = stub(), source = doc('Premier');
+  const second = doc('Second').tabs[0]; second.tabProperties = { tabId: 'second', title: 'Second' };
+  source.tabs.push(second); google.setSource(source);
+  const api = await startApi({ google });
+  try {
+    const opened = await api.post('/api/google/documents/open', { document_id: 'google-123' });
+    const tabs = opened.body.google_sync.tabs;
+    for (const tab of tabs) {
+      const entry = (await api.get(`/api/entries/${tab.id}`)).body;
+      entry.content_json.content[0].content[0].text += ' révisé';
+      await api.put(`/api/entries/${tab.id}`, { content_json: entry.content_json });
+      const pushed = await api.post(`/api/entries/${tab.id}/google/push`);
+      assert.equal(pushed.status, 200, JSON.stringify(pushed.body));
+    }
+    assert.equal(google.calls.filter(c => c.url.endsWith(':batchUpdate')).length, 2);
+  } finally { await api.close(); }
+});
+
+test('anciens imports bloqués : actualise les brouillons intacts et conserve les brouillons modifiés', async () => {
+  const google = stub(), api = await startApi({ google });
+  try {
+    const opened = (await api.post('/api/google/documents/open', { document_id: 'google-123' })).body;
+    const id = opened.id;
+    api.db.prepare("UPDATE google_documents SET readonly_reason='ancien convertisseur' WHERE entry_id=?").run(id);
+    google.setSource(doc('Contenu complet'));
+    const refreshed = await api.post('/api/google/documents/open', { document_id: 'google-123' });
+    assert.match(refreshed.body.content_md, /Contenu complet/);
+    assert.equal(refreshed.body.google_sync.sync_blocked, '');
+    api.db.prepare("UPDATE google_documents SET readonly_reason='ancien convertisseur' WHERE entry_id=?").run(id);
+    const draft = refreshed.body.content_json;
+    draft.content[0].content[0].text = 'Brouillon à garder';
+    await api.put(`/api/entries/${id}`, { content_json: draft });
+    const kept = await api.post('/api/google/documents/open', { document_id: 'google-123' });
+    assert.match(kept.body.content_md, /Brouillon à garder/);
+    assert.equal((await api.post(`/api/entries/${id}/google/push`)).status, 422);
+    const pulled = await api.post(`/api/entries/${id}/google/pull`, { expected_content_json: draft });
+    assert.equal(pulled.status, 200);
+    assert.equal(pulled.body.google_sync.sync_blocked, '');
+  } finally { await api.close(); }
 });

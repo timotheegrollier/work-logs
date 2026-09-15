@@ -83,13 +83,10 @@ test('une API désactivée affiche un lien d’activation, sans prétendre que l
   expect(screen.queryByRole('button', { name: 'Retrouvé' })).not.toBeInTheDocument();
 });
 
-test('propose les onglets Google et ouvre uniquement le brouillon choisi', async () => {
+test('ouvre directement tous les onglets, y compris ceux signalés incompatibles par l’ancien convertisseur', async () => {
   vi.spyOn(api, 'googleStatus').mockResolvedValue(connected);
   vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [{ id: 'doc-1', name: 'Document partagé', modifiedTime: '' }] });
-  vi.spyOn(api, 'googleDocumentTabs').mockResolvedValue({ tabs: [
-    { id: 't.0', title: 'Complexe', depth: 0, editable: false, reason: 'Contient un tableau' },
-    { id: 't.1', title: 'Notes', depth: 1, editable: true },
-  ] });
+  const scan = vi.spyOn(api, 'googleDocumentTabs');
   const open = vi.spyOn(api, 'openGoogleDocument').mockResolvedValue(entry);
   const onOpen = vi.fn();
   render(<GoogleDrive onOpen={onOpen} />);
@@ -97,13 +94,9 @@ test('propose les onglets Google et ouvre uniquement le brouillon choisi', async
   const file = await screen.findByRole('button', { name: 'Document partagé' });
   await waitFor(() => expect(file).toBeEnabled());
   fireEvent.click(file);
-  expect(await screen.findByRole('button', { name: 'Complexe' })).toBeDisabled();
-  expect(open).not.toHaveBeenCalled();
-  const child = screen.getByRole('button', { name: /Notes/ });
-  await waitFor(() => expect(child).toBeEnabled());
-  fireEvent.click(child);
-  await waitFor(() => expect(open).toHaveBeenCalledWith('doc-1', 't.1'));
+  await waitFor(() => expect(open).toHaveBeenCalledWith('doc-1'));
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(entry));
+  expect(scan).not.toHaveBeenCalled();
 });
 
 test('un envoi bloqué par Docs API propose son activation dans l’éditeur', async () => {

@@ -4,6 +4,26 @@
 > [état et reprise](06-DESKTOP-CICD.md). Il se lance avec `npm run desktop` et utilise un
 > dossier de données distinct. Les paquets exploratoires ne sont pas des releases validées.
 
+## Les onglets Google Docs (2026-09-15)
+
+Dans **Google Drive**, cliquer sur un document ouvre tous ses onglets. La liste verticale
+à côté de la page conserve les sous-onglets indentés ; la recherche apparaît à partir
+de six onglets. Les flèches haut/bas déplacent le focus, Entrée ouvre l’onglet. Le dernier
+onglet est retenu au redémarrage. **Afficher les tâches** rouvre le panneau latéral.
+
+Le texte et les cellules se modifient dans WorkLogs. **Enregistrer sur Drive** envoie
+les changements ; la sauvegarde sur cet appareil reste automatique. **Actualiser**
+recharge l’onglet Google après confirmation. Le menu **•••** garde une copie locale.
+Titre local, projet, date, impression et suppression sont dans **Détails du document**.
+
+Les éléments natifs signalés restent conservés. **Ouvrir dans Google Docs** accède au
+bon onglet pour modifier un menu déroulant, une image, une suggestion ou la structure
+d’un tableau. Ces fonctions ne sont pas encore toutes éditables dans WorkLogs.
+
+Pour un ancien import simplifié, réouvrir le fichier depuis Drive récupère les onglets
+intacts. Si tu as modifié un de ces brouillons, garde une copie locale puis actualise-le.
+Ses modifications ne sont pas écrasées automatiquement.
+
 ## Ouvrir
 
 <http://localhost:8411>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, googleHelpUrl, type Entry, type GoogleFile, type GoogleStatus, type GoogleTab } from '../lib';
+import { api, googleHelpUrl, type Entry, type GoogleFile, type GoogleStatus } from '../lib';
 
 /** Panneau repliable du journal, sans route ni onglet supplémentaire. */
 export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
@@ -14,7 +14,6 @@ export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState('');
   const [filter, setFilter] = useState('');
-  const [tabChoice, setTabChoice] = useState<{ file: GoogleFile; tabs: GoogleTab[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [configure, setConfigure] = useState(false);
 
@@ -68,11 +67,7 @@ export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
       setStatus(await api.configureGoogle(config)); setFiles([]); setLoaded(false); setConfigure(false);
     });
   };
-  const openFile = async (file: GoogleFile) => {
-    const { tabs } = await api.googleDocumentTabs(file.id);
-    if (tabs.length > 1) { setTabChoice({ file, tabs }); return; }
-    setTabChoice(null); onOpen(await api.openGoogleDocument(file.id));
-  };
+  const openFile = async (file: GoogleFile) => onOpen(await api.openGoogleDocument(file.id));
   return <section className="drive-panel" aria-label="Google Drive">
     <button className="drive-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>Google Drive <span aria-hidden="true">{expanded ? '−' : '+'}</span></button>
     {expanded && <div className="drive-content">
@@ -109,15 +104,6 @@ export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
             <button disabled={busy} onClick={() => void run(() => openFile(file))}>{file.name}</button>
             {status.selectedIds.includes(file.id) && <small>Dernière sélection Google</small>}
           </li>)}</ul>
-          {tabChoice && <div className="drive-tab-choice" role="group" aria-label="Choisir un onglet Google">
-            <p>Onglet à éditer dans « {tabChoice.file.name} » :</p>
-            {tabChoice.tabs.map(tab => <div key={tab.id}><button disabled={busy || tab.editable === false} onClick={() => void run(async () => {
-              onOpen(await api.openGoogleDocument(tabChoice.file.id, tab.id)); setTabChoice(null);
-            })}>{'↳ '.repeat(tab.depth)}{tab.title}</button>{tab.reason && <small>{tab.reason}</small>}</div>)}
-            <p className="drive-hint">Chaque onglet ouvert a son propre brouillon dans le journal.</p>
-            <a href={`https://docs.google.com/document/d/${tabChoice.file.id}/edit`} target="_blank" rel="noopener noreferrer">Ouvrir l’original dans Google Docs</a>
-            <button className="ghost" onClick={() => setTabChoice(null)}>Fermer le choix d’onglet</button>
-          </div>}
           {busy && <p role="status">Opération Google en cours…</p>}
           {!busy && !error && loaded && !files.length && <p>Aucun document autorisé. Utilise « Choisir des documents dans Drive ».</p>}
           {warnings.map(warning => <p key={warning} role="status">{warning}</p>)}

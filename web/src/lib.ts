@@ -26,6 +26,8 @@ export interface EntrySummary {
   google_document_title?: string | null;
   google_tab_title?: string | null;
   google_tab_order?: number | null;
+  google_tab_depth?: number | null;
+  google_dirty?: number | boolean | null;
   google_sync_blocked?: string | null;
 }
 
@@ -82,7 +84,8 @@ export interface Entry {
 }
 export interface GoogleSync {
   document_id: string; tab_id?: string; synced_at: string | null; dirty: boolean;
-  document_title?: string; tab_title?: string; tab_order?: number; sync_blocked?: string;
+  document_title?: string; tab_title?: string; tab_order?: number; tab_depth?: number; sync_blocked?: string;
+  preserved_elements?: number; tabs?: EntrySummary[];
 }
 export interface GoogleStatus {
   available: boolean; configured: boolean; connected: boolean; pending: boolean; error: string;

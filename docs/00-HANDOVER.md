@@ -5,7 +5,30 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
-## État vérifié
+## Lot du 2026-09-15 — navigation et synchronisation Google
+
+Branche `codex/google-docs-layout-sync`, sur les sources **0.9.1**, sans bump ni release.
+Le bilan en tête de [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md) remplace les limites historiques.
+
+- Ouverture directe de tous les onglets, navigation verticale/recherche/clavier,
+  sous-onglets indentés et journal regroupé même si les dates diffèrent.
+- Document agrandi, tâches repliables, états local/Google distincts, petits écrans.
+- `google-preserve.js` : patches ciblés du texte/styles, cellules éditables,
+  objets/widgets/suggestions conservés. Les commentaires ne bloquent plus l’import.
+- Révisions partagées : une écriture ne crée plus de faux conflit sur l’onglet suivant.
+- Anciens imports aplatis : récupération des imports intacts à la réouverture Drive ;
+  copie/rechargement explicite lorsque le brouillon a changé.
+- Vraie API : texte/emoji, titre, retrait, cellules, ajout de paragraphe et commentaire
+  conservés sur un document temporaire, ensuite mis à la corbeille.
+- Document existant vérifié en lecture seule : **11 onglets importés, 54 éléments
+  conservés, aucune écriture produite pour les imports inchangés**.
+- `./scripts/check.sh` : 244 tests, desktop compris. Une recette de surlignage/rechargement
+  peut nécessiter sa relance prévue, comme observé avant ce lot.
+
+Les menus déroulants, images, suggestions et changements de structure des tableaux
+passent encore par Google Docs. Ne pas annoncer une parité complète.
+
+## État vérifié du lot précédent
 
 L’autre agent a publié v0.7.0 à v0.7.4 : documents riches/Drive, dépôt apt Mint,
 corrections des lockfiles, de l’amorçage des tests, des projets vides, de PackageKit

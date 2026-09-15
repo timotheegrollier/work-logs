@@ -1,15 +1,15 @@
 /** Format JSON de l'éditeur riche. Indépendant de la bibliothèque d'affichage. */
-const BLOCKS = ['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'codeBlock', 'horizontalRule', 'table', 'image'];
+const BLOCKS = ['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'codeBlock', 'horizontalRule', 'table', 'image', 'googleBlock'];
 const CHILDREN = {
   doc: BLOCKS,
-  paragraph: ['text', 'hardBreak', 'image'], heading: ['text', 'hardBreak'],
+  paragraph: ['text', 'hardBreak', 'image', 'googleInline'], heading: ['text', 'hardBreak', 'googleInline'],
   bulletList: ['listItem'], orderedList: ['listItem'],
   listItem: BLOCKS,
   blockquote: BLOCKS, codeBlock: ['text'],
   table: ['tableRow'], tableRow: ['tableCell', 'tableHeader'],
   tableCell: BLOCKS,
   tableHeader: BLOCKS,
-  text: [], hardBreak: [], horizontalRule: [], image: [],
+  text: [], hardBreak: [], horizontalRule: [], image: [], googleInline: [], googleBlock: [],
 };
 const MARKS = new Set(['bold', 'italic', 'underline', 'strike', 'code', 'link', 'textStyle', 'highlight']);
 const COLOR = /^(#[\da-f]{3,8}|rgba?\([\d.,%\s]+\)|[a-z]{1,20})$/i;
@@ -31,7 +31,12 @@ export function validateDocument(document) {
     for (const [key, v] of Object.entries(value)) {
       if (v === null) continue;
       if (key === 'href') { if (type !== 'link' || !safeUrl(v)) fail(); }
-      else if (key === 'src') { if (type !== 'image' || !safeUrl(v, true)) fail(); }
+      else if (key === 'src') { if (!['image', 'googleInline'].includes(type) || !safeUrl(v, true)) fail(); }
+      else if (key === 'googleId') { if (!['googleInline', 'googleBlock'].includes(type) || typeof v !== 'string' || !/^object-\d{1,6}$/.test(v)) fail(); }
+      else if (key === 'label') { if (!['googleInline', 'googleBlock'].includes(type) || typeof v !== 'string' || v.length > 1000) fail(); }
+      else if (key === 'googleNamedStyle') { if (!['paragraph', 'heading'].includes(type) || !['TITLE', 'SUBTITLE'].includes(v)) fail(); }
+      else if (['googleIndentStart', 'googleIndentEnd', 'googleIndentFirstLine'].includes(key)) { if (!['paragraph', 'heading'].includes(type) || !Number.isFinite(v) || Math.abs(v) > 2000) fail(); }
+      else if (key === 'baselineOffset') { if (type !== 'textStyle' || !['SUPERSCRIPT', 'SUBSCRIPT'].includes(v)) fail(); }
       else if (key === 'textAlign') { if (!['left', 'center', 'right', 'justify'].includes(v)) fail(); }
       else if (['color', 'backgroundColor'].includes(key)) { if (typeof v !== 'string' || !COLOR.test(v)) fail(); }
       else if (key === 'fontSize') { if (typeof v !== 'string' || !/^\d{1,3}(\.\d{1,3})?(px|pt)$/.test(v)) fail(); }
@@ -50,6 +55,7 @@ export function validateDocument(document) {
     if (n.type === 'text') { if (typeof n.text !== 'string' || !n.text.length) fail(); }
     else if (n.text !== undefined) fail();
     if (n.type === 'image' && !safeUrl(n.attrs?.src, true)) fail();
+    if (['googleInline', 'googleBlock'].includes(n.type) && (!n.attrs?.googleId || typeof n.attrs.label !== 'string')) fail();
     if (n.marks !== undefined) {
       if (n.type !== 'text' || !Array.isArray(n.marks) || n.marks.length > 10) fail();
       for (const mark of n.marks) {
@@ -77,6 +83,7 @@ export function documentText(node) {
   if (node.type === 'text') return node.text;
   if (node.type === 'hardBreak') return '\n';
   if (node.type === 'image') return node.attrs?.alt || '';
+  if (['googleInline', 'googleBlock'].includes(node.type)) return node.attrs?.label || '';
   const separator = ['paragraph', 'heading', 'codeBlock'].includes(node.type) ? '' : '\n';
   return (node.content || []).map(documentText).join(separator);
 }

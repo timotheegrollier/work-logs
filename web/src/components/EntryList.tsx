@@ -17,6 +17,7 @@ export function EntryList({
   onCreateDocument: () => void;
   searching: boolean;
 }) {
+  const items = groupTabs(entries);
   const colors = new Map(projects.map((p) => [p.id, p.color]));
 
   return (
@@ -33,16 +34,16 @@ export function EntryList({
       )}
 
       <ol className="days">
-        {groupByDay(entries).map(([date, ofDay]) => (
+        {groupByDay(items.map(item => item.entry)).map(([date, ofDay]) => (
           <li key={date}>
             <h2 className="day">{dayLabel(date)}</h2>
             <ul>
-              {groupTabs(ofDay).map(({ entry, title, tabs }) => (
+              {ofDay.map(representative => items.find(item => item.entry.id === representative.id)!).map(({ entry, title, tabs }) => (
                 <li key={entry.id}>
                   <button
                     className={'entry' + (tabs.some((t) => t.id === selectedId) || entry.id === selectedId ? ' is-selected' : '')}
-                    aria-current={entry.id === selectedId ? 'true' : undefined}
-                    onClick={() => onSelect(entry.id)}
+                    aria-current={entry.id === selectedId || tabs.some(t => t.id === selectedId) ? 'true' : undefined}
+                    onClick={() => onSelect(tabs.find(t => t.id === selectedId)?.id || entry.id)}
                   >
                     <span className="entry-title">
                       {entry.project_id && (
