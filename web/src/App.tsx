@@ -23,6 +23,9 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(readSelected);
   const [entry, setEntry] = useState<Entry | null>(null);
   const [freshEntry, setFreshEntry] = useState(false);
+  const [showDocumentTasks, setShowDocumentTasks] = useState(false);
+  const documentRef = useRef<string | undefined>(undefined);
+  documentRef.current = entry?.google_sync?.document_id;
   const [theme, setTheme] = useState(readTheme);
   const selectedRef = useRef<string | null>(null);
   const reloadSequence = useRef(0);
@@ -76,7 +79,7 @@ export default function App() {
       setState(next);
       setError('');
       // Rien de sélectionné (premier chargement, ou entrée supprimée) : on ouvre la plus récente.
-      const stillThere = next.entries.some((e) => e.id === selectedRef.current);
+      const stillThere = next.entries.some((e) => e.id === selectedRef.current || (documentRef.current && e.google_document_id === documentRef.current));
       if (!stillThere) setSelectedId(next.entries[0]?.id ?? null);
     } catch {
       setError('API injoignable. Lance `npm run dev` dans /home/timo/WorkLogs.');
@@ -116,14 +119,10 @@ export default function App() {
     reload();
   };
 
-  // Onglets du même document Google que l'entrée ouverte : ils forment la barre
-  // d'onglets de l'éditeur, pour tout consulter sans quitter le document.
-  const siblingTabs = (() => {
-    const documentId = state?.entries.find((e) => e.id === selectedId)?.google_document_id;
-    if (!documentId) return [];
-    const tabs = (state?.entries ?? []).filter((e) => e.google_document_id === documentId);
-    return tabs.length > 1 ? [...tabs].sort((a, b) => (a.google_tab_order ?? 0) - (b.google_tab_order ?? 0)) : [];
-  })();
+  const siblingTabs = (entry?.google_sync?.tabs || state?.entries.filter(e => e.google_document_id === entry?.google_sync?.document_id && e.google_document_id) || [])
+    .map(tab => ({ ...tab, ...state?.entries.find(e => e.id === tab.id) }))
+    .sort((a, b) => (a.google_tab_order ?? 0) - (b.google_tab_order ?? 0));
+  const isGoogleDocument = Boolean(entry?.google_sync);
 
   const stats = state?.stats;
 
@@ -178,7 +177,10 @@ export default function App() {
 
       {error && <p className="error banner no-print">{error}</p>}
 
-      <div className="columns">
+      {isGoogleDocument && <div className="workspace-switch no-print"><span>Document Google · {siblingTabs.length} onglet{siblingTabs.length > 1 ? 's' : ''}</span>
+        <button aria-expanded={showDocumentTasks} aria-controls="workspace-tasks" onClick={() => setShowDocumentTasks(!showDocumentTasks)}>{showDocumentTasks ? 'Masquer les tâches' : 'Afficher les tâches'}</button>
+      </div>}
+      <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showDocumentTasks ? ' with-tasks' : '')}>
         <aside className="left no-print">
           <ProjectBar
             projects={state?.projects ?? []}
@@ -229,7 +231,7 @@ export default function App() {
           )}
         </main>
 
-        <aside className="right no-print">
+        <aside id="workspace-tasks" className="right no-print">
           <TaskBoard tasks={state?.tasks ?? []} projectId={projectId} onChanged={reload} />
         </aside>
       </div>

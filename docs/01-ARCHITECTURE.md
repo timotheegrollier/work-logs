@@ -46,6 +46,7 @@ attachments(id, filename, stored, mime, size,
 
 google_documents(entry_id → entries ON DELETE CASCADE PRIMARY KEY,
                  document_id, tab_id DEFAULT '', revision_id, synced_content_json, synced_at,
+                 document_title, tab_title, tab_order, tab_depth DEFAULT 0, readonly_reason,
                  UNIQUE(document_id, tab_id))
 ```
 
@@ -61,6 +62,17 @@ La migration est additive ; les entrées Markdown gardent NULL. Pour un document
 `content_md` contient le texte de recherche et le JSON fait autorité. `google_documents`
 suit les révisions et le dernier contenu envoyé ; aucun jeton OAuth n’est stocké dans
 SQLite. Supprimer une entrée locale ne supprime jamais le fichier Google.
+
+`tab_depth` est ajouté par migration additive. Les entrées détaillées fournissent
+`google_sync.tabs` (tous les onglets locaux du fichier, même sous un filtre),
+`preserved_elements` et `tab_depth`. Les résumés ajoutent `google_dirty` et
+`google_tab_depth`. `readonly_reason` identifie les anciens imports aplatis à recharger.
+
+`google-preserve.js` importe tableaux/paragraphes et calcule des patches ciblés.
+Les nœuds `googleInline`/`googleBlock` représentent les éléments natifs conservés ;
+leurs identifiants ne servent jamais d’indices d’écriture. Les attributs sont validés
+par `rich-document.js` et conservés par `web/src/google-content.ts`. Un verrou par
+document sérialise les envois ; `requiredRevisionId` protège chaque batch Google.
 
 ### Migration V1 → V2
 `migrate()` dans `db.js` s'exécute à l'ouverture si les tables V1 sont détectées, **sans perte** :

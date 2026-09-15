@@ -3,6 +3,7 @@ import { api, formatSize, googleHelpUrl, type Attachment, type Entry, type Entry
 import { renderMarkdown } from '../markdown';
 import { Autosave } from '../autosave';
 import { RichEditor } from './RichEditor';
+import { DocumentTabs } from './DocumentTabs';
 
 type SaveState = 'saved' | 'dirty' | 'saving' | 'error';
 const LABELS: Record<SaveState, string> = {
@@ -156,8 +157,20 @@ export function EntryEditor({
     } catch (e) { setError((e as Error).message); }
   };
 
+  const googleUrl = googleSync ? `https://docs.google.com/document/d/${encodeURIComponent(googleSync.document_id)}/edit${googleSync.tab_id ? `?tab=${encodeURIComponent(googleSync.tab_id)}` : ''}` : '';
+  const selectTab = async (id: string) => {
+    try { await autosave.flush(); onSelectTab(id); }
+    catch (e) { setError((e as Error).message); }
+  };
+
   return (
-    <section className="editor" aria-label="Entrée">
+    <section className={'editor' + (googleSync ? ' google-editor' : '')} aria-label="Entrée">
+      {googleSync && <div className="document-heading no-print">
+        <div><span className="document-eyebrow">Google Docs</span><h1>{googleSync.document_title || draft.title}</h1></div>
+        <a className="ghost" href={googleUrl} target="_blank" rel="noopener noreferrer">Ouvrir dans Google Docs ↗</a>
+      </div>}
+      <details className={'document-details no-print' + (googleSync ? '' : ' local-details')} open={googleSync ? undefined : true}>
+      {googleSync && <summary>Détails du document</summary>}
       <div className="editor-bar no-print">
         <input
           className="title"
@@ -216,47 +229,39 @@ export function EntryEditor({
         </button>
       </div>
 
-      {error && <p className="error no-print">{error}</p>}
+      </details>
+      {error && <p role="alert" className="error no-print">{error}</p>}
       {error && googleHelp && <a className="no-print" href={googleHelp} target="_blank" rel="noopener noreferrer">Activer l’API dans Google Cloud</a>}
       {syncMessage && <p className="rich-count no-print" role="status">{syncMessage}</p>}
       {draft.content_json && <div className="google-sync no-print" aria-label="Synchronisation Google Drive">
-        <span>{syncing ? 'Synchronisation…' : googleSync ? googleSync.dirty ? 'Modifications locales à envoyer' : 'Enregistré sur Google Drive' : 'Document enregistré sur cet appareil'}</span>
-        <button disabled={syncing} onClick={() => void synchronize()}>{googleSync ? 'Enregistrer sur Drive' : 'Synchroniser avec Drive'}</button>
+        <div className="sync-status" role="status">
+          <strong>{syncing ? 'Synchronisation…' : googleSync?.sync_blocked ? 'Ancien import à actualiser' : googleSync ? googleSync.dirty ? 'Prêt à synchroniser' : 'À jour sur Google Drive' : 'Enregistré sur cet appareil'}</strong>
+          <span>{googleSync ? `${LABELS[save]} sur cet appareil${googleSync.dirty ? ' · modifications à envoyer' : ''}` : 'Sauvegarde locale automatique'}</span>
+        </div>
+        <button className="sync-primary" disabled={syncing} onClick={() => void synchronize()}>{googleSync ? 'Enregistrer sur Drive' : 'Synchroniser avec Drive'}</button>
         {googleSync && <>
-          <button className="ghost" disabled={syncing} onClick={() => void synchronize(true)}>Recharger depuis Google</button>
-          <button className="ghost" disabled={syncing} onClick={() => void keepCopy()}>Garder une copie locale</button>
+          <button className="ghost" aria-label="Recharger depuis Google" disabled={syncing} onClick={() => void synchronize(true)}>Actualiser</button>
+          <details className="document-actions"><summary aria-label="Autres actions du document">•••</summary><div>
+            <button className="ghost" disabled={syncing} onClick={() => void keepCopy()}>Garder une copie locale</button>
+          </div></details>
         </>}
       </div>}
 
       <h1 className="print-only print-title">{draft.title}</h1>
 
-      {tabs.length > 1 && (
-        // Les onglets du document se parcourent ici : un seul document dans le
-        // journal, tous ses onglets sous la main, comme dans Google Docs.
-        <nav className="doc-tabs" role="tablist" aria-label="Onglets du document">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              role="tab"
-              aria-selected={tab.id === entry.id}
-              className={'doc-tab' + (tab.id === entry.id ? ' is-on' : '')}
-              title={tab.google_sync_blocked || undefined}
-              onClick={() => onSelectTab(tab.id)}
-            >
-              {tab.google_tab_title || 'Onglet'}
-              {tab.google_sync_blocked ? <span className="doc-tab-lock" aria-label="envoi bloqué"> ⚠</span> : null}
-            </button>
-          ))}
-        </nav>
-      )}
+      <div className={'document-workspace' + (googleSync && tabs.length ? ' has-tabs' : '')}>
+        {googleSync && tabs.length > 0 && <DocumentTabs tabs={tabs} selectedId={entry.id} onSelect={id => { if (!syncing) void selectTab(id); }} />}
+        <div className="document-page" id="document-tab-panel" role={googleSync && tabs.length ? 'tabpanel' : undefined} aria-labelledby={googleSync && tabs.length ? `tab-${entry.id}` : undefined}>
+        {googleSync && <div className="document-page-heading no-print"><h2>{googleSync.tab_title || 'Document'}</h2><span>Édition</span></div>}
       {googleSync?.sync_blocked && (
         // Modifiable, mais non renvoyé : c'est un avertissement, pas une erreur.
         <p className="notice no-print">
-          <b>Envoi vers Google bloqué pour cet onglet.</b> {googleSync.sync_blocked} Tu peux
-          l’éditer ici : ta version locale est conservée et enregistrée.
+          <b>Cet onglet utilise un ancien import simplifié.</b> Garde une copie locale si tu l’as modifié,
+          puis utilise Actualiser pour retrouver les tableaux et la synchronisation.
         </p>
       )}
-      {draft.content_json ? <RichEditor key={richVersion} entryId={entry.id} content={draft.content_json} onChange={(content_json) => update({ content_json })} /> : <div className={'sheet' + (writing ? ' is-split' : '')}>
+      {Boolean(googleSync?.preserved_elements) && <p className="google-preservation no-print">Les éléments Google signalés restent conservés à l’envoi. Pour modifier un menu déroulant, une image ou une suggestion, <a href={googleUrl} target="_blank" rel="noopener noreferrer">ouvre cet onglet dans Google Docs</a>.</p>}
+      {draft.content_json ? <RichEditor key={richVersion} googleLinked={Boolean(googleSync)} entryId={entry.id} content={draft.content_json} onChange={(content_json) => update({ content_json })} /> : <div className={'sheet' + (writing ? ' is-split' : '')}>
         {writing && (
           <textarea
             className="source no-print"
@@ -273,6 +278,8 @@ export function EntryEditor({
         />
       </div>}
 
+      </div>
+      </div>
       <div className="files no-print">
         <label className="ghost file-button">
           📎 Joindre un fichier

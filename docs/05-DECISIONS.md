@@ -43,25 +43,30 @@ découlé, valables tant qu'Electron et Ubuntu se comportent ainsi :
 
 Ces trois points, et le détail complet des investigations, sont dans `06-DESKTOP-CICD.md`.
 
-## Onglets Google : tout est modifiable, seul l'envoi peut être bloqué
+## Onglets Google : modifications ciblées et objets natifs conservés
 
-**Décision.** Ouvrir un document Google crée **tous** ses onglets d'un coup, sous une seule
-ligne du journal. Chaque onglet est **modifiable**, sans exception. Quand un onglet contient un
-élément que le convertisseur ne sait pas réécrire (tableau, image, note de bas de page,
-suggestion, retrait personnalisé…), c'est **l'envoi vers Google** qui est refusé, pas l'édition.
+**Décision (2026-09-15).** Ouvrir un fichier Drive charge tous ses onglets sous une
+seule ligne du journal. Ils se parcourent dans une liste verticale à côté du texte.
+Les tâches se replient pour laisser de la place et restent accessibles.
 
-**Pourquoi.** L'écriture vers Google remplace le contenu de l'onglet. Renvoyer un onglet dont
-nous ne savons pas reproduire un élément l'effacerait **du vrai document**. Le refus protège
-donc le document d'origine — mais il n'y a aucune raison d'empêcher de travailler en local :
-la version locale est conservée et enregistrée normalement.
+La synchronisation compare les paragraphes/cellules avec la révision Google et envoie
+seulement les insertions, suppressions et styles modifiés. Les indices viennent de
+la réponse Google courante. Les écritures partent de la fin vers le début. Commentaires,
+objets et styles non représentés restent dans Google. Un élément natif ne bloque plus
+tout l’onglet : son repère reste conservé pendant l’édition du texte autour.
 
-**Ce que ça coûte.** Un onglet marqué ⚠ diverge de Google tant que le convertisseur ne sait pas
-le réécrire. L'utilisateur le voit : un bandeau dit quel élément bloque.
+**Pourquoi.** L’ancien import en texte simple perdait la structure des tableaux et
+rendait la synchronisation impossible. Enlever simplement les refus aurait effacé
+le contenu du vrai document. Les patches évitent cette réécriture globale.
 
-**Quand la rouvrir.** En étendant le convertisseur dans les deux sens. Les tableaux et les
-images existent déjà dans le modèle local : ce sont les meilleurs candidats. Ne **jamais**
-lever un refus sans savoir réécrire l'élément — ce serait une perte de données chez
-l'utilisateur, pas un test qui passe.
+**Limites.** Menus déroulants, images, suggestions et changements de structure des
+tableaux passent encore par Google Docs, via le lien vers l’onglet exact. Une opération
+incompatible conserve le brouillon et explique quoi faire ; elle n’est jamais annoncée
+enregistrée sur Google. Les anciennes copies aplaties modifiées nécessitent une copie
+locale puis un rechargement, sans conversion automatique destructive.
+
+**Validation.** Tests d’indices UTF-16, objets, tableaux, suggestions, révisions et
+brouillons ; aller-retour Google réel détaillé dans `08-GOOGLE-DOCS.md`.
 
 ---
 

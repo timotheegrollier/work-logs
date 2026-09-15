@@ -566,3 +566,56 @@ describe('barre de progression des mises à jour', () => {
     delete (window as unknown as { worklogsDesktop?: unknown }).worklogsDesktop;
   });
 });
+
+describe('espace Google Docs', () => {
+  function seedTabs() {
+    seedData(api.db, { entries: [
+      { id: 'en_intro', title: 'Dossier — Introduction', content_md: 'Introduction' },
+      { id: 'en_budget', title: 'Dossier — Budget', content_md: 'Budget' },
+    ] });
+    for (const [order, id] of ['en_intro', 'en_budget'].entries()) {
+      const rich = JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: order ? 'Budget' : 'Introduction' }] }] });
+      api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(rich, id);
+      api.db.prepare(`INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json,document_title,tab_title,tab_order,tab_depth)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(id, 'dossier', `tab-${order}`, 'r1', rich, 'Dossier', order ? 'Budget' : 'Introduction', order, order);
+    }
+    localStorage.setItem('worklogs-entry', 'en_intro');
+  }
+
+  test('navigation verticale, clavier, brouillons distincts et dernier onglet conservé', async () => {
+    seedTabs();
+    render(<App />);
+    const intro = await screen.findByRole('tab', { name: /Introduction/ });
+    const budget = screen.getByRole('tab', { name: /Budget/ });
+    expect(screen.getByRole('tablist')).toHaveAttribute('aria-orientation', 'vertical');
+    expect(budget).toHaveAttribute('data-depth', '1');
+    fireEvent.keyDown(intro, { key: 'ArrowDown' });
+    expect(budget).toHaveFocus();
+    fireEvent.click(budget);
+    await waitFor(() => expect(screen.getByRole('tab', { name: /Budget/ })).toHaveAttribute('aria-selected', 'true'));
+    expect(screen.getByRole('textbox', { name: 'Contenu du document' })).toHaveTextContent('Budget');
+    expect(localStorage.getItem('worklogs-entry')).toBe('en_budget');
+    expect(screen.getByRole('link', { name: /Ouvrir dans Google Docs/ })).toHaveAttribute('href', 'https://docs.google.com/document/d/dossier/edit?tab=tab-1');
+    expect(within(journal()).getAllByRole('button', { name: /Dossier/ })).toHaveLength(1);
+  });
+
+  test('filtrer le journal conserve les autres onglets du document et permet leur sélection', async () => {
+    seedTabs();
+    render(<App />);
+    await screen.findByRole('tab', { name: /Introduction/ });
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Rechercher' }), { target: { value: 'Introduction' } });
+    await waitFor(() => expect(within(journal()).getAllByRole('button', { name: /Dossier/ })).toHaveLength(1));
+    fireEvent.click(screen.getByRole('tab', { name: /Budget/ }));
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Contenu du document' })).toHaveTextContent('Budget'));
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+  });
+
+  test('les tâches se replient pour le document et se rouvrent sur demande', async () => {
+    seedTabs();
+    render(<App />);
+    const show = await screen.findByRole('button', { name: 'Afficher les tâches' });
+    expect(show).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(show);
+    expect(screen.getByRole('button', { name: 'Masquer les tâches' })).toHaveAttribute('aria-expanded', 'true');
+  });
+});

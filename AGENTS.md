@@ -1,6 +1,13 @@
 # WorkLogs — règles agents
 
-## Reprise actuelle — 2026-09-14
+## Reprise actuelle — 2026-09-15
+- Lot courant : `codex/google-docs-layout-sync`, sources 0.9.1, sans nouvelle release.
+  Navigation verticale et synchronisation ciblée : bilan en tête de `docs/08-GOOGLE-DOCS.md`.
+  Aucune dépendance ajoutée. Recette Google réelle validée sur document temporaire ;
+  11 onglets existants vérifiés en lecture seule. Objets natifs conservés, pas réécrits.
+  `./scripts/check.sh` reste requis.
+
+## Repères précédents — 2026-09-14
 - Lot en cours : **éditeur riche intégré + Google Drive facultatif**, branche
   `codex/rich-editor-drive`. Lire `docs/08-GOOGLE-DOCS.md` pour le périmètre,
   le diagnostic Google résolu, la recette réelle validée et les limites restantes.

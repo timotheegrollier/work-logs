@@ -1,6 +1,7 @@
 import { uid, nowISO, today } from './db.js';
 import { decodeEntry, documentText } from './rich-document.js';
-import { buildGoogleUpdate, documentBody, documentTabs, googleToDocument, plainTextDocument, selectDocumentTab, tabPlainText } from './google-document.js';
+import { buildGoogleUpdate, documentBody, documentTabs, selectDocumentTab } from './google-document.js';
+import { buildPreservingUpdate, googlePreservedCount, importGoogleDocument as googleToDocument } from './google-preserve.js';
 
 const blankSource = { body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } };
 
@@ -13,8 +14,14 @@ export function googleLink(db, entry) {
   const link = db.prepare('SELECT * FROM google_documents WHERE entry_id=?').get(entry.id);
   return link ? {
     document_id: link.document_id, tab_id: link.tab_id, synced_at: link.synced_at,
-    document_title: link.document_title, tab_title: link.tab_title, tab_order: link.tab_order,
+    document_title: link.document_title, tab_title: link.tab_title, tab_order: link.tab_order, tab_depth: link.tab_depth,
+    preserved_elements: entry.content_json ? googlePreservedCount(JSON.parse(entry.content_json)) : 0,
     sync_blocked: link.readonly_reason || '',
+    tabs: db.prepare(`SELECT e.id, e.title, e.entry_date, e.project_id, e.updated_at,
+      '' excerpt, 0 attachments, g.document_id google_document_id, g.tab_id google_tab_id,
+      g.tab_title google_tab_title, g.tab_order google_tab_order, g.tab_depth google_tab_depth,
+      g.readonly_reason google_sync_blocked, (e.content_json != g.synced_content_json) google_dirty
+      FROM google_documents g JOIN entries e ON e.id=g.entry_id WHERE g.document_id=? ORDER BY g.tab_order`).all(link.document_id),
     dirty: entry.content_json !== link.synced_content_json,
   } : null;
 }
@@ -31,41 +38,11 @@ export function registerGoogleRoutes(app, { db, google }) {
     if (!value) fail('entrée introuvable', 404);
     return value;
   };
-  /** Lecture brute : contrôle des commentaires, sans valider la conversion. */
   const readSource = async (id) => {
     fileId(id);
-    const [source, comments] = await Promise.all([
-      google.request(`/docs/v1/documents/${id}?includeTabsContent=true`),
-      google.request(`/drive/v3/files/${id}/comments?fields=comments(id)&pageSize=1&includeDeleted=false`),
-    ]);
-    if (comments.comments?.length) fail('Ce document contient des commentaires Google. L’édition synchronisée de ces documents n’est pas encore prise en charge ; l’original reste intact.', 422);
-    return source;
+    return google.request(`/docs/v1/documents/${id}?includeTabsContent=true`);
   };
-
-  /** Nœud d'un onglet, pour en extraire le texte brut sans conversion. */
-  const chosenTab = (source, tabId) => {
-    let found;
-    const visit = (nodes) => {
-      for (const tab of nodes || []) {
-        if (!tabId || tab.tabProperties?.tabId === tabId) found ??= tab;
-        visit(tab.childTabs);
-      }
-    };
-    visit(source.tabs);
-    return found ?? source;
-  };
-
-  const read = async (id, tabId = '') => {
-    fileId(id);
-    const [source, comments] = await Promise.all([
-      google.request(`/docs/v1/documents/${id}?includeTabsContent=true`),
-      google.request(`/drive/v3/files/${id}/comments?fields=comments(id)&pageSize=1&includeDeleted=false`),
-    ]);
-    if (comments.comments?.length) fail('Ce document contient des commentaires Google. L’édition synchronisée de ces documents n’est pas encore prise en charge ; l’original reste intact.', 422);
-    const selected = selectDocumentTab(source, tabId);
-    googleToDocument(selected);
-    return selected;
-  };
+  const read = async (id, tabId = '') => selectDocumentTab(await readSource(id), tabId);
   const linked = (id) => {
     const link = db.prepare('SELECT * FROM google_documents WHERE entry_id=?').get(id);
     if (!link) fail('Ce document n’est pas encore associé à Google Drive.', 404);
@@ -91,7 +68,7 @@ export function registerGoogleRoutes(app, { db, google }) {
     const source = await google.request(`/docs/v1/documents/${id}?includeTabsContent=true`);
     res.json({ tabs: documentTabs(source).map(tab => {
       try { googleToDocument(selectDocumentTab(source, tab.id)); return { ...tab, editable: true }; }
-      catch (e) { if (e.status !== 422) throw e; return { ...tab, editable: false, reason: e.message }; }
+      catch (e) { if (e.status !== 422) throw e; return { ...tab, editable: true, reason: e.message }; }
     }) });
   });
   route('get', '/api/google/documents', async (req, res) => {
@@ -146,42 +123,40 @@ export function registerGoogleRoutes(app, { db, google }) {
       const source = await readSource(documentId);
       const tabs = documentTabs(source);
       const list = tabs.length ? tabs : [{ id: '', title: source.title || 'Document', depth: 0 }];
+      if (wanted && !list.some(tab => tab.id === wanted)) fail('Onglet Google introuvable.', 404);
       const documentTitle = source.title || 'Document Google';
       const time = nowISO();
       let first = null;
       let asked = null;
 
       // Tous les onglets sont ouverts d'un coup : ils forment un seul document
-      // dans le journal, avec une barre d'onglets dans l'éditeur. Un onglet que
-      // le convertisseur ne sait pas réécrire s'ouvre quand même et reste
-      // **modifiable** ; seul l'envoi vers Google est bloqué, pour ne pas
-      // effacer ce qu'on ne sait pas reproduire.
+      // dans le journal. Les éléments Google natifs restent dans leur onglet ;
+      // les cellules et le texte autour restent éditables et synchronisables.
       for (const [order, tab] of list.entries()) {
-        const existing = db.prepare('SELECT entry_id FROM google_documents WHERE document_id=? AND tab_id=?').get(documentId, tab.id)
-          ?? (tab.id && order === 0 ? db.prepare("SELECT entry_id FROM google_documents WHERE document_id=? AND tab_id=''").get(documentId) : undefined);
+        const existing = db.prepare('SELECT * FROM google_documents WHERE document_id=? AND tab_id=?').get(documentId, tab.id)
+          ?? (tab.id && order === 0 ? db.prepare("SELECT * FROM google_documents WHERE document_id=? AND tab_id=''").get(documentId) : undefined);
         if (existing) {
-          db.prepare('UPDATE google_documents SET document_title=?, tab_title=?, tab_order=? WHERE entry_id=?')
-            .run(documentTitle, tab.title, order, existing.entry_id);
+          db.prepare('UPDATE google_documents SET document_title=?, tab_title=?, tab_order=?, tab_depth=?, tab_id=? WHERE entry_id=?')
+            .run(documentTitle, tab.title, order, tab.depth, tab.id, existing.entry_id);
+          // Upgrade old flattened imports only when no local content was edited.
+          if (existing.readonly_reason && entry(existing.entry_id).content_json === existing.synced_content_json) {
+            const rich = googleToDocument(selectDocumentTab(source, tab.id)), serialized = JSON.stringify(rich);
+            db.prepare('UPDATE entries SET content_json=?,content_md=? WHERE id=?').run(serialized, documentText(rich), existing.entry_id);
+            db.prepare("UPDATE google_documents SET synced_content_json=?,revision_id=?,synced_at=?,readonly_reason='' WHERE entry_id=?")
+              .run(serialized, source.revisionId || '', time, existing.entry_id);
+          }
           first ??= existing.entry_id;
           if (tab.id === wanted) asked = existing.entry_id;
           continue;
         }
-        let rich;
-        let readonly = '';
-        try {
-          rich = googleToDocument(selectDocumentTab(source, tab.id));
-        } catch (error) {
-          if (error?.status !== 422) throw error;
-          readonly = error.message;
-          rich = plainTextDocument(tabPlainText(chosenTab(source, tab.id)));
-        }
+        const rich = googleToDocument(selectDocumentTab(source, tab.id));
         const id = uid('en_');
         db.exec('BEGIN');
         try {
           db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
             .run(id, list.length > 1 ? `${documentTitle} — ${tab.title}` : documentTitle, documentText(rich), JSON.stringify(rich), today(), time, time);
-          db.prepare('INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json,synced_at,document_title,tab_title,tab_order,readonly_reason) VALUES (?,?,?,?,?,?,?,?,?,?)')
-            .run(id, documentId, tab.id, source.revisionId || '', JSON.stringify(rich), readonly ? null : time, documentTitle, tab.title, order, readonly);
+          db.prepare('INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json,synced_at,document_title,tab_title,tab_order,tab_depth) VALUES (?,?,?,?,?,?,?,?,?,?)')
+            .run(id, documentId, tab.id, source.revisionId || '', JSON.stringify(rich), time, documentTitle, tab.title, order, tab.depth);
           db.exec('COMMIT');
         } catch (e) { db.exec('ROLLBACK'); throw e; }
         first ??= id;
@@ -193,16 +168,15 @@ export function registerGoogleRoutes(app, { db, google }) {
 
   route('post', '/api/entries/:id/google/push', async (req, res) => {
     const id = req.params.id;
-    await exclusive(id, async () => {
+    await exclusive(db.prepare('SELECT document_id FROM google_documents WHERE entry_id=?').get(id)?.document_id || id, async () => {
       const current = entry(id);
       if (!current.content_json) fail('Crée un document riche pour le synchroniser avec Google Drive.');
       const rich = JSON.parse(current.content_json);
       let link = db.prepare('SELECT * FROM google_documents WHERE entry_id=?').get(id);
-      // Cet onglet contient un élément que le convertisseur ne sait pas réécrire
-      // fidèlement. On l'édite librement en local ; seul l'envoi est refusé,
-      // car il effacerait cet élément du document Google.
+      // Les anciens imports aplatis doivent être rechargés : ils ne contiennent
+      // pas les repères nécessaires à la conservation des éléments Google.
       if (link?.readonly_reason) {
-        fail(`${link.readonly_reason} Tu peux continuer à l’éditer ici : ta version locale est conservée, mais elle ne sera pas renvoyée.`, 422);
+        fail('Cet ancien import a été aplati. Garde une copie locale de tes modifications puis recharge depuis Google pour activer la nouvelle synchronisation.', 422);
       }
       if (!link) {
         // Vérifier le format AVANT de créer un fichier distant.
@@ -218,10 +192,13 @@ export function registerGoogleRoutes(app, { db, google }) {
       const source = await read(link.document_id, link.tab_id);
       const unchangedNewDocument = !link.revision_id && JSON.stringify(googleToDocument(source)) === link.synced_content_json;
       if (!unchangedNewDocument && source.revisionId !== link.revision_id) fail('Le document a changé sur Google Drive. Ton brouillon local est conservé. Recharge la version Google ou garde une copie locale avant de continuer.', 409);
-      const update = buildGoogleUpdate(source, rich);
-      const result = await google.request(`/docs/v1/documents/${link.document_id}:batchUpdate`, { method: 'POST', body: JSON.stringify(update) });
+      const update = buildPreservingUpdate(source, rich);
+      const result = update.requests.length ? await google.request(`/docs/v1/documents/${link.document_id}:batchUpdate`, { method: 'POST', body: JSON.stringify(update) }) : { writeControl: { requiredRevisionId: source.revisionId } };
       const revision = result.writeControl?.requiredRevisionId;
       if (!revision) fail('Google a reçu la mise à jour sans renvoyer sa révision. Recharge la version Google pour vérifier l’enregistrement.', 502);
+      // Google revisions belong to the whole document. Our own write must not
+      // create a false conflict on the other tabs read at that same revision.
+      db.prepare('UPDATE google_documents SET revision_id=? WHERE document_id=? AND revision_id=?').run(revision, link.document_id, source.revisionId);
       db.prepare('UPDATE google_documents SET revision_id=?,synced_content_json=?,synced_at=? WHERE entry_id=?')
         .run(revision, current.content_json, nowISO(), id);
       res.json(reply(id));
@@ -229,7 +206,7 @@ export function registerGoogleRoutes(app, { db, google }) {
   });
   route('post', '/api/entries/:id/google/pull', async (req, res) => {
     const id = req.params.id;
-    await exclusive(id, async () => {
+    await exclusive(db.prepare('SELECT document_id FROM google_documents WHERE entry_id=?').get(id)?.document_id || id, async () => {
       const current = entry(id), link = linked(id);
       if (JSON.stringify(req.body?.expected_content_json) !== current.content_json) fail('Le brouillon a changé. Enregistre-le avant de recharger Google.', 409);
       const source = await read(link.document_id, link.tab_id), rich = googleToDocument(source);
@@ -238,7 +215,7 @@ export function registerGoogleRoutes(app, { db, google }) {
       db.exec('BEGIN');
       try {
         db.prepare('UPDATE entries SET content_json=?,content_md=?,updated_at=? WHERE id=?').run(serialized, documentText(rich), time, id);
-        db.prepare('UPDATE google_documents SET revision_id=?,synced_content_json=?,synced_at=? WHERE entry_id=?').run(source.revisionId || '', serialized, time, id);
+        db.prepare("UPDATE google_documents SET revision_id=?,synced_content_json=?,synced_at=?,readonly_reason='' WHERE entry_id=?").run(source.revisionId || '', serialized, time, id);
         db.exec('COMMIT');
       } catch (e) { db.exec('ROLLBACK'); throw e; }
       res.json(reply(id));

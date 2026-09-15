@@ -219,6 +219,7 @@ export function openDb(dbPath, { withSeed = true } = {}) {
     ['document_title', "TEXT NOT NULL DEFAULT ''"],
     ['tab_title', "TEXT NOT NULL DEFAULT ''"],
     ['tab_order', 'INTEGER NOT NULL DEFAULT 0'],
+    ['tab_depth', 'INTEGER NOT NULL DEFAULT 0'],
     ['readonly_reason', "TEXT NOT NULL DEFAULT ''"],
   ]) {
     if (!columns(db, 'google_documents').includes(name)) {
