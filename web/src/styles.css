@@ -426,10 +426,13 @@ button:disabled {
 .google-sync { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
 .google-sync span { color: var(--muted); margin-right: auto; }
 .google-sync button { font-size: 12px; }
-.rich-toolbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
-.rich-toolbar button, .rich-toolbar select, .rich-toolbar .file-button { font-size: 12px; padding: 5px 7px; }
+/* Barre resserrée : elle mangeait une part importante de la hauteur du document.
+   Les libellés visibles sont des symboles, les noms accessibles restent entiers. */
+.rich-toolbar { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.rich-toolbar button, .rich-toolbar select, .rich-toolbar .file-button { font-size: 12px; padding: 3px 6px; line-height: 1.25; }
+.rich-toolbar select { padding-block: 2px; }
 .rich-toolbar .is-on { background: var(--accent); color: white; }
-.rich-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding-right: 6px; border-right: 1px solid var(--line); }
+.rich-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding-right: 5px; border-right: 1px solid var(--line); }
 .rich-tools:last-child { border-right: 0; }
 .rich-tools button { min-width: 28px; }
 .rich-tools select { max-width: 160px; }
@@ -447,7 +450,9 @@ button:disabled {
 .rich-outline [data-level="3"], .rich-outline [data-level="4"], .rich-outline [data-level="5"], .rich-outline [data-level="6"] { margin-left: 24px; }
 .rich-color { display: inline-flex; align-items: center; gap: 3px; padding: 0 4px; }
 .rich-color input { width: 24px; height: 24px; padding: 0; border: 0; }
-.rich-content { min-height: 480px; padding: 28px; margin-top: 12px; outline: none; border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; background: var(--surface); }
+/* L'éditeur n'est pas une colonne de lecture : il prend toute la largeur
+   disponible, comme la barre d'outils au-dessus. */
+.rich-content { max-width: none; width: 100%; min-height: 480px; padding: 24px; margin-top: 12px; outline: none; border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; background: var(--surface); }
 .rich-content:focus { border-color: var(--accent); }
 .rich-content p { min-height: 1.5em; }
 .rich-content table { table-layout: fixed; width: 100%; }
@@ -567,6 +572,12 @@ button:disabled {
 }
 
 /* --- le rendu du document : la partie qu'on lit et qu'on imprime --- */
+/* `.prose` est défini après `.rich-content` : à spécificité égale, c'est lui
+   qui gagnait et l'éditeur restait bridé à la largeur de lecture. */
+.prose.rich-content {
+  max-width: none;
+  width: 100%;
+}
 .prose {
   max-width: 72ch;
   font-size: 16px;
@@ -1024,3 +1035,18 @@ button:disabled {
     margin: 18mm;
   }
 }
+
+/* ------------------------------------------------- onglets d'un document Google */
+.doc-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 0; }
+.doc-tab {
+  padding: 4px 11px;
+  border: 1px solid var(--line);
+  border-bottom-color: transparent;
+  border-radius: 8px 8px 0 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 13px;
+}
+.doc-tab:hover { color: var(--text); }
+.doc-tab.is-on { background: var(--surface); border-color: var(--accent); color: var(--text); }
+.doc-tab-lock { opacity: 0.7; }

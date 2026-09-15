@@ -116,24 +116,24 @@ export function RichEditor({ content, entryId, onChange }: {
         {action('Code en ligne', () => { editor.chain().focus().toggleCode().run(); }, editor.isActive('code'), false, '< >')}
         <label className="rich-color" title="Couleur du texte">A<input type="color" aria-label="Couleur du texte"
           value={/^#[\da-f]{6}$/i.test(textStyle.color || '') ? textStyle.color : '#222222'} onChange={e => editor.chain().focus().setColor(e.target.value).run()} /></label>
-        {action('Surligner', () => { editor.chain().focus().toggleHighlight({ color: highlight }).run(); }, editor.isActive('highlight'))}
+        {action('Surligner', () => { editor.chain().focus().toggleHighlight({ color: highlight }).run(); }, editor.isActive('highlight'), false, '▨')}
         <label className="rich-color" title="Couleur du surlignage"><input type="color" aria-label="Couleur du surlignage" value={highlight}
           onChange={e => { setHighlight(e.target.value); editor.chain().focus().setHighlight({ color: e.target.value }).run(); }} /></label>
-        {action('Effacer la mise en forme', () => { editor.chain().focus().unsetAllMarks().clearNodes().unsetTextAlign().run(); }, false, false, 'Effacer le format')}
+        {action('Effacer la mise en forme', () => { editor.chain().focus().unsetAllMarks().clearNodes().unsetTextAlign().run(); }, false, false, '⌫')}
       </div>
       <div className="rich-tools" role="group" aria-label="Paragraphes et listes">
-        {action('Liste à puces', () => { editor.chain().focus().toggleBulletList().run(); }, editor.isActive('bulletList'), false, '• Liste')}
-        {action('Liste numérotée', () => { editor.chain().focus().toggleOrderedList().run(); }, editor.isActive('orderedList'), false, '1. Liste')}
+        {action('Liste à puces', () => { editor.chain().focus().toggleBulletList().run(); }, editor.isActive('bulletList'), false, '•')}
+        {action('Liste numérotée', () => { editor.chain().focus().toggleOrderedList().run(); }, editor.isActive('orderedList'), false, '1.')}
         {action('Augmenter le retrait de liste', () => { editor.chain().focus().sinkListItem('listItem').run(); }, false, !editor.can().sinkListItem('listItem'), '→')}
         {action('Diminuer le retrait de liste', () => { editor.chain().focus().liftListItem('listItem').run(); }, false, !editor.can().liftListItem('listItem'), '←')}
-        {(['left', 'center', 'right', 'justify'] as const).map((align, i) => <span key={align}>{action(['Gauche', 'Centrer', 'Droite', 'Justifier'][i], () => { editor.chain().focus().setTextAlign(align).run(); }, editor.isActive({ textAlign: align }))}</span>)}
+        {(['left', 'center', 'right', 'justify'] as const).map((align, i) => <span key={align}>{action(['Gauche', 'Centrer', 'Droite', 'Justifier'][i], () => { editor.chain().focus().setTextAlign(align).run(); }, editor.isActive({ textAlign: align }), false, ['⇤', '↔', '⇥', '≡'][i])}</span>)}
       </div>
       <div className="rich-tools" role="group" aria-label="Insérer">
-        {action('Lien', () => { setHref(editor.getAttributes('link').href || ''); setLinkOpen(!linkOpen); }, editor.isActive('link'))}
-        {action('Citation', () => { editor.chain().focus().toggleBlockquote().run(); }, editor.isActive('blockquote'))}
-        {action('Bloc de code', () => { editor.chain().focus().toggleCodeBlock().run(); }, editor.isActive('codeBlock'))}
-        {action('Séparateur', () => { editor.chain().focus().setHorizontalRule().run(); })}
-        {action('Tableau', () => { editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); })}
+        {action('Lien', () => { setHref(editor.getAttributes('link').href || ''); setLinkOpen(!linkOpen); }, editor.isActive('link'), false, '🔗')}
+        {action('Citation', () => { editor.chain().focus().toggleBlockquote().run(); }, editor.isActive('blockquote'), false, '❝')}
+        {action('Bloc de code', () => { editor.chain().focus().toggleCodeBlock().run(); }, editor.isActive('codeBlock'), false, '{ }')}
+        {action('Séparateur', () => { editor.chain().focus().setHorizontalRule().run(); }, false, false, '—')}
+        {action('Tableau', () => { editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); }, false, false, '▦')}
         <label className="ghost file-button">{uploading ? 'Envoi…' : 'Image'}<input type="file" aria-label="Insérer une image" accept="image/png,image/jpeg,image/webp,image/gif" disabled={uploading}
           onChange={e => { void addImage(e.target.files?.[0]); e.target.value = ''; }} /></label>
       </div>
