@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
 import { createGoogleClient } from './google.mjs';
+import { installGoogleView } from './google-view.mjs';
 import { checkForUpdate, hasPackageKit, hasPkexec, installedVersionCommand, installKind, installedMatches, isAuthorizationFailure, isNewer, logUpdateEvent, packageManager, parseManagerProgress, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, privilegedInstallCommand, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
@@ -45,6 +46,7 @@ protocol.registerSchemesAsPrivileged([{
 let window;
 let backend;
 let google;
+let googleView;
 let stopping = false;
 let closePending = false;
 let closeTimer;
@@ -356,10 +358,10 @@ async function fallbackNotify(found) {
   else dismissedVersion = found.version;
 }
 
-function finishClose(error) {
+async function finishClose(error) {
   clearTimeout(closeTimer);
-  closePending = false;
   if (error && window && !window.isDestroyed()) {
+    closePending = false;
     ask(window, {
       type: 'error', title: 'WorkLogs', buttons: ['Revenir à l’entrée'],
       message: 'L’entrée n’a pas pu être enregistrée. La fenêtre reste ouverte.',
@@ -367,7 +369,9 @@ function finishClose(error) {
     });
     return;
   }
-  window?.destroy();
+  // Une vue Google en défaut ne doit pas retenir la fenêtre : on ferme quand même.
+  if (googleView && !await googleView.close().catch(() => true)) { closePending = false; return; }
+  if (window && !window.isDestroyed()) window.destroy();
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -421,6 +425,7 @@ if (!app.requestSingleInstanceLock()) {
           nodeIntegration: false, contextIsolation: true, sandbox: true,
         },
       });
+      googleView = installGoogleView(window);
       window.once('ready-to-show', () => {
         window.maximize();
         window.show();
@@ -443,13 +448,13 @@ if (!app.requestSingleInstanceLock()) {
       window.webContents.on('before-input-event', (event, input) => {
         if (input.type === 'keyDown' && input.control && input.key.toLowerCase() === 'p') {
           event.preventDefault();
-          window.webContents.print({ printBackground: true });
+          if (!googleView.print()) window.webContents.print({ printBackground: true });
         }
       });
       // Le gestionnaire de fenêtres rend le focus à la fenêtre, mais pas forcément
       // au contenu web : sans ça, la fenêtre paraît active et rien ne réagit.
       window.on('focus', () => {
-        if (!window.isDestroyed()) window.webContents.focus();
+        if (!window.isDestroyed() && !googleView.focus()) window.webContents.focus();
       });
       window.on('close', (event) => {
         event.preventDefault();
@@ -468,7 +473,7 @@ if (!app.requestSingleInstanceLock()) {
       });
       ipcMain.on('worklogs:close-ready', (event, error) => {
         if (event.sender === window.webContents && event.senderFrame === window.webContents.mainFrame && closePending)
-          finishClose(error);
+          void finishClose(error);
       });
       // Clic sur la pastille de version : revérifie tout de suite, même si la
       // version a déjà été refusée (force ignore dismissedVersion).

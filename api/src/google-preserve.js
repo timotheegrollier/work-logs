@@ -111,7 +111,7 @@ export function googlePreservedCount(document) {
 
 /** Petits changements Unicode, pour ne pas supprimer les plages inchangées entre
  * deux corrections. Le calcul quadratique ne porte que sur le milieu modifié. */
-function diff(before, after) {
+export function diff(before, after) {
   const a = Array.from(before), b = Array.from(after);
   let prefix = 0, suffix = 0;
   while (prefix < Math.min(a.length, b.length) && a[prefix] === b[prefix]) prefix++;

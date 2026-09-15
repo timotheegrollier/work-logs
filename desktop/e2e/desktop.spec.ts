@@ -1,7 +1,10 @@
 import { _electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import type { GoogleDocsBridge } from '../../web/src/google-desktop';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
+type DesktopWindow = Window & { worklogsDesktop: { googleDocs: GoogleDocsBridge } };
 
 let directory: string;
 let application: ElectronApplication | undefined;
@@ -44,6 +47,10 @@ test.beforeEach(async () => {
   await launch();
 });
 test.afterEach(async () => {
+  // Un beforeunload de la fixture ne doit pas bloquer le nettoyage après un échec.
+  await application?.evaluate(({ webContents }) => {
+    for (const contents of webContents.getAllWebContents()) if (contents.getURL().startsWith('https://')) contents.close({ waitForBeforeUnload: false });
+  }).catch(() => {});
   await application?.close();
   application = undefined;
   fs.rmSync(directory, { recursive: true, force: true });
@@ -159,4 +166,91 @@ test('impression PDF et refus de fermeture si l’enregistrement échoue', async
   await page.getByLabel('Titre de l’entrée').fill('Comment ça marche');
   await page.keyboard.press('Control+s');
   await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
+});
+
+test('Google intégré : outils dans le canevas, isolation, dimensions et copie locale', async () => {
+  // Serveur Google simulé dans sa session isolée ; aucune connexion personnelle.
+  await application!.evaluate(({ session }) => {
+    session.fromPartition('persist:google-docs').protocol.handle('https', () => new Response(`<!doctype html><html><head><title>Google simulé</title></head><body>
+      <label>Statut du projet <select><option>À faire</option><option>En cours</option></select></label>
+      <div contenteditable="true" role="textbox" aria-label="Texte Google">Document natif</div>
+      <a href="file:///etc/passwd">Interdit</a>
+      <button onclick="window.open('https://accounts.google.com/v3/signin/identifier')">Connexion Google</button>
+      <script>document.querySelector('select').onchange=()=>document.body.dataset.saved='yes';
+      document.onkeydown=e=>{if(e.ctrlKey && e.key.toLowerCase()==='p'){e.preventDefault();document.body.dataset.printed='yes';}};</script>
+      </body></html>`, { headers: { 'content-type': 'text/html' } }));
+  });
+  const entry = await page.evaluate(async () => (await fetch('/api/entries', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Google intégré', content_json: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Copie' }] }] } }),
+  })).json());
+  const linked = { ...entry, google_sync: { document_id: 'native-doc', tab_id: 't.2', dirty: false, document_title: 'Google intégré' } };
+  await page.route(`**/api/entries/${entry.id}`, route => route.fulfill({ json: linked }));
+  await page.route('**/api/google/documents/open', route => route.fulfill({ json: { ...linked, content_json: {
+    type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Copie actualisée' }] }],
+  } } }));
+  await page.reload();
+  await page.getByRole('button', { name: /Google intégré/ }).click();
+  await expect(page.getByLabel('Éditeur Google Docs intégré')).toBeVisible();
+  await expect.poll(() => application!.context().pages().some(p => p.url().includes('/document/d/native-doc/'))).toBe(true);
+  const googlePage = application!.context().pages().find(p => p.url().includes('/document/d/native-doc/'))!;
+  expect(googlePage.url()).toContain('?tab=t.2');
+  await googlePage.getByLabel('Statut du projet').selectOption('En cours');
+  await expect(googlePage.locator('body')).toHaveAttribute('data-saved', 'yes');
+  await googlePage.getByRole('textbox').fill('Édition native dans WorkLogs');
+  await page.getByRole('button', { name: /Comment ça marche/ }).click();
+  expect(googlePage.isClosed()).toBe(false);
+  await page.getByRole('button', { name: /Google intégré/ }).click();
+  await expect(googlePage.getByRole('textbox')).toHaveText('Édition native dans WorkLogs');
+  await page.getByText('Détails du document', { exact: true }).click();
+  await page.getByRole('button', { name: 'Imprimer', exact: true }).click();
+  await expect(googlePage.locator('body')).toHaveAttribute('data-printed', 'yes');
+  await page.getByText('Détails du document', { exact: true }).click();
+  expect(await googlePage.evaluate(() => [typeof (window as unknown as DesktopWindow).worklogsDesktop, typeof (window as unknown as { require: unknown }).require])).toEqual(['undefined', 'undefined']);
+  const isolation = await application!.evaluate(({ BrowserWindow, webContents, session }) => {
+    const remote = webContents.getAllWebContents().find(w => w.getURL().includes('/document/d/native-doc/'))!;
+    const prefs = (remote as unknown as { getLastWebPreferences: () => Record<string, unknown> }).getLastWebPreferences();
+    return { windows: BrowserWindow.getAllWindows().length, sameSession: remote.session === session.defaultSession,
+      sandbox: prefs.sandbox, node: prefs.nodeIntegration, isolation: prefs.contextIsolation, security: prefs.webSecurity, preload: prefs.preload };
+  });
+  expect(isolation).toEqual({ windows: 1, sameSession: false, sandbox: true, node: false, isolation: true, security: true, preload: undefined });
+  const rect = await page.getByLabel('Zone du document Google').boundingBox();
+  expect(rect!.width).toBeGreaterThan(650);
+  await expect.poll(() => application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.at(-1)!.getBounds().width)).toBe(Math.round(rect!.width));
+  await page.getByRole('button', { name: 'Afficher les tâches' }).click();
+  const smaller = await page.getByLabel('Zone du document Google').boundingBox();
+  expect(smaller!.width).toBeLessThan(rect!.width);
+  // Une navigation interdite ne reçoit ni page locale, ni privilège WorkLogs.
+  await googlePage.getByRole('link', { name: 'Interdit' }).click();
+  expect(googlePage.url()).toContain('docs.google.com');
+  await page.getByRole('button', { name: 'Copie locale', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Contenu du document' })).toHaveText('Copie actualisée');
+  await expect.poll(() => googlePage.isClosed()).toBe(true);
+});
+
+test('Google intégré : validation des adresses et fermeture respectant les modifications Google', async () => {
+  await application!.evaluate(({ session }) => session.fromPartition('persist:google-docs').protocol.handle('https', () => new Response(
+    '<button onclick="window.onbeforeunload=e=>{e.preventDefault();e.returnValue=true;}">Modifier</button>', { headers: { 'content-type': 'text/html' } },
+  )));
+  const rejected = await page.evaluate(async () => {
+    try { await (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.open({ documentId: '../../secret', tabId: '', token: 'bad', bounds: { x: 300, y: 300, width: 600, height: 300 } }); return false; }
+    catch { return true; }
+  });
+  expect(rejected).toBe(true);
+  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.open({ documentId: 'close-doc', tabId: '', token: 'close', bounds: { x: 300, y: 300, width: 600, height: 300 } }));
+  await expect.poll(() => application!.context().pages().some(p => p.url().includes('/document/d/close-doc/'))).toBe(true);
+  const googlePage = application!.context().pages().find(p => p.url().includes('/document/d/close-doc/'))!;
+  // Electron répond au beforeunload via will-prevent-unload ; Playwright ne doit
+  // pas envoyer une seconde réponse automatique au dialogue Chromium déjà traité.
+  googlePage.on('dialog', () => {});
+  await googlePage.getByRole('button', { name: 'Modifier' }).click();
+  await application!.evaluate(({ dialog }) => { dialog.showMessageBoxSync = () => 0; });
+  expect(await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.close('close-doc'))).toBe(false);
+  expect(googlePage.isClosed()).toBe(false);
+  await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  expect(googlePage.isClosed()).toBe(false);
+  await application!.evaluate(({ dialog }) => { dialog.showMessageBoxSync = () => 1; });
+  expect(await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.close('close-doc'))).toBe(true);
+  await expect.poll(() => googlePage.isClosed()).toBe(true);
 });

@@ -330,3 +330,41 @@ l'échec attrapait `declined`, donc « user declined simulation » était annonc
 « autorisation administrateur non accordée » — à quelqu'un à qui aucune fenêtre n'avait
 rien demandé. Un diagnostic faux coûte plus cher qu'un message vague.
 `isAuthorizationFailure` sépare les deux cas et un test l'ancre.
+
+## 14. L'éditeur Google Docs est la vraie page Google, dans le canevas — 2026-09-15
+
+**Le problème.** Le convertisseur maison est arrivé au bout de ce qu'il pouvait rendre.
+Menus déroulants, images, suggestions actives, structure des tableaux : l'API Docs ne
+fournit pas d'opération pour les modifier (§12 et `08-GOOGLE-DOCS.md`). Continuer à
+élargir le sous-ensemble revenait à réécrire Google Docs. Le lien « Ouvrir dans Google
+Docs ↗ » renvoyait l'utilisateur dans un navigateur — donc hors du seul écran.
+
+**Décision.** Afficher la page Google elle-même dans la colonne centrale, comme une
+`WebContentsView` de premier niveau que le rendu React positionne au pixel. Ce n'est
+ni une `iframe` (Google les refuse), ni une `webview` (dépréciée, `will-attach-webview`
+la bloque), ni une seconde fenêtre (l'application tient sur un écran). L'éditeur Tiptap
+reste : « Copie locale » quitte Google, réimporte et redonne la main à WorkLogs.
+
+**Ce qui est isolé.** Session `persist:google-docs` séparée, aucun preload, `sandbox`,
+`contextIsolation`, `webSecurity`, pas de Node. La vue n'atteint jamais `worklogsDesktop`.
+Navigation limitée à quatre hôtes Google en HTTPS, sans port ni identifiants dans l'URL ;
+`/o/oauth2…` en est **exclu** pour que l'autorisation des API garde le navigateur système,
+comme l'exige la politique OAuth de Google. Permissions refusées par défaut.
+
+**La limite qu'on ne contourne pas.** Google refuse ses pages de connexion dans un
+navigateur embarqué. WorkLogs ne déguise pas son `userAgent` pour y échapper : ce serait
+contourner un contrôle de sécurité du fournisseur, et ça casserait au premier changement
+de leur détection. Tant que la connexion d'un compte réel dans la vue n'a pas été faite,
+ce chemin reste **non prouvé** — et c'est écrit tel quel dans `08-GOOGLE-DOCS.md`.
+
+**Fusion plutôt que refus.** Jusqu'ici, toute modification distante bloquait l'envoi. Une
+page Google éditée en direct rend ce refus permanent. `google-merge.js` fait une fusion à
+trois versions sur le JSON normalisé : une correction locale et une correction distante
+qui ne se touchent pas sont réconciliées, le même passage modifié des deux côtés reste un
+conflit 409 avec le brouillon conservé. Conservateur exprès — une fusion silencieuse qui
+se trompe coûte plus cher qu'un conflit à trancher.
+
+**Testable hors Electron.** `google-view.mjs` importe `electron` par défaut au lieu de ses
+exports nommés : le module reste chargeable par `node --test`, donc ses trois contrôles
+(adresse, navigation, dimensions) ont de vrais tests unitaires et ne dépendent pas d'un
+parcours graphique pour être vérifiés.

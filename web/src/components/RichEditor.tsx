@@ -10,8 +10,8 @@ import { api, type RichDocument } from '../lib';
 import { RichSearch, replaceMatches, searchKey, setSearch } from '../rich-search';
 import { GoogleBlock, GoogleFormatting, GoogleInline, PreserveGoogleObjects } from '../google-content';
 
-export function RichEditor({ content, entryId, onChange, googleLinked = false }: {
-  googleLinked?: boolean; content: RichDocument; entryId: string; onChange: (document: RichDocument) => void;
+export function RichEditor({ content, entryId, onChange, googleLinked = false, disabled = false }: {
+  disabled?: boolean; googleLinked?: boolean; content: RichDocument; entryId: string; onChange: (document: RichDocument) => void;
 }) {
   const change = useRef(onChange);
   change.current = onChange;
@@ -39,6 +39,7 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false }:
     editorProps: { attributes: { class: 'prose rich-content', role: 'textbox', 'aria-label': 'Contenu du document', 'aria-multiline': 'true' } },
     onUpdate: ({ editor: current }) => change.current(current.getJSON()),
   });
+  useEffect(() => { editor?.setEditable(!disabled, false); }, [editor, disabled]);
   useEffect(() => {
     if (editor) setSearch(editor, { query: searchOpen ? query : '', caseSensitive, active: 0 });
   }, [editor, searchOpen, query, caseSensitive]);
@@ -88,6 +89,7 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false }:
     }
     if (event.key === 'Escape') { setSearchOpen(false); setLinkOpen(false); editor.commands.focus(); }
   }}>
+    <fieldset className="rich-controls" disabled={disabled}>
     <div className="rich-toolbar no-print" role="toolbar" aria-label="Mise en forme du document">
       <div className="rich-tools" role="group" aria-label="Historique et navigation">
         {action('Annuler', () => { editor.chain().focus().undo().run(); }, false, !editor.can().undo(), '↶')}
@@ -193,6 +195,7 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false }:
         onClick={() => { editor.chain().focus().setTextSelection(heading.pos + 1).scrollIntoView().run(); }}>{heading.title}</button>)}
     </nav>}
     {error && <p className="error no-print" role="alert">{error}</p>}
+    </fieldset>
     <EditorContent editor={editor} />
     <p className="rich-count no-print">{text.trim().split(/\s+/).filter(Boolean).length} mot(s) · {Array.from(text).length} caractère(s) · sauvegarde locale automatique</p>
   </div>;

@@ -1,3 +1,90 @@
+# Google Docs — éditeur natif dans WorkLogs, bilan du 2026-09-15
+
+**Branche `codex/google-docs-integrated-editor`, sur les sources 0.10.0, sans bump ni release.**
+Aucune dépendance ajoutée. Ce bilan remplace les limites de la section suivante.
+
+## Ce qui change
+
+- Ouvrir un document Google lié affiche **le vrai éditeur Google Docs dans la colonne
+  centrale** : menus, tableaux, images, menus déroulants, suggestions et commentaires
+  sont ceux de Google. Le journal à gauche et les tâches à droite restent WorkLogs.
+  Toujours un seul écran, ni onglet ni routeur ; l’application ne change pas de forme.
+- « Copie locale » quitte l’éditeur Google, réimporte le document et actualise au passage
+  les onglets restés intacts. Un brouillon local modifié est conservé tel quel.
+- Un brouillon local en attente est envoyé avant d’ouvrir l’éditeur complet. Si l’envoi
+  échoue, l’éditeur ne s’ouvre pas et le brouillon reste affiché.
+- `api/src/google-merge.js` réconcilie une correction locale et une correction distante
+  **indépendantes** au lieu de refuser l’envoi. Deux modifications du même passage — ou
+  un paragraphe ajouté des deux côtés — restent un conflit explicite, brouillon conservé.
+- Impression : `Ctrl+P` et le bouton *Imprimer* passent la main à Google quand son éditeur
+  est affiché ; c’est Google qui prépare le document complet.
+- Fermer la fenêtre, changer de document ou demander la copie locale respectent
+  l’avertissement « modifications en cours » de Google avant de quitter.
+
+## Comment c’est isolé
+
+La page Google est une `WebContentsView` de premier niveau — pas une `iframe`, pas une
+`webview`, pas une seconde fenêtre. Elle tient dans sa propre session
+`persist:google-docs`, **sans preload**, `sandbox`, `contextIsolation` et `webSecurity`
+actifs, sans Node : `window.worklogsDesktop` et `require` y sont indéfinis, et un parcours
+Electron l’ancre. Le renderer WorkLogs ne reçoit jamais de jeton Google.
+
+| Contrôle | Comportement |
+|---|---|
+| Navigation | HTTPS seulement, sur `docs`, `accounts`, `drive`, `myaccount`.google.com ; ni port, ni identifiants dans l’URL |
+| Autre document Google, lien externe, `file:`, fenêtre surgissante | Refusés avec un message dans la barre de l’éditeur |
+| `/o/oauth2…` | **Jamais** dans la vue : l’autorisation des API garde le navigateur système ([politique Google](https://developers.google.com/identity/protocols/oauth2/policies)) |
+| Permissions (presse-papiers, micro/caméra) | Refusées par défaut ; une demande explicite passe par un dialogue WorkLogs |
+| Téléchargements | Dialogue « Enregistrer sous » natif, dossier Téléchargements par défaut |
+
+`googleViewUrl`, `allowedGoogleNavigation` et `viewBounds` sont testés directement dans
+`desktop/test/google-view.test.mjs` ; les parcours `desktop/e2e/desktop.spec.ts` couvrent
+l’isolation, les dimensions suivies au pixel, l’impression et le refus de quitter.
+
+## Limites connues — à ne pas présenter autrement
+
+| Point | État |
+|---|---|
+| Navigation entre onglets pendant l’édition Google | Celle de Google ; la navigation verticale WorkLogs revient avec la copie locale |
+| Documents ouverts dans la session | Une vue reste vivante par document jusqu’à la fermeture de l’application — volontaire (un enregistrement Google en cours doit pouvoir finir), mais non borné |
+| Hors ligne | L’éditeur Google ne fonctionne pas ; la copie locale, si |
+| Fusion automatique | Corrections indépendantes seulement ; longueurs de document différentes = conflit |
+
+## Ce qui reste à prouver — lire avant d’annoncer quoi que ce soit
+
+**La connexion du compte Google *dans* la vue intégrée n’a été validée avec aucun compte
+réel.** Les parcours Electron utilisent un serveur simulé dans la session isolée. Le
+risque est identifié et n’est pas théorique : Google refuse les pages de connexion
+affichées dans un navigateur embarqué (« Ce navigateur ou cette application n’est
+peut-être pas sécurisé »), et WorkLogs ne modifie pas l’`userAgent` d’Electron — il
+annonce donc `Electron/44.3.0`. L’autorisation **des API** contourne déjà le problème
+par le navigateur système ; la connexion **du compte** pour l’affichage, elle, se fait
+dans la vue.
+
+Recette à faire sur une vraie session, avant toute promesse :
+
+1. Connecter un compte Google depuis la zone intégrée. Si Google refuse, s’arrêter là
+   et le consigner : ne pas déguiser l’`userAgent` pour contourner ce contrôle.
+2. Modifier un menu déroulant, une image et une suggestion dans l’éditeur Google, puis
+   « Copie locale » : vérifier que WorkLogs relit bien le document modifié.
+3. Modifier localement un onglet, modifier un autre passage dans Google, envoyer :
+   vérifier la réconciliation. Puis modifier le même passage des deux côtés et vérifier
+   le conflit et la conservation du brouillon.
+4. Fermer la fenêtre pendant un enregistrement Google : vérifier l’avertissement.
+5. Couper le réseau : l’éditeur Google signale l’échec, la copie locale reste éditable.
+
+## Validation de ce lot
+
+`./scripts/check.sh` : **262 tests** (99 API, 87 front, 31 desktop unitaires, 16 scripts,
+21 navigateur, 8 Electron), `CHECK OK`. Aucun compte Google réel, aucun jeton, aucun
+contenu privé n’a été utilisé ni ajouté au dépôt.
+
+Fichiers principaux : `desktop/google-view.mjs`, `desktop/main.mjs`, `desktop/preload.cjs`,
+`web/src/components/GoogleDocsEditor.tsx`, `web/src/google-desktop.ts`, `EntryEditor.tsx`
+et `api/src/google-merge.js`.
+
+---
+
 # Google Docs — onglets et synchronisation, bilan du 2026-09-15
 
 **Branche `codex/google-docs-layout-sync` mergée sur master, publiée en v0.10.0.**

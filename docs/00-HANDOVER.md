@@ -1,9 +1,34 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
 > **Mise à jour :** 2026-09-15 · **Dernière release publiée : v0.10.0**.
-> **Lot courant :** terminé — `codex/google-docs-layout-sync` mergé sur master et publié en v0.10.0.
+> **Lot courant :** `codex/google-docs-integrated-editor` — l’éditeur Google Docs natif
+> dans la colonne centrale. Code et tests terminés, **pas encore mergé ni publié**.
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-09-15 (2) — éditeur Google Docs natif dans WorkLogs
+
+Branche `codex/google-docs-integrated-editor`, sur les sources **0.10.0**, sans bump ni
+release. Bilan complet en tête de [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md) ; le pourquoi
+est en [05-DECISIONS.md §14](05-DECISIONS.md).
+
+- La vraie page Google Docs s’affiche dans la colonne centrale (`WebContentsView` dans
+  une session isolée, sans preload ni Node), positionnée au pixel par le rendu React.
+  Menus déroulants, images et suggestions deviennent modifiables — par Google.
+- « Copie locale » quitte Google, réimporte le document et actualise les onglets intacts.
+  Un brouillon en attente est envoyé avant d’ouvrir l’éditeur complet, ou rien ne s’ouvre.
+- `api/src/google-merge.js` : fusion à trois versions. Corrections indépendantes
+  réconciliées, même passage modifié des deux côtés = conflit 409, brouillon conservé.
+- `Ctrl+P` et *Imprimer* passent la main à Google quand son éditeur est affiché ; fermer
+  la fenêtre respecte son avertissement « modifications en cours ».
+- Navigation bornée à quatre hôtes Google en HTTPS ; `/o/oauth2…` reste au navigateur
+  système (politique Google). Permissions refusées par défaut.
+- `./scripts/check.sh` : **262 tests**, `CHECK OK`, desktop compris.
+
+**⚠ Non prouvé :** la connexion d’un compte Google **dans la vue intégrée** n’a été faite
+avec aucun compte réel — Google refuse ses pages de connexion en navigateur embarqué et
+l’`userAgent` d’Electron n’est pas déguisé. Recette détaillée dans `08-GOOGLE-DOCS.md`.
+Ne pas annoncer ce lot comme fonctionnel avant de l’avoir passée.
 
 ## Lot du 2026-09-15 — navigation et synchronisation Google
 
@@ -103,7 +128,8 @@ WorkLogs/
 │   ├── lib.ts           types, client API, helpers purs
 │   ├── markdown.ts      marked + DOMPurify
 │   ├── autosave.ts      cadence d'enregistrement automatique
-│   ├── components/      EntryList · EntryEditor · RichEditor · GoogleDrive · TaskBoard · ProjectBar · UpdateBar · Logo
+│   ├── components/      EntryList · EntryEditor · RichEditor · GoogleDocsEditor · GoogleDrive ·
+│   │                    DocumentTabs · TaskBoard · ProjectBar · UpdateBar · Logo
 │   ├── styles.css       thèmes clair/sombre, typographie du document, feuille d'impression
 │   └── *.test.ts(x)     tests vitest : gestes, sauvegarde, recherche riche et Drive
 ├── desktop/
@@ -111,10 +137,11 @@ WorkLogs/
 │   ├── server.mjs       API + SQLite sur port éphémère local, protégés par jeton
 │   ├── update.mjs       format installé, pré-vol PackageKit, installation pkexec, electron-updater
 │   ├── google.mjs       OAuth desktop, trousseau, appels Google
-│   ├── preload.cjs      bridge minimal : fermeture après sauvegarde
-│   ├── test/            tests node:test (serveur + mises à jour + OAuth)
-│   └── e2e/             6 parcours Playwright (sources ou paquet via WORKLOGS_EXECUTABLE)
-├── e2e/                 20 parcours Playwright (web)
+│   ├── google-view.mjs  vue Google Docs isolée dans le canevas : adresses, navigation, fermeture
+│   ├── preload.cjs      bridge minimal : fermeture après sauvegarde, vue Google
+│   ├── test/            tests node:test (serveur + mises à jour + OAuth + vue Google)
+│   └── e2e/             8 parcours Playwright (sources ou paquet via WORKLOGS_EXECUTABLE)
+├── e2e/                 21 parcours Playwright (web)
 ├── scripts/             check.sh · backup.sh · stage-desktop · verify-package ·
 │                        check-release · release-notes · blockmap  (+ 16 tests)
 ├── .github/workflows/   ci.yml · release.yml · repos.yml

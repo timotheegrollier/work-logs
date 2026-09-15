@@ -11,6 +11,19 @@ ipcRenderer.on('worklogs:prepare-close', async () => {
   }
 });
 contextBridge.exposeInMainWorld('worklogsDesktop', {
+  googleDocs: {
+    open: (request) => ipcRenderer.invoke('worklogs:google-view:open', request),
+    bounds: (request) => ipcRenderer.send('worklogs:google-view:bounds', request),
+    hide: (token) => ipcRenderer.send('worklogs:google-view:hide', token),
+    close: (documentId) => ipcRenderer.invoke('worklogs:google-view:close', documentId),
+    reload: (token) => ipcRenderer.invoke('worklogs:google-view:reload', token),
+    print: () => ipcRenderer.invoke('worklogs:google-view:print'),
+    onState(callback) {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('worklogs:google-view', listener);
+      return () => ipcRenderer.removeListener('worklogs:google-view', listener);
+    },
+  },
   onBeforeClose(callback) {
     beforeClose = callback;
     return () => { beforeClose = async () => {}; };

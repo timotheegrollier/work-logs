@@ -81,6 +81,8 @@ test('API Drive : configuration, sélection, import idempotent, envoi et conflit
     const pushed = await api.post(`/api/entries/${id}/google/push`);
     assert.equal(pushed.status, 200);
     assert.equal(pushed.body.google_sync.dirty, false);
+    rich.content[0].content[0].text = 'Modification personnelle';
+    await api.put(`/api/entries/${id}`, { content_json: rich });
     const changed = doc('Modification distante'); changed.revisionId = 'r3'; google.setSource(changed);
     const writes = google.calls.filter(c => c.url.endsWith(':batchUpdate')).length;
     assert.equal((await api.post(`/api/entries/${id}/google/push`)).status, 409);
@@ -362,5 +364,77 @@ test('anciens imports bloqués : actualise les brouillons intacts et conserve le
     const pulled = await api.post(`/api/entries/${id}/google/pull`, { expected_content_json: draft });
     assert.equal(pulled.status, 200);
     assert.equal(pulled.body.google_sync.sync_blocked, '');
+  } finally { await api.close(); }
+});
+
+
+test('réconcilie une correction locale et une correction distante indépendantes avant l’envoi', async () => {
+  const google = stub(), api = await startApi({ google });
+  google.setSource(doc('Bonjour 😀, budget 100 €'));
+  try {
+    const opened = (await api.post('/api/google/documents/open', { document_id: 'google-123' })).body;
+    opened.content_json.content[0].content[0].text = 'Bonjour 😃, budget 100 €';
+    await api.put(`/api/entries/${opened.id}`, { content_json: opened.content_json });
+    const changed = doc('Bonjour 😀, budget 200 €'); changed.revisionId = 'remote-r2'; google.setSource(changed);
+    const pushed = await api.post(`/api/entries/${opened.id}/google/push`);
+    assert.equal(pushed.status, 200, JSON.stringify(pushed.body));
+    assert.match(pushed.body.content_md, /Bonjour 😃, budget 200 €/);
+    assert.equal(pushed.body.google_sync.dirty, false);
+    const update = JSON.parse(google.calls.find(c => c.url.endsWith(':batchUpdate')).options.body);
+    assert.equal(update.writeControl.requiredRevisionId, 'remote-r2');
+  } finally { await api.close(); }
+});
+
+test('une fusion reçue pendant une nouvelle sauvegarde locale ne remplace pas les dernières frappes', async () => {
+  const google = stub(), api = await startApi({ google });
+  google.setSource(doc('Bonjour 😀, budget 100 €'));
+  try {
+    const opened = (await api.post('/api/google/documents/open', { document_id: 'google-123' })).body;
+    const draft = structuredClone(opened.content_json); draft.content[0].content[0].text = 'Bonjour 😃, budget 100 €';
+    await api.put(`/api/entries/${opened.id}`, { content_json: draft });
+    const changed = doc('Bonjour 😀, budget 200 €'); changed.revisionId = 'remote-r2'; google.setSource(changed);
+    const original = google.request;
+    google.request = async (url, options) => {
+      if (url.endsWith(':batchUpdate')) {
+        const newer = structuredClone(draft); newer.content[0].content[0].text += ' — nouvelle frappe';
+        await api.put(`/api/entries/${opened.id}`, { content_json: newer });
+      }
+      return original(url, options);
+    };
+    const pushed = await api.post(`/api/entries/${opened.id}/google/push`);
+    assert.equal(pushed.status, 200);
+    assert.match(pushed.body.content_md, /nouvelle frappe/);
+    assert.match(pushed.body.content_md, /200 €/, 'la prochaine synchronisation ne rétablit pas le budget distant périmé');
+    assert.equal(pushed.body.google_sync.dirty, true);
+    const link = api.db.prepare('SELECT synced_content_json FROM google_documents WHERE entry_id=?').get(opened.id);
+    assert.match(link.synced_content_json, /200 €/);
+    assert.doesNotMatch(link.synced_content_json, /nouvelle frappe/);
+  } finally { await api.close(); }
+});
+
+test('le retour de l’éditeur Google actualise les onglets intacts et importe les nouveaux sans remplacer les brouillons', async () => {
+  const google = stub(), api = await startApi({ google });
+  const tab = (id, text) => ({ ...doc(text).tabs[0], tabProperties: { tabId: id, title: id } });
+  google.setSource({ ...doc(), tabs: [tab('t.0', 'Premier'), tab('t.1', 'Deuxième')] });
+  try {
+    const opened = (await api.post('/api/google/documents/open', { document_id: 'google-123' })).body;
+    const second = api.db.prepare("SELECT entry_id FROM google_documents WHERE tab_id='t.1'").get().entry_id;
+    const draft = (await api.get(`/api/entries/${second}`)).body.content_json;
+    draft.content[0].content[0].text = 'Mon brouillon à conserver';
+    await api.put(`/api/entries/${second}`, { content_json: draft });
+    google.setSource({ ...doc(), revisionId: 'native-r2', title: 'Renommé dans Google', tabs: [tab('t.0', 'Édité dans Google'), tab('t.1', 'Autre édition Google'), tab('t.2', 'Nouvel onglet Google')] });
+    const refreshed = await api.post('/api/google/documents/open', { document_id: 'google-123', tab_id: 't.0' });
+    assert.equal(refreshed.status, 201);
+    assert.equal(refreshed.body.id, opened.id);
+    assert.match(refreshed.body.content_md, /Édité dans Google/);
+    assert.equal(refreshed.body.google_sync.document_title, 'Renommé dans Google');
+    assert.equal(refreshed.body.google_sync.dirty, false);
+    assert.equal(refreshed.body.google_sync.tabs.length, 3);
+    const retained = (await api.get(`/api/entries/${second}`)).body;
+    assert.match(retained.content_md, /Mon brouillon à conserver/);
+    assert.equal(retained.google_sync.dirty, true);
+    const base = api.db.prepare('SELECT revision_id,synced_content_json FROM google_documents WHERE entry_id=?').get(second);
+    assert.equal(base.revision_id, 'r1');
+    assert.match(base.synced_content_json, /Deuxième/);
   } finally { await api.close(); }
 });
