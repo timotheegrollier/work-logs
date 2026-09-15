@@ -254,3 +254,38 @@ test('Google intégré : validation des adresses et fermeture respectant les mod
   expect(await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.close('close-doc'))).toBe(true);
   await expect.poll(() => googlePage.isClosed()).toBe(true);
 });
+
+type DialogCount = { worklogsDialogs: number };
+
+test('Google intégré : une vue d’arrière-plan se libère seule, sauf si Google enregistre', async () => {
+  await application!.evaluate(({ session }) => session.fromPartition('persist:google-docs').protocol.handle('https', () => new Response(
+    '<button onclick="window.onbeforeunload=e=>{e.preventDefault();e.returnValue=true;}">Modifier</button>', { headers: { 'content-type': 'text/html' } },
+  )));
+  const open = (documentId: string) => page.evaluate(id => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!
+    .open({ documentId: id, tabId: '', token: id, bounds: { x: 300, y: 300, width: 600, height: 300 } }), documentId);
+  const viewOf = (documentId: string) => application!.context().pages().find(p => p.url().includes(`/document/d/${documentId}/`));
+  const live = () => application!.evaluate(({ webContents }) => webContents.getAllWebContents().filter(w => w.getURL().includes('/document/d/')).length);
+  // Un document Google affiché reste une application complète qui tourne : ouvrir le
+  // suivant libère le précédent au lieu d’empiler les sessions jusqu’à la fermeture.
+  await open('premier-doc');
+  await expect.poll(() => Boolean(viewOf('premier-doc'))).toBe(true);
+  const first = viewOf('premier-doc')!;
+  await open('second-doc');
+  await expect.poll(() => first.isClosed()).toBe(true);
+  await expect.poll(() => Boolean(viewOf('second-doc'))).toBe(true);
+  const second = viewOf('second-doc')!;
+  await expect.poll(live).toBe(1);
+  // Un enregistrement Google en cours garde sa vue — et sans poser de question,
+  // puisque l’utilisateur n’a pas demandé à fermer ce document-là.
+  second.on('dialog', () => {});
+  await second.getByRole('button', { name: 'Modifier' }).click();
+  await application!.evaluate(({ dialog }) => {
+    (globalThis as unknown as DialogCount).worklogsDialogs = 0;
+    dialog.showMessageBoxSync = () => { (globalThis as unknown as DialogCount).worklogsDialogs++; return 1; };
+  });
+  await open('troisieme-doc');
+  await expect.poll(() => Boolean(viewOf('troisieme-doc'))).toBe(true);
+  expect(second.isClosed()).toBe(false);
+  await expect.poll(live).toBe(2);
+  expect(await application!.evaluate(() => (globalThis as unknown as DialogCount).worklogsDialogs)).toBe(0);
+});

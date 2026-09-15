@@ -6,7 +6,7 @@
   La vraie page Google s'affiche dans la colonne centrale (`desktop/google-view.mjs`,
   `WebContentsView` isolée) ; `api/src/google-merge.js` réconcilie les corrections
   indépendantes. Bilan en tête de `docs/08-GOOGLE-DOCS.md`, pourquoi en `05-DECISIONS.md` §14.
-  Aucune dépendance ajoutée. `./scripts/check.sh` vert : **262 tests**.
+  Aucune dépendance ajoutée. `./scripts/check.sh` vert : **263 tests**.
   **⚠ Non prouvé :** la connexion d'un compte Google réel *dans la vue intégrée*. Google
   refuse ses pages de connexion en navigateur embarqué. **Ne pas déguiser l'`userAgent`**
   pour contourner ce contrôle ; consigner le résultat de la recette à la place.

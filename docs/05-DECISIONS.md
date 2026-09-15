@@ -364,6 +364,15 @@ qui ne se touchent pas sont réconciliées, le même passage modifié des deux c
 conflit 409 avec le brouillon conservé. Conservateur exprès — une fusion silencieuse qui
 se trompe coûte plus cher qu'un conflit à trancher.
 
+**Une seule vue vivante.** Une page Google Docs affichée n'est pas un onglet inerte :
+c'est une application qui continue de tourner, sans throttling puisqu'elle doit pouvoir
+finir ses enregistrements. En garder une par document ouvert revenait à empiler des
+sessions jusqu'à la fermeture de l'application. Ouvrir le document suivant libère donc
+le précédent — mais par un `close({ waitForBeforeUnload: true })` : si Google signale un
+enregistrement en cours, la vue survit et termine son envoi. Cette éviction ne pose
+aucune question, parce que l'utilisateur n'a pas demandé la fermeture de ce document-là ;
+seule une fermeture explicite (copie locale, fenêtre) affiche l'avertissement.
+
 **Testable hors Electron.** `google-view.mjs` importe `electron` par défaut au lieu de ses
 exports nommés : le module reste chargeable par `node --test`, donc ses trois contrôles
 (adresse, navigation, dimensions) ont de vrais tests unitaires et ne dépendent pas d'un

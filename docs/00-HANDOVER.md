@@ -23,7 +23,9 @@ est en [05-DECISIONS.md §14](05-DECISIONS.md).
   la fenêtre respecte son avertissement « modifications en cours ».
 - Navigation bornée à quatre hôtes Google en HTTPS ; `/o/oauth2…` reste au navigateur
   système (politique Google). Permissions refusées par défaut.
-- `./scripts/check.sh` : **262 tests**, `CHECK OK`, desktop compris.
+- Une seule vue Google vivante : ouvrir le document suivant libère le précédent,
+  sauf s’il enregistre encore — sans dialogue, puisqu’on n’a pas demandé sa fermeture.
+- `./scripts/check.sh` : **263 tests**, `CHECK OK`, desktop compris.
 
 **⚠ Non prouvé :** la connexion d’un compte Google **dans la vue intégrée** n’a été faite
 avec aucun compte réel — Google refuse ses pages de connexion en navigateur embarqué et
@@ -140,7 +142,7 @@ WorkLogs/
 │   ├── google-view.mjs  vue Google Docs isolée dans le canevas : adresses, navigation, fermeture
 │   ├── preload.cjs      bridge minimal : fermeture après sauvegarde, vue Google
 │   ├── test/            tests node:test (serveur + mises à jour + OAuth + vue Google)
-│   └── e2e/             8 parcours Playwright (sources ou paquet via WORKLOGS_EXECUTABLE)
+│   └── e2e/             9 parcours Playwright (sources ou paquet via WORKLOGS_EXECUTABLE)
 ├── e2e/                 21 parcours Playwright (web)
 ├── scripts/             check.sh · backup.sh · stage-desktop · verify-package ·
 │                        check-release · release-notes · blockmap  (+ 16 tests)

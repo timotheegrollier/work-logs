@@ -102,6 +102,9 @@ export function installGoogleView(window) {
     });
     contents.on('render-process-gone', () => state('error', 'L’éditeur Google s’est arrêté. Recharge-le pour reprendre.'));
     contents.on('will-prevent-unload', event => {
+      // Vue d'arrière-plan qu'on libère : Google signale un enregistrement en cours,
+      // donc elle reste — sans rien demander pour un document qu'on n'affiche plus.
+      if (record.evicting && !closing) return record.cancelClose?.();
       const choice = dialog.showMessageBoxSync(window, {
         type: 'warning', title: 'Google Docs dans WorkLogs',
         message: 'Google Docs signale des modifications en cours. Quitter ce document ?',
@@ -113,11 +116,20 @@ export function installGoogleView(window) {
       if (!window.isDestroyed()) { window.focus(); contents.focus(); }
     });
     contents.on('destroyed', () => {
-      views.delete(documentId);
+      if (views.get(documentId) === record) views.delete(documentId);
       if (active?.record === record) active = undefined;
       if (!window.isDestroyed()) window.contentView.removeChildView(view);
     });
     return record;
+  }
+  /** Un document Google affiché est une application complète qui continue de tourner :
+   * n'en garder qu'une, et laisser partir les autres dès qu'elles n'enregistrent plus. */
+  function evict(keep) {
+    for (const record of [...views.values()]) {
+      if (record === keep || record.closePromise) continue;
+      record.evicting = true;
+      void closeRecord(record).finally(() => { record.evicting = false; });
+    }
   }
   function closeRecord(record) {
     if (record.closePromise) return record.closePromise;
@@ -137,8 +149,10 @@ export function installGoogleView(window) {
     const bounds = viewBounds(request.bounds, window.getContentSize());
     if (typeof request.token !== 'string' || request.token.length > 100) throw new Error('Vue invalide.');
     hide();
-    const record = views.get(request.documentId) || create(request.documentId);
+    const previous = views.get(request.documentId);
+    const record = previous && !previous.closePromise ? previous : create(request.documentId);
     active = { record, token: request.token };
+    evict(record);
     record.view.setBounds(bounds);
     record.view.setVisible(true);
     if (record.tabId !== (request.tabId ?? '')) {

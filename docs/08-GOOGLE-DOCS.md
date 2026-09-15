@@ -20,6 +20,8 @@ Aucune dépendance ajoutée. Ce bilan remplace les limites de la section suivant
   est affiché ; c’est Google qui prépare le document complet.
 - Fermer la fenêtre, changer de document ou demander la copie locale respectent
   l’avertissement « modifications en cours » de Google avant de quitter.
+- Un document Google affiché est une application complète qui continue de tourner :
+  ouvrir le suivant libère le précédent, sauf s’il est encore en train d’enregistrer.
 
 ## Comment c’est isolé
 
@@ -46,7 +48,7 @@ l’isolation, les dimensions suivies au pixel, l’impression et le refus de qu
 | Point | État |
 |---|---|
 | Navigation entre onglets pendant l’édition Google | Celle de Google ; la navigation verticale WorkLogs revient avec la copie locale |
-| Documents ouverts dans la session | Une vue reste vivante par document jusqu’à la fermeture de l’application — volontaire (un enregistrement Google en cours doit pouvoir finir), mais non borné |
+| Documents ouverts dans la session | Une seule vue Google vivante : ouvrir le document suivant libère le précédent. Une vue que Google déclare en cours d’enregistrement survit, sans dialogue, et finira son envoi |
 | Hors ligne | L’éditeur Google ne fonctionne pas ; la copie locale, si |
 | Fusion automatique | Corrections indépendantes seulement ; longueurs de document différentes = conflit |
 
@@ -75,8 +77,8 @@ Recette à faire sur une vraie session, avant toute promesse :
 
 ## Validation de ce lot
 
-`./scripts/check.sh` : **262 tests** (99 API, 87 front, 31 desktop unitaires, 16 scripts,
-21 navigateur, 8 Electron), `CHECK OK`. Aucun compte Google réel, aucun jeton, aucun
+`./scripts/check.sh` : **263 tests** (99 API, 87 front, 31 desktop unitaires, 16 scripts,
+21 navigateur, 9 Electron), `CHECK OK`. Aucun compte Google réel, aucun jeton, aucun
 contenu privé n’a été utilisé ni ajouté au dépôt.
 
 Fichiers principaux : `desktop/google-view.mjs`, `desktop/main.mjs`, `desktop/preload.cjs`,
