@@ -1,8 +1,9 @@
 /**
  * Stratégie de mise à jour par format installé (voir docs/07-RELEASES.md §7) :
  * - AppImage : electron-updater (différentiel via blockmap) — voir main.mjs.
- * - Paquet système (deb/rpm) : PackageKit (`pkcon`) si présent — polkit demande
- *   le mot de passe, un clic suffit ; sinon consigne dnf/apt + page de release.
+ * - Paquet système (deb/rpm) : PackageKit (`pkcon`) lit les mises à jour sans
+ *   autorisation, `pkexec` installe avec (polkit demande le mot de passe, un clic
+ *   suffit) ; sinon consigne dnf/apt + page de release.
  * - Dev (sources) : simple signalement.
  * Ce module reste sans dépendance : détection, planification et décision.
  */
@@ -95,23 +96,62 @@ export function hasPackageKit({ existsSync = fs.existsSync } = {}) {
 }
 
 /**
- * Transaction de mise à jour (`update`, pas `install` : le paquet est déjà
- * installé puisqu'on tourne depuis — prouvé en conteneur, `install` créait
- * des conflits de fichiers).
+ * Commande d'installation privilégiée : `pkexec` + le gestionnaire natif.
  *
- * **Surtout pas `--noninteractive` ici.** La politique polkit de
- * `org.freedesktop.packagekit.system-update` est `auth_admin_keep` : un mot de
- * passe administrateur est exigé. `--noninteractive` marque la transaction comme
- * non interactive, polkit refuse alors *sans afficher de dialogue*, et la mise à
- * jour échoue en silence. Vérifié sur Linux Mint :
- *   pkcheck --action-id org.freedesktop.packagekit.system-update --process $$
- *   → « Authorization requires authentication and -u wasn't passed. » (code 2)
- * Les conteneurs de recette tournent en root, sans polkit : ils ne pouvaient pas
- * révéler ce défaut. `system-sources-refresh` reste, lui, autorisé sans mot de
- * passe (`implicit active: yes`), d'où un pré-vol qui réussissait.
+ * **Pourquoi plus `pkcon update` ?** Ses deux formes échouent sur une vraie
+ * session — reproduit sur Linux Mint 22 (Cinnamon, agent polkit bien enregistré) :
+ *
+ *   printf 'y\n' | pkcon --cache-age 1 update worklogs
+ *     → Erreur fatale: user declined simulation            (code 7, en 0,5 s)
+ *   pkcon --noninteractive --cache-age 1 update worklogs
+ *     → État: Attente de l'authentification
+ *       Erreur fatale: Failed to obtain authentication      (code 7)
+ *
+ * Sans `--noninteractive`, pkcon exige un **vrai terminal** pour sa confirmation :
+ * alimenter son entrée standard ne suffit pas, il refuse sa propre simulation
+ * avant même de demander quoi que ce soit à polkit. Avec, il marque la
+ * transaction non interactive et polkit refuse sans jamais afficher de dialogue.
+ * Il n'existe pas de troisième forme : ce chemin est sans issue depuis une
+ * application graphique.
+ *
+ * `pkexec` est fait exactement pour ça : il demande l'autorisation à l'agent
+ * polkit de la session, puis exécute la commande en root. Vérifié sur la machine
+ * de production (Mint 22) : 0.8.0 → 0.9.0, code 0.
+ *
+ * `Dpkg::Use-Pty=0` évite que dpkg réclame un pseudo-terminal : sans lui, la
+ * sortie est noyée sous les retours chariot de la barre de progression.
  */
-export function pkconInstallArgs() {
-  return ['--cache-age', '1', 'update', SYSTEM_PACKAGE];
+export function privilegedInstallCommand(manager) {
+  return {
+    file: 'pkexec',
+    args: manager === 'apt'
+      ? ['/usr/bin/apt-get', '-o', 'Dpkg::Use-Pty=0', 'install', '-y', '--only-upgrade', SYSTEM_PACKAGE]
+      : ['/usr/bin/dnf', 'upgrade', '-y', SYSTEM_PACKAGE],
+  };
+}
+
+/** `pkexec` présent = l'application peut demander l'autorisation administrateur. */
+export function hasPkexec({ existsSync = fs.existsSync } = {}) {
+  return existsSync('/usr/bin/pkexec');
+}
+
+/**
+ * Cet échec d'installation est-il un refus d'autorisation ?
+ *
+ * `pkexec` sort en **126** quand l'utilisateur a fermé le dialogue. Son **127**
+ * est ambigu (`man pkexec`) : « not authorized », « authentification impossible »
+ * *et* « erreur d'exécution » y tombent ensemble. Seul le message tranche, d'où
+ * la lecture de la sortie en plus du code.
+ *
+ * Le piège à ne pas réintroduire : « user declined simulation » (pkcon) n'est
+ * **pas** un refus d'autorisation, c'est pkcon qui renonce faute de terminal.
+ * L'ancienne expression attrapait « declined » et annonçait « autorisation non
+ * accordée » à quelqu'un à qui aucune fenêtre n'avait rien demandé.
+ */
+export function isAuthorizationFailure({ code, output = '' }) {
+  if (code === 126) return true;
+  return /not authorized|non autoris|authentication failed|échec de l['\u2019]authentification|obtain authentication|request dismissed/i
+    .test(String(output));
 }
 
 /**
@@ -122,22 +162,24 @@ export function pkconUpdatesArgs() {
 }
 
 /**
- * Lit la progression d'une transaction pkcon depuis sa sortie cumulée
- * (lignes `Status: …` et `Percentage: NN`, observées en conteneur Fedora).
+ * Lit la phase d'une installation apt/dnf depuis sa sortie cumulée.
  * Résout vers `{ phase, percent }` ou null si rien d'exploitable.
- * `phase` vaut 'download' pendant le téléchargement, 'install' sinon.
+ *
+ * Aucun des deux n'annonce de pourcentage exploitable hors terminal : `percent`
+ * reste null et le bandeau affiche une barre indéterminée, ce qu'il sait faire.
+ * Les marqueurs sont bilingues parce que la commande hérite de la locale
+ * système via polkit (relevé : sortie en français sur la machine de production).
  */
-export function parsePkconProgress(output) {
-  let status = null;
-  let percent = null;
+export function parseManagerProgress(output) {
+  const DOWNLOAD = /^(?:Get:|Réception de |Downloading|Téléchargement)/i;
+  const INSTALL = /^(?:Preparing to unpack|Préparation du dépaquetage|Unpacking|Dépaquetage|Setting up|Paramétrage|Running transaction|Upgrading|Mise à niveau|Installing|Installation)/i;
+  let phase = null;
   for (const line of String(output).split('\n')) {
-    const statusMatch = /^\s*Status:\s*(.+?)\s*$/.exec(line);
-    if (statusMatch) status = statusMatch[1];
-    const percentMatch = /^\s*Percentage:\s*(\d+)\s*$/.exec(line);
-    if (percentMatch) percent = Math.min(100, Math.max(0, Number(percentMatch[1])));
+    const text = line.trim();
+    if (DOWNLOAD.test(text)) phase = 'download';
+    else if (INSTALL.test(text)) phase = 'install';
   }
-  if (status === null && percent === null) return null;
-  return { phase: /download/i.test(status ?? '') ? 'download' : 'install', percent };
+  return phase === null ? null : { phase, percent: null };
 }
 
 /** Recharge les métadonnées (prouvé en conteneur : `get-updates`, même avec

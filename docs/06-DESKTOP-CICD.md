@@ -163,7 +163,7 @@ qui ne survivent pas au changement de racine).
 | `.github/workflows/repos.yml` | dépôts **dnf et apt** sur `gh-pages`, déclenché par la fin de « Release Linux », rétention 3 versions |
 | `scripts/build-deb-repo.sh` · `scripts/prune-repo.mjs` | index apt plat · purge des versions au-delà des 3 dernières |
 | `.github/dependabot.yml` | propositions mensuelles npm et GitHub Actions |
-| `desktop/update.mjs` | détection du format installé, PackageKit (`pkcon`), electron-updater |
+| `desktop/update.mjs` | détection du format installé, pré-vol PackageKit (`pkcon`), installation `pkexec`, electron-updater |
 | `scripts/check-release.mjs` | semver, égalité version/tag, **et synchronisation de `package-lock.json`** |
 
 Cette carte décrit le déblocage initial ; les fonctionnalités ajoutées ensuite
