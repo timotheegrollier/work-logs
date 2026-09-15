@@ -4,6 +4,7 @@ declare const __WORKLOGS_VERSION__: string;
 
 interface Window {
   worklogsDesktop?: {
+    googleDocs?: import('./google-desktop').GoogleDocsBridge;
     onBeforeClose: (callback: () => Promise<void>) => () => void;
     checkUpdatesNow?: () => Promise<string | null>;
     onUpdateProgress?: (

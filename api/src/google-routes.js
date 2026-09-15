@@ -1,6 +1,7 @@
 import { uid, nowISO, today } from './db.js';
 import { decodeEntry, documentText } from './rich-document.js';
 import { buildGoogleUpdate, documentBody, documentTabs, selectDocumentTab } from './google-document.js';
+import { mergeGoogleChanges } from './google-merge.js';
 import { buildPreservingUpdate, googlePreservedCount, importGoogleDocument as googleToDocument } from './google-preserve.js';
 
 const blankSource = { body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } };
@@ -138,8 +139,9 @@ export function registerGoogleRoutes(app, { db, google }) {
         if (existing) {
           db.prepare('UPDATE google_documents SET document_title=?, tab_title=?, tab_order=?, tab_depth=?, tab_id=? WHERE entry_id=?')
             .run(documentTitle, tab.title, order, tab.depth, tab.id, existing.entry_id);
-          // Upgrade old flattened imports only when no local content was edited.
-          if (existing.readonly_reason && entry(existing.entry_id).content_json === existing.synced_content_json) {
+          // Refresh clean snapshots after native Google editing, including the
+          // other tabs. Dirty local drafts keep their original merge base.
+          if (entry(existing.entry_id).content_json === existing.synced_content_json) {
             const rich = googleToDocument(selectDocumentTab(source, tab.id)), serialized = JSON.stringify(rich);
             db.prepare('UPDATE entries SET content_json=?,content_md=? WHERE id=?').run(serialized, documentText(rich), existing.entry_id);
             db.prepare("UPDATE google_documents SET synced_content_json=?,revision_id=?,synced_at=?,readonly_reason='' WHERE entry_id=?")
@@ -171,7 +173,7 @@ export function registerGoogleRoutes(app, { db, google }) {
     await exclusive(db.prepare('SELECT document_id FROM google_documents WHERE entry_id=?').get(id)?.document_id || id, async () => {
       const current = entry(id);
       if (!current.content_json) fail('Crée un document riche pour le synchroniser avec Google Drive.');
-      const rich = JSON.parse(current.content_json);
+      let rich = JSON.parse(current.content_json);
       let link = db.prepare('SELECT * FROM google_documents WHERE entry_id=?').get(id);
       // Les anciens imports aplatis doivent être rechargés : ils ne contiennent
       // pas les repères nécessaires à la conservation des éléments Google.
@@ -191,16 +193,29 @@ export function registerGoogleRoutes(app, { db, google }) {
       }
       const source = await read(link.document_id, link.tab_id);
       const unchangedNewDocument = !link.revision_id && JSON.stringify(googleToDocument(source)) === link.synced_content_json;
-      if (!unchangedNewDocument && source.revisionId !== link.revision_id) fail('Le document a changé sur Google Drive. Ton brouillon local est conservé. Recharge la version Google ou garde une copie locale avant de continuer.', 409);
+      if (!unchangedNewDocument && source.revisionId !== link.revision_id) {
+        if (!link.revision_id) fail('Le document a changé sur Google Drive. Ton brouillon local est conservé.', 409);
+        rich = mergeGoogleChanges(JSON.parse(link.synced_content_json), rich, googleToDocument(source));
+      }
       const update = buildPreservingUpdate(source, rich);
       const result = update.requests.length ? await google.request(`/docs/v1/documents/${link.document_id}:batchUpdate`, { method: 'POST', body: JSON.stringify(update) }) : { writeControl: { requiredRevisionId: source.revisionId } };
       const revision = result.writeControl?.requiredRevisionId;
       if (!revision) fail('Google a reçu la mise à jour sans renvoyer sa révision. Recharge la version Google pour vérifier l’enregistrement.', 502);
       // Google revisions belong to the whole document. Our own write must not
       // create a false conflict on the other tabs read at that same revision.
-      db.prepare('UPDATE google_documents SET revision_id=? WHERE document_id=? AND revision_id=?').run(revision, link.document_id, source.revisionId);
+      db.prepare('UPDATE google_documents SET revision_id=? WHERE document_id=? AND revision_id=? AND entry_id<>?').run(revision, link.document_id, source.revisionId, id);
+      const serialized = JSON.stringify(rich);
+      // Rebase any concurrent local save onto the merged Google snapshot. Otherwise
+      // the next push could mistake unseen remote edits for deliberate deletions.
+      // If these overlap, retain the old base and draft so the next push still
+      // detects the conflict, even though Google accepted the earlier snapshot.
+      const latest = entry(id);
+      const local = latest.content_json === current.content_json ? rich
+        : mergeGoogleChanges(JSON.parse(current.content_json), JSON.parse(latest.content_json), rich);
+      db.prepare('UPDATE entries SET content_json=?,content_md=? WHERE id=?')
+        .run(JSON.stringify(local), documentText(local), id);
       db.prepare('UPDATE google_documents SET revision_id=?,synced_content_json=?,synced_at=? WHERE entry_id=?')
-        .run(revision, current.content_json, nowISO(), id);
+        .run(revision, serialized, nowISO(), id);
       res.json(reply(id));
     });
   });

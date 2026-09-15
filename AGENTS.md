@@ -1,10 +1,17 @@
 # WorkLogs — règles agents
 
 ## Reprise actuelle — 2026-09-15
-- Lot `codex/google-docs-layout-sync` terminé et publié : **v0.10.0 sur master**
-  (navigation verticale et synchronisation ciblée Google Docs).
-  Bilan en tête de `docs/08-GOOGLE-DOCS.md`. Aucune dépendance ajoutée.
-  `./scripts/check.sh` vert en local et CI master verte.
+- Lot en cours : **éditeur Google Docs natif dans WorkLogs**, branche
+  `codex/google-docs-integrated-editor`, sur les sources 0.10.0. Pas encore mergé.
+  La vraie page Google s'affiche dans la colonne centrale (`desktop/google-view.mjs`,
+  `WebContentsView` isolée) ; `api/src/google-merge.js` réconcilie les corrections
+  indépendantes. Bilan en tête de `docs/08-GOOGLE-DOCS.md`, pourquoi en `05-DECISIONS.md` §14.
+  Aucune dépendance ajoutée. `./scripts/check.sh` vert : **263 tests**.
+  Connexion d'un compte Google *dans la vue intégrée* : **vérifiée par Timo le 15/09**.
+  **Ne jamais déguiser l'`userAgent`** si Google referme ce chemin : c'est un contrôle de
+  sécurité du fournisseur ; consigner le refus à la place.
+- Lot précédent terminé et publié : **v0.10.0 sur master** (navigation verticale et
+  synchronisation ciblée Google Docs). CI master verte.
 
 ## Repères précédents — 2026-09-14
 - Lot en cours : **éditeur riche intégré + Google Drive facultatif**, branche
