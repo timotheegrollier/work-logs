@@ -52,28 +52,30 @@ l’isolation, les dimensions suivies au pixel, l’impression et le refus de qu
 | Hors ligne | L’éditeur Google ne fonctionne pas ; la copie locale, si |
 | Fusion automatique | Corrections indépendantes seulement ; longueurs de document différentes = conflit |
 
-## Ce qui reste à prouver — lire avant d’annoncer quoi que ce soit
+## Connexion Google dans la vue intégrée
 
-**La connexion du compte Google *dans* la vue intégrée n’a été validée avec aucun compte
-réel.** Les parcours Electron utilisent un serveur simulé dans la session isolée. Le
-risque est identifié et n’est pas théorique : Google refuse les pages de connexion
-affichées dans un navigateur embarqué (« Ce navigateur ou cette application n’est
-peut-être pas sécurisé »), et WorkLogs ne modifie pas l’`userAgent` d’Electron — il
-annonce donc `Electron/44.3.0`. L’autorisation **des API** contourne déjà le problème
-par le navigateur système ; la connexion **du compte** pour l’affichage, elle, se fait
-dans la vue.
+**Vérifiée par Timo le 2026-09-15**, sur sa session : Google accepte la connexion du
+compte dans la vue intégrée. C'était le risque qui pouvait condamner tout ce lot —
+Google refuse ses pages de connexion dans certains navigateurs embarqués, et WorkLogs
+ne déguise pas l'`userAgent` d'Electron (il annonce `Electron/44.3.0`). Si un futur
+durcissement de Google referme ce chemin, **ne pas contourner la détection** : c'est un
+contrôle de sécurité du fournisseur, et un déguisement casserait à leur mise à jour
+suivante. Consigner le refus et rouvrir la question du lien vers le navigateur.
 
-Recette à faire sur une vraie session, avant toute promesse :
+L'autorisation **des API** reste, elle, dans le navigateur système : c'est une exigence
+de la [politique OAuth de Google](https://developers.google.com/identity/protocols/oauth2/policies),
+pas un choix révisable.
 
-1. Connecter un compte Google depuis la zone intégrée. Si Google refuse, s’arrêter là
-   et le consigner : ne pas déguiser l’`userAgent` pour contourner ce contrôle.
-2. Modifier un menu déroulant, une image et une suggestion dans l’éditeur Google, puis
+Reste à passer sur une vraie session, avec un vrai document :
+
+1. Modifier un menu déroulant, une image et une suggestion dans l'éditeur Google, puis
    « Copie locale » : vérifier que WorkLogs relit bien le document modifié.
-3. Modifier localement un onglet, modifier un autre passage dans Google, envoyer :
+2. Modifier localement un onglet, modifier un autre passage dans Google, envoyer :
    vérifier la réconciliation. Puis modifier le même passage des deux côtés et vérifier
    le conflit et la conservation du brouillon.
-4. Fermer la fenêtre pendant un enregistrement Google : vérifier l’avertissement.
-5. Couper le réseau : l’éditeur Google signale l’échec, la copie locale reste éditable.
+3. Fermer la fenêtre pendant un enregistrement Google : vérifier l'avertissement.
+4. Enchaîner deux documents Google : vérifier que le premier se libère.
+5. Couper le réseau : l'éditeur Google signale l'échec, la copie locale reste éditable.
 
 ## Validation de ce lot
 

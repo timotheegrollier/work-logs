@@ -27,10 +27,12 @@ est en [05-DECISIONS.md §14](05-DECISIONS.md).
   sauf s’il enregistre encore — sans dialogue, puisqu’on n’a pas demandé sa fermeture.
 - `./scripts/check.sh` : **263 tests**, `CHECK OK`, desktop compris.
 
-**⚠ Non prouvé :** la connexion d’un compte Google **dans la vue intégrée** n’a été faite
-avec aucun compte réel — Google refuse ses pages de connexion en navigateur embarqué et
-l’`userAgent` d’Electron n’est pas déguisé. Recette détaillée dans `08-GOOGLE-DOCS.md`.
-Ne pas annoncer ce lot comme fonctionnel avant de l’avoir passée.
+**Connexion Google dans la vue intégrée : vérifiée par Timo le 15/09** sur sa session —
+c’était le risque qui pouvait condamner le lot. L’`userAgent` d’Electron n’est pas déguisé
+et ne doit pas l’être : si Google referme ce chemin un jour, consigner le refus plutôt que
+contourner sa détection. Les cinq points restants (widgets, réconciliation, fermeture
+pendant un enregistrement, enchaînement de documents, hors ligne) sont dans
+`08-GOOGLE-DOCS.md`.
 
 ## Lot du 2026-09-15 — navigation et synchronisation Google
 

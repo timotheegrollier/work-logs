@@ -4,8 +4,8 @@
 Lire `docs/08-GOOGLE-DOCS.md` : la vraie page Google s'affiche dans la colonne centrale,
 dans une vue Electron isolée ; l'autorisation OAuth des API garde le navigateur système.
 Tiptap 3.31.3 et ses extensions listées dans `AGENTS.md` ont été explicitement approuvés.
-**La connexion d'un compte Google dans la vue intégrée n'a été prouvée avec aucun compte
-réel** — Google refuse ce type de navigateur. Ne pas déguiser l'`userAgent` pour passer.
+La connexion d'un compte Google dans la vue intégrée a été vérifiée le 15/09. Ne jamais
+déguiser l'`userAgent` si Google referme ce chemin : consigner le refus à la place.
 
 **État au 2026-09-14 :** application desktop Linux **en production**, 19 releases publiées
 (`v0.2.0` → `v0.6.12`, DEB/RPM/AppImage avec mise à jour intégrée). `./scripts/check.sh` est

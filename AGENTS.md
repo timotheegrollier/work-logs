@@ -7,9 +7,9 @@
   `WebContentsView` isolée) ; `api/src/google-merge.js` réconcilie les corrections
   indépendantes. Bilan en tête de `docs/08-GOOGLE-DOCS.md`, pourquoi en `05-DECISIONS.md` §14.
   Aucune dépendance ajoutée. `./scripts/check.sh` vert : **263 tests**.
-  **⚠ Non prouvé :** la connexion d'un compte Google réel *dans la vue intégrée*. Google
-  refuse ses pages de connexion en navigateur embarqué. **Ne pas déguiser l'`userAgent`**
-  pour contourner ce contrôle ; consigner le résultat de la recette à la place.
+  Connexion d'un compte Google *dans la vue intégrée* : **vérifiée par Timo le 15/09**.
+  **Ne jamais déguiser l'`userAgent`** si Google referme ce chemin : c'est un contrôle de
+  sécurité du fournisseur ; consigner le refus à la place.
 - Lot précédent terminé et publié : **v0.10.0 sur master** (navigation verticale et
   synchronisation ciblée Google Docs). CI master verte.
 
