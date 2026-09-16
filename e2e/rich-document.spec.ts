@@ -162,7 +162,13 @@ test('titres 4–6, plan, couleurs et effacement du format', async ({ page }, te
   await page.keyboard.type('Préparer la prochaine version');
   await page.getByLabel('Style du paragraphe').selectOption('6');
   await expect(plan.getByRole('button', { name: 'Préparer la prochaine version' })).toBeVisible();
+  const saveRequest = page.waitForRequest(request => request.method() === 'PUT' && /\/api\/entries\/[^/]+$/.test(request.url()) && request.postData()?.includes('aaffcc') && request.postData()?.includes('Préparer la prochaine version'));
   await content.press('Control+s');
+  const request = await saveRequest;
+  expect((await request.response())?.ok()).toBe(true);
+  const persisted = await page.request.get(request.url());
+  expect(persisted.ok()).toBe(true);
+  expect(JSON.stringify((await persisted.json()).content_json)).toContain('aaffcc');
   await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('rich-editor-expanded.png'), fullPage: true });
   await page.reload();

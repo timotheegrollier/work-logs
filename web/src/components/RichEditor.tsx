@@ -102,7 +102,7 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false, d
           onChange={e => {
             const value = e.target.value;
             if (['paragraph', 'TITLE', 'SUBTITLE'].includes(value)) editor.chain().focus().setParagraph().updateAttributes('paragraph', { googleNamedStyle: value === 'paragraph' ? null : value }).run();
-            else editor.chain().focus().setHeading({ level: Number(value) as 1 | 2 | 3 | 4 | 5 | 6 }).updateAttributes('heading', { googleNamedStyle: null }).run();
+            else editor.chain().setHeading({ level: Number(value) as 1 | 2 | 3 | 4 | 5 | 6 }).updateAttributes('heading', { googleNamedStyle: null }).run();
           }}>
           <option value="paragraph">Texte normal</option><option value="TITLE">Titre du document</option><option value="SUBTITLE">Sous-titre</option>{[1, 2, 3, 4, 5, 6].map(level => <option key={level} value={level}>Titre {level}</option>)}
         </select>
@@ -193,10 +193,10 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false, d
       {!headings.length && <p>Applique un style Titre pour construire le plan.</p>}
       {headings.map(heading => <button key={heading.pos} data-level={heading.level}
         onClick={() => {
-          editor.chain().setTextSelection(heading.pos + 1).scrollIntoView().run();
-          // Le focus différé de Tiptap peut rétablir cette position après une
-          // touche End, avant que selectionchange ait actualisé ProseMirror.
+          // Synchroniser le focus avant la sélection : sinon une touche End peut
+          // déplacer la sélection DOM sans que ProseMirror ne quitte l'ancien titre.
           editor.view.focus();
+          editor.chain().setTextSelection(heading.pos + 1).scrollIntoView().run();
         }}>{heading.title}</button>)}
     </nav>}
     {error && <p className="error no-print" role="alert">{error}</p>}
