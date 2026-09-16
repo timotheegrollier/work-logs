@@ -74,9 +74,9 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false, d
     setSearch(editor, { active });
     editor.chain().focus().setTextSelection(search.matches[active]).scrollIntoView().run();
   };
-  const headings: { title: string; pos: number; level: number }[] = [];
+  const headings: { title: string; pos: number; end: number; level: number }[] = [];
   if (outline) editor.state.doc.descendants((node, pos) => {
-    if (node.type.name === 'heading') headings.push({ title: node.textContent || 'Titre vide', pos, level: node.attrs.level });
+    if (node.type.name === 'heading') headings.push({ title: node.textContent || 'Titre vide', pos, end: pos + node.nodeSize - 1, level: node.attrs.level });
   });
   const textStyle = editor.getAttributes('textStyle');
   const fonts = Array.from(new Set(['Arial', 'Georgia', 'Verdana', 'Times New Roman', 'Courier New', 'monospace', ...(textStyle.fontFamily ? [textStyle.fontFamily as string] : [])]));
@@ -196,7 +196,9 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false, d
           // Synchroniser le focus avant la sélection : sinon une touche End peut
           // déplacer la sélection DOM sans que ProseMirror ne quitte l'ancien titre.
           editor.view.focus();
-          editor.chain().setTextSelection(heading.pos + 1).scrollIntoView().run();
+          // Placer directement le curseur en fin de titre rend un éventuel
+          // `End` natif idempotent, même si selectionchange est retardé.
+          editor.chain().setTextSelection(heading.end).scrollIntoView().run();
         }}>{heading.title}</button>)}
     </nav>}
     {error && <p className="error no-print" role="alert">{error}</p>}
