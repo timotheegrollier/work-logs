@@ -259,7 +259,8 @@ button:disabled {
 .columns {
   flex: 1;
   display: grid;
-  grid-template-columns: var(--col-left, 290px) minmax(0, 1fr) var(--col-right, 320px);
+  grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr) 8px minmax(120px, var(--col-right, 320px));
+  grid-template-areas: "journal resize-left editor resize-right tasks";
   min-height: 0;
 }
 .left,
@@ -271,15 +272,47 @@ button:disabled {
   gap: 14px;
 }
 .left {
-  border-right: 1px solid var(--line);
+  grid-area: journal;
 }
 .right {
-  border-left: 1px solid var(--line);
+  grid-area: tasks;
   background: var(--surface);
 }
 .center {
+  grid-area: editor;
   overflow-y: auto;
   min-width: 0;
+}
+.column-resizer {
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+}
+.column-resizer-left { grid-area: resize-left; }
+.column-resizer-right { grid-area: resize-right; }
+.column-resizer::before {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  background: var(--line);
+}
+.column-resizer::after {
+  content: '';
+  position: absolute;
+  top: calc(50% - 20px);
+  left: 2px;
+  width: 4px;
+  height: 40px;
+  border-radius: 4px;
+  background: var(--muted);
+}
+.column-resizer:hover, .column-resizer:focus-visible, .column-resizer.is-dragging { background: var(--accent-soft); }
+.column-resizer:hover::after, .column-resizer:focus-visible::after, .column-resizer.is-dragging::after { background: var(--accent); }
+.columns:has(.column-resizer.is-dragging), .columns:has(.column-resizer.is-dragging) * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 /* ------------------------------------------------------------ projets */
@@ -984,9 +1017,6 @@ button:disabled {
   scrollbar-color: var(--line) transparent;
 }
 @media (max-width: 1180px) {
-  .columns {
-    grid-template-columns: 250px minmax(0, 1fr) 280px;
-  }
   .sheet.is-split {
     grid-template-columns: 1fr;
   }
@@ -998,7 +1028,9 @@ button:disabled {
   .columns {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto auto;
+    grid-template-areas: "journal" "editor" "tasks";
   }
+  .column-resizer { display: none; }
   .left,
   .right {
     border: 0;
@@ -1083,10 +1115,10 @@ button:disabled {
 /* ------------------------------------------------- espace des documents Google */
 .workspace-switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 18px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 .workspace-switch button { color: var(--accent); padding: 4px 8px; }
-.columns.is-document { grid-template-columns: 240px minmax(0, 1fr); }
-.columns.is-document > .right { display: none; }
-.columns.is-document.with-tasks { grid-template-columns: 220px minmax(0, 1fr) 270px; }
-.columns.is-document.with-tasks > .right { display: flex; }
+.columns.is-document { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr); grid-template-areas: "journal resize-left editor"; }
+.columns.is-document > .right, .columns.is-document > .column-resizer-right { display: none; }
+.columns.is-document.with-tasks { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr) 8px minmax(120px, var(--col-right, 320px)); grid-template-areas: "journal resize-left editor resize-right tasks"; }
+.columns.is-document.with-tasks > .right, .columns.is-document.with-tasks > .column-resizer-right { display: flex; }
 .google-editor { max-width: none; padding: 24px 28px 40px; gap: 16px; }
 .document-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .document-heading > div { min-width: 0; }
@@ -1150,8 +1182,9 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 @media (max-width: 1200px) {
   .google-editor { padding: 20px; }
   .document-workspace.has-tabs { grid-template-columns: 165px minmax(0, 1fr); gap: 18px; }
-  .columns.is-document.with-tasks { grid-template-columns: 210px minmax(0, 1fr); }
-  .columns.is-document.with-tasks > .right { grid-column: 2; max-height: 300px; }
+  .columns.is-document.with-tasks { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr); grid-template-areas: "journal resize-left editor" ". . tasks"; }
+  .columns.is-document.with-tasks > .right { max-height: 300px; }
+  .columns.is-document.with-tasks > .column-resizer-right { display: none; }
   .google-editor .files { padding-left: 0; }
 }
 @media (max-width: 900px) {

@@ -45,6 +45,14 @@ Une seule page, trois zones, jamais de navigation.
 
 En haut : la recherche, le résumé de la semaine, le thème clair/sombre, l'export.
 
+Pour régler les barres latérales, **cliquer-glisser la poignée entre le journal et
+le document, ou entre le document et les tâches**. La largeur change immédiatement
+et reste mémorisée après redémarrage. Les champs de largeur et **Par défaut** restent
+disponibles dans l’en-tête. Au clavier, sélectionner une poignée avec Tab puis utiliser
+les flèches gauche/droite (10 px, ou 50 px avec Maj) ; Début/Fin donnent les limites.
+Sur une petite fenêtre, les colonnes se resserrent pour conserver la place du document.
+Les poignées disparaissent lorsque les panneaux sont empilés ou masqués.
+
 ## Écrire une entrée
 
 1. **+ Nouvelle entrée** — elle est créée à la date du jour, le curseur est dans le titre.

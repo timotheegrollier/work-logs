@@ -1,11 +1,25 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-15 · **Dernière release publiée : v0.12.0**.
-> **Lot courant :** terminé — `codex/google-docs-integrated-editor` mergé sur master et
-> publié en v0.12.0, avec le réglage de largeur des colonnes ajouté dans le même train.
+> **Mise à jour :** 2026-09-16 · **Dernière release publiée : v0.12.0**.
+> **Lot courant :** redimensionnement des barres latérales au glissement, sur les
+> sources v0.12.0, sans bump ni publication.
 > **Trois courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-09-16 — largeurs des barres latérales au glissement
+
+- Poignées entre le journal, le document et les tâches : ajustement en direct,
+  capture du pointeur jusqu’au relâchement, arrêt sur annulation du geste.
+- Largeurs mémorisées dans les mêmes préférences que les champs existants ;
+  réglage au clavier et bouton « Par défaut » conservés.
+- La grille utilise aussi ces largeurs pour Google Docs et les fenêtres moyennes,
+  tout en réservant 320 px au centre. Les poignées disparaissent lorsque les
+  panneaux sont masqués ou empilés, ainsi qu’à l’impression.
+- `ColumnResizer.tsx`, styles et tests navigateur/desktop ; aucune dépendance ajoutée.
+- Validation : `./scripts/check.sh` vert avant et après le lot (**270 tests** après),
+  dont glissement des deux côtés, annulation, mémorisation, clavier, petits écrans
+  et position de la vue Google native pendant le redimensionnement.
 
 ## Lot du 2026-09-15 (2) — éditeur Google Docs natif dans WorkLogs
 
