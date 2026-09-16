@@ -220,6 +220,22 @@ test('Google intégré : outils dans le canevas, isolation, dimensions et copie 
   await page.getByRole('button', { name: 'Afficher les tâches' }).click();
   const smaller = await page.getByLabel('Zone du document Google').boundingBox();
   expect(smaller!.width).toBeLessThan(rect!.width);
+  // Les poignées déplacent aussi la vraie WebContentsView, sans sortir de l'éditeur.
+  for (const [side, delta] of [['gauche', 60], ['droite', -50]] as const) {
+    const handle = (await page.getByRole('separator', { name: `Redimensionner la colonne de ${side}` }).boundingBox())!;
+    const before = (await page.getByLabel('Zone du document Google').boundingBox())!;
+    const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + delta, y, { steps: 6 });
+    await page.mouse.up();
+    const resized = (await page.getByLabel('Zone du document Google').boundingBox())!;
+    expect(resized.width).toBeCloseTo(before.width - Math.abs(delta), 0);
+    await expect.poll(() => application!.evaluate(({ BrowserWindow }) => {
+      const bounds = BrowserWindow.getAllWindows()[0].contentView.children.at(-1)!.getBounds();
+      return { x: bounds.x, width: bounds.width };
+    })).toEqual({ x: Math.round(resized.x), width: Math.round(resized.width) });
+  }
   // Une navigation interdite ne reçoit ni page locale, ni privilège WorkLogs.
   await googlePage.getByRole('link', { name: 'Interdit' }).click();
   expect(googlePage.url()).toContain('docs.google.com');

@@ -8,6 +8,7 @@ import { UpdateBar } from './components/UpdateBar';
 import { TaskBoard } from './components/TaskBoard';
 import { ProjectBar } from './components/ProjectBar';
 import { GoogleDrive } from './components/GoogleDrive';
+import { ColumnResizer } from './components/ColumnResizer';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
 
 export default function App() {
@@ -229,7 +230,7 @@ export default function App() {
         <button aria-expanded={showDocumentTasks} aria-controls="workspace-tasks" onClick={() => setShowDocumentTasks(!showDocumentTasks)}>{showDocumentTasks ? 'Masquer les tâches' : 'Afficher les tâches'}</button>
       </div>}
       <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showDocumentTasks ? ' with-tasks' : '')}>
-        <aside className="left no-print">
+        <aside id="workspace-journal" className="left no-print">
           <ProjectBar
             projects={state?.projects ?? []}
             selected={projectId}
@@ -257,6 +258,8 @@ export default function App() {
           }} />
         </aside>
 
+        <ColumnResizer side="left" panelId="workspace-journal" value={colLeft} onChange={setColLeft} />
+
         <main className="center">
           {entry && state ? (
             <EntryEditor
@@ -278,6 +281,8 @@ export default function App() {
             </section>
           )}
         </main>
+
+        <ColumnResizer side="right" panelId="workspace-tasks" value={colRight} onChange={setColRight} />
 
         <aside id="workspace-tasks" className="right no-print">
           <TaskBoard tasks={state?.tasks ?? []} projectId={projectId} onChanged={reload} />
