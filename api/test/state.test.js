@@ -103,8 +103,9 @@ describe('état global et recherche', () => {
 
   test('exporte toute la base en JSON', async () => {
     const project = await make.project(api, 'Export');
-    await make.entry(api, { title: 'Entrée exportée', project_id: project.id });
-    await make.task(api, { title: 'Tâche exportée' });
+    const entry = await make.entry(api, { title: 'Entrée exportée', project_id: project.id });
+    const task = await make.task(api, { title: 'Tâche exportée' });
+    await api.post(`/api/tasks/${task.id}/documents/${entry.id}`);
 
     const { status, body } = await api.get('/api/export');
     assert.equal(status, 200);
@@ -113,6 +114,10 @@ describe('état global et recherche', () => {
     assert.equal(body.entries[0].title, 'Entrée exportée');
     assert.equal(body.entries[0].content_md, '', 'l’export contient bien le corps');
     assert.equal(body.tasks.length, 1);
+    assert.equal(body.task_entries.length, 1);
+    assert.equal(body.task_entries[0].task_id, task.id);
+    assert.equal(body.task_entries[0].entry_id, entry.id);
+    assert.ok(body.task_entries[0].created_at);
   });
 });
 

@@ -25,6 +25,13 @@ const filters = () => screen.getByRole('group', { name: 'Filtrer par projet' });
 const row = (db: typeof api.db, sql: string, ...args: unknown[]) =>
   db.prepare(sql).get(...args) as Record<string, unknown>;
 
+function seedGoogleLink(db: typeof api.db, entryId: string, documentId: string) {
+  const rich = JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Google' }] }] });
+  db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(rich, entryId);
+  db.prepare(`INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json,document_title,tab_title,tab_order,tab_depth)
+    VALUES (?,?,?,?,?,?,?,?,?)`).run(entryId, documentId, 'tab-0', 'r1', rich, 'Document Google', 'Onglet', 0, 0);
+}
+
 describe('contrôles de largeur des colonnes', () => {
   test('les contrôles affichent les valeurs lues depuis localStorage', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }, { id: 'en_2', title: 'Deuxième' }] });
@@ -153,6 +160,22 @@ describe('écran unique', () => {
     render(<App />);
     expect(await screen.findByText(/API injoignable/)).toBeInTheDocument();
     api = await useRealApi(); // pour que le nettoyage de fin de test reste valide
+  });
+});
+
+describe('gestion Google Drive', () => {
+  test('garde le contenu Drive absent avant ouverture et le ferme dans un dialogue', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const manage = await screen.findByRole('button', { name: 'Gérer Google Drive' });
+    expect(screen.queryByRole('dialog', { name: 'Gestion Google Drive' })).not.toBeInTheDocument();
+    expect(screen.queryByText('La connexion Drive est disponible dans l’application desktop Linux.')).not.toBeInTheDocument();
+
+    await user.click(manage);
+    expect(await screen.findByRole('dialog', { name: 'Gestion Google Drive' })).toBeVisible();
+    await user.click(within(screen.getByRole('dialog', { name: 'Gestion Google Drive' })).getByRole('button', { name: 'Fermer' }));
+    expect(screen.queryByRole('dialog', { name: 'Gestion Google Drive' })).not.toBeInTheDocument();
   });
 });
 
@@ -338,6 +361,40 @@ describe('retrouver son travail', () => {
     await user.click(chip);
     expect(await within(journal()).findByText('Entrée libre')).toBeInTheDocument();
   });
+
+  test('persiste le projet sélectionné après remontage', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Beta' }],
+      entries: [
+        { id: 'en_a', title: 'Entrée Alpha', project_id: 'pr_a' },
+        { id: 'en_b', title: 'Entrée Beta', project_id: 'pr_b' },
+      ],
+    });
+    const first = render(<App />);
+    await user.click(await within(filters()).findByRole('button', { name: /Alpha/ }));
+    await waitFor(() => expect(within(journal()).queryByText('Entrée Beta')).not.toBeInTheDocument());
+    expect(localStorage.getItem('worklogs-project')).toBe('pr_a');
+
+    first.unmount();
+    render(<App />);
+    await waitFor(() => expect(within(filters()).getByRole('button', { name: /Alpha/ })).toHaveAttribute('aria-pressed', 'true'));
+    expect(within(journal()).getByText('Entrée Alpha')).toBeInTheDocument();
+    expect(within(journal()).queryByText('Entrée Beta')).not.toBeInTheDocument();
+  });
+
+  test('réinitialise un projet mémorisé qui n’existe plus', async () => {
+    localStorage.setItem('worklogs-project', 'pr_absent');
+    seedData(api.db, {
+      projects: [{ id: 'pr_a', name: 'Alpha' }],
+      entries: [{ id: 'en_a', title: 'Entrée Alpha', project_id: 'pr_a' }],
+    });
+    render(<App />);
+
+    await waitFor(() => expect(within(filters()).getByRole('button', { name: 'Tout' })).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(localStorage.getItem('worklogs-project')).toBe(''));
+    expect(await within(journal()).findByText('Entrée Alpha')).toBeInTheDocument();
+  });
 });
 
 describe('organiser les tâches', () => {
@@ -436,6 +493,66 @@ describe('organiser les tâches', () => {
 
     await waitFor(() => expect(row(api.db, 'SELECT * FROM tasks').status).toBe('doing'));
     expect(await within(doing).findByText('À déplacer')).toBeInTheDocument();
+  });
+
+  test('associe un document local, l’ouvre puis le retire', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      entries: [{ id: 'en_local', title: 'Note locale' }],
+      tasks: [{ id: 'tk_1', title: 'Préparer la réunion' }],
+    });
+    render(<App />);
+
+    const card = (await within(board()).findByText('Préparer la réunion')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: 'Relier un document' }));
+    await user.selectOptions(within(card).getByLabelText('Document à relier à Préparer la réunion'), 'en_local');
+    await user.click(within(card).getByRole('button', { name: 'Relier' }));
+
+    await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
+    expect(await within(board()).findByText('local')).toBeInTheDocument();
+    await user.click(within(board()).getByRole('button', { name: 'Ouvrir Note locale' }));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Note locale'));
+
+    await user.click(within(board()).getByRole('button', { name: 'Retirer Note locale de Préparer la réunion' }));
+    await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(0));
+    await waitFor(() => expect(within(board()).queryByRole('button', { name: 'Ouvrir Note locale' })).not.toBeInTheDocument());
+  });
+
+  test('associe un document Google et l’indique sur la carte', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      entries: [{ id: 'en_google', title: 'Note Google' }],
+      tasks: [{ id: 'tk_1', title: 'Relire le compte rendu' }],
+    });
+    seedGoogleLink(api.db, 'en_google', 'doc-1');
+    render(<App />);
+
+    const card = (await within(board()).findByText('Relire le compte rendu')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: 'Relier un document' }));
+    const select = within(card).getByLabelText('Document à relier à Relire le compte rendu');
+    expect(within(select).getByRole('option', { name: 'Note Google — Google' })).toBeInTheDocument();
+    await user.selectOptions(select, 'en_google');
+    await user.click(within(card).getByRole('button', { name: 'Relier' }));
+
+    await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
+    expect(await within(board()).findByText('Google')).toBeInTheDocument();
+  });
+
+  test('ouvre un document lié hors projet en basculant vers son projet', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      projects: [{ id: 'pr_task', name: 'Tâches' }, { id: 'pr_doc', name: 'Documents' }],
+      entries: [{ id: 'en_doc', title: 'Document hors projet', project_id: 'pr_doc' }],
+      tasks: [{ id: 'tk_1', title: 'Tâche active', project_id: 'pr_task' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_1', 'en_doc', new Date().toISOString());
+    localStorage.setItem('worklogs-project', 'pr_task');
+    render(<App />);
+
+    const card = (await within(board()).findByText('Tâche active')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: 'Ouvrir Document hors projet' }));
+    await waitFor(() => expect(within(filters()).getByRole('button', { name: /Documents/ })).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Document hors projet'));
   });
 });
 

@@ -105,14 +105,32 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
       taskWhere.push('title LIKE ?');
       taskArgs.push(`%${q}%`);
     }
+    const taskDocuments = db.prepare(
+      `SELECT te.task_id, e.id, e.title, e.entry_date, e.project_id, e.updated_at,
+              g.document_id google_document_id, g.tab_id google_tab_id,
+              g.document_title google_document_title, g.tab_title google_tab_title
+       FROM task_entries te
+       JOIN entries e ON e.id = te.entry_id
+       LEFT JOIN google_documents g ON g.entry_id = e.id
+       ORDER BY te.task_id, e.entry_date DESC, e.updated_at DESC, e.id ASC`
+    ).all();
+    const documentsByTask = new Map();
+    for (const document of taskDocuments) {
+      const documents = documentsByTask.get(document.task_id) || [];
+      const { task_id: _taskId, ...summary } = document;
+      documents.push(summary);
+      documentsByTask.set(document.task_id, documents);
+    }
+
     const tasks = db
       .prepare(
         `SELECT * FROM tasks
          ${taskWhere.length ? 'WHERE ' + taskWhere.join(' AND ') : ''}
-         ORDER BY position ASC, updated_at DESC
+         ORDER BY position ASC, updated_at DESC, id ASC
          LIMIT 500`
       )
-      .all(...taskArgs);
+      .all(...taskArgs)
+      .map((task) => ({ ...task, documents: documentsByTask.get(task.id) || [] }));
 
     res.json({
       projects: db
@@ -193,6 +211,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     for (const a of db.prepare('SELECT stored FROM attachments WHERE entry_id=?').all(cur.id)) {
       fs.rmSync(path.join(uploadDir, a.stored), { force: true });
     }
+    db.prepare('DELETE FROM google_documents WHERE entry_id=?').run(cur.id);
     db.prepare('DELETE FROM entries WHERE id=?').run(cur.id);
     res.json({ ok: true });
   });
@@ -300,6 +319,32 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     res.json(getTask(cur.id));
   });
 
+  app.post('/api/tasks/:id/documents/:entryId', (req, res) => {
+    const task = getTask(req.params.id);
+    if (!task) return notFound(res, 'tâche introuvable');
+    const entry = getEntry(req.params.entryId);
+    if (!entry) return notFound(res, 'entrée introuvable');
+    const existing = db.prepare('SELECT * FROM task_entries WHERE task_id=? AND entry_id=?').get(task.id, entry.id);
+    if (existing) return res.json(existing);
+    const association = { task_id: task.id, entry_id: entry.id, created_at: nowISO() };
+    db.prepare('INSERT INTO task_entries (task_id, entry_id, created_at) VALUES (?,?,?)').run(
+      association.task_id,
+      association.entry_id,
+      association.created_at
+    );
+    res.status(201).json(association);
+  });
+
+  app.delete('/api/tasks/:id/documents/:entryId', (req, res) => {
+    const task = getTask(req.params.id);
+    if (!task) return notFound(res, 'tâche introuvable');
+    const entry = getEntry(req.params.entryId);
+    if (!entry) return notFound(res, 'entrée introuvable');
+    const result = db.prepare('DELETE FROM task_entries WHERE task_id=? AND entry_id=?').run(task.id, entry.id);
+    if (!result.changes) return notFound(res, 'association introuvable');
+    res.json({ ok: true });
+  });
+
   app.delete('/api/tasks/:id', (req, res) => {
     const cur = getTask(req.params.id);
     if (!cur) return notFound(res, 'tâche introuvable');
@@ -389,6 +434,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
       projects: db.prepare('SELECT * FROM projects ORDER BY name').all(),
       entries: db.prepare('SELECT * FROM entries ORDER BY entry_date DESC').all().map(decodeEntry),
       tasks: db.prepare('SELECT * FROM tasks ORDER BY status, position').all(),
+      task_entries: db.prepare('SELECT * FROM task_entries ORDER BY task_id, entry_id').all(),
       attachments: db.prepare('SELECT * FROM attachments').all(),
     });
   });

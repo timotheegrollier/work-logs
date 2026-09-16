@@ -29,7 +29,7 @@ automatique depuis la base web dans ce lot.
 En production, `npm start` construit le front et l'API le sert elle-même : **une seule URL**
 (`http://localhost:8410`). En développement, Vite proxifie `/api` vers `:8410`.
 
-## Base — 5 tables (branche documents riches)
+## Base — 6 tables (branche documents riches)
 
 ```sql
 projects(id, name, color, created_at)
@@ -40,6 +40,9 @@ entries(id, title, content_md, content_json JSON|NULL, entry_date 'AAAA-MM-JJ',
 tasks(id, title, status ∈ {todo, doing, done}, due_date 'AAAA-MM-JJ'|NULL,
       pinned 0|1, position, project_id → projects ON DELETE SET NULL,
       created_at, updated_at)
+
+task_entries(task_id → tasks ON DELETE CASCADE, entry_id → entries ON DELETE CASCADE,
+             created_at, PRIMARY KEY(task_id, entry_id))
 
 attachments(id, filename, stored, mime, size,
             entry_id → entries ON DELETE CASCADE, created_at)
@@ -55,7 +58,8 @@ google_documents(entry_id → entries ON DELETE CASCADE PRIMARY KEY,
 - `position` : ordre dans une colonne. Après chaque déplacement ou suppression, la colonne est
   **renumérotée 0,1,2…** (`renumber()` dans `app.js`) : jamais de trou ni de doublon.
 - Supprimer un projet **détache** entrées et tâches (`SET NULL`), il ne les perd pas.
-  Supprimer une entrée supprime ses pièces jointes, lignes **et** fichiers disque.
+- Supprimer une entrée supprime ses pièces jointes, ses associations de tâches, les lignes
+  `google_documents` associées et les fichiers disque. Cela ne supprime jamais le fichier Google.
 
 `content_json` est une colonne TEXT nullable contenant le document riche sérialisé.
 La migration est additive ; les entrées Markdown gardent NULL. Pour un document riche,
@@ -91,7 +95,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | Méthode | Route | Effet |
 |---|---|---|
 | GET | `/api/health` | `{ok, ts}` |
-| GET | `/api/state?q=&project_id=` | **tout l'écran en un appel** : projets, entrées (extrait seul), tâches, compteurs |
+| GET | `/api/state?q=&project_id=` | **tout l'écran en un appel** : projets, entrées (extrait seul), tâches avec `documents`, compteurs |
 | GET | `/api/entries/:id` | l'entrée complète + ses pièces jointes |
 | POST · PUT · DELETE | `/api/entries[/:id]` | créer · modifier · supprimer |
 | POST | `/api/entries/:id/copy` | copie locale indépendante, fichiers compris |
@@ -100,18 +104,28 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET | `/api/google/documents/:id/tabs` | onglets, imbrication et compatibilité d’édition |
 | POST | `/api/entries/:id/google/push` · `pull` | envoyer ou recharger avec contrôle de révision/brouillon |
 | POST · PUT · DELETE | `/api/tasks[/:id]` | créer · modifier · supprimer |
+| POST · DELETE | `/api/tasks/:id/documents/:entryId` | associer ou retirer une entrée (locale ou Google) |
 | PATCH | `/api/tasks/:id/move` | `{status, position}` puis renumérotation |
 | POST · PUT · DELETE | `/api/projects[/:id]` | créer · renommer/recolorer · supprimer |
 | POST | `/api/uploads` | multipart `file` + `entry_id` (obligatoire) |
 | GET · DELETE | `/api/files/:stored` · `/api/attachments/:id` | télécharger · supprimer |
-| GET | `/api/export` | toute la base en JSON |
+| GET | `/api/export` | toute la base en JSON, associations `task_entries` incluses |
 
 Conventions : erreurs `{"error": "…"}` en français, `400` pour une validation, `404` pour un
 identifiant inconnu, `201` à la création. Un champ absent d'un `PUT` **n'est pas écrasé** ;
 une chaîne vide vaut NULL.
 
 `/api/state` est le cœur du front : une seule requête alimente les trois colonnes, et le front
-la rejoue après chaque mutation. C'est ce qui permet à `App.tsx` de tenir en ~170 lignes.
+la rejoue après chaque mutation. C'est ce qui permet à `App.tsx` de tenir en ~170 lignes. Chaque
+tâche porte `documents`, un tableau de résumés `{id, title, entry_date, project_id, updated_at,
+google_document_id, google_tab_id, google_document_title, google_tab_title}`. Le filtre
+`project_id` filtre les tâches (et les entrées principales), mais pas les documents associés à
+une tâche : ils restent son contexte, même s'ils appartiennent à un autre projet.
+
+Les associations sont créées avec `POST /api/tasks/:id/documents/:entryId` : `201` à la première
+création, puis `200` avec la ligne existante en cas de doublon. La suppression renvoie `200` ;
+une tâche, une entrée ou une association inconnue renvoie `404` avec un message distinct.
+`entryId` désigne aussi bien une entrée locale qu'un onglet Google importé.
 
 ## Front
 
@@ -123,8 +137,8 @@ la rejoue après chaque mutation. C'est ce qui permet à `App.tsx` de tenir en ~
 | `components/EntryList.tsx` | journal groupé par jour, extrait sur une ligne |
 | `components/EntryEditor.tsx` | titre, date, projet, Écrire/Lire, enregistrement auto, pièces jointes |
 | `components/RichEditor.tsx` | éditeur Tiptap et barre de mise en forme |
-| `components/GoogleDrive.tsx` | panneau Drive repliable, configuration et documents autorisés |
-| `components/TaskBoard.tsx` | ajout rapide, 3 colonnes, glisser-déposer HTML5, édition en place |
+| `components/GoogleDrive.tsx` | dialogue Drive dédié, configuration et documents autorisés |
+| `components/TaskBoard.tsx` | ajout rapide, 3 colonnes, glisser-déposer HTML5, édition en place, associations de documents |
 | `components/ProjectBar.tsx` | pastilles de filtre + panneau de gestion repliable |
 | `styles.css` | thèmes clair/sombre par variables, typographie du document, feuille d'impression |
 

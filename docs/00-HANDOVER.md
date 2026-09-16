@@ -1,11 +1,28 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-16 · **Version : v0.13.0**.
-> **Lot courant :** redimensionnement des barres latérales au glissement, fusionné
+> **Mise à jour :** 2026-09-16 · **Version publiée : v0.13.0** · **prochaine : v0.14.0**.
+> **Lot courant :** associations tâches-documents, projet mémorisé et gestion Google Drive en dialogue.
+> **Validation :** `./scripts/check.sh` vert après le lot : 105 tests API, 98 front, 32 desktop unitaires,
+> 16 scripts, 24 navigateur et 10 desktop e2e.
+>
+> **Lot précédent :** redimensionnement des barres latérales au glissement, fusionné
 > sur master avec la correction du focus clavier Google de la v0.12.1.
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-09-16 — associations, projet courant et Google Drive séparé
+
+- `task_entries` relie plusieurs tâches à plusieurs entrées, qu'elles soient locales ou des onglets Google.
+  `/api/state` renvoie les résumés des documents associés ; les associations sont exportées et nettoyées
+  par cascade lors de la suppression d'une tâche ou d'une entrée.
+- Chaque carte de tâche affiche ses documents de contexte, leur origine, un accès direct au centre,
+  le retrait et un sélecteur **Relier un document**.
+- Le projet actif est mémorisé dans `localStorage`. Un projet supprimé ou inconnu revient à **Tout**.
+- Google Drive n'occupe plus la liste du journal : **Gérer Google Drive** ouvre un dialogue dédié
+  pour OAuth, sélection, création, liste et déconnexion. Les entrées Google restent des documents
+  normaux du journal et leur suppression locale ne contacte jamais Google.
+- Aucune dépendance ajoutée. Tests API, front, navigateur, desktop et build verts.
 
 ## Lot du 2026-09-16 — largeurs des barres latérales au glissement
 

@@ -16,7 +16,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
-  const [projectId, setProjectId] = useState('');
+  const [projectId, setProjectId] = useState(readProject);
   // L'entrée ouverte survit au rechargement et au redémarrage : on retrouve le
   // document qu'on éditait, au lieu de retomber sur « le plus récent ». C'est
   // aussi ce qui rend les recettes déterministes — elles pariaient jusqu'ici sur
@@ -38,6 +38,10 @@ export default function App() {
     if (selectedId) localStorage.setItem(SELECTED_KEY, selectedId);
     else localStorage.removeItem(SELECTED_KEY);
   }, [selectedId]);
+
+  useEffect(() => {
+    localStorage.setItem(PROJECT_KEY, projectId);
+  }, [projectId]);
 
   useEffect(() => {
     const unsubscribe = window.worklogsDesktop?.onBeforeClose(flushPendingSaves);
@@ -101,6 +105,12 @@ export default function App() {
   }, [reload]);
 
   useEffect(() => {
+    if (state && projectId && !state.projects.some((project) => project.id === projectId)) {
+      setProjectId('');
+    }
+  }, [state, projectId]);
+
+  useEffect(() => {
     if (!selectedId) {
       setEntry(null);
       return;
@@ -135,6 +145,15 @@ export default function App() {
   const isGoogleDocument = Boolean(entry?.google_sync);
 
   const stats = state?.stats;
+
+  const openDocument = useCallback((entryId: string) => {
+    const summary = state?.entries.find((candidate) => candidate.id === entryId)
+      ?? state?.tasks.flatMap((task) => task.documents ?? []).find((candidate) => candidate.id === entryId);
+    if (summary && summary.project_id !== projectId) setProjectId(summary.project_id ?? '');
+    setFreshEntry(false);
+    selectedRef.current = entryId;
+    setSelectedId(entryId);
+  }, [projectId, state]);
 
   return (
     <div className="app">
@@ -251,10 +270,10 @@ export default function App() {
           />
           <GoogleDrive onOpen={(opened) => {
             const sequence = ++reloadSequence.current;
-            setSearch(''); setQuery(''); setProjectId(''); setFreshEntry(false);
+            setSearch(''); setQuery(''); setFreshEntry(false);
             selectedRef.current = opened.id;
             setSelectedId(opened.id); setEntry(opened);
-            void api.state().then(next => { if (sequence === reloadSequence.current) setState(next); }).catch(() => {});
+            void api.state('', projectId).then(next => { if (sequence === reloadSequence.current) setState(next); }).catch(() => {});
           }} />
         </aside>
 
@@ -285,7 +304,13 @@ export default function App() {
         <ColumnResizer side="right" panelId="workspace-tasks" value={colRight} onChange={setColRight} />
 
         <aside id="workspace-tasks" className="right no-print">
-          <TaskBoard tasks={state?.tasks ?? []} projectId={projectId} onChanged={reload} />
+          <TaskBoard
+            tasks={state?.tasks ?? []}
+            entries={state?.entries ?? []}
+            projectId={projectId}
+            onOpenDocument={openDocument}
+            onChanged={reload}
+          />
         </aside>
       </div>
     </div>
@@ -293,10 +318,16 @@ export default function App() {
 }
 
 const SELECTED_KEY = 'worklogs-entry';
+const PROJECT_KEY = 'worklogs-project';
 
 function readSelected() {
   if (typeof localStorage === 'undefined') return null;
   return localStorage.getItem(SELECTED_KEY);
+}
+
+function readProject() {
+  if (typeof localStorage === 'undefined') return '';
+  return localStorage.getItem(PROJECT_KEY) || '';
 }
 
 function readTheme() {

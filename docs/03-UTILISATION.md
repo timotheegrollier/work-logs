@@ -1,12 +1,12 @@
 # 📖 WorkLogs — guide d'utilisation
 
-> Ce guide décrit le socle web. Le desktop Linux est un prototype **non livré** :
+> Ce guide décrit le socle web. Le desktop Linux est publié depuis la v0.13.0 :
 > [état et reprise](06-DESKTOP-CICD.md). Il se lance avec `npm run desktop` et utilise un
 > dossier de données distinct. Les paquets exploratoires ne sont pas des releases validées.
 
 ## Les onglets Google Docs (2026-09-15)
 
-Dans **Google Drive**, cliquer sur un document ouvre tous ses onglets. La liste verticale
+Dans **Gérer Google Drive**, ouvrir le dialogue dédié puis cliquer sur un document ouvre tous ses onglets. La liste verticale
 à côté de la page conserve les sous-onglets indentés ; la recherche apparaît à partir
 de six onglets. Les flèches haut/bas déplacent le focus, Entrée ouvre l’onglet. Le dernier
 onglet est retenu au redémarrage. **Afficher les tâches** rouvre le panneau latéral.
@@ -39,9 +39,9 @@ Une seule page, trois zones, jamais de navigation.
 
 | Zone | Ce qu'on y fait |
 |---|---|
-| **Gauche — Journal** | filtrer par projet, créer une entrée, retrouver les précédentes (groupées par jour) |
+| **Gauche — Journal** | filtrer par projet, créer une entrée, retrouver les précédentes (groupées par jour), ouvrir la gestion Google Drive |
 | **Centre — Écriture** | écrire l'entrée ouverte, la relire, l'imprimer, y joindre des fichiers |
-| **Droite — Tâches** | ajouter, avancer, terminer |
+| **Droite — Tâches** | ajouter, avancer, terminer, relier les documents de contexte |
 
 En haut : la recherche, le résumé de la semaine, le thème clair/sombre, l'export.
 
@@ -112,11 +112,19 @@ ses fichiers.
 - **Modifier** : cliquer sur le titre ouvre le nom et l'échéance. `Entrée` valide, `Échap` annule.
 - **★** met la tâche en avant (liseré coloré à gauche). C'est la seule notion de priorité.
 - Une échéance dépassée s'affiche en rouge, et le compteur « en retard » apparaît en haut.
+- **Relier un document** ouvre la liste des entrées disponibles. Choisir une entrée locale ou un onglet Google puis cliquer sur **Relier** ; chaque document lié reste visible sur la carte avec son origine.
+- Cliquer sur le titre d'un document lié l'ouvre au centre. Le bouton ✕ retire seulement l'association, sans supprimer le document. Une même entrée peut fournir le contexte de plusieurs tâches.
 
 ## Projets
 
 Les pastilles en haut à gauche filtrent **le journal et les tâches en même temps** : un clic sur
-« Chantier » et l'écran entier ne parle plus que de ce chantier. Recliquer enlève le filtre.
+« Chantier » et l'écran entier ne parle plus que de ce chantier. Recliquer enlève le filtre ; le dernier
+projet sélectionné est retenu au prochain démarrage. Si le projet a été supprimé, WorkLogs revient à
+« Tout ».
+
+Les documents associés restent le contexte d'une tâche même s'ils appartiennent à un autre projet.
+Supprimer une entrée Google dans WorkLogs ne supprime jamais le fichier Google distant ; cela retire
+seulement sa copie locale, y compris si le fichier est déjà absent ou dans la corbeille Drive.
 
 **Gérer les projets** (dépliant sous les pastilles) permet d'en créer, de les renommer, de
 changer leur couleur, de les supprimer. Supprimer un projet ne supprime **rien** : les entrées
@@ -126,6 +134,13 @@ et les tâches restent, simplement détachées.
 
 La recherche en haut cherche dans les **titres et le corps** des entrées, et dans les titres des
 tâches. Elle se combine avec le filtre projet.
+
+## Gérer Google Drive
+
+Le bouton **Gérer Google Drive** ouvre un dialogue séparé de la liste des entrées locales. Toute la
+gestion Drive s'y trouve : configuration OAuth, connexion, choix des fichiers autorisés, création,
+recherche, ouverture et déconnexion. Fermer le dialogue ne ferme pas le document actuellement ouvert
+au centre.
 
 ## Sauvegarder
 

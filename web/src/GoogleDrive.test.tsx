@@ -63,7 +63,7 @@ test('ouvre un document autorisé dans WorkLogs puis permet de déconnecter Driv
   const disconnect = vi.spyOn(api, 'disconnectGoogle').mockResolvedValue({ ...connected, connected: false });
   const onOpen = vi.fn();
   render(<GoogleDrive onOpen={onOpen} />);
-  fireEvent.click(screen.getByRole('button', { name: /Google Drive/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Gérer Google Drive' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Document partagé' }));
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(entry));
   expect(open).toHaveBeenCalledWith('doc-1');
@@ -99,7 +99,7 @@ test('crée un Google Docs nommé et l’ouvre immédiatement dans l’éditeur'
   const create = vi.spyOn(api, 'createGoogleDocument').mockResolvedValue(entry);
   const onOpen = vi.fn();
   render(<GoogleDrive onOpen={onOpen} />);
-  fireEvent.click(screen.getByRole('button', { name: /Google Drive/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Gérer Google Drive' }));
   const button = await screen.findByRole('button', { name: 'Créer un Google Docs' });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
@@ -117,7 +117,7 @@ test('une API désactivée affiche un lien d’activation, sans prétendre que l
   const list = vi.spyOn(api, 'googleDocuments').mockRejectedValueOnce(new ApiError('API Drive désactivée', 'GOOGLE_API_DISABLED', help))
     .mockResolvedValue({ files: [{ id: 'doc-1', name: 'Retrouvé', modifiedTime: '' }] });
   render(<GoogleDrive onOpen={() => {}} />);
-  fireEvent.click(screen.getByRole('button', { name: /Google Drive/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Gérer Google Drive' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('API Drive désactivée');
   expect(screen.getByRole('link', { name: 'Activer l’API dans Google Cloud' })).toHaveAttribute('href', help);
   expect(screen.queryByText(/Aucun document autorisé/)).not.toBeInTheDocument();
@@ -136,7 +136,7 @@ test('ouvre directement tous les onglets, y compris ceux signalés incompatibles
   const open = vi.spyOn(api, 'openGoogleDocument').mockResolvedValue(entry);
   const onOpen = vi.fn();
   render(<GoogleDrive onOpen={onOpen} />);
-  fireEvent.click(screen.getByRole('button', { name: /Google Drive/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Gérer Google Drive' }));
   const file = await screen.findByRole('button', { name: 'Document partagé' });
   await waitFor(() => expect(file).toBeEnabled());
   fireEvent.click(file);

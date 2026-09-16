@@ -85,8 +85,8 @@ describe('migration V1 → V2', () => {
       assert.equal(tables.includes(gone), false, `${gone} devrait être supprimée`);
     }
     assert.deepEqual(
-      ['attachments', 'entries', 'projects', 'tasks'].filter((t) => tables.includes(t)).sort(),
-      ['attachments', 'entries', 'projects', 'tasks']
+      ['attachments', 'entries', 'projects', 'task_entries', 'tasks'].filter((t) => tables.includes(t)).sort(),
+      ['attachments', 'entries', 'projects', 'task_entries', 'tasks']
     );
   });
 
@@ -98,6 +98,10 @@ describe('migration V1 → V2', () => {
     );
     assert.deepEqual(db.prepare('PRAGMA foreign_key_list(tasks)').all().map((f) => f.table), ['projects']);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_list(attachments)').all().map((f) => f.table), ['entries']);
+    assert.deepEqual(
+      db.prepare('PRAGMA foreign_key_list(task_entries)').all().map((f) => f.table).sort(),
+      ['entries', 'tasks']
+    );
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), [], 'aucune référence cassée');
   });
 
@@ -163,6 +167,13 @@ describe('migration V1 → V2', () => {
   test('l’amorçage ne réécrit pas par-dessus les données reprises', () => {
     assert.equal(one('SELECT COUNT(*) n FROM projects').n, 2);
     assert.equal(one("SELECT COUNT(*) n FROM entries WHERE id='en_welcome'").n, 0);
+  });
+
+  test('crée l’index de recherche des associations', () => {
+    assert.equal(
+      one("SELECT COUNT(*) n FROM sqlite_master WHERE type='index' AND name='idx_task_entries_entry'").n,
+      1
+    );
   });
 
   test('rouvrir la base migrée ne change plus rien', () => {

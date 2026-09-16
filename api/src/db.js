@@ -47,6 +47,12 @@ CREATE TABLE IF NOT EXISTS attachments (
   entry_id TEXT REFERENCES entries(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS task_entries (
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  entry_id TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (task_id, entry_id)
+);
 `;
 
 // Séparés des tables : ils portent sur des colonnes V2, donc ne peuvent être
@@ -55,6 +61,7 @@ const INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(entry_date DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, position);
 CREATE INDEX IF NOT EXISTS idx_attachments_entry ON attachments(entry_id);
+CREATE INDEX IF NOT EXISTS idx_task_entries_entry ON task_entries(entry_id);
 `;
 
 const hasTable = (db, name) =>

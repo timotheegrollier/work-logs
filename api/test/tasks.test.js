@@ -116,6 +116,74 @@ describe('tâches', () => {
     assert.equal(res.body.status, 'done');
   });
 
+  test('associe des entrées locales et Google, même hors du projet de la tâche', async () => {
+    const taskProject = await make.project(api, 'Projet tâche');
+    const documentProject = await make.project(api, 'Projet documents');
+    const local = await make.entry(api, { title: 'Compte rendu local', project_id: documentProject.id });
+    const google = await make.entry(api, { title: 'Onglet Google', project_id: documentProject.id });
+    api.db.prepare(`INSERT INTO google_documents
+      (entry_id, document_id, tab_id, revision_id, synced_content_json, document_title, tab_title)
+      VALUES (?,?,?,?,?,?,?)`).run(google.id, 'google-doc', 'tab-1', 'r1', '{}', 'Document Google', 'Onglet 1');
+    const task = await make.task(api, { project_id: taskProject.id });
+
+    let res = await api.post(`/api/tasks/${task.id}/documents/${local.id}`);
+    assert.equal(res.status, 201);
+    assert.equal(res.body.task_id, task.id);
+    assert.equal(res.body.entry_id, local.id);
+    const firstCreatedAt = res.body.created_at;
+
+    res = await api.post(`/api/tasks/${task.id}/documents/${google.id}`);
+    assert.equal(res.status, 201);
+    assert.equal((await api.post(`/api/tasks/${task.id}/documents/${local.id}`)).status, 200);
+    assert.equal((await api.post(`/api/tasks/${task.id}/documents/${local.id}`)).body.created_at, firstCreatedAt);
+
+    const state = await api.get(`/api/state?project_id=${taskProject.id}`);
+    assert.equal(state.status, 200);
+    assert.equal(state.body.tasks.length, 1);
+    assert.deepEqual(state.body.tasks[0].documents.map((document) => document.id).sort(), [local.id, google.id].sort());
+    const googleSummary = state.body.tasks[0].documents.find((document) => document.id === google.id);
+    assert.deepEqual(googleSummary, {
+      id: google.id,
+      title: 'Onglet Google',
+      entry_date: google.entry_date,
+      project_id: documentProject.id,
+      updated_at: google.updated_at,
+      google_document_id: 'google-doc',
+      google_tab_id: 'tab-1',
+      google_document_title: 'Document Google',
+      google_tab_title: 'Onglet 1',
+    });
+  });
+
+  test('refuse les associations vers une tâche ou une entrée inconnue', async () => {
+    const entry = await make.entry(api);
+    const task = await make.task(api);
+    assert.equal((await api.post(`/api/tasks/tk_nope/documents/${entry.id}`)).status, 404);
+    assert.equal((await api.post(`/api/tasks/${task.id}/documents/en_nope`)).status, 404);
+    assert.equal((await api.del(`/api/tasks/tk_nope/documents/${entry.id}`)).status, 404);
+    assert.equal((await api.del(`/api/tasks/${task.id}/documents/en_nope`)).status, 404);
+  });
+
+  test('retire une association et refuse son second retrait', async () => {
+    const entry = await make.entry(api);
+    const task = await make.task(api);
+    await api.post(`/api/tasks/${task.id}/documents/${entry.id}`);
+
+    const removed = await api.del(`/api/tasks/${task.id}/documents/${entry.id}`);
+    assert.equal(removed.status, 200);
+    assert.deepEqual(removed.body, { ok: true });
+    assert.equal((await api.del(`/api/tasks/${task.id}/documents/${entry.id}`)).status, 404);
+  });
+
+  test('supprimer une tâche supprime ses associations', async () => {
+    const entry = await make.entry(api);
+    const task = await make.task(api);
+    await api.post(`/api/tasks/${task.id}/documents/${entry.id}`);
+
+    assert.equal((await api.del(`/api/tasks/${task.id}`)).status, 200);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=?').get(task.id).n, 0);
+  });
+
   test('404 sur une tâche inconnue', async () => {
     assert.equal((await api.put('/api/tasks/tk_nope', { title: 'x' })).status, 404);
     assert.equal((await api.patch('/api/tasks/tk_nope/move', { status: 'done' })).status, 404);

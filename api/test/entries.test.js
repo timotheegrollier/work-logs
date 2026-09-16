@@ -90,6 +90,28 @@ describe('entrées de journal', () => {
     assert.equal(res.body.error, 'titre requis');
   });
 
+  test('supprime une entrée Google et ses associations sans appel réseau', async () => {
+    let networkCalls = 0;
+    const google = { request: async () => { networkCalls += 1; throw new Error('réseau inattendu'); } };
+    const isolated = await startApi({ google });
+    try {
+      const entry = await make.entry(isolated, { title: 'Onglet à retirer' });
+      isolated.db.prepare(`INSERT INTO google_documents
+        (entry_id, document_id, tab_id, revision_id, synced_content_json, document_title, tab_title)
+        VALUES (?,?,?,?,?,?,?)`).run(entry.id, 'absent-google', 'tab-1', 'r1', '{}', 'Document absent', 'Onglet');
+      const task = await make.task(isolated);
+      assert.equal((await isolated.post(`/api/tasks/${task.id}/documents/${entry.id}`)).status, 201);
+
+      const res = await isolated.del(`/api/entries/${entry.id}`);
+      assert.equal(res.status, 200);
+      assert.equal(isolated.db.prepare('SELECT COUNT(*) n FROM google_documents WHERE entry_id=?').get(entry.id).n, 0);
+      assert.equal(isolated.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE entry_id=?').get(entry.id).n, 0);
+      assert.equal(networkCalls, 0);
+    } finally {
+      await isolated.close();
+    }
+  });
+
   test('supprime une entrée', async () => {
     const entry = await make.entry(api);
     assert.equal((await api.del(`/api/entries/${entry.id}`)).status, 200);

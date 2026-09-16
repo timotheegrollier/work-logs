@@ -103,6 +103,7 @@ export interface Task {
   project_id: string | null;
   created_at: string;
   updated_at: string;
+  documents: EntrySummary[];
 }
 export interface Attachment {
   id: string;
@@ -184,6 +185,10 @@ export const api = {
   moveTask: (id: string, status: Status, position: number) =>
     send<Task>('PATCH', `/api/tasks/${id}/move`, { status, position }),
   deleteTask: (id: string) => send<{ ok: true }>('DELETE', `/api/tasks/${id}`),
+  linkTaskDocument: (taskId: string, entryId: string) =>
+    send<{ task_id: string; entry_id: string }>('POST', `/api/tasks/${taskId}/documents/${entryId}`),
+  unlinkTaskDocument: (taskId: string, entryId: string) =>
+    send<{ ok: true }>('DELETE', `/api/tasks/${taskId}/documents/${entryId}`),
 
   createProject: (body: { name: string; color?: string }) =>
     send<Project>('POST', '/api/projects', body),
