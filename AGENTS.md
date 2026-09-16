@@ -1,5 +1,13 @@
 # WorkLogs — règles agents
 
+## Reprise actuelle — 2026-09-16
+- **v0.13.0** : poignées de redimensionnement des barres latérales, fusionnées sur
+  master avec la correction du focus clavier Google (v0.12.1).
+  `ColumnResizer.tsx`, largeurs mémorisées, grille adaptative et accès au clavier.
+  Aucune dépendance ajoutée. Course du focus dans le plan de l’éditeur riche corrigée.
+  `./scripts/check.sh` vert après fusion et correctif : **273 tests**.
+  Bilan dans `docs/00-HANDOVER.md`, publication via `docs/07-RELEASES.md`.
+
 ## Reprise actuelle — 2026-09-15
 - Lot terminé et **publié en v0.12.0** : **éditeur Google Docs natif dans WorkLogs**
   (branche `codex/google-docs-integrated-editor`, mergée), plus le réglage de largeur
@@ -11,7 +19,8 @@
   Connexion d'un compte Google *dans la vue intégrée* : **vérifiée par Timo le 15/09**.
   **Ne jamais déguiser l'`userAgent`** si Google referme ce chemin : c'est un contrôle de
   sécurité du fournisseur ; consigner le refus à la place.
-- **Trois courses e2e non élucidées** sont sorties le 15/09 et restent ouvertes :
+- **Deux courses e2e non élucidées** du 15/09 restent ouvertes (celle du plan est
+  corrigée avec test déterministe et sans retry le 16/09) :
   détail, mesures déjà faites et hypothèses **infirmées** dans `docs/00-HANDOVER.md`
   § « Ce qui reste à faire », point 0. Ne pas relancer la CI en boucle pour les masquer.
 - Lot précédent publié : **v0.10.0** (navigation verticale et synchronisation ciblée).

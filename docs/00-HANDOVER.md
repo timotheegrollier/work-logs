@@ -1,9 +1,9 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-16 · **Dernière release publiée : v0.12.0**.
-> **Lot courant :** redimensionnement des barres latérales au glissement, sur les
-> sources v0.12.0, sans bump ni publication.
-> **Trois courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
+> **Mise à jour :** 2026-09-16 · **Version : v0.13.0**.
+> **Lot courant :** redimensionnement des barres latérales au glissement, fusionné
+> sur master avec la correction du focus clavier Google de la v0.12.1.
+> **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
@@ -20,6 +20,13 @@
 - Validation : `./scripts/check.sh` vert avant et après le lot (**270 tests** après),
   dont glissement des deux côtés, annulation, mémorisation, clavier, petits écrans
   et position de la vue Google native pendant le redimensionnement.
+- Fusion avec la correction du focus clavier Google : **272 tests**, `CHECK OK`.
+  Version **0.13.0**, manifeste et lockfile synchronisés ; publication via les
+  workflows `CI Linux`, `Release Linux` et `Dépôts` décrits dans `07-RELEASES.md`.
+- La CI du merge (`35106209108`) a révélé de nouveau la course du plan de l’éditeur
+  riche. Focus rendu immédiatement après la sélection du titre ; test déterministe
+  de non-régression ajouté et réessais de cette recette retirés. Détail au point 0.
+  Validation complète après correction : **273 tests**, `CHECK OK`.
 
 ## Lot du 2026-09-15 (2) — éditeur Google Docs natif dans WorkLogs
 
@@ -109,13 +116,22 @@ contenu privé n’a été ajouté au dépôt. La connexion desktop existante a 
 
 ## Ce qui reste à faire
 
-0. **Trois courses non élucidées dans les recettes e2e** — sorties le 15/09, aucune
+0. **Deux courses encore non élucidées dans les recettes e2e** — sorties le 15/09, aucune
    reproductible en local, toutes vues sous contention CPU sur agent CI :
    | Recette | Symptôme observé |
    |---|---|
-   | `e2e/rich-document.spec.ts:134` titres 4–6 | la frappe s'insère **au début** du titre au lieu de la ligne suivante ; les deux paragraphes fusionnent |
    | `e2e/rich-document.spec.ts:87` recherche/remplacement | « Remplacer » s'applique **deux fois**, avec l'ancienne puis la nouvelle valeur (`<b>$&</b> Salut BONJOUR` au lieu de `Salut bonjour BONJOUR`) |
    | `desktop/e2e/desktop.spec.ts:105` document riche | le titre relu vaut `"Sans titrere"` au lieu de `"Sans titre"` |
+
+   **Course du plan corrigée le 16/09.** Le run `35106209108` conservait déjà les deux
+   textes fusionnés avant le rechargement. Tiptap `focus()` programme un callback dans
+   `requestAnimationFrame` : il pouvait remettre la sélection ProseMirror au début
+   après `End`, avant l’événement natif `selectionchange`. Une sonde déterministe
+   rejoue cet ordre : offset DOM **17 → 0** avant correction, **17 → 17** après.
+   Le clic du plan sélectionne maintenant le titre puis rend le focus immédiatement
+   via `editor.view.focus()`. Test dédié sans délai ni retry ; les deux réessais
+   de la recette titres 4–6 ont été retirés. Les anciennes sondes ci-dessous
+   mesuraient la bonne position **avant** son écrasement différé.
 
    Mesures déjà faites, à ne pas refaire : 36 répétitions bridées à 1 cœur après le lot
    contre 18 avant — **aucune différence significative**, le signal « 2 contre 0 » initial
@@ -124,7 +140,7 @@ contenu privé n’a été ajouté au dépôt. La connexion desktop existante a 
    bien posée (offset 0 → 17 après `End`, 3/3). La recette `titres 4–6` était déjà flaky
    sur master avant le lot (run `34968387999`, commit `4c9f506`, rattrapée au retry #1).
 
-   Les trois exigent un enchaînement **sous le frame** — remplir un champ et cliquer dans
+   Les trois symptômes avaient été observés avec un enchaînement **sous le frame** — remplir un champ et cliquer dans
    la même milliseconde, presser `End` dans le frame du clic — que Playwright produit et
    qu'un humain ne produit pas. C'est pourquoi la v0.12.0 a été publiée malgré elles.
    **Ce n'est pas une preuve qu'elles sont inatteignables à la main.**
@@ -185,7 +201,7 @@ WorkLogs/
 │   ├── preload.cjs      bridge minimal : fermeture après sauvegarde, vue Google
 │   ├── test/            tests node:test (serveur + mises à jour + OAuth + vue Google)
 │   └── e2e/            10 parcours Playwright (sources ou paquet via WORKLOGS_EXECUTABLE)
-├── e2e/                 21 parcours Playwright (web)
+├── e2e/                 24 parcours Playwright (web)
 ├── scripts/             check.sh · backup.sh · stage-desktop · verify-package ·
 │                        check-release · release-notes · blockmap  (+ 16 tests)
 ├── .github/workflows/   ci.yml · release.yml · repos.yml

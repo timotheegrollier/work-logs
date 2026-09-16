@@ -1,5 +1,8 @@
 # WorkLogs
 
+**v0.13.0 :** poignées de redimensionnement des deux barres latérales et correction
+du focus clavier Google, fusionnées sur master. Bilan dans `docs/00-HANDOVER.md`.
+
 **Lot publié en v0.12.0 : éditeur Google Docs natif** (`codex/google-docs-integrated-editor`).
 Lire `docs/08-GOOGLE-DOCS.md` : la vraie page Google s'affiche dans la colonne centrale,
 dans une vue Electron isolée ; l'autorisation OAuth des API garde le navigateur système.
@@ -30,7 +33,7 @@ au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + V
   test dans `web/src/App.test.tsx`, ou dans `e2e/` si ça dépend d'un vrai navigateur.
 - **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 99 tests API, 92 tests front,
   32 tests desktop (serveur/OAuth/mise à jour/vue Google), 16 tests des scripts de release,
-  build, 21 parcours navigateur et 10 parcours de l'application desktop — **270 tests**,
+  build, 24 parcours navigateur et 10 parcours de l'application desktop — **273 tests**,
   et finit par `CHECK OK`.
 - **Rien de nouveau sans accord** : ni dépendance, ni onglet, ni mode. La valeur de cette
   application est qu'elle tient sur un écran.
@@ -43,7 +46,7 @@ npm run desktop      # l'application Electron
 npm test             # API + front (~20 s)
 npm run test:e2e     # build + Playwright (web)
 npm run test:desktop # parcours Electron (xvfb-run si pas d'affichage)
-./scripts/check.sh   # tout, 270 tests
+./scripts/check.sh   # tout, 273 tests
 ./scripts/backup.sh  # sauvegarde base + fichiers joints
 ```
 
