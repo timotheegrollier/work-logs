@@ -192,7 +192,12 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false, d
       <strong>Plan du document</strong>
       {!headings.length && <p>Applique un style Titre pour construire le plan.</p>}
       {headings.map(heading => <button key={heading.pos} data-level={heading.level}
-        onClick={() => { editor.chain().focus().setTextSelection(heading.pos + 1).scrollIntoView().run(); }}>{heading.title}</button>)}
+        onClick={() => {
+          editor.chain().setTextSelection(heading.pos + 1).scrollIntoView().run();
+          // Le focus différé de Tiptap peut rétablir cette position après une
+          // touche End, avant que selectionchange ait actualisé ProseMirror.
+          editor.view.focus();
+        }}>{heading.title}</button>)}
     </nav>}
     {error && <p className="error no-print" role="alert">{error}</p>}
     </fieldset>

@@ -114,22 +114,36 @@ test('recherche et remplacement : casse, navigation, annulation et sauvegarde du
   await expect(content).toHaveText('Salut bonjour BONJOUR 😀');
 });
 
-/**
- * Fragilité connue, cause non établie. Après le rechargement, l'éditeur de
- * document est parfois absent (« element(s) not found ») : une autre entrée
- * s'ouvre à la place. Mesuré sur cette machine : **1 échec sur 80**, nettement
- * plus fréquent sur les agents CI, plus lents.
- *
- * Deux tentatives de correction ont été mesurées puis **abandonnées** : ouvrir
- * le document explicitement après rechargement, et attendre que le serveur ait
- * la version finale. Les deux font passer le taux à 5 sur 80 — elles ajoutent
- * une écriture de titre qui aggrave la course. La version ci-dessous est celle
- * d'origine, la moins fragile des trois.
- *
- * Réessais limités à cette recette, le temps d'élucider. Ne pas étendre.
- */
-test.describe('mise en forme avancée', () => {
-  test.describe.configure({ retries: 2 });
+test('plan : rendre le focus ne rétablit pas une ancienne position du curseur', async ({ page }) => {
+  const content = page.getByRole('textbox', { name: 'Contenu du document' });
+  await content.fill('Prochaines étapes');
+  await page.getByLabel('Style du paragraphe').selectOption('4');
+  await page.getByRole('button', { name: 'Plan du document', exact: true }).click();
+  const heading = page.getByRole('navigation', { name: 'Plan du document' }).getByRole('button', { name: 'Prochaines étapes' });
+  await heading.focus();
+  const offsets = await heading.evaluate(button => {
+    // Rejouer l'ordre observé en CI : clic, End natif, callback de focus,
+    // puis seulement selectionchange. Aucun délai arbitraire ni retry.
+    const frame = window.requestAnimationFrame;
+    const queued: FrameRequestCallback[] = [];
+    window.requestAnimationFrame = callback => { queued.push(callback); return 0; };
+    try { (button as HTMLButtonElement).click(); }
+    finally { window.requestAnimationFrame = frame; }
+    const editor = document.querySelector<HTMLElement>('[aria-label="Contenu du document"]')!;
+    editor.focus();
+    const text = editor.querySelector('h4')!.firstChild!;
+    const selection = window.getSelection()!;
+    selection.collapse(text, text.textContent!.length);
+    const before = selection.focusOffset;
+    for (const callback of queued) callback(performance.now());
+    return { before, after: selection.focusOffset };
+  });
+  expect(offsets).toEqual({ before: 17, after: 17 });
+  await content.press('Enter');
+  await page.keyboard.type('Suite');
+  await expect(content.locator('h4')).toHaveText('Prochaines étapes');
+  await expect(content.locator('p').filter({ hasText: 'Suite' })).toHaveText('Suite');
+});
 
 test('titres 4–6, plan, couleurs et effacement du format', async ({ page }, testInfo) => {
   const content = page.getByRole('textbox', { name: 'Contenu du document' });
@@ -159,7 +173,6 @@ test('titres 4–6, plan, couleurs et effacement du format', async ({ page }, te
   await page.getByRole('button', { name: 'Effacer la mise en forme' }).click();
   await expect(content.locator('h4, h6, mark, span[style]')).toHaveCount(0);
   await expect(content.locator('p').filter({ hasText: /\S/ })).toHaveCount(2);
-});
 });
 
 test('citations, code, séparateur et retraits de listes', async ({ page }) => {
