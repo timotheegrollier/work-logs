@@ -11,6 +11,7 @@ api/data/uploads/*
 .e2e-data/
 test-results/
 playwright-report/
+web/.vitest/
 
 .desktop-app/
 release/
