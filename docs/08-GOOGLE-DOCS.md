@@ -235,6 +235,30 @@ Le scope [`drive.file`](https://developers.google.com/workspace/drive/api/guides
 limite l’accès aux documents autorisés pour WorkLogs ; coller une URL n’accorde pas cet
 accès. Aucun serveur hébergé ni SDK Google supplémentaire n’est nécessaire.
 
+## Configuration de la PWA (client OAuth Web, sans serveur)
+
+La PWA parle à Google **directement depuis le navigateur** (`web/src/store/google-web.ts` :
+autorisation par code + PKCE en `fetch`, jeton d'accès en mémoire, renouvellement en
+stockage local). Le client « Web » **doit vivre dans le même projet Google Cloud que le
+client desktop** : le périmètre `drive.file` est partagé par projet, c'est ce qui rend
+les sauvegardes du PC visibles sur le téléphone (et inversement). Connexion facultative :
+sans elle, les données restent simplement sur l'appareil.
+
+1. Dans le **même projet** que le desktop, créer un client OAuth de type **Application Web**.
+2. Origines JavaScript autorisées : l'URL de la PWA
+   (`https://timotheegrollier.github.io`), plus `http://localhost:8411` pour les essais en dev.
+3. URI de redirection autorisés : `https://timotheegrollier.github.io/work-logs/app/`
+   (et `http://localhost:8411/` en dev). Aucun secret à copier : client public + PKCE.
+4. Si le projet est en mode test, ajouter ton compte Gmail aux comptes de test.
+5. Ouvrir la PWA, **Gérer Google Drive**, coller l'identifiant client
+   (`…apps.googleusercontent.com`), **Connecter Google Drive**, autoriser, puis **Charger**
+   une sauvegarde. Le contenu local est remplacé après confirmation.
+
+Limites v1 : lecture des sauvegardes + chargement complet uniquement (pas d'envoi
+mobile vers Drive, pas d'édition Google Docs sur téléphone — lots suivants). Les pièces
+jointes du PC n'ont pas de binaire sur le téléphone : leurs métadonnées sont conservées
+et leurs liens répondent « fichier introuvable » en attendant la synchronisation des photos.
+
 ## Données, confidentialité et architecture
 
 - `entries.content_json` : JSON riche sérialisé en SQLite TEXT, NULL pour les anciennes

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, googleHelpUrl, type Entry, type GoogleBackup, type GoogleFile, type GoogleStatus } from '../lib';
+import { GoogleDriveWeb } from './GoogleDriveWeb';
+
+/** PWA statique : Drive direct navigateur, sans passer par `/api`. */
+const isPwa = import.meta.env.VITE_PWA === '1';
 
 /** Gestion Drive dans une fenêtre dédiée, sans route ni onglet supplémentaire. */
 export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => void; onRestored?: () => void | Promise<void> }) {
@@ -163,7 +167,7 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
             </button>
           </div>
           <div className="drive-content">
-            {!status ? <p>Chargement…</p> : !status.available ? <p>La connexion Drive est disponible dans l’application desktop Linux.</p> : <>
+            {isPwa ? <GoogleDriveWeb onRestored={onRestored} /> : (!status ? <p>Chargement…</p> : !status.available ? <p>La connexion Drive est disponible dans l’application desktop Linux.</p> : <>
               <p>{status.connected ? 'Google Drive connecté' : status.pending ? 'Termine la connexion dans ton navigateur, puis reviens ici.' : 'Ouvre et édite tes documents Google dans WorkLogs.'}</p>
               {(!status.configured || configure) && <div className="drive-setup">
                 <p>Première connexion : crée un client OAuth de type « Application de bureau » dans Google Cloud, puis importe son fichier JSON. Active les API Google Docs, Drive et Google Picker.</p>
@@ -212,7 +216,7 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
               </>}
               {status.configured && !status.pending && <button className="ghost" type="button" disabled={busy} onClick={() => setConfigure(!configure)}>Configuration Google</button>}
               {status.secureStorage === false && <p>Le trousseau Linux doit être déverrouillé pour conserver ta connexion Google.</p>}
-            </>}
+            </>)}
             {(error || status?.error) && <p className="error" role="alert">{error || status?.error}</p>}
             {helpUrl && <a href={helpUrl} target="_blank" rel="noopener noreferrer">Activer l’API dans Google Cloud</a>}
           </div>

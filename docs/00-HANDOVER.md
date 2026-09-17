@@ -2,10 +2,12 @@
 
 > **Mise à jour :** 2026-09-18 · Version : v0.17.0.
 > **Lot courant :** socle PWA statique (manifeste, service worker versionné, base
-> relative, déploiement `app/` sur gh-pages) — lecture/écriture locales et OAuth
-> Web à venir (lots 2–5).
+> relative, déploiement `app/` sur gh-pages), backend local IndexedDB à interface
+> identique, pièces jointes hors-ligne via le SW, connexion Google directe
+> (client OAuth Web) avec lecture/chargement des sauvegardes — envoi mobile
+> et import desktop à venir (lot 4).
 > **Validation :** `./scripts/check.sh` vert sur l'arbre rebasé (base v0.17.0) :
-> 116 tests API, 125 front, 33 desktop unitaires, 23 scripts, 26 navigateur
+> 116 tests API, 140 front, 33 desktop unitaires, 23 scripts, 26 navigateur
 > et 10 desktop e2e.
 >
 > **Lot précédent :** correctif multipart Drive CRLF publié en v0.15.1 (travail conservé tel quel).
