@@ -5,7 +5,7 @@
 > relative, déploiement `app/` sur gh-pages) — lecture/écriture locales et OAuth
 > Web à venir (lots 2–5).
 > **Validation :** `./scripts/check.sh` vert sur l'arbre rebasé (base v0.17.0) :
-> 116 tests API, 104 front, 33 desktop unitaires, 19 scripts, 26 navigateur
+> 116 tests API, 125 front, 33 desktop unitaires, 19 scripts, 26 navigateur
 > et 10 desktop e2e.
 >
 > **Lot précédent :** correctif multipart Drive CRLF publié en v0.15.1 (travail conservé tel quel).

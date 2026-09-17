@@ -35,6 +35,9 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm --prefix web ci && npm --prefix web run build
+        env:
+          # La PWA utilise le backend local IndexedDB au lieu de `/api`.
+          VITE_PWA: '1'
       - name: Publier `app/` sur gh-pages
         run: |
           git clone -q --branch gh-pages --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" .pages

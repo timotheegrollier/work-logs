@@ -139,6 +139,24 @@ export default function App() {
     reload();
   };
 
+  // Même geste dans les deux backends : le distant renvoie le JSON du serveur,
+  // le local construit le blob depuis IndexedDB (PWA hors-ligne comprise).
+  const exportJson = async () => {
+    try {
+      const { filename, blob } = await api.exportBackup();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const siblingTabs = (entry?.google_sync?.tabs || state?.entries.filter(e => e.google_document_id === entry?.google_sync?.document_id && e.google_document_id) || [])
     .map(tab => ({ ...tab, ...state?.entries.find(e => e.id === tab.id) }))
     .sort((a, b) => (a.google_tab_order ?? 0) - (b.google_tab_order ?? 0));
@@ -238,9 +256,9 @@ export default function App() {
             Par défaut
           </button>
         </div>
-        <a className="ghost" href="/api/export" download="worklogs.json">
+        <button className="ghost" type="button" onClick={() => void exportJson()}>
           Exporter
-        </a>
+        </button>
       </header>
 
       {error && <p className="error banner no-print">{error}</p>}

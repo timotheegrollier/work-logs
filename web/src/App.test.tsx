@@ -787,11 +787,16 @@ describe('confort', () => {
     expect(localStorage.getItem('worklogs-theme')).toBe('light');
   });
 
-  test('propose le lien d’export de la base', async () => {
+  test('propose l’export JSON de la base', async () => {
+    const user = userEvent.setup();
     render(<App />);
-    const link = await screen.findByRole('link', { name: 'Exporter' });
-    expect(link).toHaveAttribute('href', '/api/export');
-    expect(link).toHaveAttribute('download', 'worklogs.json');
+    const button = await screen.findByRole('button', { name: 'Exporter' });
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test');
+    vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined);
+    await user.click(button);
+    await waitFor(() => expect(created).toHaveBeenCalled());
+    const blob = created.mock.calls[0][0] as Blob;
+    expect(JSON.parse(await blob.text()).entries).toHaveLength(0);
   });
 
   test('résume la semaine dans l’en-tête', async () => {

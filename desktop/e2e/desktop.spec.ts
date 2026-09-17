@@ -142,7 +142,7 @@ test('fichiers joints et export JSON fonctionnent dans l’application empaquet�
 
   const exportTarget = path.join(directory, 'export.json');
   const exportDownload = downloadNext(exportTarget);
-  await page.getByRole('link', { name: 'Exporter' }).click();
+  await page.getByRole('button', { name: 'Exporter' }).click();
   await exportDownload;
   expect(JSON.parse(fs.readFileSync(exportTarget, 'utf8')).entries[0].title).toBe('Comment ça marche');
 });

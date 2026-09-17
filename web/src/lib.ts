@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/core';
+import { localApi } from './store/localApi';
 export type Status = 'todo' | 'doing' | 'done';
 export type Priority = 'low' | 'normal' | 'high';
 export const PRIORITIES: { id: Priority; label: string }[] = [
@@ -167,7 +168,7 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 const send = <T>(method: string, url: string, body?: unknown) =>
   req<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
 
-export const api = {
+export const remoteApi = {
   googleStatus: () => req<GoogleStatus>('/api/google/status'),
   configureGoogle: (configuration: unknown) => send<GoogleStatus>('POST', '/api/google/configure', configuration),
   connectGoogle: () => send<GoogleStatus>('POST', '/api/google/connect'),
@@ -214,6 +215,11 @@ export const api = {
 
   deleteAttachment: (id: string) => send<{ ok: true }>('DELETE', `/api/attachments/${id}`),
   fileUrl: (stored: string) => `/api/files/${stored}`,
+  async exportBackup() {
+    const res = await fetch('/api/export');
+    if (!res.ok) throw new ApiError((await res.json().catch(() => null))?.error || 'export impossible');
+    return { filename: 'worklogs.json', blob: await res.blob() };
+  },
   async upload(file: File, entryId: string) {
     const form = new FormData();
     form.append('file', file);
@@ -223,6 +229,15 @@ export const api = {
     return res.json() as Promise<Attachment>;
   },
 };
+
+/** Contrat partagé par le serveur Express et le backend local du navigateur. */
+export type Api = typeof remoteApi;
+
+/**
+ * PWA statique (`VITE_PWA=1`, déploiement gh-pages) : backend local IndexedDB,
+ * même interface, donc mêmes écrans sans divergence.
+ */
+export const api: Api = import.meta.env.VITE_PWA === '1' ? localApi : remoteApi;
 
 // ---------------------------------------------------------------- helpers
 
