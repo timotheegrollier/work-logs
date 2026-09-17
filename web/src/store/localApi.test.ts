@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { ApiError } from '../lib';
-import { localApi, setLocalDatabase } from './localApi';
+import { importLocalBackup, localApi, setLocalDatabase } from './localApi';
 import { createMemoryDatabase } from './storage';
 
 beforeEach(() => {
@@ -154,6 +154,33 @@ describe('projets et fichiers', () => {
     expect(backup.entries.map((e: { id: string }) => e.id)).toContain('en_welcome');
     expect(backup.tasks).toHaveLength(3);
     expect(JSON.stringify(backup)).not.toContain('données');
+  });
+});
+
+describe('import de sauvegarde', () => {
+  test('aller-retour export puis import sur base vide', async () => {
+    const id = await projectId('Atelier');
+    const entry = await localApi.createEntry({ title: 'Devis', project_id: id });
+    const task = await localApi.createTask({ title: 'Relire', project_id: id });
+    await localApi.linkTaskDocument(task.id, entry.id);
+    await localApi.upload(new File(['x'], 'note.txt', { type: 'text/plain' }), entry.id);
+    const { blob } = await localApi.exportBackup();
+
+    setLocalDatabase(createMemoryDatabase());
+    const result = await importLocalBackup(JSON.parse(await blob.text()));
+    expect(result).toEqual({ ok: true, projects: 3, entries: 2, tasks: 4 });
+    const state = await localApi.state();
+    expect(state.entries.map((e) => e.title)).toContain('Devis');
+    expect(state.tasks.find((t) => t.title === 'Relire')?.documents.map((d) => d.id)).toEqual([entry.id]);
+    const imported = await localApi.entry(entry.id);
+    expect(imported.attachments).toHaveLength(1);
+    expect(imported.attachments[0].filename).toBe('note.txt');
+  });
+
+  test('sauvegarde invalide refusée sans rien écrire', async () => {
+    await expect(importLocalBackup({ version: 999 })).rejects.toThrow('Version de sauvegarde');
+    expect((await localApi.state()).stats.entries).toBe(1);
+    await expect(importLocalBackup('{malformé')).rejects.toThrow();
   });
 });
 

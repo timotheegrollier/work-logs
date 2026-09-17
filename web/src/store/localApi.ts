@@ -13,6 +13,8 @@ import {
 } from '../lib';
 // @ts-expect-error — rich-document.js est du JavaScript pur partagé avec l'API (comme test/server.ts).
 import { decodeEntry, documentText, validateDocument } from '../../../api/src/rich-document.js';
+// @ts-expect-error — idem : validation 100 % pure, sans `node:sqlite`.
+import { validateBackup } from '../../../api/src/backup-format.js';
 import { createIndexedDbDatabase, createMemoryDatabase, type Database } from './storage';
 
 /**
@@ -64,7 +66,10 @@ interface ProjectRow { id: string; name: string; color: string; created_at: stri
 interface LinkRow { id: string; task_id: string; entry_id: string; created_at: string }
 interface AttachmentRow {
   id: string; filename: string; stored: string; mime: string; size: number;
-  entry_id: string; created_at: string; blob: Blob;
+  entry_id: string; created_at: string;
+  /** Absent après l'import d'une sauvegarde desktop (binaires sur le PC) : le
+   * lot 4 téléchargera les photos ; le SW répond 404 en attendant. */
+  blob?: Blob;
 }
 interface GoogleRow {
   entry_id: string; document_id: string; tab_id: string; revision_id: string;
@@ -538,6 +543,35 @@ export const localApi: Api = {
     return { filename: 'worklogs.json', blob: new Blob([JSON.stringify(backup)], { type: 'application/json' }) };
   },
 };
+
+/**
+ * Remplace le contenu local par une sauvegarde validée — miroir de
+ * `restoreBackup` (`api/src/backup.js`), sans transaction (un seul
+ * utilisateur) mais avec validation préalable : rien n'est écrit si elle échoue.
+ */
+export async function importLocalBackup(input: unknown): Promise<{ ok: true; projects: number; entries: number; tasks: number }> {
+  const data = validateBackup(input) as {
+    projects: ProjectRow[]; entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; created_at: string; updated_at: string }[];
+    tasks: TaskRow[]; task_entries: { task_id: string; entry_id: string; created_at: string }[];
+    google_documents: GoogleRow[]; attachments: { id: string; filename: string; stored: string; mime: string; size: number; entry_id: string; created_at: string }[];
+  };
+  const t = await tables();
+  const byName = { projects: t.projects, entries: t.entries, tasks: t.tasks, task_entries: t.links, google_documents: t.google, attachments: t.attachments };
+  for (const name of ['task_entries', 'google_documents', 'attachments', 'tasks', 'entries', 'projects'] as const) {
+    await byName[name].clear();
+  }
+  for (const project of data.projects) await t.projects.put(project);
+  for (const entry of data.entries) {
+    await t.entries.put({ ...entry, content_json: entry.content_json ? JSON.stringify(entry.content_json) : null });
+  }
+  for (const task of data.tasks) await t.tasks.put(task);
+  for (const document of data.google_documents) await t.google.put(document);
+  for (const file of data.attachments) await t.attachments.put(file);
+  for (const link of data.task_entries) {
+    await t.links.put({ id: linkId(link.task_id, link.entry_id), ...link });
+  }
+  return { ok: true, projects: data.projects.length, entries: data.entries.length, tasks: data.tasks.length };
+}
 
 function rowAsTask(row: TaskRow): Task {
   return { ...row, documents: [] };
