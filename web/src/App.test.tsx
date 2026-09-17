@@ -534,12 +534,13 @@ describe('organiser les tâches', () => {
     render(<App />);
 
     const card = (await within(board()).findByText('Préparer la réunion')).closest('.card') as HTMLElement;
-    await user.click(within(card).getByRole('button', { name: 'Relier un document' }));
-    await user.selectOptions(within(card).getByLabelText('Document à relier à Préparer la réunion'), 'en_local');
-    await user.click(within(card).getByRole('button', { name: 'Relier' }));
+    await user.click(within(card).getByRole('button', { name: /Lier des documents/ }));
+    await user.click(within(card).getByRole('checkbox', { name: 'Lier Note locale à Préparer la réunion' }));
+    await user.click(within(card).getByRole('button', { name: /Relier la sélection/ }));
 
     await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
-    expect(await within(board()).findByText('local')).toBeInTheDocument();
+    expect(await within(board()).findByRole('button', { name: 'Ouvrir Note locale' })).toBeInTheDocument();
+    expect(board().textContent).toMatch(/local ·/);
     await user.click(within(board()).getByRole('button', { name: 'Ouvrir Note locale' }));
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Note locale'));
 
@@ -558,14 +559,45 @@ describe('organiser les tâches', () => {
     render(<App />);
 
     const card = (await within(board()).findByText('Relire le compte rendu')).closest('.card') as HTMLElement;
-    await user.click(within(card).getByRole('button', { name: 'Relier un document' }));
-    const select = within(card).getByLabelText('Document à relier à Relire le compte rendu');
-    expect(within(select).getByRole('option', { name: 'Note Google — Google' })).toBeInTheDocument();
-    await user.selectOptions(select, 'en_google');
-    await user.click(within(card).getByRole('button', { name: 'Relier' }));
+    await user.click(within(card).getByRole('button', { name: /Lier des documents/ }));
+    const picker = within(card).getByRole('checkbox', { name: 'Lier Note Google à Relire le compte rendu' });
+    expect(picker.closest('label')).toHaveTextContent('Google');
+    await user.click(picker);
+    await user.click(within(card).getByRole('button', { name: /Relier la sélection/ }));
 
     await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
-    expect(await within(board()).findByText('Google')).toBeInTheDocument();
+    expect(await within(board()).findByRole('button', { name: 'Ouvrir Note Google' })).toBeInTheDocument();
+    expect(board().textContent).toMatch(/Google ·/);
+  });
+
+  test('lie plusieurs documents d’un coup, avec recherche', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      entries: [
+        { id: 'en_1', title: 'Compte rendu client' },
+        { id: 'en_2', title: 'Devis atelier' },
+        { id: 'en_3', title: 'Note interne' },
+      ],
+      tasks: [{ id: 'tk_1', title: 'Préparer le dossier' }],
+    });
+    render(<App />);
+
+    const card = (await within(board()).findByText('Préparer le dossier')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: /Lier des documents/ }));
+
+    // La recherche restreint la liste sans perdre la sélection.
+    await user.type(within(card).getByLabelText('Rechercher un document à lier à Préparer le dossier'), 'devis');
+    expect(within(card).queryByRole('checkbox', { name: /Compte rendu client/ })).not.toBeInTheDocument();
+    await user.click(within(card).getByRole('checkbox', { name: 'Lier Devis atelier à Préparer le dossier' }));
+    await user.clear(within(card).getByLabelText('Rechercher un document à lier à Préparer le dossier'));
+    await user.click(within(card).getByRole('checkbox', { name: 'Lier Note interne à Préparer le dossier' }));
+
+    await user.click(within(card).getByRole('button', { name: 'Relier la sélection (2)' }));
+
+    await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(2));
+    expect(await within(card).findByText('📎 2 documents')).toBeInTheDocument();
+    expect(await within(card).findByRole('button', { name: 'Ouvrir Devis atelier' })).toBeInTheDocument();
+    expect(await within(card).findByRole('button', { name: 'Ouvrir Note interne' })).toBeInTheDocument();
   });
 
   test('ouvre un document lié hors projet en basculant vers son projet', async () => {

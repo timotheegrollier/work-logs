@@ -113,10 +113,16 @@ function TaskCard({
 }) {
   const [form, setForm] = useState({ title: task.title, due_date: task.due_date ?? '' });
   const [linking, setLinking] = useState(false);
-  const [selectedDocumentId, setSelectedDocumentId] = useState('');
+  const [filter, setFilter] = useState('');
+  const [selected, setSelected] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
   const linkedDocuments = task.documents ?? [];
   const linkedIds = new Set(linkedDocuments.map((document) => document.id));
   const availableDocuments = entries.filter((entry) => !linkedIds.has(entry.id));
+  const query = filter.trim().toLowerCase();
+  const visibleDocuments = query
+    ? availableDocuments.filter((entry) => entry.title.toLowerCase().includes(query))
+    : availableDocuments;
   const done = task.status === 'done';
   const late = isOverdue(task);
 
@@ -132,15 +138,27 @@ function TaskCard({
   };
 
   const startLinking = () => {
-    setSelectedDocumentId(availableDocuments[0]?.id ?? '');
+    setFilter('');
+    setSelected([]);
     setLinking(true);
   };
 
-  const linkDocument = async () => {
-    if (!selectedDocumentId) return;
-    await api.linkTaskDocument(task.id, selectedDocumentId);
-    setLinking(false);
-    onChanged();
+  const toggleSelected = (id: string) => {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((candidate) => candidate !== id) : [...prev, id]));
+  };
+
+  const linkSelected = async () => {
+    if (selected.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      await Promise.all(selected.map((id) => api.linkTaskDocument(task.id, id)));
+      setLinking(false);
+      setSelected([]);
+      setFilter('');
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
   };
 
   const unlinkDocument = async (entryId: string) => {
@@ -149,26 +167,38 @@ function TaskCard({
   };
 
   const documentControls = (
-    <>
+    <div className="card-documents">
       {linkedDocuments.length > 0 && (
         <div className="task-documents" aria-label={`Documents liés à ${task.title}`}>
+          <p className="task-documents-title" aria-hidden="true">
+            <span>📎 {linkedDocuments.length} document{linkedDocuments.length > 1 ? 's' : ''}</span>
+          </p>
           {linkedDocuments.map((document) => {
-            const source = isGoogleDocument(document) ? 'Google' : 'local';
+            const google = isGoogleDocument(document);
             return (
               <div className="task-document" key={document.id}>
+                <span className={'task-document-icon' + (google ? ' is-google' : '')} aria-hidden="true">
+                  {google ? 'G' : '📄'}
+                </span>
                 <button
                   className="task-document-open"
                   type="button"
                   aria-label={`Ouvrir ${document.title}`}
+                  title={`${document.title} — ${dayLabel(document.entry_date)}`}
                   onClick={() => onOpenDocument(document.id)}
                 >
-                  {document.title}
+                  <span className="task-document-title">{document.title}</span>
+                  <span className="task-document-meta">
+                    <span className="task-document-source">{google ? 'Google' : 'local'}</span>
+                    {' · '}
+                    {dayLabel(document.entry_date)}
+                  </span>
                 </button>
-                <span className="task-document-source">{source}</span>
                 <button
                   className="icon"
                   type="button"
                   aria-label={`Retirer ${document.title} de ${task.title}`}
+                  title={`Retirer ${document.title}`}
                   onClick={() => void unlinkDocument(document.id)}
                 >
                   ✕
@@ -179,38 +209,87 @@ function TaskCard({
         </div>
       )}
       {linking ? (
-        <div className="document-linker" aria-label={`Relier un document à ${task.title}`}>
-          <label>
-            Document à relier
-            <select
-              aria-label={`Document à relier à ${task.title}`}
-              value={selectedDocumentId}
-              disabled={availableDocuments.length === 0}
-              onChange={(event) => setSelectedDocumentId(event.target.value)}
-            >
-              {availableDocuments.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.title} — {isGoogleDocument(entry) ? 'Google' : 'local'}
-                </option>
-              ))}
-            </select>
-          </label>
-          {availableDocuments.length === 0 && <p className="empty">Tous les documents sont déjà liés.</p>}
+        <div className="document-linker" aria-label={`Lier des documents à ${task.title}`}>
+          <div className="document-linker-head">
+            <strong>Lier des documents</strong>
+            <span className="document-linker-count">
+              {selected.length > 0 ? `${selected.length} sélectionné${selected.length > 1 ? 's' : ''}` : `${availableDocuments.length} disponible${availableDocuments.length > 1 ? 's' : ''}`}
+            </span>
+          </div>
+          {availableDocuments.length > 0 && (
+            <input
+              type="search"
+              aria-label={`Rechercher un document à lier à ${task.title}`}
+              placeholder="Rechercher…"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            />
+          )}
+          {availableDocuments.length === 0 ? (
+            <p className="empty">Tous les documents sont déjà liés.</p>
+          ) : visibleDocuments.length === 0 ? (
+            <p className="empty">Aucun document ne correspond à « {filter.trim()} ».</p>
+          ) : (
+            <ul className="document-picker">
+              {visibleDocuments.map((entry) => {
+                const checked = selected.includes(entry.id);
+                const google = isGoogleDocument(entry);
+                return (
+                  <li key={entry.id}>
+                    <label className={'picker-row' + (checked ? ' is-checked' : '')}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        aria-label={`Lier ${entry.title} à ${task.title}`}
+                        onChange={() => toggleSelected(entry.id)}
+                      />
+                      <span className="picker-title">{entry.title}</span>
+                      <span className={'picker-source' + (google ? ' is-google' : '')}>
+                        {google ? 'Google' : 'local'}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <div className="document-linker-actions">
+            {visibleDocuments.length > 1 && (
+              <>
+                <button
+                  className="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setSelected(visibleDocuments.map((entry) => entry.id))}
+                >
+                  Tout sélectionner
+                </button>
+                <button className="ghost" type="button" disabled={busy || selected.length === 0} onClick={() => setSelected([])}>
+                  Effacer
+                </button>
+              </>
+            )}
+          </div>
           <div className="card-actions">
-            <button className="ghost" type="button" disabled={!selectedDocumentId} onClick={() => void linkDocument()}>
-              Relier
+            <button
+              className="ghost primary"
+              type="button"
+              disabled={selected.length === 0 || busy}
+              onClick={() => void linkSelected()}
+            >
+              {busy ? 'Liaison…' : selected.length > 0 ? `Relier la sélection (${selected.length})` : 'Relier la sélection'}
             </button>
-            <button className="ghost" type="button" onClick={() => setLinking(false)}>
+            <button className="ghost" type="button" disabled={busy} onClick={() => setLinking(false)}>
               Annuler
             </button>
           </div>
         </div>
       ) : (
         <button className="link-document" type="button" onClick={startLinking}>
-          Relier un document
+          ＋ Lier des documents
         </button>
       )}
-    </>
+    </div>
   );
 
   if (editing) {
@@ -252,39 +331,58 @@ function TaskCard({
       onDragStart={(e) => e.dataTransfer.setData(DRAG_TYPE, task.id)}
       onDrop={onDrop}
     >
-      <input
-        type="checkbox"
-        checked={done}
-        aria-label={done ? `Rouvrir ${task.title}` : `Terminer ${task.title}`}
-        onChange={() => void patch({ status: done ? 'todo' : 'done' })}
-      />
-      <button className="card-title" type="button" onClick={onEdit} title="Modifier">
-        {task.title}
-      </button>
-      {task.due_date && (
-        <span className={'due' + (late ? ' is-late' : '')}>{dayLabel(task.due_date)}</span>
+      <div className="card-top">
+        <input
+          className="card-check"
+          type="checkbox"
+          checked={done}
+          aria-label={done ? `Rouvrir ${task.title}` : `Terminer ${task.title}`}
+          onChange={() => void patch({ status: done ? 'todo' : 'done' })}
+        />
+        <button className="card-title" type="button" onClick={onEdit} title="Modifier">
+          {task.title}
+        </button>
+        <span className="card-top-actions">
+          <button
+            className={'icon pin' + (task.pinned ? ' is-on' : '')}
+            type="button"
+            aria-label={task.pinned ? `Désépingler ${task.title}` : `Épingler ${task.title}`}
+            aria-pressed={!!task.pinned}
+            title={task.pinned ? 'Désépingler' : 'Épingler'}
+            onClick={() => void patch({ pinned: task.pinned ? 0 : 1 })}
+          >
+            ★
+          </button>
+          <button
+            className="icon"
+            type="button"
+            aria-label={`Supprimer ${task.title}`}
+            title="Supprimer"
+            onClick={async () => {
+              if (!confirm(`Supprimer « ${task.title} » ?`)) return;
+              await api.deleteTask(task.id);
+              onChanged();
+            }}
+          >
+            ✕
+          </button>
+        </span>
+      </div>
+      {(task.due_date || linkedDocuments.length > 0) && (
+        <div className="card-meta">
+          {task.due_date && (
+            <span className={'due' + (late ? ' is-late' : '')} title={late ? 'En retard' : 'Échéance'}>
+              <span aria-hidden="true">📅 </span>
+              {dayLabel(task.due_date)}
+            </span>
+          )}
+          {linkedDocuments.length > 0 && (
+            <span className="docs-count" title={`${linkedDocuments.length} document${linkedDocuments.length > 1 ? 's' : ''} lié${linkedDocuments.length > 1 ? 's' : ''}`}>
+              📎 {linkedDocuments.length}
+            </span>
+          )}
+        </div>
       )}
-      <button
-        className={'icon pin' + (task.pinned ? ' is-on' : '')}
-        type="button"
-        aria-label={task.pinned ? `Désépingler ${task.title}` : `Épingler ${task.title}`}
-        aria-pressed={!!task.pinned}
-        onClick={() => void patch({ pinned: task.pinned ? 0 : 1 })}
-      >
-        ★
-      </button>
-      <button
-        className="icon"
-        type="button"
-        aria-label={`Supprimer ${task.title}`}
-        onClick={async () => {
-          if (!confirm(`Supprimer « ${task.title} » ?`)) return;
-          await api.deleteTask(task.id);
-          onChanged();
-        }}
-      >
-        ✕
-      </button>
       {documentControls}
     </div>
   );
