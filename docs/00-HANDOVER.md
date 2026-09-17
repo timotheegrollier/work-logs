@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-16 · **Version publiée : v0.13.0** · **prochaine : v0.14.0**.
+> **Mise à jour :** 2026-09-16 · **Version : v0.14.0**.
 > **Lot courant :** associations tâches-documents, projet mémorisé et gestion Google Drive en dialogue.
 > **Validation :** `./scripts/check.sh` vert après le lot : 105 tests API, 98 front, 32 desktop unitaires,
 > 16 scripts, 24 navigateur et 10 desktop e2e.
@@ -23,6 +23,8 @@
   pour OAuth, sélection, création, liste et déconnexion. Les entrées Google restent des documents
   normaux du journal et leur suppression locale ne contacte jamais Google.
 - Aucune dépendance ajoutée. Tests API, front, navigateur, desktop et build verts.
+- Version **0.14.0** : manifeste et lockfile synchronisés ; publication via les workflows
+  `CI Linux`, `Release Linux` et `Dépôts` décrits dans `07-RELEASES.md`.
 
 ## Lot du 2026-09-16 — largeurs des barres latérales au glissement
 
