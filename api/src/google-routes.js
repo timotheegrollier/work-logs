@@ -22,10 +22,10 @@ const multipartBackup = (name, payload) => {
   });
   return {
     body: Buffer.concat([
-      Buffer.from(`--${boundary}\\r\\nContent-Type: application/json; charset=UTF-8\\r\\n\\r\\n${metadata}\\r\\n`),
-      Buffer.from(`--${boundary}\\r\\nContent-Type: application/json; charset=UTF-8\\r\\nContent-Transfer-Encoding: 8bit\\r\\n\\r\\n`),
+      Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`),
+      Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n`),
       Buffer.from(payload),
-      Buffer.from(`\\r\\n--${boundary}--\\r\\n`),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
     ]),
     contentType: `multipart/related; boundary=${boundary}`,
   };

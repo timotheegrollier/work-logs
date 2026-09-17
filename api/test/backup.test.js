@@ -39,6 +39,13 @@ describe('sauvegardes Google Drive', () => {
       assert.match(upload.options.headers['Content-Type'], /^multipart\/related; boundary=/);
       assert.ok(Buffer.isBuffer(upload.options.body));
       assert.match(upload.options.body.toString(), /worklogs_type/);
+      // Le multipart Drive exige de vrais CRLF (13,10), pas des antislashs littéraux.
+      const boundary = upload.options.headers['Content-Type'].split('boundary=')[1];
+      assert.ok(boundary && !/[\r\n]/.test(boundary));
+      assert.ok(upload.options.body.includes(Buffer.from('\r\n')), 'le corps multipart utilise des CRLF');
+      assert.ok(!upload.options.body.includes(Buffer.from('\\r\\n')), 'pas de séquence antislash-r-n littérale');
+      assert.ok(upload.options.body.subarray(0, boundary.length + 4).equals(Buffer.from(`--${boundary}\r\n`)));
+      assert.ok(upload.options.body.subarray(-boundary.length - 8).equals(Buffer.from(`\r\n--${boundary}--\r\n`)));
 
       const listed = await api.get('/api/google/backup/list');
       assert.deepEqual(listed.body.files, [exported.body]);
