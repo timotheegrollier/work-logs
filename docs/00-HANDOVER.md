@@ -1,15 +1,30 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-17 · Version : v0.15.0.
-> **Lot courant :** tâches liées aux documents et sauvegarde/restauration JSON via Google Drive.
-> **Validation :** `./scripts/check.sh` vert après le bump : 111 tests API, 102 front,
+> **Mise à jour :** 2026-09-17 · Version : v0.16.0.
+> **Lot courant :** liaison de plusieurs documents à une tâche et refonte ergonomique des cartes.
+> **Validation :** `./scripts/check.sh` vert après le bump : 111 tests API, 103 front,
 > 33 desktop unitaires, 16 scripts, 24 navigateur et 10 desktop e2e.
 >
-> **Lot précédent :** redimensionnement des barres latérales au glissement, fusionné
-> sur master avec la correction du focus clavier Google de la v0.12.1.
+> **Lot précédent :** correctif multipart Drive CRLF publié en v0.15.1 (travail conservé tel quel).
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-09-17 — plusieurs documents par tâche et cartes repensées
+
+- **＋ Lier des documents** remplace le sélecteur unique : cases à cocher avec pastille
+  `local`/`Google`, recherche instantanée, `Tout sélectionner`/`Effacer`, compteur de
+  sélection et **Relier la sélection (n)** en un seul rechargement. Aucun nouvel endpoint
+  (les `POST /api/tasks/:id/documents/:entryId` existants sont groupés), aucune dépendance.
+- Chaque document lié affiche son origine **et** sa date (`local · aujourd'hui`), son icône
+  (📄/G) et un accès direct au centre ; la carte porte un compteur `📎 n` et une méta
+  d'échéance en pastille (📅, rouge si en retard). Mise en page verticale : entête
+  (case 19 px + titre + actions 28 px), méta, documents en tuiles.
+- Rebasé sans conflit sur la v0.15.1 distante (fix multipart Drive CRLF conservé) après
+  `check.sh` vert ; fonctionnalité mergée sur master avant le bump.
+- Version **0.16.0** : bump manifeste/lockfile synchronisé et publiée via `CI Linux`
+  (`35205133501`), `Release Linux` (`35205842162`), `Dépôts` (`35205936323`) et GitHub Pages
+  (`35206234611`). Assets : DEB/RPM/AppImage, SHA256 et attestation.
 
 ## Lot du 2026-09-17 — tâches liées et sauvegarde JSON Google Drive
 
