@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { ApiError } from '../lib';
-import { importLocalBackup, localApi, setLocalDatabase } from './localApi';
+import {
+  clearLocalOutbox,
+  exportLocalOutbox,
+  importLocalBackup,
+  listPendingUploads,
+  localApi,
+  markAttachmentUploaded,
+  outboxSize,
+  readLocalOutbox,
+  setLocalDatabase,
+} from './localApi';
 import { createMemoryDatabase } from './storage';
 
 beforeEach(() => {
@@ -181,6 +191,70 @@ describe('import de sauvegarde', () => {
     await expect(importLocalBackup({ version: 999 })).rejects.toThrow('Version de sauvegarde');
     expect((await localApi.state()).stats.entries).toBe(1);
     await expect(importLocalBackup('{malformé')).rejects.toThrow();
+  });
+});
+
+describe('file d’envoi', () => {
+  test('créations et modifications suivies, suppressions retirées', async () => {
+    expect(outboxSize()).toBe(0);
+    const project = await localApi.createProject({ name: 'Suivi' });
+    const entry = await localApi.createEntry({ title: 'Brouillon', project_id: project.id });
+    const task = await localApi.createTask({ title: 'Relire' });
+    await localApi.linkTaskDocument(task.id, entry.id);
+    await localApi.updateEntry(entry.id, { title: 'Brouillon 2' });
+    const file = new File(['photo'], 'img.jpg', { type: 'image/jpeg' });
+    const saved = await localApi.upload(file, entry.id);
+    let outbox = readLocalOutbox();
+    expect(outbox.projects).toEqual([project.id]);
+    expect(outbox.entries).toEqual([entry.id]);
+    expect(outbox.tasks).toEqual([task.id]);
+    expect(outbox.attachments).toEqual([saved.id]);
+    expect(outbox.links).toHaveLength(1);
+    expect(outboxSize()).toBe(5);
+
+    await localApi.unlinkTaskDocument(task.id, entry.id);
+    await localApi.deleteAttachment(saved.id);
+    outbox = readLocalOutbox();
+    expect(outbox.links).toEqual([]);
+    expect(outbox.attachments).toEqual([]);
+    await localApi.deleteTask(task.id);
+    await localApi.deleteEntry(entry.id);
+    await localApi.deleteProject(project.id);
+    expect(outboxSize()).toBe(0);
+  });
+
+  test('export de la boîte : lignes décodées, binaires exclus', async () => {
+    const entry = await localApi.createEntry({ title: 'À envoyer' });
+    const file = new File(['pixels'], 'photo.jpg', { type: 'image/jpeg' });
+    await localApi.upload(file, entry.id);
+    const payload = await exportLocalOutbox('2026-09-18T10:00:00.000Z');
+    expect(payload.version).toBe(1);
+    expect(payload.device).toBe('pwa');
+    expect(payload.base_exported_at).toBe('2026-09-18T10:00:00.000Z');
+    expect(payload.entries.map((e) => e.title)).toContain('À envoyer');
+    expect(payload.attachments).toHaveLength(1);
+    expect(payload.attachments[0].driveFileId).toBeNull();
+    expect(JSON.stringify(payload)).not.toContain('pixels');
+  });
+
+  test('binaires en attente puis marqués envoyés', async () => {
+    const entry = await localApi.createEntry({ title: 'Photo' });
+    const file = new File(['pixels'], 'photo.jpg', { type: 'image/jpeg' });
+    const saved = await localApi.upload(file, entry.id);
+    expect((await listPendingUploads()).map((row) => row.stored)).toEqual([saved.stored]);
+    await markAttachmentUploaded(saved.stored, 'drive-abc');
+    expect(await listPendingUploads()).toEqual([]);
+    const payload = await exportLocalOutbox();
+    expect(payload.attachments[0].driveFileId).toBe('drive-abc');
+  });
+
+  test('import efface la file d’envoi', async () => {
+    await localApi.createEntry({ title: 'Local' });
+    expect(outboxSize()).toBeGreaterThan(0);
+    const { blob } = await localApi.exportBackup();
+    await importLocalBackup(JSON.parse(await blob.text()));
+    expect(outboxSize()).toBe(0);
+    clearLocalOutbox();
   });
 });
 

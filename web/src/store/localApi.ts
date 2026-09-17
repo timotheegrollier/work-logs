@@ -14,7 +14,7 @@ import {
 // @ts-expect-error — rich-document.js est du JavaScript pur partagé avec l'API (comme test/server.ts).
 import { decodeEntry, documentText, validateDocument } from '../../../api/src/rich-document.js';
 // @ts-expect-error — idem : validation 100 % pure, sans `node:sqlite`.
-import { validateBackup } from '../../../api/src/backup-format.js';
+import { OUTBOX_VERSION, validateBackup } from '../../../api/src/backup-format.js';
 import { createIndexedDbDatabase, createMemoryDatabase, type Database } from './storage';
 
 /**
@@ -70,6 +70,8 @@ interface AttachmentRow {
   /** Absent après l'import d'une sauvegarde desktop (binaires sur le PC) : le
    * lot 4 téléchargera les photos ; le SW répond 404 en attendant. */
   blob?: Blob;
+  /** Renseigné après l'envoi du binaire sur Drive (file d'envoi, lot 4). */
+  driveFileId?: string;
 }
 interface GoogleRow {
   entry_id: string; document_id: string; tab_id: string; revision_id: string;
@@ -102,6 +104,58 @@ async function tables() {
 export function setLocalDatabase(next: Database | null): void {
   backend = next;
   seeded = false;
+}
+
+// ---------------------------------------------------------------- file d'envoi
+// Créations et modifications locales à transmettre au PC via Drive (lot 4).
+// `localStorage` uniquement : jamais de binaire, juste des identifiants.
+const OUTBOX_KEY = 'worklogs-outbox';
+export interface LocalOutbox {
+  entries: string[]; tasks: string[]; links: string[]; attachments: string[]; projects: string[];
+}
+const emptyOutbox = (): LocalOutbox => ({ entries: [], tasks: [], links: [], attachments: [], projects: [] });
+
+export function readLocalOutbox(): LocalOutbox {
+  try {
+    const raw = localStorage.getItem(OUTBOX_KEY);
+    if (!raw) return emptyOutbox();
+    const parsed = JSON.parse(raw) as Partial<Record<keyof LocalOutbox, unknown>>;
+    const clean = emptyOutbox();
+    for (const kind of Object.keys(clean) as (keyof LocalOutbox)[]) {
+      if (Array.isArray(parsed[kind])) {
+        clean[kind] = (parsed[kind] as unknown[]).filter((id): id is string => typeof id === 'string');
+      }
+    }
+    return clean;
+  } catch {
+    return emptyOutbox();
+  }
+}
+
+function writeOutbox(outbox: LocalOutbox): void {
+  try {
+    localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox));
+  } catch {
+    // Stockage indisponible : l'envoi sera vide, les données restent intactes.
+  }
+}
+
+function track(kind: keyof LocalOutbox, id: string): void {
+  const outbox = readLocalOutbox();
+  if (!outbox[kind].includes(id)) {
+    outbox[kind].push(id);
+    writeOutbox(outbox);
+  }
+}
+
+function untrack(kind: keyof LocalOutbox, id: string): void {
+  const outbox = readLocalOutbox();
+  outbox[kind] = outbox[kind].filter((current) => current !== id);
+  writeOutbox(outbox);
+}
+
+export function clearLocalOutbox(): void {
+  writeOutbox(emptyOutbox());
 }
 
 /** Amorçage identique à `seed()` de `api/src/db.js` : 2 projets, le mode d'emploi, 3 tâches. */
@@ -303,6 +357,7 @@ export const localApi: Api = {
       entry_date: date, project_id: orNull(body.project_id), created_at: t, updated_at: t,
       content_json: rich ? JSON.stringify(rich) : null,
     });
+    track('entries', id);
     return fullEntry(id);
   },
 
@@ -326,6 +381,7 @@ export const localApi: Api = {
       entry_date: date, project_id: projectId, updated_at: nowISO(),
       content_json: rich ? JSON.stringify(rich) : null,
     });
+    track('entries', id);
     return fullEntry(id);
   },
 
@@ -333,9 +389,16 @@ export const localApi: Api = {
     const { entries, links, attachments, google } = await tables();
     if (!(await entries.get(id))) fail('entrée introuvable');
     await entries.remove(id);
-    for (const link of (await links.all()).filter((row) => row.entry_id === id)) await links.remove(link.id);
-    for (const file of (await attachments.all()).filter((row) => row.entry_id === id)) await attachments.remove(file.id);
+    for (const link of (await links.all()).filter((row) => row.entry_id === id)) {
+      await links.remove(link.id);
+      untrack('links', link.id);
+    }
+    for (const file of (await attachments.all()).filter((row) => row.entry_id === id)) {
+      await attachments.remove(file.id);
+      untrack('attachments', file.id);
+    }
     await google.remove(id);
+    untrack('entries', id);
     return { ok: true };
   },
 
@@ -368,6 +431,10 @@ export const localApi: Api = {
     }
     const row = (await entries.get(copyId)) as EntryRow;
     await entries.put({ ...row, content_md: rich ? documentText(rich) : markdown, content_json: rich ? JSON.stringify(rich) : null });
+    track('entries', copyId);
+    for (const file of (await attachments.all()).filter((row) => row.entry_id === copyId)) {
+      track('attachments', file.id);
+    }
     return fullEntry(copyId);
   },
 
@@ -386,6 +453,8 @@ export const localApi: Api = {
       priority: 'normal', project_id: source.project_id, created_at: time, updated_at: time,
     });
     await links.put({ id: linkId(id, source.id), task_id: id, entry_id: source.id, created_at: time });
+    track('tasks', id);
+    track('links', linkId(id, source.id));
     return taskWithDocuments(id);
   },
 
@@ -406,6 +475,7 @@ export const localApi: Api = {
       priority: priority as TaskRow['priority'], project_id: orNull(body.project_id), created_at: t, updated_at: t,
     };
     await tasks.put(row);
+    track('tasks', id);
     return rowAsTask(row);
   },
 
@@ -428,6 +498,7 @@ export const localApi: Api = {
       priority: priority as TaskRow['priority'], project_id: projectId, updated_at: nowISO(),
     };
     await tasks.put(next);
+    track('tasks', id);
     return rowAsTask(next);
   },
 
@@ -439,6 +510,7 @@ export const localApi: Api = {
     await tasks.put({ ...current, status, position: target - 0.5, updated_at: nowISO() });
     await renumber(status);
     if (current.status !== status) await renumber(current.status);
+    track('tasks', id);
     return rowAsTask((await tasks.get(id)) as TaskRow);
   },
 
@@ -446,8 +518,12 @@ export const localApi: Api = {
     const { tasks, links } = await tables();
     const current = (await tasks.get(id)) ?? fail('tâche introuvable');
     await tasks.remove(id);
-    for (const link of (await links.all()).filter((row) => row.task_id === id)) await links.remove(link.id);
+    for (const link of (await links.all()).filter((row) => row.task_id === id)) {
+      await links.remove(link.id);
+      untrack('links', link.id);
+    }
     await renumber(current.status);
+    untrack('tasks', id);
     return { ok: true };
   },
 
@@ -459,6 +535,7 @@ export const localApi: Api = {
     if (existing) return { task_id: existing.task_id, entry_id: existing.entry_id };
     const association = { id: linkId(taskId, entryId), task_id: taskId, entry_id: entryId, created_at: nowISO() };
     await links.put(association);
+    track('links', association.id);
     return { task_id: taskId, entry_id: entryId };
   },
 
@@ -468,6 +545,7 @@ export const localApi: Api = {
     if (!(await entries.get(entryId))) fail('entrée introuvable');
     if (!(await links.get(linkId(taskId, entryId)))) fail('association introuvable');
     await links.remove(linkId(taskId, entryId));
+    untrack('links', linkId(taskId, entryId));
     return { ok: true };
   },
 
@@ -477,6 +555,7 @@ export const localApi: Api = {
     if (!name) fail('nom requis');
     const row: ProjectRow = { id: uid('pr_'), name, color: str(body.color) || '#4f7cff', created_at: nowISO() };
     await projects.put(row);
+    track('projects', row.id);
     // Comme le serveur (`SELECT *`), sans les compteurs de `/api/state`.
     return row as unknown as Project;
   },
@@ -489,6 +568,7 @@ export const localApi: Api = {
     if (!name) fail('nom requis');
     const next = { ...current, name, color: pick(patch as Record<string, unknown>, 'color', current.color, (v) => str(v) || current.color) };
     await projects.put(next);
+    track('projects', id);
     return next as unknown as Project;
   },
 
@@ -503,6 +583,7 @@ export const localApi: Api = {
     for (const task of (await tasks.all()).filter((row) => row.project_id === id)) {
       await tasks.put({ ...task, project_id: null });
     }
+    untrack('projects', id);
     return { ok: true };
   },
 
@@ -510,6 +591,7 @@ export const localApi: Api = {
     const { attachments } = await tables();
     if (!(await attachments.get(id))) fail('pièce jointe introuvable');
     await attachments.remove(id);
+    untrack('attachments', id);
     return { ok: true };
   },
 
@@ -525,6 +607,7 @@ export const localApi: Api = {
       size: file.size, entry_id: entryId, created_at: nowISO(), blob: file,
     };
     await attachments.put(row);
+    track('attachments', row.id);
     return stripBlob(row);
   },
 
@@ -570,7 +653,72 @@ export async function importLocalBackup(input: unknown): Promise<{ ok: true; pro
   for (const link of data.task_entries) {
     await t.links.put({ id: linkId(link.task_id, link.entry_id), ...link });
   }
+  // Nouvelle base de référence : la file d'envoi repart de zéro.
+  clearLocalOutbox();
   return { ok: true, projects: data.projects.length, entries: data.entries.length, tasks: data.tasks.length };
+}
+
+export interface OutboxPayload {
+  version: number;
+  exported_at: string;
+  base_exported_at: string | null;
+  device: 'pwa';
+  projects: ProjectRow[];
+  entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; created_at: string; updated_at: string }[];
+  tasks: TaskRow[];
+  task_entries: { task_id: string; entry_id: string; created_at: string }[];
+  attachments: { id: string; filename: string; stored: string; mime: string; size: number; entry_id: string; created_at: string; driveFileId: string | null }[];
+}
+
+/**
+ * Construit la « boîte mobile » : créations et modifications locales depuis le
+ * dernier import, avec les métadonnées des pièces jointes (binaires envoyés
+ * séparément). Vide si rien n'a changé.
+ */
+export async function exportLocalOutbox(baseExportedAt: string | null = null): Promise<OutboxPayload> {
+  const t = await tables();
+  const outbox = readLocalOutbox();
+  const take = async <T extends { id: string }>(table: { get(key: string): Promise<T | undefined> }, ids: string[]): Promise<T[]> => {
+    const rows: T[] = [];
+    for (const id of ids) {
+      const row = await table.get(id);
+      if (row) rows.push(row);
+    }
+    return rows;
+  };
+  const entries = await take(t.entries, outbox.entries);
+  const tasks = await take(t.tasks, outbox.tasks);
+  const links = await take(t.links, outbox.links);
+  const files = await take(t.attachments, outbox.attachments);
+  return {
+    version: OUTBOX_VERSION,
+    exported_at: nowISO(),
+    base_exported_at: baseExportedAt,
+    device: 'pwa',
+    projects: await take(t.projects, outbox.projects),
+    entries: entries.map((row) => ({ ...row, content_json: row.content_json ? (JSON.parse(row.content_json) as RichDocument) : null })),
+    tasks,
+    task_entries: links.map(({ task_id, entry_id, created_at }) => ({ task_id, entry_id, created_at })),
+    attachments: files.map(({ blob: _blob, driveFileId, ...meta }) => ({ ...meta, driveFileId: driveFileId ?? null })),
+  };
+}
+
+export function outboxSize(outbox: LocalOutbox = readLocalOutbox()): number {
+  return outbox.entries.length + outbox.tasks.length + outbox.links.length + outbox.attachments.length + outbox.projects.length;
+}
+
+/** Pièces jointes avec binaire local en attente d'envoi sur Drive. */
+export async function listPendingUploads(): Promise<AttachmentRow[]> {
+  const { attachments } = await tables();
+  const tracked = new Set(readLocalOutbox().attachments);
+  return (await attachments.all()).filter((row) => tracked.has(row.id) && row.blob && !row.driveFileId);
+}
+
+/** Mémorise le fichier Drive d'un binaire envoyé (reprise après coupure). */
+export async function markAttachmentUploaded(stored: string, driveFileId: string): Promise<void> {
+  const { attachments } = await tables();
+  const found = (await attachments.all()).find((row) => row.stored === stored);
+  if (found) await attachments.put({ ...found, driveFileId });
 }
 
 function rowAsTask(row: TaskRow): Task {

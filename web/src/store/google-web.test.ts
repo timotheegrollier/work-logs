@@ -175,4 +175,31 @@ describe('appels Drive', () => {
     expect(await downloadWebBackup('b1')).toEqual({ version: 2 });
     await expect(downloadWebBackup('mauvais id!')).rejects.toThrow('Identifiant de document Google invalide');
   });
+
+  test('envoi multipart avec vrais CRLF, puis boîte mobile étiquetée', async () => {
+    const { uploadDriveFile, uploadOutbox } = await googleWeb();
+    await connected();
+    const calls = stubFetch(async (url, init) => {
+      expect(url).toContain('/upload/drive/v3/files?uploadType=multipart');
+      expect((init?.headers as Record<string, string>)['Content-Type']).toMatch(/^multipart\/related; boundary=/);
+      const raw = await ((init?.body as Blob).text());
+      expect(raw).toContain('\r\n');
+      expect(raw).not.toContain('\\r\\n');
+      expect(raw).toContain('worklogs_type');
+      return jsonResponse({ id: 'f1', name: 'photo.jpg' });
+    });
+    expect(await uploadDriveFile({ name: 'photo.jpg', mimeType: 'image/jpeg', data: new Blob(['pixels']), appProperties: { worklogs_type: 'attachment' } })).toEqual({ id: 'f1', name: 'photo.jpg' });
+    expect(calls).toHaveLength(1);
+    await expect(uploadDriveFile({ name: '  ', mimeType: 'image/jpeg', data: new Blob([]), appProperties: {} })).rejects.toThrow('Nom de fichier Google invalide');
+
+    stubFetch(async (_url, init) => {
+      const raw = await ((init?.body as Blob).text());
+      expect(raw).toContain('"worklogs_type":"outbox"');
+      expect(raw).toContain('"version":1');
+      return jsonResponse({ id: 'o1' });
+    });
+    const sent = await uploadOutbox({ version: 1 });
+    expect(sent.id).toBe('o1');
+    expect(sent.name).toMatch(/^WorkLogs outbox .*\.json$/);
+  });
 });

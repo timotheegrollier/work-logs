@@ -4,6 +4,8 @@ import { validateDocument } from './rich-document.js';
  *  partageable avec le front/PWA qui valide avant d'écrire en local. */
 export const BACKUP_VERSION = 2;
 export const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
+/** Version des fichiers « boîte mobile » (créations PWA à fusionner, lot 4). */
+export const OUTBOX_VERSION = 1;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES = new Set(['todo', 'doing', 'done']);
 const PRIORITIES = new Set(['low', 'normal', 'high']);

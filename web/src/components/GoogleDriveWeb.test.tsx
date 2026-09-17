@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoogleDriveWeb } from './GoogleDriveWeb';
-import { setLocalDatabase } from '../store/localApi';
+import { localApi, setLocalDatabase } from '../store/localApi';
 import { createMemoryDatabase } from '../store/storage';
 
 const CLIENT = '123456789012-abc.apps.googleusercontent.com';
@@ -74,5 +74,33 @@ describe('panneau Drive de la PWA', () => {
     await user.click(screen.getByRole('button', { name: 'Charger' }));
     expect(await screen.findByText(/Sauvegarde chargée : 1 entrée\(s\)/)).toBeInTheDocument();
     expect(onRestored).toHaveBeenCalled();
+  });
+
+  test('envoi : photo puis boîte mobile, file vidée', async () => {
+    const user = userEvent.setup();
+    const { disconnectWeb } = await import('../store/google-web');
+    disconnectWeb();
+    localStorage.setItem('worklogs-google-web-client', CLIENT);
+    localStorage.setItem('worklogs-google-web-tokens', JSON.stringify({ access_token: 'acces', expires_at: Date.now() + 3600_000 }));
+    const entry = await localApi.createEntry({ title: 'Mobile' });
+    await localApi.upload(new File(['pixels'], 'photo.jpg', { type: 'image/jpeg' }), entry.id);
+
+    const uploaded: { url: string; body: string }[] = [];
+    vi.stubGlobal('fetch', async (url: unknown, init?: RequestInit) => {
+      const body = await ((init?.body as Blob).text());
+      uploaded.push({ url: String(url), body });
+      return Response.json({ id: `drive-${uploaded.length}` });
+    });
+    render(<GoogleDriveWeb />);
+    expect(await screen.findByText(/2 modification\(s\) en attente/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Envoyer vers Drive' }));
+    expect(await screen.findByText(/Boîte envoyée dans Google Drive/)).toBeInTheDocument();
+    expect(uploaded).toHaveLength(2);
+    expect(uploaded[0].body).toContain('pixels');
+    expect(uploaded[0].body).toContain('"worklogs_type":"attachment"');
+    expect(uploaded[1].body).toContain('"worklogs_type":"outbox"');
+    expect(uploaded[1].body).toContain('Mobile');
+    expect(uploaded[1].body).toContain('"driveFileId":"drive-1"');
+    expect(await screen.findByText(/Rien à envoyer/)).toBeInTheDocument();
   });
 });

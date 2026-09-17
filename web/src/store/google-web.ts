@@ -1,4 +1,6 @@
 import { ApiError, type GoogleBackup } from '../lib';
+// @ts-expect-error — backup-format.js est du JavaScript pur partagé avec l'API.
+import { OUTBOX_VERSION } from '../../../api/src/backup-format.js';
 
 /**
  * Connexion directe à Google depuis le navigateur (PWA, sans serveur) : OAuth
@@ -290,4 +292,40 @@ export async function downloadWebBackup(id: string): Promise<unknown> {
   } catch {
     fail('Le contenu de cette sauvegarde Google est invalide.');
   }
+}
+
+/**
+ * Envoie un binaire sur Drive (multipart `related`, vrais CRLF comme
+ * `multipartBackup` côté serveur). Les photos de la PWA partent ainsi, une
+ * par une, avant le JSON qui les référence.
+ */
+export async function uploadDriveFile({ name, mimeType, data, appProperties }: {
+  name: string; mimeType: string; data: Blob; appProperties: Record<string, string>;
+}): Promise<{ id: string; name: string }> {
+  if (!name.trim() || name.length > 240) fail('Nom de fichier Google invalide.');
+  const boundary = `worklogs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const metadata = JSON.stringify({ name, mimeType, appProperties });
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`,
+    `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+    data,
+    `\r\n--${boundary}--\r\n`,
+  ]);
+  const result = (await webGoogleRequest(
+    '/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name',
+    { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body }
+  )) as { id?: string; name?: string };
+  const id = result?.id ?? fail('Google n’a pas confirmé l’envoi du fichier.');
+  return { id, name: result?.name || name };
+}
+
+/** Envoie la boîte mobile (JSON v1) : le PC la fusionnera sans rien écraser. */
+export async function uploadOutbox(payload: { version: number }): Promise<{ id: string; name: string }> {
+  const name = `WorkLogs outbox ${new Date().toISOString().replace(/[T:.]/g, '-').replace(/Z$/, '')}.json`;
+  return uploadDriveFile({
+    name,
+    mimeType: 'application/json',
+    data: new Blob([JSON.stringify(payload)], { type: 'application/json' }),
+    appProperties: { worklogs_type: 'outbox', worklogs_version: String(OUTBOX_VERSION) },
+  });
 }

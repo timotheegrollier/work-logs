@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { googleHelpUrl, type GoogleBackup } from '../lib';
-import { importLocalBackup } from '../store/localApi';
+import { clearLocalOutbox, exportLocalOutbox, importLocalBackup, listPendingUploads, markAttachmentUploaded, outboxSize } from '../store/localApi';
 import {
   beginWebLogin,
   disconnectWeb,
@@ -9,6 +9,8 @@ import {
   handleRedirectCallback,
   listWebBackups,
   setWebClientId,
+  uploadDriveFile,
+  uploadOutbox,
   webGoogleStatus,
 } from '../store/google-web';
 
@@ -23,6 +25,7 @@ export function GoogleDriveWeb({ onRestored }: { onRestored?: () => void | Promi
   const [savedClientId, setSavedClientId] = useState(getWebClientId());
   const [connected, setConnected] = useState(webGoogleStatus().connected);
   const [backups, setBackups] = useState<GoogleBackup[]>([]);
+  const [pending, setPending] = useState(outboxSize());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [helpUrl, setHelpUrl] = useState('');
@@ -41,6 +44,7 @@ export function GoogleDriveWeb({ onRestored }: { onRestored?: () => void | Promi
     } catch (e) {
       showError(e);
     } finally {
+      setPending(outboxSize());
       setBusy(false);
     }
   };
@@ -95,6 +99,26 @@ export function GoogleDriveWeb({ onRestored }: { onRestored?: () => void | Promi
       const result = await importLocalBackup(data);
       setMessage(`Sauvegarde chargée : ${result.entries} entrée(s), ${result.tasks} tâche(s).`);
       await onRestored?.();
+    });
+  };
+
+  const envoyer = async () => {
+    await run(async () => {
+      // 1. Binaires en attente (photos), un par un : le JSON les référence ensuite.
+      for (const row of await listPendingUploads()) {
+        if (!row.blob) continue;
+        const uploaded = await uploadDriveFile({
+          name: row.filename,
+          mimeType: row.mime || 'application/octet-stream',
+          data: row.blob,
+          appProperties: { worklogs_type: 'attachment', worklogs_version: '1' },
+        });
+        await markAttachmentUploaded(row.stored, uploaded.id);
+      }
+      // 2. Boîte mobile : le PC la fusionnera sans rien écraser.
+      const sent = await uploadOutbox(await exportLocalOutbox());
+      clearLocalOutbox();
+      setMessage(`Boîte envoyée dans Google Drive : ${sent.name}`);
     });
   };
 
@@ -166,6 +190,17 @@ export function GoogleDriveWeb({ onRestored }: { onRestored?: () => void | Promi
           ) : (
             <p className="drive-hint">Aucune sauvegarde WorkLogs dans ce compte.</p>
           )}
+          <section className="drive-outbox" aria-label="Envoi vers le PC">
+            <div className="drive-subheading">
+              <div>
+                <h3>Envoi vers le PC</h3>
+                <p>{pending === 0 ? 'Rien à envoyer : tout est déjà sur Drive.' : `${pending} modification(s) en attente d’envoi.`}</p>
+              </div>
+              <button type="button" className="primary" disabled={busy || pending === 0} onClick={() => void envoyer()}>
+                Envoyer vers Drive
+              </button>
+            </div>
+          </section>
           <button
             className="ghost"
             type="button"
