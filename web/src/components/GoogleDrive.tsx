@@ -23,6 +23,8 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
   const [busy, setBusy] = useState(false);
   const [configure, setConfigure] = useState(false);
   const [backupMessage, setBackupMessage] = useState('');
+  const [outbox, setOutbox] = useState<GoogleBackup[]>([]);
+  const [outboxMessage, setOutboxMessage] = useState('');
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   const refreshFiles = async (token = '') => {
@@ -35,6 +37,10 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
   const refreshBackups = async () => {
     const result = await api.googleBackups();
     setBackups(result.files);
+  };
+  const refreshOutbox = async () => {
+    const result = await api.listOutbox();
+    setOutbox(result.files);
   };
   const showError = (e: unknown) => {
     setError((e as Error).message);
@@ -65,6 +71,7 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
       if (next.connected) {
         await refreshFiles();
         await refreshBackups();
+        await refreshOutbox();
       }
     }).catch(e => alive && showError(e)).finally(() => {
       if (alive) setBusy(false);
@@ -92,6 +99,7 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
           if (next.connected) {
             await refreshFiles();
             await refreshBackups();
+            await refreshOutbox();
           }
           if (next.error) setError(next.error);
         }
@@ -133,6 +141,16 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
     await run(async () => {
       await api.importGoogleBackup(backup.id);
       setBackupMessage(`Sauvegarde restaurée : ${backup.name}`);
+      await onRestored?.();
+    });
+  };
+  const importOutboxFile = async (box: GoogleBackup) => {
+    await run(async () => {
+      const result = await api.importOutbox(box.id);
+      setOutboxMessage(
+        `Boîte fusionnée : ${result.entries} entrée(s), ${result.tasks} tâche(s), ${result.updated} mise(s) à jour, ${result.conflicts} conflit(s) conservé(s) côté PC.`
+      );
+      await refreshOutbox();
       await onRestored?.();
     });
   };
@@ -185,6 +203,12 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
                   {backups.length > 0 ? <ul className="drive-backups-list">{backups.map(backup => <li key={backup.id}><div><strong>{backup.name}</strong><small>{backup.modifiedTime ? new Date(backup.modifiedTime).toLocaleString('fr-FR') : 'Date inconnue'}{backup.size ? ` · ${Math.round(backup.size / 1024)} Ko` : ''}</small></div><button className="ghost" type="button" disabled={busy} onClick={() => void restore(backup)}>Restaurer</button></li>)}</ul> : <p className="drive-hint">Aucune sauvegarde WorkLogs dans ce compte.</p>}
                   {backupMessage && <p className="drive-success" role="status">{backupMessage}</p>}
                 </section>
+                <section className="drive-outbox" aria-label="Boîte mobile">
+                  <div className="drive-subheading"><div><h3>Boîte mobile</h3><p>Créations du téléphone à fusionner, sans rien écraser.</p></div></div>
+                  <div className="drive-backup-actions"><button type="button" disabled={busy} onClick={() => void run(refreshOutbox)}>Actualiser la boîte mobile</button></div>
+                  {outbox.length > 0 ? <ul className="drive-backups-list">{outbox.map(box => <li key={box.id}><div><strong>{box.name}</strong><small>{box.modifiedTime ? new Date(box.modifiedTime).toLocaleString('fr-FR') : 'Date inconnue'}{box.size ? ` · ${Math.round(box.size / 1024)} Ko` : ''}</small></div><button className="ghost" type="button" disabled={busy} onClick={() => void importOutboxFile(box)}>Importer</button></li>)}</ul> : <p className="drive-hint">Aucune boîte mobile dans ce compte.</p>}
+                  {outboxMessage && <p className="drive-success" role="status">{outboxMessage}</p>}
+                </section>
                 <button className="primary" type="button" disabled={busy || status.pending} onClick={() => setCreating(!creating)}>Créer un Google Docs</button>
                 {creating && <form className="drive-create" onSubmit={event => {
                   event.preventDefault();
@@ -212,7 +236,7 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
                 {!busy && !error && loaded && !files.length && <p>Aucun document autorisé. Utilise « Choisir des documents dans Drive ».</p>}
                 {warnings.map(warning => <p key={warning} role="status">{warning}</p>)}
                 {page && <button type="button" disabled={busy} onClick={() => void run(() => refreshFiles(page))}>Voir la suite</button>}
-                <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.disconnectGoogle()); setFiles([]); setBackups([]); setLoaded(false); setCreating(false); setWarnings([]); setBackupMessage(''); })}>Déconnecter Google Drive</button>
+                <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.disconnectGoogle()); setFiles([]); setBackups([]); setOutbox([]); setLoaded(false); setCreating(false); setWarnings([]); setBackupMessage(''); setOutboxMessage(''); })}>Déconnecter Google Drive</button>
               </>}
               {status.configured && !status.pending && <button className="ghost" type="button" disabled={busy} onClick={() => setConfigure(!configure)}>Configuration Google</button>}
               {status.secureStorage === false && <p>Le trousseau Linux doit être déverrouillé pour conserver ta connexion Google.</p>}

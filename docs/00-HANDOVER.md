@@ -7,7 +7,7 @@
 > (client OAuth Web) avec lecture/chargement des sauvegardes — envoi mobile
 > et import desktop à venir (lot 4).
 > **Validation :** `./scripts/check.sh` vert sur l'arbre rebasé (base v0.17.0) :
-> 116 tests API, 140 front, 33 desktop unitaires, 23 scripts, 26 navigateur
+> 122 tests API, 147 front, 33 desktop unitaires, 23 scripts, 26 navigateur
 > et 10 desktop e2e.
 >
 > **Lot précédent :** correctif multipart Drive CRLF publié en v0.15.1 (travail conservé tel quel).

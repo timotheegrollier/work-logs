@@ -114,6 +114,9 @@ test('autorise les uploads Drive multipart et les téléchargements texte sans �
     assert.ok(Buffer.isBuffer(upload.options.body));
     const downloaded = await f.client.request('/drive/v3/files/backup-1?alt=media', { responseType: 'text' });
     assert.equal(downloaded, '{"ok":true}');
+    const binary = await f.client.request('/drive/v3/files/photo-1?alt=media', { responseType: 'arraybuffer' });
+    assert.ok(Buffer.isBuffer(binary));
+    assert.equal(JSON.parse(binary.toString('utf8')).ok, true);
   } finally { f.close(); }
 });
 

@@ -98,10 +98,14 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
     const response = await fetchImpl(url, { ...fetchOptions,
       headers: { 'Content-Type': 'application/json', ...customHeaders, Authorization: `Bearer ${await accessToken()}` },
       redirect: 'error', signal: AbortSignal.timeout(30_000) });
-    const body = responseType === 'text' ? await response.text() : await response.json().catch(() => ({}));
+    const body = responseType === 'text' ? await response.text()
+      : responseType === 'arraybuffer' ? Buffer.from(await response.arrayBuffer())
+      : await response.json().catch(() => ({}));
     if (!response.ok) {
       if (response.status === 401) { tokens = null; fs.rmSync(tokenPath, { force: true }); }
-      const errorBody = typeof body === 'string' ? (() => { try { return JSON.parse(body); } catch { return {}; } })() : body;
+      const errorBody = typeof body === 'string' ? (() => { try { return JSON.parse(body); } catch { return {}; } })()
+        : Buffer.isBuffer(body) ? (() => { try { return JSON.parse(body.toString('utf8')); } catch { return {}; } })()
+        : body;
       throw googleApiError(response.status, errorBody, apiPath, config.client_id);
     }
     return body;

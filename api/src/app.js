@@ -484,7 +484,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
   // ---------------------------------------------------------------- export
   app.get('/api/export', (_req, res) => res.json(buildBackup(db)));
 
-  registerGoogleRoutes(app, { db, google });
+  registerGoogleRoutes(app, { db, google, uploadDir });
   app.use('/api', (_req, res) => notFound(res, 'route inconnue'));
 
   // En production, l'API sert aussi le front construit : une seule URL.

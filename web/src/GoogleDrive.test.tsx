@@ -89,6 +89,22 @@ test('sauvegarde puis restaure la base depuis Google Drive', async () => {
   expect(onRestored).toHaveBeenCalledOnce();
 });
 
+test('la boîte mobile se liste et se fusionne depuis Google Drive', async () => {
+  vi.spyOn(api, 'googleStatus').mockResolvedValue(connected);
+  vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [] });
+  const box = { id: 'ob-1', name: 'WorkLogs outbox.json', modifiedTime: '2026-09-18T11:00:00.000Z', size: 99 };
+  vi.spyOn(api, 'listOutbox').mockResolvedValue({ files: [box] });
+  const importer = vi.spyOn(api, 'importOutbox').mockResolvedValue({ ok: true, projects: 0, entries: 1, tasks: 1, links: 1, attachments: 0, binaries: 0, updated: 0, conflicts: 2 });
+  const onRestored = vi.fn();
+  render(<GoogleDrive onOpen={() => {}} onRestored={onRestored} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Gérer Google Drive' }));
+  expect(await screen.findByText('WorkLogs outbox.json')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Importer' }));
+  await waitFor(() => expect(importer).toHaveBeenCalledWith('ob-1'));
+  expect(await screen.findByText(/Boîte fusionnée : 1 entrée\(s\), 1 tâche\(s\), 0 mise\(s\) à jour, 2 conflit\(s\)/)).toBeVisible();
+  expect(onRestored).toHaveBeenCalledOnce();
+});
+
 test('ouvre un document autorisé dans WorkLogs puis permet de déconnecter Drive', async () => {
   vi.spyOn(api, 'googleStatus').mockResolvedValue(connected);
   vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [{ id: 'doc-1', name: 'Document partagé', modifiedTime: '' }] });

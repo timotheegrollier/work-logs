@@ -1,9 +1,12 @@
 import { uid, nowISO, today } from './db.js';
+import fs from 'node:fs';
+import path from 'node:path';
 import { decodeEntry, documentText } from './rich-document.js';
 import { buildGoogleUpdate, documentBody, documentTabs, selectDocumentTab } from './google-document.js';
 import { mergeGoogleChanges } from './google-merge.js';
 import { buildPreservingUpdate, googlePreservedCount, importGoogleDocument as googleToDocument } from './google-preserve.js';
 import { buildBackup, MAX_BACKUP_BYTES, restoreBackup, validateBackup } from './backup.js';
+import { validateOutbox } from './backup-format.js';
 
 const blankSource = { body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } };
 const backupInfo = (file) => ({
@@ -36,6 +39,112 @@ const fileId = (value) => {
   if (typeof value !== 'string' || !/^[\w-]{1,200}$/.test(value)) fail('Identifiant de document Google invalide.');
   return value;
 };
+
+/** Réécrit les positions d'une colonne (miroir de `renumber()` dans `app.js`,
+ *  non importable ici sans cycle : toute règle s'applique des deux côtés). */
+function renumberTasks(db, status) {
+  const rows = db.prepare('SELECT id FROM tasks WHERE status=? ORDER BY position ASC, updated_at DESC').all(status);
+  const set = db.prepare('UPDATE tasks SET position=? WHERE id=?');
+  rows.forEach((row, i) => set.run(i, row.id));
+}
+
+const sameEntry = (current, next) =>
+  current.title === next.title && current.content_md === next.content_md &&
+  (current.content_json || null) === (next.content_json ? JSON.stringify(next.content_json) : null) &&
+  current.entry_date === next.entry_date && (current.project_id || null) === (next.project_id || null);
+
+const sameTask = (current, next) =>
+  current.title === next.title && current.status === next.status &&
+  (current.due_date || null) === (next.due_date || null) && current.pinned === next.pinned &&
+  current.position === next.position && current.priority === next.priority &&
+  (current.project_id || null) === (next.project_id || null);
+
+/**
+ * Fusionne une boîte mobile validée : insertions, mises à jour si la version
+ * mobile est plus récente (`updated_at`), conflits comptés sinon — jamais
+ * d'écrasement silencieux. Les binaires sont téléchargés AVANT la transaction
+ * (pas de réseau transaction ouverte) ; les fichiers écrits sont retirés en
+ * cas d'échec, comme `copyEntry` dans `app.js`.
+ */
+export async function importOutbox(db, { google, uploadDir }, data) {
+  const counts = { projects: 0, entries: 0, tasks: 0, links: 0, attachments: 0, binaries: 0, updated: 0, conflicts: 0 };
+  const pending = [];
+  for (const attachment of data.attachments) {
+    const exists = db.prepare('SELECT id FROM attachments WHERE id=?').get(attachment.id);
+    const target = path.join(uploadDir, path.basename(attachment.stored));
+    if (attachment.driveFileId && (!exists || !fs.existsSync(target))) {
+      const binary = await google.request(`/drive/v3/files/${attachment.driveFileId}?alt=media&supportsAllDrives=true`, { responseType: 'arraybuffer' });
+      pending.push({ target, content: Buffer.isBuffer(binary) ? binary : Buffer.from(binary) });
+    }
+  }
+  const written = [];
+  const touched = new Set();
+  db.exec('BEGIN');
+  try {
+    for (const project of data.projects) {
+      if (!db.prepare('SELECT id FROM projects WHERE id=?').get(project.id)) {
+        db.prepare('INSERT INTO projects (id,name,color,created_at) VALUES (?,?,?,?)').run(project.id, project.name, project.color, project.created_at);
+        counts.projects++;
+      }
+    }
+    for (const next of data.entries) {
+      const current = db.prepare('SELECT * FROM entries WHERE id=?').get(next.id);
+      const content = next.content_json ? JSON.stringify(next.content_json) : null;
+      if (!current) {
+        db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)')
+          .run(next.id, next.title, next.content_md, content, next.entry_date, next.project_id, next.created_at, next.updated_at);
+        counts.entries++;
+      } else if (next.updated_at > current.updated_at) {
+        db.prepare('UPDATE entries SET title=?,content_md=?,content_json=?,entry_date=?,project_id=?,updated_at=? WHERE id=?')
+          .run(next.title, next.content_md, content, next.entry_date, next.project_id, next.updated_at, next.id);
+        counts.updated++;
+      } else if (!sameEntry(current, next)) counts.conflicts++;
+    }
+    for (const next of data.tasks) {
+      const current = db.prepare('SELECT * FROM tasks WHERE id=?').get(next.id);
+      if (!current) {
+        db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+          .run(next.id, next.title, next.status, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.created_at, next.updated_at);
+        counts.tasks++;
+        touched.add(next.status);
+      } else if (next.updated_at > current.updated_at) {
+        db.prepare('UPDATE tasks SET title=?,status=?,due_date=?,pinned=?,position=?,priority=?,project_id=?,updated_at=? WHERE id=?')
+          .run(next.title, next.status, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.updated_at, next.id);
+        counts.updated++;
+        touched.add(current.status);
+        touched.add(next.status);
+      } else if (!sameTask(current, next)) counts.conflicts++;
+    }
+    for (const link of data.task_entries) {
+      if (!db.prepare('SELECT 1 FROM tasks WHERE id=?').get(link.task_id)) continue;
+      if (!db.prepare('SELECT 1 FROM entries WHERE id=?').get(link.entry_id)) continue;
+      if (!db.prepare('SELECT * FROM task_entries WHERE task_id=? AND entry_id=?').get(link.task_id, link.entry_id)) {
+        db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run(link.task_id, link.entry_id, link.created_at);
+        counts.links++;
+      }
+    }
+    for (const attachment of data.attachments) {
+      if (!db.prepare('SELECT id FROM attachments WHERE id=?').get(attachment.id)) {
+        db.prepare('INSERT INTO attachments (id,filename,stored,mime,size,entry_id,created_at) VALUES (?,?,?,?,?,?,?)')
+          .run(attachment.id, attachment.filename, attachment.stored, attachment.mime, attachment.size, attachment.entry_id, attachment.created_at);
+        counts.attachments++;
+      }
+    }
+    for (const status of touched) renumberTasks(db, status);
+    for (const { target, content } of pending) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+      fs.writeFileSync(target, content);
+      written.push(target);
+      counts.binaries++;
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    for (const file of written) fs.rmSync(file, { force: true });
+    throw error;
+  }
+  return { ok: true, ...counts };
+}
 export function googleLink(db, entry) {
   const link = db.prepare('SELECT * FROM google_documents WHERE entry_id=?').get(entry.id);
   return link ? {
@@ -52,7 +161,7 @@ export function googleLink(db, entry) {
   } : null;
 }
 
-export function registerGoogleRoutes(app, { db, google }) {
+export function registerGoogleRoutes(app, { db, google, uploadDir }) {
   const route = (method, url, fn) => app[method](url, (req, res, next) => {
     Promise.resolve().then(() => {
       if (!google) fail('Google Drive est disponible dans l’application desktop. Les documents locaux fonctionnent aussi dans le navigateur.', 503);
@@ -141,6 +250,30 @@ export function registerGoogleRoutes(app, { db, google }) {
   route('post', '/api/google/backup/:id/import', async (req, res) => {
     const data = await downloadBackup(req.params.id);
     res.json(restoreBackup(db, data));
+  });
+  route('get', '/api/google/outbox/list', async (_req, res) => {
+    const params = new URLSearchParams({
+      q: "appProperties has { key='worklogs_type' and value='outbox' } and trashed=false",
+      fields: 'files(id,name,modifiedTime,size,mimeType),nextPageToken',
+      orderBy: 'modifiedTime desc',
+      pageSize: '100',
+      supportsAllDrives: 'true',
+      includeItemsFromAllDrives: 'true',
+    });
+    const result = await google.request(`/drive/v3/files?${params}`);
+    res.json({ files: (result.files || []).filter(file => file.mimeType === 'application/json' || !file.mimeType).map(backupInfo) });
+  });
+  route('post', '/api/google/outbox/:id/import', async (req, res) => {
+    fileId(req.params.id);
+    const raw = await google.request(`/drive/v3/files/${req.params.id}?alt=media&supportsAllDrives=true`, { responseType: 'text' });
+    const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : typeof raw === 'string' ? raw : JSON.stringify(raw);
+    if (Buffer.byteLength(text, 'utf8') > MAX_BACKUP_BYTES) fail('La boîte mobile est trop volumineuse (20 Mo max).', 413);
+    let data;
+    try { data = validateOutbox(JSON.parse(text)); } catch (error) {
+      if (error.status) throw error;
+      fail('Le contenu de cette boîte mobile est invalide.', 422);
+    }
+    res.json(await importOutbox(db, { google, uploadDir }, data));
   });
   route('get', '/api/google/documents', async (req, res) => {
     const params = new URLSearchParams({ q: "mimeType='application/vnd.google-apps.document' and trashed=false", fields: 'files(id,name,modifiedTime),nextPageToken', orderBy: 'modifiedTime desc', pageSize: '100', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true' });

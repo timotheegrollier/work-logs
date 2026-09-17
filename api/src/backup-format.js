@@ -174,3 +174,51 @@ export function validateBackup(input) {
   return { version: BACKUP_VERSION, projects, entries, tasks, task_entries: taskEntries, google_documents: googleDocuments, attachments };
 }
 
+/**
+ * Valide une « boîte mobile » (créations PWA à fusionner, jamais d'écrasement).
+ * Les éléments reprennent exactement les formes d'une sauvegarde : la
+ * validation est déléguée à `validateBackup`, seuls l'enveloppe et les
+ * références Drive (`driveFileId`) sont vérifiés ici. Tout nouveau champ
+ * d'élément s'ajoute donc d'un seul côté.
+ */
+export function validateOutbox(input) {
+  const data = record(input, 'Boîte mobile');
+  if (data.version !== OUTBOX_VERSION) fail(`Version de boîte mobile non prise en charge (attendu : ${OUTBOX_VERSION}).`);
+  if (typeof data.device !== 'string' || !data.device.trim() || data.device.length > 100) fail('Appareil d’origine invalide.');
+  const base = data.base_exported_at === null || data.base_exported_at === undefined || data.base_exported_at === ''
+    ? null
+    : timestamp(data.base_exported_at, 'Sauvegarde d’origine');
+  if (Array.isArray(data.attachments)) {
+    for (const attachment of data.attachments) {
+      record(attachment, 'Pièce jointe');
+      const drive = attachment.driveFileId;
+      const clean = drive === null || drive === undefined || drive === '' ? null : requiredText(drive, 'Fichier Drive', 200);
+      if (clean && !/^[\w-]{1,200}$/.test(clean)) fail('Fichier Drive invalide.');
+    }
+  }
+  const backup = validateBackup({
+    version: BACKUP_VERSION,
+    projects: data.projects,
+    entries: data.entries,
+    tasks: data.tasks,
+    task_entries: data.task_entries,
+    attachments: data.attachments,
+    google_documents: [],
+  });
+  const driveIds = new Map(
+    (Array.isArray(data.attachments) ? data.attachments : []).map((attachment) => [attachment.id, attachment.driveFileId || null])
+  );
+  return {
+    version: OUTBOX_VERSION,
+    exported_at: timestamp(data.exported_at, 'Date d’envoi'),
+    base_exported_at: base,
+    device: data.device.trim(),
+    projects: backup.projects,
+    entries: backup.entries,
+    tasks: backup.tasks,
+    task_entries: backup.task_entries,
+    google_documents: [],
+    attachments: backup.attachments.map((attachment) => ({ ...attachment, driveFileId: driveIds.get(attachment.id) || null })),
+  };
+}
+

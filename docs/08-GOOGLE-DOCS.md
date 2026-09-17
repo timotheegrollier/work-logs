@@ -254,10 +254,22 @@ sans elle, les données restent simplement sur l'appareil.
    (`…apps.googleusercontent.com`), **Connecter Google Drive**, autoriser, puis **Charger**
    une sauvegarde. Le contenu local est remplacé après confirmation.
 
-Limites v1 : lecture des sauvegardes + chargement complet uniquement (pas d'envoi
-mobile vers Drive, pas d'édition Google Docs sur téléphone — lots suivants). Les pièces
-jointes du PC n'ont pas de binaire sur le téléphone : leurs métadonnées sont conservées
-et leurs liens répondent « fichier introuvable » en attendant la synchronisation des photos.
+État : lecture des sauvegardes, chargement complet et envoi (boîte mobile +
+photos) implémentés ; l'édition Google Docs sur téléphone reste un lot ultérieur.
+Les pièces jointes du PC n'ont pas de binaire sur le téléphone : leurs métadonnées
+sont conservées et leurs liens répondent « fichier introuvable » tant que la photo
+n'a pas été renvoyée depuis le mobile.
+
+## Boîte mobile (envoi PWA → fusion desktop)
+
+Dans l'autre sens, la PWA accumule ses créations dans une file d'envoi locale
+(`web/src/store/localApi.ts`, `localStorage`, jamais de binaire) et les pousse via
+**Envoyer vers Drive** : d'abord chaque photo (`appProperties worklogs_type=attachment`),
+puis un JSON `WorkLogs outbox …` (`worklogs_type=outbox`, format v1 validé par
+`validateOutbox` dans `api/src/backup-format.js`). Sur le PC, **Gérer Google Drive →
+Boîte mobile → Importer** fusionne sans écraser : insertions, mises à jour si la version
+mobile est plus récente (`updated_at`), conflits comptés et conservés côté PC, photos
+téléchargées dans `uploads/`. Le réimport est idempotent (compteurs à zéro).
 
 ## Données, confidentialité et architecture
 
