@@ -1091,6 +1091,26 @@ button:disabled {
   letter-spacing: 0.07em;
   color: var(--muted);
 }
+.history-toggle {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+}
+.history-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  border-style: solid;
+}
+.history-toggle[aria-expanded='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--accent-soft);
+}
 .task-document {
   display: flex;
   align-items: center;

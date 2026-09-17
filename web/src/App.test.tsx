@@ -634,6 +634,27 @@ describe('organiser les tâches', () => {
     await waitFor(() => expect(within(filters()).getByRole('button', { name: /Documents/ })).toHaveAttribute('aria-pressed', 'true'));
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Document hors projet'));
   });
+
+  test('les documents d’une tâche terminée sont repliés dans un historique', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      entries: [{ id: 'en_doc', title: 'Document archivé' }],
+      tasks: [{ id: 'tk_1', title: 'Tâche finie', status: 'done' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_1', 'en_doc', new Date().toISOString());
+    render(<App />);
+
+    const card = (await within(board()).findByText('Tâche finie')).closest('.card') as HTMLElement;
+    // Replié par défaut : le compteur reste visible, le document est masqué.
+    expect(within(card).getByText('📎 1 document')).toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'Ouvrir Document archivé' })).not.toBeInTheDocument();
+
+    await user.click(within(card).getByRole('button', { name: 'Afficher l’historique des documents de Tâche finie' }));
+    expect(await within(card).findByRole('button', { name: 'Ouvrir Document archivé' })).toBeInTheDocument();
+
+    await user.click(within(card).getByRole('button', { name: 'Masquer l’historique des documents de Tâche finie' }));
+    await waitFor(() => expect(within(card).queryByRole('button', { name: 'Ouvrir Document archivé' })).not.toBeInTheDocument());
+  });
 });
 
 describe('projets', () => {

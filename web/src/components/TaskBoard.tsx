@@ -125,6 +125,10 @@ function TaskCard({
     : availableDocuments;
   const done = task.status === 'done';
   const late = isOverdue(task);
+  // Les documents d'une tâche terminée sont repliés derrière un historique :
+  // la carte reste compacte, le contexte reste accessible. `null` = suivre le statut.
+  const [docsOverride, setDocsOverride] = useState<boolean | null>(null);
+  const docsExpanded = docsOverride ?? !done;
 
   const patch = async (body: Partial<Task>) => {
     await api.updateTask(task.id, body);
@@ -173,7 +177,20 @@ function TaskCard({
           <p className="task-documents-title" aria-hidden="true">
             <span>📎 {linkedDocuments.length} document{linkedDocuments.length > 1 ? 's' : ''}</span>
           </p>
-          {linkedDocuments.map((document) => {
+          {done && (
+            <button
+              className="history-toggle"
+              type="button"
+              aria-expanded={docsExpanded}
+              aria-label={`${docsExpanded ? 'Masquer' : 'Afficher'} l’historique des documents de ${task.title}`}
+              onClick={() => setDocsOverride((current) => !(current ?? !done))}
+            >
+              {docsExpanded
+                ? 'Masquer l’historique'
+                : `Historique · ${linkedDocuments.length} document${linkedDocuments.length > 1 ? 's' : ''}`}
+            </button>
+          )}
+          {docsExpanded && linkedDocuments.map((document) => {
             const google = isGoogleDocument(document);
             return (
               <div className="task-document" key={document.id}>
