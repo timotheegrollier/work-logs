@@ -24,8 +24,9 @@
   les octets des fichiers locaux ; `scripts/backup.sh` reste requis pour une migration complète.
 - Le client desktop autorise uniquement `/upload/drive/v3/` en plus des API existantes et gère les
   réponses texte pour les téléchargements. Aucun faux `userAgent`, aucune dépendance ajoutée.
-- Version **0.15.0** : bump manifeste/lockfile synchronisé ; publication via les workflows
-  `CI Linux`, `Release Linux` et `Dépôts` après le commit master.
+- Version **0.15.0** : bump manifeste/lockfile synchronisé et publiée via `CI Linux`
+  (`35196706807`), `Release Linux` (`35197256929`), `Dépôts` (`35197381827`) et GitHub Pages
+  (`35197714781`). Assets : DEB/RPM/AppImage, SHA256 et attestation.
 
 ## Lot du 2026-09-16 — associations, projet courant et Google Drive séparé
 

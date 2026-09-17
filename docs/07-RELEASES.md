@@ -1,7 +1,7 @@
 # Releases — processus complet (lire avant de publier)
 
-Dernière mise à jour : **2026-09-15**. **29 releases publiées**, de `v0.2.0` (11/09) à
-`v0.10.0` (15/09) — `gh release list` fait foi.
+Dernière mise à jour : **2026-09-17**. **34 releases publiées**, de `v0.2.0` (11/09) à
+`v0.15.0` (17/09) — `gh release list` fait foi.
 Notes de release **en anglais**, générées par `scripts/release-notes.mjs`.
 
 ## 1. Carte du pipeline
