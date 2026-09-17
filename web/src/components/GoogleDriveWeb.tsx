@@ -6,9 +6,11 @@ import {
   disconnectWeb,
   downloadWebBackup,
   getWebClientId,
+  getWebClientSecret,
   handleRedirectCallback,
   listWebBackups,
   setWebClientId,
+  setWebClientSecret,
   uploadDriveFile,
   uploadOutbox,
   webGoogleStatus,
@@ -22,6 +24,7 @@ import {
  */
 export function GoogleDriveWeb({ onRestored }: { onRestored?: () => void | Promise<void> }) {
   const [clientId, setClientId] = useState(getWebClientId());
+  const [clientSecret, setClientSecret] = useState(getWebClientSecret());
   const [savedClientId, setSavedClientId] = useState(getWebClientId());
   const [connected, setConnected] = useState(webGoogleStatus().connected);
   const [backups, setBackups] = useState<GoogleBackup[]>([]);
@@ -79,6 +82,7 @@ export function GoogleDriveWeb({ onRestored }: { onRestored?: () => void | Promi
   const saveClient = () =>
     run(async () => {
       setSavedClientId(setWebClientId(clientId));
+      setClientSecret(setWebClientSecret(clientSecret));
       setMessage('');
     });
 
@@ -143,6 +147,18 @@ export function GoogleDriveWeb({ onRestored }: { onRestored?: () => void | Promi
               onChange={(e) => setClientId(e.target.value)}
             />
           </label>
+          <label>
+            Secret client Web (exigé par Google pour un client confidentiel)
+            <input
+              type="password"
+              aria-label="Secret client Google Web"
+              placeholder="Colle le secret affiché dans Google Cloud"
+              value={clientSecret}
+              disabled={busy}
+              autoComplete="off"
+              onChange={(e) => setClientSecret(e.target.value)}
+            />
+          </label>
           <button type="button" className="primary" disabled={busy || !clientId.trim()} onClick={() => void saveClient()}>
             Enregistrer l’identifiant
           </button>
@@ -153,7 +169,7 @@ export function GoogleDriveWeb({ onRestored }: { onRestored?: () => void | Promi
           <button type="button" className="primary" disabled={busy} onClick={() => void beginWebLogin(savedClientId)}>
             Connecter Google Drive
           </button>
-          <button type="button" className="ghost" disabled={busy} onClick={() => { setSavedClientId(''); setClientId(''); }}>
+          <button type="button" className="ghost" disabled={busy} onClick={() => { setSavedClientId(''); setClientId(''); setClientSecret(''); setWebClientSecret(''); }}>
             Changer d’identifiant client
           </button>
         </div>

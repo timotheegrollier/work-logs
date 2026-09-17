@@ -16,6 +16,7 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 const CLIENT_KEY = 'worklogs-google-web-client';
+const CLIENT_SECRET_KEY = 'worklogs-google-web-secret';
 const TOKENS_KEY = 'worklogs-google-web-tokens';
 const PENDING_KEY = 'worklogs-google-web-pending';
 
@@ -55,6 +56,32 @@ export function setWebClientId(clientId: string): string {
   }
   try {
     localStorage.setItem(CLIENT_KEY, cleaned);
+  } catch {
+    fail('Stockage local indisponible : impossible de conserver la configuration Google.');
+  }
+  return cleaned;
+}
+
+/**
+ * Le secret du client « Web » (console Google Cloud → fiche du client). Google
+ * l'exige à l'échange du code pour un client confidentiel, contrairement au
+ * client desktop. Stocké localement comme les jetons, jamais affiché ni envoyé
+ * ailleurs qu'à Google.
+ */
+export function getWebClientSecret(): string {
+  try {
+    return localStorage.getItem(CLIENT_SECRET_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function setWebClientSecret(secret: string): string {
+  const cleaned = secret.trim();
+  if (cleaned && cleaned.length > 500) fail('Secret client Google invalide.');
+  try {
+    if (cleaned) localStorage.setItem(CLIENT_SECRET_KEY, cleaned);
+    else localStorage.removeItem(CLIENT_SECRET_KEY);
   } catch {
     fail('Stockage local indisponible : impossible de conserver la configuration Google.');
   }
@@ -134,18 +161,22 @@ function writeTokens(tokens: WebTokens | null): void {
 async function tokenRequest(params: Record<string, string>): Promise<WebTokens> {
   const clientId = getWebClientId();
   if (!clientId) fail('Configure d’abord l’identifiant client Google.');
+  const secret = getWebClientSecret();
   const response = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: clientId, ...params }),
+    body: new URLSearchParams({ client_id: clientId, ...(secret ? { client_secret: secret } : {}), ...params }),
   });
   const result = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
     if (result['error'] === 'invalid_grant') writeTokens(null);
+    // Détail technique en console uniquement : l'interface reste en français
+    // sans exposer le message brut (comme `desktop/google.mjs`).
+    console.warn('[worklogs] Google a refusé les jetons :', result['error'], result['error_description']);
     fail(
       result['error'] === 'invalid_grant'
         ? 'Autorisation Google expirée ou révoquée. Reconnecte Google Drive.'
-        : 'Google a refusé la connexion. Vérifie l’identifiant client et les URI de redirection.'
+        : 'Google a refusé la connexion. Vérifie l’identifiant client, le secret et les URI de redirection.'
     );
   }
   if (typeof result['access_token'] !== 'string' || !result['access_token']) fail('Réponse de connexion Google invalide.');

@@ -251,7 +251,10 @@ sans elle, les données restent simplement sur l'appareil.
    (et `http://localhost:8411/` en dev). Aucun secret à copier : client public + PKCE.
 4. Si le projet est en mode test, ajouter ton compte Gmail aux comptes de test.
 5. Ouvrir la PWA, **Gérer Google Drive**, coller l'identifiant client
-   (`…apps.googleusercontent.com`), **Connecter Google Drive**, autoriser, puis **Charger**
+   (`…apps.googleusercontent.com`) **et le secret client** (fiche du client dans
+   Google Cloud : un client « Web » est confidentiel, Google refuse l'échange du
+   code sans lui — erreur `invalid_client` visible en console, message français
+   dans l'interface), **Connecter Google Drive**, autoriser, puis **Charger**
    une sauvegarde. Le contenu local est remplacé après confirmation.
 
 État : lecture des sauvegardes, chargement complet et envoi (boîte mobile +

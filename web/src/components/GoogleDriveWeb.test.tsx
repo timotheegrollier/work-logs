@@ -39,6 +39,7 @@ describe('panneau Drive de la PWA', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Identifiant client Google invalide');
     await user.clear(screen.getByLabelText('Identifiant client Google Web'));
     await user.type(screen.getByLabelText('Identifiant client Google Web'), CLIENT);
+    await user.type(screen.getByLabelText('Secret client Google Web'), 'secret-abc');
     await user.click(screen.getByRole('button', { name: 'Enregistrer l’identifiant' }));
     expect(await screen.findByRole('button', { name: 'Connecter Google Drive' })).toBeInTheDocument();
   });

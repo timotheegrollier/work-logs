@@ -33,10 +33,16 @@ afterEach(() => {
 
 describe('configuration et PKCE', () => {
   test('identifiant client validé et conservé', async () => {
-    const { setWebClientId, getWebClientId } = await googleWeb();
+    const { setWebClientId, getWebClientId, setWebClientSecret, getWebClientSecret } = await googleWeb();
     expect(() => setWebClientId('n’importe quoi')).toThrow('Identifiant client Google invalide');
     expect(setWebClientId(`  ${CLIENT}  `)).toBe(CLIENT);
     expect(getWebClientId()).toBe(CLIENT);
+    expect(getWebClientSecret()).toBe('');
+    expect(setWebClientSecret('  secret-abc  ')).toBe('secret-abc');
+    expect(getWebClientSecret()).toBe('secret-abc');
+    expect(() => setWebClientSecret('x'.repeat(501))).toThrow('Secret client Google invalide');
+    expect(setWebClientSecret('')).toBe('');
+    expect(getWebClientSecret()).toBe('');
   });
 
   test('base64url sans remplissage, conforme RFC 4648', async () => {
@@ -86,14 +92,19 @@ describe('retour OAuth et jetons', () => {
   });
 
   test('échange du code et persistance des jetons', async () => {
-    const { setWebClientId, handleRedirectCallback, webGoogleStatus } = await googleWeb();
+    const { setWebClientId, setWebClientSecret, handleRedirectCallback, webGoogleStatus } = await googleWeb();
     setWebClientId(CLIENT);
+    setWebClientSecret('secret-abc');
     sessionStorage.setItem('worklogs-google-web-pending', JSON.stringify({ state: 's', verifier: 'v', redirectUri: 'https://pwa.test/' }));
-    stubFetch(async (url) => {
+    const calls = stubFetch(async (url, init) => {
       expect(url).toBe('https://oauth2.googleapis.com/token');
+      const body = new URLSearchParams((init?.body as URLSearchParams).toString());
+      expect(body.get('client_secret')).toBe('secret-abc');
+      expect(body.get('code_verifier')).toBe('v');
       return jsonResponse({ access_token: 'acces', refresh_token: 'renouvellement', expires_in: 3600, scope: 'https://www.googleapis.com/auth/drive.file' });
     });
     expect(await handleRedirectCallback('?code=code&state=s')).toBe(true);
+    expect(calls).toHaveLength(1);
     expect(webGoogleStatus()).toEqual({ configured: true, connected: true });
     expect(JSON.parse(localStorage.getItem('worklogs-google-web-tokens') as string).refresh_token).toBe('renouvellement');
   });
