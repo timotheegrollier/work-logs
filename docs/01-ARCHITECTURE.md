@@ -53,7 +53,8 @@ Les données locales (IndexedDB) et la connexion directe à Google (client OAuth
 projects(id, name, color, created_at)
 
 entries(id, title, content_md, content_json JSON|NULL, entry_date 'AAAA-MM-JJ',
-        project_id → projects ON DELETE SET NULL, created_at, updated_at)
+        project_id → projects ON DELETE SET NULL, archived 0|1 DEFAULT 0,
+        created_at, updated_at)
 
 tasks(id, title, status ∈ {todo, doing, done}, due_date 'AAAA-MM-JJ'|NULL,
       pinned 0|1, position, priority ∈ {low, normal, high} DEFAULT 'normal',

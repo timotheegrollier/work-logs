@@ -485,6 +485,49 @@ button:disabled {
 }
 
 .new-document { width: 100%; margin: 0 0 12px; }
+.archives {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.archives summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 10px;
+  list-style: none;
+}
+.archives summary::-webkit-details-marker {
+  display: none;
+}
+.archives summary:hover {
+  color: var(--text);
+}
+.archives summary .count {
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  border-radius: 99px;
+  padding: 0 7px;
+  letter-spacing: 0;
+}
+.archives[open] summary {
+  border-bottom: 1px solid var(--line);
+  border-radius: 10px 10px 0 0;
+}
+.archives .days {
+  padding: 8px;
+}
+.entry.is-archived {
+  opacity: 0.72;
+}
 .drive-panel { margin-top: 12px; }
 .drive-open { width: 100%; text-align: left; }
 .drive-toggle { display: flex; justify-content: space-between; width: 100%; }

@@ -59,6 +59,18 @@ describe('entrées', () => {
     await expect(localApi.entry(created.id)).rejects.toThrow('entrée introuvable');
   });
 
+  test('archivage visible par défaut, masquable et restaurable (miroir du serveur)', async () => {
+    const created = await localApi.createEntry({ title: 'À ranger' });
+    expect(created.archived).toBe(0);
+    expect((await localApi.state()).entries.find((row) => row.id === created.id)?.archived).toBe(0);
+    const archived = await localApi.updateEntry(created.id, { archived: 1 });
+    expect(archived.archived).toBe(1);
+    const kept = await localApi.updateEntry(created.id, { title: 'Autre nom' });
+    expect(kept.archived).toBe(1);
+    expect(kept.title).toBe('Autre nom');
+    expect((await localApi.updateEntry(created.id, { archived: 0 })).archived).toBe(0);
+  });
+
   test('document riche validé, refus de redescendre vers Markdown', async () => {
     const rich = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Bonjour' }] }] } as never;
     const created = await localApi.createEntry({ title: 'Riche', content_json: rich });

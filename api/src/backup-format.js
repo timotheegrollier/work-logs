@@ -77,6 +77,8 @@ export function validateBackup(input) {
     if (projectId && !projectIds.has(projectId)) fail('Une entrée référence un projet absent.');
     const date = requiredText(entry.entry_date, 'Date d’entrée', 10);
     if (!DATE_RE.test(date)) fail('Date d’entrée invalide.');
+    // Les exports antérieurs n'ont pas d'archivage : ils reviennent visibles.
+    if (entry.archived !== undefined && ![0, 1].includes(Number(entry.archived))) fail('Archivage d’entrée invalide.');
     return {
       id: id(entry.id, 'Identifiant d’entrée'),
       title: requiredText(entry.title, 'Titre d’entrée', 500),
@@ -84,6 +86,7 @@ export function validateBackup(input) {
       content_json: contentValue(entry.content_json, 'Document riche'),
       entry_date: date,
       project_id: projectId,
+      archived: entry.archived === undefined ? 0 : Number(entry.archived),
       created_at: timestamp(entry.created_at, 'Date de création de l’entrée'),
       updated_at: timestamp(entry.updated_at, 'Date de modification de l’entrée'),
     };

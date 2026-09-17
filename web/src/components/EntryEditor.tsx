@@ -46,6 +46,8 @@ export function EntryEditor({
     project_id: entry.project_id ?? '',
   });
   const [attachments, setAttachments] = useState<Attachment[]>(entry.attachments ?? []);
+  // L'archivage est une action explicite, hors enregistrement automatique.
+  const [archived, setArchived] = useState(entry.archived ?? 0);
   const [save, setSave] = useState<SaveState>('saved');
   const [writing, setWriting] = useState(autoFocusTitle);
   const [error, setError] = useState('');
@@ -134,6 +136,20 @@ export function EntryEditor({
     await autosave.flush();
     await api.deleteEntry(entry.id);
     onDeleted();
+  };
+
+  // Archiver masque du journal sans rien détruire (associations et, pour
+  // Google, fichier distant conservés) ; désarchiver restaure. La suppression
+  // locale d'un document Google ne touche jamais le fichier distant.
+  const toggleArchive = async () => {
+    try {
+      await autosave.flush();
+      const updated = await api.updateEntry(entry.id, { archived: archived ? 0 : 1 });
+      setArchived(updated.archived ?? 0);
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    }
   };
 
   const synchronize = async (pull = false) => {
@@ -308,7 +324,15 @@ export function EntryEditor({
         <button className="ghost" onClick={() => nativeGoogle ? void window.worklogsDesktop?.googleDocs?.print() : window.print()}>
           Imprimer
         </button>
-        <button className="danger" disabled={syncing} onClick={remove}>
+        <button className="ghost" disabled={syncing} onClick={() => void toggleArchive()}>
+          {archived ? 'Désarchiver' : 'Archiver'}
+        </button>
+        <button
+          className="danger"
+          disabled={syncing}
+          onClick={remove}
+          title={googleSync ? 'Retire la copie locale (le fichier Google distant est conservé)' : 'Supprime définitivement l’entrée et ses fichiers'}
+        >
           Supprimer
         </button>
       </div>

@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS entries (
   content_md TEXT NOT NULL DEFAULT '',
   entry_date TEXT NOT NULL,
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  archived INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -201,6 +202,9 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   db.exec(INDEXES);
   // Migration additive V2 : les entrées Markdown et leurs pièces jointes restent intactes.
   if (!columns(db, 'entries').includes('content_json')) db.exec('ALTER TABLE entries ADD COLUMN content_json TEXT');
+  // Archivage (2026-09-18) : masque du journal sans rien détruire. Les entrées
+  // existantes restent visibles (`0`), les associations sont conservées.
+  if (!columns(db, 'entries').includes('archived')) db.exec('ALTER TABLE entries ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
   // Priorités (2026-09-18) : les tâches existantes deviennent « normale », sans toucher
   // à l'ordre des colonnes — la position et l'épingle gardent leur rôle.
   if (!columns(db, 'tasks').includes('priority')) db.exec("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'");

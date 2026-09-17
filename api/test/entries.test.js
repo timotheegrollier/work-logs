@@ -1,6 +1,10 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { startApi, make } from './helpers.js';
+import { openDb } from '../src/db.js';
 
 describe('entrées de journal', () => {
   let api;
@@ -75,6 +79,46 @@ describe('entrées de journal', () => {
     const entry = await make.entry(api, { project_id: project.id });
     const res = await api.put(`/api/entries/${entry.id}`, { project_id: '' });
     assert.equal(res.body.project_id, null);
+  });
+
+  test('archive et désarchive sans toucher au reste', async () => {
+    const entry = await make.entry(api, { title: 'À ranger' });
+    assert.equal(entry.archived, 0, 'visible par défaut');
+
+    let res = await api.put(`/api/entries/${entry.id}`, { archived: 1 });
+    assert.equal(res.body.archived, 1);
+    assert.equal(res.body.title, 'À ranger');
+
+    res = await api.put(`/api/entries/${entry.id}`, { title: 'Autre nom' });
+    assert.equal(res.body.archived, 1, 'non fourni = non écrasé');
+
+    const state = await api.get('/api/state');
+    assert.equal(state.body.entries.find((row) => row.id === entry.id).archived, 1);
+
+    res = await api.put(`/api/entries/${entry.id}`, { archived: 0 });
+    assert.equal(res.body.archived, 0);
+  });
+
+  test('une base antérieure sans colonne reste visible sans perdre ses entrées', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-archive-migration-'));
+    const file = path.join(dir, 'old.db');
+    const initial = openDb(file, { withSeed: false });
+    initial.exec(`DROP TABLE entries;
+      CREATE TABLE entries (id TEXT PRIMARY KEY, title TEXT NOT NULL, content_md TEXT NOT NULL DEFAULT '',
+        entry_date TEXT NOT NULL, project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      INSERT INTO entries (id,title,entry_date,created_at,updated_at) VALUES ('en_old','Ancienne','2026-01-05','','');`);
+    initial.close();
+    const migrated = openDb(file, { withSeed: false });
+    try {
+      const row = migrated.prepare('SELECT * FROM entries WHERE id=?').get('en_old');
+      assert.equal(row.archived, 0);
+      assert.equal(row.title, 'Ancienne');
+      assert.deepEqual(migrated.prepare('PRAGMA foreign_key_check').all(), []);
+    } finally {
+      migrated.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('accepte un corps vidé', async () => {

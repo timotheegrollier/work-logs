@@ -321,6 +321,32 @@ describe('écrire une entrée', () => {
     );
     expect(within(journal()).queryByText('À supprimer')).not.toBeInTheDocument();
   });
+
+  test('archive un document du journal puis le restaure depuis les Archives', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      entries: [
+        { id: 'en_old', title: 'Vieux dossier', date: '2026-06-02' },
+        { id: 'en_new', title: 'En cours', date: '2026-06-01' },
+      ],
+    });
+    render(<App />);
+
+    await user.click(await within(journal()).findByText('Vieux dossier'));
+    await user.click(await screen.findByRole('button', { name: 'Archiver' }));
+    await waitFor(() => expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_old').archived).toBe(1));
+
+    // Masqué du journal, sans rien détruire : les Archives le proposent.
+    await waitFor(() => expect(within(journal()).queryByText('Vieux dossier')).not.toBeInTheDocument());
+    expect(within(journal()).getByText('Archives')).toBeInTheDocument();
+    await user.click(within(journal()).getByText('Archives', { selector: 'summary' }));
+    await user.click(await within(journal()).findByText('Vieux dossier'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Vieux dossier'));
+
+    await user.click(await screen.findByRole('button', { name: 'Désarchiver' }));
+    await waitFor(() => expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_old').archived).toBe(0));
+    await waitFor(() => expect(within(journal()).queryByText('Archives')).not.toBeInTheDocument());
+  });
 });
 
 describe('retrouver son travail', () => {

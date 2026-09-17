@@ -70,7 +70,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     const task = getTask(id);
     if (!task) return task;
     const documents = db.prepare(
-      `SELECT e.id, e.title, e.entry_date, e.project_id, e.updated_at,
+      `SELECT e.id, e.title, e.entry_date, e.project_id, e.archived, e.updated_at,
               '' excerpt, 0 attachments,
               g.document_id google_document_id, g.tab_id google_tab_id,
               g.document_title google_document_title, g.tab_title google_tab_title
@@ -109,7 +109,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     }
     const entries = db
       .prepare(
-        `SELECT entries.id, entries.title, entries.entry_date, entries.project_id, entries.updated_at,
+        `SELECT entries.id, entries.title, entries.entry_date, entries.project_id, entries.archived, entries.updated_at,
                 substr(entries.content_md, 1, 240) excerpt,
                 (SELECT COUNT(*) FROM attachments a WHERE a.entry_id = entries.id) attachments,
                 g.document_id google_document_id, g.tab_id google_tab_id,
@@ -130,7 +130,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
       taskArgs.push(`%${q}%`);
     }
     const taskDocuments = db.prepare(
-      `SELECT te.task_id, e.id, e.title, e.entry_date, e.project_id, e.updated_at,
+      `SELECT te.task_id, e.id, e.title, e.entry_date, e.project_id, e.archived, e.updated_at,
               g.document_id google_document_id, g.tab_id google_tab_id,
               g.document_title google_document_title, g.tab_title google_tab_title
        FROM task_entries te
@@ -210,18 +210,20 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     if (!DATE_RE.test(date)) return bad(res, 'date invalide (AAAA-MM-JJ attendu)');
     const projectId = pick(b, 'project_id', cur.project_id, orNull);
     if (projectId && !getProject(projectId)) return bad(res, 'projet introuvable');
+    const archived = pick(b, 'archived', cur.archived ?? 0, (v) => (v ? 1 : 0));
 
     const rich = b.content_json === undefined ? cur.content_json : b.content_json;
     if (rich !== null) validateDocument(rich);
     if (cur.content_json && rich === null) return bad(res, 'la conversion d’un document riche en Markdown n’est pas prise en charge');
 
     db.prepare(
-      'UPDATE entries SET title=?, content_md=?, entry_date=?, project_id=?, updated_at=?, content_json=? WHERE id=?'
+      'UPDATE entries SET title=?, content_md=?, entry_date=?, project_id=?, archived=?, updated_at=?, content_json=? WHERE id=?'
     ).run(
       title,
       rich ? documentText(rich) : pick(b, 'content_md', cur.content_md, (v) => (typeof v === 'string' ? v : cur.content_md)),
       date,
       projectId,
+      archived,
       nowISO(),
       rich ? JSON.stringify(rich) : null,
       cur.id

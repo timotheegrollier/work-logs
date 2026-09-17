@@ -64,6 +64,13 @@ Les poignées disparaissent lorsque les panneaux sont empilés ou masqués.
 Une entrée porte une **date** (modifiable : utile pour rattraper un compte rendu de la veille)
 et un **projet** (facultatif).
 
+**Archiver** (bouton dans la barre de l'entrée) range un document hors du journal sans
+rien détruire : les tâches liées gardent leur contexte et **Supprimer** n'est pas appelé.
+Les archives se déplient en bas de la colonne de gauche, par jour comme le journal ;
+**Désarchiver** remet le document à sa place. Même geste pour un document Google :
+l'archiver le masque de l'application locale en conservant le fichier distant, tandis
+que **Supprimer** ne retire que la copie locale (jamais le fichier Google).
+
 ### Aide-mémoire Markdown
 
 | On tape | On obtient |

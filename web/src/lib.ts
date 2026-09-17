@@ -26,6 +26,8 @@ export interface EntrySummary {
   title: string;
   entry_date: string;
   project_id: string | null;
+  /** 1 = rangée dans les archives (masquée du journal, sans rien détruire). */
+  archived: 0 | 1;
   updated_at: string;
   excerpt: string;
   attachments: number;
@@ -87,6 +89,7 @@ export interface Entry {
   google_sync?: GoogleSync | null;
   entry_date: string;
   project_id: string | null;
+  archived: 0 | 1;
   created_at: string;
   updated_at: string;
   attachments: Attachment[];

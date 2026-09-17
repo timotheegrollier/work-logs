@@ -106,7 +106,7 @@ describe('groupByDay', () => {
 
 describe('groupTabs', () => {
   const entry = (over: Partial<EntrySummary>): EntrySummary => ({
-    id: 'en_1', title: 'Titre', entry_date: '2026-09-14', project_id: null,
+    id: 'en_1', title: 'Titre', entry_date: '2026-09-14', project_id: null, archived: 0,
     updated_at: '2026-09-14T10:00:00.000Z', excerpt: '', attachments: 0, ...over,
   });
 
