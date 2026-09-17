@@ -1636,6 +1636,8 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .head .search { width: 100%; grid-row: 2; grid-column: 1 / -1; }
   .head .grow { display: none; }
   .head > .ghost { padding: 6px 8px; font-size: 12px; }
+  /* Les largeurs de colonnes n'ont aucun sens en pile unique : on les cache. */
+  .head .col-widths { display: none; }
 }
 
 .rich-controls { display: contents; border: 0; padding: 0; margin: 0; min-width: 0; }

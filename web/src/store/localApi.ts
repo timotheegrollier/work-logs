@@ -15,6 +15,15 @@ import {
 import { decodeEntry, documentText, validateDocument } from '../../../api/src/rich-document.js';
 // @ts-expect-error — idem : validation 100 % pure, sans `node:sqlite`.
 import { OUTBOX_VERSION, validateBackup } from '../../../api/src/backup-format.js';
+// @ts-expect-error — idem : conversion et patches ciblés, sans `node:sqlite`.
+import { googlePreservedCount } from '../../../api/src/google-preserve.js';
+// @ts-expect-error — idem : lecture et fusion Docs, sans `node:sqlite`.
+import { buildGoogleUpdate, documentBody, documentTabs, selectDocumentTab } from '../../../api/src/google-document.js';
+// @ts-expect-error — idem : conservation à l'envoi, sans `node:sqlite`.
+import { buildPreservingUpdate, importGoogleDocument } from '../../../api/src/google-preserve.js';
+// @ts-expect-error — idem : réconciliation locale/distance, sans `node:sqlite`.
+import { mergeGoogleChanges } from '../../../api/src/google-merge.js';
+import { webGoogleRequest } from './google-web';
 import { createIndexedDbDatabase, createMemoryDatabase, type Database } from './storage';
 
 /**
@@ -232,7 +241,8 @@ async function googleSync(entryId: string, contentJson: string | null): Promise<
     document_id: link.document_id, tab_id: link.tab_id, synced_at: link.synced_at,
     document_title: link.document_title, tab_title: link.tab_title, tab_order: link.tab_order,
     tab_depth: link.tab_depth, sync_blocked: link.readonly_reason,
-    preserved_elements: 0, tabs, dirty: contentJson !== link.synced_content_json,
+    preserved_elements: contentJson ? googlePreservedCount(JSON.parse(contentJson)) : 0,
+    tabs, dirty: contentJson !== link.synced_content_json,
   };
 }
 
@@ -248,7 +258,7 @@ async function fullEntry(id: string): Promise<Entry> {
   return entry;
 }
 
-function taskDocuments(taskId: string, entries: EntryRow[], links: LinkRow[]): EntrySummary[] {
+function taskDocuments(taskId: string, entries: EntryRow[], links: LinkRow[], googleByEntry: Map<string, GoogleRow>): EntrySummary[] {
   return links
     .filter((link) => link.task_id === taskId)
     .map((link) => entries.find((entry) => entry.id === link.entry_id))
@@ -256,13 +266,16 @@ function taskDocuments(taskId: string, entries: EntryRow[], links: LinkRow[]): E
     .sort((a, b) => cmp(b.entry_date, a.entry_date) || cmp(b.updated_at, a.updated_at) || cmp(a.id, b.id))
     // Même forme que `getTaskWithDocuments` côté serveur (`''`, `0`, sans
     // jointure Google) : les cartes n'affichent que titre, date et projet.
-    .map((entry) => ({
-      id: entry.id, title: entry.title, entry_date: entry.entry_date,
-      project_id: entry.project_id, archived: entry.archived ?? 0, updated_at: entry.updated_at,
-      excerpt: '', attachments: 0,
-      google_document_id: null, google_tab_id: null,
-      google_document_title: null, google_tab_title: null,
-    }));
+    .map((entry) => {
+      const link = googleByEntry.get(entry.id);
+      return {
+        id: entry.id, title: entry.title, entry_date: entry.entry_date,
+        project_id: entry.project_id, archived: entry.archived ?? 0, updated_at: entry.updated_at,
+        excerpt: '', attachments: 0,
+        google_document_id: link?.document_id ?? null, google_tab_id: link?.tab_id ?? null,
+        google_document_title: link?.document_title ?? null, google_tab_title: link?.tab_title ?? null,
+      };
+    });
 }
 
 async function renumber(status: Status): Promise<void> {
@@ -277,6 +290,15 @@ async function renumber(status: Status): Promise<void> {
   }
 }
 
+/** Lecture Docs ciblée sur l'onglet lié (miroir de `read` dans `google-routes.js`). */
+async function readGoogleSource(documentId: string, tabId = '') {
+  if (!/^[\w-]{1,200}$/.test(documentId)) fail('Identifiant de document Google invalide.');
+  const raw = await webGoogleRequest(`/docs/v1/documents/${documentId}?includeTabsContent=true`);
+  return selectDocumentTab(raw, tabId);
+}
+
+const blankGoogleSource = () => ({ body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } });
+
 export const localApi: Api = {
   googleStatus: async (): Promise<GoogleStatus> => ({
     // Lot 3 : connexion directe à Google depuis le navigateur.
@@ -285,24 +307,126 @@ export const localApi: Api = {
   configureGoogle: async () => fail('Google Drive est disponible dans l’application desktop.'),
   connectGoogle: async () => fail('Google Drive est disponible dans l’application desktop.'),
   disconnectGoogle: async () => fail('Google Drive est disponible dans l’application desktop.'),
-  googleDocuments: async () => fail('Google Drive est disponible dans l’application desktop.'),
+  googleDocuments: async (pageToken = '') => {
+    const params = new URLSearchParams({
+      q: "mimeType='application/vnd.google-apps.document' and trashed=false",
+      fields: 'files(id,name,modifiedTime),nextPageToken', orderBy: 'modifiedTime desc', pageSize: '100',
+      supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
+    });
+    if (pageToken && pageToken.length < 5000) params.set('pageToken', pageToken);
+    const result = (await webGoogleRequest(`/drive/v3/files?${params}`)) as { files?: { id: string; name: string; modifiedTime: string }[]; nextPageToken?: string };
+    return { files: result.files || [], ...(result.nextPageToken ? { nextPageToken: result.nextPageToken } : {}) };
+  },
   googleBackups: async () => fail('Google Drive est disponible dans l’application desktop.'),
   exportGoogleBackup: async () => fail('Google Drive est disponible dans l’application desktop.'),
   importGoogleBackup: async () => fail('Google Drive est disponible dans l’application desktop.'),
   listOutbox: async () => fail('Google Drive est disponible dans l’application desktop.'),
   importOutbox: async () => fail('Google Drive est disponible dans l’application desktop.'),
-  createGoogleDocument: async () => fail('Google Drive est disponible dans l’application desktop.'),
+  createGoogleDocument: async (title) => {
+    const clean = str(title);
+    if (!clean || clean.length > 240) fail('Le titre doit contenir entre 1 et 240 caractères.');
+    const created = (await webGoogleRequest('/docs/v1/documents', { method: 'POST', body: JSON.stringify({ title: clean }) })) as Record<string, unknown>;
+    const rawId: unknown = created['documentId'];
+    const documentId: string = typeof rawId === 'string' && /^[\w-]{1,200}$/.test(rawId) ? rawId : fail('Identifiant de document Google invalide.');
+    const hasBody = (created['body'] as { content?: unknown } | undefined)?.content || (created['tabs'] as unknown[] | undefined)?.length;
+    const rich = importGoogleDocument(hasBody ? selectDocumentTab(created) : blankGoogleSource());
+    const serialized = JSON.stringify(rich);
+    const id = uid('en_');
+    const time = nowISO();
+    const t = await tables();
+    await t.entries.put({
+      id, title: clean, content_md: '', content_json: serialized, entry_date: today(),
+      project_id: null, archived: 0, created_at: time, updated_at: time,
+    });
+    const tabs = documentTabs(created);
+    const createdRevision = typeof created['revisionId'] === 'string' ? created['revisionId'] : '';
+    await t.google.put({
+      entry_id: id, document_id: documentId, tab_id: tabs[0]?.id || '', revision_id: createdRevision,
+      synced_content_json: serialized, synced_at: time,
+      document_title: '', tab_title: '', tab_order: 0, tab_depth: 0, readonly_reason: '',
+    });
+    track('entries', id);
+    return fullEntry(id);
+  },
   googleDocumentTabs: async () => fail('Google Drive est disponible dans l’application desktop.'),
   openGoogleDocument: async () => fail('Google Drive est disponible dans l’application desktop.'),
-  pushGoogleDocument: async () => fail('Google Drive est disponible dans l’application desktop.'),
-  pullGoogleDocument: async () => fail('Google Drive est disponible dans l’application desktop.'),
+  pushGoogleDocument: async (id) => {
+    const t = await tables();
+    const current = (await t.entries.get(id)) ?? fail('entrée introuvable');
+    const currentJson: string = current.content_json ?? fail('Crée un document riche pour le synchroniser avec Google Drive.');
+    let rich = JSON.parse(currentJson) as RichDocument;
+    let link = (await t.google.get(id)) ?? null;
+    if (link?.readonly_reason) {
+      fail('Cet ancien import a été aplati. Garde une copie locale de tes modifications puis recharge depuis Google pour activer la nouvelle synchronisation.');
+    }
+    if (!link) {
+      // Vérifier le format AVANT de créer un fichier distant (miroir serveur).
+      buildGoogleUpdate({ revisionId: 'check', body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } }, rich);
+      const created = (await webGoogleRequest('/docs/v1/documents', { method: 'POST', body: JSON.stringify({ title: current.title }) })) as Record<string, unknown>;
+      const rawId: unknown = created['documentId'];
+      const documentId: string = typeof rawId === 'string' && /^[\w-]{1,200}$/.test(rawId) ? rawId : fail('Identifiant de document Google invalide.');
+      const fresh = await readGoogleSource(documentId);
+      if (!(await t.entries.get(id))) fail('entrée introuvable');
+      await t.google.put({
+        entry_id: id, document_id: documentId, tab_id: documentBody(fresh).tabId || '', revision_id: fresh.revisionId || '',
+        synced_content_json: JSON.stringify(importGoogleDocument(fresh)),
+        synced_at: null, document_title: '', tab_title: '', tab_order: 0, tab_depth: 0, readonly_reason: '',
+      });
+      link = ((await t.google.get(id)) ?? fail('Ce document n’est pas encore associé à Google Drive.')) as GoogleRow;
+    }
+    const source = await readGoogleSource(link.document_id, link.tab_id);
+    const unchangedNewDocument = !link.revision_id && JSON.stringify(importGoogleDocument(source)) === link.synced_content_json;
+    if (!unchangedNewDocument && source.revisionId !== link.revision_id) {
+      if (!link.revision_id) fail('Le document a changé sur Google Drive. Ton brouillon local est conservé.');
+      rich = mergeGoogleChanges(JSON.parse(link.synced_content_json), rich, importGoogleDocument(source));
+    }
+    const update = buildPreservingUpdate(source, rich);
+    const result = update.requests.length
+      ? ((await webGoogleRequest(`/docs/v1/documents/${link.document_id}:batchUpdate`, { method: 'POST', body: JSON.stringify(update) })) as { writeControl?: { requiredRevisionId?: string } })
+      : { writeControl: { requiredRevisionId: source.revisionId } };
+    const revision = result.writeControl?.requiredRevisionId;
+    if (!revision) fail('Google a reçu la mise à jour sans renvoyer sa révision. Recharge la version Google pour vérifier l’enregistrement.');
+    // La révision vaut pour tout le document : ne pas créer de faux conflit
+    // sur les autres onglets lus à cette même révision (miroir serveur).
+    for (const sibling of (await t.google.all()).filter((row) => row.document_id === (link as GoogleRow).document_id && row.revision_id === source.revisionId && row.entry_id !== id)) {
+      await t.google.put({ ...sibling, revision_id: revision });
+    }
+    const serialized = JSON.stringify(rich);
+    const latest = ((await t.entries.get(id)) ?? fail('entrée introuvable')) as EntryRow;
+    const local = latest.content_json === current.content_json
+      ? rich
+      : mergeGoogleChanges(JSON.parse(current.content_json as string), JSON.parse(latest.content_json as string), rich);
+    await t.entries.put({ ...latest, content_json: JSON.stringify(local), content_md: documentText(local), updated_at: latest.updated_at });
+    await t.google.put({ ...(link as GoogleRow), revision_id: revision, synced_content_json: serialized, synced_at: nowISO() });
+    // Google porte désormais la modification : la file d'envoi vers le PC n'a plus à la transmettre.
+    untrack('entries', id);
+    return fullEntry(id);
+  },
+  pullGoogleDocument: async (id, expected) => {
+    const t = await tables();
+    const current = (await t.entries.get(id)) ?? fail('entrée introuvable');
+    const link = (await t.google.get(id)) ?? fail('Ce document n’est pas encore associé à Google Drive.');
+    if (JSON.stringify(expected) !== current.content_json) fail('Le brouillon a changé. Enregistre-le avant de recharger Google.');
+    const source = await readGoogleSource(link.document_id, link.tab_id);
+    const rich = importGoogleDocument(source);
+    if (((await t.entries.get(id)) as EntryRow | undefined)?.content_json !== current.content_json) {
+      fail('Tu as modifié le brouillon pendant le rechargement. Il a été conservé.');
+    }
+    const serialized = JSON.stringify(rich);
+    const time = nowISO();
+    await t.entries.put({ ...current, content_json: serialized, content_md: documentText(rich), updated_at: time });
+    await t.google.put({ ...link, revision_id: source.revisionId || '', synced_content_json: serialized, synced_at: time, readonly_reason: '' });
+    track('entries', id);
+    return fullEntry(id);
+  },
 
   state: async (q = '', projectId = ''): Promise<AppState> => {
-    const { projects, entries, tasks, links, attachments } = await tables();
+    const { projects, entries, tasks, links, attachments, google } = await tables();
     const allEntries = await entries.all();
     const allTasks = await tasks.all();
     const allLinks = await links.all();
     const allAttachments = await attachments.all();
+    const googleByEntry = new Map((await google.all()).map((row) => [row.entry_id, row]));
     const needle = q.trim().toLowerCase();
     const matching = allEntries
       .filter((entry) => (!projectId || entry.project_id === projectId))
@@ -311,19 +435,25 @@ export const localApi: Api = {
       .sort((a, b) => cmp(b.entry_date, a.entry_date) || cmp(b.updated_at, a.updated_at));
     const counts = new Map<string, number>();
     for (const file of allAttachments) counts.set(file.entry_id, (counts.get(file.entry_id) ?? 0) + 1);
-    const summaries = matching.map((entry) => ({
-      id: entry.id, title: entry.title, entry_date: entry.entry_date, project_id: entry.project_id,
-      archived: entry.archived ?? 0,
-      updated_at: entry.updated_at, excerpt: entry.content_md.slice(0, 240),
-      attachments: counts.get(entry.id) ?? 0,
-      google_document_id: null, google_tab_id: null, google_document_title: null, google_tab_title: null,
-      google_tab_order: null, google_tab_depth: null, google_sync_blocked: null, google_dirty: false,
-    }));
+    const summaries = matching.map((entry) => {
+      const link = googleByEntry.get(entry.id);
+      return {
+        id: entry.id, title: entry.title, entry_date: entry.entry_date, project_id: entry.project_id,
+        archived: entry.archived ?? 0,
+        updated_at: entry.updated_at, excerpt: entry.content_md.slice(0, 240),
+        attachments: counts.get(entry.id) ?? 0,
+        google_document_id: link?.document_id ?? null, google_tab_id: link?.tab_id ?? null,
+        google_document_title: link?.document_title ?? null, google_tab_title: link?.tab_title ?? null,
+        google_tab_order: link?.tab_order ?? null, google_tab_depth: link?.tab_depth ?? null,
+        google_sync_blocked: link?.readonly_reason ?? null,
+        google_dirty: link ? entry.content_json !== link.synced_content_json : false,
+      };
+    });
     const matchingTasks = allTasks
       .filter((task) => (!projectId || task.project_id === projectId))
       .filter((task) => !needle || task.title.toLowerCase().includes(needle))
       .sort((a, b) => a.position - b.position || cmp(b.updated_at, a.updated_at) || cmp(a.id, b.id))
-      .map((task) => ({ ...task, documents: taskDocuments(task.id, allEntries, allLinks) }));
+      .map((task) => ({ ...task, documents: taskDocuments(task.id, allEntries, allLinks, googleByEntry) }));
     const allProjects = (await projects.all()).sort((a, b) => cmp(a.name, b.name));
     const byStatus: Record<Status, number> = { todo: 0, doing: 0, done: 0 };
     for (const task of allTasks) byStatus[task.status]++;
@@ -671,7 +801,7 @@ export interface OutboxPayload {
   base_exported_at: string | null;
   device: 'pwa';
   projects: ProjectRow[];
-  entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; created_at: string; updated_at: string }[];
+  entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; archived: 0 | 1; created_at: string; updated_at: string }[];
   tasks: TaskRow[];
   task_entries: { task_id: string; entry_id: string; created_at: string }[];
   attachments: { id: string; filename: string; stored: string; mime: string; size: number; entry_id: string; created_at: string; driveFileId: string | null }[];
@@ -733,7 +863,8 @@ function rowAsTask(row: TaskRow): Task {
 }
 
 async function taskWithDocuments(id: string): Promise<Task> {
-  const { tasks, entries, links } = await tables();
+  const { tasks, entries, links, google } = await tables();
   const row = (await tasks.get(id)) ?? fail('tâche introuvable');
-  return { ...row, documents: taskDocuments(id, await entries.all(), await links.all()) };
+  const googleByEntry = new Map((await google.all()).map((link) => [link.entry_id, link]));
+  return { ...row, documents: taskDocuments(id, await entries.all(), await links.all(), googleByEntry) };
 }

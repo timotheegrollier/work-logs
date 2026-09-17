@@ -51,7 +51,8 @@ function renumberTasks(db, status) {
 const sameEntry = (current, next) =>
   current.title === next.title && current.content_md === next.content_md &&
   (current.content_json || null) === (next.content_json ? JSON.stringify(next.content_json) : null) &&
-  current.entry_date === next.entry_date && (current.project_id || null) === (next.project_id || null);
+  current.entry_date === next.entry_date && (current.project_id || null) === (next.project_id || null) &&
+  (current.archived ?? 0) === (next.archived ?? 0);
 
 const sameTask = (current, next) =>
   current.title === next.title && current.status === next.status &&
@@ -91,12 +92,12 @@ export async function importOutbox(db, { google, uploadDir }, data) {
       const current = db.prepare('SELECT * FROM entries WHERE id=?').get(next.id);
       const content = next.content_json ? JSON.stringify(next.content_json) : null;
       if (!current) {
-        db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)')
-          .run(next.id, next.title, next.content_md, content, next.entry_date, next.project_id, next.created_at, next.updated_at);
+        db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
+          .run(next.id, next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.created_at, next.updated_at);
         counts.entries++;
       } else if (next.updated_at > current.updated_at) {
-        db.prepare('UPDATE entries SET title=?,content_md=?,content_json=?,entry_date=?,project_id=?,updated_at=? WHERE id=?')
-          .run(next.title, next.content_md, content, next.entry_date, next.project_id, next.updated_at, next.id);
+        db.prepare('UPDATE entries SET title=?,content_md=?,content_json=?,entry_date=?,project_id=?,archived=?,updated_at=? WHERE id=?')
+          .run(next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.updated_at, next.id);
         counts.updated++;
       } else if (!sameEntry(current, next)) counts.conflicts++;
     }

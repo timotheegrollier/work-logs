@@ -257,11 +257,22 @@ sans elle, les données restent simplement sur l'appareil.
    dans l'interface), **Connecter Google Drive**, autoriser, puis **Charger**
    une sauvegarde. Le contenu local est remplacé après confirmation.
 
-État : lecture des sauvegardes, chargement complet et envoi (boîte mobile +
-photos) implémentés ; l'édition Google Docs sur téléphone reste un lot ultérieur.
+État : lecture des sauvegardes, chargement complet, envoi (boîte mobile +
+photos), **et synchronisation Docs** implémentés ; l'import d'un document Drive
+existant (`Ouvrir`) et l'éditeur Google natif restent réservés au desktop.
 Les pièces jointes du PC n'ont pas de binaire sur le téléphone : leurs métadonnées
 sont conservées et leurs liens répondent « fichier introuvable » tant que la photo
 n'a pas été renvoyée depuis le mobile.
+
+## Synchronisation Docs sur mobile (parité desktop)
+
+Le journal regroupe les onglets sous une seule ligne et la navigation verticale
+fonctionne comme sur desktop (`DocumentTabs`, une colonne). **Enregistrer sur
+Drive**, **Actualiser**, la création de Google Docs et la liste Drive passent par
+l'API Docs directement depuis le navigateur : `web/src/store/localApi.ts`
+réutilise les mêmes modules purs que le serveur (`google-document.js`,
+`google-preserve.js`, `google-merge.js`) avec `webGoogleRequest` comme transport —
+mêmes patches ciblés, mêmes révisions, mêmes conflits 409 avec brouillon conservé.
 
 ## Boîte mobile (envoi PWA → fusion desktop)
 

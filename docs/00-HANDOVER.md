@@ -1,13 +1,14 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-18 · Version : v0.17.0.
-> **Lot courant :** socle PWA statique (manifeste, service worker versionné, base
-> relative, déploiement `app/` sur gh-pages), backend local IndexedDB à interface
-> identique, pièces jointes hors-ligne via le SW, connexion Google directe
-> (client OAuth Web) avec lecture/chargement des sauvegardes — envoi mobile
-> et import desktop à venir (lot 4).
-> **Validation :** `./scripts/check.sh` vert sur l'arbre rebasé (base v0.17.0) :
-> 122 tests API, 147 front, 33 desktop unitaires, 23 scripts, 26 navigateur
+> **Mise à jour :** 2026-09-18 · Version : v0.18.0.
+> **Lot courant :** PWA mobile — parité Google Docs : regroupement multi-onglets
+> dans le journal, navigation par onglets, envoi (`Enregistrer sur Drive`),
+> rechargement (`Actualiser`), création et liste Drive via l'API Docs depuis le
+> navigateur (mêmes modules purs que le serveur) ; en-tête réparé à 412 px ;
+> fusion avec le lot Archives amont (`archived`Desktop+local+boîte mobile).
+> Import d'un document Drive existant (`Ouvrir`) encore réservé au desktop.
+> **Validation :** `./scripts/check.sh` vert (base v0.18.0) :
+> 125 tests API, 160 front, 33 desktop unitaires, 23 scripts, 26 navigateur
 > et 10 desktop e2e.
 >
 > **Lot précédent :** correctif multipart Drive CRLF publié en v0.15.1 (travail conservé tel quel).

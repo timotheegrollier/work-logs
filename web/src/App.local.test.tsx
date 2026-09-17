@@ -63,4 +63,36 @@ describe('PWA locale (mêmes écrans, backend IndexedDB/mémoire)', () => {
     expect(created.mock.calls[0][0]).toBeInstanceOf(Blob);
     expect(editor()).toBeInTheDocument();
   });
+
+  test('document Google multi-onglets : une ligne au journal, navigation entre onglets', async () => {
+    const user = userEvent.setup();
+    const { importLocalBackup } = await import('./store/localApi');
+    const T = '2026-09-18T10:00:00.000Z';
+    const rich = (text: string) => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
+    await importLocalBackup({
+      version: 2,
+      projects: [],
+      entries: ['A', 'B'].map((tab) => ({
+        id: `en_${tab}`, title: `Doc multi — ${tab}`, content_md: `Contenu ${tab}`, content_json: rich(`Contenu ${tab}`),
+        entry_date: '2026-09-18', project_id: null, created_at: T, updated_at: T,
+      })),
+      tasks: [],
+      task_entries: [],
+      google_documents: ['A', 'B'].map((tab, order) => ({
+        entry_id: `en_${tab}`, document_id: 'gdoc-multi', tab_id: `tab-${tab}`, revision_id: 'r1',
+        synced_content_json: JSON.stringify(rich(`Contenu ${tab}`)), synced_at: T,
+        document_title: 'Doc multi', tab_title: `Onglet ${tab}`, tab_order: order, tab_depth: 0, readonly_reason: '',
+      })),
+      attachments: [],
+    });
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+    // Une seule ligne pour les deux onglets, comme sur desktop.
+    expect(await within(journal()).findByText('Doc multi')).toBeInTheDocument();
+    expect(within(journal()).queryByText('Doc multi — A')).not.toBeInTheDocument();
+    await user.click(within(journal()).getByText('Doc multi'));
+    expect(await screen.findByRole('tab', { name: 'Onglet A' })).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Onglet B' }));
+    expect(await screen.findByText('Contenu B')).toBeInTheDocument();
+  });
 });

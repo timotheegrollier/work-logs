@@ -270,11 +270,72 @@ describe('file d’envoi', () => {
   });
 });
 
-describe('Google indisponible en local', () => {
-  test('état non disponible et refus explicite', async () => {
+describe('documents Google multi-onglets', () => {
+  const T = '2026-09-18T10:00:00.000Z';
+  const rich = (text: string) => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
+  const entryRow = (id: string, tab: string, text: string) => ({
+    id, title: `Doc multi — ${tab}`, content_md: text, content_json: rich(text),
+    entry_date: '2026-09-18', project_id: null, created_at: T, updated_at: T,
+  });
+  const linkRow = (id: string, tab: string, order: number, text: string) => ({
+    entry_id: id, document_id: 'gdoc-multi', tab_id: `tab-${tab}`, revision_id: 'r1',
+    synced_content_json: JSON.stringify(rich(text)), synced_at: T,
+    document_title: 'Doc multi', tab_title: `Onglet ${tab}`, tab_order: order, tab_depth: 0, readonly_reason: '',
+  });
+  async function importTwoTabs() {
+    await importLocalBackup({
+      version: 2, projects: [],
+      entries: [entryRow('en_a', 'A', 'Contenu A'), entryRow('en_b', 'B', 'Contenu B')],
+      tasks: [], task_entries: [],
+      google_documents: [linkRow('en_a', 'A', 0, 'Contenu A'), linkRow('en_b', 'B', 1, 'Contenu B')],
+      attachments: [],
+    });
+  }
+
+  test('state() porte les associations, comme la jointure serveur', async () => {
+    await importTwoTabs();
+    const summaries = (await localApi.state()).entries;
+    const a = summaries.find((e) => e.id === 'en_a');
+    expect(a).toMatchObject({ google_document_id: 'gdoc-multi', google_tab_id: 'tab-A', google_document_title: 'Doc multi', google_tab_title: 'Onglet A', google_tab_order: 0, google_dirty: false });
+    await localApi.updateEntry('en_a', { content_json: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Modifié' }] }] } as never });
+    expect((await localApi.state()).entries.find((e) => e.id === 'en_a')?.google_dirty).toBe(true);
+  });
+
+  test('le journal regroupe les onglets en une seule ligne', async () => {
+    await importTwoTabs();
+    const { groupTabs } = await import('../lib');
+    const items = groupTabs((await localApi.state()).entries);
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toBe('Doc multi');
+    expect(items[0].tabs.map((t) => t.google_tab_id)).toEqual(['tab-A', 'tab-B']);
+  });
+
+  test('fullEntry expose les onglets frères et compte les éléments conservés', async () => {
+    await importTwoTabs();
+    const sync = (await localApi.entry('en_a')).google_sync;
+    expect(sync?.tabs?.map((t) => t.id)).toEqual(['en_a', 'en_b']);
+    expect(sync?.dirty).toBe(false);
+    expect(sync?.preserved_elements).toBe(0);
+    const kept = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [
+        { type: 'text', text: 'Vu ' },
+        { type: 'googleInline', attrs: { googleId: 'object-0', label: 'Menu Google' } },
+      ] }],
+    } as never;
+    await localApi.updateEntry('en_a', { content_json: kept });
+    expect((await localApi.entry('en_a')).google_sync?.preserved_elements).toBe(1);
+  });
+});
+
+describe('Google sans serveur (lots suivants couverts ailleurs)', () => {
+  test('état non disponible et refus explicite des flux desktop', async () => {
     expect(await localApi.googleStatus()).toMatchObject({ available: false, connected: false });
-    await expect(localApi.googleDocuments()).rejects.toThrow('disponible dans l’application desktop');
-    await expect(localApi.pushGoogleDocument('en_x')).rejects.toThrow('disponible dans l’application desktop');
+    await expect(localApi.configureGoogle({})).rejects.toThrow('disponible dans l’application desktop');
+    await expect(localApi.connectGoogle()).rejects.toThrow('disponible dans l’application desktop');
+    await expect(localApi.googleBackups()).rejects.toThrow('disponible dans l’application desktop');
+    await expect(localApi.googleDocumentTabs('x')).rejects.toThrow('disponible dans l’application desktop');
+    await expect(localApi.openGoogleDocument('x')).rejects.toThrow('disponible dans l’application desktop');
   });
 
   test('les refus sont des ApiError reconnues par le front', async () => {
