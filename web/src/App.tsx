@@ -268,7 +268,7 @@ export default function App() {
             onCreateDocument={() => void createEntry(true)}
             searching={query !== ''}
           />
-          <GoogleDrive onOpen={(opened) => {
+          <GoogleDrive onRestored={reload} onOpen={(opened) => {
             const sequence = ++reloadSequence.current;
             setSearch(''); setQuery(''); setFreshEntry(false);
             selectedRef.current = opened.id;
@@ -289,6 +289,7 @@ export default function App() {
               projects={state.projects}
               autoFocusTitle={freshEntry}
               onChanged={reload}
+              onTaskCreated={reload}
               onDeleted={() => {
                 setSelectedId(null);
                 reload();

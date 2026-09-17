@@ -1,15 +1,31 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-16 · **Version : v0.14.0**.
-> **Lot courant :** associations tâches-documents, projet mémorisé et gestion Google Drive en dialogue.
-> **Validation :** `./scripts/check.sh` vert après le lot : 105 tests API, 98 front, 32 desktop unitaires,
-> 16 scripts, 24 navigateur et 10 desktop e2e.
+> **Mise à jour :** 2026-09-17 · Version : v0.15.0.
+> **Lot courant :** tâches liées aux documents et sauvegarde/restauration JSON via Google Drive.
+> **Validation :** `./scripts/check.sh` vert après le bump : 111 tests API, 102 front,
+> 33 desktop unitaires, 16 scripts, 24 navigateur et 10 desktop e2e.
 >
 > **Lot précédent :** redimensionnement des barres latérales au glissement, fusionné
 > sur master avec la correction du focus clavier Google de la v0.12.1.
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-09-17 — tâches liées et sauvegarde JSON Google Drive
+
+- L’éditeur d’une entrée locale ou d’un onglet Google propose **Créer une tâche liée** : titre
+  prérempli, échéance facultative, tâche `todo` dans le projet de l’entrée et association créée
+  atomiquement. La carte affiche immédiatement le document de contexte et son origine.
+- Le dialogue Google est rendu dans le `body` et ouvert dans le top layer natif : il ne passe plus
+  sous la grille. Il contient une section **Sauvegardes WorkLogs** séparée de la gestion des documents.
+- `/api/google/backup/*` stocke un vrai fichier JSON Drive versionné avec `appProperties`, liste les
+  sauvegardes et restaure projets, entrées riches, tâches, `task_entries` et liens `google_documents`
+  dans une transaction après validation. L’export conserve les métadonnées de pièces jointes, pas
+  les octets des fichiers locaux ; `scripts/backup.sh` reste requis pour une migration complète.
+- Le client desktop autorise uniquement `/upload/drive/v3/` en plus des API existantes et gère les
+  réponses texte pour les téléchargements. Aucun faux `userAgent`, aucune dépendance ajoutée.
+- Version **0.15.0** : bump manifeste/lockfile synchronisé ; publication via les workflows
+  `CI Linux`, `Release Linux` et `Dépôts` après le commit master.
 
 ## Lot du 2026-09-16 — associations, projet courant et Google Drive séparé
 

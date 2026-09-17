@@ -79,6 +79,7 @@ http://localhost:8410. Application desktop : `npm run desktop`.
 | Cocher une carte · la glisser | la termine · la change de colonne |
 | Clic sur un projet | filtre **le journal et les tâches** en même temps |
 | **Rechercher** | cherche dans les titres, le corps des entrées et les tâches |
+| **Créer une tâche liée** dans une entrée | crée une tâche avec cette entrée comme contexte |
 | **Exporter** | télécharge toute la base en JSON |
 
 Markdown géré : titres, gras/italique, listes, **cases à cocher**, **tableaux**,
@@ -93,6 +94,8 @@ La première synchronisation couvre texte, titres, styles usuels et listes simpl
 Les documents Google complexes sont refusés avant import/écriture ; tableaux et images
 fonctionnent localement. OAuth et les API sont testés avec des réponses simulées ;
 la recette sur un vrai compte reste à faire. [Configuration et limites](docs/08-GOOGLE-DOCS.md).
+
+Dans le dialogue **Gérer Google Drive**, **Sauvegardes WorkLogs** enregistre le JSON de la base dans Drive et permet de le restaurer sur un autre PC connecté au même compte. La restauration remplace les données locales après confirmation ; les octets des pièces jointes locales ne font pas partie du JSON.
 
 ## Tester
 

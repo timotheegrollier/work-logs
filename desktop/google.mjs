@@ -92,14 +92,17 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
   }
   async function request(apiPath, options = {}) {
     // Les appelants ne peuvent pas envoyer le jeton à une URL extérieure.
-    if (!/^\/(drive\/v3\/|docs\/v1\/)/.test(apiPath)) throw fail('Adresse Google non autorisée.');
+    if (!/^\/(?:upload\/)?(?:drive\/v3\/|docs\/v1\/)/.test(apiPath)) throw fail('Adresse Google non autorisée.');
+    const { responseType = 'json', headers: customHeaders = {}, ...fetchOptions } = options;
     const url = apiPath.startsWith('/docs/') ? 'https://docs.googleapis.com' + apiPath.slice(5) : 'https://www.googleapis.com' + apiPath;
-    const response = await fetchImpl(url, { ...options, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await accessToken()}` },
+    const response = await fetchImpl(url, { ...fetchOptions,
+      headers: { 'Content-Type': 'application/json', ...customHeaders, Authorization: `Bearer ${await accessToken()}` },
       redirect: 'error', signal: AbortSignal.timeout(30_000) });
-    const body = await response.json().catch(() => ({}));
+    const body = responseType === 'text' ? await response.text() : await response.json().catch(() => ({}));
     if (!response.ok) {
       if (response.status === 401) { tokens = null; fs.rmSync(tokenPath, { force: true }); }
-      throw googleApiError(response.status, body, apiPath, config.client_id);
+      const errorBody = typeof body === 'string' ? (() => { try { return JSON.parse(body); } catch { return {}; } })() : body;
+      throw googleApiError(response.status, errorBody, apiPath, config.client_id);
     }
     return body;
   }

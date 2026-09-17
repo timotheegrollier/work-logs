@@ -274,6 +274,36 @@ describe('écrire une entrée', () => {
     await waitFor(() => expect(row(api.db, 'SELECT title FROM entries WHERE id=?', 'en_a').title).toBe('A modifié'));
   });
 
+  test('crée une tâche liée depuis l’entrée ouverte et affiche son document sur la carte', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_context', title: 'Contexte de réunion' }] });
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Créer une tâche liée' }));
+    expect(screen.getByLabelText('Titre de la tâche liée')).toHaveValue('Contexte de réunion');
+    await user.click(screen.getByRole('button', { name: 'Créer et lier' }));
+
+    await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
+    expect(await within(editor()).findByText('Tâche créée et liée à cette entrée.')).toBeVisible();
+    const card = (await within(board()).findByRole('button', { name: 'Contexte de réunion' })).closest('.card') as HTMLElement;
+    expect(within(card).getByRole('button', { name: 'Ouvrir Contexte de réunion' })).toBeInTheDocument();
+    expect(within(card).getByText('local')).toBeInTheDocument();
+  });
+
+  test('crée une tâche liée depuis un document Google', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_google_task', title: 'Contexte Google' }] });
+    seedGoogleLink(api.db, 'en_google_task', 'doc-task');
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Créer une tâche liée' }));
+    await user.click(screen.getByRole('button', { name: 'Créer et lier' }));
+
+    await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
+    const card = (await within(board()).findByRole('button', { name: 'Contexte Google' })).closest('.card') as HTMLElement;
+    expect(within(card).getByText('Google')).toBeInTheDocument();
+  });
+
   test('supprime une entrée et ouvre la suivante', async () => {
     const user = userEvent.setup();
     seedData(api.db, {

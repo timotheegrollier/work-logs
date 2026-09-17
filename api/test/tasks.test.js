@@ -12,7 +12,7 @@ describe('tâches', () => {
   let api;
   before(async () => { api = await startApi(); });
   after(() => api.close());
-  beforeEach(() => api.db.exec('DELETE FROM tasks'));
+  beforeEach(() => api.db.exec('DELETE FROM task_entries; DELETE FROM google_documents; DELETE FROM tasks; DELETE FROM entries; DELETE FROM projects;'));
 
   test('crée une tâche en « à faire » par défaut', async () => {
     const res = await api.post('/api/tasks', { title: '  Rappeler le client  ' });
@@ -114,6 +114,36 @@ describe('tâches', () => {
     assert.equal(res.body.due_date, '2026-03-01');
     assert.equal(res.body.pinned, 1);
     assert.equal(res.body.status, 'done');
+  });
+
+  test('crée une tâche liée depuis une entrée en recopiant son projet et son contexte', async () => {
+    const project = await make.project(api, 'Planning');
+    const entry = await make.entry(api, { title: 'Préparer le comité', project_id: project.id });
+    const created = await api.post(`/api/entries/${entry.id}/task`, { due_date: '2026-09-20' });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.title, 'Préparer le comité');
+    assert.equal(created.body.project_id, project.id);
+    assert.equal(created.body.due_date, '2026-09-20');
+    assert.deepEqual(created.body.documents.map((document) => document.id), [entry.id]);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=? AND entry_id=?').get(created.body.id, entry.id).n, 1);
+  });
+
+  test('crée une tâche liée depuis un onglet Google et valide son échéance', async () => {
+    const entry = await make.entry(api, { title: 'Onglet à planifier' });
+    api.db.prepare(`INSERT INTO google_documents
+      (entry_id, document_id, tab_id, revision_id, synced_content_json, document_title, tab_title)
+      VALUES (?,?,?,?,?,?,?)`).run(entry.id, 'google-doc', 'tab-1', 'r1', '{"type":"doc","content":[{"type":"paragraph"}]}', 'Dossier', 'Onglet');
+    const created = await api.post(`/api/entries/${entry.id}/task`, {});
+    assert.equal(created.status, 201);
+    assert.equal(created.body.documents[0].google_document_id, 'google-doc');
+    assert.equal((await api.post(`/api/entries/${entry.id}/task`, { due_date: '20-09-2026' })).body.error, 'échéance invalide (AAAA-MM-JJ attendu)');
+  });
+
+  test('refuse la création liée depuis une entrée inconnue et ne crée rien pour un titre vide', async () => {
+    assert.equal((await api.post('/api/entries/en_nope/task', {})).status, 404);
+    const entry = await make.entry(api);
+    assert.equal((await api.post(`/api/entries/${entry.id}/task`, { title: ' ' })).status, 400);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM tasks').get().n, 0);
   });
 
   test('associe des entrées locales et Google, même hors du projet de la tâche', async () => {

@@ -26,6 +26,7 @@ export function EntryEditor({
   projects,
   onChanged,
   onDeleted,
+  onTaskCreated,
   autoFocusTitle = false,
 }: {
   tabs?: EntrySummary[];
@@ -34,6 +35,7 @@ export function EntryEditor({
   projects: Project[];
   onChanged: () => void;
   onDeleted: () => void;
+  onTaskCreated?: () => void;
   autoFocusTitle?: boolean;
 }) {
   const [draft, setDraft] = useState({
@@ -55,6 +57,11 @@ export function EntryEditor({
   const [syncMessage, setSyncMessage] = useState('');
   const [snapshotStale, setSnapshotStale] = useState(false);
   const [googleHelp, setGoogleHelp] = useState('');
+  const [taskCreator, setTaskCreator] = useState(false);
+  const [taskTitle, setTaskTitle] = useState(entry.title);
+  const [taskDueDate, setTaskDueDate] = useState('');
+  const [taskCreating, setTaskCreating] = useState(false);
+  const [taskMessage, setTaskMessage] = useState('');
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const changedRef = useRef(onChanged);
@@ -164,6 +171,31 @@ export function EntryEditor({
     } catch (e) { setError((e as Error).message); }
   };
 
+  const openTaskCreator = () => {
+    setTaskTitle(draftRef.current.title);
+    setTaskDueDate('');
+    setTaskMessage('');
+    setError('');
+    setTaskCreator(true);
+  };
+  const createTask = async () => {
+    const title = taskTitle.trim();
+    if (!title) return;
+    setTaskCreating(true);
+    setError('');
+    try {
+      await autosave.flush();
+      await api.createTaskFromEntry(entry.id, { title, due_date: taskDueDate || null });
+      setTaskCreator(false);
+      setTaskMessage('Tâche créée et liée à cette entrée.');
+      onTaskCreated?.();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setTaskCreating(false);
+    }
+  };
+
   const googleUrl = googleSync ? `https://docs.google.com/document/d/${encodeURIComponent(googleSync.document_id)}/edit${googleSync.tab_id ? `?tab=${encodeURIComponent(googleSync.tab_id)}` : ''}` : '';
   const openIntegratedGoogle = async () => {
     setSyncing(true);
@@ -206,6 +238,18 @@ export function EntryEditor({
         <div><span className="document-eyebrow">Google Docs</span><h1>{googleSync.document_title || draft.title}</h1></div>
         {integratedGoogle ? !nativeGoogle && <button className="sync-primary" disabled={syncing} onClick={() => void openIntegratedGoogle()}>{googleSync.dirty ? 'Envoyer le brouillon et ouvrir l’éditeur complet' : 'Modifier dans WorkLogs'}</button> : <a className="ghost" href={googleUrl} target="_blank" rel="noopener noreferrer">Ouvrir dans Google Docs ↗</a>}
       </div>}
+      <div className="entry-task-action no-print">
+        {!taskCreator ? <button className="task-primary" type="button" disabled={syncing} onClick={openTaskCreator}>Créer une tâche liée</button> : <form className="task-creator" onSubmit={(event) => { event.preventDefault(); void createTask(); }}>
+          <strong>Nouvelle tâche liée à cette entrée</strong>
+          <label>Titre de la tâche<input aria-label="Titre de la tâche liée" autoFocus value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} /></label>
+          <label>Échéance facultative<input aria-label="Échéance de la tâche liée" type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} /></label>
+          <div className="task-creator-actions">
+            <button className="task-primary" type="submit" disabled={taskCreating || !taskTitle.trim()}>{taskCreating ? 'Création…' : 'Créer et lier'}</button>
+            <button className="ghost" type="button" disabled={taskCreating} onClick={() => setTaskCreator(false)}>Annuler</button>
+          </div>
+        </form>}
+        {taskMessage && <p className="task-message" role="status">{taskMessage}</p>}
+      </div>
       <details className={'document-details no-print' + (googleSync ? '' : ' local-details')} open={googleSync ? undefined : true}>
       {googleSync && <summary>Détails du document</summary>}
       <div className="editor-bar no-print">

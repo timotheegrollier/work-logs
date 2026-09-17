@@ -68,6 +68,22 @@ locale puis un rechargement, sans conversion automatique destructive.
 **Validation.** Tests d’indices UTF-16, objets, tableaux, suggestions, révisions et
 brouillons ; aller-retour Google réel détaillé dans `08-GOOGLE-DOCS.md`.
 
+## Sauvegarde JSON Drive : fichier applicatif, remplacement explicite
+
+**Décision (2026-09-17).** WorkLogs enregistre l’export JSON comme un vrai fichier `.json`
+dans Drive, avec `appProperties` dédiées, puis permet de le restaurer sur une autre installation
+connectée au même compte. La restauration remplace la base locale dans une transaction après
+confirmation ; elle n’est jamais une synchronisation destructive automatique.
+
+**Pourquoi.** Un Google Docs peut réécrire ou transformer le contenu et ne garantit pas un aller-retour
+exact. `drive.file` suffit pour les fichiers créés par WorkLogs et conserve le contrôle par le fournisseur.
+Le JSON conserve projets, entrées riches, tâches, associations et liens vers les onglets Google.
+
+**Ce que ça coûte.** Les octets des pièces jointes locales ne sont pas dans cet export : le fichier
+Drive conserve leurs métadonnées, mais la copie complète `scripts/backup.sh` reste nécessaire pour
+migrer aussi les fichiers. Une restauration demande une confirmation claire et valide tout le document
+avant d’écrire.
+
 ---
 
 Pourquoi c'est comme ça. À lire avant de proposer une « amélioration » : la plupart des choses

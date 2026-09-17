@@ -3,8 +3,33 @@ import { decodeEntry, documentText } from './rich-document.js';
 import { buildGoogleUpdate, documentBody, documentTabs, selectDocumentTab } from './google-document.js';
 import { mergeGoogleChanges } from './google-merge.js';
 import { buildPreservingUpdate, googlePreservedCount, importGoogleDocument as googleToDocument } from './google-preserve.js';
+import { buildBackup, MAX_BACKUP_BYTES, restoreBackup, validateBackup } from './backup.js';
 
 const blankSource = { body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } };
+const backupInfo = (file) => ({
+  id: file.id,
+  name: file.name,
+  modifiedTime: file.modifiedTime || '',
+  size: file.size === undefined ? null : Number(file.size),
+});
+const backupBoundary = () => `worklogs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+const multipartBackup = (name, payload) => {
+  const boundary = backupBoundary();
+  const metadata = JSON.stringify({
+    name,
+    mimeType: 'application/json',
+    appProperties: { worklogs_type: 'backup', worklogs_version: '2' },
+  });
+  return {
+    body: Buffer.concat([
+      Buffer.from(`--${boundary}\\r\\nContent-Type: application/json; charset=UTF-8\\r\\n\\r\\n${metadata}\\r\\n`),
+      Buffer.from(`--${boundary}\\r\\nContent-Type: application/json; charset=UTF-8\\r\\nContent-Transfer-Encoding: 8bit\\r\\n\\r\\n`),
+      Buffer.from(payload),
+      Buffer.from(`\\r\\n--${boundary}--\\r\\n`),
+    ]),
+    contentType: `multipart/related; boundary=${boundary}`,
+  };
+};
 
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const fileId = (value) => {
@@ -44,6 +69,28 @@ export function registerGoogleRoutes(app, { db, google }) {
     return google.request(`/docs/v1/documents/${id}?includeTabsContent=true`);
   };
   const read = async (id, tabId = '') => selectDocumentTab(await readSource(id), tabId);
+  const backupList = async () => {
+    const params = new URLSearchParams({
+      q: "appProperties has { key='worklogs_type' and value='backup' } and trashed=false",
+      fields: 'files(id,name,modifiedTime,size,mimeType,appProperties),nextPageToken',
+      orderBy: 'modifiedTime desc',
+      pageSize: '100',
+      supportsAllDrives: 'true',
+      includeItemsFromAllDrives: 'true',
+    });
+    const result = await google.request(`/drive/v3/files?${params}`);
+    return (result.files || []).filter(file => file.mimeType === 'application/json' || !file.mimeType).map(backupInfo);
+  };
+  const downloadBackup = async (id) => {
+    fileId(id);
+    const raw = await google.request(`/drive/v3/files/${id}?alt=media&supportsAllDrives=true`, { responseType: 'text' });
+    const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : typeof raw === 'string' ? raw : JSON.stringify(raw);
+    if (Buffer.byteLength(text, 'utf8') > MAX_BACKUP_BYTES) fail('La sauvegarde Google est trop volumineuse (20 Mo max).', 413);
+    try { return validateBackup(JSON.parse(text)); } catch (error) {
+      if (error.status) throw error;
+      fail('Le contenu de cette sauvegarde Google est invalide.', 422);
+    }
+  };
   const linked = (id) => {
     const link = db.prepare('SELECT * FROM google_documents WHERE entry_id=?').get(id);
     if (!link) fail('Ce document n’est pas encore associé à Google Drive.', 404);
@@ -71,6 +118,29 @@ export function registerGoogleRoutes(app, { db, google }) {
       try { googleToDocument(selectDocumentTab(source, tab.id)); return { ...tab, editable: true }; }
       catch (e) { if (e.status !== 422) throw e; return { ...tab, editable: true, reason: e.message }; }
     }) });
+  });
+  route('get', '/api/google/backup/list', async (_req, res) => {
+    res.json({ files: await backupList() });
+  });
+  route('post', '/api/google/backup/export', async (_req, res) => {
+    const payload = JSON.stringify(buildBackup(db));
+    if (Buffer.byteLength(payload, 'utf8') > MAX_BACKUP_BYTES) fail('La sauvegarde est trop volumineuse (20 Mo max).', 413);
+    const name = `WorkLogs backup ${new Date().toISOString().replace(/[T:.]/g, '-').replace(/Z$/, '')}.json`;
+    const multipart = multipartBackup(name, payload);
+    const result = await google.request('/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime,size,mimeType', {
+      method: 'POST',
+      headers: { 'Content-Type': multipart.contentType },
+      body: multipart.body,
+    });
+    if (!result?.id) fail('Google n’a pas confirmé la création de la sauvegarde.', 502);
+    res.status(201).json(backupInfo({ ...result, name: result.name || name, mimeType: 'application/json', size: result.size || Buffer.byteLength(payload, 'utf8') }));
+  });
+  route('get', '/api/google/backup/:id', async (req, res) => {
+    res.json(await downloadBackup(req.params.id));
+  });
+  route('post', '/api/google/backup/:id/import', async (req, res) => {
+    const data = await downloadBackup(req.params.id);
+    res.json(restoreBackup(db, data));
   });
   route('get', '/api/google/documents', async (req, res) => {
     const params = new URLSearchParams({ q: "mimeType='application/vnd.google-apps.document' and trashed=false", fields: 'files(id,name,modifiedTime),nextPageToken', orderBy: 'modifiedTime desc', pageSize: '100', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true' });

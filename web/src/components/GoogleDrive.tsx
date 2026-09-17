@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
-import { api, googleHelpUrl, type Entry, type GoogleFile, type GoogleStatus } from '../lib';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { api, googleHelpUrl, type Entry, type GoogleBackup, type GoogleFile, type GoogleStatus } from '../lib';
 
 /** Gestion Drive dans une fenêtre dédiée, sans route ni onglet supplémentaire. */
-export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
+export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => void; onRestored?: () => void | Promise<void> }) {
   const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState<GoogleStatus | null>(null);
   const [files, setFiles] = useState<GoogleFile[]>([]);
+  const [backups, setBackups] = useState<GoogleBackup[]>([]);
   const [page, setPage] = useState('');
   const [error, setError] = useState('');
   const [helpUrl, setHelpUrl] = useState('');
@@ -16,6 +18,8 @@ export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
   const [filter, setFilter] = useState('');
   const [busy, setBusy] = useState(false);
   const [configure, setConfigure] = useState(false);
+  const [backupMessage, setBackupMessage] = useState('');
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   const refreshFiles = async (token = '') => {
     const result = await api.googleDocuments(token);
@@ -23,6 +27,10 @@ export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
     setPage(result.nextPageToken || '');
     setWarnings(result.warnings || []);
     setLoaded(true);
+  };
+  const refreshBackups = async () => {
+    const result = await api.googleBackups();
+    setBackups(result.files);
   };
   const showError = (e: unknown) => {
     setError((e as Error).message);
@@ -50,11 +58,22 @@ export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
     void api.googleStatus().then(async (next) => {
       if (!alive) return;
       setStatus(next);
-      if (next.connected) await refreshFiles();
+      if (next.connected) {
+        await refreshFiles();
+        await refreshBackups();
+      }
     }).catch(e => alive && showError(e)).finally(() => {
       if (alive) setBusy(false);
     });
     return () => { alive = false; };
+  }, [expanded]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const dialog = dialogRef.current;
+    if (!dialog || dialog.open) return;
+    try { dialog.showModal(); }
+    catch { dialog.setAttribute('open', ''); }
   }, [expanded]);
 
   useEffect(() => {
@@ -66,7 +85,10 @@ export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
         setStatus(next);
         if (!next.pending) {
           clearInterval(timer);
-          if (next.connected) await refreshFiles();
+          if (next.connected) {
+            await refreshFiles();
+            await refreshBackups();
+          }
           if (next.error) setError(next.error);
         }
       }).catch(e => { if (alive) showError(e); });
@@ -95,6 +117,21 @@ export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
   };
 
   const openFile = async (file: GoogleFile) => onOpen(await api.openGoogleDocument(file.id));
+  const saveBackup = async () => {
+    await run(async () => {
+      const saved = await api.exportGoogleBackup();
+      setBackups(current => [saved, ...current.filter(backup => backup.id !== saved.id)]);
+      setBackupMessage(`Sauvegarde enregistrée dans Google Drive : ${saved.name}`);
+    });
+  };
+  const restore = async (backup: GoogleBackup) => {
+    if (!confirm(`Restaurer « ${backup.name} » ? Les projets, entrées, tâches et associations locales seront remplacés. Les fichiers joints locaux ne sont pas inclus dans le JSON.`)) return;
+    await run(async () => {
+      await api.importGoogleBackup(backup.id);
+      setBackupMessage(`Sauvegarde restaurée : ${backup.name}`);
+      await onRestored?.();
+    });
+  };
 
   return (
     <section className="drive-panel" aria-label="Google Drive">
@@ -107,13 +144,13 @@ export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
       >
         Gérer Google Drive
       </button>
-      {expanded && (
+      {expanded && createPortal((
         <dialog
           id="google-drive-dialog"
           className="drive-dialog"
           aria-label="Gestion Google Drive"
           aria-modal="true"
-          open
+          ref={dialogRef}
           onCancel={(event) => {
             event.preventDefault();
             setExpanded(false);
@@ -138,6 +175,12 @@ export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
                 {status.connected ? 'Choisir des documents dans Drive' : 'Connecter Google Drive'}
               </button>}
               {status.connected && <>
+                <section className="drive-backups" aria-label="Sauvegardes WorkLogs">
+                  <div className="drive-subheading"><div><h3>Sauvegardes WorkLogs</h3><p>Un fichier JSON lisible par WorkLogs sur un autre PC connecté au même compte.</p></div><button className="primary" type="button" disabled={busy} onClick={() => void saveBackup()}>Sauvegarder dans Google Drive</button></div>
+                  <div className="drive-backup-actions"><button type="button" disabled={busy} onClick={() => void run(() => refreshBackups())}>Actualiser les sauvegardes</button></div>
+                  {backups.length > 0 ? <ul className="drive-backups-list">{backups.map(backup => <li key={backup.id}><div><strong>{backup.name}</strong><small>{backup.modifiedTime ? new Date(backup.modifiedTime).toLocaleString('fr-FR') : 'Date inconnue'}{backup.size ? ` · ${Math.round(backup.size / 1024)} Ko` : ''}</small></div><button className="ghost" type="button" disabled={busy} onClick={() => void restore(backup)}>Restaurer</button></li>)}</ul> : <p className="drive-hint">Aucune sauvegarde WorkLogs dans ce compte.</p>}
+                  {backupMessage && <p className="drive-success" role="status">{backupMessage}</p>}
+                </section>
                 <button className="primary" type="button" disabled={busy || status.pending} onClick={() => setCreating(!creating)}>Créer un Google Docs</button>
                 {creating && <form className="drive-create" onSubmit={event => {
                   event.preventDefault();
@@ -165,7 +208,7 @@ export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
                 {!busy && !error && loaded && !files.length && <p>Aucun document autorisé. Utilise « Choisir des documents dans Drive ».</p>}
                 {warnings.map(warning => <p key={warning} role="status">{warning}</p>)}
                 {page && <button type="button" disabled={busy} onClick={() => void run(() => refreshFiles(page))}>Voir la suite</button>}
-                <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.disconnectGoogle()); setFiles([]); setLoaded(false); setCreating(false); setWarnings([]); })}>Déconnecter Google Drive</button>
+                <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.disconnectGoogle()); setFiles([]); setBackups([]); setLoaded(false); setCreating(false); setWarnings([]); setBackupMessage(''); })}>Déconnecter Google Drive</button>
               </>}
               {status.configured && !status.pending && <button className="ghost" type="button" disabled={busy} onClick={() => setConfigure(!configure)}>Configuration Google</button>}
               {status.secureStorage === false && <p>Le trousseau Linux doit être déverrouillé pour conserver ta connexion Google.</p>}
@@ -174,7 +217,7 @@ export function GoogleDrive({ onOpen }: { onOpen: (entry: Entry) => void }) {
             {helpUrl && <a href={helpUrl} target="_blank" rel="noopener noreferrer">Activer l’API dans Google Cloud</a>}
           </div>
         </dialog>
-      )}
+      ), document.body)}
     </section>
   );
 }

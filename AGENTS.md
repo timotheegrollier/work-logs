@@ -1,11 +1,11 @@
 # WorkLogs — règles agents
 
-## Reprise actuelle — 2026-09-16
-- **v0.13.0** : poignées de redimensionnement des barres latérales, fusionnées sur
-  master avec la correction du focus clavier Google (v0.12.1).
-  `ColumnResizer.tsx`, largeurs mémorisées, grille adaptative et accès au clavier.
-  Aucune dépendance ajoutée. Course du focus dans le plan de l’éditeur riche corrigée.
-  `./scripts/check.sh` vert après fusion et correctif : **273 tests**.
+## Reprise actuelle — 2026-09-17
+- **v0.15.0** : création de tâches liées depuis une entrée locale ou Google, dialogue Drive
+  rendu au premier plan, sauvegarde/restauration JSON versionnée dans Drive.
+  Liens `task_entries` et `google_documents` restaurés de façon transactionnelle ; aucune
+  dépendance ajoutée. `./scripts/check.sh` vert : **111 API, 102 front, 33 desktop unitaires,
+  16 scripts, 24 navigateur et 10 desktop e2e**.
   Bilan dans `docs/00-HANDOVER.md`, publication via `docs/07-RELEASES.md`.
 
 ## Reprise actuelle — 2026-09-15

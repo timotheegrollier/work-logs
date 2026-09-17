@@ -92,6 +92,7 @@ export interface GoogleStatus {
   selectedIds: string[]; secureStorage?: boolean;
 }
 export interface GoogleFile { id: string; name: string; modifiedTime: string }
+export interface GoogleBackup { id: string; name: string; modifiedTime: string; size: number | null }
 export interface GoogleTab { id: string; title: string; depth: number; editable?: boolean; reason?: string }
 export interface Task {
   id: string;
@@ -162,6 +163,9 @@ export const api = {
   connectGoogle: () => send<GoogleStatus>('POST', '/api/google/connect'),
   disconnectGoogle: () => send<GoogleStatus>('POST', '/api/google/disconnect'),
   googleDocuments: (pageToken = '') => req<{ files: GoogleFile[]; nextPageToken?: string; warnings?: string[] }>('/api/google/documents' + (pageToken ? '?page_token=' + encodeURIComponent(pageToken) : '')),
+  googleBackups: () => req<{ files: GoogleBackup[] }>('/api/google/backup/list'),
+  exportGoogleBackup: () => send<GoogleBackup>('POST', '/api/google/backup/export'),
+  importGoogleBackup: (id: string) => send<{ ok: true; projects: number; entries: number; tasks: number }>('POST', `/api/google/backup/${encodeURIComponent(id)}/import`),
   createGoogleDocument: (title: string) => send<Entry>('POST', '/api/google/documents', { title }),
   googleDocumentTabs: (id: string) => req<{ tabs: GoogleTab[] }>(`/api/google/documents/${encodeURIComponent(id)}/tabs`),
   openGoogleDocument: (document_id: string, tab_id?: string) => send<Entry>('POST', '/api/google/documents/open', { document_id, ...(tab_id ? { tab_id } : {}) }),
@@ -179,6 +183,8 @@ export const api = {
   updateEntry: (id: string, body: Partial<Entry>) => send<Entry>('PUT', `/api/entries/${id}`, body),
   deleteEntry: (id: string) => send<{ ok: true }>('DELETE', `/api/entries/${id}`),
   copyEntry: (id: string) => send<Entry>('POST', `/api/entries/${id}/copy`),
+  createTaskFromEntry: (entryId: string, body?: { title?: string; due_date?: string | null }) =>
+    send<Task>('POST', `/api/entries/${entryId}/task`, body),
 
   createTask: (body: Partial<Task>) => send<Task>('POST', '/api/tasks', body),
   updateTask: (id: string, body: Partial<Task>) => send<Task>('PUT', `/api/tasks/${id}`, body),

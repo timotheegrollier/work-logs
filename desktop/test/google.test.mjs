@@ -98,6 +98,25 @@ test('renouvelle un jeton expiré une seule fois pour des appels simultanés', a
   } finally { f.close(); }
 });
 
+test('autorise les uploads Drive multipart et les téléchargements texte sans élargir les hôtes', async () => {
+  const f = fixture();
+  try {
+    await f.authorize();
+    const uploaded = await f.client.request('/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'multipart/related; boundary=test' },
+      body: Buffer.from('backup'),
+    });
+    assert.deepEqual(uploaded, { ok: true });
+    const upload = f.calls.find(call => call.url.includes('/upload/drive/v3/files'));
+    assert.equal(upload.options.headers['Content-Type'], 'multipart/related; boundary=test');
+    assert.equal(upload.options.headers.Authorization, 'Bearer test-access');
+    assert.ok(Buffer.isBuffer(upload.options.body));
+    const downloaded = await f.client.request('/drive/v3/files/backup-1?alt=media', { responseType: 'text' });
+    assert.equal(downloaded, '{"ok":true}');
+  } finally { f.close(); }
+});
+
 test('révocation distante et déconnexion locale effacent les identifiants enregistrés', async () => {
   const f = fixture({ response: 401 });
   try {

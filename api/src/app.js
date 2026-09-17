@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { uid, nowISO, today } from './db.js';
 import { decodeEntry, documentText, validateDocument } from './rich-document.js';
+import { buildBackup } from './backup.js';
 import { googleLink, registerGoogleRoutes } from './google-routes.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
@@ -58,6 +59,22 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     return row ? { ...decodeEntry(row), google_sync: googleLink(db, row) } : row;
   };
   const getTask = (id) => db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
+  const getTaskWithDocuments = (id) => {
+    const task = getTask(id);
+    if (!task) return task;
+    const documents = db.prepare(
+      `SELECT e.id, e.title, e.entry_date, e.project_id, e.updated_at,
+              '' excerpt, 0 attachments,
+              g.document_id google_document_id, g.tab_id google_tab_id,
+              g.document_title google_document_title, g.tab_title google_tab_title
+       FROM task_entries te
+       JOIN entries e ON e.id = te.entry_id
+       LEFT JOIN google_documents g ON g.entry_id = e.id
+       WHERE te.task_id=?
+       ORDER BY e.entry_date DESC, e.updated_at DESC, e.id ASC`
+    ).all(id);
+    return { ...task, documents };
+  };
   const getProject = (id) => db.prepare('SELECT * FROM projects WHERE id=?').get(id);
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, ts: nowISO() }));
@@ -253,6 +270,32 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
   });
 
   // ---------------------------------------------------------------- tâches
+  app.post('/api/entries/:id/task', (req, res) => {
+    const source = getEntry(req.params.id);
+    if (!source) return notFound(res, 'entrée introuvable');
+    const b = req.body || {};
+    const title = b.title === undefined ? source.title : str(b.title);
+    if (!title) return bad(res, 'titre requis');
+    const dueDate = b.due_date === undefined ? null : orNull(b.due_date);
+    if (dueDate && !DATE_RE.test(dueDate)) return bad(res, 'échéance invalide (AAAA-MM-JJ attendu)');
+
+    const id = uid('tk_');
+    const time = nowISO();
+    const position = db.prepare('SELECT COALESCE(MAX(position),-1)+1 p FROM tasks WHERE status=?').get('todo').p;
+    db.exec('BEGIN');
+    try {
+      db.prepare(
+        'INSERT INTO tasks (id,title,status,due_date,pinned,position,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)'
+      ).run(id, title, 'todo', dueDate, 0, position, source.project_id, time, time);
+      db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run(id, source.id, time);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    res.status(201).json(getTaskWithDocuments(id));
+  });
+
   app.post('/api/tasks', (req, res) => {
     const b = req.body || {};
     const title = str(b.title);
@@ -427,17 +470,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
   });
 
   // ---------------------------------------------------------------- export
-  app.get('/api/export', (_req, res) => {
-    res.json({
-      version: 2,
-      exported_at: nowISO(),
-      projects: db.prepare('SELECT * FROM projects ORDER BY name').all(),
-      entries: db.prepare('SELECT * FROM entries ORDER BY entry_date DESC').all().map(decodeEntry),
-      tasks: db.prepare('SELECT * FROM tasks ORDER BY status, position').all(),
-      task_entries: db.prepare('SELECT * FROM task_entries ORDER BY task_id, entry_id').all(),
-      attachments: db.prepare('SELECT * FROM attachments').all(),
-    });
-  });
+  app.get('/api/export', (_req, res) => res.json(buildBackup(db)));
 
   registerGoogleRoutes(app, { db, google });
   app.use('/api', (_req, res) => notFound(res, 'route inconnue'));

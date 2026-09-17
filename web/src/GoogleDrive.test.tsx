@@ -1,10 +1,15 @@
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { GoogleDrive } from './components/GoogleDrive';
 import { EntryEditor } from './components/EntryEditor';
 import { api, ApiError, emptyDocument, type Entry } from './lib';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); delete window.worklogsDesktop; });
+
+beforeEach(() => {
+  vi.spyOn(api, 'googleBackups').mockResolvedValue({ files: [] });
+});
+
 const connected = { available: true, configured: true, connected: true, pending: false, error: '', selectedIds: [] };
 const entry: Entry = { id: 'en_google', title: 'Document partagé', content_md: 'Original', content_json: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Original' }] }] },
   entry_date: '2026-09-14', project_id: null, created_at: '', updated_at: '', attachments: [], google_sync: { document_id: 'doc-1', synced_at: '', dirty: true } };
@@ -53,6 +58,35 @@ test('un refus de quitter Google garde son éditeur et ne recharge aucune copie 
   await waitFor(() => expect(bridge.close).toHaveBeenCalled());
   expect(pull).not.toHaveBeenCalled();
   expect(screen.getByLabelText('Éditeur Google Docs intégré')).toBeVisible();
+});
+
+test('rend le dialogue Drive au-dessus du layout via le body', async () => {
+  vi.spyOn(api, 'googleStatus').mockResolvedValue({ ...connected, connected: false });
+  render(<GoogleDrive onOpen={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Gérer Google Drive' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Gestion Google Drive' });
+  expect(dialog.parentElement).toBe(document.body);
+});
+
+test('sauvegarde puis restaure la base depuis Google Drive', async () => {
+  vi.spyOn(api, 'googleStatus').mockResolvedValue(connected);
+  vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [] });
+  const backup = { id: 'backup-1', name: 'WorkLogs backup.json', modifiedTime: '2026-09-17T10:00:00.000Z', size: 1234 };
+  vi.spyOn(api, 'googleBackups').mockResolvedValue({ files: [backup] });
+  const exportBackup = vi.spyOn(api, 'exportGoogleBackup').mockResolvedValue(backup);
+  const importBackup = vi.spyOn(api, 'importGoogleBackup').mockResolvedValue({ ok: true, projects: 1, entries: 1, tasks: 1 });
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  const onRestored = vi.fn();
+  render(<GoogleDrive onOpen={() => {}} onRestored={onRestored} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Gérer Google Drive' }));
+  await screen.findByRole('button', { name: 'Sauvegarder dans Google Drive' });
+  fireEvent.click(screen.getByRole('button', { name: 'Sauvegarder dans Google Drive' }));
+  await waitFor(() => expect(exportBackup).toHaveBeenCalledOnce());
+  expect(await screen.findByText(/Sauvegarde enregistrée/)).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Restaurer' }));
+  await waitFor(() => expect(importBackup).toHaveBeenCalledWith('backup-1'));
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining('seront remplacés'));
+  expect(onRestored).toHaveBeenCalledOnce();
 });
 
 test('ouvre un document autorisé dans WorkLogs puis permet de déconnecter Drive', async () => {

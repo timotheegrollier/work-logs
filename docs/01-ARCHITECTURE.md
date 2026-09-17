@@ -98,9 +98,12 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET | `/api/state?q=&project_id=` | **tout l'écran en un appel** : projets, entrées (extrait seul), tâches avec `documents`, compteurs |
 | GET | `/api/entries/:id` | l'entrée complète + ses pièces jointes |
 | POST · PUT · DELETE | `/api/entries[/:id]` | créer · modifier · supprimer |
+| POST | `/api/entries/:id/task` | crée une tâche `todo` et la lie atomiquement à l’entrée |
 | POST | `/api/entries/:id/copy` | copie locale indépendante, fichiers compris |
 | GET · POST | `/api/google/*` | état, configuration desktop, connexion, déconnexion, liste et ouverture |
 | POST | `/api/google/documents` | crée un Google Docs nommé et son entrée locale associée |
+| GET · POST | `/api/google/backup/list`, `/api/google/backup/export` | liste ou enregistre un JSON WorkLogs dans Drive |
+| GET · POST | `/api/google/backup/:id`, `/:id/import` | lit ou restaure une sauvegarde après validation transactionnelle |
 | GET | `/api/google/documents/:id/tabs` | onglets, imbrication et compatibilité d’édition |
 | POST | `/api/entries/:id/google/push` · `pull` | envoyer ou recharger avec contrôle de révision/brouillon |
 | POST · PUT · DELETE | `/api/tasks[/:id]` | créer · modifier · supprimer |
@@ -109,7 +112,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | POST · PUT · DELETE | `/api/projects[/:id]` | créer · renommer/recolorer · supprimer |
 | POST | `/api/uploads` | multipart `file` + `entry_id` (obligatoire) |
 | GET · DELETE | `/api/files/:stored` · `/api/attachments/:id` | télécharger · supprimer |
-| GET | `/api/export` | toute la base en JSON, associations `task_entries` incluses |
+| GET | `/api/export` | toute la base en JSON : tâches, associations, liens Google et métadonnées de pièces jointes |
 
 Conventions : erreurs `{"error": "…"}` en français, `400` pour une validation, `404` pour un
 identifiant inconnu, `201` à la création. Un champ absent d'un `PUT` **n'est pas écrasé** ;
@@ -121,6 +124,10 @@ tâche porte `documents`, un tableau de résumés `{id, title, entry_date, proje
 google_document_id, google_tab_id, google_document_title, google_tab_title}`. Le filtre
 `project_id` filtre les tâches (et les entrées principales), mais pas les documents associés à
 une tâche : ils restent son contexte, même s'ils appartiennent à un autre projet.
+
+`POST /api/entries/:id/task` reprend par défaut le titre et le projet de l’entrée, accepte une échéance
+facultative et crée la tâche ainsi que `task_entries` dans une transaction. Il fonctionne de la même
+manière pour une entrée locale et pour un onglet Google.
 
 Les associations sont créées avec `POST /api/tasks/:id/documents/:entryId` : `201` à la première
 création, puis `200` avec la ligne existante en cas de doublon. La suppression renvoie `200` ;

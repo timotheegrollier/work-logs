@@ -80,6 +80,7 @@ Desktop app: `npm run desktop`.
 | Check a card · drag it | finishes it · moves it across columns |
 | Click a project | filters **journal and tasks** at the same time |
 | **Search** | searches entry titles, bodies and tasks |
+| **Create linked task** in an entry | creates a task with that entry as context |
 | **Export** | downloads the whole database as JSON |
 
 Supported Markdown: headings, bold/italic, lists, **check boxes**, **tables**,
@@ -92,6 +93,8 @@ file authorization use the system browser. **Save to Drive** sends changes expli
 Initial Drive support covers text, headings, basic styles and flat lists; complex Google
 documents are rejected before import/write. Tables and images work locally. OAuth/API
 tests use simulated responses; a real-account round trip remains to be verified.
+
+The **WorkLogs backups** section in the Google Drive dialog stores a versioned JSON file in Drive and restores it on another WorkLogs installation connected to the same account. Restore replaces local data after confirmation; local attachment bytes are not part of this JSON.
 [Setup, limitations and implementation](docs/08-GOOGLE-DOCS.md).
 
 ## Test

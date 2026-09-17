@@ -112,6 +112,7 @@ ses fichiers.
 - **Modifier** : cliquer sur le titre ouvre le nom et l'échéance. `Entrée` valide, `Échap` annule.
 - **★** met la tâche en avant (liseré coloré à gauche). C'est la seule notion de priorité.
 - Une échéance dépassée s'affiche en rouge, et le compteur « en retard » apparaît en haut.
+- **Créer une tâche liée** depuis l’entrée ouverte préremplit son titre et permet d’ajouter une échéance. La tâche apparaît directement dans le panneau de droite avec cette entrée comme contexte.
 - **Relier un document** ouvre la liste des entrées disponibles. Choisir une entrée locale ou un onglet Google puis cliquer sur **Relier** ; chaque document lié reste visible sur la carte avec son origine.
 - Cliquer sur le titre d'un document lié l'ouvre au centre. Le bouton ✕ retire seulement l'association, sans supprimer le document. Une même entrée peut fournir le contexte de plusieurs tâches.
 
@@ -139,8 +140,14 @@ tâches. Elle se combine avec le filtre projet.
 
 Le bouton **Gérer Google Drive** ouvre un dialogue séparé de la liste des entrées locales. Toute la
 gestion Drive s'y trouve : configuration OAuth, connexion, choix des fichiers autorisés, création,
-recherche, ouverture et déconnexion. Fermer le dialogue ne ferme pas le document actuellement ouvert
-au centre.
+recherche, ouverture, sauvegardes et déconnexion. Le dialogue est au premier plan ; fermer le dialogue
+ne ferme pas le document actuellement ouvert au centre.
+
+Dans **Sauvegardes WorkLogs**, **Sauvegarder dans Google Drive** dépose un fichier JSON versionné
+(`.json`) lisible par une autre installation WorkLogs connectée au même compte. **Restaurer** demande
+confirmation puis remplace les projets, entrées, tâches, associations et liens Google locaux de manière
+transactionnelle. Le JSON contient les métadonnées des pièces jointes, mais pas leurs octets : les
+fichiers locaux devront être récupérés avec `./scripts/backup.sh` si on veut les déplacer aussi.
 
 ## Sauvegarder
 
@@ -148,6 +155,7 @@ au centre.
 |---|---|---|
 | Copie complète (base + fichiers joints) | `./scripts/backup.sh` | avant toute manipulation risquée, et chaque vendredi |
 | Export lisible (JSON) | bouton **Exporter** | pour archiver ou relire ailleurs |
+| Sauvegarde JSON Drive | **Gérer Google Drive → Sauvegardes WorkLogs** | pour restaurer sur un autre PC du même compte |
 
 La sauvegarde atterrit dans `~/WorkLogs-backups/worklogs-AAAAMMJJ-HHMMSS/`.
 
