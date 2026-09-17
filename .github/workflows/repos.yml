@@ -19,7 +19,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: repos
+  # Partagé avec « PWA » : les deux workflows poussent sur gh-pages.
+  group: gh-pages
   cancel-in-progress: false
 
 env:

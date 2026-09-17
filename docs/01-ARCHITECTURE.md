@@ -29,6 +29,24 @@ automatique depuis la base web dans ce lot.
 En production, `npm start` construit le front et l'API le sert elle-même : **une seule URL**
 (`http://localhost:8410`). En développement, Vite proxifie `/api` vers `:8410`.
 
+## PWA statique (mobile, sans serveur)
+
+Le même `web/dist/` (base relative `./`, donc rejouable à la racine comme dans
+un sous-dossier) est publié dans `app/` sur gh-pages par le workflow `PWA`
+(`.github/workflows/pwa.yml`), qui partage son groupe de concurrence `gh-pages`
+avec « Dépôts » : les deux poussent sur la même branche. Contenu : `index.html`,
+`manifest.webmanifest`, icônes 256/512 (`web/public/icons/`, dérivées de
+`desktop/icons/`) et `sw.js` émis au build (`scripts/emit-sw.mjs`, version =
+paquet racine, testé dans `scripts/pwa-sw.test.mjs`).
+
+Le service worker (`web/src/sw-template.js`) met en cache la coquille et les
+ressources même origine, **jamais `/api/`** ; les navigations sont réseau
+d'abord avec repli hors-ligne, et le changement de version purge l'ancien
+cache (`skipWaiting` + `clients.claim` : mise à jour transparente). Il ne
+s'enregistre qu'en production sur http(s) — jamais sur `worklogs://` ni en dev.
+Les données locales (IndexedDB) et la connexion directe à Google (client OAuth
+« Web », lots suivants) n'ont besoin d'aucun serveur.
+
 ## Base — 6 tables (branche documents riches)
 
 ```sql

@@ -10,6 +10,9 @@ const rootVersion = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../packa
 
 export default defineConfig({
   plugins: [react()],
+  // Chemins relatifs : le même `dist/` tourne à la racine (desktop, `npm start`,
+  // recettes e2e) et dans un sous-dossier (PWA sur gh-pages).
+  base: './',
   define: { __WORKLOGS_VERSION__: JSON.stringify(rootVersion) },
   server: { port: 8411, proxy: { '/api': 'http://localhost:8410' } },
   preview: { port: 8411 },

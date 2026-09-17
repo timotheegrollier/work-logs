@@ -137,6 +137,13 @@ et les tâches restent, simplement détachées.
 La recherche en haut cherche dans les **titres et le corps** des entrées, et dans les titres des
 tâches. Elle se combine avec le filtre projet.
 
+## Installer sur mobile (PWA)
+
+Sur Android, ouvre l'URL de la PWA dans Chrome puis « Ajouter à l'écran d'accueil » :
+l'application s'ouvre en plein écran, fonctionne hors-ligne (coquille en cache) et se met
+à jour toute seule au rechargement suivant. Aucun compte requis : sans connexion Google,
+les données restent sur l'appareil ; la synchronisation Drive arrive aux lots suivants.
+
 ## Gérer Google Drive
 
 Le bouton **Gérer Google Drive** ouvre un dialogue séparé de la liste des entrées locales. Toute la

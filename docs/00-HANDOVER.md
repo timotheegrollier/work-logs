@@ -1,9 +1,12 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-17 · Version : v0.16.0.
-> **Lot courant :** liaison de plusieurs documents à une tâche et refonte ergonomique des cartes.
-> **Validation :** `./scripts/check.sh` vert après le bump : 111 tests API, 103 front,
-> 33 desktop unitaires, 16 scripts, 24 navigateur et 10 desktop e2e.
+> **Mise à jour :** 2026-09-18 · Version : v0.17.0.
+> **Lot courant :** socle PWA statique (manifeste, service worker versionné, base
+> relative, déploiement `app/` sur gh-pages) — lecture/écriture locales et OAuth
+> Web à venir (lots 2–5).
+> **Validation :** `./scripts/check.sh` vert sur l'arbre rebasé (base v0.17.0) :
+> 116 tests API, 104 front, 33 desktop unitaires, 19 scripts, 26 navigateur
+> et 10 desktop e2e.
 >
 > **Lot précédent :** correctif multipart Drive CRLF publié en v0.15.1 (travail conservé tel quel).
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
