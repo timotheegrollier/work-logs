@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { COLUMNS, api, dayLabel, isOverdue, type EntrySummary, type Status, type Task } from '../lib';
+import { COLUMNS, PRIORITIES, api, dayLabel, isOverdue, priorityLabel, type EntrySummary, type Priority, type Status, type Task } from '../lib';
 
 const DRAG_TYPE = 'text/plain';
 
@@ -111,7 +111,7 @@ function TaskCard({
   onChanged: () => void;
   onDrop: (event: React.DragEvent) => void;
 }) {
-  const [form, setForm] = useState({ title: task.title, due_date: task.due_date ?? '' });
+  const [form, setForm] = useState({ title: task.title, due_date: task.due_date ?? '', priority: (task.priority ?? 'normal') as Priority });
   const [linking, setLinking] = useState(false);
   const [filter, setFilter] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
@@ -134,7 +134,7 @@ function TaskCard({
   const saveEdit = async () => {
     if (!form.title.trim()) return;
     onEditDone();
-    await patch({ title: form.title.trim(), due_date: form.due_date || null });
+    await patch({ title: form.title.trim(), due_date: form.due_date || null, priority: form.priority });
   };
 
   const startLinking = () => {
@@ -311,6 +311,20 @@ function TaskCard({
           value={form.due_date}
           onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
         />
+        <label className="priority-field">
+          Priorité
+          <select
+            aria-label="Priorité"
+            value={form.priority}
+            onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value as Priority }))}
+          >
+            {PRIORITIES.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="card-actions">
           <button className="ghost" type="button" onClick={() => void saveEdit()}>
             Enregistrer
@@ -368,21 +382,26 @@ function TaskCard({
           </button>
         </span>
       </div>
-      {(task.due_date || linkedDocuments.length > 0) && (
-        <div className="card-meta">
-          {task.due_date && (
-            <span className={'due' + (late ? ' is-late' : '')} title={late ? 'En retard' : 'Échéance'}>
-              <span aria-hidden="true">📅 </span>
-              {dayLabel(task.due_date)}
-            </span>
-          )}
-          {linkedDocuments.length > 0 && (
-            <span className="docs-count" title={`${linkedDocuments.length} document${linkedDocuments.length > 1 ? 's' : ''} lié${linkedDocuments.length > 1 ? 's' : ''}`}>
-              📎 {linkedDocuments.length}
-            </span>
-          )}
-        </div>
-      )}
+      <div className="card-meta">
+        <span
+          className={'priority is-' + (task.priority ?? 'normal')}
+          title={`Priorité ${priorityLabel(task.priority ?? 'normal').toLowerCase()}`}
+        >
+          <span aria-hidden="true">{task.priority === 'high' ? '▲ ' : task.priority === 'low' ? '▼ ' : '● '}</span>
+          {priorityLabel(task.priority ?? 'normal')}
+        </span>
+        {task.due_date && (
+          <span className={'due' + (late ? ' is-late' : '')} title={late ? 'En retard' : 'Échéance'}>
+            <span aria-hidden="true">📅 </span>
+            {dayLabel(task.due_date)}
+          </span>
+        )}
+        {linkedDocuments.length > 0 && (
+          <span className="docs-count" title={`${linkedDocuments.length} document${linkedDocuments.length > 1 ? 's' : ''} lié${linkedDocuments.length > 1 ? 's' : ''}`}>
+            📎 {linkedDocuments.length}
+          </span>
+        )}
+      </div>
       {documentControls}
     </div>
   );

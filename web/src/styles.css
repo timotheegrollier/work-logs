@@ -1010,6 +1010,37 @@ button:disabled {
   padding: 2px 9px;
   font-variant-numeric: tabular-nums;
 }
+.priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+.priority.is-high {
+  color: var(--danger);
+  font-weight: 700;
+  background: var(--danger-soft);
+  border-color: transparent;
+}
+.priority.is-low {
+  border-style: dashed;
+}
+.priority-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.priority-field select {
+  flex: 1;
+}
 .pin {
   opacity: 0.35;
 }

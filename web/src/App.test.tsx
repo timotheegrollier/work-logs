@@ -490,6 +490,24 @@ describe('organiser les tâches', () => {
     });
   });
 
+  test('change la priorité d’une tâche et l’affiche en pastille', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { tasks: [{ id: 'tk_1', title: 'À trier' }] });
+    render(<App />);
+
+    // Les tâches d’avant la fonctionnalité (sans colonne) arrivent en « Normale ».
+    const card = (await within(board()).findByText('À trier')).closest('.card') as HTMLElement;
+    expect(within(card).getByText('Normale')).toBeInTheDocument();
+
+    await user.click(within(card).getByRole('button', { name: 'À trier' }));
+    await user.selectOptions(screen.getByLabelText('Priorité'), 'high');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }));
+
+    await waitFor(() => expect(row(api.db, 'SELECT priority FROM tasks WHERE id=?', 'tk_1').priority).toBe('high'));
+    expect(await within(board()).findByText('Haute')).toBeInTheDocument();
+    expect(within(board()).queryByText('Normale')).not.toBeInTheDocument();
+  });
+
   test('signale une échéance dépassée', async () => {
     const hier = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
     seedData(api.db, { tasks: [{ id: 'tk_1', title: 'Facture oubliée', due_date: hier }] });

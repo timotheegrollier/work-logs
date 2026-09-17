@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   due_date TEXT,
   pinned INTEGER NOT NULL DEFAULT 0,
   position INTEGER NOT NULL DEFAULT 0,
+  priority TEXT NOT NULL DEFAULT 'normal',
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -183,12 +184,12 @@ function seed(db) {
   );
 
   const ti = db.prepare(
-    'INSERT INTO tasks (id,title,status,due_date,pinned,position,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)'
+    'INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
   );
   const plus = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
-  ti.run('tk_1', 'Écrire ma première entrée', 'todo', plus(0), 1, 0, 'pr_perso', t, t);
-  ti.run('tk_2', 'Créer mes projets', 'todo', null, 0, 1, 'pr_perso', t, t);
-  ti.run('tk_3', 'Prendre en main WorkLogs', 'doing', null, 0, 0, 'pr_pro', t, t);
+  ti.run('tk_1', 'Écrire ma première entrée', 'todo', plus(0), 1, 0, 'normal', 'pr_perso', t, t);
+  ti.run('tk_2', 'Créer mes projets', 'todo', null, 0, 1, 'normal', 'pr_perso', t, t);
+  ti.run('tk_3', 'Prendre en main WorkLogs', 'doing', null, 0, 0, 'normal', 'pr_pro', t, t);
 }
 
 export function openDb(dbPath, { withSeed = true } = {}) {
@@ -200,6 +201,9 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   db.exec(INDEXES);
   // Migration additive V2 : les entrées Markdown et leurs pièces jointes restent intactes.
   if (!columns(db, 'entries').includes('content_json')) db.exec('ALTER TABLE entries ADD COLUMN content_json TEXT');
+  // Priorités (2026-09-18) : les tâches existantes deviennent « normale », sans toucher
+  // à l'ordre des colonnes — la position et l'épingle gardent leur rôle.
+  if (!columns(db, 'tasks').includes('priority')) db.exec("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'");
   const googleSchema = `CREATE TABLE IF NOT EXISTS google_documents (
     entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
     document_id TEXT NOT NULL,

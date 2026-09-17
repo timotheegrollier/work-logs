@@ -1,5 +1,13 @@
 import type { JSONContent } from '@tiptap/core';
 export type Status = 'todo' | 'doing' | 'done';
+export type Priority = 'low' | 'normal' | 'high';
+export const PRIORITIES: { id: Priority; label: string }[] = [
+  { id: 'low', label: 'Basse' },
+  { id: 'normal', label: 'Normale' },
+  { id: 'high', label: 'Haute' },
+];
+export const priorityLabel = (priority: Priority): string =>
+  PRIORITIES.find((p) => p.id === priority)?.label ?? 'Normale';
 export type RichDocument = JSONContent;
 export const emptyDocument = (): RichDocument => ({ type: 'doc', content: [{ type: 'paragraph' }] });
 
@@ -101,6 +109,8 @@ export interface Task {
   due_date: string | null;
   pinned: 0 | 1;
   position: number;
+  /** Toujours renseignée par l'API (`'normal'` par défaut et après migration). */
+  priority: Priority;
   project_id: string | null;
   created_at: string;
   updated_at: string;

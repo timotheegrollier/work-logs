@@ -109,8 +109,9 @@ ses fichiers.
   lui est rattachée automatiquement.
 - **Avancer** : glisser la carte d'une colonne à l'autre (À faire → En cours → Terminé).
 - **Terminer** : cocher la case. Le titre se barre et la carte rejoint Terminé.
-- **Modifier** : cliquer sur le titre ouvre le nom et l'échéance. `Entrée` valide, `Échap` annule.
-- **★** met la tâche en avant (liseré coloré à gauche). C'est la seule notion de priorité.
+- **Modifier** : cliquer sur le titre ouvre le nom, l'échéance et la priorité. `Entrée` valide, `Échap` annule.
+- **Priorité** : chaque carte affiche sa pastille — Basse, Normale ou Haute (▲ rouge). Elle ne réordonne pas la colonne : l'ordre reste celui du glisser-déposer.
+- **★** met la tâche en avant (liseré coloré à gauche), indépendamment de sa priorité.
 - Une échéance dépassée s'affiche en rouge, et le compteur « en retard » apparaît en haut.
 - **Créer une tâche liée** depuis l’entrée ouverte préremplit son titre et permet d’ajouter une échéance. La tâche apparaît directement dans le panneau de droite avec cette entrée comme contexte.
 - **Relier un document** ouvre la liste des entrées disponibles. Choisir une entrée locale ou un onglet Google puis cliquer sur **Relier** ; chaque document lié reste visible sur la carte avec son origine.

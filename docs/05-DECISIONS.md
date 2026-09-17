@@ -131,6 +131,12 @@ tâches en entrées de journal (`api/test/migration.test.js` le vérifie ligne �
 supplémentaire coûte un champ, un contrôle, un tri, un test et une ligne de doc — pour un gain
 réel à démontrer.
 
+**Réouverte le 2026-09-18** (demande d'usage : distinguer l'important dans la colonne).
+Trois niveaux seulement (`low`/`normal`/`high`, défaut `normal`) — pas quatre : la leçon
+« basse vs moyenne » tient toujours. Pas de tri automatique : l'ordre reste celui du
+glisser-déposer, l'épingle reste la mise en avant. Migration additive, anciens exports
+sans priorité restaurés en « normale ».
+
 ---
 
 ## 3. Le code n'a pas rétréci — et c'est normal
@@ -141,7 +147,7 @@ réel à démontrer.
 | Tests | 0 | 1 298 |
 | Écrans | 7 onglets | 1 |
 | Tables | 5 | 4 |
-| Colonnes de `tasks` | 13 | 9 |
+| Colonnes de `tasks` | 13 | 10 (priorité réintroduite le 2026-09-18, §2) |
 
 La V2 est plus simple **à utiliser** et plus verbeuse **à lire**. Ce qui a grossi :
 

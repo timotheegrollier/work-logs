@@ -1,6 +1,10 @@
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { startApi, make } from './helpers.js';
+import { openDb } from '../src/db.js';
 
 /** Titres d'une colonne, dans l'ordre d'affichage. */
 async function column(api, status) {
@@ -105,6 +109,64 @@ describe('tâches', () => {
     res = await api.put(`/api/tasks/${task.id}`, { pinned: false, due_date: '' });
     assert.equal(res.body.pinned, 0);
     assert.equal(res.body.due_date, null);
+  });
+
+  test('priorité normale par défaut, basse ou haute sur demande', async () => {
+    const defaut = await make.task(api, { title: 'Sans priorité' });
+    assert.equal(defaut.priority, 'normal');
+
+    const haute = await make.task(api, { title: 'Urgent', priority: 'high' });
+    assert.equal(haute.priority, 'high');
+    const basse = await make.task(api, { title: 'Plus tard', priority: 'low' });
+    assert.equal(basse.priority, 'low');
+    // `""` et l'absence valent « normale », comme les autres champs par défaut.
+    assert.equal((await make.task(api, { title: 'Vide', priority: '' })).priority, 'normal');
+  });
+
+  test('refuse une priorité inconnue sans rien créer', async () => {
+    const res = await api.post('/api/tasks', { title: 'Douteuse', priority: 'urgent' });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.error, 'priorité invalide (basse, normale ou haute attendue)');
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM tasks').get().n, 0);
+  });
+
+  test('modifie la priorité sans toucher au reste', async () => {
+    const task = await make.task(api, { title: 'À trier', due_date: '2026-04-01', pinned: true });
+
+    let res = await api.put(`/api/tasks/${task.id}`, { priority: 'high' });
+    assert.equal(res.body.priority, 'high');
+    assert.equal(res.body.title, 'À trier');
+    assert.equal(res.body.due_date, '2026-04-01');
+    assert.equal(res.body.pinned, 1);
+
+    res = await api.put(`/api/tasks/${task.id}`, { title: 'Autre nom' });
+    assert.equal(res.body.priority, 'high', 'non fournie = non écrasée');
+
+    assert.equal((await api.put(`/api/tasks/${task.id}`, { priority: 'minimum' })).status, 400);
+    assert.equal(api.db.prepare('SELECT priority FROM tasks WHERE id=?').get(task.id).priority, 'high');
+  });
+
+  test('une base antérieure sans colonne reçoit « normale » sans perdre ses tâches', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-priority-migration-'));
+    const file = path.join(dir, 'old.db');
+    const initial = openDb(file, { withSeed: false });
+    initial.exec(`DROP TABLE tasks;
+      CREATE TABLE tasks (id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'todo',
+        due_date TEXT, pinned INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL DEFAULT 0,
+        project_id TEXT REFERENCES projects(id) ON DELETE SET NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      INSERT INTO tasks (id,title,status,position,created_at,updated_at) VALUES ('tk_old','Ancienne','doing',0,'','');`);
+    initial.close();
+    const migrated = openDb(file, { withSeed: false });
+    try {
+      const row = migrated.prepare('SELECT * FROM tasks WHERE id=?').get('tk_old');
+      assert.equal(row.priority, 'normal');
+      assert.equal(row.title, 'Ancienne');
+      assert.equal(row.status, 'doing');
+      assert.deepEqual(migrated.prepare('PRAGMA foreign_key_check').all(), []);
+    } finally {
+      migrated.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('conserve les champs non fournis lors d’une mise à jour', async () => {

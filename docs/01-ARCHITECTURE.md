@@ -38,8 +38,8 @@ entries(id, title, content_md, content_json JSON|NULL, entry_date 'AAAA-MM-JJ',
         project_id → projects ON DELETE SET NULL, created_at, updated_at)
 
 tasks(id, title, status ∈ {todo, doing, done}, due_date 'AAAA-MM-JJ'|NULL,
-      pinned 0|1, position, project_id → projects ON DELETE SET NULL,
-      created_at, updated_at)
+      pinned 0|1, position, priority ∈ {low, normal, high} DEFAULT 'normal',
+      project_id → projects ON DELETE SET NULL, created_at, updated_at)
 
 task_entries(task_id → tasks ON DELETE CASCADE, entry_id → entries ON DELETE CASCADE,
              created_at, PRIMARY KEY(task_id, entry_id))

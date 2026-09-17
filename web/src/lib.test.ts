@@ -8,6 +8,7 @@ const task = (over: Partial<Task>): Task => ({
   due_date: null,
   pinned: 0,
   position: 0,
+  priority: 'normal',
   project_id: null,
   documents: [],
   created_at: '2026-09-01T00:00:00.000Z',

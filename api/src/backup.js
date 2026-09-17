@@ -5,6 +5,7 @@ export const BACKUP_VERSION = 2;
 export const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES = new Set(['todo', 'doing', 'done']);
+const PRIORITIES = new Set(['low', 'normal', 'high']);
 
 const fail = (message, status = 400) => {
   throw Object.assign(new Error(message), { status });
@@ -110,6 +111,9 @@ export function validateBackup(input) {
     if (typeof task.status !== 'string' || !STATUSES.has(task.status)) fail('Statut de tâche invalide.');
     if (!Number.isInteger(task.position) || task.position < 0) fail('Position de tâche invalide.');
     if (![0, 1].includes(Number(task.pinned))) fail('Épinglage de tâche invalide.');
+    // Les exports antérieurs n'ont pas de priorité : ils reviennent en « normale ».
+    const priority = task.priority === undefined || task.priority === null || task.priority === '' ? 'normal' : task.priority;
+    if (!PRIORITIES.has(priority)) fail('Priorité de tâche invalide.');
     return {
       id: id(task.id, 'Identifiant de tâche'),
       title: requiredText(task.title, 'Titre de tâche', 500),
@@ -117,6 +121,7 @@ export function validateBackup(input) {
       due_date: dueDate,
       pinned: Number(task.pinned),
       position: task.position,
+      priority,
       project_id: projectId,
       created_at: timestamp(task.created_at, 'Date de création de la tâche'),
       updated_at: timestamp(task.updated_at, 'Date de modification de la tâche'),
@@ -191,8 +196,8 @@ export function restoreBackup(db, input) {
     for (const value of data.projects) project.run(value.id, value.name, value.color, value.created_at);
     const entry = db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)');
     for (const value of data.entries) entry.run(value.id, value.title, value.content_md, value.content_json ? JSON.stringify(value.content_json) : null, value.entry_date, value.project_id, value.created_at, value.updated_at);
-    const task = db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)');
-    for (const value of data.tasks) task.run(value.id, value.title, value.status, value.due_date, value.pinned, value.position, value.project_id, value.created_at, value.updated_at);
+    const task = db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)');
+    for (const value of data.tasks) task.run(value.id, value.title, value.status, value.due_date, value.pinned, value.position, value.priority, value.project_id, value.created_at, value.updated_at);
     const google = db.prepare(`INSERT INTO google_documents
       (entry_id,document_id,tab_id,revision_id,synced_content_json,synced_at,document_title,tab_title,tab_order,tab_depth,readonly_reason)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`);

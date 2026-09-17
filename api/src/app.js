@@ -9,7 +9,14 @@ import { buildBackup } from './backup.js';
 import { googleLink, registerGoogleRoutes } from './google-routes.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
+export const PRIORITIES = ['low', 'normal', 'high'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** `undefined`/`""` → priorité par défaut ; toute autre valeur inconnue est refusée. */
+const priorityOf = (value, fallback = 'normal') => {
+  const cleaned = str(value);
+  if (cleaned === '') return fallback;
+  return PRIORITIES.includes(cleaned) ? cleaned : null;
+};
 
 const bad = (res, msg) => res.status(400).json({ error: msg });
 const notFound = (res, msg = 'introuvable') => res.status(404).json({ error: msg });
@@ -302,6 +309,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     if (!title) return bad(res, 'titre requis');
     const status = str(b.status) || 'todo';
     if (!STATUSES.includes(status)) return bad(res, 'statut invalide');
+    const priority = priorityOf(b.priority);
+    if (!priority) return bad(res, 'priorité invalide (basse, normale ou haute attendue)');
     if (orNull(b.project_id) && !getProject(str(b.project_id)))
       return bad(res, 'projet introuvable');
 
@@ -311,8 +320,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
       .prepare('SELECT COALESCE(MAX(position),-1)+1 p FROM tasks WHERE status=?')
       .get(status).p;
     db.prepare(
-      'INSERT INTO tasks (id,title,status,due_date,pinned,position,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)'
-    ).run(id, title, status, orNull(b.due_date), b.pinned ? 1 : 0, position, orNull(b.project_id), t, t);
+      'INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
+    ).run(id, title, status, orNull(b.due_date), b.pinned ? 1 : 0, position, priority, orNull(b.project_id), t, t);
     res.status(201).json(getTask(id));
   });
 
@@ -325,16 +334,19 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     if (!title) return bad(res, 'titre requis');
     const status = pick(b, 'status', cur.status, (v) => str(v) || cur.status);
     if (!STATUSES.includes(status)) return bad(res, 'statut invalide');
+    const priority = pick(b, 'priority', cur.priority ?? 'normal', (v) => priorityOf(v, cur.priority ?? 'normal'));
+    if (!priority) return bad(res, 'priorité invalide (basse, normale ou haute attendue)');
     const projectId = pick(b, 'project_id', cur.project_id, orNull);
     if (projectId && !getProject(projectId)) return bad(res, 'projet introuvable');
 
     db.prepare(
-      'UPDATE tasks SET title=?, status=?, due_date=?, pinned=?, project_id=?, updated_at=? WHERE id=?'
+      'UPDATE tasks SET title=?, status=?, due_date=?, pinned=?, priority=?, project_id=?, updated_at=? WHERE id=?'
     ).run(
       title,
       status,
       pick(b, 'due_date', cur.due_date, orNull),
       pick(b, 'pinned', cur.pinned, (v) => (v ? 1 : 0)),
+      priority,
       projectId,
       nowISO(),
       cur.id

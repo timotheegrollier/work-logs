@@ -89,6 +89,32 @@ describe('sauvegardes Google Drive', () => {
     }
   });
 
+  test('les priorités survivent à l’export et les anciens exports reviennent en « normale »', async () => {
+    const { restoreBackup } = await import('../src/backup.js');
+    const api = await startApi();
+    try {
+      const haute = await make.task(api, { title: 'Prioritaire', priority: 'high' });
+      const exported = (await api.get('/api/export')).body;
+      assert.equal(exported.tasks.find((task) => task.id === haute.id).priority, 'high');
+
+      await api.del(`/api/tasks/${haute.id}`);
+      restoreBackup(api.db, exported);
+      assert.equal(api.db.prepare('SELECT priority FROM tasks WHERE id=?').get(haute.id).priority, 'high');
+
+      // Export d’avant la fonctionnalité : pas de champ priority.
+      const legacy = structuredClone(exported);
+      for (const task of legacy.tasks) delete task.priority;
+      await api.del(`/api/tasks/${haute.id}`);
+      restoreBackup(api.db, legacy);
+      assert.equal(api.db.prepare('SELECT priority FROM tasks WHERE id=?').get(haute.id).priority, 'normal');
+
+      legacy.tasks[0].priority = 'critique';
+      assert.throws(() => restoreBackup(api.db, legacy), /Priorité de tâche invalide/);
+    } finally {
+      await api.close();
+    }
+  });
+
   test('signale que les sauvegardes Drive sont réservées au desktop', async () => {
     const api = await startApi();
     try {
