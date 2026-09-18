@@ -53,6 +53,50 @@ describe('tâches', () => {
     assert.deepEqual(await column(api, 'done'), ['A']);
   });
 
+  test('termine une tâche et archive ses documents sans supprimer le contexte', async () => {
+    const local = await make.entry(api, { title: 'Compte rendu local' });
+    const google = await make.entry(api, { title: 'Onglet Google' });
+    api.db.prepare(`INSERT INTO google_documents
+      (entry_id,document_id,tab_id,revision_id,synced_content_json,document_title,tab_title)
+      VALUES (?,?,?,?,?,?,?)`).run(google.id, 'google-doc', 'tab-1', 'r1', '{}', 'Dossier', 'Onglet');
+    const task = await make.task(api, { title: 'Terminer le dossier' });
+    await api.post(`/api/tasks/${task.id}/documents/${local.id}`);
+    await api.post(`/api/tasks/${task.id}/documents/${google.id}`);
+
+    const completed = await api.put(`/api/tasks/${task.id}`, { status: 'done' });
+    assert.equal(completed.body.status, 'done');
+    assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(local.id).archived, 1);
+    assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(google.id).archived, 1);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=?').get(task.id).n, 2);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM google_documents WHERE entry_id=?').get(google.id).n, 1);
+
+    const state = await api.get('/api/state');
+    assert.equal(state.body.entries.find((entry) => entry.id === local.id).archived, 1);
+    assert.equal(state.body.tasks.find((item) => item.id === task.id).documents.length, 2);
+
+    // Rouvrir la tâche ne ressuscite pas une archive explicite/automatique.
+    await api.put(`/api/tasks/${task.id}`, { status: 'todo' });
+    assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(local.id).archived, 1);
+  });
+
+  test('le déplacement kanban vers Terminé archive aussi les documents liés', async () => {
+    const entry = await make.entry(api, { title: 'Plan à livrer' });
+    const task = await make.task(api, { title: 'Livrer' });
+    await api.post(`/api/tasks/${task.id}/documents/${entry.id}`);
+
+    const moved = await api.patch(`/api/tasks/${task.id}/move`, { status: 'done', position: 0 });
+    assert.equal(moved.body.status, 'done');
+    assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(entry.id).archived, 1);
+  });
+
+  test('un document lié après coup à une tâche déjà terminée est archivé', async () => {
+    const entry = await make.entry(api, { title: 'Document tardif' });
+    const task = await make.task(api, { title: 'Déjà terminé', status: 'done' });
+
+    await api.post(`/api/tasks/${task.id}/documents/${entry.id}`);
+    assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(entry.id).archived, 1);
+  });
+
   test('insère à la bonne place et renumérote sans trou', async () => {
     await make.task(api, { title: 'A' });
     await make.task(api, { title: 'B' });

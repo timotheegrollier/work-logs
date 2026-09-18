@@ -71,7 +71,8 @@ et un **projet** (facultatif).
 
 **Archiver** (bouton dans la barre de l'entrée) range un document hors du journal sans
 rien détruire : les tâches liées gardent leur contexte et **Supprimer** n'est pas appelé.
-Les archives se déplient en bas de la colonne de gauche, par jour comme le journal ;
+Terminer une tâche archive automatiquement tous ses documents liés ; les archives se
+déplient en bas de la colonne de gauche, par jour comme le journal ;
 **Désarchiver** remet le document à sa place. Même geste pour un document Google :
 l'archiver le masque de l'application locale en conservant le fichier distant, tandis
 que **Supprimer** ne retire que la copie locale (jamais le fichier Google).
@@ -169,11 +170,14 @@ gestion Drive s'y trouve : configuration OAuth, connexion, choix des fichiers au
 recherche, ouverture, sauvegardes et déconnexion. Le dialogue est au premier plan ; fermer le dialogue
 ne ferme pas le document actuellement ouvert au centre.
 
-Dans **Sauvegardes WorkLogs**, **Sauvegarder dans Google Drive** dépose un fichier JSON versionné
-(`.json`) lisible par une autre installation WorkLogs connectée au même compte. **Restaurer** demande
-confirmation puis remplace les projets, entrées, tâches, associations et liens Google locaux de manière
-transactionnelle. Le JSON contient les métadonnées des pièces jointes, mais pas leurs octets : les
-fichiers locaux devront être récupérés avec `./scripts/backup.sh` si on veut les déplacer aussi.
+Dans **Sauvegardes WorkLogs**, **Sauvegarder dans Google Drive** maintient un seul fichier JSON
+canonique (`WorkLogs backup.json`) : une nouvelle sauvegarde remplace la précédente et les anciennes
+copies sont placées à la corbeille. Le fichier est lisible par une autre installation WorkLogs
+connectée au même compte. **Restaurer** demande confirmation puis remplace les projets, entrées,
+tâches, associations et liens Google locaux de manière transactionnelle. Le JSON contient les
+métadonnées des pièces jointes, mais pas leurs octets : les fichiers locaux devront être récupérés
+avec `./scripts/backup.sh` si on veut les déplacer aussi. Les boîtes mobiles restent séparées, car
+elles attendent une fusion explicite sur le PC.
 
 ## Sauvegarder
 

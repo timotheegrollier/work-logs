@@ -109,6 +109,37 @@ describe('tâches', () => {
     await expect(localApi.updateTask('tk_inconnu', { title: 'X' })).rejects.toThrow('tâche introuvable');
   });
 
+  test('termine une tâche et archive les documents liés sans supprimer le lien', async () => {
+    const entry = await localApi.createEntry({ title: 'Compte rendu' });
+    const task = await localApi.createTask({ title: 'Terminer' });
+    await localApi.linkTaskDocument(task.id, entry.id);
+
+    await localApi.updateTask(task.id, { status: 'done' });
+    expect((await localApi.entry(entry.id)).archived).toBe(1);
+    expect((await localApi.state()).entries.find((item) => item.id === entry.id)?.archived).toBe(1);
+    expect((await localApi.state()).tasks.find((item) => item.id === task.id)?.documents.map((item) => item.id)).toEqual([entry.id]);
+
+    await localApi.updateTask(task.id, { status: 'todo' });
+    expect((await localApi.entry(entry.id)).archived).toBe(1);
+  });
+
+  test('déplacement kanban vers Terminé archive les documents liés', async () => {
+    const entry = await localApi.createEntry({ title: 'Plan' });
+    const task = await localApi.createTask({ title: 'Livrer' });
+    await localApi.linkTaskDocument(task.id, entry.id);
+
+    await localApi.moveTask(task.id, 'done', 0);
+    expect((await localApi.entry(entry.id)).archived).toBe(1);
+  });
+
+  test('lier un document à une tâche déjà terminée l’archive immédiatement', async () => {
+    const entry = await localApi.createEntry({ title: 'Document tardif' });
+    const task = await localApi.createTask({ title: 'Déjà terminé', status: 'done' });
+
+    await localApi.linkTaskDocument(task.id, entry.id);
+    expect((await localApi.entry(entry.id)).archived).toBe(1);
+  });
+
   test('déplacement kanban renumérote les deux colonnes sans trou', async () => {
     const state = await localApi.state();
     const first = state.tasks.find((t) => t.status === 'todo') as { id: string };

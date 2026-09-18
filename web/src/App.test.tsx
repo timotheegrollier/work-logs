@@ -548,6 +548,25 @@ describe('organiser les tâches', () => {
     await waitFor(() => expect(row(api.db, 'SELECT * FROM tasks').status).toBe('todo'));
   });
 
+  test('termine une tâche, archive son document et le laisse restaurable depuis Archives', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      entries: [{ id: 'en_task_doc', title: 'Document de la tâche' }],
+      tasks: [{ id: 'tk_task_doc', title: 'Tâche finie' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_task_doc', 'en_task_doc', new Date().toISOString());
+    render(<App />);
+
+    expect(await within(journal()).findByText('Document de la tâche')).toBeInTheDocument();
+    await user.click(await screen.findByLabelText('Terminer Tâche finie'));
+    await waitFor(() => expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_task_doc').archived).toBe(1));
+    await waitFor(() => expect(within(journal()).queryByText('Document de la tâche')).not.toBeInTheDocument());
+
+    await user.click(within(journal()).getByText('Archives', { selector: 'summary' }));
+    expect(await within(journal()).findByText('Document de la tâche')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Désarchiver' })).toBeInTheDocument();
+  });
+
   test('épingle une tâche', async () => {
     const user = userEvent.setup();
     seedData(api.db, { tasks: [{ id: 'tk_1', title: 'Important' }] });

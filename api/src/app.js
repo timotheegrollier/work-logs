@@ -360,18 +360,27 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     const projectId = pick(b, 'project_id', cur.project_id, orNull);
     if (projectId && !getProject(projectId)) return bad(res, 'projet introuvable');
 
-    db.prepare(
-      'UPDATE tasks SET title=?, status=?, due_date=?, pinned=?, priority=?, project_id=?, updated_at=? WHERE id=?'
-    ).run(
-      title,
-      status,
-      pick(b, 'due_date', cur.due_date, orNull),
-      pick(b, 'pinned', cur.pinned, (v) => (v ? 1 : 0)),
-      priority,
-      projectId,
-      nowISO(),
-      cur.id
-    );
+    const time = nowISO();
+    db.exec('BEGIN');
+    try {
+      db.prepare(
+        'UPDATE tasks SET title=?, status=?, due_date=?, pinned=?, priority=?, project_id=?, updated_at=? WHERE id=?'
+      ).run(
+        title,
+        status,
+        pick(b, 'due_date', cur.due_date, orNull),
+        pick(b, 'pinned', cur.pinned, (v) => (v ? 1 : 0)),
+        priority,
+        projectId,
+        time,
+        cur.id
+      );
+      if (cur.status !== 'done' && status === 'done') archiveTaskDocuments(db, cur.id, time);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
     res.json(getTask(cur.id));
   });
 
@@ -384,14 +393,23 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     if (!STATUSES.includes(status)) return bad(res, 'statut invalide');
     const target = Number.isFinite(Number(position)) ? Math.max(0, Number(position)) : 0;
 
-    db.prepare('UPDATE tasks SET status=?, position=?, updated_at=? WHERE id=?').run(
-      status,
-      target - 0.5,
-      nowISO(),
-      cur.id
-    );
-    renumber(db, status);
-    if (cur.status !== status) renumber(db, cur.status);
+    const time = nowISO();
+    db.exec('BEGIN');
+    try {
+      db.prepare('UPDATE tasks SET status=?, position=?, updated_at=? WHERE id=?').run(
+        status,
+        target - 0.5,
+        time,
+        cur.id
+      );
+      renumber(db, status);
+      if (cur.status !== status) renumber(db, cur.status);
+      if (cur.status !== 'done' && status === 'done') archiveTaskDocuments(db, cur.id, time);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
     res.json(getTask(cur.id));
   });
 
@@ -403,11 +421,19 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     const existing = db.prepare('SELECT * FROM task_entries WHERE task_id=? AND entry_id=?').get(task.id, entry.id);
     if (existing) return res.json(existing);
     const association = { task_id: task.id, entry_id: entry.id, created_at: nowISO() };
-    db.prepare('INSERT INTO task_entries (task_id, entry_id, created_at) VALUES (?,?,?)').run(
-      association.task_id,
-      association.entry_id,
-      association.created_at
-    );
+    db.exec('BEGIN');
+    try {
+      db.prepare('INSERT INTO task_entries (task_id, entry_id, created_at) VALUES (?,?,?)').run(
+        association.task_id,
+        association.entry_id,
+        association.created_at
+      );
+      if (task.status === 'done') archiveTaskDocuments(db, task.id, association.created_at);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
     res.status(201).json(association);
   });
 
@@ -554,6 +580,14 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
   });
 
   return app;
+}
+
+/** Archive les documents liés quand une tâche est terminée, sans supprimer leurs liens. */
+function archiveTaskDocuments(db, taskId, time = nowISO()) {
+  db.prepare(
+    `UPDATE entries SET archived=1, updated_at=?
+     WHERE archived=0 AND id IN (SELECT entry_id FROM task_entries WHERE task_id=?)`
+  ).run(time, taskId);
 }
 
 /** Réécrit les positions d'une colonne en 0,1,2… (ordre courant conservé). */

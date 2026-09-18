@@ -69,6 +69,9 @@ export function EntryEditor({
   const [taskDueDate, setTaskDueDate] = useState('');
   const [taskCreating, setTaskCreating] = useState(false);
   const [taskMessage, setTaskMessage] = useState('');
+  useEffect(() => {
+    setArchived(entry.archived ?? 0);
+  }, [entry.id, entry.archived]);
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const changedRef = useRef(onChanged);

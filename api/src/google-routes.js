@@ -15,6 +15,7 @@ const backupInfo = (file) => ({
   modifiedTime: file.modifiedTime || '',
   size: file.size === undefined ? null : Number(file.size),
 });
+const BACKUP_NAME = 'WorkLogs backup.json';
 const backupBoundary = () => `worklogs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 const multipartBackup = (name, payload) => {
   const boundary = backupBoundary();
@@ -257,16 +258,27 @@ export function registerGoogleRoutes(app, { db, google, uploadDir }) {
   };
   const read = async (id, tabId = '') => selectDocumentTab(await readSource(id), tabId);
   const backupList = async () => {
-    const params = new URLSearchParams({
-      q: "appProperties has { key='worklogs_type' and value='backup' } and trashed=false",
-      fields: 'files(id,name,modifiedTime,size,mimeType,appProperties),nextPageToken',
-      orderBy: 'modifiedTime desc',
-      pageSize: '100',
-      supportsAllDrives: 'true',
-      includeItemsFromAllDrives: 'true',
-    });
-    const result = await google.request(`/drive/v3/files?${params}`);
-    return (result.files || []).filter(file => file.mimeType === 'application/json' || !file.mimeType).map(backupInfo);
+    const files = [];
+    const seenTokens = new Set();
+    let pageToken = '';
+    do {
+      const params = new URLSearchParams({
+        q: "appProperties has { key='worklogs_type' and value='backup' } and trashed=false",
+        fields: 'files(id,name,modifiedTime,size,mimeType,appProperties),nextPageToken',
+        orderBy: 'modifiedTime desc',
+        pageSize: '100',
+        supportsAllDrives: 'true',
+        includeItemsFromAllDrives: 'true',
+      });
+      if (pageToken) params.set('pageToken', pageToken);
+      const result = await google.request(`/drive/v3/files?${params}`);
+      files.push(...(result.files || []).filter(file => file.mimeType === 'application/json' || !file.mimeType));
+      const next = typeof result.nextPageToken === 'string' ? result.nextPageToken : '';
+      if (!next || seenTokens.has(next)) break;
+      seenTokens.add(next);
+      pageToken = next;
+    } while (pageToken);
+    return files.map(backupInfo);
   };
   const downloadBackup = async (id) => {
     fileId(id);
@@ -312,22 +324,43 @@ export function registerGoogleRoutes(app, { db, google, uploadDir }) {
   route('get', '/api/google/backup/list', async (_req, res) => {
     res.json({ files: await backupList() });
   });
-  route('post', '/api/google/backup/export', async (_req, res) => {
+  route('post', '/api/google/backup/export', async (_req, res) => exclusive('backup-export', async () => {
     // D'abord les binaires : le JSON référence ensuite leurs `driveFileId`.
     // Best-effort : un binaire trop gros ou refusé reste « local seul ».
     const uploadedBinaries = await uploadMissingAttachments(db, google, uploadDir);
     const payload = JSON.stringify(buildBackup(db));
     if (Buffer.byteLength(payload, 'utf8') > MAX_BACKUP_BYTES) fail('La sauvegarde est trop volumineuse (20 Mo max).', 413);
-    const name = `WorkLogs backup ${new Date().toISOString().replace(/[T:.]/g, '-').replace(/Z$/, '')}.json`;
-    const multipart = multipartBackup(name, payload);
-    const result = await google.request('/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime,size,mimeType', {
-      method: 'POST',
+
+    // Un export réutilise le fichier applicatif. Les anciennes sauvegardes
+    // horodatées sont nettoyées seulement après le remplacement réussi.
+    const existing = await backupList();
+    const canonical = existing.find((file) => file.name === BACKUP_NAME) || existing[0];
+    const multipart = multipartBackup(BACKUP_NAME, payload);
+    const target = canonical
+      ? `/upload/drive/v3/files/${fileId(canonical.id)}?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime,size,mimeType`
+      : '/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime,size,mimeType';
+    const result = await google.request(target, {
+      method: canonical ? 'PATCH' : 'POST',
       headers: { 'Content-Type': multipart.contentType },
       body: multipart.body,
     });
-    if (!result?.id) fail('Google n’a pas confirmé la création de la sauvegarde.', 502);
-    res.status(201).json({ ...backupInfo({ ...result, name: result.name || name, mimeType: 'application/json', size: result.size || Buffer.byteLength(payload, 'utf8') }), binaries: uploadedBinaries });
-  });
+    if (!result?.id) fail(`Google n’a pas confirmé le ${canonical ? 'remplacement' : 'création'} de la sauvegarde.`, 502);
+
+    // Une panne pendant le nettoyage ne doit pas invalider la sauvegarde déjà
+    // écrite ; le prochain export retentera la mise à la corbeille.
+    for (const duplicate of existing.filter((file) => file.id !== result.id)) {
+      try {
+        await google.request(`/drive/v3/files/${fileId(duplicate.id)}?supportsAllDrives=true&fields=id,trashed`, {
+          method: 'PATCH',
+          body: JSON.stringify({ trashed: true }),
+        });
+      } catch {
+        // Best-effort : ne jamais perdre le backup canonique pour un doublon inaccessible.
+      }
+    }
+
+    res.status(201).json({ ...backupInfo({ ...result, name: result.name || BACKUP_NAME, mimeType: 'application/json', size: result.size || Buffer.byteLength(payload, 'utf8') }), binaries: uploadedBinaries });
+  }));
   route('get', '/api/google/backup/:id', async (req, res) => {
     res.json(await downloadBackup(req.params.id));
   });

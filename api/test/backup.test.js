@@ -6,6 +6,7 @@ describe('sauvegardes Google Drive', () => {
   test('exporte, liste, télécharge et restaure une sauvegarde WorkLogs', async () => {
     let stored;
     const calls = [];
+    const remoteFiles = [];
     const google = {
       status: () => ({ available: true, configured: true, connected: true, pending: false, selectedIds: [] }),
       configure: () => ({}),
@@ -13,8 +14,15 @@ describe('sauvegardes Google Drive', () => {
       disconnect: async () => ({}),
       async request(url, options = {}) {
         calls.push({ url, options });
-        if (url.startsWith('/upload/drive/v3/files')) return { id: 'backup-1', name: 'WorkLogs backup.json', modifiedTime: '2026-09-17T10:00:00.000Z', size: '1234', mimeType: 'application/json' };
-        if (url.startsWith('/drive/v3/files?') && url.includes('worklogs_type')) return { files: [{ id: 'backup-1', name: 'WorkLogs backup.json', modifiedTime: '2026-09-17T10:00:00.000Z', size: '1234', mimeType: 'application/json' }] };
+        if (url.startsWith('/upload/drive/v3/files') && options.method === 'POST') {
+          const file = { id: 'backup-1', name: 'WorkLogs backup.json', modifiedTime: '2026-09-17T10:00:00.000Z', size: '1234', mimeType: 'application/json' };
+          remoteFiles.splice(0, remoteFiles.length, file);
+          return file;
+        }
+        if (url.startsWith('/upload/drive/v3/files/backup-1') && options.method === 'PATCH') {
+          return { id: 'backup-1', name: 'WorkLogs backup.json', modifiedTime: '2026-09-18T10:00:00.000Z', size: '1234', mimeType: 'application/json' };
+        }
+        if (url.startsWith('/drive/v3/files?') && url.includes('worklogs_type')) return { files: remoteFiles };
         if (url.startsWith('/drive/v3/files/backup-1?alt=media')) return JSON.stringify(stored);
         throw new Error(`appel Google inattendu: ${url}`);
       },
@@ -47,6 +55,12 @@ describe('sauvegardes Google Drive', () => {
       assert.ok(upload.options.body.subarray(0, boundary.length + 4).equals(Buffer.from(`--${boundary}\r\n`)));
       assert.ok(upload.options.body.subarray(-boundary.length - 8).equals(Buffer.from(`\r\n--${boundary}--\r\n`)));
 
+      const replaced = await api.post('/api/google/backup/export');
+      assert.equal(replaced.status, 201);
+      assert.equal(replaced.body.id, 'backup-1');
+      assert.equal(calls.filter((call) => call.url.startsWith('/upload/drive/v3/files') && call.options.method === 'POST').length, 1);
+      assert.equal(calls.filter((call) => call.url.startsWith('/upload/drive/v3/files/backup-1') && call.options.method === 'PATCH').length, 1);
+
       const listed = await api.get('/api/google/backup/list');
       assert.deepEqual(listed.body.files, [{ id: 'backup-1', name: 'WorkLogs backup.json', modifiedTime: '2026-09-17T10:00:00.000Z', size: 1234 }]);
       const downloaded = await api.get('/api/google/backup/backup-1');
@@ -62,6 +76,41 @@ describe('sauvegardes Google Drive', () => {
       assert.equal(api.db.prepare('SELECT title FROM entries').get().title, 'Contexte sauvegardé');
       assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries').get().n, 1);
       assert.equal(api.db.prepare('SELECT document_id FROM google_documents').get().document_id, 'google-backup-doc');
+    } finally {
+      await api.close();
+    }
+  });
+
+  test('remplace la sauvegarde canonique et met les doublons à la corbeille, y compris paginés', async () => {
+    const calls = [];
+    const google = {
+      status: () => ({ available: true, configured: true, connected: true, pending: false, selectedIds: [] }),
+      configure: () => ({}), connect: async () => ({}), disconnect: async () => ({}),
+      async request(url, options = {}) {
+        calls.push({ url, options });
+        if (url.startsWith('/drive/v3/files?') && !url.includes('pageToken=')) {
+          return { files: [{ id: 'backup-newest', name: 'WorkLogs backup 2026.json', modifiedTime: '2026-09-18T10:00:00.000Z', size: '20', mimeType: 'application/json' }], nextPageToken: 'page-2' };
+        }
+        if (url.startsWith('/drive/v3/files?') && url.includes('pageToken=page-2')) {
+          return { files: [{ id: 'backup-old', name: 'WorkLogs backup 2026-09-17.json', modifiedTime: '2026-09-17T10:00:00.000Z', size: '20', mimeType: 'application/json' }] };
+        }
+        if (url.startsWith('/upload/drive/v3/files/backup-newest') && options.method === 'PATCH') {
+          return { id: 'backup-newest', name: 'WorkLogs backup.json', modifiedTime: '2026-09-18T11:00:00.000Z', size: '30', mimeType: 'application/json' };
+        }
+        if (url.startsWith('/drive/v3/files/backup-old') && options.method === 'PATCH') return { id: 'backup-old', trashed: true };
+        throw new Error(`appel Google inattendu: ${url}`);
+      },
+    };
+    const api = await startApi({ google });
+    try {
+      const result = await api.post('/api/google/backup/export');
+      assert.equal(result.status, 201);
+      assert.equal(result.body.id, 'backup-newest');
+      assert.equal(calls.filter((call) => call.url.startsWith('/upload/drive/v3/files') && call.options.method === 'POST').length, 0);
+      assert.equal(calls.filter((call) => call.url.startsWith('/upload/drive/v3/files/backup-newest') && call.options.method === 'PATCH').length, 1);
+      const trash = calls.find((call) => call.url.startsWith('/drive/v3/files/backup-old'));
+      assert.equal(trash.options.method, 'PATCH');
+      assert.deepEqual(JSON.parse(trash.options.body), { trashed: true });
     } finally {
       await api.close();
     }

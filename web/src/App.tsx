@@ -110,6 +110,14 @@ export default function App() {
       if (sequence !== reloadSequence.current) return;
       setState(next);
       setError('');
+      // Une tâche terminée peut archiver l'entrée actuellement ouverte :
+      // actualiser seulement ses métadonnées évite d'écraser un brouillon local.
+      const selectedSummary = next.entries.find((e) => e.id === selectedRef.current);
+      if (selectedSummary) {
+        setEntry((current) => current && current.id === selectedSummary.id
+          ? { ...current, archived: selectedSummary.archived, updated_at: selectedSummary.updated_at }
+          : current);
+      }
       // Rien de sélectionné (premier chargement, ou entrée supprimée) : on ouvre la plus récente.
       const stillThere = next.entries.some((e) => e.id === selectedRef.current || (documentRef.current && e.google_document_id === documentRef.current));
       if (!stillThere) setSelectedId(next.entries[0]?.id ?? null);

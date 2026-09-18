@@ -303,6 +303,19 @@ async function renumber(status: Status): Promise<void> {
   }
 }
 
+/** Archive dans IndexedDB les entrées liées à une tâche qui vient d'être terminée. */
+async function archiveTaskDocuments(taskId: string): Promise<void> {
+  const { entries, links } = await tables();
+  const linked = new Set((await links.all()).filter((link) => link.task_id === taskId).map((link) => link.entry_id));
+  const time = nowISO();
+  for (const entry of await entries.all()) {
+    if (linked.has(entry.id) && !entry.archived) {
+      await entries.put({ ...entry, archived: 1, updated_at: time });
+      track('entries', entry.id);
+    }
+  }
+}
+
 /** Lecture Docs ciblée sur l'onglet lié (miroir de `read` dans `google-routes.js`). */
 async function readGoogleSource(documentId: string, tabId = '') {
   if (!/^[\w-]{1,200}$/.test(documentId)) fail('Identifiant de document Google invalide.');
@@ -715,6 +728,7 @@ export const localApi: Api = {
       priority: priority as TaskRow['priority'], project_id: projectId, updated_at: nowISO(),
     };
     await tasks.put(next);
+    if (current.status !== 'done' && status === 'done') await archiveTaskDocuments(id);
     track('tasks', id);
     return rowAsTask(next);
   },
@@ -727,6 +741,7 @@ export const localApi: Api = {
     await tasks.put({ ...current, status, position: target - 0.5, updated_at: nowISO() });
     await renumber(status);
     if (current.status !== status) await renumber(current.status);
+    if (current.status !== 'done' && status === 'done') await archiveTaskDocuments(id);
     track('tasks', id);
     return rowAsTask((await tasks.get(id)) as TaskRow);
   },
@@ -746,12 +761,13 @@ export const localApi: Api = {
 
   linkTaskDocument: async (taskId, entryId) => {
     const { tasks, entries, links } = await tables();
-    if (!(await tasks.get(taskId))) fail('tâche introuvable');
+    const task = (await tasks.get(taskId)) ?? fail('tâche introuvable');
     if (!(await entries.get(entryId))) fail('entrée introuvable');
     const existing = await links.get(linkId(taskId, entryId));
     if (existing) return { task_id: existing.task_id, entry_id: existing.entry_id };
     const association = { id: linkId(taskId, entryId), task_id: taskId, entry_id: entryId, created_at: nowISO() };
     await links.put(association);
+    if (task.status === 'done') await archiveTaskDocuments(taskId);
     track('links', association.id);
     return { task_id: taskId, entry_id: entryId };
   },
