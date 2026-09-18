@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { dayLabel, formatSize, groupByDay, groupTabs, isOverdue, plainText, type EntrySummary, type Task } from './lib';
+import { dayLabel, formatSize, groupByDay, groupTabs, isOverdue, plainText, subtasksMd, type EntrySummary, type Task } from './lib';
 
 const task = (over: Partial<Task>): Task => ({
   id: 'tk_1',
@@ -144,5 +144,23 @@ describe('groupTabs', () => {
       entry({ id: 'b', google_document_id: 'doc2', google_document_title: 'Deux' }),
     ]);
     expect(items.map((i) => i.title)).toEqual(['Un', 'Deux']);
+  });
+});
+
+describe('subtasksMd', () => {
+  test('chaque ligne non vide devient une case à cocher sous un titre', () => {
+    expect(subtasksMd('Relire\nAppeler le client\n')).toBe('## Sous-tâches\n- [ ] Relire\n- [ ] Appeler le client\n');
+  });
+
+  test('les lignes vides sautent et un tiret seul devient une case', () => {
+    expect(subtasksMd('\n- Commander\n\n* Payer ')).toBe('## Sous-tâches\n- [ ] Commander\n- [ ] Payer\n');
+  });
+
+  test('un - [x] collé garde son statut coché', () => {
+    expect(subtasksMd('- [x] Payé\n- [ ] Relancer')).toBe('## Sous-tâches\n- [x] Payé\n- [ ] Relancer\n');
+  });
+
+  test('sans sous-tâche, pas de contenu prérempli', () => {
+    expect(subtasksMd('  \n ')).toBe('');
   });
 });

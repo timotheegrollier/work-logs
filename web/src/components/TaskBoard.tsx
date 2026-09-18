@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { COLUMNS, PRIORITIES, api, dayLabel, isOverdue, priorityLabel, type EntrySummary, type Priority, type Status, type Task } from '../lib';
+import { COLUMNS, PRIORITIES, api, dayLabel, isOverdue, priorityLabel, subtasksMd, type EntrySummary, type Priority, type Status, type Task } from '../lib';
 
 const DRAG_TYPE = 'text/plain';
 
@@ -116,6 +116,11 @@ function TaskCard({
   const [filter, setFilter] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  // Créateur d'entrée liée : titre prérempli + sous-tâches en cases à cocher.
+  const [creatingEntry, setCreatingEntry] = useState(false);
+  const [entryTitle, setEntryTitle] = useState(task.title);
+  const [entrySubtasks, setEntrySubtasks] = useState('');
+  const [entryBusy, setEntryBusy] = useState(false);
   const linkedDocuments = task.documents ?? [];
   const linkedIds = new Set(linkedDocuments.map((document) => document.id));
   const availableDocuments = entries.filter((entry) => !linkedIds.has(entry.id));
@@ -169,6 +174,61 @@ function TaskCard({
     await api.unlinkTaskDocument(task.id, entryId);
     onChanged();
   };
+
+  const startEntryCreator = () => {
+    setEntryTitle(task.title);
+    setEntrySubtasks('');
+    setCreatingEntry(true);
+  };
+
+  const createEntry = async () => {
+    const title = entryTitle.trim();
+    if (!title || entryBusy) return;
+    setEntryBusy(true);
+    try {
+      const created = await api.createEntryFromTask(task.id, { title, content_md: subtasksMd(entrySubtasks) });
+      setCreatingEntry(false);
+      setEntrySubtasks('');
+      onChanged();
+      onOpenDocument(created.id);
+    } finally {
+      setEntryBusy(false);
+    }
+  };
+
+  const entryCreator = creatingEntry ? (
+    <form
+      className="task-creator"
+      aria-label={`Créer une entrée liée à ${task.title}`}
+      onSubmit={(event) => { event.preventDefault(); void createEntry(); }}
+    >
+      <strong>Nouvelle entrée liée à cette tâche</strong>
+      <label className="task-creator-wide">Titre de l’entrée liée
+        <input aria-label="Titre de l’entrée liée" autoFocus value={entryTitle} onChange={(e) => setEntryTitle(e.target.value)} />
+      </label>
+      <label className="task-creator-wide">Sous-tâches, une par ligne
+        <textarea
+          aria-label="Sous-tâches de l’entrée liée, une par ligne"
+          rows={4}
+          placeholder={'Relire le devis\nAppeler le client'}
+          value={entrySubtasks}
+          onChange={(e) => setEntrySubtasks(e.target.value)}
+        />
+      </label>
+      <div className="task-creator-actions">
+        <button className="task-primary" type="submit" disabled={entryBusy || !entryTitle.trim()}>
+          {entryBusy ? 'Création…' : 'Créer et ouvrir'}
+        </button>
+        <button className="ghost" type="button" disabled={entryBusy} onClick={() => setCreatingEntry(false)}>
+          Annuler
+        </button>
+      </div>
+    </form>
+  ) : (
+    <button className="link-document" type="button" onClick={startEntryCreator}>
+      ＋ Créer une entrée liée
+    </button>
+  );
 
   const documentControls = (
     <div className="card-documents">
@@ -420,6 +480,7 @@ function TaskCard({
         )}
       </div>
       {documentControls}
+      {entryCreator}
     </div>
   );
 }

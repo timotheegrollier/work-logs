@@ -173,6 +173,17 @@ describe('tâches', () => {
     await expect(localApi.createTaskFromEntry('en_x')).rejects.toThrow('entrée introuvable');
     expect(await localApi.deleteTask(task.id)).toEqual({ ok: true });
   });
+
+  test('création depuis une tâche, avec projet, contenu et lien repris', async () => {
+    const id = await projectId();
+    const task = await localApi.createTask({ title: 'Dossier', project_id: id });
+    const entry = await localApi.createEntryFromTask(task.id, { content_md: '## Sous-tâches\n- [ ] Relire\n' });
+    expect(entry).toMatchObject({ title: 'Dossier', project_id: id, content_md: '## Sous-tâches\n- [ ] Relire\n' });
+    expect(entry.entry_date).toBe(new Date().toISOString().slice(0, 10));
+    expect((await localApi.state()).tasks.find((t) => t.id === task.id)?.documents.map((d) => d.id)).toEqual([entry.id]);
+    await expect(localApi.createEntryFromTask('tk_x')).rejects.toThrow('tâche introuvable');
+    await expect(localApi.createEntryFromTask(task.id, { title: ' ' })).rejects.toThrow('titre requis');
+  });
 });
 
 describe('projets et fichiers', () => {

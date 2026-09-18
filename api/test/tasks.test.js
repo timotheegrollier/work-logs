@@ -252,6 +252,25 @@ describe('tâches', () => {
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM tasks').get().n, 0);
   });
 
+  test('crée une entrée liée depuis une tâche en recopiant son projet, datée du jour', async () => {
+    const project = await make.project(api, 'Chantier');
+    const task = await make.task(api, { title: 'Préparer le dossier', project_id: project.id });
+    const created = await api.post(`/api/tasks/${task.id}/entry`, { content_md: '## Sous-tâches\n- [ ] Relire\n' });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.title, 'Préparer le dossier');
+    assert.equal(created.body.project_id, project.id);
+    assert.equal(created.body.entry_date, new Date().toISOString().slice(0, 10));
+    assert.equal(created.body.content_md, '## Sous-tâches\n- [ ] Relire\n');
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=? AND entry_id=?').get(task.id, created.body.id).n, 1);
+  });
+
+  test('refuse la création liée depuis une tâche inconnue et ne crée rien pour un titre vide', async () => {
+    assert.equal((await api.post('/api/tasks/tk_nope/entry', {})).status, 404);
+    const task = await make.task(api);
+    assert.equal((await api.post(`/api/tasks/${task.id}/entry`, { title: ' ' })).status, 400);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entries').get().n, 0);
+  });
+
   test('associe des entrées locales et Google, même hors du projet de la tâche', async () => {
     const taskProject = await make.project(api, 'Projet tâche');
     const documentProject = await make.project(api, 'Projet documents');

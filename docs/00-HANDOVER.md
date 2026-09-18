@@ -7,7 +7,7 @@
 > **Lot courant (candidat v0.24.0) :** en-tête mobile aéré (Pixel 9a, 412 px),
 > rebasé sur v0.23.0 : marque, recherche, panneaux en trois lignes, cibles 44 px,
 > sans JS ni dépendance.
-> **Validation :** `./scripts/check.sh` vert : **135 tests API, 183 front,
+> **Validation :** `./scripts/check.sh` vert : **137 tests API, 189 front,
 > 33 desktop unitaires, 25 scripts, 31 navigateur et 10 desktop e2e**.
 >
 > **Lot précédent :** panneaux latéraux repliables (Journal/Tâches, desktop comme
@@ -28,6 +28,23 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-09-18 (4) — créer une entrée liée depuis une tâche, avec sous-tâches
+
+- Miroir de « Créer une tâche liée » : `POST /api/tasks/:id/entry` crée une
+  entrée (titre repris, projet repris, datée du jour) et la lie atomiquement à
+  la tâche ; tâche terminée → document archivé comme à la liaison manuelle.
+  Mêmes erreurs en français (`tâche introuvable`, `titre requis`).
+- La carte gagne « ＋ Créer une entrée liée » : titre prérempli + zone
+  « Sous-tâches, une par ligne », chaque ligne devenant `- [ ]` (un `- [x]`
+  collé garde son statut, lignes vides ignorées, `subtasksMd` pur et testé).
+  « Créer et ouvrir » recharge et ouvre l'entrée aussitôt. Mêmes classes
+  `.task-creator` que l'autre sens, aucun style ad hoc.
+- Miroir PWA (`localApi.createEntryFromTask`, contrat `Api` imposé par le
+  typecheck). Piège noté : `user.type` avale les séquences `[x]` (syntaxe
+  clavier user-event) — le test du statut coché passe par `fireEvent.change`.
+- Tests : API (2), `subtasksMd` (4), PWA locale (1), flux complet front (1).
+  Aucune dépendance ajoutée.
 
 ## Lot du 2026-09-18 (3) — version en Paramètres mobile et blocs en cartes
 

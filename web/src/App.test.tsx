@@ -317,6 +317,30 @@ describe('écrire une entrée', () => {
     expect(within(card).getByText('local')).toBeInTheDocument();
   });
 
+  test('crée une entrée liée depuis une tâche, avec ses sous-tâches en cases', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { tasks: [{ id: 'tk_dossier', title: 'Préparer le dossier' }] });
+    render(<App />);
+
+    const card = (await within(board()).findByText('Préparer le dossier')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: /Créer une entrée liée/ }));
+    expect(screen.getByLabelText('Titre de l’entrée liée')).toHaveValue('Préparer le dossier');
+    // fireEvent : user.type avale les séquences `[x]` (syntaxe clavier), ce qui
+    // fausserait justement le statut coché qu'on veut vérifier ici.
+    fireEvent.change(screen.getByLabelText('Sous-tâches de l’entrée liée, une par ligne'), {
+      target: { value: 'Relire\n- [x] Payer' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Créer et ouvrir' }));
+
+    await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
+    // L'entrée s'ouvre aussitôt, titre repris et liste à puces préremplie.
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Préparer le dossier'));
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('## Sous-tâches\n- [ ] Relire\n- [x] Payer\n');
+    // La carte affiche le document lié, comme dans l'autre sens.
+    expect(await within(board()).findByRole('button', { name: 'Ouvrir Préparer le dossier' })).toBeInTheDocument();
+  });
+
   test('crée une tâche liée depuis un document Google', async () => {
     const user = userEvent.setup();
     seedData(api.db, { entries: [{ id: 'en_google_task', title: 'Contexte Google' }] });

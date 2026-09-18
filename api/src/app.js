@@ -324,6 +324,33 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     res.status(201).json(getTaskWithDocuments(id));
   });
 
+  // Miroir de /api/entries/:id/task : une entrée créée depuis une tâche, liée
+  // atomiquement. Le client y met sa liste de sous-tâches en Markdown.
+  app.post('/api/tasks/:id/entry', (req, res) => {
+    const source = getTask(req.params.id);
+    if (!source) return notFound(res, 'tâche introuvable');
+    const b = req.body || {};
+    const title = b.title === undefined ? source.title : str(b.title);
+    if (!title) return bad(res, 'titre requis');
+    const content = typeof b.content_md === 'string' ? b.content_md : '';
+
+    const id = uid('en_');
+    const time = nowISO();
+    db.exec('BEGIN');
+    try {
+      db.prepare(
+        'INSERT INTO entries (id,title,content_md,entry_date,project_id,created_at,updated_at,content_json) VALUES (?,?,?,?,?,?,?,?)'
+      ).run(id, title, content, today(), source.project_id, time, time, null);
+      db.prepare('INSERT INTO task_entries (task_id, entry_id, created_at) VALUES (?,?,?)').run(source.id, id, time);
+      if (source.status === 'done') archiveTaskDocuments(db, source.id, time);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    res.status(201).json(getEntry(id));
+  });
+
   app.post('/api/tasks', (req, res) => {
     const b = req.body || {};
     const title = str(b.title);

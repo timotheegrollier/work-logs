@@ -205,6 +205,8 @@ export const remoteApi = {
   copyEntry: (id: string) => send<Entry>('POST', `/api/entries/${id}/copy`),
   createTaskFromEntry: (entryId: string, body?: { title?: string; due_date?: string | null }) =>
     send<Task>('POST', `/api/entries/${entryId}/task`, body),
+  createEntryFromTask: (taskId: string, body?: { title?: string; content_md?: string }) =>
+    send<Entry>('POST', `/api/tasks/${taskId}/entry`, body),
 
   createTask: (body: Partial<Task>) => send<Task>('POST', '/api/tasks', body),
   updateTask: (id: string, body: Partial<Task>) => send<Task>('PUT', `/api/tasks/${id}`, body),
@@ -253,6 +255,21 @@ export const api: Api = import.meta.env.VITE_PWA === '1' ? localApi : remoteApi;
 // ---------------------------------------------------------------- helpers
 
 export const todayISO = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * Une zone de sous-tâches (une par ligne) devient une liste à puces à cases :
+ * les lignes vides sautent, un `- [x]` collé garde son statut coché, un tiret
+ * seul devient une case à cocher. Vide → chaîne vide (entrée sans contenu).
+ */
+export function subtasksMd(raw: string): string {
+  const items = raw.split('\n').map((line) => {
+    const match = line.trim().match(/^(?:[-*•]\s*)?(?:\[([ xX])\]\s*)?(.+)$/);
+    if (!match || !match[2].trim()) return null;
+    return `- [${match[1] && match[1].toLowerCase() === 'x' ? 'x' : ' '}] ${match[2].trim()}`;
+  }).filter((item): item is string => item !== null);
+  if (items.length === 0) return '';
+  return `## Sous-tâches\n${items.join('\n')}\n`;
+}
 
 /** « aujourd'hui », « hier », sinon « lun. 8 sept. » (et l'année si ce n'est pas la courante). */
 export function dayLabel(date: string, now = new Date()): string {

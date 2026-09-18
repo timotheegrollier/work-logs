@@ -688,6 +688,25 @@ export const localApi: Api = {
     return taskWithDocuments(id);
   },
 
+  createEntryFromTask: async (taskId, body) => {
+    const { entries, tasks, links } = await tables();
+    const source = (await tasks.get(taskId)) ?? fail('tâche introuvable');
+    const title = body?.title === undefined ? source.title : str(body.title);
+    if (!title) fail('titre requis');
+    const content = typeof body?.content_md === 'string' ? body.content_md : '';
+    const id = uid('en_');
+    const time = nowISO();
+    await entries.put({
+      id, title, content_md: content, entry_date: today(), project_id: source.project_id,
+      archived: 0, created_at: time, updated_at: time, content_json: null,
+    });
+    await links.put({ id: linkId(source.id, id), task_id: source.id, entry_id: id, created_at: time });
+    if (source.status === 'done') await archiveTaskDocuments(source.id);
+    track('entries', id);
+    track('links', linkId(source.id, id));
+    return fullEntry(id);
+  },
+
   createTask: async (body) => {
     const { tasks, projects } = await tables();
     const title = str(body.title);
