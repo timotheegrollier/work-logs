@@ -258,8 +258,11 @@ sans elle, les données restent simplement sur l'appareil.
    une sauvegarde. Le contenu local est remplacé après confirmation.
 
 État : lecture des sauvegardes, chargement complet, envoi (boîte mobile +
-photos), **et synchronisation Docs** implémentés ; l'import d'un document Drive
-existant (`Ouvrir`) et l'éditeur Google natif restent réservés au desktop.
+photos), **synchronisation Docs et ouverture d'un document Drive** implémentés ;
+seul l'éditeur Google natif intégré reste réservé au desktop (un navigateur ne
+peut pas embarquer la page Google, qui refuse le framing : sur mobile, « ouvre
+cet onglet dans Google Docs » bascule vers le navigateur ou l'appli Docs, puis
+**Actualiser** relit les changements).
 Les pièces jointes du PC n'ont pas de binaire sur le téléphone : leurs métadonnées
 sont conservées et leurs liens répondent « fichier introuvable » tant que la photo
 n'a pas été renvoyée depuis le mobile.

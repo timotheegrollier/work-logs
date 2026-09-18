@@ -144,4 +144,42 @@ describe('synchronisation Docs dans le navigateur', () => {
     expect(listed.files).toEqual([{ id: 'd1', name: 'Doc', modifiedTime: T }]);
     expect(listed.nextPageToken).toBe('p2');
   });
+
+  test('ouverture multi-onglets : deux entrées groupées, onglet demandé', async () => {
+    const tabsDoc = (rev: string) => ({
+      title: 'Doc', revisionId: rev,
+      tabs: ['A', 'B'].map((tab, order) => ({
+        tabProperties: { tabId: `tab-${tab.toLowerCase()}`, title: `Onglet ${tab}`, index: order },
+        childTabs: [],
+        documentTab: { body: { content: [paragraph(`Contenu ${tab}\n`)] } },
+      })),
+    });
+    currentDoc = tabsDoc('r1');
+    const first = await localApi.openGoogleDocument('gdoc-multi');
+    expect(first.title).toBe('Doc — Onglet A');
+    const state = await localApi.state();
+    expect(state.entries.filter((e) => e.google_document_id === 'gdoc-multi')).toHaveLength(2);
+    const asked = await localApi.openGoogleDocument('gdoc-multi', 'tab-b');
+    expect(asked.google_sync?.tab_id).toBe('tab-b');
+    await expect(localApi.openGoogleDocument('gdoc-multi', 'tab-x')).rejects.toThrow('Onglet Google introuvable');
+    await expect(localApi.openGoogleDocument('mauvais id!')).rejects.toThrow('Identifiant de document Google invalide');
+  });
+
+  test('réouverture : brouillon propre actualisé, brouillon modifié conservé', async () => {
+    const tabsDoc = (rev: string, textA: string) => ({
+      title: 'Doc', revisionId: rev,
+      tabs: [{ tabProperties: { tabId: 'tab-a', title: 'Onglet A', index: 0 }, childTabs: [], documentTab: { body: { content: [paragraph(textA)] } } }],
+    });
+    currentDoc = tabsDoc('r1', 'Contenu A\n');
+    const opened = await localApi.openGoogleDocument('gdoc-multi');
+    // Brouillon modifié localement : conservé tel quel à la réouverture.
+    await localApi.updateEntry(opened.id, { content_json: rich('Modifié local') });
+    currentDoc = tabsDoc('r2', 'Contenu distant\n');
+    const kept = await localApi.openGoogleDocument('gdoc-multi');
+    expect(kept.content_md).toContain('Modifié local');
+    // Brouillon propre : actualisé depuis Google.
+    await localApi.updateEntry(opened.id, { content_json: rich('Contenu distant') });
+    const refreshed = await localApi.openGoogleDocument('gdoc-multi');
+    expect(refreshed.content_md).toContain('Contenu distant');
+  });
 });

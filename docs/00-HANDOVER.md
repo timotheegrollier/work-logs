@@ -1,14 +1,13 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-18 · Version : v0.18.0.
-> **Lot courant :** PWA mobile — parité Google Docs : regroupement multi-onglets
-> dans le journal, navigation par onglets, envoi (`Enregistrer sur Drive`),
-> rechargement (`Actualiser`), création et liste Drive via l'API Docs depuis le
-> navigateur (mêmes modules purs que le serveur) ; en-tête réparé à 412 px ;
-> fusion avec le lot Archives amont (`archived`Desktop+local+boîte mobile).
-> Import d'un document Drive existant (`Ouvrir`) encore réservé au desktop.
-> **Validation :** `./scripts/check.sh` vert (base v0.18.0) :
-> 125 tests API, 160 front, 33 desktop unitaires, 23 scripts, 26 navigateur
+> **Mise à jour :** 2026-09-18 · Version : v0.19.0.
+> **Lot courant :** PWA mobile — layout à défilement sous 900 px (fini les zones
+> coupées), en-tête 412 px, tableaux à défilement horizontal, ouverture d'un
+> document Drive existant ; boucle d'édition : éditeur local + poussée +
+> bascule vers l'appli Docs + relecture (l'éditeur natif embarqué reste
+> impossible dans un navigateur : Google refuse le framing).
+> **Validation :** `./scripts/check.sh` vert (base v0.19.0) :
+> 125 tests API, 164 front, 33 desktop unitaires, 23 scripts, 26 navigateur
 > et 10 desktop e2e.
 >
 > **Lot précédent :** correctif multipart Drive CRLF publié en v0.15.1 (travail conservé tel quel).

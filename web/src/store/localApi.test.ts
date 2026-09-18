@@ -335,7 +335,12 @@ describe('Google sans serveur (lots suivants couverts ailleurs)', () => {
     await expect(localApi.connectGoogle()).rejects.toThrow('disponible dans l’application desktop');
     await expect(localApi.googleBackups()).rejects.toThrow('disponible dans l’application desktop');
     await expect(localApi.googleDocumentTabs('x')).rejects.toThrow('disponible dans l’application desktop');
-    await expect(localApi.openGoogleDocument('x')).rejects.toThrow('disponible dans l’application desktop');
+  });
+
+  test('les flux Docs directs exigent un identifiant valide puis une connexion', async () => {
+    await expect(localApi.openGoogleDocument('mauvais id!')).rejects.toThrow('Identifiant de document Google invalide');
+    await expect(localApi.openGoogleDocument('gdoc-1')).rejects.toThrow('Connecte Google Drive pour continuer');
+    await expect(localApi.pushGoogleDocument('en_x')).rejects.toThrow('entrée introuvable');
   });
 
   test('les refus sont des ApiError reconnues par le front', async () => {

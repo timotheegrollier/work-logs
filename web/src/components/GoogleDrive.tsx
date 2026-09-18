@@ -185,7 +185,7 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
             </button>
           </div>
           <div className="drive-content">
-            {isPwa ? <GoogleDriveWeb onRestored={onRestored} /> : (!status ? <p>Chargement…</p> : !status.available ? <p>La connexion Drive est disponible dans l’application desktop Linux.</p> : <>
+            {isPwa ? <GoogleDriveWeb onOpen={onOpen} onRestored={onRestored} /> : (!status ? <p>Chargement…</p> : !status.available ? <p>La connexion Drive est disponible dans l’application desktop Linux.</p> : <>
               <p>{status.connected ? 'Google Drive connecté' : status.pending ? 'Termine la connexion dans ton navigateur, puis reviens ici.' : 'Ouvre et édite tes documents Google dans WorkLogs.'}</p>
               {(!status.configured || configure) && <div className="drive-setup">
                 <p>Première connexion : crée un client OAuth de type « Application de bureau » dans Google Cloud, puis importe son fichier JSON. Active les API Google Docs, Drive et Google Picker.</p>

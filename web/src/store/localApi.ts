@@ -349,7 +349,54 @@ export const localApi: Api = {
     return fullEntry(id);
   },
   googleDocumentTabs: async () => fail('Google Drive est disponible dans l’application desktop.'),
-  openGoogleDocument: async () => fail('Google Drive est disponible dans l’application desktop.'),
+  openGoogleDocument: async (documentId, tabId) => {
+    if (!/^[\w-]{1,200}$/.test(documentId)) fail('Identifiant de document Google invalide.');
+    if (tabId !== undefined && (typeof tabId !== 'string' || (tabId && !/^[\w.-]{1,200}$/.test(tabId)))) {
+      fail('Identifiant d’onglet Google invalide.');
+    }
+    const t = await tables();
+    const source = (await webGoogleRequest(`/docs/v1/documents/${documentId}?includeTabsContent=true`)) as Record<string, unknown>;
+    const allTabs = documentTabs(source);
+    const list: { id: string; title: string; depth: number }[] = allTabs.length ? allTabs : [{ id: '', title: (source.title as string) || 'Document', depth: 0 }];
+    if (tabId && !list.some((tab) => tab.id === tabId)) fail('Onglet Google introuvable.');
+    const documentTitle = (source.title as string) || 'Document Google';
+    const time = nowISO();
+    let first: string | null = null;
+    let asked: string | null = null;
+    for (const [order, tab] of list.entries()) {
+      const existing = ((await t.google.all()).find((row) => row.document_id === documentId && row.tab_id === tab.id)
+        ?? (tab.id && order === 0 ? (await t.google.all()).find((row) => row.document_id === documentId && row.tab_id === '') : undefined));
+      if (existing) {
+        await t.google.put({ ...existing, document_title: documentTitle, tab_title: tab.title, tab_order: order, tab_depth: tab.depth, tab_id: tab.id });
+        const entryRow = (await t.entries.get(existing.entry_id)) as EntryRow | undefined;
+        if (entryRow && entryRow.content_json === existing.synced_content_json) {
+          const rich = importGoogleDocument(selectDocumentTab(source, tab.id));
+          const serialized = JSON.stringify(rich);
+          await t.entries.put({ ...entryRow, content_json: serialized, content_md: documentText(rich) });
+          await t.google.put({ ...existing, document_title: documentTitle, tab_title: tab.title, tab_order: order, tab_depth: tab.depth, tab_id: tab.id, synced_content_json: serialized, revision_id: (source.revisionId as string) || '', synced_at: time, readonly_reason: '' });
+        }
+        first ??= existing.entry_id;
+        if (tab.id === tabId) asked = existing.entry_id;
+        continue;
+      }
+      const rich = importGoogleDocument(selectDocumentTab(source, tab.id));
+      const id = uid('en_');
+      await t.entries.put({
+        id, title: list.length > 1 ? `${documentTitle} — ${tab.title}` : documentTitle,
+        content_md: documentText(rich), content_json: JSON.stringify(rich),
+        entry_date: today(), project_id: null, archived: 0, created_at: time, updated_at: time,
+      });
+      await t.google.put({
+        entry_id: id, document_id: documentId, tab_id: tab.id, revision_id: (source.revisionId as string) || '',
+        synced_content_json: JSON.stringify(rich), synced_at: time,
+        document_title: documentTitle, tab_title: tab.title, tab_order: order, tab_depth: tab.depth, readonly_reason: '',
+      });
+      track('entries', id);
+      first ??= id;
+      if (tab.id === tabId) asked = id;
+    }
+    return fullEntry((asked ?? first) as string);
+  },
   pushGoogleDocument: async (id) => {
     const t = await tables();
     const current = (await t.entries.get(id)) ?? fail('entrée introuvable');

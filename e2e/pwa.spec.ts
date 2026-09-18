@@ -31,13 +31,17 @@ test('PWA installable : manifeste, icônes et service worker versionné', async 
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', './manifest.webmanifest');
 });
 
-test('à 390 px les trois zones s’empilent en une colonne', async ({ page }) => {
+test('à 390 px les trois zones s’empilent en une page qui défile', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Entrée' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Tâches' })).toBeVisible();
-  const areas = await page
-    .locator('.columns')
-    .evaluate((el) => getComputedStyle(el).gridTemplateAreas);
-  expect(areas).toBe('"journal" "editor" "tasks"');
+  // Modèle mobile : bloc unique à défilement, pas trois fenêtres fixes.
+  const metrics = await page.evaluate(() => ({
+    display: getComputedStyle(document.querySelector('.columns') as Element).display,
+    overflow: getComputedStyle(document.querySelector('.columns') as Element).overflowY,
+    center: getComputedStyle(document.querySelector('.center') as Element).overflowY,
+    noHorizontalOverflow: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+  }));
+  expect(metrics).toEqual({ display: 'block', overflow: 'auto', center: 'visible', noHorizontalOverflow: true });
 });

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoogleDriveWeb } from './GoogleDriveWeb';
+import { api } from '../lib';
 import { localApi, setLocalDatabase } from '../store/localApi';
 import { createMemoryDatabase } from '../store/storage';
 
@@ -33,7 +34,7 @@ afterEach(() => {
 describe('panneau Drive de la PWA', () => {
   test('identifiant invalide refusé, valide enregistré', async () => {
     const user = userEvent.setup();
-    render(<GoogleDriveWeb />);
+    render(<GoogleDriveWeb onOpen={() => {}} />);
     await user.type(screen.getByLabelText('Identifiant client Google Web'), 'n’importe quoi');
     await user.click(screen.getByRole('button', { name: 'Enregistrer l’identifiant' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Identifiant client Google invalide');
@@ -68,7 +69,7 @@ describe('panneau Drive de la PWA', () => {
     );
     window.history.replaceState(null, '', '/?code=code&state=s');
     const onRestored = vi.fn();
-    render(<GoogleDriveWeb onRestored={onRestored} />);
+    render(<GoogleDriveWeb onOpen={() => {}} onRestored={onRestored} />);
     expect(await screen.findByText(/Google Drive connecté/)).toBeInTheDocument();
     expect(await screen.findByText('WorkLogs backup.json')).toBeInTheDocument();
 
@@ -92,7 +93,7 @@ describe('panneau Drive de la PWA', () => {
       uploaded.push({ url: String(url), body });
       return Response.json({ id: `drive-${uploaded.length}` });
     });
-    render(<GoogleDriveWeb />);
+    render(<GoogleDriveWeb onOpen={() => {}} />);
     expect(await screen.findByText(/2 modification\(s\) en attente/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Envoyer vers Drive' }));
     expect(await screen.findByText(/Boîte envoyée dans Google Drive/)).toBeInTheDocument();
@@ -103,5 +104,20 @@ describe('panneau Drive de la PWA', () => {
     expect(uploaded[1].body).toContain('Mobile');
     expect(uploaded[1].body).toContain('"driveFileId":"drive-1"');
     expect(await screen.findByText(/Rien à envoyer/)).toBeInTheDocument();
+  });
+
+  test('documents Drive listés puis ouverts dans WorkLogs', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-google-web-client', CLIENT);
+    localStorage.setItem('worklogs-google-web-tokens', JSON.stringify({ access_token: 'acces', expires_at: Date.now() + 3600_000 }));
+    vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [{ id: 'd1', name: 'Doc distant', modifiedTime: '' }] });
+    const opened = { id: 'en_doc', title: 'Doc distant' };
+    const open = vi.spyOn(api, 'openGoogleDocument').mockResolvedValue(opened as never);
+    const onOpen = vi.fn();
+    render(<GoogleDriveWeb onOpen={onOpen} />);
+    expect(await screen.findByText('Doc distant')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ouvrir' }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith('d1'));
+    expect(onOpen).toHaveBeenCalledWith(opened);
   });
 });
