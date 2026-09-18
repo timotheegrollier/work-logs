@@ -143,6 +143,20 @@ describe('routage fetch du service worker', () => {
     assert.equal((await missing.responses[0]).status, 404);
   });
 
+  test('hébergement statique : une 404 réseau replie vers le blob local', async () => {
+    const file = { stored: 'archi.ods', filename: 'archi.ods', mime: 'application/vnd.oasis.opendocument.spreadsheet', blob: new Blob(['tableur']) };
+    const pages = loadSw({ fetchImpl: async () => new Response('<h1>404</h1>', { status: 404 }), files: [file] });
+    const local = getEvent('https://pwa.test/api/files/archi.ods');
+    pages.listeners.fetch(local);
+    const response = await local.responses[0];
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), 'tableur');
+
+    const unknown = getEvent('https://pwa.test/api/files/inconnu.ods');
+    pages.listeners.fetch(unknown);
+    assert.equal((await unknown.responses[0]).status, 404);
+  });
+
   test('aperçu : mêmes octets servis `inline` et nommés, téléchargement toujours `attachment`', async () => {
     const file = { stored: 'abc.pdf', filename: 'devis é.pdf', mime: 'application/pdf', blob: new Blob(['contenu']) };
 
