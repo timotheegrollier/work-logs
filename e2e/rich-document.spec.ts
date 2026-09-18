@@ -79,10 +79,12 @@ test('tableau et image locale survivent au rechargement', async ({ page }) => {
 });
 
 test('le panneau Drive explique la disponibilité desktop sans bloquer le document local', async ({ page }) => {
-  await page.getByRole('button', { name: 'Google Drive', exact: false }).click();
+  await page.getByRole('button', { name: '⚙ Paramètres' }).click();
+  await page.getByRole('dialog', { name: 'Paramètres' }).getByRole('button', { name: 'Gérer Google Drive' }).click();
   await expect(page.getByText('La connexion Drive est disponible dans l’application desktop Linux.')).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Contenu du document' })).toBeEditable();
   await page.getByRole('dialog', { name: 'Gestion Google Drive' }).getByRole('button', { name: 'Fermer' }).click();
+  await page.getByRole('dialog', { name: 'Paramètres' }).getByRole('button', { name: 'Fermer' }).click();
 });
 
 test('recherche et remplacement : casse, navigation, annulation et sauvegarde du texte littéral', async ({ page }) => {

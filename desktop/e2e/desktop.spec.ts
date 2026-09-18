@@ -125,9 +125,12 @@ test('document riche : fermeture, reprise et panneau Drive dans Electron', async
   await expect(reopened.locator('strong')).toHaveText('Texte riche retrouvé');
   await reopened.press('Control+s');
   await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Google Drive', exact: false }).click();
+  await page.getByRole('button', { name: '⚙ Paramètres' }).click();
+  await page.getByRole('dialog', { name: 'Paramètres' }).getByRole('button', { name: 'Gérer Google Drive' }).click();
   await expect(page.getByLabel('Configuration Google JSON')).toBeAttached();
   await expect(page.getByRole('link', { name: 'Ouvrir Google Cloud' })).toBeVisible();
+  await page.getByRole('dialog', { name: 'Gestion Google Drive' }).getByRole('button', { name: 'Fermer' }).click();
+  await page.getByRole('dialog', { name: 'Paramètres' }).getByRole('button', { name: 'Fermer' }).click();
 });
 
 test('fichiers joints et export JSON fonctionnent dans l’application empaquetée', async () => {
