@@ -105,3 +105,18 @@ test('panneaux : replier le journal et les tâches ne garde que l’écriture', 
   await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Tâches' })).toBeHidden();
 });
+
+test('panneaux : replier l’écriture garde le journal et les tâches', async ({ page }) => {
+  await page.getByRole('button', { name: 'Écriture' }).click();
+  await expect(page.locator('.columns')).toHaveClass(/hide-center/);
+  await expect(page.getByRole('button', { name: 'Écriture' })).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Tâches' })).toBeVisible();
+  await expect(page.getByRole('separator')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Écriture' }).click();
+  await expect(page.getByRole('region', { name: 'Entrée' })).toBeVisible();
+  await page.getByRole('button', { name: 'Écriture' }).click();
+  await page.reload();
+  await expect(page.locator('.columns')).toHaveClass(/hide-center/);
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+});

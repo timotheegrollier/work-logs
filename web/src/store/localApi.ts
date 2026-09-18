@@ -23,7 +23,7 @@ import { buildGoogleUpdate, documentBody, documentTabs, selectDocumentTab } from
 import { buildPreservingUpdate, importGoogleDocument } from '../../../api/src/google-preserve.js';
 // @ts-expect-error — idem : réconciliation locale/distance, sans `node:sqlite`.
 import { mergeGoogleChanges } from '../../../api/src/google-merge.js';
-import { webGoogleRequest } from './google-web';
+import { downloadDriveBinary, webGoogleRequest, webGoogleStatus } from './google-web';
 import { createIndexedDbDatabase, createMemoryDatabase, type Database } from './storage';
 
 /**
@@ -81,7 +81,7 @@ interface AttachmentRow {
    * lot 4 téléchargera les photos ; le SW répond 404 en attendant. */
   blob?: Blob;
   /** Renseigné après l'envoi du binaire sur Drive (file d'envoi, lot 4). */
-  driveFileId?: string;
+  driveFileId?: string | null;
 }
 interface GoogleRow {
   entry_id: string; document_id: string; tab_id: string; revision_id: string;
@@ -320,6 +320,26 @@ export const localApi: Api = {
   googleBackups: async () => fail('Google Drive est disponible dans l’application desktop.'),
   exportGoogleBackup: async () => fail('Google Drive est disponible dans l’application desktop.'),
   importGoogleBackup: async () => fail('Google Drive est disponible dans l’application desktop.'),
+  driveAttachmentStatus: async () => {
+    const { attachments } = await tables();
+    const rows = await attachments.all();
+    return {
+      total: rows.length,
+      onDrive: rows.filter((row) => row.driveFileId).length,
+      missingLocal: rows.filter((row) => !row.blob).length,
+      connected: webGoogleStatus().connected,
+    };
+  },
+  fetchDriveAttachment: async (id: string) => {
+    const { attachments } = await tables();
+    const row = (await attachments.get(id)) ?? fail('pièce jointe introuvable');
+    if (row.blob) return { ...stripBlob(row), fetched: false };
+    const driveId = row.driveFileId || '';
+    if (!driveId) fail('Ce fichier n’est pas encore sur Google Drive. Envoyez-le depuis un appareil connecté.');
+    const blob = await downloadDriveBinary(driveId);
+    await attachments.put({ ...row, blob, size: blob.size || row.size, mime: blob.type || row.mime });
+    return { ...stripBlob({ ...row, size: blob.size || row.size, mime: blob.type || row.mime }), fetched: true };
+  },
   listOutbox: async () => fail('Google Drive est disponible dans l’application desktop.'),
   importOutbox: async () => fail('Google Drive est disponible dans l’application desktop.'),
   createGoogleDocument: async (title) => {
@@ -822,7 +842,7 @@ export async function importLocalBackup(input: unknown): Promise<{ ok: true; pro
   const data = validateBackup(input) as {
     projects: ProjectRow[]; entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; archived: 0 | 1; created_at: string; updated_at: string }[];
     tasks: TaskRow[]; task_entries: { task_id: string; entry_id: string; created_at: string }[];
-    google_documents: GoogleRow[]; attachments: { id: string; filename: string; stored: string; mime: string; size: number; entry_id: string; created_at: string }[];
+    google_documents: GoogleRow[]; attachments: { id: string; filename: string; stored: string; mime: string; size: number; entry_id: string; created_at: string; driveFileId?: string | null }[];
   };
   const t = await tables();
   const byName = { projects: t.projects, entries: t.entries, tasks: t.tasks, task_entries: t.links, google_documents: t.google, attachments: t.attachments };
@@ -905,6 +925,24 @@ export async function markAttachmentUploaded(stored: string, driveFileId: string
   const { attachments } = await tables();
   const found = (await attachments.all()).find((row) => row.stored === stored);
   if (found) await attachments.put({ ...found, driveFileId });
+}
+
+/** Retélécharge les binaires Drive manquants en local (après un chargement). */
+export async function fetchMissingDriveAttachments(): Promise<{ fetched: number; missing: number }> {
+  const { attachments } = await tables();
+  let fetched = 0;
+  let missing = 0;
+  for (const row of await attachments.all()) {
+    if (row.blob || !row.driveFileId) continue;
+    try {
+      const blob = await downloadDriveBinary(row.driveFileId);
+      await attachments.put({ ...row, blob, size: blob.size || row.size, mime: blob.type || row.mime });
+      fetched++;
+    } catch {
+      missing++;
+    }
+  }
+  return { fetched, missing };
 }
 
 function rowAsTask(row: TaskRow): Task {

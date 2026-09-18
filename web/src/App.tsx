@@ -31,6 +31,7 @@ export default function App() {
   const [colLeft, setColLeft] = useState(readColLeft);
   const [colRight, setColRight] = useState(readColRight);
   const [showLeft, setShowLeft] = useState(() => readPanel('worklogs-show-left'));
+  const [showCenter, setShowCenter] = useState(() => readPanel('worklogs-show-center'));
   const [showRight, setShowRight] = useState(() => readPanel('worklogs-show-right'));
   const selectedRef = useRef<string | null>(null);
   const reloadSequence = useRef(0);
@@ -84,6 +85,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('worklogs-show-left', showLeft ? '1' : '0');
   }, [showLeft]);
+
+  useEffect(() => {
+    localStorage.setItem('worklogs-show-center', showCenter ? '1' : '0');
+  }, [showCenter]);
 
   useEffect(() => {
     localStorage.setItem('worklogs-show-right', showRight ? '1' : '0');
@@ -240,6 +245,16 @@ export default function App() {
           </button>
           <button
             type="button"
+            className={'ghost' + (showCenter ? ' is-on' : '')}
+            aria-pressed={showCenter}
+            aria-controls="workspace-editor"
+            title={showCenter ? 'Masquer l’écriture' : 'Afficher l’écriture'}
+            onClick={() => setShowCenter((v) => !v)}
+          >
+            Écriture
+          </button>
+          <button
+            type="button"
             className={'ghost' + (showRight ? ' is-on' : '')}
             aria-pressed={showRight}
             aria-controls="workspace-tasks"
@@ -298,7 +313,7 @@ export default function App() {
       {isGoogleDocument && <div className="workspace-switch no-print"><span>Document Google · {siblingTabs.length} onglet{siblingTabs.length > 1 ? 's' : ''}</span>
         <button aria-expanded={showDocumentTasks} aria-controls="workspace-tasks" onClick={() => setShowDocumentTasks(!showDocumentTasks)}>{showDocumentTasks ? 'Masquer les tâches' : 'Afficher les tâches'}</button>
       </div>}
-      <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showDocumentTasks ? ' with-tasks' : '') + (showLeft ? '' : ' hide-left') + (showRight ? '' : ' hide-right')}>
+      <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showDocumentTasks ? ' with-tasks' : '') + (showLeft ? '' : ' hide-left') + (showCenter ? '' : ' hide-center') + (showRight ? '' : ' hide-right')}>
         <aside id="workspace-journal" className="left no-print">
           <ProjectBar
             projects={state?.projects ?? []}
@@ -329,7 +344,7 @@ export default function App() {
 
         <ColumnResizer side="left" panelId="workspace-journal" value={colLeft} onChange={setColLeft} />
 
-        <main className="center">
+        <main id="workspace-editor" className="center">
           {entry && state ? (
             <EntryEditor
               key={entry.id}

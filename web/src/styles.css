@@ -1542,6 +1542,10 @@ button:disabled {
   .columns {
     display: block;
   }
+  /* Centre replié : l'impression garde le document, les latéraux sont no-print. */
+  .columns.hide-center > .center {
+    display: block;
+  }
   .center,
   .editor {
     overflow: visible;
@@ -1611,6 +1615,17 @@ button:disabled {
 .columns.hide-left.hide-right { grid-template-columns: minmax(0, 1fr); grid-template-areas: "editor"; }
 .columns.hide-left > .left, .columns.hide-left > .column-resizer-left,
 .columns.hide-right > .right, .columns.hide-right > .column-resizer-right { display: none; }
+/* Centre repliable : journal + tâches côte à côte, poignées sans objet. */
+.columns.hide-center { grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr); grid-template-areas: "journal tasks"; }
+.columns.hide-center.hide-left { grid-template-columns: minmax(0, 1fr); grid-template-areas: "tasks"; }
+.columns.hide-center.hide-right { grid-template-columns: minmax(0, 1fr); grid-template-areas: "journal"; }
+.columns.hide-center.hide-left.hide-right { grid-template-columns: minmax(0, 1fr); grid-template-areas: "empty"; }
+.columns.hide-center > .center, .columns.hide-center > .column-resizer-left,
+.columns.hide-center > .column-resizer-right { display: none; }
+.columns.is-document.hide-center, .columns.is-document.with-tasks.hide-center { grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr); grid-template-areas: "journal tasks"; }
+.columns.is-document.hide-center.hide-left, .columns.is-document.with-tasks.hide-center.hide-left { grid-template-columns: minmax(0, 1fr); grid-template-areas: "tasks"; }
+.columns.is-document.hide-center.hide-right, .columns.is-document.with-tasks.hide-center.hide-right { grid-template-columns: minmax(0, 1fr); grid-template-areas: "journal"; }
+.columns.is-document.hide-center.hide-left.hide-right, .columns.is-document.with-tasks.hide-center.hide-left.hide-right { grid-template-columns: minmax(0, 1fr); grid-template-areas: "empty"; }
 .columns.is-document.hide-left { grid-template-columns: minmax(0, 1fr); grid-template-areas: "editor"; }
 .columns.is-document.hide-right, .columns.is-document.with-tasks.hide-right { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr); grid-template-areas: "journal resize-left editor"; }
 .columns.is-document.with-tasks.hide-left { grid-template-columns: minmax(320px, 1fr) 8px minmax(120px, var(--col-right, 320px)); grid-template-areas: "editor resize-right tasks"; }

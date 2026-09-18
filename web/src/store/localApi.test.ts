@@ -3,6 +3,7 @@ import { ApiError } from '../lib';
 import {
   clearLocalOutbox,
   exportLocalOutbox,
+  fetchMissingDriveAttachments,
   importLocalBackup,
   listPendingUploads,
   localApi,
@@ -268,6 +269,23 @@ describe('file d’envoi', () => {
     await importLocalBackup(JSON.parse(await blob.text()));
     expect(outboxSize()).toBe(0);
     clearLocalOutbox();
+  });
+
+  test('import conserve le driveFileId, le statut compte les manquants', async () => {
+    const T = '2026-09-18T10:00:00.000Z';
+    await importLocalBackup({
+      version: 2, projects: [],
+      entries: [{ id: 'en_1', title: 'Note', content_md: '', content_json: null, entry_date: '2026-09-18', project_id: null, archived: 0, created_at: T, updated_at: T }],
+      tasks: [], task_entries: [], google_documents: [],
+      attachments: [{ id: 'at_1', filename: 'doc.txt', stored: 'doc.txt', mime: 'text/plain', size: 3, entry_id: 'en_1', created_at: T, driveFileId: 'drive-doc-1' }],
+    });
+    const entry = await localApi.entry('en_1');
+    expect(entry.attachments[0].driveFileId).toBe('drive-doc-1');
+    const status = await localApi.driveAttachmentStatus();
+    expect(status).toMatchObject({ total: 1, onDrive: 1, missingLocal: 1 });
+    // Sans connexion Google, la récupération échoue en français sans rien casser.
+    await expect(localApi.fetchDriveAttachment('at_1')).rejects.toThrow(/Connecte Google Drive/);
+    expect((await fetchMissingDriveAttachments())).toMatchObject({ fetched: 0, missing: 1 });
   });
 });
 

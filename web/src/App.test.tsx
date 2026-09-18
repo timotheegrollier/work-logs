@@ -387,6 +387,21 @@ describe('écrire une entrée', () => {
     expect(within(dialog).getByText(/tableur/)).toBeInTheDocument();
     expect(within(dialog).queryByRole('img')).not.toBeInTheDocument();
   });
+
+  test('une pièce jointe adossée à Drive affiche son badge et propose Récupérer', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_drive', title: 'Dossier Drive' }] });
+    const entry = row(api.db, 'SELECT * FROM entries WHERE id=?', 'en_drive') as { id: string };
+    const upload = await api.upload('contrat.pdf', '%PDF', { entry_id: entry.id });
+    api.db.prepare('UPDATE attachments SET drive_file_id=? WHERE id=?').run('drive-contrat-1', upload.body.id);
+    await api.upload('local.txt', 'x', { entry_id: entry.id });
+    render(<App />);
+    await user.click(await within(journal()).findByText('Dossier Drive'));
+    expect(await screen.findByText('☁ Drive')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Récupérer contrat\.pdf depuis Drive/ })).toBeInTheDocument();
+    // Un fichier local seul n'a ni badge Drive ni bouton Récupérer.
+    expect(screen.getByText('local seul')).toBeInTheDocument();
+  });
 });
 
 describe('retrouver son travail', () => {
@@ -1007,5 +1022,31 @@ describe('panneaux repliables', () => {
     await screen.findByRole('region', { name: 'Journal' });
     expect(columns()).toHaveClass('hide-right');
     expect(screen.getByRole('button', { name: 'Tâches' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('masquer l’écriture garde le journal et les tâches côte à côte', async () => {
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
+    render(<App />);
+    await screen.findByRole('region', { name: 'Entrée' });
+    const writingToggle = screen.getByRole('button', { name: 'Écriture' });
+    expect(writingToggle).toHaveAttribute('aria-pressed', 'true');
+    expect(columns()).not.toHaveClass('hide-center');
+    fireEvent.click(writingToggle);
+    expect(columns()).toHaveClass('hide-center');
+    expect(writingToggle).toHaveAttribute('aria-pressed', 'false');
+    expect(globalThis.localStorage.getItem('worklogs-show-center')).toBe('0');
+    expect(screen.getByRole('region', { name: 'Journal' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Tâches' })).toBeVisible();
+    fireEvent.click(writingToggle);
+    expect(columns()).not.toHaveClass('hide-center');
+    expect(globalThis.localStorage.getItem('worklogs-show-center')).toBe('1');
+  });
+
+  test('l’écriture repliée survit au rechargement', async () => {
+    globalThis.localStorage.setItem('worklogs-show-center', '0');
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+    expect(columns()).toHaveClass('hide-center');
+    expect(screen.getByRole('button', { name: 'Écriture' })).toHaveAttribute('aria-pressed', 'false');
   });
 });

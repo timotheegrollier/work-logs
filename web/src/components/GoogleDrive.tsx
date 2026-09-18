@@ -25,6 +25,7 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
   const [backupMessage, setBackupMessage] = useState('');
   const [outbox, setOutbox] = useState<GoogleBackup[]>([]);
   const [outboxMessage, setOutboxMessage] = useState('');
+  const [attachmentStatus, setAttachmentStatus] = useState<{ total: number; onDrive: number; missingLocal: number } | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   const refreshFiles = async (token = '') => {
@@ -41,6 +42,14 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
   const refreshOutbox = async () => {
     const result = await api.listOutbox();
     setOutbox(result.files);
+  };
+  const refreshAttachments = async () => {
+    try {
+      const next = await api.driveAttachmentStatus();
+      setAttachmentStatus({ total: next.total, onDrive: next.onDrive, missingLocal: next.missingLocal });
+    } catch {
+      setAttachmentStatus(null);
+    }
   };
   const showError = (e: unknown) => {
     setError((e as Error).message);
@@ -72,6 +81,7 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
         await refreshFiles();
         await refreshBackups();
         await refreshOutbox();
+        await refreshAttachments();
       }
     }).catch(e => alive && showError(e)).finally(() => {
       if (alive) setBusy(false);
@@ -100,6 +110,7 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
             await refreshFiles();
             await refreshBackups();
             await refreshOutbox();
+            await refreshAttachments();
           }
           if (next.error) setError(next.error);
         }
@@ -133,14 +144,22 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
     await run(async () => {
       const saved = await api.exportGoogleBackup();
       setBackups(current => [saved, ...current.filter(backup => backup.id !== saved.id)]);
-      setBackupMessage(`Sauvegarde enregistrée dans Google Drive : ${saved.name}`);
+      setBackupMessage(saved.binaries
+        ? `Sauvegarde enregistrée dans Google Drive : ${saved.name} (${saved.binaries} fichier(s) envoyé(s) avec).`
+        : `Sauvegarde enregistrée dans Google Drive : ${saved.name}`);
+      await refreshAttachments();
     });
   };
   const restore = async (backup: GoogleBackup) => {
-    if (!confirm(`Restaurer « ${backup.name} » ? Les projets, entrées, tâches et associations locales seront remplacés. Les fichiers joints locaux ne sont pas inclus dans le JSON.`)) return;
+    if (!confirm(`Restaurer « ${backup.name} » ? Les projets, entrées, tâches et associations locales seront remplacés. Les fichiers adossés à Drive sont retéléchargés automatiquement quand la connexion est active.`)) return;
     await run(async () => {
-      await api.importGoogleBackup(backup.id);
-      setBackupMessage(`Sauvegarde restaurée : ${backup.name}`);
+      const result = await api.importGoogleBackup(backup.id);
+      setBackupMessage(result.binaries
+        ? `Sauvegarde restaurée : ${backup.name} (${result.binaries} fichier(s) récupéré(s)).`
+        : result.missingFiles
+          ? `Sauvegarde restaurée : ${backup.name} (${result.missingFiles} fichier(s) encore sur Drive : ouvrez l’entrée et touchez Récupérer).`
+          : `Sauvegarde restaurée : ${backup.name}`);
+      await refreshAttachments();
       await onRestored?.();
     });
   };
@@ -198,10 +217,14 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
               </button>}
               {status.connected && <>
                 <section className="drive-backups" aria-label="Sauvegardes WorkLogs">
-                  <div className="drive-subheading"><div><h3>Sauvegardes WorkLogs</h3><p>Un fichier JSON lisible par WorkLogs sur un autre PC connecté au même compte.</p></div><button className="primary" type="button" disabled={busy} onClick={() => void saveBackup()}>Sauvegarder dans Google Drive</button></div>
+                  <div className="drive-subheading"><div><h3>Sauvegardes WorkLogs</h3><p>Un fichier JSON lisible par WorkLogs sur un autre PC connecté au même compte. Les pièces jointes partent avec, automatiquement.</p></div><button className="primary" type="button" disabled={busy} onClick={() => void saveBackup()}>Sauvegarder dans Google Drive</button></div>
                   <div className="drive-backup-actions"><button type="button" disabled={busy} onClick={() => void run(() => refreshBackups())}>Actualiser les sauvegardes</button></div>
                   {backups.length > 0 ? <ul className="drive-backups-list">{backups.map(backup => <li key={backup.id}><div><strong>{backup.name}</strong><small>{backup.modifiedTime ? new Date(backup.modifiedTime).toLocaleString('fr-FR') : 'Date inconnue'}{backup.size ? ` · ${Math.round(backup.size / 1024)} Ko` : ''}</small></div><button className="ghost" type="button" disabled={busy} onClick={() => void restore(backup)}>Restaurer</button></li>)}</ul> : <p className="drive-hint">Aucune sauvegarde WorkLogs dans ce compte.</p>}
                   {backupMessage && <p className="drive-success" role="status">{backupMessage}</p>}
+                </section>
+                <section className="drive-backups" aria-label="Pièces jointes Drive">
+                  <div className="drive-subheading"><div><h3>Pièces jointes</h3><p>{attachmentStatus ? `${attachmentStatus.onDrive}/${attachmentStatus.total} fichier(s) sur Drive${attachmentStatus.missingLocal ? ` · ${attachmentStatus.missingLocal} manquant(s) en local` : ' · tout est lisible ici'}.` : 'État des fichiers joints.'}</p></div><button type="button" disabled={busy} onClick={() => void run(refreshAttachments)}>Actualiser</button></div>
+                  <p className="drive-hint">Sauvegarder envoie les nouveaux fichiers, Restaurer les récupère. Dans l’entrée, le badge ☁ Drive + ⬇ Récupérer répare un fichier isolé.</p>
                 </section>
                 <section className="drive-outbox" aria-label="Boîte mobile">
                   <div className="drive-subheading"><div><h3>Boîte mobile</h3><p>Créations du téléphone à fusionner, sans rien écraser.</p></div></div>
@@ -236,7 +259,7 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
                 {!busy && !error && loaded && !files.length && <p>Aucun document autorisé. Utilise « Choisir des documents dans Drive ».</p>}
                 {warnings.map(warning => <p key={warning} role="status">{warning}</p>)}
                 {page && <button type="button" disabled={busy} onClick={() => void run(() => refreshFiles(page))}>Voir la suite</button>}
-                <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.disconnectGoogle()); setFiles([]); setBackups([]); setOutbox([]); setLoaded(false); setCreating(false); setWarnings([]); setBackupMessage(''); setOutboxMessage(''); })}>Déconnecter Google Drive</button>
+                <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.disconnectGoogle()); setFiles([]); setBackups([]); setOutbox([]); setAttachmentStatus(null); setLoaded(false); setCreating(false); setWarnings([]); setBackupMessage(''); setOutboxMessage(''); })}>Déconnecter Google Drive</button>
               </>}
               {status.configured && !status.pending && <button className="ghost" type="button" disabled={busy} onClick={() => setConfigure(!configure)}>Configuration Google</button>}
               {status.secureStorage === false && <p>Le trousseau Linux doit être déverrouillé pour conserver ta connexion Google.</p>}

@@ -287,6 +287,17 @@ export async function webGoogleRequest(
   return body;
 }
 
+/** Télécharge un binaire Drive (pièce jointe adossée) : Blob prêt à stocker. */
+export async function downloadDriveBinary(driveFileId: string): Promise<Blob> {
+  if (!/^[\w-]{1,200}$/.test(driveFileId)) fail('Identifiant de document Google invalide.');
+  const token = await webAccessToken();
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media&supportsAllDrives=true`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) mapGoogleError(response.status, {}, `/drive/v3/files/${driveFileId}`);
+  return response.blob();
+}
+
 export function webGoogleStatus(): { configured: boolean; connected: boolean } {
   return { configured: getWebClientId() !== '', connected: readTokens() !== null };
 }

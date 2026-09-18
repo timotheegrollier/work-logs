@@ -162,6 +162,13 @@ export function validateBackup(input) {
     const stored = requiredText(attachment.stored, 'Fichier joint', 500);
     if (!/^[\w.-]+$/.test(stored)) fail('Fichier joint invalide.');
     if (!Number.isInteger(attachment.size) || attachment.size < 0) fail('Taille de pièce jointe invalide.');
+    // Adossement Drive (2026-09-19) : optionnel, ancien exports sans ce champ
+    // restent valides ; un identifiant Drive invalide est refusé en français.
+    const driveRaw = attachment.driveFileId ?? attachment.drive_file_id ?? null;
+    const driveFileId = driveRaw === null || driveRaw === undefined || driveRaw === ''
+      ? null
+      : requiredText(driveRaw, 'Fichier Drive', 200);
+    if (driveFileId && !/^[\w-]{1,200}$/.test(driveFileId)) fail('Fichier Drive invalide.');
     return {
       id: id(attachment.id, 'Identifiant de pièce jointe'),
       filename: requiredText(attachment.filename, 'Nom de pièce jointe', 1000),
@@ -170,6 +177,7 @@ export function validateBackup(input) {
       size: attachment.size,
       entry_id: entryId,
       created_at: timestamp(attachment.created_at, 'Date de création de la pièce jointe'),
+      driveFileId,
     };
   });
   unique(attachments.map((attachment) => attachment.id), 'Identifiant de pièce jointe');

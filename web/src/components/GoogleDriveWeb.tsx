@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, googleHelpUrl, type Entry, type GoogleBackup, type GoogleFile } from '../lib';
-import { clearLocalOutbox, exportLocalOutbox, importLocalBackup, listPendingUploads, markAttachmentUploaded, outboxSize } from '../store/localApi';
+import { clearLocalOutbox, exportLocalOutbox, fetchMissingDriveAttachments, importLocalBackup, listPendingUploads, markAttachmentUploaded, outboxSize } from '../store/localApi';
 import {
   beginWebLogin,
   disconnectWeb,
@@ -131,7 +131,26 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
     await run(async () => {
       const data = await downloadWebBackup(backup.id);
       const result = await importLocalBackup(data);
-      setMessage(`Sauvegarde chargée : ${result.entries} entrée(s), ${result.tasks} tâche(s).`);
+      // Les binaires adossés suivent : un clic les rapatrie, même sur mobile.
+      const { fetched, missing } = await fetchMissingDriveAttachments();
+      setMessage(fetched
+        ? `Sauvegarde chargée : ${result.entries} entrée(s), ${result.tasks} tâche(s), ${fetched} fichier(s) récupéré(s).`
+        : missing
+          ? `Sauvegarde chargée : ${result.entries} entrée(s), ${result.tasks} tâche(s). ${missing} fichier(s) encore sur Drive : ouvrez l’entrée et touchez Récupérer.`
+          : `Sauvegarde chargée : ${result.entries} entrée(s), ${result.tasks} tâche(s).`);
+      setPending(outboxSize());
+      await onRestored?.();
+    });
+  };
+
+  const recupererFichiers = async () => {
+    await run(async () => {
+      const { fetched, missing } = await fetchMissingDriveAttachments();
+      setMessage(fetched
+        ? `${fetched} fichier(s) récupéré(s) depuis Google Drive.`
+        : missing
+          ? `${missing} fichier(s) encore indisponible(s) : vérifie la connexion puis réessaie.`
+          : 'Tout est déjà lisible sur cet appareil.');
       await onRestored?.();
     });
   };
@@ -244,6 +263,18 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
               </div>
               <button type="button" className="primary" disabled={busy || pending === 0} onClick={() => void envoyer()}>
                 Envoyer vers Drive
+              </button>
+            </div>
+            <p className="drive-hint">Les photos partent avec leurs binaires : le PC les retrouve après import, même après un rechargement complet.</p>
+          </section>
+          <section className="drive-outbox" aria-label="Pièces jointes Drive">
+            <div className="drive-subheading">
+              <div>
+                <h3>Fichiers sur Drive</h3>
+                <p>Charger rapatrie aussi les binaires ; sinon, ⬇ Récupérer dans l’entrée suffit.</p>
+              </div>
+              <button type="button" disabled={busy} onClick={() => void recupererFichiers()}>
+                Récupérer les fichiers
               </button>
             </div>
           </section>

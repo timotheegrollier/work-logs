@@ -34,7 +34,7 @@ describe('sauvegardes Google Drive', () => {
 
       const exported = await api.post('/api/google/backup/export');
       assert.equal(exported.status, 201);
-      assert.deepEqual(exported.body, { id: 'backup-1', name: 'WorkLogs backup.json', modifiedTime: '2026-09-17T10:00:00.000Z', size: 1234 });
+      assert.deepEqual(exported.body, { id: 'backup-1', name: 'WorkLogs backup.json', modifiedTime: '2026-09-17T10:00:00.000Z', size: 1234, binaries: 0 });
       const upload = calls.find(call => call.url.startsWith('/upload/'));
       assert.match(upload.options.headers['Content-Type'], /^multipart\/related; boundary=/);
       assert.ok(Buffer.isBuffer(upload.options.body));
@@ -48,7 +48,7 @@ describe('sauvegardes Google Drive', () => {
       assert.ok(upload.options.body.subarray(-boundary.length - 8).equals(Buffer.from(`\r\n--${boundary}--\r\n`)));
 
       const listed = await api.get('/api/google/backup/list');
-      assert.deepEqual(listed.body.files, [exported.body]);
+      assert.deepEqual(listed.body.files, [{ id: 'backup-1', name: 'WorkLogs backup.json', modifiedTime: '2026-09-17T10:00:00.000Z', size: 1234 }]);
       const downloaded = await api.get('/api/google/backup/backup-1');
       assert.equal(downloaded.body.version, 2);
       assert.equal(downloaded.body.google_documents.length, 1);
@@ -58,7 +58,7 @@ describe('sauvegardes Google Drive', () => {
       await api.db.prepare('DELETE FROM tasks').run();
       const restored = await api.post('/api/google/backup/backup-1/import');
       assert.equal(restored.status, 200);
-      assert.deepEqual(restored.body, { ok: true, projects: 1, entries: 1, tasks: 1 });
+      assert.deepEqual(restored.body, { ok: true, projects: 1, entries: 1, tasks: 1, binaries: 0, missingFiles: 0 });
       assert.equal(api.db.prepare('SELECT title FROM entries').get().title, 'Contexte sauvegardé');
       assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries').get().n, 1);
       assert.equal(api.db.prepare('SELECT document_id FROM google_documents').get().document_id, 'google-backup-doc');

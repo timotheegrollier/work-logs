@@ -49,6 +49,8 @@ export function EntryEditor({
   const [attachments, setAttachments] = useState<Attachment[]>(entry.attachments ?? []);
   /** Pièce jointe dont l'aperçu est ouvert, sinon `null` (aucun dialogue). */
   const [previewing, setPreviewing] = useState<Attachment | null>(null);
+  const [fetchingId, setFetchingId] = useState<string | null>(null);
+  const [driveNotice, setDriveNotice] = useState('');
   // L'archivage est une action explicite, hors enregistrement automatique.
   const [archived, setArchived] = useState(entry.archived ?? 0);
   const [save, setSave] = useState<SaveState>('saved');
@@ -132,6 +134,25 @@ export function EntryEditor({
     await api.deleteAttachment(file.id);
     setAttachments((prev) => prev.filter((a) => a.id !== file.id));
     onChanged();
+  };
+
+  // Fichier adossé à Drive mais absent en local (restauration, autre appareil) :
+  // un clic le retélécharge, puis l'aperçu et le téléchargement refonctionnent.
+  const fetchFromDrive = async (file: Attachment) => {
+    setFetchingId(file.id);
+    setDriveNotice('');
+    setError('');
+    try {
+      const updated = await api.fetchDriveAttachment(file.id);
+      setAttachments((prev) => prev.map((a) => (a.id === file.id ? { ...a, ...updated } : a)));
+      setPreviewing((current) => (current?.id === file.id ? { ...current, ...updated } : current));
+      setDriveNotice(`« ${file.filename} » récupéré depuis Google Drive.`);
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setFetchingId(null);
+    }
   };
 
   const remove = async () => {
@@ -409,6 +430,9 @@ export function EntryEditor({
           <span className="file" key={file.id}>
             <a href={api.fileUrl(file.stored)}>{file.filename}</a>
             <small>{formatSize(file.size)}</small>
+            {file.driveFileId
+              ? <small className="picker-source is-google" title="Binaire conservé sur Google Drive">☁ Drive</small>
+              : <small className="picker-source" title="Fichier uniquement sur cet appareil">local seul</small>}
             <button
               className="ghost file-preview"
               type="button"
@@ -417,6 +441,16 @@ export function EntryEditor({
             >
               👁 Aperçu
             </button>
+            {file.driveFileId && <button
+              className="ghost file-preview"
+              type="button"
+              disabled={fetchingId === file.id}
+              title="Retélécharger le binaire depuis Google Drive"
+              aria-label={`Récupérer ${file.filename} depuis Drive`}
+              onClick={() => void fetchFromDrive(file)}
+            >
+              {fetchingId === file.id ? 'Récupération…' : '⬇ Récupérer'}
+            </button>}
             <button
               className="icon"
               aria-label={`Supprimer ${file.filename}`}
@@ -426,8 +460,9 @@ export function EntryEditor({
             </button>
           </span>
         ))}
+        {driveNotice && <p className="drive-success" role="status">{driveNotice}</p>}
       </div>}
-      {previewing && <FileViewer key={previewing.id} file={previewing} onClose={() => setPreviewing(null)} />}
+      {previewing && <FileViewer key={previewing.id + (previewing.driveFileId || '')} file={previewing} onClose={() => setPreviewing(null)} onFetch={() => previewing && void fetchFromDrive(previewing)} fetching={fetchingId === previewing.id} />}
     </section>
   );
 }

@@ -128,6 +128,8 @@ export interface Attachment {
   size: number;
   entry_id: string;
   created_at: string;
+  /** Renseigné quand le binaire est adossé à Drive : survit à une restauration. */
+  driveFileId?: string | null;
 }
 export interface Stats {
   entries: number;
@@ -178,8 +180,10 @@ export const remoteApi = {
   disconnectGoogle: () => send<GoogleStatus>('POST', '/api/google/disconnect'),
   googleDocuments: (pageToken = '') => req<{ files: GoogleFile[]; nextPageToken?: string; warnings?: string[] }>('/api/google/documents' + (pageToken ? '?page_token=' + encodeURIComponent(pageToken) : '')),
   googleBackups: () => req<{ files: GoogleBackup[] }>('/api/google/backup/list'),
-  exportGoogleBackup: () => send<GoogleBackup>('POST', '/api/google/backup/export'),
-  importGoogleBackup: (id: string) => send<{ ok: true; projects: number; entries: number; tasks: number }>('POST', `/api/google/backup/${encodeURIComponent(id)}/import`),
+  exportGoogleBackup: () => send<GoogleBackup & { binaries?: number }>('POST', '/api/google/backup/export'),
+  importGoogleBackup: (id: string) => send<{ ok: true; projects: number; entries: number; tasks: number; binaries?: number; missingFiles?: number }>('POST', `/api/google/backup/${encodeURIComponent(id)}/import`),
+  driveAttachmentStatus: () => req<{ total: number; onDrive: number; missingLocal: number; connected: boolean }>('/api/google/attachments/status'),
+  fetchDriveAttachment: (id: string) => send<Attachment & { fetched?: boolean }>('POST', `/api/google/attachments/${encodeURIComponent(id)}/fetch`),
   listOutbox: () => req<{ files: GoogleBackup[] }>('/api/google/outbox/list'),
   importOutbox: (id: string) => send<{ ok: true; projects: number; entries: number; tasks: number; links: number; attachments: number; binaries: number; updated: number; conflicts: number }>('POST', `/api/google/outbox/${encodeURIComponent(id)}/import`),
   createGoogleDocument: (title: string) => send<Entry>('POST', '/api/google/documents', { title }),

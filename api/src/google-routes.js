@@ -34,6 +34,83 @@ const multipartBackup = (name, payload) => {
   };
 };
 
+/**
+ * Binaire adossé à Drive : même `multipart/related` à vrais CRLF que les
+ * sauvegardes, avec `appProperties` qui permet de retrouver le fichier sans
+ * nouvelle table (`worklogs_type=attachment` + ids WorkLogs).
+ */
+const multipartAttachment = (name, mimeType, content, attachmentId, entryId) => {
+  const boundary = backupBoundary();
+  const metadata = JSON.stringify({
+    name,
+    mimeType: mimeType || 'application/octet-stream',
+    appProperties: {
+      worklogs_type: 'attachment',
+      worklogs_version: '2',
+      worklogs_attachment_id: attachmentId,
+      worklogs_entry_id: entryId,
+    },
+  });
+  return {
+    body: Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`),
+      Buffer.from(`--${boundary}\r\nContent-Type: ${mimeType || 'application/octet-stream'}\r\n\r\n`),
+      Buffer.isBuffer(content) ? content : Buffer.from(content),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]),
+    contentType: `multipart/related; boundary=${boundary}`,
+  };
+};
+
+/** Envoie vers Drive les binaires locaux pas encore adossés, en place. */
+async function uploadMissingAttachments(db, google, uploadDir) {
+  const rows = db.prepare("SELECT * FROM attachments WHERE drive_file_id IS NULL OR drive_file_id=''").all();
+  let binaries = 0;
+  for (const row of rows) {
+    const target = path.join(uploadDir, path.basename(row.stored));
+    if (!fs.existsSync(target)) continue;
+    try {
+      const content = fs.readFileSync(target);
+      if (content.length > 100 * 1024 * 1024) continue;
+      const part = multipartAttachment(row.filename, row.mime, content, row.id, row.entry_id);
+      const result = await google.request('/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id', {
+        method: 'POST',
+        headers: { 'Content-Type': part.contentType },
+        body: part.body,
+      });
+      if (result?.id && /^[\w-]{1,200}$/.test(result.id)) {
+        db.prepare('UPDATE attachments SET drive_file_id=? WHERE id=?').run(result.id, row.id);
+        binaries++;
+      }
+    } catch {
+      // Best-effort à l'export : la sauvegarde JSON part quand même, le
+      // fichier restera « local seul » et sera renvoyé au prochain export.
+    }
+  }
+  return binaries;
+}
+
+/** Retélécharge les binaires Drive dont le fichier local manque. */
+async function downloadMissingAttachments(db, google, uploadDir, attachments) {
+  let binaries = 0;
+  let missing = 0;
+  for (const attachment of attachments) {
+    const driveFileId = attachment.driveFileId || attachment.drive_file_id || '';
+    if (!driveFileId) continue;
+    const target = path.join(uploadDir, path.basename(attachment.stored));
+    if (fs.existsSync(target)) continue;
+    try {
+      const binary = await google.request(`/drive/v3/files/${driveFileId}?alt=media&supportsAllDrives=true`, { responseType: 'arraybuffer' });
+      fs.mkdirSync(uploadDir, { recursive: true });
+      fs.writeFileSync(target, Buffer.isBuffer(binary) ? binary : Buffer.from(binary));
+      binaries++;
+    } catch {
+      missing++;
+    }
+  }
+  return { binaries, missing };
+}
+
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const fileId = (value) => {
   if (typeof value !== 'string' || !/^[\w-]{1,200}$/.test(value)) fail('Identifiant de document Google invalide.');
@@ -126,8 +203,8 @@ export async function importOutbox(db, { google, uploadDir }, data) {
     }
     for (const attachment of data.attachments) {
       if (!db.prepare('SELECT id FROM attachments WHERE id=?').get(attachment.id)) {
-        db.prepare('INSERT INTO attachments (id,filename,stored,mime,size,entry_id,created_at) VALUES (?,?,?,?,?,?,?)')
-          .run(attachment.id, attachment.filename, attachment.stored, attachment.mime, attachment.size, attachment.entry_id, attachment.created_at);
+        db.prepare('INSERT INTO attachments (id,filename,stored,mime,size,entry_id,created_at,drive_file_id) VALUES (?,?,?,?,?,?,?,?)')
+          .run(attachment.id, attachment.filename, attachment.stored, attachment.mime, attachment.size, attachment.entry_id, attachment.created_at, attachment.driveFileId || '');
         counts.attachments++;
       }
     }
@@ -208,7 +285,10 @@ export function registerGoogleRoutes(app, { db, google, uploadDir }) {
   };
   const reply = (id) => {
     const current = entry(id);
-    return { ...decodeEntry(current), google_sync: googleLink(db, current), attachments: db.prepare('SELECT * FROM attachments WHERE entry_id=?').all(id) };
+    return { ...decodeEntry(current), google_sync: googleLink(db, current), attachments: db.prepare('SELECT * FROM attachments WHERE entry_id=?').all(id).map((row) => {
+      const { drive_file_id: _snake, driveFileId: _camel, ...rest } = row;
+      return { ...rest, driveFileId: _snake || _camel || null };
+    }) };
   };
   const busy = new Set();
   const exclusive = async (id, fn) => {
@@ -233,6 +313,9 @@ export function registerGoogleRoutes(app, { db, google, uploadDir }) {
     res.json({ files: await backupList() });
   });
   route('post', '/api/google/backup/export', async (_req, res) => {
+    // D'abord les binaires : le JSON référence ensuite leurs `driveFileId`.
+    // Best-effort : un binaire trop gros ou refusé reste « local seul ».
+    const uploadedBinaries = await uploadMissingAttachments(db, google, uploadDir);
     const payload = JSON.stringify(buildBackup(db));
     if (Buffer.byteLength(payload, 'utf8') > MAX_BACKUP_BYTES) fail('La sauvegarde est trop volumineuse (20 Mo max).', 413);
     const name = `WorkLogs backup ${new Date().toISOString().replace(/[T:.]/g, '-').replace(/Z$/, '')}.json`;
@@ -243,14 +326,50 @@ export function registerGoogleRoutes(app, { db, google, uploadDir }) {
       body: multipart.body,
     });
     if (!result?.id) fail('Google n’a pas confirmé la création de la sauvegarde.', 502);
-    res.status(201).json(backupInfo({ ...result, name: result.name || name, mimeType: 'application/json', size: result.size || Buffer.byteLength(payload, 'utf8') }));
+    res.status(201).json({ ...backupInfo({ ...result, name: result.name || name, mimeType: 'application/json', size: result.size || Buffer.byteLength(payload, 'utf8') }), binaries: uploadedBinaries });
   });
   route('get', '/api/google/backup/:id', async (req, res) => {
     res.json(await downloadBackup(req.params.id));
   });
   route('post', '/api/google/backup/:id/import', async (req, res) => {
     const data = await downloadBackup(req.params.id);
-    res.json(restoreBackup(db, data));
+    const restored = restoreBackup(db, data);
+    const { binaries, missing } = await downloadMissingAttachments(db, google, uploadDir, data.attachments || []);
+    res.json({ ...restored, binaries, missingFiles: missing });
+  });
+  // État simple pour le panneau : combiens sur Drive, combiens manquent en local.
+  route('get', '/api/google/attachments/status', async (_req, res) => {
+    const rows = db.prepare('SELECT stored, drive_file_id FROM attachments').all();
+    let onDrive = 0;
+    let missingLocal = 0;
+    for (const row of rows) {
+      if (row.drive_file_id) onDrive++;
+      if (!fs.existsSync(path.join(uploadDir, path.basename(row.stored)))) missingLocal++;
+    }
+    res.json({ total: rows.length, onDrive, missingLocal, connected: Boolean(google) });
+  });
+  route('post', '/api/google/attachments/:id/fetch', async (req, res) => {
+    const row = db.prepare('SELECT * FROM attachments WHERE id=?').get(req.params.id);
+    if (!row) fail('pièce jointe introuvable', 404);
+    const target = path.join(uploadDir, path.basename(row.stored));
+    if (fs.existsSync(target)) {
+      const { drive_file_id: _snake, ...rest } = row;
+      res.json({ ...rest, driveFileId: _snake || null, fetched: false });
+      return;
+    }
+    const driveFileId = row.drive_file_id || '';
+    if (!driveFileId) fail('Ce fichier n’est pas encore sur Google Drive. Exporte une sauvegarde pour l’y envoyer.', 404);
+    fileId(driveFileId);
+    try {
+      const binary = await google.request(`/drive/v3/files/${driveFileId}?alt=media&supportsAllDrives=true`, { responseType: 'arraybuffer' });
+      fs.mkdirSync(uploadDir, { recursive: true });
+      fs.writeFileSync(target, Buffer.isBuffer(binary) ? binary : Buffer.from(binary));
+    } catch {
+      fail('Google Drive est injoignable ou le fichier n’y est plus accessible. Vérifie la connexion puis réessaie.', 502);
+    }
+    const fresh = db.prepare('SELECT * FROM attachments WHERE id=?').get(row.id);
+    const { drive_file_id: _snake, ...rest } = fresh;
+    res.json({ ...rest, driveFileId: _snake || null, fetched: true });
   });
   route('get', '/api/google/outbox/list', async (_req, res) => {
     const params = new URLSearchParams({

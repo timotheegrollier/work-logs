@@ -28,6 +28,17 @@ const orNull = (v) => (str(v) === '' ? null : str(v));
 const pick = (body, key, current, transform = (v) => v) =>
   body[key] === undefined ? current : transform(body[key]);
 
+/**
+ * La base parle `drive_file_id` (snake), l'API et le JSON parlent
+ * `driveFileId` (comme la boîte mobile). Exposer les deux dupliquerait le
+ * sens ; on ne sort que le camel, `null` quand le fichier est local seul.
+ */
+export const formatAttachment = (row) => {
+  if (!row) return row;
+  const { drive_file_id: _snake, driveFileId: _camel, ...rest } = row;
+  return { ...rest, driveFileId: _snake || _camel || null };
+};
+
 const CONTROL_OR_QUOTE_RE = /[\x00-\x1f\x7f"\\]/g;
 const NON_ASCII_RE = /[^\x20-\x7e]/g;
 const EXTRA_ENCODE_RE = /['()]/g;
@@ -184,7 +195,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     if (!entry) return notFound(res, 'entrée introuvable');
     entry.attachments = db
       .prepare('SELECT * FROM attachments WHERE entry_id=? ORDER BY created_at DESC')
-      .all(entry.id);
+      .all(entry.id)
+      .map(formatAttachment);
     res.json(entry);
   });
 
@@ -268,8 +280,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
         const target = path.join(uploadDir, stored);
         fs.copyFileSync(path.join(uploadDir, attachment.stored), target);
         written.push(target);
-        db.prepare('INSERT INTO attachments (id,filename,stored,mime,size,entry_id,created_at) VALUES (?,?,?,?,?,?,?)')
-          .run(uid('at_'), attachment.filename, stored, attachment.mime, attachment.size, id, time);
+        db.prepare('INSERT INTO attachments (id,filename,stored,mime,size,entry_id,created_at,drive_file_id) VALUES (?,?,?,?,?,?,?,?)')
+          .run(uid('at_'), attachment.filename, stored, attachment.mime, attachment.size, id, time, attachment.drive_file_id || '');
         const from = `/api/files/${attachment.stored}`, to = `/api/files/${stored}`;
         markdown = markdown.split(from).join(to);
         if (rich) replaceImage(rich, from, to);
@@ -468,9 +480,9 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     let filename = req.file.originalname;
     try { filename = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(filename, 'latin1')); } catch {}
     db.prepare(
-      'INSERT INTO attachments (id,filename,stored,mime,size,entry_id,created_at) VALUES (?,?,?,?,?,?,?)'
-    ).run(id, filename, req.file.filename, req.file.mimetype || '', req.file.size, entryId, nowISO());
-    res.status(201).json(db.prepare('SELECT * FROM attachments WHERE id=?').get(id));
+      'INSERT INTO attachments (id,filename,stored,mime,size,entry_id,created_at,drive_file_id) VALUES (?,?,?,?,?,?,?,?)'
+    ).run(id, filename, req.file.filename, req.file.mimetype || '', req.file.size, entryId, nowISO(), '');
+    res.status(201).json(formatAttachment(db.prepare('SELECT * FROM attachments WHERE id=?').get(id)));
   });
 
   /**

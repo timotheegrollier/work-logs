@@ -241,6 +241,10 @@ export function openDb(dbPath, { withSeed = true } = {}) {
       db.exec(`ALTER TABLE google_documents ADD COLUMN ${name} ${definition}`);
     }
   }
+  // Pièces jointes adossées à Drive (2026-09-19) : le binaire peut vivre sur
+  // Google (`drive_file_id`) pour survivre à une restauration. Chaîne vide =
+  // local seul, sans rien casser pour les lignes existantes.
+  if (!columns(db, 'attachments').includes('drive_file_id')) db.exec("ALTER TABLE attachments ADD COLUMN drive_file_id TEXT NOT NULL DEFAULT ''");
   db.exec('PRAGMA foreign_keys = ON;');
   if (withSeed) seed(db);
   return db;
