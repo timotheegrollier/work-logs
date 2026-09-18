@@ -1,23 +1,4 @@
 Package: worklogs
-Version: 0.16.0
-Architecture: amd64
-Maintainer: Timothée Grollier <timotheegrollier@gmail.com>
-Installed-Size: 285451
-Depends: libgtk-3-0, libnss3, libxss1, libxtst6, libatspi2.0-0, libdrm2, libgbm1, libasound2t64 | libasound2, xdg-utils
-Filename: ./WorkLogs-0.16.0-linux-amd64.deb
-Size: 98140692
-MD5sum: 45272b983e8f6f8e10ad20ea0b2fa02a
-SHA1: e94638a0fa90781fd9efa845f53415b68cdb9c42
-SHA256: 08794555353642b3ab34491beca6683da58c3a1771bf35ebe963b8f1bfa7943a
-Section: default
-Priority: optional
-Homepage: https://github.com/timotheegrollier/work-logs
-Description: Journal de travail personnel
-  Journal Markdown et suivi de tâches, sur un seul écran, entièrement local.
-License: UNLICENSED
-Vendor: Timothée Grollier <timotheegrollier@gmail.com>
-
-Package: worklogs
 Version: 0.17.0
 Architecture: amd64
 Maintainer: Timothée Grollier <timotheegrollier@gmail.com>
@@ -47,6 +28,25 @@ Size: 98175624
 MD5sum: 59a8dd7b35dd72ef52e9fbf8664c4ebe
 SHA1: b3e03e163fe3f8fe81ee2729ce6b2b74a10d9b3a
 SHA256: 8cea082cea56fd80472ad8726b65f1ac4cf6b2c73870bde2fbaf312d7b3dfa0c
+Section: default
+Priority: optional
+Homepage: https://github.com/timotheegrollier/work-logs
+Description: Journal de travail personnel
+  Journal Markdown et suivi de tâches, sur un seul écran, entièrement local.
+License: UNLICENSED
+Vendor: Timothée Grollier <timotheegrollier@gmail.com>
+
+Package: worklogs
+Version: 0.19.0
+Architecture: amd64
+Maintainer: Timothée Grollier <timotheegrollier@gmail.com>
+Installed-Size: 285555
+Depends: libgtk-3-0, libnss3, libxss1, libxtst6, libatspi2.0-0, libdrm2, libgbm1, libasound2t64 | libasound2, xdg-utils
+Filename: ./WorkLogs-0.19.0-linux-amd64.deb
+Size: 98176412
+MD5sum: 55fc0cca8f1075fda5e99f0d913c5eb0
+SHA1: 9e7773bb9668504286a8ba258e1f39e1f558f84b
+SHA256: 6d056550f486d777365a908e40bc4204358f057bb8d558bee7ef48f974a73777
 Section: default
 Priority: optional
 Homepage: https://github.com/timotheegrollier/work-logs
