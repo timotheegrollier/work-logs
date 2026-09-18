@@ -441,3 +441,23 @@ notre origine deviendrait du code actif. La route d'aperçu les renvoie en
 binaire IndexedDB : il distingue maintenant `/preview` pour poser `inline` plutôt
 qu'`attachment`. `path.basename` continue d'empêcher toute traversée de répertoire côté
 serveur, et un `/preview` sur un nom inconnu répond 404 comme le téléchargement.
+
+## 16. L'en-tête mobile se réorganise, sans hamburger — 2026-09-18
+
+**Le besoin.** Sur un Pixel 9a (412 px), la barre entassait logo, version, recherche,
+thème, panneaux, Exporter et Paramètres : tout se marchait dessus, cibles minuscules.
+(Le lot a été rebasé sur v0.23.0, qui ajoutait le troisième panneau Écriture et le
+bouton ⚙ Paramètres : quatre icônes en première ligne, trois boutons de panneaux.)
+
+**Décision.** Réorganisation CSS seule, zéro JS : trois lignes (marque + icônes,
+recherche pleine largeur, panneaux en trois grands boutons), cibles 44 px, version
+masquée en mobile, Exporter et Paramètres en icônes à `aria-label` stable (noms exacts
+inchangés). Pas de menu hamburger **pour l'en-tête** : les réglages ont déjà leur
+dialogue ⚙ Paramètres, et les contrôles restants sont des interrupteurs de vue
+instantanés — les enterrer dans un tiroir ajouterait état, focus et tests pour sept
+contrôles qui tiennent en trois lignes une fois compactés.
+
+**Ce que ça coûte.** Une ligne verticale de plus (~50 px) ; le contenu défilant
+l'absorbe. Chaque icône mobile demande son `aria-label`, verrouillé par test.
+Rouvrir si l'en-tête accueille un neuvième contrôle : ce sera le signe qu'il faut
+sortir une action de la barre, pas d'y ajouter un tiroir.

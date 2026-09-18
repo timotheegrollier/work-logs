@@ -163,6 +163,23 @@ describe('écran unique', () => {
   });
 });
 
+describe('en-tête', () => {
+  test('expose recherche, thème, panneaux et export avec des noms stables', async () => {
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
+    render(<App />);
+
+    const header = await screen.findByRole('banner');
+    expect(within(header).getByRole('searchbox', { name: 'Rechercher' })).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: 'Changer de thème' })).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: 'Journal' })).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: 'Écriture' })).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: 'Tâches' })).toBeInTheDocument();
+    // Noms en aria-label : ils survivent au passage en icônes seules sur mobile.
+    expect(within(header).getByRole('button', { name: 'Exporter' })).toHaveAttribute('aria-label', 'Exporter');
+    expect(within(header).getByRole('button', { name: '⚙ Paramètres' })).toHaveAttribute('aria-label', '⚙ Paramètres');
+  });
+});
+
 describe('gestion Google Drive', () => {
   test('vit dans les paramètres, pas dans le journal, et s’ouvre dans un dialogue', async () => {
     const user = userEvent.setup();

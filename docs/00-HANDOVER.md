@@ -1,7 +1,16 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-18 · Version : v0.19.0.
-> **Lot courant :** panneaux latéraux repliables (Journal/Tâches, desktop comme
+> **Mise à jour :** 2026-09-18 · Version : v0.23.0.
+> **Lots v0.20.0–v0.23.0 publiés sans retouche de cette fiche** (menu Paramètres,
+> partie centrale repliable, pièces jointes adossées à Drive, archives, URLs PWA
+> en sous-dossier — voir `git log`).
+> **Lot courant (candidat v0.24.0) :** en-tête mobile aéré (Pixel 9a, 412 px),
+> rebasé sur v0.23.0 : marque, recherche, panneaux en trois lignes, cibles 44 px,
+> sans JS ni dépendance.
+> **Validation :** `./scripts/check.sh` vert : **135 tests API, 183 front,
+> 33 desktop unitaires, 25 scripts, 30 navigateur et 10 desktop e2e**.
+>
+> **Lot précédent :** panneaux latéraux repliables (Journal/Tâches, desktop comme
 > PWA, état retenu) pour n'afficher que ce qui sert.
 > **Validation :** `./scripts/check.sh` vert (lots PWA + aperçu fusionnés) :
 > 128 tests API, 173 front, 33 desktop unitaires, 24 scripts, 28 navigateur
@@ -19,6 +28,27 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-09-18 (2) — en-tête mobile aéré (rebasé sur v0.23.0)
+
+- Parti de v0.19.0, rebasé sans conflit sur v0.23.0 qui ajoutait entre-temps un
+  troisième panneau (Écriture repliable) et un bouton ⚙ Paramètres : la grille
+  mobile passe à quatre colonnes en première ligne et trois boutons de panneaux.
+- Sur ~412 px (Pixel 9a), l'en-tête entassait logo, pastille version, recherche,
+  thème, panneaux, Exporter et Paramètres sur deux lignes serrées. Il passe en
+  grille de trois lignes : marque + thème + export (icône ⤓) + paramètres (icône ⚙)
+  / recherche pleine largeur 44 px / Journal, Écriture et Tâches en trois grands
+  boutons côte à côte.
+- Pastille version masquée en mobile (elle ne sert qu'en desktop) ; Exporter et
+  Paramètres deviennent des icônes à `aria-label` stable (noms exacts conservés :
+  `Exporter`, `⚙ Paramètres`) ; recherche en 16 px (pas de zoom auto au focus) ;
+  `safe-area` haut/bas pour la PWA ; chips, saisie rapide et lignes du journal en
+  cibles tactiles. Desktop inchangé à l'exception de deux icônes masquées.
+- Tests : noms accessibles de la bannière (`App.test.tsx`, Écriture et Paramètres
+  inclus), disposition à 412×860 sans débordement, trois panneaux à parts égales,
+  cibles ≥ 40 px, repli du journal (`mobile-header.spec.ts`). Capture de contrôle :
+  trois lignes aérées, contenu intact.
+- Pourquoi pas de menu hamburger pour l'en-tête : `05-DECISIONS.md` §16.
 
 ## Lot du 2026-09-18 — aperçu des pièces jointes dans l'app
 

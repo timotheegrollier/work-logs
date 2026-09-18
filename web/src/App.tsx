@@ -255,7 +255,7 @@ export default function App() {
           </p>
         )}
         <button
-          className="ghost"
+          className="ghost theme-btn"
           aria-label="Changer de thème"
           onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
         >
@@ -332,17 +332,20 @@ export default function App() {
             Par défaut
           </button>
         </div>
-        <button className="ghost" type="button" onClick={() => void exportJson()}>
-          Exporter
+        <button className="ghost export-btn" type="button" aria-label="Exporter" onClick={() => void exportJson()}>
+          <span className="export-icon" aria-hidden="true">⤓</span>
+          <span className="export-label">Exporter</span>
         </button>
         <button
-          className="ghost"
+          className="ghost settings-btn"
           type="button"
           aria-haspopup="dialog"
+          aria-label="⚙ Paramètres"
           title="Paramètres (dont Google Drive)"
           onClick={() => setShowSettings(true)}
         >
-          ⚙ Paramètres
+          <span className="settings-icon" aria-hidden="true">⚙</span>
+          <span className="settings-label">Paramètres</span>
         </button>
       </header>
 

@@ -104,6 +104,12 @@ button:disabled {
 .ghost:hover:not(:disabled) {
   border-color: var(--accent);
 }
+/* Icônes d'export et de paramètres : visibles en mobile seul,
+   où les libellés passent en aria-label. */
+.export-icon,
+.settings-icon {
+  display: none;
+}
 .danger {
   background: var(--danger-soft);
   color: var(--danger);
@@ -1796,13 +1802,108 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .rich-content [data-indent-first] { text-indent: calc((attr(data-indent-first type(<number>), 0) - attr(data-indent-start type(<number>), 0)) * 1pt); }
 @media (max-width: 1180px) { .head .stats { display: none; } }
 @media (max-width: 600px) {
-  .head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; padding: 10px 12px; }
-  .head .search { width: 100%; grid-row: 2; grid-column: 1 / -1; }
-  .head .grow { display: none; }
-  .head > .ghost, .head .panel-toggles .ghost { padding: 6px 8px; font-size: 12px; }
+  /* Mobile : en-tête aéré en trois lignes — marque, recherche, panneaux —
+     au lieu d'une rangée unique où logo, version, thème, Journal, Écriture,
+     Tâches, Exporter et Paramètres se marchaient dessus. Aucun JS, juste du placement. */
+  .head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-areas:
+      'logo theme export settings'
+      'search search search search'
+      'panels panels panels panels';
+    gap: 10px;
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px;
+  }
+  .head .logo {
+    grid-area: logo;
+    min-width: 0;
+    font-size: 16px;
+  }
+  /* La pastille de version ne sert qu'en desktop (vérification manuelle). */
+  .head .logo .version {
+    display: none;
+  }
+  .head .search {
+    grid-area: search;
+    width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .head .grow {
+    display: none;
+  }
+  .head .theme-btn {
+    grid-area: theme;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .head .export-btn {
+    grid-area: export;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 16px;
+    padding: 6px 10px;
+  }
+  .head .export-btn .export-label {
+    display: none;
+  }
+  .head .export-btn .export-icon {
+    display: inline;
+  }
+  .head .settings-btn {
+    grid-area: settings;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 16px;
+    padding: 6px 10px;
+  }
+  .head .settings-btn .settings-label {
+    display: none;
+  }
+  .head .settings-btn .settings-icon {
+    display: inline;
+  }
+  .head .panel-toggles {
+    grid-area: panels;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+  .head .panel-toggles .ghost {
+    min-height: 44px;
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
   /* Les largeurs de colonnes n'ont aucun sens en pile unique : on les cache. */
-  .head .col-widths { display: none; }
-  .title { font-size: 22px; }
+  .head .col-widths {
+    display: none;
+  }
+  /* Marge basse pour la navigation gestuelle des PWA. */
+  .columns {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* Cibles tactiles dans le contenu : chips, saisie rapide, lignes du journal. */
+  .chip {
+    padding: 8px 14px;
+    font-size: 14px;
+  }
+  .quick input,
+  .quick button {
+    min-height: 44px;
+  }
+  .new-entry {
+    padding: 12px;
+  }
+  .entry {
+    padding: 10px 12px;
+  }
+  .title {
+    font-size: 22px;
+  }
 }
 
 .rich-controls { display: contents; border: 0; padding: 0; margin: 0; min-width: 0; }
