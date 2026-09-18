@@ -10,6 +10,10 @@ on:
       - 'web/**'
       - 'scripts/pwa-sw.mjs'
       - 'scripts/emit-sw.mjs'
+      # Le service worker lit la version du paquet racine : un release bump
+      # doit donc reconstruire la PWA, même si aucun fichier web ne change.
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/pwa.yml'
   workflow_dispatch:
 
