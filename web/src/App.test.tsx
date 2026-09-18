@@ -164,18 +164,23 @@ describe('écran unique', () => {
 });
 
 describe('gestion Google Drive', () => {
-  test('garde le contenu Drive absent avant ouverture et le ferme dans un dialogue', async () => {
+  test('vit dans les paramètres, pas dans le journal, et s’ouvre dans un dialogue', async () => {
     const user = userEvent.setup();
     render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
 
-    const manage = await screen.findByRole('button', { name: 'Gérer Google Drive' });
+    expect(within(journal()).queryByRole('button', { name: 'Gérer Google Drive' })).not.toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Gestion Google Drive' })).not.toBeInTheDocument();
     expect(screen.queryByText('La connexion Drive est disponible dans l’application desktop Linux.')).not.toBeInTheDocument();
 
-    await user.click(manage);
+    await user.click(screen.getByRole('button', { name: '⚙ Paramètres' }));
+    expect(await screen.findByRole('dialog', { name: 'Paramètres' })).toBeVisible();
+    await user.click(within(screen.getByRole('dialog', { name: 'Paramètres' })).getByRole('button', { name: 'Gérer Google Drive' }));
     expect(await screen.findByRole('dialog', { name: 'Gestion Google Drive' })).toBeVisible();
     await user.click(within(screen.getByRole('dialog', { name: 'Gestion Google Drive' })).getByRole('button', { name: 'Fermer' }));
     expect(screen.queryByRole('dialog', { name: 'Gestion Google Drive' })).not.toBeInTheDocument();
+    await user.click(within(screen.getByRole('dialog', { name: 'Paramètres' })).getByRole('button', { name: 'Fermer' }));
+    expect(screen.queryByRole('dialog', { name: 'Paramètres' })).not.toBeInTheDocument();
   });
 });
 

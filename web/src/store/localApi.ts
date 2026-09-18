@@ -218,6 +218,19 @@ const stripBlob = (row: AttachmentRow): Attachment => {
   return meta;
 };
 
+/**
+ * La PWA peut être servie dans un sous-dossier (GitHub Pages : `/work-logs/`).
+ * Une URL commençant par `/api` sortirait alors de la portée du service worker
+ * et serait résolue sur `timotheegrollier.github.io/api/...`.
+ */
+function localFileUrl(stored: string, suffix = ''): string {
+  const base = new URL(window.location.href);
+  // Même sans slash final, traiter l'URL de l'application comme un dossier.
+  if (!base.pathname.endsWith('/')) base.pathname += '/';
+  const url = new URL(`api/files/${encodeURIComponent(stored)}${suffix}`, base);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 async function googleSync(entryId: string, contentJson: string | null): Promise<Entry['google_sync']> {
   const { google, entries } = await tables();
   const link = await google.get(entryId);
@@ -799,9 +812,9 @@ export const localApi: Api = {
     return { ok: true };
   },
 
-  fileUrl: (stored: string) => `/api/files/${stored}`,
-  /** Mêmes URL canoniques en PWA : le service worker sert le binaire IndexedDB `inline`. */
-  previewUrl: (stored: string) => `/api/files/${stored}/preview`,
+  fileUrl: (stored: string) => localFileUrl(stored),
+  /** Même chemin PWA : le service worker sert le binaire IndexedDB `inline`. */
+  previewUrl: (stored: string) => localFileUrl(stored, '/preview'),
 
   upload: async (file: File, entryId: string) => {
     const { entries, attachments } = await tables();

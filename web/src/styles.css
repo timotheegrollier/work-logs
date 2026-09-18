@@ -1713,6 +1713,37 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 }
 .drive-dialog-heading h2 { margin: 0; font-size: 16px; }
 .drive-dialog .drive-content { max-height: calc(100vh - 100px); overflow: auto; }
+/* Paramètres : même cadre que le dialogue Drive ; la gestion Drive y vit
+   sans le faux cadre du panneau latéral. */
+.settings-dialog {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  z-index: 1000;
+  transform: translate(-50%, -50%);
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  margin: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.settings-dialog::backdrop { background: rgb(0 0 0 / 0.55); }
+.settings-dialog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.settings-dialog-heading h2 { margin: 0; font-size: 16px; }
+.settings-content { max-height: calc(100vh - 100px); overflow: auto; padding: 12px 14px; }
+.settings-content .drive-panel { border: 0; background: none; margin: 0; }
+.settings-content .drive-panel > .drive-open { width: 100%; text-align: left; }
 .drive-toggle { align-items: center; padding: 12px; font-size: 13px; font-weight: 600; }
 .drive-content { gap: 10px; padding: 0 12px 12px; }
 .drive-content button { text-align: left; padding: 7px 8px; }

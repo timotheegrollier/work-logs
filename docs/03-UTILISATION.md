@@ -164,7 +164,7 @@ les données restent sur l'appareil ; la synchronisation Drive arrive aux lots s
 
 ## Gérer Google Drive
 
-Le bouton **Gérer Google Drive** ouvre un dialogue séparé de la liste des entrées locales. Toute la
+Le bouton **⚙ Paramètres** (en-tête) mène à **Gérer Google Drive**, qui ouvre un dialogue dédié. Toute la
 gestion Drive s'y trouve : configuration OAuth, connexion, choix des fichiers autorisés, création,
 recherche, ouverture, sauvegardes et déconnexion. Le dialogue est au premier plan ; fermer le dialogue
 ne ferme pas le document actuellement ouvert au centre.

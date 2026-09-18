@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import './styles.css';
 import { api, emptyDocument, todayISO, type AppState, type Entry } from './lib';
 import { EntryList } from './components/EntryList';
@@ -33,6 +34,8 @@ export default function App() {
   const [showLeft, setShowLeft] = useState(() => readPanel('worklogs-show-left'));
   const [showCenter, setShowCenter] = useState(() => readPanel('worklogs-show-center'));
   const [showRight, setShowRight] = useState(() => readPanel('worklogs-show-right'));
+  const [showSettings, setShowSettings] = useState(false);
+  const settingsRef = useRef<HTMLDialogElement>(null);
   const selectedRef = useRef<string | null>(null);
   const reloadSequence = useRef(0);
   selectedRef.current = selectedId;
@@ -188,6 +191,24 @@ export default function App() {
     setSelectedId(entryId);
   }, [projectId, state]);
 
+  // Ouverture d'un document Drive : même geste que depuis une carte de tâche,
+  // mais en rechargeant l'état sans filtrer par projet.
+  const openDriveEntry = useCallback((opened: Entry) => {
+    const sequence = ++reloadSequence.current;
+    setSearch(''); setQuery(''); setFreshEntry(false);
+    selectedRef.current = opened.id;
+    setSelectedId(opened.id); setEntry(opened);
+    void api.state('', projectId).then(next => { if (sequence === reloadSequence.current) setState(next); }).catch(() => {});
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!showSettings) return;
+    const dialog = settingsRef.current;
+    if (!dialog || dialog.open) return;
+    try { dialog.showModal(); }
+    catch { dialog.setAttribute('open', ''); }
+  }, [showSettings]);
+
   return (
     <div className="app">
       <UpdateBar />
@@ -306,6 +327,15 @@ export default function App() {
         <button className="ghost" type="button" onClick={() => void exportJson()}>
           Exporter
         </button>
+        <button
+          className="ghost"
+          type="button"
+          aria-haspopup="dialog"
+          title="Paramètres (dont Google Drive)"
+          onClick={() => setShowSettings(true)}
+        >
+          ⚙ Paramètres
+        </button>
       </header>
 
       {error && <p className="error banner no-print">{error}</p>}
@@ -333,13 +363,6 @@ export default function App() {
             onCreateDocument={() => void createEntry(true)}
             searching={query !== ''}
           />
-          <GoogleDrive onRestored={reload} onOpen={(opened) => {
-            const sequence = ++reloadSequence.current;
-            setSearch(''); setQuery(''); setFreshEntry(false);
-            selectedRef.current = opened.id;
-            setSelectedId(opened.id); setEntry(opened);
-            void api.state('', projectId).then(next => { if (sequence === reloadSequence.current) setState(next); }).catch(() => {});
-          }} />
         </aside>
 
         <ColumnResizer side="left" panelId="workspace-journal" value={colLeft} onChange={setColLeft} />
@@ -379,6 +402,28 @@ export default function App() {
           />
         </aside>
       </div>
+      {showSettings && createPortal((
+        <dialog
+          className="settings-dialog"
+          aria-label="Paramètres"
+          aria-modal="true"
+          ref={settingsRef}
+          onCancel={(event) => {
+            event.preventDefault();
+            setShowSettings(false);
+          }}
+        >
+          <div className="settings-dialog-heading">
+            <h2>Paramètres</h2>
+            <button className="ghost" type="button" onClick={() => setShowSettings(false)}>
+              Fermer
+            </button>
+          </div>
+          <div className="settings-content">
+            <GoogleDrive onRestored={reload} onOpen={openDriveEntry} />
+          </div>
+        </dialog>
+      ), document.body)}
     </div>
   );
 }

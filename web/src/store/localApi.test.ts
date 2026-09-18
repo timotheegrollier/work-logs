@@ -170,6 +170,17 @@ describe('projets et fichiers', () => {
     await expect(localApi.deleteAttachment(saved.id)).rejects.toThrow('pièce jointe introuvable');
   });
 
+  test('URL de pièce jointe reste dans le sous-dossier de la PWA', () => {
+    const originalPath = window.location.pathname;
+    window.history.replaceState(null, '', '/work-logs/');
+    try {
+      expect(localApi.fileUrl('archi.ods')).toBe('/work-logs/api/files/archi.ods');
+      expect(localApi.previewUrl('archi.ods')).toBe('/work-logs/api/files/archi.ods/preview');
+    } finally {
+      window.history.replaceState(null, '', originalPath || '/');
+    }
+  });
+
   test('export local au format sauvegarde v2, sans binaires', async () => {
     const { filename, blob } = await localApi.exportBackup();
     expect(filename).toBe('worklogs.json');
