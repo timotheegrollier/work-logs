@@ -52,3 +52,29 @@ test('en-tête mobile : trois lignes aérées, sans débordement, cibles tactile
   await expect(page.getByRole('region', { name: 'Journal' })).toBeHidden();
   await expect(journal).toHaveAttribute('aria-pressed', 'false');
 });
+
+test('paramètres mobiles : la version s’y lit et les trois blocs sont des cartes', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+
+  // La pastille de l'en-tête est masquée à 412 px : le dialogue prend le relais.
+  await expect(page.locator('.head .logo .version')).toBeHidden();
+  await page.getByRole('button', { name: '⚙ Paramètres' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Paramètres' });
+  await expect(dialog.getByText(/WorkLogs \d+\.\d+\.\d+/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Fermer' }).click();
+
+  // Journal, Écriture et Tâches : trois cartes identifiées, pas un long continu.
+  for (const [selector, title] of [['.left', 'Journal'], ['.center', 'Écriture'], ['.right', 'Tâches']] as const) {
+    await expect(page.locator(selector)).toHaveCSS('border-radius', '14px');
+    expect(
+      await page.locator(selector).evaluate(
+        (el, expected) => getComputedStyle(el, '::before').content.replace(/["']/g, '') === expected,
+        title
+      )
+    ).toBe(true);
+  }
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
+  ).toBe(true);
+});

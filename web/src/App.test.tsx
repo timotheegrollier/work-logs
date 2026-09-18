@@ -192,6 +192,11 @@ describe('gestion Google Drive', () => {
 
     await user.click(screen.getByRole('button', { name: '⚙ Paramètres' }));
     expect(await screen.findByRole('dialog', { name: 'Paramètres' })).toBeVisible();
+    // La pastille de version de l'en-tête est masquée sur mobile : le dialogue
+    // garde le numéro accessible partout.
+    expect(
+      within(screen.getByRole('dialog', { name: 'Paramètres' })).getByText(/WorkLogs \d+\.\d+\.\d+/)
+    ).toBeInTheDocument();
     await user.click(within(screen.getByRole('dialog', { name: 'Paramètres' })).getByRole('button', { name: 'Gérer Google Drive' }));
     expect(await screen.findByRole('dialog', { name: 'Gestion Google Drive' })).toBeVisible();
     await user.click(within(screen.getByRole('dialog', { name: 'Gestion Google Drive' })).getByRole('button', { name: 'Fermer' }));

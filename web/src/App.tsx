@@ -433,6 +433,9 @@ export default function App() {
           <div className="settings-content">
             <GoogleDrive onRestored={reload} onOpen={openDriveEntry} />
           </div>
+          {/* La pastille de version de l'en-tête est masquée sur mobile :
+              le numéro reste accessible ici. */}
+          <p className="settings-version">WorkLogs {__WORKLOGS_VERSION__}</p>
         </dialog>
       ), document.body)}
     </div>

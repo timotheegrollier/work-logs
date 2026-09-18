@@ -8,7 +8,7 @@
 > rebasé sur v0.23.0 : marque, recherche, panneaux en trois lignes, cibles 44 px,
 > sans JS ni dépendance.
 > **Validation :** `./scripts/check.sh` vert : **135 tests API, 183 front,
-> 33 desktop unitaires, 25 scripts, 30 navigateur et 10 desktop e2e**.
+> 33 desktop unitaires, 25 scripts, 31 navigateur et 10 desktop e2e**.
 >
 > **Lot précédent :** panneaux latéraux repliables (Journal/Tâches, desktop comme
 > PWA, état retenu) pour n'afficher que ce qui sert.
@@ -28,6 +28,20 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-09-18 (3) — version en Paramètres mobile et blocs en cartes
+
+- La pastille de version de l'en-tête étant masquée sur mobile, le dialogue
+  ⚙ Paramètres affiche désormais `WorkLogs x.y.z` en pied (visible en mobile
+  seul, redondant en desktop où la pastille reste).
+- L'empilement mobile (≤ 900 px) passe en trois cartes distinctes au lieu d'un
+  long continu à filets : fond, bordure, rayon 14 px, marges, et intitulés
+  JOURNAL / ÉCRITURE / TÂCHES qui répondent aux boutons de l'en-tête. Aucun JSX
+  de navigation ajouté, que du CSS (+ une ligne dans le dialogue).
+- Tests : version présente dans le dialogue (`App.test.tsx`), visible à 412 px
+  et masquée en desktop, cartes à 14 px avec intitulés (`mobile-header.spec.ts`,
+  `rich-document.spec.ts`). Capture de contrôle : deux cartes identifiées,
+  header à quatre icônes. Aucune dépendance ajoutée.
 
 ## Lot du 2026-09-18 (2) — en-tête mobile aéré (rebasé sur v0.23.0)
 

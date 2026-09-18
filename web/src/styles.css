@@ -1504,22 +1504,40 @@ button:disabled {
 }
 @media (max-width: 900px) {
   /* Mobile : une seule page qui défile, pas trois fenêtres fixes empilées
-     (le mode document a sa variante plus bas, même comportement). */
+     (le mode document a sa variante plus bas, même comportement).
+     Les trois blocs deviennent des cartes identifiées qui répondent aux
+     boutons Journal / Écriture / Tâches de l'en-tête. */
   .columns {
     display: block;
     overflow-y: auto;
+    padding: 12px 12px 0;
   }
   .column-resizer { display: none; }
   .left,
   .center,
   .right {
     overflow: visible;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px;
+    margin: 0 0 12px;
   }
-  .left,
-  .right {
-    border: 0;
-    border-bottom: 1px solid var(--line);
+  /* Intitulés des cartes : mêmes mots que les boutons de l'en-tête. */
+  .left::before,
+  .center::before,
+  .right::before {
+    display: block;
+    margin: 0 0 10px;
+    font-size: 11px;
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
   }
+  .left::before { content: 'Journal'; }
+  .center::before { content: 'Écriture'; }
+  .right::before { content: 'Tâches'; }
   .editor {
     padding: 16px;
   }
@@ -1750,6 +1768,9 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .settings-content { max-height: calc(100vh - 100px); overflow: auto; padding: 12px 14px; }
 .settings-content .drive-panel { border: 0; background: none; margin: 0; }
 .settings-content .drive-panel > .drive-open { width: 100%; text-align: left; }
+/* Numéro de version : redondant avec la pastille de l'en-tête en desktop,
+   il n'apparaît que sur mobile où la pastille est masquée. */
+.settings-version { display: none; }
 .drive-toggle { align-items: center; padding: 12px; font-size: 13px; font-weight: 600; }
 .drive-content { gap: 10px; padding: 0 12px 12px; }
 .drive-content button { text-align: left; padding: 7px 8px; }
@@ -1823,6 +1844,17 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   /* La pastille de version ne sert qu'en desktop (vérification manuelle). */
   .head .logo .version {
     display: none;
+  }
+  /* Version dans les paramètres : seule source du numéro sur mobile. */
+  .settings-version {
+    display: block;
+    margin: 0;
+    padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
   }
   .head .search {
     grid-area: search;
