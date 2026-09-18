@@ -979,3 +979,33 @@ describe('espace Google Docs', () => {
     expect(screen.getByRole('button', { name: 'Masquer les tâches' })).toHaveAttribute('aria-expanded', 'true');
   });
 });
+
+describe('panneaux repliables', () => {
+  const columns = () => document.querySelector('.columns') as HTMLElement;
+  test('masquer le journal et les tâches ne garde que l’écriture', async () => {
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
+    render(<App />);
+    await screen.findByRole('region', { name: 'Entrée' });
+    const journalToggle = screen.getByRole('button', { name: 'Journal' });
+    expect(journalToggle).toHaveAttribute('aria-pressed', 'true');
+    expect(columns()).not.toHaveClass('hide-left');
+    fireEvent.click(journalToggle);
+    expect(columns()).toHaveClass('hide-left');
+    expect(journalToggle).toHaveAttribute('aria-pressed', 'false');
+    expect(globalThis.localStorage.getItem('worklogs-show-left')).toBe('0');
+    fireEvent.click(screen.getByRole('button', { name: 'Tâches' }));
+    expect(columns()).toHaveClass('hide-left', 'hide-right');
+    expect(screen.getByRole('region', { name: 'Entrée' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Journal' }));
+    expect(columns()).not.toHaveClass('hide-left');
+    expect(globalThis.localStorage.getItem('worklogs-show-left')).toBe('1');
+  });
+
+  test('l’état replié survit au rechargement', async () => {
+    globalThis.localStorage.setItem('worklogs-show-right', '0');
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+    expect(columns()).toHaveClass('hide-right');
+    expect(screen.getByRole('button', { name: 'Tâches' })).toHaveAttribute('aria-pressed', 'false');
+  });
+});

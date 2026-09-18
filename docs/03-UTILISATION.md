@@ -45,6 +45,11 @@ Une seule page, trois zones, jamais de navigation.
 
 En haut : la recherche, le résumé de la semaine, le thème clair/sombre, l'export.
 
+Les boutons **Journal** et **Tâches** de l'en-tête replient les panneaux latéraux
+pour ne garder que ce qui sert (l'écriture en grand, par exemple) ; l'état est
+retenu au redémarrage. Sur téléphone, c'est ce qui rend chaque zone utilisable
+plein écran.
+
 Pour régler les barres latérales, **cliquer-glisser la poignée entre le journal et
 le document, ou entre le document et les tâches**. La largeur change immédiatement
 et reste mémorisée après redémarrage. Les champs de largeur et **Par défaut** restent

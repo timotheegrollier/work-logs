@@ -30,6 +30,8 @@ export default function App() {
   const [theme, setTheme] = useState(readTheme);
   const [colLeft, setColLeft] = useState(readColLeft);
   const [colRight, setColRight] = useState(readColRight);
+  const [showLeft, setShowLeft] = useState(() => readPanel('worklogs-show-left'));
+  const [showRight, setShowRight] = useState(() => readPanel('worklogs-show-right'));
   const selectedRef = useRef<string | null>(null);
   const reloadSequence = useRef(0);
   selectedRef.current = selectedId;
@@ -78,6 +80,14 @@ export default function App() {
     localStorage.setItem('worklogs-col-left', String(colLeft));
     localStorage.setItem('worklogs-col-right', String(colRight));
   }, [colLeft, colRight]);
+
+  useEffect(() => {
+    localStorage.setItem('worklogs-show-left', showLeft ? '1' : '0');
+  }, [showLeft]);
+
+  useEffect(() => {
+    localStorage.setItem('worklogs-show-right', showRight ? '1' : '0');
+  }, [showRight]);
 
   // La recherche attend une pause de frappe avant d'interroger l'API.
   useEffect(() => {
@@ -217,6 +227,28 @@ export default function App() {
         >
           {theme === 'dark' ? '☀' : '☾'}
         </button>
+        <div className="panel-toggles no-print" role="group" aria-label="Panneaux latéraux">
+          <button
+            type="button"
+            className={'ghost' + (showLeft ? ' is-on' : '')}
+            aria-pressed={showLeft}
+            aria-controls="workspace-journal"
+            title={showLeft ? 'Masquer le journal' : 'Afficher le journal'}
+            onClick={() => setShowLeft((v) => !v)}
+          >
+            Journal
+          </button>
+          <button
+            type="button"
+            className={'ghost' + (showRight ? ' is-on' : '')}
+            aria-pressed={showRight}
+            aria-controls="workspace-tasks"
+            title={showRight ? 'Masquer les tâches' : 'Afficher les tâches'}
+            onClick={() => setShowRight((v) => !v)}
+          >
+            Tâches
+          </button>
+        </div>
         <div className="col-widths">
           <div className="col-width-control">
             <label htmlFor="col-left-width">Gauche</label>
@@ -266,7 +298,7 @@ export default function App() {
       {isGoogleDocument && <div className="workspace-switch no-print"><span>Document Google · {siblingTabs.length} onglet{siblingTabs.length > 1 ? 's' : ''}</span>
         <button aria-expanded={showDocumentTasks} aria-controls="workspace-tasks" onClick={() => setShowDocumentTasks(!showDocumentTasks)}>{showDocumentTasks ? 'Masquer les tâches' : 'Afficher les tâches'}</button>
       </div>}
-      <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showDocumentTasks ? ' with-tasks' : '')}>
+      <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showDocumentTasks ? ' with-tasks' : '') + (showLeft ? '' : ' hide-left') + (showRight ? '' : ' hide-right')}>
         <aside id="workspace-journal" className="left no-print">
           <ProjectBar
             projects={state?.projects ?? []}
@@ -367,4 +399,10 @@ function readColRight() {
   if (typeof localStorage === 'undefined') return 320;
   const v = Number(localStorage.getItem(COL_RS_KEY));
   return Number.isFinite(v) && v >= 120 && v <= 600 ? v : 320;
+}
+
+/** Panneau visible par défaut ; `'0'` enregistré le replie durablement. */
+function readPanel(key: string) {
+  if (typeof localStorage === 'undefined') return true;
+  return localStorage.getItem(key) !== '0';
 }

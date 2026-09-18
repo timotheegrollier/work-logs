@@ -1,22 +1,19 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
 > **Mise à jour :** 2026-09-18 · Version : v0.19.0.
-> **Lot courant :** **aperçu des pièces jointes dans l'app** — `GET /api/files/:stored/preview`
+> **Lot courant :** panneaux latéraux repliables (Journal/Tâches, desktop comme
+> PWA, état retenu) pour n'afficher que ce qui sert.
+> **Validation :** `./scripts/check.sh` vert (lots PWA + aperçu fusionnés) :
+> 128 tests API, 173 front, 33 desktop unitaires, 24 scripts, 28 navigateur
+> et 10 desktop e2e.
+>
+> **Lot précédent :** **aperçu des pièces jointes dans l'app** — `GET /api/files/:stored/preview`
 > sert les mêmes octets en `inline` avec le type enregistré (le téléchargement `attachment`
 > reste inchangé) ; le dialogue `FileViewer` affiche images, PDF et texte dans l'entrée,
 > annonce franchement les tableurs (`.xlsx`, `.ods`) faute de bibliothèque, et laisse
 > toujours **Télécharger**. Le service worker PWA sert le binaire IndexedDB avec la bonne
 > disposition. Aucune dépendance ajoutée ; les types dangereux (`text/html`, `image/svg+xml`)
 > sont renvoyés en `text/plain` + `nosniff`.
-> **Validation :** `./scripts/check.sh` vert après rebasage sur le lot PWA mobile :
-> **128 tests API, 166 front, 33 desktop unitaires, 24 scripts, 27 navigateur
-> et 10 desktop e2e**. `CHECK OK`.
->
-> **Lot précédent :** PWA mobile — layout à défilement sous 900 px (fini les zones
-> coupées), en-tête 412 px, tableaux à défilement horizontal, ouverture d'un
-> document Drive existant ; boucle d'édition : éditeur local + poussée +
-> bascule vers l'appli Docs + relecture (l'éditeur natif embarqué reste
-> impossible dans un navigateur : Google refuse le framing).
 >
 > **Lot précédent :** correctif multipart Drive CRLF publié en v0.15.1 (travail conservé tel quel).
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**

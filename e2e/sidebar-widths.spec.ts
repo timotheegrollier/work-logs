@@ -90,3 +90,18 @@ test('largeurs : limites au glissement, réglage au clavier et adaptation aux pe
   await page.emulateMedia({ media: 'print' });
   await expect(page.getByRole('separator')).toHaveCount(0);
 });
+
+test('panneaux : replier le journal et les tâches ne garde que l’écriture', async ({ page }) => {
+  await page.getByRole('button', { name: 'Journal' }).click();
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Journal' })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('button', { name: 'Tâches' }).click();
+  await expect(page.getByRole('region', { name: 'Tâches' })).toBeHidden();
+  await expect(page.getByRole('region', { name: 'Entrée' })).toBeVisible();
+  await expect(page.locator('.columns')).toHaveClass(/hide-left hide-right/);
+  await page.getByRole('button', { name: 'Journal' }).click();
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Tâches' })).toBeHidden();
+});

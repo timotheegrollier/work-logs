@@ -95,4 +95,13 @@ describe('PWA locale (mêmes écrans, backend IndexedDB/mémoire)', () => {
     await user.click(screen.getByRole('tab', { name: 'Onglet B' }));
     expect(await screen.findByText('Contenu B')).toBeInTheDocument();
   });
+
+  test('panneaux repliables disponibles sur mobile', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+    await user.click(screen.getByRole('button', { name: 'Tâches' }));
+    expect(document.querySelector('.columns')).toHaveClass('hide-right');
+    expect(editor()).toBeInTheDocument();
+  });
 });
