@@ -110,6 +110,12 @@ PDF » pour obtenir un document à envoyer.
 plan…). Clic sur le nom pour le récupérer, ✕ pour le retirer. Supprimer l'entrée supprime aussi
 ses fichiers.
 
+**👁 Aperçu** affiche le fichier dans WorkLogs, sans ouvrir un autre programme : les images,
+les PDF et les textes (`.txt`, `.md`, `.csv`, code…) s'y lisent directement, et le bouton
+**Télécharger** du dialogue reste disponible. Les tableurs (`.xlsx`, `.ods`…) ne sont pas
+décodés — l'aperçu le dit franchement et renvoie au téléchargement, plutôt que d'afficher un
+rendu approximatif.
+
 ## Suivre ses tâches
 
 - **Ajouter** : taper dans « Nouvelle tâche… » puis `Entrée`. Si un projet est filtré, la tâche

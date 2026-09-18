@@ -220,6 +220,8 @@ export const remoteApi = {
 
   deleteAttachment: (id: string) => send<{ ok: true }>('DELETE', `/api/attachments/${id}`),
   fileUrl: (stored: string) => `/api/files/${stored}`,
+  /** Même fichier, servi `inline` : sert l'aperçu intégré, jamais le téléchargement. */
+  previewUrl: (stored: string) => `/api/files/${stored}/preview`,
   async exportBackup() {
     const res = await fetch('/api/export');
     if (!res.ok) throw new ApiError((await res.json().catch(() => null))?.error || 'export impossible');

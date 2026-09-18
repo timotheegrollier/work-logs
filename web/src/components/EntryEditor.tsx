@@ -5,6 +5,7 @@ import { Autosave } from '../autosave';
 import { RichEditor } from './RichEditor';
 import { DocumentTabs } from './DocumentTabs';
 import { GoogleDocsEditor } from './GoogleDocsEditor';
+import { FileViewer } from './FileViewer';
 
 type SaveState = 'saved' | 'dirty' | 'saving' | 'error';
 const LABELS: Record<SaveState, string> = {
@@ -46,6 +47,8 @@ export function EntryEditor({
     project_id: entry.project_id ?? '',
   });
   const [attachments, setAttachments] = useState<Attachment[]>(entry.attachments ?? []);
+  /** Pièce jointe dont l'aperçu est ouvert, sinon `null` (aucun dialogue). */
+  const [previewing, setPreviewing] = useState<Attachment | null>(null);
   // L'archivage est une action explicite, hors enregistrement automatique.
   const [archived, setArchived] = useState(entry.archived ?? 0);
   const [save, setSave] = useState<SaveState>('saved');
@@ -407,6 +410,14 @@ export function EntryEditor({
             <a href={api.fileUrl(file.stored)}>{file.filename}</a>
             <small>{formatSize(file.size)}</small>
             <button
+              className="ghost file-preview"
+              type="button"
+              aria-label={`Aperçu de ${file.filename}`}
+              onClick={() => setPreviewing(file)}
+            >
+              👁 Aperçu
+            </button>
+            <button
               className="icon"
               aria-label={`Supprimer ${file.filename}`}
               onClick={() => removeFile(file)}
@@ -416,6 +427,7 @@ export function EntryEditor({
           </span>
         ))}
       </div>}
+      {previewing && <FileViewer key={previewing.id} file={previewing} onClose={() => setPreviewing(null)} />}
     </section>
   );
 }

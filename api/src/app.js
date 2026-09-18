@@ -45,6 +45,13 @@ const attachmentHeader = (filename) => {
   return 'attachment; filename="' + ascii + '"; filename*=UTF-8\'\'' + utf8;
 };
 
+/**
+ * Même nom, mais affiché dans l'onglet au lieu d'être téléchargé : c'est ce qui
+ * permet à l'aperçu intégré de lire PDF, images et texte sans sortir de WorkLogs.
+ * Un téléchargement direct reste toujours possible via `/api/files/:stored`.
+ */
+const inlineHeader = (filename) => `inline; ${attachmentHeader(filename).slice('attachment; '.length)}`;
+
 export function createApp({ db, uploadDir, staticDir = null, google = null }) {
   fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -466,13 +473,44 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     res.status(201).json(db.prepare('SELECT * FROM attachments WHERE id=?').get(id));
   });
 
-  app.get('/api/files/:stored', (req, res) => {
-    const stored = path.basename(req.params.stored);
+  /**
+   * Retrouve une pièce jointe et son chemin absolu. `null` si la ligne, le nom
+   * enregistré ou le fichier disque manque — les trois cas mènent au même 404,
+   * la route ne devant rien laisser deviner de l'état interne.
+   */
+  const findAttachment = (storedParam) => {
+    const stored = path.basename(storedParam);
     const att = db.prepare('SELECT * FROM attachments WHERE stored=?').get(stored);
     const file = path.join(uploadDir, stored);
-    if (!att || !fs.existsSync(file)) return notFound(res, 'fichier introuvable');
-    res.setHeader('Content-Disposition', attachmentHeader(att.filename));
-    res.sendFile(path.resolve(file)); // res.download() résolvait ce chemin ; sendFile l'exige déjà absolu.
+    if (!att || !fs.existsSync(file)) return null;
+    return { att, file: path.resolve(file) };
+  };
+
+  app.get('/api/files/:stored', (req, res) => {
+    const found = findAttachment(req.params.stored);
+    if (!found) return notFound(res, 'fichier introuvable');
+    res.setHeader('Content-Disposition', attachmentHeader(found.att.filename));
+    res.sendFile(found.file); // res.download() résolvait ce chemin ; sendFile l'exige déjà absolu.
+  });
+
+  /**
+   * Mêmes octets, mais servis pour l'affichage : `inline` et le type réellement
+   * enregistré à l'envoi, au lieu de forcer un téléchargement. Permet d'ouvrir
+   * PDF, images, texte ou tableur dans l'aperçu intégré. Le chemin disque reste
+   * `path.basename` : aucune traversée possible depuis l'URL.
+   */
+  app.get('/api/files/:stored/preview', (req, res) => {
+    const found = findAttachment(req.params.stored);
+    if (!found) return notFound(res, 'fichier introuvable');
+    res.setHeader('Content-Disposition', inlineHeader(found.att.filename));
+    const mime = found.att.mime || 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    // Un type inconnu affiché tel quel deviendrait du HTML actif : on neutralise.
+    if (/^(text\/html|application\/xhtml\+xml|image\/svg\+xml)$/i.test(mime)) {
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    }
+    res.sendFile(found.file);
   });
 
   app.delete('/api/attachments/:id', (req, res) => {

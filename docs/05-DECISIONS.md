@@ -411,3 +411,33 @@ clic, qui a tranché avant nous. C'est la **deuxième** fois que ce piège mord 
 dans `main.mjs` le corrige déjà pour les dialogues natifs. Les tests automatisés ne le
 voient pas tout seuls, Playwright injectant les frappes sans traverser cette couche : le
 parcours de non-régression mesure donc `webContents.isFocused()` côté Electron.
+
+## 15. L'aperçu des pièces jointes sert les mêmes octets en `inline` — 2026-09-18
+
+**Le besoin.** Une pièce jointe ne pouvait qu'être téléchargée : `GET /api/files/:stored`
+force `Content-Disposition: attachment`, donc cliquer sur le nom faisait sortir le fichier de
+WorkLogs. Pour relire un PDF, une photo ou un compte rendu, il fallait ouvrir un autre
+programme — l'application qui sert à relire son travail ne le montrait pas.
+
+**Une seconde route, pas un changement de la première.** `GET /api/files/:stored/preview`
+sert exactement les mêmes octets avec `Content-Disposition: inline` et le type MIME enregistré
+à l'envoi. Modifier la route existante aurait été un piège : le nom RFC 6266 et le
+téléchargement fonctionnent aujourd'hui, y compris en desktop, et tout casser pour un confort
+d'affichage aurait été un mauvais échange. La route d'aperçu est additive ; le téléchargement
+garde son comportement, et l'aperçu offre toujours un bouton **Télécharger**.
+
+**Ce qu'on affiche, et ce qu'on annonce.** `web/src/file-preview.ts` classe la pièce jointe
+sur l'extension **et** le type MIME : image, PDF et texte sont rendus par le navigateur, sans
+dépendance ; les tableurs (`.xlsx`, `.ods`…) sont **annoncés** comme non affichables, avec le
+téléchargement en solution. Décoder ces formats demanderait une bibliothèque (accord explicite
+requis) et un rendu qu'on ne peut pas garantir fidèle : afficher du charabia serait pire que
+de dire la vérité. Le `.csv`, lui, reste du texte et s'affiche très bien tel quel.
+
+**Types dangereux neutralisés.** Un `text/html` ou un `image/svg+xml` servi en `inline` dans
+notre origine deviendrait du code actif. La route d'aperçu les renvoie en
+`text/plain; charset=utf-8` avec `X-Content-Type-Options: nosniff`.
+
+**Deux backends, un seul chemin.** Le service worker PWA intercepte `/api/files/` et sert le
+binaire IndexedDB : il distingue maintenant `/preview` pour poser `inline` plutôt
+qu'`attachment`. `path.basename` continue d'empêcher toute traversée de répertoire côté
+serveur, et un `/preview` sur un nom inconnu répond 404 comme le téléchargement.

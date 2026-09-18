@@ -780,6 +780,8 @@ export const localApi: Api = {
   },
 
   fileUrl: (stored: string) => `/api/files/${stored}`,
+  /** Mêmes URL canoniques en PWA : le service worker sert le binaire IndexedDB `inline`. */
+  previewUrl: (stored: string) => `/api/files/${stored}/preview`,
 
   upload: async (file: File, entryId: string) => {
     const { entries, attachments } = await tables();

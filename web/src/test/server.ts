@@ -28,6 +28,32 @@ export async function useRealApi() {
   return {
     db,
     base,
+    /**
+     * Envoie un fichier en multipart, comme le ferait le navigateur. Le corps
+     * est construit à la main : en environnement jsdom, `FormData` est celui du
+     * DOM et le `fetch` de Node ne sait pas l'encoder — multer ne verrait alors
+     * aucun fichier. Un corps `Buffer` avec sa frontière marche dans les deux.
+     */
+    async upload(filename: string, contents: string, fields: Record<string, string> = {}) {
+      const boundary = '----worklogs' + Math.random().toString(36).slice(2);
+      const chunks: Buffer[] = [];
+      const part = (header: string, body: Buffer) => {
+        chunks.push(Buffer.from(`--${boundary}\r\n${header}\r\n\r\n`), body, Buffer.from('\r\n'));
+      };
+      part(`Content-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: text/plain`,
+        Buffer.from(contents));
+      for (const [key, value] of Object.entries(fields)) {
+        part(`Content-Disposition: form-data; name="${key}"`, Buffer.from(value));
+      }
+      chunks.push(Buffer.from(`--${boundary}--\r\n`));
+      const res = await realFetch(`${base}/api/uploads`, {
+        method: 'POST',
+        headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+        body: Buffer.concat(chunks),
+      });
+      const text = await res.text();
+      return { status: res.status, body: text ? JSON.parse(text) : null };
+    },
     async close() {
       globalThis.fetch = realFetch;
       server.close();

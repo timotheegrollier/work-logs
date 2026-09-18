@@ -75,6 +75,7 @@ http://localhost:8410. Application desktop : `npm run desktop`.
 | **Écrire / Lire** | édition côte à côte avec l'aperçu, ou lecture pleine largeur |
 | **Imprimer** (ou `Ctrl+P`) | sort l'entrée seule, mise en page propre, prête pour un PDF |
 | 📎 **Joindre un fichier** | attache un document à l'entrée ouverte |
+| 👁 **Aperçu** | lit le fichier dans WorkLogs (image, PDF, texte) sans le télécharger |
 | Taper + `Entrée` dans « Nouvelle tâche » | ajoute une tâche à la colonne À faire |
 | Cocher une carte · la glisser | la termine · la change de colonne |
 | Clic sur un projet | filtre **le journal et les tâches** en même temps |

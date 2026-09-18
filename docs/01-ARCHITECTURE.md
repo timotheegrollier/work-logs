@@ -130,7 +130,9 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | PATCH | `/api/tasks/:id/move` | `{status, position}` puis renumérotation |
 | POST · PUT · DELETE | `/api/projects[/:id]` | créer · renommer/recolorer · supprimer |
 | POST | `/api/uploads` | multipart `file` + `entry_id` (obligatoire) |
-| GET · DELETE | `/api/files/:stored` · `/api/attachments/:id` | télécharger · supprimer |
+| GET | `/api/files/:stored` | télécharger (`Content-Disposition: attachment`, nom RFC 6266) |
+| GET | `/api/files/:stored/preview` | afficher dans l’app : mêmes octets, `inline` + type enregistré |
+| DELETE | `/api/attachments/:id` | supprimer la ligne et le fichier disque |
 | GET | `/api/export` | toute la base en JSON : tâches, associations, liens Google et métadonnées de pièces jointes |
 
 Conventions : erreurs `{"error": "…"}` en français, `400` pour une validation, `404` pour un

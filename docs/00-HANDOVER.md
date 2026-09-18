@@ -1,19 +1,53 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
 > **Mise à jour :** 2026-09-18 · Version : v0.19.0.
-> **Lot courant :** PWA mobile — layout à défilement sous 900 px (fini les zones
+> **Lot courant :** **aperçu des pièces jointes dans l'app** — `GET /api/files/:stored/preview`
+> sert les mêmes octets en `inline` avec le type enregistré (le téléchargement `attachment`
+> reste inchangé) ; le dialogue `FileViewer` affiche images, PDF et texte dans l'entrée,
+> annonce franchement les tableurs (`.xlsx`, `.ods`) faute de bibliothèque, et laisse
+> toujours **Télécharger**. Le service worker PWA sert le binaire IndexedDB avec la bonne
+> disposition. Aucune dépendance ajoutée ; les types dangereux (`text/html`, `image/svg+xml`)
+> sont renvoyés en `text/plain` + `nosniff`.
+> **Validation :** `./scripts/check.sh` vert après rebasage sur le lot PWA mobile :
+> **128 tests API, 166 front, 33 desktop unitaires, 24 scripts, 27 navigateur
+> et 10 desktop e2e**. `CHECK OK`.
+>
+> **Lot précédent :** PWA mobile — layout à défilement sous 900 px (fini les zones
 > coupées), en-tête 412 px, tableaux à défilement horizontal, ouverture d'un
 > document Drive existant ; boucle d'édition : éditeur local + poussée +
 > bascule vers l'appli Docs + relecture (l'éditeur natif embarqué reste
 > impossible dans un navigateur : Google refuse le framing).
-> **Validation :** `./scripts/check.sh` vert (base v0.19.0) :
-> 125 tests API, 164 front, 33 desktop unitaires, 23 scripts, 26 navigateur
-> et 10 desktop e2e.
 >
 > **Lot précédent :** correctif multipart Drive CRLF publié en v0.15.1 (travail conservé tel quel).
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-09-18 — aperçu des pièces jointes dans l'app
+
+- `GET /api/files/:stored/preview` : mêmes octets que le téléchargement, mais
+  `Content-Disposition: inline` et le type MIME enregistré à l'envoi. La route
+  `/api/files/:stored` n'a pas bougé — le nom RFC 6266 et le téléchargement desktop
+  continuent de fonctionner. La recherche de la pièce jointe est partagée
+  (`findAttachment`) ; `path.basename` empêche toujours toute traversée de répertoire.
+- `web/src/file-preview.ts` classe la pièce jointe sur l'extension **et** le type MIME :
+  `image`, `pdf`, `text`, `sheet`, `other`. `FileViewer.tsx` rend images, PDF (`<iframe>`)
+  et texte (récupéré puis affiché dans un `<pre>`) ; les tableurs sont annoncés comme non
+  affichables — décoder `.xlsx`/`.ods` demanderait une dépendance (accord explicite requis)
+  et un rendu qu'on ne peut garantir fidèle. Le `.csv` reste du texte et s'affiche tel quel.
+- `EntryEditor.tsx` gagne un bouton **👁 Aperçu** par pièce jointe ; le lien de
+  téléchargement et la suppression restent en place. Dialogue au premier plan
+  (`showModal`), comme « Gérer Google Drive ».
+- Service worker PWA : `serveLocalFile` distingue `/preview` (disposition `inline`) du
+  téléchargement ; au passage, la lecture du nom `stored` ne prend plus `preview` pour le
+  nom du fichier.
+- Aucune dépendance ajoutée. Tests : API (4 nouveaux dans `api/test/files.test.js`), front
+  (`file-preview.test.ts`, 2 dans `App.test.tsx`, `previewUrl` dans `localApi.test.ts`),
+  scripts (`pwa-sw.test.mjs`), e2e (1 dans `worklogs.spec.ts`). Le helper `upload` de
+  `web/src/test/server.ts` construit son multipart à la main : en jsdom, `FormData` du DOM
+  n'est pas encodable par le `fetch` de Node, multer ne voyait alors aucun fichier.
+- Pourquoi cette route additive, et pourquoi « annoncer plutôt que rendre » :
+  `05-DECISIONS.md` §15.
 
 ## Lot du 2026-09-17 — plusieurs documents par tâche et cartes repensées
 

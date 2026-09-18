@@ -76,6 +76,7 @@ Desktop app: `npm run desktop`.
 | **Write / Read** | side-by-side editing with preview, or full-width reading |
 | **Print** (or `Ctrl+P`) | prints the entry alone, clean layout, PDF-ready |
 | 📎 **Attach a file** | attaches a document to the open entry |
+| 👁 **Preview** | reads the file inside WorkLogs (image, PDF, text) without downloading it |
 | Type + `Enter` in “New task” | adds a task to the Todo column |
 | Check a card · drag it | finishes it · moves it across columns |
 | Click a project | filters **journal and tasks** at the same time |

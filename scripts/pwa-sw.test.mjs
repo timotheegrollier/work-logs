@@ -142,4 +142,23 @@ describe('routage fetch du service worker', () => {
     offline.listeners.fetch(missing);
     assert.equal((await missing.responses[0]).status, 404);
   });
+
+  test('aperçu : mêmes octets servis `inline` et nommés, téléchargement toujours `attachment`', async () => {
+    const file = { stored: 'abc.pdf', filename: 'devis é.pdf', mime: 'application/pdf', blob: new Blob(['contenu']) };
+
+    // Hors-ligne : seuls les binaires locaux peuvent répondre, c'est le cas réel.
+    const offline = loadSw({ fetchImpl: async () => { throw new Error('hors-ligne'); }, files: [file] });
+    const preview = getEvent('https://pwa.test/api/files/abc.pdf/preview');
+    offline.listeners.fetch(preview);
+    const inline = await preview.responses[0];
+    assert.equal(inline.status, 200);
+    assert.equal(inline.headers.get('content-type'), 'application/pdf');
+    assert.match(inline.headers.get('content-disposition'), /^inline; /);
+    assert.match(inline.headers.get('content-disposition'), /filename="devis é\.pdf"/);
+    assert.equal(await inline.text(), 'contenu');
+
+    const download = getEvent('https://pwa.test/api/files/abc.pdf');
+    offline.listeners.fetch(download);
+    assert.match((await download.responses[0]).headers.get('content-disposition'), /^attachment; /);
+  });
 });

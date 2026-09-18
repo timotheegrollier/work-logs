@@ -876,6 +876,98 @@ button:disabled {
 .file a:hover {
   text-decoration: underline;
 }
+.file-preview {
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+/* ------------------------------------------------------------ aperçu de fichier */
+.viewer-dialog {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  z-index: 1000;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  width: min(960px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 40px));
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.viewer-dialog::backdrop { background: rgb(0 0 0 / 0.55); }
+.viewer-dialog .viewer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.viewer-title {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.viewer-title strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.viewer-title small { color: var(--muted); font-size: 12px; }
+.viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.viewer-actions a { text-decoration: none; font-size: 13px; }
+.viewer-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  overflow: auto;
+  background: var(--surface-2);
+}
+.viewer-body img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.viewer-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: #fff;
+}
+.viewer-text {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.viewer-notice {
+  max-width: 420px;
+  margin: 0;
+  text-align: center;
+  color: var(--muted);
+}
 
 /* ------------------------------------------------------------ tâches */
 .board {

@@ -1,12 +1,18 @@
 # WorkLogs — règles agents
 
-## Reprise actuelle — 2026-09-17
-- **v0.15.0** : création de tâches liées depuis une entrée locale ou Google, dialogue Drive
-  rendu au premier plan, sauvegarde/restauration JSON versionnée dans Drive.
-  Liens `task_entries` et `google_documents` restaurés de façon transactionnelle ; aucune
-  dépendance ajoutée. `./scripts/check.sh` vert : **111 API, 102 front, 33 desktop unitaires,
-  16 scripts, 24 navigateur et 10 desktop e2e**.
-  Bilan dans `docs/00-HANDOVER.md`, publication via `docs/07-RELEASES.md`.
+## Reprise actuelle — 2026-09-18
+- **Aperçu des pièces jointes dans l'app** : `GET /api/files/:stored/preview` sert les mêmes
+  octets en `inline` (le téléchargement `attachment` ne bouge pas) ; le dialogue `FileViewer`
+  affiche images, PDF et texte dans l'entrée, annonce franchement les tableurs (`.xlsx`, `.ods`)
+  et laisse toujours **Télécharger**. Service worker PWA aligné. Aucune dépendance ajoutée.
+  `./scripts/check.sh` vert : **128 API, 166 front, 33 desktop unitaires, 24 scripts,
+  27 navigateur et 10 desktop e2e**. Bilan dans `docs/00-HANDOVER.md`,
+  pourquoi dans `05-DECISIONS.md` §15.
+
+## Reprise précédente — 2026-09-17
+- **v0.19.0** : plusieurs documents par tâche et cartes repensées ; lot PWA mobile parité
+  Google Docs. Liens `task_entries` et `google_documents` restaurés de façon transactionnelle ;
+  aucune dépendance ajoutée. Bilan dans `docs/00-HANDOVER.md`, publication via `docs/07-RELEASES.md`.
 
 ## Reprise actuelle — 2026-09-15
 - Lot terminé et **publié en v0.12.0** : **éditeur Google Docs natif dans WorkLogs**

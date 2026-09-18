@@ -23,7 +23,11 @@ self.addEventListener('activate', (event) => {
 // Miroir du schéma `web/src/store/schema.ts` (base `worklogs`, magasin
 // `attachments` en clé `id`) : tout changement de schéma se répercute ici.
 function serveLocalFile(pathname) {
-  const stored = pathname.slice(pathname.lastIndexOf('/') + 1);
+  // `/api/files/:stored` ou `/api/files/:stored/preview` : mêmes octets, mais
+  // servis pour l'affichage dans le second cas.
+  const inline = /\/preview$/.test(pathname);
+  const segment = pathname.replace(/\/preview$/, '');
+  const stored = segment.slice(segment.lastIndexOf('/') + 1);
   if (!stored || stored.length > 500) return Promise.resolve(new Response('fichier introuvable', { status: 404 }));
   return new Promise((resolve) => {
     let settled = false;
@@ -43,8 +47,14 @@ function serveLocalFile(pathname) {
           got.onerror = missing;
           got.onsuccess = () => {
             const found = (got.result || []).find((row) => row && row.stored === stored);
-            if (found && found.blob) done(new Response(found.blob, { headers: { 'Content-Type': found.mime || 'application/octet-stream' } }));
-            else missing();
+            if (found && found.blob) {
+              done(new Response(found.blob, {
+                headers: {
+                  'Content-Type': found.mime || 'application/octet-stream',
+                  'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${String(found.filename || stored).replace(/["\\]/g, '_')}"`,
+                },
+              }));
+            } else missing();
           };
         } catch {
           missing();

@@ -156,6 +156,31 @@ test('joindre un fichier à une entrée puis le récupérer', async ({ page }) =
   await expect(link).toBeHidden();
 });
 
+test('affiche un fichier joint directement dans l’app', async ({ page }) => {
+  await newEntry(page, 'Aperçu intégré');
+
+  await page.getByLabel('Joindre un fichier').setInputFiles({
+    name: 'notes.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from('# Compte rendu\n\nDeux points à retenir'),
+  });
+  await expect(editor(page).getByRole('link', { name: 'notes.md' })).toBeVisible();
+
+  await editor(page).getByRole('button', { name: 'Aperçu de notes.md' }).click();
+
+  const viewer = page.getByRole('dialog', { name: 'Aperçu de notes.md' });
+  await expect(viewer).toBeVisible();
+  await expect(viewer.getByText('Deux points à retenir')).toBeVisible();
+  // Le corps est servi en `inline`, pas en pièce jointe à télécharger.
+  const downloadHref = await viewer.getByRole('link', { name: 'Télécharger' }).getAttribute('href');
+  const response = await page.request.get(`${page.url().replace(/\/$/, '')}${downloadHref}/preview`);
+  expect(response.ok()).toBe(true);
+  expect(response.headers()['content-disposition']).toMatch(/^inline; /);
+
+  await viewer.getByRole('button', { name: 'Fermer' }).click();
+  await expect(viewer).toBeHidden();
+});
+
 test('la recherche filtre le journal et les tâches d’un coup', async ({ page }) => {
   await newEntry(page, 'Dossier ravalement');
   await page.getByLabel('Nouvelle tâche').fill('Devis ravalement');

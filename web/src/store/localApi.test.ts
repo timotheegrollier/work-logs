@@ -160,6 +160,7 @@ describe('projets et fichiers', () => {
     const saved = await localApi.upload(file, entry.id);
     expect(saved).toMatchObject({ filename: 'devis.pdf', size: 3, entry_id: entry.id });
     expect(localApi.fileUrl(saved.stored)).toBe(`/api/files/${saved.stored}`);
+    expect(localApi.previewUrl(saved.stored)).toBe(`/api/files/${saved.stored}/preview`);
     expect((await localApi.entry(entry.id)).attachments).toHaveLength(1);
     expect((await localApi.state()).entries.find((e) => e.id === entry.id)?.attachments).toBe(1);
     await expect(localApi.upload(file, 'en_x')).rejects.toThrow('entry_id requis et valide');

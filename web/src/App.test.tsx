@@ -347,6 +347,46 @@ describe('écrire une entrée', () => {
     await waitFor(() => expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_old').archived).toBe(0));
     await waitFor(() => expect(within(journal()).queryByText('Archives')).not.toBeInTheDocument());
   });
+
+  test('ouvre l’aperçu d’une pièce jointe sans la télécharger', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_pj', title: 'Avec aperçu' }] });
+    const entry = row(api.db, 'SELECT * FROM entries WHERE id=?', 'en_pj') as { id: string };
+    const upload = await api.upload('notes.md', '# Notes\nligne', { entry_id: entry.id });
+    // Le helper envoie tout en text/plain ; on pose le type d'un fichier Markdown.
+    api.db.prepare('UPDATE attachments SET mime=? WHERE id=?').run('text/markdown', upload.body.id);
+    render(<App />);
+    await user.click(await within(journal()).findByText('Avec aperçu'));
+    await user.click(await screen.findByRole('button', { name: 'Aperçu de notes.md' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Aperçu de notes.md' });
+    expect(await within(dialog).findByText(/ligne/)).toBeInTheDocument();
+    // Le téléchargement direct reste accessible depuis l'aperçu.
+    expect(within(dialog).getByRole('link', { name: 'Télécharger' })).toHaveAttribute(
+      'href', `/api/files/${upload.body.stored}`
+    );
+
+    await user.click(within(dialog).getByRole('button', { name: 'Fermer' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Aperçu de notes.md' })).not.toBeInTheDocument());
+  });
+
+  test('un tableur est annoncé tel quel plutôt que rendu de travers', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_xlsx', title: 'Budget' }] });
+    const entry = row(api.db, 'SELECT * FROM entries WHERE id=?', 'en_xlsx') as { id: string };
+    const upload = await api.upload('budget.xlsx', 'PK binaire', { entry_id: entry.id });
+    api.db.prepare('UPDATE attachments SET mime=? WHERE id=?').run(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', upload.body.id
+    );
+
+    render(<App />);
+    await user.click(await within(journal()).findByText('Budget'));
+    await user.click(await screen.findByRole('button', { name: 'Aperçu de budget.xlsx' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Aperçu de budget.xlsx' });
+    expect(within(dialog).getByText(/tableur/)).toBeInTheDocument();
+    expect(within(dialog).queryByRole('img')).not.toBeInTheDocument();
+  });
 });
 
 describe('retrouver son travail', () => {

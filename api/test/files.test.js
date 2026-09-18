@@ -64,6 +64,39 @@ describe('pièces jointes', () => {
     assert.equal(res.status, 404);
   });
 
+  test('l’aperçu sert les mêmes octets en `inline`, avec le type enregistré', async () => {
+    const entry = await make.entry(api);
+    const up = await api.upload('tableau.csv', 'a;b\n1;2', { entry_id: entry.id });
+    // Le helper envoie tout en text/plain : on pose le vrai type comme le ferait un navigateur.
+    api.db.prepare('UPDATE attachments SET mime=? WHERE id=?').run('text/csv', up.body.id);
+
+    const preview = await fetch(`${api.base}/api/files/${up.body.stored}/preview`);
+    assert.equal(preview.status, 200);
+    assert.match(preview.headers.get('content-disposition'), /^inline; /);
+    assert.match(preview.headers.get('content-disposition'), /filename="tableau\.csv"/);
+    assert.equal(preview.headers.get('content-type'), 'text/csv');
+    assert.equal(await preview.text(), 'a;b\n1;2');
+
+    // Le téléchargement, lui, n'a pas changé de nature.
+    const download = await fetch(`${api.base}/api/files/${up.body.stored}`);
+    assert.match(download.headers.get('content-disposition'), /^attachment; /);
+  });
+
+  test('l’aperçu neutralise un type affichable dangereux', async () => {
+    const entry = await make.entry(api);
+    const up = await api.upload('piege.svg', '<svg/>', { entry_id: entry.id });
+    api.db.prepare('UPDATE attachments SET mime=? WHERE id=?').run('image/svg+xml', up.body.id);
+
+    const preview = await fetch(`${api.base}/api/files/${up.body.stored}/preview`);
+    assert.equal(preview.status, 200);
+    assert.match(preview.headers.get('content-type'), /^text\/plain/);
+    assert.equal(preview.headers.get('x-content-type-options'), 'nosniff');
+  });
+
+  test('404 sur l’aperçu d’un fichier inconnu, comme au téléchargement', async () => {
+    assert.equal((await fetch(`${api.base}/api/files/inexistant.txt/preview`)).status, 404);
+  });
+
   test('ne sort pas du dossier d’uploads via le nom de fichier', async () => {
     const res = await fetch(`${api.base}/api/files/${encodeURIComponent('../../src/app.js')}`);
     assert.equal(res.status, 404);
