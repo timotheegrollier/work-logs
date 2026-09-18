@@ -1,8 +1,8 @@
 name: PWA
 
-# La PWA statique vit dans `app/` sur gh-pages, à côté des dépôts rpm/ et deb
-# (jamais touchés ici). Même groupe de concurrence que « Dépôts » : les deux
-# workflows poussent sur gh-pages et ne doivent jamais le faire en même temps.
+# La PWA statique vit à la racine de gh-pages ; les dépôts rpm/ et deb/ restent
+# dans leurs sous-dossiers dédiés et ne sont jamais touchés ici. Même groupe de
+# concurrence que « Dépôts » : les deux workflows poussent sur gh-pages.
 on:
   push:
     branches: [master]
@@ -42,16 +42,23 @@ jobs:
         env:
           # La PWA utilise le backend local IndexedDB au lieu de `/api`.
           VITE_PWA: '1'
-      - name: Publier `app/` sur gh-pages
+      - name: Publier la PWA à la racine sans toucher aux dépôts
         run: |
           git clone -q --branch gh-pages --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" .pages
-          rm -rf .pages/app && mkdir -p .pages/app
-          cp -r web/dist/. .pages/app/
-          test -f .pages/app/index.html && test -f .pages/app/sw.js && test -f .pages/app/manifest.webmanifest
+          # Retirer l'ancien emplacement et les seuls fichiers PWA de la racine.
+          # Les dossiers deb/ et rpm/ ne sont jamais supprimés ni remplacés.
+          rm -rf .pages/app .pages/assets .pages/icons
+          rm -f .pages/index.html .pages/manifest.webmanifest .pages/sw.js .pages/theme.js
+          cp -r web/dist/. .pages/
+          test -f .pages/index.html && test -f .pages/sw.js && test -f .pages/manifest.webmanifest
           cd .pages
-          git add -A app
+          git add -A -- .
+          if git diff --cached --name-only -- deb rpm | grep -q .; then
+            echo 'Erreur : le déploiement PWA a modifié un dépôt deb/ ou rpm/'
+            exit 1
+          fi
           git -c user.name='github-actions[bot]' -c user.email='github-actions[bot]@users.noreply.github.com' \
-            commit -m "pwa: ${GITHUB_SHA::12} (WorkLogs mobile)" || { echo "PWA inchangée"; exit 0; }
+            commit -m "pwa: ${GITHUB_SHA::12} (WorkLogs mobile à la racine)" || { echo "PWA inchangée"; exit 0; }
           for attempt in 1 2 3; do
             git push origin gh-pages && break
             git pull --rebase origin gh-pages || break

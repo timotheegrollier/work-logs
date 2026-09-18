@@ -32,9 +32,11 @@ En production, `npm start` construit le front et l'API le sert elle-même : **un
 ## PWA statique (mobile, sans serveur)
 
 Le même `web/dist/` (base relative `./`, donc rejouable à la racine comme dans
-un sous-dossier) est publié dans `app/` sur gh-pages par le workflow `PWA`
-(`.github/workflows/pwa.yml`), qui partage son groupe de concurrence `gh-pages`
-avec « Dépôts » : les deux poussent sur la même branche. Contenu : `index.html`,
+un sous-dossier) est publié **à la racine** de gh-pages par le workflow `PWA`
+(`.github/workflows/pwa.yml`) : la PWA est donc disponible à la racine du site,
+et les dépôts Linux restent isolés dans `/deb/` et `/rpm/`. Le workflow partage
+son groupe de concurrence `gh-pages` avec « Dépôts » : les deux poussent sur la
+même branche sans toucher aux chemins de l'autre. Contenu PWA : `index.html`,
 `manifest.webmanifest`, icônes 256/512 (`web/public/icons/`, dérivées de
 `desktop/icons/`) et `sw.js` émis au build (`scripts/emit-sw.mjs`, version =
 paquet racine, testé dans `scripts/pwa-sw.test.mjs`).
