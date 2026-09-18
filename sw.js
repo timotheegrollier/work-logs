@@ -74,8 +74,16 @@ self.addEventListener('fetch', (event) => {
   // Pièces jointes : en PWA (aucun serveur) le réseau échoue et le binaire est
   // servi depuis IndexedDB, avec les mêmes URL canoniques `/api/files/…` que
   // le serveur. Avec serveur, le réseau répond d'abord : comportement inchangé.
+  // Sur un hébergement statique (GitHub Pages), le réseau répond 404 au lieu
+  // d'échouer : on replie aussi vers IndexedDB quand la réponse n'est pas OK,
+  // sinon aucun fichier local ne serait jamais servi en ligne.
   if (url.pathname.includes('/api/files/')) {
-    event.respondWith(fetch(request).catch(() => serveLocalFile(url.pathname)));
+    event.respondWith(
+      fetch(request).then(
+        (response) => (response.ok ? response : serveLocalFile(url.pathname)),
+        () => serveLocalFile(url.pathname)
+      )
+    );
     return;
   }
   // L'API ne se met jamais en cache : les données restent toujours fraîches.
