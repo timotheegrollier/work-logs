@@ -206,6 +206,31 @@ describe('gestion Google Drive', () => {
   });
 });
 
+describe('réglages IA', () => {
+  test('endpoint, modèle et clé modifiables, avec valeurs Gemini gratuites', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+
+    await user.click(screen.getByRole('button', { name: '⚙ Paramètres' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Paramètres' });
+    expect(within(dialog).getByLabelText('Endpoint IA')).toHaveValue(
+      'https://generativelanguage.googleapis.com/v1beta/openai'
+    );
+    expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('gemini-3.5-flash-lite');
+    expect(within(dialog).getByLabelText('Clé IA')).toHaveValue('');
+
+    await user.type(within(dialog).getByLabelText('Clé IA'), 'cle-test');
+    expect(localStorage.getItem('worklogs-ai-key')).toBe('cle-test');
+
+    await user.clear(within(dialog).getByLabelText('Modèle IA'));
+    await user.click(within(dialog).getByRole('button', { name: 'Valeurs Gemini gratuites' }));
+    expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('gemini-3.5-flash-lite');
+    // La clé collée survit au reset des valeurs.
+    expect(within(dialog).getByLabelText('Clé IA')).toHaveValue('cle-test');
+  });
+});
+
 describe('écrire une entrée', () => {
   test('crée une entrée et la sélectionne aussitôt', async () => {
     const user = userEvent.setup();
@@ -339,6 +364,72 @@ describe('écrire une entrée', () => {
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('## Sous-tâches\n- [ ] Relire\n- [x] Payer\n');
     // La carte affiche le document lié, comme dans l'autre sens.
     expect(await within(board()).findByRole('button', { name: 'Ouvrir Préparer le dossier' })).toBeInTheDocument();
+  });
+
+  // Le fetch détourné vers l'API locale ne voit que le relatif : l'URL absolue
+  // du service IA reste mockable sans toucher au backend réel.
+  function mockAiSuggest(content: string) {
+    const diverted = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('chat/completions')) {
+        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as Response;
+      }
+      return diverted(input, init);
+    }));
+  }
+
+  test('suggère des sous-tâches dans le créateur d’entrée liée', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('Relire\nPayer');
+    seedData(api.db, { tasks: [{ id: 'tk_dossier', title: 'Préparer le dossier' }] });
+    render(<App />);
+
+    const card = (await within(board()).findByText('Préparer le dossier')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: /Créer une entrée liée/ }));
+    await user.click(screen.getByRole('button', { name: '✨ Suggérer' }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Sous-tâches de l’entrée liée, une par ligne')).toHaveValue('Relire\nPayer');
+    });
+    await user.click(screen.getByRole('button', { name: 'Créer et ouvrir' }));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Préparer le dossier'));
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('## Sous-tâches\n- [ ] Relire\n- [ ] Payer\n');
+  });
+
+  test('sans clé IA, la suggestion renvoie aux Paramètres sans appeler personne', async () => {
+    const user = userEvent.setup();
+    const calls: string[] = [];
+    const diverted = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(String(input));
+      return diverted(input, init);
+    }));
+    seedData(api.db, { tasks: [{ id: 'tk_dossier', title: 'Préparer le dossier' }] });
+    render(<App />);
+
+    const card = (await within(board()).findByText('Préparer le dossier')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: /Créer une entrée liée/ }));
+    await user.click(screen.getByRole('button', { name: '✨ Suggérer' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('⚙ Paramètres');
+    expect(calls.some((url) => url.includes('chat/completions'))).toBe(false);
+  });
+
+  test('suggère des sous-tâches dans l’éditeur d’une entrée Markdown', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('Relire');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Intro.' }] });
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Suggérer des sous-tâches' }));
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Intro.\n## Sous-tâches\n- [ ] Relire\n');
+    });
   });
 
   test('crée une tâche liée depuis un document Google', async () => {

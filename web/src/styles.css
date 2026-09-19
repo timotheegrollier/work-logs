@@ -673,6 +673,7 @@ button:disabled {
 /* Le titre et les sous-tâches d'une entrée liée prennent toute la largeur. */
 .task-creator-wide { grid-column: 1 / -1; }
 .task-creator-wide textarea { min-height: 88px; resize: vertical; }
+.task-creator .error { grid-column: 1 / -1; font-size: 12px; }
 .task-creator input { width: 100%; font-size: 13px; }
 .task-creator-actions { display: flex; gap: 6px; }
 .task-creator-actions button { white-space: nowrap; }
@@ -1771,6 +1772,18 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .settings-content { max-height: calc(100vh - 100px); overflow: auto; padding: 12px 14px; }
 .settings-content .drive-panel { border: 0; background: none; margin: 0; }
 .settings-content .drive-panel > .drive-open { width: 100%; text-align: left; }
+/* Réglages IA : même grille simple que les formulaires Drive. */
+.ai-settings {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.ai-settings h3 { margin: 0; font-size: 14px; }
+.ai-hint { margin: 0; font-size: 12px; color: var(--muted); }
+.ai-settings label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.ai-settings input { width: 100%; }
 /* Numéro de version : redondant avec la pastille de l'en-tête en desktop,
    il n'apparaît que sur mobile où la pastille est masquée. */
 .settings-version { display: none; }

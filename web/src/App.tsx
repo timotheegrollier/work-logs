@@ -9,6 +9,7 @@ import { UpdateBar } from './components/UpdateBar';
 import { TaskBoard } from './components/TaskBoard';
 import { ProjectBar } from './components/ProjectBar';
 import { GoogleDrive } from './components/GoogleDrive';
+import { AiSettings } from './components/AiSettings';
 import { ColumnResizer } from './components/ColumnResizer';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
 
@@ -432,6 +433,7 @@ export default function App() {
           </div>
           <div className="settings-content">
             <GoogleDrive onRestored={reload} onOpen={openDriveEntry} />
+            <AiSettings />
           </div>
           {/* La pastille de version de l'en-tête est masquée sur mobile :
               le numéro reste accessible ici. */}

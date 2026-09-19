@@ -259,11 +259,11 @@ export const todayISO = () => new Date().toISOString().slice(0, 10);
 /**
  * Une zone de sous-tâches (une par ligne) devient une liste à puces à cases :
  * les lignes vides sautent, un `- [x]` collé garde son statut coché, un tiret
- * seul devient une case à cocher. Vide → chaîne vide (entrée sans contenu).
+ * ou un numéro seuls deviennent une case à cocher. Vide → chaîne vide.
  */
 export function subtasksMd(raw: string): string {
   const items = raw.split('\n').map((line) => {
-    const match = line.trim().match(/^(?:[-*•]\s*)?(?:\[([ xX])\]\s*)?(.+)$/);
+    const match = line.trim().match(/^(?:[-*•]\s*|\d+[.)]\s*)?(?:\[([ xX])\]\s*)?(.+)$/);
     if (!match || !match[2].trim()) return null;
     return `- [${match[1] && match[1].toLowerCase() === 'x' ? 'x' : ' '}] ${match[2].trim()}`;
   }).filter((item): item is string => item !== null);

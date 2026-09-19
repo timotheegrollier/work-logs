@@ -160,6 +160,10 @@ describe('subtasksMd', () => {
     expect(subtasksMd('- [x] Payé\n- [ ] Relancer')).toBe('## Sous-tâches\n- [x] Payé\n- [ ] Relancer\n');
   });
 
+  test('une liste numérotée collée depuis l’IA devient des cases', () => {
+    expect(subtasksMd('1. Relire\n2) Payer')).toBe('## Sous-tâches\n- [ ] Relire\n- [ ] Payer\n');
+  });
+
   test('sans sous-tâche, pas de contenu prérempli', () => {
     expect(subtasksMd('  \n ')).toBe('');
   });

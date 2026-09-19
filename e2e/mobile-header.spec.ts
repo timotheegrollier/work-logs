@@ -11,9 +11,9 @@ test('en-tête mobile : trois lignes aérées, sans débordement, cibles tactile
   const head = page.locator('header.head');
   const search = page.getByRole('searchbox', { name: 'Rechercher' });
   const theme = page.getByRole('button', { name: 'Changer de thème' });
-  const journal = page.getByRole('button', { name: 'Journal' });
-  const writing = page.getByRole('button', { name: 'Écriture' });
-  const tasks = page.getByRole('button', { name: 'Tâches' });
+  const journal = page.getByRole('button', { name: 'Journal', exact: true });
+  const writing = page.getByRole('button', { name: 'Écriture', exact: true });
+  const tasks = page.getByRole('button', { name: 'Tâches', exact: true });
   const exporter = page.getByRole('button', { name: 'Exporter' });
   const settings = page.getByRole('button', { name: '⚙ Paramètres' });
   for (const control of [search, theme, journal, writing, tasks, exporter, settings]) {

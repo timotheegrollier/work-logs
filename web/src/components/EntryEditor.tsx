@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, formatSize, googleHelpUrl, type Attachment, type Entry, type EntrySummary, type Project } from '../lib';
+import { api, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project } from '../lib';
+import { readAiSettings, suggestSubtasks } from '../ai-suggest';
 import { renderMarkdown } from '../markdown';
 import { Autosave } from '../autosave';
 import { RichEditor } from './RichEditor';
@@ -214,14 +215,31 @@ export function EntryEditor({
     } catch (e) { setError((e as Error).message); }
   };
 
-  const openTaskCreator = () => {
+    const openTaskCreator = () => {
     setTaskTitle(draftRef.current.title);
     setTaskDueDate('');
     setTaskMessage('');
     setError('');
     setTaskCreator(true);
   };
-  const createTask = async () => {
+  // Suggestion IA : un clic = un envoi du titre au service configuré en
+  // Paramètres. Markdown seul : les documents riches n'ont pas de cases.
+  const [suggesting, setSuggesting] = useState(false);
+  const suggestForEntry = async () => {
+    if (suggesting || draftRef.current.content_json) return;
+    setSuggesting(true);
+    setError('');
+    try {
+      await autosave.flush();
+      const raw = await suggestSubtasks(readAiSettings(), draftRef.current.title);
+      const current = draftRef.current.content_md.trim();
+      update({ content_md: (current ? current.replace(/\s+$/, '') + '\n' : '') + subtasksMd(raw) });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSuggesting(false);
+    }
+  };  const createTask = async () => {
     const title = taskTitle.trim();
     if (!title) return;
     setTaskCreating(true);
@@ -282,8 +300,7 @@ export function EntryEditor({
         {integratedGoogle ? !nativeGoogle && <button className="sync-primary" disabled={syncing} onClick={() => void openIntegratedGoogle()}>{googleSync.dirty ? 'Envoyer le brouillon et ouvrir l’éditeur complet' : 'Modifier dans WorkLogs'}</button> : <a className="ghost" href={googleUrl} target="_blank" rel="noopener noreferrer">Ouvrir dans Google Docs ↗</a>}
       </div>}
       <div className="entry-task-action no-print">
-        {!taskCreator ? <button className="task-primary" type="button" disabled={syncing} onClick={openTaskCreator}>Créer une tâche liée</button> : <form className="task-creator" onSubmit={(event) => { event.preventDefault(); void createTask(); }}>
-          <strong>Nouvelle tâche liée à cette entrée</strong>
+        {!taskCreator ? <button className="task-primary" type="button" disabled={syncing} onClick={openTaskCreator}>Créer une tâche liée</button> : <form className="task-creator" onSubmit={(event) => { event.preventDefault(); void createTask(); }}>          <strong>Nouvelle tâche liée à cette entrée</strong>
           <label>Titre de la tâche<input aria-label="Titre de la tâche liée" autoFocus value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} /></label>
           <label>Échéance facultative<input aria-label="Échéance de la tâche liée" type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} /></label>
           <div className="task-creator-actions">
@@ -292,6 +309,17 @@ export function EntryEditor({
           </div>
         </form>}
         {taskMessage && <p className="task-message" role="status">{taskMessage}</p>}
+        {!draft.content_json && (
+          <button
+            className="ghost"
+            type="button"
+            disabled={suggesting || syncing}
+            title="Envoie le titre au service IA configuré en Paramètres"
+            onClick={() => void suggestForEntry()}
+          >
+            {suggesting ? 'Suggestion…' : '✨ Suggérer des sous-tâches'}
+          </button>
+        )}
       </div>
       <details className={'document-details no-print' + (googleSync ? '' : ' local-details')} open={googleSync ? undefined : true}>
       {googleSync && <summary>Détails du document</summary>}

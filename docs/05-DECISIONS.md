@@ -442,6 +442,24 @@ binaire IndexedDB : il distingue maintenant `/preview` pour poser `inline` plut�
 qu'`attachment`. `path.basename` continue d'empêcher toute traversée de répertoire côté
 serveur, et un `/preview` sur un nom inconnu répond 404 comme le téléchargement.
 
+## 17. Suggestions IA : clé personnelle, endpoint unique, jamais d'auto-envoi — 2026-09-19
+
+**Le besoin.** Découper une tâche en sous-tâches pertinentes sans les taper :
+clé gratuite AI Studio + `gemini-3.5-flash-lite`, validé en direct (81 tokens).
+
+**Décision.** BYOK plutôt que keyless (Pollinations) : pas de tiers imposé par
+défaut, pas de limite anonyme subie (1 appel/15 s), qualité maîtrisée — au prix
+d'un collage unique dans Paramètres. Un seul client OpenAI-compatible (pas de
+SDK) : l'endpoint Gemini parle ce protocole avec une clé AI Studio, et
+OpenRouter/autres restent utilisables en changeant l'URL. Un clic = un envoi du
+titre seul ; sans clé, les boutons expliquent au lieu d'appeler. Chrome Prompt
+API écartée : Gemini Nano absent d'Android et d'Electron.
+
+**La clé ne vit jamais dans le dépôt** (public : vol de quota, révocation).
+Défaut local non versionné (`.env.local` ignoré) pour les essais, collage en
+Paramètres en prod. Les documents riches n'ont pas le bouton en v1 : leurs
+cases demanderaient une transaction ProseMirror dédiée, pas un pis-aller.
+
 ## 16. L'en-tête mobile se réorganise, sans hamburger — 2026-09-18
 
 **Le besoin.** Sur un Pixel 9a (412 px), la barre entassait logo, version, recherche,

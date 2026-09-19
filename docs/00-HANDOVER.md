@@ -7,7 +7,7 @@
 > **Lot courant (candidat v0.24.0) :** en-tête mobile aéré (Pixel 9a, 412 px),
 > rebasé sur v0.23.0 : marque, recherche, panneaux en trois lignes, cibles 44 px,
 > sans JS ni dépendance.
-> **Validation :** `./scripts/check.sh` vert : **137 tests API, 189 front,
+> **Validation :** `./scripts/check.sh` vert : **137 tests API, 203 front,
 > 33 desktop unitaires, 25 scripts, 31 navigateur et 10 desktop e2e**.
 >
 > **Lot précédent :** panneaux latéraux repliables (Journal/Tâches, desktop comme
@@ -28,6 +28,36 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-09-19 — suggestions de sous-tâches par IA (clé AI Studio gratuite)
+
+- Demande : depuis une tâche, obtenir des sous-tâches « concises mais précises
+  et pertinentes ». Test réel concluant avant implémentation : clé AI Studio
+  gratuite + `gemini-3.5-flash-lite` via l'endpoint OpenAI-compatible de Google,
+  4 lignes FR pour 81 tokens.
+- Un seul client générique (`web/src/ai-suggest.ts`, `fetch` natif, sans
+  dépendance) : `POST {endpoint}/chat/completions` en Bearer, timeout 30 s,
+  erreurs en français (clé refusée, limite 429, hors-ligne, réponse illisible),
+  jamais d'envoi automatique — un clic = un envoi du titre seul.
+- ⚙ Paramètres, section « IA » : endpoint (défaut l'URL OpenAI de Google),
+  modèle (défaut `gemini-3.5-flash-lite`), clé en champ password sur l'appareil,
+  bouton « Valeurs Gemini gratuites ». Sans clé, les boutons Suggérer expliquent
+  au lieu d'appeler.
+- Boutons « ✨ Suggérer » : créateur d'entrée liée (remplit la zone, modifiable
+  avant création) et éditeur Markdown (ajoute le bloc en fin de contenu) ;
+  documents riches exclus en v1 (pas de cases). Le parse réutilise `subtasksMd`,
+  étendu aux numéros `1.`/`1)`.
+- **Clé de test du demandeur essayée en direct puis écartée du dépôt**
+  (public : quota pillé + révocation). Par défaut locale non versionnée
+  (`VITE_DEFAULT_AI_KEY` via `web/.env.local`, `.gitignore` complété) ; en prod,
+  collage unique dans Paramètres.
+- Tests : `ai-suggest.test.ts` (9, fetch mocké), `subtasksMd` numérotée (1),
+  flux front (4 : créateur, sans-clé sans appel réseau, éditeur, réglages).
+  Pièges notés : `user.type` avale `[x]` (déjà connu) et `findByDisplayValue`
+  trop juste en timing — `waitFor` + `toHaveValue` comme le reste du fichier ;
+  `getByRole(name: 'Tâches')` matche désormais aussi « ✨ Suggérer des
+  sous-tâches » — toggles verrouillés en `exact: true` dans les e2e.
+- Pourquoi BYOK + endpoint unique : `05-DECISIONS.md` §17.
 
 ## Lot du 2026-09-18 (4) — créer une entrée liée depuis une tâche, avec sous-tâches
 

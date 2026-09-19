@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { COLUMNS, PRIORITIES, api, dayLabel, isOverdue, priorityLabel, subtasksMd, type EntrySummary, type Priority, type Status, type Task } from '../lib';
+import { readAiSettings, suggestSubtasks } from '../ai-suggest';
 
 const DRAG_TYPE = 'text/plain';
 
@@ -121,6 +122,9 @@ function TaskCard({
   const [entryTitle, setEntryTitle] = useState(task.title);
   const [entrySubtasks, setEntrySubtasks] = useState('');
   const [entryBusy, setEntryBusy] = useState(false);
+  // Suggestion IA : un clic = un envoi du titre au service configuré en Paramètres.
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestError, setSuggestError] = useState('');
   const linkedDocuments = task.documents ?? [];
   const linkedIds = new Set(linkedDocuments.map((document) => document.id));
   const availableDocuments = entries.filter((entry) => !linkedIds.has(entry.id));
@@ -178,7 +182,22 @@ function TaskCard({
   const startEntryCreator = () => {
     setEntryTitle(task.title);
     setEntrySubtasks('');
+    setSuggestError('');
     setCreatingEntry(true);
+  };
+
+  const suggestForCreator = async () => {
+    if (suggesting) return;
+    setSuggesting(true);
+    setSuggestError('');
+    try {
+      const raw = await suggestSubtasks(readAiSettings(), entryTitle.trim() || task.title);
+      setEntrySubtasks((prev) => (prev.trim() ? prev.replace(/\s+$/, '') + '\n' + raw : raw));
+    } catch (e) {
+      setSuggestError((e as Error).message);
+    } finally {
+      setSuggesting(false);
+    }
   };
 
   const createEntry = async () => {
@@ -216,6 +235,15 @@ function TaskCard({
         />
       </label>
       <div className="task-creator-actions">
+        <button
+          className="ghost"
+          type="button"
+          disabled={suggesting || entryBusy}
+          title="Envoie le titre au service IA configuré en Paramètres"
+          onClick={() => void suggestForCreator()}
+        >
+          {suggesting ? 'Suggestion…' : '✨ Suggérer'}
+        </button>
         <button className="task-primary" type="submit" disabled={entryBusy || !entryTitle.trim()}>
           {entryBusy ? 'Création…' : 'Créer et ouvrir'}
         </button>
@@ -223,6 +251,7 @@ function TaskCard({
           Annuler
         </button>
       </div>
+      {suggestError && <p className="error" role="alert">{suggestError}</p>}
     </form>
   ) : (
     <button className="link-document" type="button" onClick={startEntryCreator}>
