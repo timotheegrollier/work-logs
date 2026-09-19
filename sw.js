@@ -1,8 +1,8 @@
 // WorkLogs — service worker PWA, généré au build (`scripts/emit-sw.mjs`).
-// `0.26.0` est remplacé par la version du paquet racine : un
+// `0.27.0` est remplacé par la version du paquet racine : un
 // déploiement change le nom du cache, l'ancienne coquille est purgée et la
 // mise à jour est transparente au rechargement suivant.
-const VERSION = '0.26.0';
+const VERSION = '0.27.0';
 const CACHE = `worklogs-${VERSION}`;
 const CORE = ['./', './index.html', './manifest.webmanifest'];
 
