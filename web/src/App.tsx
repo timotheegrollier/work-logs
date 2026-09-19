@@ -387,6 +387,9 @@ export default function App() {
               onSelectTab={setSelectedId}
               entry={entry}
               projects={state.projects}
+              linkedTasks={state.tasks
+                .filter((task) => (task.documents ?? []).some((document) => document.id === entry.id))
+                .map((task) => ({ title: task.title, status: task.status }))}
               autoFocusTitle={freshEntry}
               onChanged={reload}
               onTaskCreated={reload}
@@ -409,6 +412,7 @@ export default function App() {
             tasks={state?.tasks ?? []}
             entries={state?.entries ?? []}
             projectId={projectId}
+            projects={state?.projects ?? []}
             onOpenDocument={openDocument}
             onChanged={reload}
           />

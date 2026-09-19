@@ -7,7 +7,7 @@
 > **Lot courant (candidat v0.24.0) :** en-tête mobile aéré (Pixel 9a, 412 px),
 > rebasé sur v0.23.0 : marque, recherche, panneaux en trois lignes, cibles 44 px,
 > sans JS ni dépendance.
-> **Validation :** `./scripts/check.sh` vert : **137 tests API, 203 front,
+> **Validation :** `./scripts/check.sh` vert : **137 tests API, 215 front,
 > 33 desktop unitaires, 25 scripts, 31 navigateur et 10 desktop e2e**.
 >
 > **Lot précédent :** panneaux latéraux repliables (Journal/Tâches, desktop comme
@@ -28,6 +28,65 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-09-19 (4) — l'IA lit l'entrée : texte, cases, pièces jointes, liens
+
+- Demande : suggestions aveugles au contenu déjà présent. Le prompt reçoit
+  désormais l'entrée elle-même : extrait du texte (plafonné 1500 car),
+  sous-tâches existantes avec statut (`parseChecklist`, consigne « ne les
+  repropose jamais »), noms des pièces jointes, tâches déjà liées ; côté
+  créateur, documents déjà liés à la tâche.
+- Câblage : `EntryEditor` reçoit `linkedTasks` d'App (tâches non terminées,
+  prop optionnelle), lit ses `attachments` et son brouillon ; `TaskBoard`
+  ajoute les documents liés ; plafonds via `compactTitles`, texte via
+  `truncate`. Mentions vie privée alignées (Paramètres + titres des boutons).
+- Tests : `parseChecklist`/`truncate`/sections (3), éditeur prouvant texte +
+  case + PJ + tâche liée dans la requête (étendu). Leçon outillage (ter) :
+  bannir les `oldString` finissant par `});`.
+- Limite assumée : seuls les NOMS des pièces jointes partent, jamais leur
+  contenu (lire un PDF/une image coûterait un envoi lourd et flou).
+
+## Lot du 2026-09-19 (3) — l'IA connaît le métier : profil + vocabulaire auto-appris
+
+- Demande : suggestions génériques, l'IA ignorait l'app et le travail (dev solo
+  en pisciculture). Deux mémoires, aucune inscription, aucun serveur à nous :
+  un **profil** écrit une fois en Paramètres (« Mon contexte de travail »,
+  joint à chaque appel) et un **vocabulaire auto-appris** des titres existants
+  (fréquence puis alpha, mots vides et courts écartés, plafond 8).
+- `recurringVocabulary()` pur et testé ; `taskSuggestContext()` ajoute le
+  vocabulaire calculé sur tous les projets (les voisines/notes restent
+  cadrées projet) ; consigne système : WorkLogs, anti-doublons, vocabulaire
+  métier. Créateur : contexte complet ; éditeur : nom du projet + profil.
+- Mentions vie privée alignées (Paramètres + titres des boutons) : titre,
+  profil et contexte au clic seul. `suggestSubtasks(settings, title, options)`.
+- Avenant lot précédent : `.env.local` polluait `npm test` — `VITE_DEFAULT_*`
+  ignorés quand `MODE === 'test'`.
+- Tests : vocabulaire (2), prompt profil/vocabulaire (1), fusion du profil dans
+  l'appel (1), `taskSuggestContext` étendus (2), créateur prouvant profil +
+  vocabulaire dans la requête (étendu), champ profil persistant (étendu).
+- Leçon outillage (bis) : bannir les `oldString` qui se terminent par `});` —
+  deux réparations dans ce lot ; ancrer sur des noms, relire après chaque edit.
+
+## Lot du 2026-09-19 (2) — prompt IA conscient de l'app et du travail en cours
+
+- Demande : l'IA répondait générique. Le prompt connaît désormais WorkLogs
+  (journal dev local, notes Markdown + tâches) et reçoit le contexte :
+  nom du projet, tâches voisines en cours (hors terminées et hors elle-même),
+  notes récentes du projet — avec consigne anti-doublons et vocabulaire dev.
+- `taskSuggestContext()` pur et testé (filtrage, sans-projet, déduplication et
+  plafond via `compactTitles`, titres rognés à 80 car). Créateur carte :
+  contexte complet ; éditeur : nom du projet (seule donnée sous la main).
+- Mentions vie privée alignées (Paramètres + titres des boutons) : titre ET
+  contexte envoyés, toujours au clic seul. `suggestSubtasks` prend
+  `{ context, timeoutMs }` en options.
+- Avenant au lot précédent, découvert en baseline : `web/.env.local` (clé de
+  test) polluait `npm test` via Vite — `readAiSettings` ignore désormais les
+  `VITE_DEFAULT_*` quand `MODE === 'test'`. Tests déterministes avec ou sans
+  fichier local.
+- Tests : prompt contextuel (2), `taskSuggestContext` (2), envoi du contexte
+  dans le corps (1), créateur prouvant projet + voisine + note dans la requête
+  (étendu). Leçon outillage : ancrer les edits sur des noms de tests, jamais
+  sur des `});` — deux structures cassées puis réparées dans ce lot.
 
 ## Lot du 2026-09-19 — suggestions de sous-tâches par IA (clé AI Studio gratuite)
 

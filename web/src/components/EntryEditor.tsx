@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project } from '../lib';
-import { readAiSettings, suggestSubtasks } from '../ai-suggest';
+import { api, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project, type Status } from '../lib';
+import { parseChecklist, readAiSettings, suggestSubtasks } from '../ai-suggest';
 import { renderMarkdown } from '../markdown';
 import { Autosave } from '../autosave';
 import { RichEditor } from './RichEditor';
@@ -26,6 +26,7 @@ export function EntryEditor({
   onSelectTab = () => {},
   entry,
   projects,
+  linkedTasks = [],
   onChanged,
   onDeleted,
   onTaskCreated,
@@ -35,6 +36,7 @@ export function EntryEditor({
   onSelectTab?: (id: string) => void;
   entry: Entry;
   projects: Project[];
+  linkedTasks?: { title: string; status: Status }[];
   onChanged: () => void;
   onDeleted: () => void;
   onTaskCreated?: () => void;
@@ -222,8 +224,9 @@ export function EntryEditor({
     setError('');
     setTaskCreator(true);
   };
-  // Suggestion IA : un clic = un envoi du titre au service configuré en
-  // Paramètres. Markdown seul : les documents riches n'ont pas de cases.
+  // Suggestion IA : un clic = un envoi du titre et du contenu de l'entrée au
+  // service configuré en Paramètres. Markdown seul : les documents riches
+  // n'ont pas de cases.
   const [suggesting, setSuggesting] = useState(false);
   const suggestForEntry = async () => {
     if (suggesting || draftRef.current.content_json) return;
@@ -231,8 +234,19 @@ export function EntryEditor({
     setError('');
     try {
       await autosave.flush();
-      const raw = await suggestSubtasks(readAiSettings(), draftRef.current.title);
-      const current = draftRef.current.content_md.trim();
+      const content = draftRef.current.content_md;
+      const raw = await suggestSubtasks(readAiSettings(), draftRef.current.title, {
+        context: {
+          project: projects.find((project) => project.id === entry.project_id)?.name,
+          entryText: content,
+          existingSubtasks: parseChecklist(content),
+          attachments: attachments.map((file) => file.filename),
+          linkedTasks: linkedTasks
+            .filter((task) => task.status !== 'done')
+            .map((task) => task.title),
+        },
+      });
+      const current = content.trim();
       update({ content_md: (current ? current.replace(/\s+$/, '') + '\n' : '') + subtasksMd(raw) });
     } catch (e) {
       setError((e as Error).message);
@@ -314,7 +328,7 @@ export function EntryEditor({
             className="ghost"
             type="button"
             disabled={suggesting || syncing}
-            title="Envoie le titre au service IA configuré en Paramètres"
+            title="Envoie le titre et le contenu de l’entrée au service IA configuré en Paramètres"
             onClick={() => void suggestForEntry()}
           >
             {suggesting ? 'Suggestion…' : '✨ Suggérer des sous-tâches'}

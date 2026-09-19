@@ -228,6 +228,9 @@ describe('réglages IA', () => {
     expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('gemini-3.5-flash-lite');
     // La clé collée survit au reset des valeurs.
     expect(within(dialog).getByLabelText('Clé IA')).toHaveValue('cle-test');
+
+    await user.type(within(dialog).getByLabelText('Mon contexte de travail'), 'Dev solo en pisciculture');
+    expect(localStorage.getItem('worklogs-ai-profile')).toBe('Dev solo en pisciculture');
   });
 });
 
@@ -368,11 +371,14 @@ describe('écrire une entrée', () => {
 
   // Le fetch détourné vers l'API locale ne voit que le relatif : l'URL absolue
   // du service IA reste mockable sans toucher au backend réel.
+  const aiBodies: unknown[] = [];
   function mockAiSuggest(content: string) {
+    aiBodies.length = 0;
     const diverted = globalThis.fetch;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('chat/completions')) {
+        if (init?.body) aiBodies.push(JSON.parse(init.body as string));
         return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as Response;
       }
       return diverted(input, init);
@@ -382,8 +388,16 @@ describe('écrire une entrée', () => {
   test('suggère des sous-tâches dans le créateur d’entrée liée', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-key', 'cle-test');
+    localStorage.setItem('worklogs-ai-profile', 'Dev solo en pisciculture');
     mockAiSuggest('Relire\nPayer');
-    seedData(api.db, { tasks: [{ id: 'tk_dossier', title: 'Préparer le dossier' }] });
+    seedData(api.db, {
+      projects: [{ id: 'pr_a', name: 'Chantier' }],
+      entries: [{ id: 'en_cr', title: 'Compte rendu', project_id: 'pr_a' }],
+      tasks: [
+        { id: 'tk_dossier', title: 'Préparer le dossier', project_id: 'pr_a' },
+        { id: 'tk_devis', title: 'Relire le devis', project_id: 'pr_a' },
+      ],
+    });
     render(<App />);
 
     const card = (await within(board()).findByText('Préparer le dossier')).closest('.card') as HTMLElement;
@@ -393,6 +407,14 @@ describe('écrire une entrée', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Sous-tâches de l’entrée liée, une par ligne')).toHaveValue('Relire\nPayer');
     });
+    // Le prompt connaît le projet, la tâche voisine, la note récente,
+    // le profil et le vocabulaire appris des titres.
+    const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+    expect(sent).toContain('Profil : Dev solo en pisciculture');
+    expect(sent).toContain('Projet : Chantier');
+    expect(sent).toContain('- Relire le devis');
+    expect(sent).toContain('- Compte rendu');
+    expect(sent).toContain('Vocabulaire du métier : compte, devis, dossier');
     await user.click(screen.getByRole('button', { name: 'Créer et ouvrir' }));
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Préparer le dossier'));
     await user.click(screen.getByRole('button', { name: 'Écrire' }));
@@ -422,13 +444,24 @@ describe('écrire une entrée', () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     mockAiSuggest('Relire');
-    seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Intro.' }] });
+    seedData(api.db, {
+      entries: [{ id: 'en_note', title: 'Note', content_md: 'Intro.\n- [ ] Déjà là\n' }],
+      tasks: [{ id: 'tk_call', title: 'Appeler le client' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_call', 'en_note', new Date().toISOString());
+    await api.upload('devis.pdf', '%PDF', { entry_id: 'en_note' });
     render(<App />);
 
     await user.click(await screen.findByRole('button', { name: '✨ Suggérer des sous-tâches' }));
+    // Le prompt connaît le contenu : texte, case existante, pièce jointe et tâche liée.
+    const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+    expect(sent).toContain('Intro.');
+    expect(sent).toContain('- [ ] Déjà là');
+    expect(sent).toContain('devis.pdf');
+    expect(sent).toContain('Appeler le client');
     await user.click(screen.getByRole('button', { name: 'Écrire' }));
     await waitFor(() => {
-      expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Intro.\n## Sous-tâches\n- [ ] Relire\n');
+      expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Intro.\n- [ ] Déjà là\n## Sous-tâches\n- [ ] Relire\n');
     });
   });
 

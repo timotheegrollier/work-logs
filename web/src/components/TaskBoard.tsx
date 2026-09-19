@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { COLUMNS, PRIORITIES, api, dayLabel, isOverdue, priorityLabel, subtasksMd, type EntrySummary, type Priority, type Status, type Task } from '../lib';
-import { readAiSettings, suggestSubtasks } from '../ai-suggest';
+import { COLUMNS, PRIORITIES, api, dayLabel, isOverdue, priorityLabel, subtasksMd, type EntrySummary, type Priority, type Project, type Status, type Task } from '../lib';
+import { readAiSettings, suggestSubtasks, taskSuggestContext, type SuggestContext } from '../ai-suggest';
 
 const DRAG_TYPE = 'text/plain';
 
@@ -8,12 +8,14 @@ export function TaskBoard({
   tasks,
   entries,
   projectId,
+  projects,
   onOpenDocument,
   onChanged,
 }: {
   tasks: Task[];
   entries: EntrySummary[];
   projectId: string;
+  projects: Project[];
   onOpenDocument: (entryId: string) => void;
   onChanged: () => void;
 }) {
@@ -76,6 +78,7 @@ export function TaskBoard({
                     task={task}
                     entries={entries}
                     editing={editing === task.id}
+                    suggestContext={taskSuggestContext(task, tasks, entries, projects)}
                     onEdit={() => setEditing(task.id)}
                     onEditDone={() => setEditing(null)}
                     onOpenDocument={onOpenDocument}
@@ -97,6 +100,7 @@ function TaskCard({
   task,
   entries,
   editing,
+  suggestContext,
   onEdit,
   onEditDone,
   onOpenDocument,
@@ -106,6 +110,7 @@ function TaskCard({
   task: Task;
   entries: EntrySummary[];
   editing: boolean;
+  suggestContext: SuggestContext;
   onEdit: () => void;
   onEditDone: () => void;
   onOpenDocument: (entryId: string) => void;
@@ -191,7 +196,9 @@ function TaskCard({
     setSuggesting(true);
     setSuggestError('');
     try {
-      const raw = await suggestSubtasks(readAiSettings(), entryTitle.trim() || task.title);
+      const raw = await suggestSubtasks(readAiSettings(), entryTitle.trim() || task.title, {
+        context: { ...suggestContext, linkedDocuments: linkedDocuments.map((document) => document.title) },
+      });
       setEntrySubtasks((prev) => (prev.trim() ? prev.replace(/\s+$/, '') + '\n' + raw : raw));
     } catch (e) {
       setSuggestError((e as Error).message);
@@ -239,7 +246,7 @@ function TaskCard({
           className="ghost"
           type="button"
           disabled={suggesting || entryBusy}
-          title="Envoie le titre au service IA configuré en Paramètres"
+          title="Envoie le titre et son contexte (projet, tâches, notes, documents liés) au service IA configuré en Paramètres"
           onClick={() => void suggestForCreator()}
         >
           {suggesting ? 'Suggestion…' : '✨ Suggérer'}
