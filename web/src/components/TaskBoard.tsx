@@ -191,7 +191,7 @@ function TaskCard({
     setCreatingEntry(true);
   };
 
-  const suggestForCreator = async () => {
+  const suggestForCreator = async (replace: boolean) => {
     if (suggesting) return;
     setSuggesting(true);
     setSuggestError('');
@@ -199,7 +199,8 @@ function TaskCard({
       const raw = await suggestSubtasks(readAiSettings(), entryTitle.trim() || task.title, {
         context: { ...suggestContext, linkedDocuments: linkedDocuments.map((document) => document.title) },
       });
-      setEntrySubtasks((prev) => (prev.trim() ? prev.replace(/\s+$/, '') + '\n' + raw : raw));
+      // Suggérer ajoute, Régénérer remplace : jamais de doublons empilés.
+      setEntrySubtasks((prev) => (replace || !prev.trim() ? raw : prev.replace(/\s+$/, '') + '\n' + raw));
     } catch (e) {
       setSuggestError((e as Error).message);
     } finally {
@@ -232,7 +233,33 @@ function TaskCard({
       <label className="task-creator-wide">Titre de l’entrée liée
         <input aria-label="Titre de l’entrée liée" autoFocus value={entryTitle} onChange={(e) => setEntryTitle(e.target.value)} />
       </label>
-      <label className="task-creator-wide">Sous-tâches, une par ligne
+      <div className="task-creator-wide">
+        <div className="subtasks-head">
+          <span>Sous-tâches, une par ligne</span>
+          {entrySubtasks.trim() && (
+            <>
+              <button
+                className="ghost"
+                type="button"
+                disabled={suggesting || entryBusy}
+                aria-label="Régénérer la suggestion"
+                title="Remplace le contenu par une nouvelle suggestion (envoie le titre au service IA)"
+                onClick={() => void suggestForCreator(true)}
+              >
+                ↻ Régénérer
+              </button>
+              <button
+                className="ghost"
+                type="button"
+                disabled={suggesting || entryBusy}
+                aria-label="Effacer la suggestion"
+                onClick={() => setEntrySubtasks('')}
+              >
+                Effacer
+              </button>
+            </>
+          )}
+        </div>
         <textarea
           aria-label="Sous-tâches de l’entrée liée, une par ligne"
           rows={4}
@@ -240,14 +267,14 @@ function TaskCard({
           value={entrySubtasks}
           onChange={(e) => setEntrySubtasks(e.target.value)}
         />
-      </label>
+      </div>
       <div className="task-creator-actions">
         <button
           className="ghost"
           type="button"
           disabled={suggesting || entryBusy}
           title="Envoie le titre et son contexte (projet, tâches, notes, documents liés) au service IA configuré en Paramètres"
-          onClick={() => void suggestForCreator()}
+          onClick={() => void suggestForCreator(false)}
         >
           {suggesting ? 'Suggestion…' : '✨ Suggérer'}
         </button>

@@ -352,17 +352,22 @@ export default function App() {
 
       {error && <p className="error banner no-print">{error}</p>}
 
+      {/* Projets hors de la sidebar : le filtre et la gestion restent accessibles
+          même quand le journal est replié, sur mobile comme sur desktop. */}
+      <div className="project-strip no-print">
+        <ProjectBar
+          projects={state?.projects ?? []}
+          selected={projectId}
+          onSelect={setProjectId}
+          onChanged={reload}
+        />
+      </div>
+
       {isGoogleDocument && <div className="workspace-switch no-print"><span>Document Google · {siblingTabs.length} onglet{siblingTabs.length > 1 ? 's' : ''}</span>
         <button aria-expanded={showDocumentTasks} aria-controls="workspace-tasks" onClick={() => setShowDocumentTasks(!showDocumentTasks)}>{showDocumentTasks ? 'Masquer les tâches' : 'Afficher les tâches'}</button>
       </div>}
       <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showDocumentTasks ? ' with-tasks' : '') + (showLeft ? '' : ' hide-left') + (showCenter ? '' : ' hide-center') + (showRight ? '' : ' hide-right')}>
         <aside id="workspace-journal" className="left no-print">
-          <ProjectBar
-            projects={state?.projects ?? []}
-            selected={projectId}
-            onSelect={setProjectId}
-            onChanged={reload}
-          />
           <EntryList
             entries={state?.entries ?? []}
             projects={state?.projects ?? []}

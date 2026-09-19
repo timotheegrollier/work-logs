@@ -78,3 +78,26 @@ test('paramètres mobiles : la version s’y lit et les trois blocs sont des car
     await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
   ).toBe(true);
 });
+
+test('bandeau projets : global, sans débordement, utilisable journal replié', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+
+  // Sous l'en-tête, au-dessus des trois cartes : ni dans le journal, ni dedans.
+  const strip = page.locator('.project-strip');
+  await expect(strip).toBeVisible();
+  const filters = page.getByRole('group', { name: 'Filtrer par projet' });
+  await expect(filters).toBeVisible();
+  expect(await page.locator('#workspace-journal .projects').count()).toBe(0);
+  const headBox = (await page.locator('header.head').boundingBox())!;
+  const stripBox = (await strip.boundingBox())!;
+  expect(stripBox.y).toBeGreaterThanOrEqual(headBox.y + headBox.height - 1);
+
+  // Journal replié : le filtre reste visible et cliquable.
+  await page.getByRole('button', { name: 'Journal', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeHidden();
+  await expect(filters).toBeVisible();
+  await expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
+  ).toBe(true);
+});

@@ -421,6 +421,33 @@ describe('écrire une entrée', () => {
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('## Sous-tâches\n- [ ] Relire\n- [ ] Payer\n');
   });
 
+  test('régénère la suggestion du créateur au lieu d’empiler, ou l’efface', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('Relire');
+    seedData(api.db, { tasks: [{ id: 'tk_dossier', title: 'Préparer le dossier' }] });
+    render(<App />);
+
+    const card = (await within(board()).findByText('Préparer le dossier')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: /Créer une entrée liée/ }));
+    // Régénérer/Effacer n'existent que quand la zone est remplie.
+    expect(within(card).queryByRole('button', { name: 'Régénérer la suggestion' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '✨ Suggérer' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Sous-tâches de l’entrée liée, une par ligne')).toHaveValue('Relire');
+    });
+
+    mockAiSuggest('Payer');
+    await user.click(within(card).getByRole('button', { name: 'Régénérer la suggestion' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Sous-tâches de l’entrée liée, une par ligne')).toHaveValue('Payer');
+    });
+
+    await user.click(within(card).getByRole('button', { name: 'Effacer la suggestion' }));
+    expect(screen.getByLabelText('Sous-tâches de l’entrée liée, une par ligne')).toHaveValue('');
+    expect(within(card).queryByRole('button', { name: 'Régénérer la suggestion' })).not.toBeInTheDocument();
+  });
+
   test('sans clé IA, la suggestion renvoie aux Paramètres sans appeler personne', async () => {
     const user = userEvent.setup();
     const calls: string[] = [];
@@ -463,6 +490,32 @@ describe('écrire une entrée', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Intro.\n- [ ] Déjà là\n## Sous-tâches\n- [ ] Relire\n');
     });
+  });
+
+  test('régénère le bloc suggéré dans l’éditeur, ou le retire proprement', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('Relire');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Intro.' }] });
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Suggérer des sous-tâches' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Régénérer la suggestion' })).toBeInTheDocument();
+    });
+
+    mockAiSuggest('Payer');
+    await user.click(screen.getByRole('button', { name: 'Régénérer la suggestion' }));
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Intro.\n## Sous-tâches\n- [ ] Payer\n');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Retirer la suggestion' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Intro.');
+    });
+    expect(screen.queryByRole('button', { name: 'Retirer la suggestion' })).not.toBeInTheDocument();
   });
 
   test('crée une tâche liée depuis un document Google', async () => {
@@ -1048,6 +1101,31 @@ describe('projets', () => {
 
     await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM projects').n).toBe(0));
     expect(await within(journal()).findByText('Survivante')).toBeInTheDocument();
+  });
+
+  test('le bandeau projets vit hors du journal et reste utilisable replié', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      projects: [{ id: 'pr_a', name: 'Alpha' }],
+      entries: [{ id: 'en_a', title: 'Entrée Alpha', project_id: 'pr_a' }],
+    });
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+
+    // Ni dans le panneau journal, ni dans l'en-tête : un bandeau global.
+    const strip = document.querySelector('.project-strip') as HTMLElement;
+    expect(strip).toBeInTheDocument();
+    expect(within(strip).getByRole('group', { name: 'Filtrer par projet' })).toBeVisible();
+    expect(document.querySelector('#workspace-journal .projects')).toBeNull();
+
+    // Journal replié (jsdom n'applique pas les feuilles de style : on lit les
+    // classes, comme les tests des panneaux) : filtrer reste possible.
+    await user.click(screen.getByRole('button', { name: 'Journal' }));
+    expect(document.querySelector('.columns')).toHaveClass('hide-left');
+    const chips = within(strip).getByRole('group', { name: 'Filtrer par projet' });
+    await user.click(within(chips).getByRole('button', { name: 'Alpha' }));
+    await waitFor(() => expect(within(chips).getByRole('button', { name: 'Alpha' })).toHaveAttribute('aria-pressed', 'true'));
+    expect(localStorage.getItem('worklogs-project')).toBe('pr_a');
   });
 });
 

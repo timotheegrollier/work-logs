@@ -323,6 +323,36 @@ button:disabled {
 }
 
 /* ------------------------------------------------------------ projets */
+.project-strip {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  padding: 8px 16px;
+}
+.project-strip .projects {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+/* Les pastilles défilent horizontalement au lieu de pousser le bandeau. */
+.project-strip .chips {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 2px;
+}
+.project-strip .manage {
+  margin-top: 0;
+  flex: none;
+}
+/* Dépliant ouvert : le panneau occupe toute la rangée suivante. */
+.project-strip .manage[open] {
+  flex-basis: 100%;
+}
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -673,6 +703,9 @@ button:disabled {
 /* Le titre et les sous-tâches d'une entrée liée prennent toute la largeur. */
 .task-creator-wide { grid-column: 1 / -1; }
 .task-creator-wide textarea { min-height: 88px; resize: vertical; }
+.subtasks-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.subtasks-head > span { margin-right: auto; }
+.subtasks-head .ghost { font-size: 12px; padding: 2px 8px; }
 .task-creator .error { grid-column: 1 / -1; font-size: 12px; }
 .task-creator input { width: 100%; font-size: 13px; }
 .task-creator-actions { display: flex; gap: 6px; }
@@ -1939,6 +1972,14 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .chip {
     padding: 8px 14px;
     font-size: 14px;
+  }
+  /* Bandeau projets : compact, pastilles en défilement horizontal. */
+  .project-strip {
+    padding: 8px 12px;
+  }
+  .project-strip .manage summary {
+    padding: 8px 12px;
+    font-size: 13px;
   }
   .quick input,
   .quick button {

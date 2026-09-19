@@ -226,9 +226,11 @@ export function EntryEditor({
   };
   // Suggestion IA : un clic = un envoi du titre et du contenu de l'entrée au
   // service configuré en Paramètres. Markdown seul : les documents riches
-  // n'ont pas de cases.
+  // n'ont pas de cases. Le bloc inséré est suivi pour pouvoir le régénérer
+  // ou le retirer sans toucher au reste.
   const [suggesting, setSuggesting] = useState(false);
-  const suggestForEntry = async () => {
+  const [suggestedBlock, setSuggestedBlock] = useState<string | null>(null);
+  const suggestForEntry = async (replace: boolean) => {
     if (suggesting || draftRef.current.content_json) return;
     setSuggesting(true);
     setError('');
@@ -246,13 +248,30 @@ export function EntryEditor({
             .map((task) => task.title),
         },
       });
+      const block = subtasksMd(raw);
       const current = content.trim();
-      update({ content_md: (current ? current.replace(/\s+$/, '') + '\n' : '') + subtasksMd(raw) });
+      if (replace && suggestedBlock && content.includes(suggestedBlock)) {
+        update({ content_md: content.replace(suggestedBlock, block) });
+      } else {
+        update({ content_md: (current ? current.replace(/\s+$/, '') + '\n' : '') + block });
+      }
+      setSuggestedBlock(block);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setSuggesting(false);
     }
+  };
+  const removeSuggestion = () => {
+    if (!suggestedBlock) return;
+    const content = draftRef.current.content_md;
+    const withSeparator = '\n' + suggestedBlock;
+    update({
+      content_md: content.includes(withSeparator)
+        ? content.replace(withSeparator, '')
+        : content.replace(suggestedBlock, ''),
+    });
+    setSuggestedBlock(null);
   };  const createTask = async () => {
     const title = taskTitle.trim();
     if (!title) return;
@@ -329,10 +348,34 @@ export function EntryEditor({
             type="button"
             disabled={suggesting || syncing}
             title="Envoie le titre et le contenu de l’entrée au service IA configuré en Paramètres"
-            onClick={() => void suggestForEntry()}
+            onClick={() => void suggestForEntry(false)}
           >
             {suggesting ? 'Suggestion…' : '✨ Suggérer des sous-tâches'}
           </button>
+        )}
+        {suggestedBlock && (
+          <>
+            <button
+              className="ghost"
+              type="button"
+              disabled={suggesting || syncing}
+              aria-label="Régénérer la suggestion"
+              title="Remplace le bloc suggéré par une nouvelle proposition"
+              onClick={() => void suggestForEntry(true)}
+            >
+              ↻ Régénérer
+            </button>
+            <button
+              className="ghost"
+              type="button"
+              disabled={suggesting || syncing}
+              aria-label="Retirer la suggestion"
+              title="Supprime le bloc suggéré sans toucher au reste"
+              onClick={removeSuggestion}
+            >
+              Retirer
+            </button>
+          </>
         )}
       </div>
       <details className={'document-details no-print' + (googleSync ? '' : ' local-details')} open={googleSync ? undefined : true}>

@@ -7,8 +7,8 @@
 > **Lot courant (candidat v0.24.0) :** en-tête mobile aéré (Pixel 9a, 412 px),
 > rebasé sur v0.23.0 : marque, recherche, panneaux en trois lignes, cibles 44 px,
 > sans JS ni dépendance.
-> **Validation :** `./scripts/check.sh` vert : **137 tests API, 215 front,
-> 33 desktop unitaires, 25 scripts, 31 navigateur et 10 desktop e2e**.
+> **Validation :** `./scripts/check.sh` vert : **137 tests API, 218 front,
+> 33 desktop unitaires, 25 scripts, 32 navigateur et 10 desktop e2e**.
 >
 > **Lot précédent :** panneaux latéraux repliables (Journal/Tâches, desktop comme
 > PWA, état retenu) pour n'afficher que ce qui sert.
@@ -28,6 +28,38 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-09-19 (6) — projets sortis de la sidebar : bandeau global
+
+- Demande : la gestion des projets vivait en haut du journal et disparaissait
+  avec lui. `ProjectBar` déménage dans un bandeau `.project-strip` sous
+  l'en-tête : filtre + « Gérer les projets » accessibles même panneaux
+  repliés, sur mobile comme sur desktop. Ni onglet ni menu : le même
+  composant, juste replacé (§1 des décisions).
+- Mise en page : pastilles en défilement horizontal (plus de wrap qui pousse),
+  résumé « Gérer » à droite ; dépliant ouvert = rangée pleine largeur
+  suivante. Mobile : bandeau compact, pastilles tactiles conservées.
+  `no-print` comme l'en-tête. Texte d'amorçage corrigé (« filtre à gauche »
+  → bandeau), côté API et PWA locale.
+- Tests : front (bandeau hors `#workspace-journal`, filtre utilisable journal
+  replié), e2e 412 px (bandeau sous l'en-tête, sans débordement, filtre
+  utilisable journal replié). Captures desktop + mobile contrôlées.
+  Aucune dépendance ajoutée.
+
+## Lot du 2026-09-19 (5) — régénérer ou retirer une suggestion IA
+
+- Problème réel : une suggestion générée ne pouvait ni être rechargée
+  (Suggérer empilait des doublons) ni supprimée (édition manuelle seule).
+- Créateur : « ✨ Suggérer » ajoute toujours, « ↻ Régénérer » remplace tout le
+  contenu par une proposition fraîche, « Effacer » vide la zone. Les deux
+  n'apparaissent que quand la zone est remplie (noms `Régénérer/Effacer la
+  suggestion`, distincts du « Effacer » du lieur de documents).
+- Éditeur : le bloc inséré est suivi tel quel (`suggestedBlock`) — « ↻
+  Régénérer » le remplace en place, « Retirer » le supprime sans toucher au
+  reste ; si l'utilisateur l'a modifié entre-temps, la régénération ajoute
+  plutôt qu'écraser. Les boutons disparaissent avec le bloc.
+- Tests : régénération/remplacement + effacement dans le créateur (1),
+  remplacement en place + retrait propre dans l'éditeur (1). Aucune dépendance.
 
 ## Lot du 2026-09-19 (4) — l'IA lit l'entrée : texte, cases, pièces jointes, liens
 

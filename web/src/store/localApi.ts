@@ -197,7 +197,7 @@ async function seed(db: Database): Promise<void> {
       '## Organiser',
       '',
       'La colonne de droite tient les tâches en cours. Glisse une carte pour la faire avancer.',
-      'Les deux colonnes partagent les mêmes **projets** : filtre à gauche, tout suit.',
+      'Les deux colonnes partagent les mêmes **projets** : le filtre est dans le bandeau sous l’en-tête, tout suit.',
     ].join('\n'),
     content_json: null,
     entry_date: d,
