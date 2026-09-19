@@ -230,7 +230,7 @@ export function EntryEditor({
   // ou le retirer sans toucher au reste.
   const [suggesting, setSuggesting] = useState(false);
   const [suggestedBlock, setSuggestedBlock] = useState<string | null>(null);
-  const suggestForEntry = async (replace: boolean) => {
+  const suggestForEntry = async () => {
     if (suggesting || draftRef.current.content_json) return;
     setSuggesting(true);
     setError('');
@@ -250,7 +250,8 @@ export function EntryEditor({
       });
       const block = subtasksMd(raw);
       const current = content.trim();
-      if (replace && suggestedBlock && content.includes(suggestedBlock)) {
+      // Suggérer remplace le bloc suivi, sinon ajoute : un seul geste.
+      if (suggestedBlock && content.includes(suggestedBlock)) {
         update({ content_md: content.replace(suggestedBlock, block) });
       } else {
         update({ content_md: (current ? current.replace(/\s+$/, '') + '\n' : '') + block });
@@ -347,35 +348,23 @@ export function EntryEditor({
             className="ghost"
             type="button"
             disabled={suggesting || syncing}
-            title="Envoie le titre et le contenu de l’entrée au service IA configuré en Paramètres"
-            onClick={() => void suggestForEntry(false)}
+            title="Remplace le bloc suggéré, ou l’ajoute (envoie le titre et le contenu de l’entrée au service IA configuré en Paramètres)"
+            onClick={() => void suggestForEntry()}
           >
             {suggesting ? 'Suggestion…' : '✨ Suggérer des sous-tâches'}
           </button>
         )}
         {suggestedBlock && (
-          <>
-            <button
-              className="ghost"
-              type="button"
-              disabled={suggesting || syncing}
-              aria-label="Régénérer la suggestion"
-              title="Remplace le bloc suggéré par une nouvelle proposition"
-              onClick={() => void suggestForEntry(true)}
-            >
-              ↻ Régénérer
-            </button>
-            <button
-              className="ghost"
-              type="button"
-              disabled={suggesting || syncing}
-              aria-label="Retirer la suggestion"
-              title="Supprime le bloc suggéré sans toucher au reste"
-              onClick={removeSuggestion}
-            >
-              Retirer
-            </button>
-          </>
+          <button
+            className="ghost"
+            type="button"
+            disabled={suggesting || syncing}
+            aria-label="Retirer la suggestion"
+            title="Supprime le bloc suggéré sans toucher au reste"
+            onClick={removeSuggestion}
+          >
+            Retirer
+          </button>
         )}
       </div>
       <details className={'document-details no-print' + (googleSync ? '' : ' local-details')} open={googleSync ? undefined : true}>

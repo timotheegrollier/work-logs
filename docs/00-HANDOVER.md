@@ -29,6 +29,17 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-09-19 (7) — Suggérer remplace, fini le bouton Régénérer
+
+- Correctif UX post-0.29.0 (qui embarquait un « ↻ Régénérer » séparé) :
+  **« ✨ Suggérer » remplace toujours** — le contenu de la zone dans le
+  créateur, le bloc suivi dans l'éditeur. « Effacer » (créateur) et « Retirer »
+  (éditeur) gardent la suppression, qui fonctionnait bien.
+- Suppressions : bouton Régénérer des deux écrans, paramètre `replace`
+  devenu inutile. Titres des boutons Suggérer précisant le remplacement.
+- Tests adaptés (remplacement constaté aux deux endroits, suppression
+  inchangée). Aucune dépendance.
+
 ## Lot du 2026-09-19 (6) — projets sortis de la sidebar : bandeau global
 
 - Demande : la gestion des projets vivait en haut du journal et disparaissait

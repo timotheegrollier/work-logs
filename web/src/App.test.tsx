@@ -421,7 +421,7 @@ describe('écrire une entrée', () => {
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('## Sous-tâches\n- [ ] Relire\n- [ ] Payer\n');
   });
 
-  test('régénère la suggestion du créateur au lieu d’empiler, ou l’efface', async () => {
+  test('suggérer remplace le contenu du créateur, effacer le vide', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     mockAiSuggest('Relire');
@@ -430,22 +430,23 @@ describe('écrire une entrée', () => {
 
     const card = (await within(board()).findByText('Préparer le dossier')).closest('.card') as HTMLElement;
     await user.click(within(card).getByRole('button', { name: /Créer une entrée liée/ }));
-    // Régénérer/Effacer n'existent que quand la zone est remplie.
-    expect(within(card).queryByRole('button', { name: 'Régénérer la suggestion' })).not.toBeInTheDocument();
+    // Effacer n'existe que quand la zone est remplie.
+    expect(within(card).queryByRole('button', { name: 'Effacer la suggestion' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '✨ Suggérer' }));
     await waitFor(() => {
       expect(screen.getByLabelText('Sous-tâches de l’entrée liée, une par ligne')).toHaveValue('Relire');
     });
 
+    // Second appel : remplace, jamais empilé.
     mockAiSuggest('Payer');
-    await user.click(within(card).getByRole('button', { name: 'Régénérer la suggestion' }));
+    await user.click(screen.getByRole('button', { name: '✨ Suggérer' }));
     await waitFor(() => {
       expect(screen.getByLabelText('Sous-tâches de l’entrée liée, une par ligne')).toHaveValue('Payer');
     });
 
     await user.click(within(card).getByRole('button', { name: 'Effacer la suggestion' }));
     expect(screen.getByLabelText('Sous-tâches de l’entrée liée, une par ligne')).toHaveValue('');
-    expect(within(card).queryByRole('button', { name: 'Régénérer la suggestion' })).not.toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'Effacer la suggestion' })).not.toBeInTheDocument();
   });
 
   test('sans clé IA, la suggestion renvoie aux Paramètres sans appeler personne', async () => {
@@ -492,7 +493,7 @@ describe('écrire une entrée', () => {
     });
   });
 
-  test('régénère le bloc suggéré dans l’éditeur, ou le retire proprement', async () => {
+  test('suggérer remplace le bloc dans l’éditeur, retirer le supprime', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     mockAiSuggest('Relire');
@@ -501,11 +502,12 @@ describe('écrire une entrée', () => {
 
     await user.click(await screen.findByRole('button', { name: '✨ Suggérer des sous-tâches' }));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Régénérer la suggestion' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Retirer la suggestion' })).toBeInTheDocument();
     });
 
+    // Second appel : le bloc est remplacé en place, pas dupliqué.
     mockAiSuggest('Payer');
-    await user.click(screen.getByRole('button', { name: 'Régénérer la suggestion' }));
+    await user.click(screen.getByRole('button', { name: '✨ Suggérer des sous-tâches' }));
     await user.click(screen.getByRole('button', { name: 'Écrire' }));
     await waitFor(() => {
       expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Intro.\n## Sous-tâches\n- [ ] Payer\n');
