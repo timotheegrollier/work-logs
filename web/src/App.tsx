@@ -127,9 +127,10 @@ export default function App() {
           ? { ...current, archived: selectedSummary.archived, updated_at: selectedSummary.updated_at }
           : current);
       }
-      // Rien de sélectionné (premier chargement, ou entrée supprimée) : on ouvre la plus récente.
+      // Rien de sélectionné (premier chargement, ou entrée supprimée) : on ouvre la
+      // plus récente du journal — jamais une procédure, qui n'y figure pas.
       const stillThere = next.entries.some((e) => e.id === selectedRef.current || (documentRef.current && e.google_document_id === documentRef.current));
-      if (!stillThere) setSelectedId(next.entries[0]?.id ?? null);
+      if (!stillThere) setSelectedId((next.entries.find((e) => e.kind !== 'procedure') ?? next.entries[0])?.id ?? null);
     } catch {
       setError('API injoignable. Lance `npm run dev` dans /home/timo/WorkLogs.');
     }

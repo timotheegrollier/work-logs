@@ -1340,11 +1340,22 @@ describe('panneau Procédures', () => {
     expect(within(panel).queryByText('Pense-bête')).not.toBeInTheDocument();
     expect(within(panel).getByRole('link', { name: 'devis.pdf' })).toHaveAttribute('href', expect.stringContaining('/api/files/'));
     await user.click(within(panel).getByText('Dallage'));
-    expect(await screen.findByLabelText('Titre de l’entrée')).toHaveValue('Dallage');
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Dallage'));
     // Le journal ne liste que les notes : les procédures ont leur sidebar.
     const journal = screen.getByRole('region', { name: 'Journal' });
     expect(within(journal).getByText('Pense-bête')).toBeInTheDocument();
     expect(within(journal).queryByText('Dallage')).not.toBeInTheDocument();
+  });
+
+  test('au premier chargement, ouvre la dernière entrée du journal, jamais une procédure', async () => {
+    seedData(api.db, {
+      entries: [
+        { id: 'en_note', title: 'Compte rendu', date: '2026-01-01' },
+        { id: 'en_proc', title: 'Dallage', kind: 'procedure', date: '2026-02-01' },
+      ],
+    });
+    render(<App />);
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Compte rendu'));
   });
 
   test('crée une procédure riche dans le projet filtré', async () => {

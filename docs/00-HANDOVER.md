@@ -43,6 +43,12 @@
 - Tests : journal sans procédure (front + e2e). Contenu désormais monté même
   masqué → sélecteurs `Joindre un fichier` passés en `exact` (e2e web et
   desktop). `check.sh` vert.
+- **Piège trouvé par la CI de la 0.31.0** : au premier chargement, l'app ouvrait
+  `entries[0]`, procédures comprises. Après `procedures.spec`, c'était la
+  procédure riche « Envoi direct » : son « Contenu du document » satisfaisait
+  le `beforeEach` de `rich-document.spec`, qui tapait alors dans la procédure
+  (échecs aléatoires, reproduits en trace). L'ouverture par défaut prend
+  désormais la première entrée non-procédure (test front dédié).
 
 ## Lot du 2026-09-21 — « ✨ Mettre en page » : correction IA d'une entrée Markdown
 
