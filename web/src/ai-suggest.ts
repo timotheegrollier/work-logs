@@ -225,22 +225,21 @@ export function taskSuggestContext(
 export class AiError extends Error {}
 
 /**
- * Un clic = un appel, jamais d'envoi automatique. Le titre seul part vers
- * l'endpoint configuré ; tout échec rend un message français, jamais d'exception
- * réseau brute, jamais de nouvel essai en boucle.
+ * Appel unique : jamais d'envoi automatique, jamais de nouvel essai en boucle.
+ * Tout échec rend un message français, jamais d'exception réseau brute.
  */
-export async function suggestSubtasks(
+async function postChatCompletions(
   settings: AiSettings,
-  title: string,
-  options: { context?: SuggestContext; timeoutMs?: number } = {}
+  feature: string,
+  system: string,
+  user: string,
+  maxTokens: number,
+  timeoutMs: number
 ): Promise<string> {
   const key = settings.key.trim();
-  if (!key) throw new AiError('Colle ta clé IA dans ⚙ Paramètres pour activer les suggestions.');
-  // Le profil vit dans les réglages : chaque appel connaît le métier, sans que
-  // les écrans aient à le renseigner.
-  const prompt = buildSuggestPrompt(title, { ...options.context, profile: settings.profile });
+  if (!key) throw new AiError(`Colle ta clé IA dans ⚙ Paramètres pour activer ${feature}.`);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? AI_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(`${settings.endpoint.trim().replace(/\/+$/, '')}/chat/completions`, {
@@ -249,11 +248,11 @@ export async function suggestSubtasks(
       body: JSON.stringify({
         model: settings.model.trim(),
         messages: [
-          { role: 'system', content: prompt.system },
-          { role: 'user', content: prompt.user },
+          { role: 'system', content: system },
+          { role: 'user', content: user },
         ],
         temperature: 0.4,
-        max_tokens: 300,
+        max_tokens: maxTokens,
       }),
       signal: controller.signal,
     });
@@ -273,5 +272,70 @@ export async function suggestSubtasks(
   }
   const content = await res.json().catch(() => null).then((body) => body?.choices?.[0]?.message?.content);
   if (typeof content !== 'string' || !content.trim()) throw new AiError('Réponse IA illisible : réessaie.');
-  return cleanSuggestionLines(content);
+  return content;
+}
+
+/**
+ * Un clic = un appel, jamais d'envoi automatique. Le titre seul part vers
+ * l'endpoint configuré ; tout échec rend un message français, jamais d'exception
+ * réseau brute, jamais de nouvel essai en boucle.
+ */
+export async function suggestSubtasks(
+  settings: AiSettings,
+  title: string,
+  options: { context?: SuggestContext; timeoutMs?: number } = {}
+): Promise<string> {
+  // Le profil vit dans les réglages : chaque appel connaît le métier, sans que
+  // les écrans aient à le renseigner.
+  const prompt = buildSuggestPrompt(title, { ...options.context, profile: settings.profile });
+  return cleanSuggestionLines(
+    await postChatCompletions(settings, 'les suggestions', prompt.system, prompt.user, 300, options.timeoutMs ?? AI_TIMEOUT_MS)
+  );
+}
+
+/** Au-delà, la réponse serait tronquée : on refuse plutôt que de corrompre. */
+export const MAX_PROOFREAD_CHARS = 12000;
+
+/** Consigne : corriger et mettre en page, sans inventer ni changer le sens. */
+export function buildProofreadPrompt(title: string, text: string, profile = ''): { system: string; user: string } {
+  const user = `${profile.trim() ? `Profil : ${profile.trim()}\n` : ''}Titre : ${title.trim()}\n\nTexte :\n${text}`;
+  return {
+    system: `Tu relis le journal de travail personnel de l'utilisateur dans WorkLogs : il y écrit ce qu'il fait en Markdown.
+Corrige l'orthographe, la grammaire, la conjugaison et la typographie française (accents, majuscules, espaces), et mets en page le Markdown (titres, listes, tableaux, citations) sans changer le sens et sans rien inventer. Conserve tels quels les liens, images, blocs de code et cases à cocher.
+Réponds uniquement avec le texte corrigé en Markdown, sans introduction ni explication.`,
+    user,
+  };
+}
+
+/** Retire l'éventuel bloc de code qui enveloppe la réponse, puis les blancs. */
+export function cleanProofreadMarkdown(text: string): string {
+  return text
+    .trim()
+    .replace(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/, '$1')
+    .trim();
+}
+
+/**
+ * Mise en page + correction d'une entrée Markdown : le texte entier part vers
+ * l'endpoint configuré, la version corrigée revient à relire avant application.
+ * Documents riches exclus (comme les suggestions) : leur JSON ne transite pas.
+ */
+export async function proofreadEntry(
+  settings: AiSettings,
+  title: string,
+  content: string,
+  options: { timeoutMs?: number } = {}
+): Promise<string> {
+  const text = content.trim();
+  if (!text) throw new AiError('Rien à corriger : l’entrée est vide.');
+  if (text.length > MAX_PROOFREAD_CHARS) {
+    throw new AiError(`Texte trop long pour une relecture (${text.length} caractères, ${MAX_PROOFREAD_CHARS} maximum).`);
+  }
+  const prompt = buildProofreadPrompt(title, text, settings.profile);
+  const cleaned = cleanProofreadMarkdown(
+    await postChatCompletions(settings, 'la mise en page', prompt.system, prompt.user,
+      Math.min(8000, Math.max(1200, Math.ceil(text.length / 2))), options.timeoutMs ?? AI_TIMEOUT_MS)
+  );
+  if (!cleaned) throw new AiError('Réponse IA illisible : réessaie.');
+  return cleaned;
 }

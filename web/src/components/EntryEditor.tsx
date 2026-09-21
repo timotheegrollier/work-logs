@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project, type Status } from '../lib';
-import { parseChecklist, readAiSettings, suggestSubtasks } from '../ai-suggest';
+import { parseChecklist, proofreadEntry, readAiSettings, suggestSubtasks } from '../ai-suggest';
 import { renderMarkdown } from '../markdown';
 import { Autosave } from '../autosave';
 import { RichEditor } from './RichEditor';
@@ -273,7 +273,41 @@ export function EntryEditor({
         : content.replace(suggestedBlock, ''),
     });
     setSuggestedBlock(null);
-  };  const createTask = async () => {
+  };
+  // Mise en page IA : même transport que les suggestions, Markdown seul, mais la
+  // version corrigée se relit avant application — jamais d'écrasement aveugle.
+  const [proofreading, setProofreading] = useState(false);
+  const [proofreadPreview, setProofreadPreview] = useState<{ source: string; fixed: string } | null>(null);
+  const proofreadHtml = useMemo(() => (proofreadPreview ? renderMarkdown(proofreadPreview.fixed) : ''), [proofreadPreview]);
+  const proofreadEntryText = async () => {
+    if (proofreading || syncing || draftRef.current.content_json) return;
+    setProofreading(true);
+    setError('');
+    setProofreadPreview(null);
+    try {
+      await autosave.flush();
+      const source = draftRef.current.content_md;
+      const fixed = await proofreadEntry(readAiSettings(), draftRef.current.title, source);
+      setProofreadPreview({ source, fixed });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setProofreading(false);
+    }
+  };
+  const applyProofread = () => {
+    if (!proofreadPreview) return;
+    // Le texte a bougé pendant la relecture : appliquer effacerait ces frappes.
+    if (draftRef.current.content_md !== proofreadPreview.source) {
+      setProofreadPreview(null);
+      setError('L’entrée a changé pendant la mise en page : relance-la pour ne rien perdre.');
+      return;
+    }
+    update({ content_md: proofreadPreview.fixed });
+    setProofreadPreview(null);
+    setSuggestedBlock(null);
+  };
+  const createTask = async () => {
     const title = taskTitle.trim();
     if (!title) return;
     setTaskCreating(true);
@@ -352,6 +386,17 @@ export function EntryEditor({
             onClick={() => void suggestForEntry()}
           >
             {suggesting ? 'Suggestion…' : '✨ Suggérer des sous-tâches'}
+          </button>
+        )}
+        {!draft.content_json && (
+          <button
+            className="ghost"
+            type="button"
+            disabled={suggesting || proofreading || syncing || !draft.content_md.trim()}
+            title="Corrige les fautes et met en page (envoie le titre et le contenu de l’entrée au service IA configuré en Paramètres, à relire avant application)"
+            onClick={() => void proofreadEntryText()}
+          >
+            {proofreading ? 'Mise en page…' : '✨ Mettre en page'}
           </button>
         )}
         {suggestedBlock && (
@@ -441,6 +486,14 @@ export function EntryEditor({
       </details>
       {error && <p role="alert" className="error no-print">{error}</p>}
       {error && googleHelp && <a className="no-print" href={googleHelp} target="_blank" rel="noopener noreferrer">Activer l’API dans Google Cloud</a>}
+      {proofreadPreview && !draft.content_json && <div className="proofread-preview no-print" role="region" aria-label="Mise en page proposée">
+        <strong>Mise en page proposée — relis avant d’appliquer</strong>
+        <article className="prose" dangerouslySetInnerHTML={{ __html: proofreadHtml }} />
+        <div className="task-creator-actions">
+          <button className="task-primary" type="button" disabled={syncing} onClick={applyProofread}>Appliquer la mise en page</button>
+          <button className="ghost" type="button" onClick={() => setProofreadPreview(null)}>Ignorer</button>
+        </div>
+      </div>}
       {syncMessage && <p className="rich-count no-print" role="status">{syncMessage}</p>}
       {!nativeGoogle && draft.content_json && <div className="google-sync no-print" aria-label="Synchronisation Google Drive">
         <div className="sync-status" role="status">

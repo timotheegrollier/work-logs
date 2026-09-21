@@ -788,6 +788,10 @@ button:disabled {
 .task-creator-actions { display: flex; gap: 6px; }
 .task-creator-actions button { white-space: nowrap; }
 .task-message { margin: 0; color: var(--ok); font-size: 12px; }
+/* Mise en page IA : la version corrigée se relit ici avant d'écraser l'entrée. */
+.proofread-preview { display: grid; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
+.proofread-preview strong { font-size: 13px; }
+.proofread-preview .prose { max-height: 50vh; overflow: auto; padding: 8px 12px; border-radius: 8px; background: var(--surface); }
 @media (max-width: 680px) { .task-creator { grid-template-columns: 1fr; } .task-creator-actions { grid-column: 1; } }
 .modes {
   display: inline-flex;

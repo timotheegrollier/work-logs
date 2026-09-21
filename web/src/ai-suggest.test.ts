@@ -1,9 +1,13 @@
 import { describe, expect, test, vi, afterEach } from 'vitest';
 import {
   AiError,
+  buildProofreadPrompt,
   buildSuggestPrompt,
+  cleanProofreadMarkdown,
   cleanSuggestionLines,
+  MAX_PROOFREAD_CHARS,
   parseChecklist,
+  proofreadEntry,
   readAiSettings,
   recurringVocabulary,
   saveAiSettings,
@@ -225,5 +229,45 @@ describe('appel', () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed'); }));
     await expect(suggestSubtasks(settings, 'T')).rejects.toBeInstanceOf(AiError);
     await expect(suggestSubtasks(settings, 'T')).rejects.toThrow(/injoignable/);
+  });
+});
+
+describe('mise en page', () => {
+  test('la consigne corrige sans inventer et joint profil, titre et texte', () => {
+    const prompt = buildProofreadPrompt(' Réunion ', 'on a decidé', ' Dev solo ');
+    expect(prompt.user).toBe('Profil : Dev solo\nTitre : Réunion\n\nTexte :\non a decidé');
+    expect(prompt.system).toMatch(/sans rien inventer/);
+    expect(prompt.system).toMatch(/uniquement avec le texte corrigé/);
+    expect(buildProofreadPrompt('T', 'x').user).toBe('Titre : T\n\nTexte :\nx');
+  });
+
+  test('l’enveloppe de code est retirée, le code interne conservé', () => {
+    expect(cleanProofreadMarkdown('```markdown\n## Titre\n- a\n```')).toBe('## Titre\n- a');
+    expect(cleanProofreadMarkdown('  Texte\n\n```js\nx()\n```  ')).toBe('Texte\n\n```js\nx()\n```');
+  });
+
+  test('un appel envoie le texte entier et rend le Markdown corrigé', async () => {
+    const fetch = vi.fn(async () => aiResponse('```md\n## Réunion\n\nOn a décidé.\n```'));
+    vi.stubGlobal('fetch', fetch);
+    const result = await proofreadEntry({ ...settings, profile: 'Dev' }, 'Réunion', '  on a decidé  ');
+    expect(result).toBe('## Réunion\n\nOn a décidé.');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.messages[1].content).toBe('Profil : Dev\nTitre : Réunion\n\nTexte :\non a decidé');
+    expect(body.max_tokens).toBe(1200);
+  });
+
+  test('vide, trop long ou sans clé : aucun appel réseau', async () => {
+    const fetch = vi.fn(async () => aiResponse('x'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(proofreadEntry(settings, 'T', '   ')).rejects.toThrow(/vide/);
+    await expect(proofreadEntry(settings, 'T', 'a'.repeat(MAX_PROOFREAD_CHARS + 1))).rejects.toThrow(/trop long/);
+    await expect(proofreadEntry({ ...settings, key: '' }, 'T', 'texte')).rejects.toThrow('activer la mise en page');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test('réponse réduite à une enveloppe vide : illisible', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse('```\n\n```')));
+    await expect(proofreadEntry(settings, 'T', 'texte')).rejects.toThrow(/illisible/);
   });
 });

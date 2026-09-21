@@ -520,6 +520,53 @@ describe('écrire une entrée', () => {
     expect(screen.queryByRole('button', { name: 'Retirer la suggestion' })).not.toBeInTheDocument();
   });
 
+  test('met en page une entrée Markdown après relecture de la proposition', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('## Réunion\n\nOn a décidé.');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Réunion', content_md: 'on a decidé' }] });
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Mettre en page' }));
+    const proposal = await screen.findByRole('region', { name: 'Mise en page proposée' });
+    expect(within(proposal).getByRole('heading', { name: 'Réunion' })).toBeInTheDocument();
+    const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+    expect(sent).toContain('Titre : Réunion');
+    expect(sent).toContain('on a decidé');
+    // Rien n'est écrit tant que la proposition n'est pas appliquée.
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('on a decidé');
+
+    await user.click(within(proposal).getByRole('button', { name: 'Appliquer la mise en page' }));
+    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('## Réunion\n\nOn a décidé.');
+    expect(screen.queryByRole('region', { name: 'Mise en page proposée' })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(row(api.db, "SELECT content_md FROM entries WHERE id='en_note'").content_md).toBe('## Réunion\n\nOn a décidé.');
+    });
+  });
+
+  test('mise en page ignorée ou dépassée par une frappe : le texte reste intact', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('Corrigé.');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'corige' }] });
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Mettre en page' }));
+    await user.click(await screen.findByRole('button', { name: 'Ignorer' }));
+    expect(screen.queryByRole('region', { name: 'Mise en page proposée' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('corige');
+
+    // Une frappe après la demande : appliquer l'écraserait, on refuse.
+    await user.click(screen.getByRole('button', { name: '✨ Mettre en page' }));
+    await screen.findByRole('region', { name: 'Mise en page proposée' });
+    await user.type(screen.getByLabelText('Contenu en Markdown'), '!');
+    await user.click(screen.getByRole('button', { name: 'Appliquer la mise en page' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('relance-la');
+    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('corige!');
+  });
+
   test('crée une tâche liée depuis un document Google', async () => {
     const user = userEvent.setup();
     seedData(api.db, { entries: [{ id: 'en_google_task', title: 'Contexte Google' }] });
