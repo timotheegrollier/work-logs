@@ -9,6 +9,7 @@ import {
   getWebClientSecret,
   handleRedirectCallback,
   listWebBackups,
+  saveBackupJson,
   setWebClientId,
   setWebClientSecret,
   uploadDriveFile,
@@ -110,6 +111,40 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
 
   const refreshBackups = async () => {
     setBackups(await listWebBackups());
+  };
+
+  const saveBackup = async () => {
+    await run(async () => {
+      const { blob } = await api.exportBackup();
+      const saved = await saveBackupJson(await blob.text());
+      setBackups((current) => [
+        { id: saved.id, name: saved.name, modifiedTime: new Date().toISOString(), size: blob.size },
+        ...current.filter((backup) => backup.id !== saved.id),
+      ]);
+      setMessage(`Sauvegarde enregistrée dans Google Drive : ${saved.name}`);
+    });
+  };
+
+  const importFile = async (file?: File) => {
+    if (!file) return;
+    await run(async () => {
+      let data: unknown;
+      try {
+        data = JSON.parse(await file.text());
+      } catch {
+        throw new Error('Fichier de sauvegarde illisible (JSON attendu).');
+      }
+      const result = await importLocalBackup(data);
+      let fetched = 0;
+      try {
+        fetched = (await fetchMissingDriveAttachments()).fetched;
+      } catch {
+        // Hors-ligne : l'import local est fait, les binaires suivront.
+      }
+      setMessage(`Sauvegarde importée : ${result.entries} entrée(s), ${result.tasks} tâche(s)` +
+        (fetched ? `, ${fetched} fichier(s) récupéré(s).` : '.'));
+      await onRestored?.();
+    });
   };
 
   const refreshFiles = async (token = '') => {
@@ -231,9 +266,17 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
             </div>
           </div>
           <div className="drive-backup-actions">
+            <button type="button" className="primary" disabled={busy} onClick={() => void saveBackup()}>
+              Sauvegarder dans Google Drive
+            </button>
             <button type="button" disabled={busy} onClick={() => void run(refreshBackups)}>
               Actualiser les sauvegardes
             </button>
+            <label className="ghost file-button">
+              Importer un fichier
+              <input type="file" aria-label="Importer une sauvegarde JSON" accept=".json,application/json" disabled={busy}
+                onChange={(e) => { void importFile(e.target.files?.[0]); e.target.value = ''; }} />
+            </label>
           </div>
           {backups.length > 0 ? (
             <ul className="drive-backups-list">

@@ -4,11 +4,16 @@
 > **Lots v0.20.0–v0.23.0 publiés sans retouche de cette fiche** (menu Paramètres,
 > partie centrale repliable, pièces jointes adossées à Drive, archives, URLs PWA
 > en sous-dossier — voir `git log`).
-> **Lot courant (candidat v0.24.0) :** en-tête mobile aéré (Pixel 9a, 412 px),
+> **Lot courant :** aller-retour complet des sauvegardes PWA ↔ Drive ↔ desktop —
+> **Sauvegarder dans Google Drive** depuis la PWA (même fichier canonique
+> `WorkLogs backup.json`, remplacement sinon création) et **Importer un fichier**
+> JSON local ; nom canonique partagé via `backup-format.js`.
+> **Validation :** `./scripts/check.sh` vert : **137 tests API, 221 front,
+> 33 desktop unitaires, 25 scripts, 32 navigateur et 10 desktop e2e**.
+>
+> **Lot précédent (candidat v0.24.0) :** en-tête mobile aéré (Pixel 9a, 412 px),
 > rebasé sur v0.23.0 : marque, recherche, panneaux en trois lignes, cibles 44 px,
 > sans JS ni dépendance.
-> **Validation :** `./scripts/check.sh` vert : **137 tests API, 218 front,
-> 33 desktop unitaires, 25 scripts, 32 navigateur et 10 desktop e2e**.
 >
 > **Lot précédent :** panneaux latéraux repliables (Journal/Tâches, desktop comme
 > PWA, état retenu) pour n'afficher que ce qui sert.

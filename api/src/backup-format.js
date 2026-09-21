@@ -4,6 +4,8 @@ import { validateDocument } from './rich-document.js';
  *  partageable avec le front/PWA qui valide avant d'écrire en local. */
 export const BACKUP_VERSION = 2;
 export const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
+/** Nom du fichier de sauvegarde canonique, réécrit à chaque export (desktop comme PWA). */
+export const BACKUP_NAME = 'WorkLogs backup.json';
 /** Version des fichiers « boîte mobile » (créations PWA à fusionner, lot 4). */
 export const OUTBOX_VERSION = 1;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

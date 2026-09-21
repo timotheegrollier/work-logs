@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoogleDriveWeb } from './GoogleDriveWeb';
 import { api } from '../lib';
@@ -119,5 +119,54 @@ describe('panneau Drive de la PWA', () => {
     await user.click(screen.getByRole('button', { name: 'Ouvrir' }));
     await waitFor(() => expect(open).toHaveBeenCalledWith('d1'));
     expect(onOpen).toHaveBeenCalledWith(opened);
+  });
+
+  test('sauvegarder envoie la base complète et actualise la liste', async () => {
+    const user = userEvent.setup();
+    const { disconnectWeb } = await import('../store/google-web');
+    disconnectWeb();
+    localStorage.setItem('worklogs-google-web-client', CLIENT);
+    localStorage.setItem('worklogs-google-web-tokens', JSON.stringify({ access_token: 'acces', expires_at: Date.now() + 3600_000 }));
+    await localApi.createEntry({ title: 'Note locale' });
+    vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [] });
+    vi.spyOn(api, 'exportBackup').mockResolvedValue({
+      filename: 'worklogs.json',
+      blob: new Blob([JSON.stringify({ version: 2, note: 'locale' })], { type: 'application/json' }),
+    });
+    const uploaded: string[] = [];
+    vi.stubGlobal('fetch', async (url: unknown, init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('/upload/')) {
+        uploaded.push(await ((init?.body as Blob).text()));
+        return Response.json({ id: 'canon', name: 'WorkLogs backup.json' });
+      }
+      return Response.json({ files: [{ id: 'canon', name: 'WorkLogs backup.json', mimeType: 'application/json' }] });
+    });
+    render(<GoogleDriveWeb onOpen={() => {}} />);
+    await user.click(screen.getByRole('button', { name: 'Sauvegarder dans Google Drive' }));
+    expect(await screen.findByText(/Sauvegarde enregistrée dans Google Drive/)).toBeInTheDocument();
+    expect(uploaded).toHaveLength(1);
+    expect(uploaded[0]).toContain('"worklogs_type":"backup"');
+    expect(uploaded[0]).toContain('locale');
+    expect(await screen.findByText('WorkLogs backup.json')).toBeInTheDocument();
+  });
+
+  test('importer un fichier JSON restaure la base, fichier illisible refusé', async () => {
+    const user = userEvent.setup();
+    void user;
+    localStorage.setItem('worklogs-google-web-client', CLIENT);
+    localStorage.setItem('worklogs-google-web-tokens', JSON.stringify({ access_token: 'acces', expires_at: Date.now() + 3600_000 }));
+    vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [] });
+    const onRestored = vi.fn();
+    render(<GoogleDriveWeb onOpen={() => {}} onRestored={onRestored} />);
+    // L'input est masqué (display:none) : on renseigne les fichiers directement.
+    const input = await screen.findByLabelText('Importer une sauvegarde JSON');
+    fireEvent.change(input, { target: { files: [new File([JSON.stringify(BACKUP)], 'sauvegarde.json', { type: 'application/json' })] } });
+    expect(await screen.findByText(/Sauvegarde importée : 1 entrée\(s\), 0 tâche\(s\)/)).toBeInTheDocument();
+    expect(onRestored).toHaveBeenCalled();
+    expect((await localApi.state()).entries.map((e) => e.title)).toContain('Devis distant');
+
+    fireEvent.change(input, { target: { files: [new File(['{pas du json'], 'cassé.json', { type: 'application/json' })] } });
+    expect(await screen.findByRole('alert')).toHaveTextContent('illisible');
   });
 });

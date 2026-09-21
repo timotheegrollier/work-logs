@@ -1,6 +1,6 @@
 import { ApiError, type GoogleBackup } from '../lib';
 // @ts-expect-error — backup-format.js est du JavaScript pur partagé avec l'API.
-import { OUTBOX_VERSION } from '../../../api/src/backup-format.js';
+import { BACKUP_NAME, BACKUP_VERSION, MAX_BACKUP_BYTES, OUTBOX_VERSION } from '../../../api/src/backup-format.js';
 
 /**
  * Connexion directe à Google depuis le navigateur (PWA, sans serveur) : OAuth
@@ -14,7 +14,6 @@ import { OUTBOX_VERSION } from '../../../api/src/backup-format.js';
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
-const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 const CLIENT_KEY = 'worklogs-google-web-client';
 const CLIENT_SECRET_KEY = 'worklogs-google-web-secret';
 const TOKENS_KEY = 'worklogs-google-web-tokens';
@@ -370,4 +369,34 @@ export async function uploadOutbox(payload: { version: number }): Promise<{ id: 
     data: new Blob([JSON.stringify(payload)], { type: 'application/json' }),
     appProperties: { worklogs_type: 'outbox', worklogs_version: String(OUTBOX_VERSION) },
   });
+}
+
+/**
+ * Envoie une sauvegarde complète (JSON v2) : comme le desktop, elle réécrit le
+ * fichier canonique `WorkLogs backup.json` (PATCH) ou le crée (POST), pour que
+ * le PC la retrouve dans ses sauvegardes et puisse la restaurer.
+ */
+export async function saveBackupJson(jsonText: string): Promise<{ id: string; name: string }> {
+  if (new Blob([jsonText]).size > MAX_BACKUP_BYTES) fail('La sauvegarde est trop volumineuse (20 Mo max).');
+  const existing = await listWebBackups();
+  const canonical = existing.find((file) => file.name === BACKUP_NAME) || existing[0];
+  const boundary = `worklogs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const metadata = JSON.stringify({ name: BACKUP_NAME, mimeType: 'application/json',
+    appProperties: { worklogs_type: 'backup', worklogs_version: String(BACKUP_VERSION) } });
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`,
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
+    jsonText,
+    `\r\n--${boundary}--\r\n`,
+  ]);
+  const target = canonical?.id
+    ? `/upload/drive/v3/files/${encodeURIComponent(canonical.id)}?uploadType=multipart&supportsAllDrives=true&fields=id,name`
+    : '/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name';
+  const result = (await webGoogleRequest(target, {
+    method: canonical?.id ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body,
+  })) as { id?: string; name?: string };
+  const id = result?.id ?? fail('Google n’a pas confirmé l’enregistrement de la sauvegarde.');
+  return { id, name: result?.name || BACKUP_NAME };
 }

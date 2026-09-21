@@ -213,4 +213,30 @@ describe('appels Drive', () => {
     expect(sent.id).toBe('o1');
     expect(sent.name).toMatch(/^WorkLogs outbox .*\.json$/);
   });
+
+  test('sauvegarde canonique : remplace le fichier existant, sinon crée', async () => {
+    const { saveBackupJson } = await googleWeb();
+    await connected();
+    const calls = stubFetch(async (url, init) => {
+      if (url.includes('/upload/')) {
+        const raw = await ((init?.body as Blob).text());
+        expect(raw).toContain('"worklogs_type":"backup"');
+        expect(raw).toContain('"version":2');
+        return jsonResponse({ id: 'canon', name: 'WorkLogs backup.json' });
+      }
+      return jsonResponse({ files: [{ id: 'canon', name: 'WorkLogs backup.json', mimeType: 'application/json' }] });
+    });
+    expect(await saveBackupJson(JSON.stringify({ version: 2 }))).toEqual({ id: 'canon', name: 'WorkLogs backup.json' });
+    const update = calls.find((c) => c.url.includes('/upload/'));
+    expect(update?.url).toContain('/upload/drive/v3/files/canon?');
+    expect(update?.init?.method).toBe('PATCH');
+
+    const created = stubFetch(async (url) => {
+      if (url.includes('/upload/')) return jsonResponse({ id: 'nouveau', name: 'WorkLogs backup.json' });
+      return jsonResponse({ files: [] });
+    });
+    expect(await saveBackupJson(JSON.stringify({ version: 2 }))).toEqual({ id: 'nouveau', name: 'WorkLogs backup.json' });
+    expect(created.find((c) => c.url.includes('/upload/'))?.init?.method).toBe('POST');
+    await expect(saveBackupJson('x'.repeat(21 * 1024 * 1024))).rejects.toThrow('trop volumineuse');
+  });
 });

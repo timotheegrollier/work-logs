@@ -1,7 +1,7 @@
 import { nowISO } from './db.js';
 import { decodeEntry } from './rich-document.js';
 import { BACKUP_VERSION, validateBackup } from './backup-format.js';
-export { BACKUP_VERSION, MAX_BACKUP_BYTES, validateBackup } from './backup-format.js';
+export { BACKUP_NAME, BACKUP_VERSION, MAX_BACKUP_BYTES, validateBackup } from './backup-format.js';
 
 /** Le format commun au téléchargement local et à la sauvegarde Drive. */
 export function buildBackup(db) {

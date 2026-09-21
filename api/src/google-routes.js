@@ -5,7 +5,7 @@ import { decodeEntry, documentText } from './rich-document.js';
 import { buildGoogleUpdate, documentBody, documentTabs, selectDocumentTab } from './google-document.js';
 import { mergeGoogleChanges } from './google-merge.js';
 import { buildPreservingUpdate, googlePreservedCount, importGoogleDocument as googleToDocument } from './google-preserve.js';
-import { buildBackup, MAX_BACKUP_BYTES, restoreBackup, validateBackup } from './backup.js';
+import { buildBackup, BACKUP_NAME, MAX_BACKUP_BYTES, restoreBackup, validateBackup } from './backup.js';
 import { validateOutbox } from './backup-format.js';
 
 const blankSource = { body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } };
@@ -15,7 +15,6 @@ const backupInfo = (file) => ({
   modifiedTime: file.modifiedTime || '',
   size: file.size === undefined ? null : Number(file.size),
 });
-const BACKUP_NAME = 'WorkLogs backup.json';
 const backupBoundary = () => `worklogs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 const multipartBackup = (name, payload) => {
   const boundary = backupBoundary();

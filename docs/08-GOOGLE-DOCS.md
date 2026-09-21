@@ -248,7 +248,9 @@ sans elle, les données restent simplement sur l'appareil.
 2. Origines JavaScript autorisées : l'URL de la PWA
    (`https://timotheegrollier.github.io`), plus `http://localhost:8411` pour les essais en dev.
 3. URI de redirection autorisés : `https://timotheegrollier.github.io/work-logs/app/`
-   (et `http://localhost:8411/` en dev). Aucun secret à copier : client public + PKCE.
+   (et `http://localhost:8411/` en dev). Copier aussi le **secret client** (fiche du
+   client) : un client « Web » est confidentiel, Google refuse l'échange du code
+   sans lui.
 4. Si le projet est en mode test, ajouter ton compte Gmail aux comptes de test.
 5. Ouvrir la PWA, **Gérer Google Drive**, coller l'identifiant client
    (`…apps.googleusercontent.com`) **et le secret client** (fiche du client dans
@@ -263,6 +265,11 @@ seul l'éditeur Google natif intégré reste réservé au desktop (un navigateur
 peut pas embarquer la page Google, qui refuse le framing : sur mobile, « ouvre
 cet onglet dans Google Docs » bascule vers le navigateur ou l'appli Docs, puis
 **Actualiser** relit les changements).
+Dans les deux sens en version complète : **Sauvegarder dans Google Drive**
+depuis la PWA réécrit le même fichier canonique `WorkLogs backup.json` que le
+desktop (remplacement, sinon création), que le PC retrouve dans ses sauvegardes
+et peut restaurer ; **Importer un fichier** charge un JSON local (export du PC
+ou d'un autre appareil) sans passer par Drive.
 Les pièces jointes du PC n'ont pas de binaire sur le téléphone : leurs métadonnées
 sont conservées et leurs liens répondent « fichier introuvable » tant que la photo
 n'a pas été renvoyée depuis le mobile.
