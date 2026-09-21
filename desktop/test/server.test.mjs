@@ -23,6 +23,12 @@ test('serveur desktop privé, persistant et fermé avec l’application', async 
     });
     assert.equal(created.status, 201);
     assert.match(created.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+    // Le renderer appelle l'endpoint IA en direct : la CSP doit le laisser passer,
+    // sans ouvrir connect-src au-delà de l'hôte par défaut.
+    assert.match(
+      created.headers.get('content-security-policy'),
+      /connect-src 'self' https:\/\/generativelanguage\.googleapis\.com/
+    );
     const entry = await created.json();
     const oldOrigin = server.origin;
     const oldToken = server.token;

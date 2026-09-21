@@ -460,6 +460,14 @@ Défaut local non versionné (`.env.local` ignoré) pour les essais, collage en
 Paramètres en prod. Les documents riches n'ont pas le bouton en v1 : leurs
 cases demanderaient une transaction ProseMirror dédiée, pas un pis-aller.
 
+**La CSP desktop doit laisser passer l'hôte IA.** Le renderer appelle l'endpoint
+en direct, mais le document est servi par le serveur local (`desktop/server.mjs`,
+relayed tel quel par le protocole `worklogs://`) : `connect-src 'self'` coupait
+l'appel et Suggérer échouait en « IA injoignable ». L'allowlist reste limitée à
+`https://generativelanguage.googleapis.com` (verrouillé par test) : un endpoint
+personnalisé reste inutilisable côté desktop — c'est le prix assumé pour ne pas
+ouvrir `connect-src` en grand et garder la garde anti-exfiltration.
+
 ## 16. L'en-tête mobile se réorganise, sans hamburger — 2026-09-18
 
 **Le besoin.** Sur un Pixel 9a (412 px), la barre entassait logo, version, recherche,
