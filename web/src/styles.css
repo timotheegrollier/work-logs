@@ -871,6 +871,17 @@ button:disabled {
   margin-right: 0.5em;
   accent-color: var(--accent);
 }
+/* Les cases cliquables du mode Lire gardent la taille du doigt et montrent
+   qu'on peut les cocher ; les cases inertes (mode Écrire, relecture)
+   restent grisées comme avant. */
+.prose li input[type='checkbox']:not([disabled]) {
+  cursor: pointer;
+  width: 1.05em;
+  height: 1.05em;
+}
+.prose li input[type='checkbox'][disabled] {
+  cursor: default;
+}
 /* `- [ ] …` : marked rend un <li> avec une case. Sans ça, on aurait la puce
    ET la case côte à côte. */
 .prose li:has(> input[type='checkbox']) {

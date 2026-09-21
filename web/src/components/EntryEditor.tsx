@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project, type Status } from '../lib';
 import { parseChecklist, proofreadEntry, readAiSettings, suggestSubtasks } from '../ai-suggest';
-import { renderMarkdown } from '../markdown';
+import { renderMarkdown, toggleChecklistItem } from '../markdown';
 import { Autosave } from '../autosave';
 import { RichEditor } from './RichEditor';
 import { DocumentTabs } from './DocumentTabs';
@@ -95,8 +95,31 @@ export function EntryEditor({
 
   // L'aperçu Markdown (marked + DOMPurify) est le rendu le plus coûteux :
   // on ne le recalcule qu'à contenu changeant, pas à chaque changement
-  // d'état de sauvegarde qui re-rend l'éditeur.
-  const previewHtml = useMemo(() => renderMarkdown(draft.content_md), [draft.content_md]);
+  // d'état de sauvegarde qui re-rend l'éditeur. En mode Lire, les cases à
+  // cocher restent actives : `marked` les rend `disabled`, on retire ce seul
+  // attribut. En mode Écrire, le textearea fait foi et les cases restent
+  // inertes, comme l'aperçu de relecture IA.
+  const previewHtml = useMemo(
+    () => renderMarkdown(draft.content_md, { interactiveCheckboxes: !writing && !draft.content_json }),
+    [draft.content_md, writing, draft.content_json],
+  );
+
+  // Cocher une case en mode Lire inverse le statut dans le Markdown, qui est
+  // enregistré comme une frappe : les cases du HTML rendu et celles du texte
+  // restent synchronisées par le re-rendu. `onClick` sur l'article (et non
+  // `onChange`) : React ne fait pas remonter le `change` synthétique depuis
+  // un enfant injecté via `dangerouslySetInnerHTML`, alors que le clic
+  // remonte. `preventDefault` évite la bascule visuelle du DOM avant le
+  // re-rendu ; Espace au clavier déclenche aussi un clic sur une case.
+  const onPreviewChecklistClick = (e: React.MouseEvent<HTMLElement>) => {
+    if (writing || draft.content_json || syncing) return;
+    const target = e.target as HTMLElement;
+    if (target.tagName !== 'INPUT' || (target as HTMLInputElement).type !== 'checkbox') return;
+    e.preventDefault();
+    const index = Array.from(e.currentTarget.querySelectorAll('input[type="checkbox"]')).indexOf(target as HTMLInputElement);
+    if (index < 0) return;
+    update({ content_md: toggleChecklistItem(draftRef.current.content_md, index) });
+  };
 
   const persist = async () => {
     await autosave.flush().catch(() => {});
@@ -536,6 +559,7 @@ export function EntryEditor({
         <article
           className="prose"
           aria-label="Aperçu"
+          onClick={onPreviewChecklistClick}
           dangerouslySetInnerHTML={{ __html: previewHtml }}
         />
       </div>}

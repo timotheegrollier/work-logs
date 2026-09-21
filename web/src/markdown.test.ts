@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { renderMarkdown } from './markdown';
+import { renderMarkdown, toggleChecklistItem } from './markdown';
 
 describe('rendu Markdown', () => {
   test('produit les titres et le gras', () => {
@@ -52,5 +52,42 @@ describe('rendu Markdown', () => {
 
   test('rend une chaîne vide sans casser', () => {
     expect(renderMarkdown('')).toBe('');
+  });
+
+  test('les cases restent inertes par défaut', () => {
+    const html = renderMarkdown('- [ ] à faire\n- [x] fait');
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain('disabled');
+  });
+
+  test('le mode Lire rend des cases cliquables, sans autre changement', () => {
+    const html = renderMarkdown('- [ ] à faire\n- [x] fait', { interactiveCheckboxes: true });
+    expect(html).toContain('type="checkbox"');
+    expect(html).not.toContain('disabled');
+    expect(html).toContain('checked');
+  });
+
+  test('les autres attributs survivent au retrait de `disabled`', () => {
+    const html = renderMarkdown('- [x] fait', { interactiveCheckboxes: true });
+    expect(html).toContain('checked');
+    expect(html).not.toMatch(/disabled/i);
+  });
+});
+
+describe('toggleChecklistItem', () => {
+  test('coche la Nième case en gardant le texte intact', () => {
+    expect(toggleChecklistItem('- [ ] Relire\n- [ ] Payer', 1)).toBe('- [ ] Relire\n- [x] Payer');
+  });
+
+  test('décoche une case déjà cochée, quelle que soit la casse', () => {
+    expect(toggleChecklistItem('- [X] Payé', 0)).toBe('- [ ] Payé');
+  });
+
+  test('ignore les lignes sans case et les index inconnus', () => {
+    const source = 'Intro.\n- Simple puce\n- [ ] Garder';
+    expect(toggleChecklistItem(source, 0)).toBe('Intro.\n- Simple puce\n- [x] Garder');
+    expect(toggleChecklistItem(source, 5)).toBe(source);
+    expect(toggleChecklistItem(source, -1)).toBe(source);
+    expect(toggleChecklistItem('Sans case', 0)).toBe('Sans case');
   });
 });

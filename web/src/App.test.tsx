@@ -290,6 +290,32 @@ describe('écrire une entrée', () => {
     expect(within(editor()).getByRole('heading', { name: 'Titre' })).toBeInTheDocument();
   });
 
+  test('coche une case en mode Lire et enregistre le Markdown', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Note', content_md: '- [ ] Relire\n- [ ] Payer' }] });
+    render(<App />);
+
+    const preview = await screen.findByRole('article', { name: 'Aperçu' });
+    const boxes = within(preview).getAllByRole('checkbox');
+    expect(boxes).toHaveLength(2);
+    // Mode Lire par défaut : les cases sont actives, pas inertes.
+    for (const box of boxes) expect(box).toBeEnabled();
+
+    await user.click(boxes[1]);
+    await waitFor(() => {
+      expect(row(api.db, 'SELECT content_md AS v FROM entries WHERE id=?', 'en_1').v)
+        .toBe('- [ ] Relire\n- [x] Payer');
+    });
+    // Le re-rendu suit le Markdown : la case cochée reste cochée.
+    expect(within(await screen.findByRole('article', { name: 'Aperçu' })).getAllByRole('checkbox')[1])
+      .toBeChecked();
+
+    // En mode Écrire, le textarea fait foi : les cases d'aperçu restent inertes.
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    const writePreview = within(editor()).getByRole('article', { name: 'Aperçu' });
+    for (const box of within(writePreview).getAllByRole('checkbox')) expect(box).toBeDisabled();
+  });
+
   test('change la date et le projet d’une entrée', async () => {
     const user = userEvent.setup();
     seedData(api.db, {
