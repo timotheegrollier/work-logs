@@ -1319,9 +1319,7 @@ describe('espace Google Docs', () => {
 describe('panneau Procédures', () => {
   async function openPanel(user: { click: (element: Element) => Promise<void> }) {
     await user.click(screen.getByRole('button', { name: 'Procédures' }));
-    const panel = await screen.findByRole('group', { name: 'Procédures du projet' });
-    await user.click(within(panel).getByText('Procédures', { selector: 'summary' }));
-    return panel;
+    return screen.findByRole('region', { name: 'Procédures du projet' });
   }
   test('rassemble procédures et pièces jointes du projet filtré, ouvre au clic', async () => {
     const user = userEvent.setup();
@@ -1343,6 +1341,10 @@ describe('panneau Procédures', () => {
     expect(within(panel).getByRole('link', { name: 'devis.pdf' })).toHaveAttribute('href', expect.stringContaining('/api/files/'));
     await user.click(within(panel).getByText('Dallage'));
     expect(await screen.findByLabelText('Titre de l’entrée')).toHaveValue('Dallage');
+    // Le journal ne liste que les notes : les procédures ont leur sidebar.
+    const journal = screen.getByRole('region', { name: 'Journal' });
+    expect(within(journal).getByText('Pense-bête')).toBeInTheDocument();
+    expect(within(journal).queryByText('Dallage')).not.toBeInTheDocument();
   });
 
   test('crée une procédure riche dans le projet filtré', async () => {
@@ -1367,7 +1369,7 @@ describe('panneau Procédures', () => {
     const toggle = screen.getByRole('button', { name: 'Procédures' });
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(toggle);
-    await screen.findByRole('group', { name: 'Procédures du projet' });
+    await screen.findByRole('region', { name: 'Procédures du projet' });
     expect(document.querySelector('.columns')).toHaveClass('show-procedures');
     expect(globalThis.localStorage.getItem('worklogs-show-procedures')).toBe('1');
     fireEvent.click(toggle);

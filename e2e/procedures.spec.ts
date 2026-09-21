@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const panel = (page) => page.getByRole('group', { name: 'Procédures du projet' });
+const panel = (page) => page.getByRole('region', { name: 'Procédures du projet' });
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -12,13 +12,14 @@ test('procédures du projet : création, pièce jointe rassemblée, ouverture', 
   await filters.getByRole('button', { name: /Pro/ }).click();
 
   await page.getByRole('button', { name: 'Procédures', exact: true }).click();
-  await panel(page).locator('summary').click();
   await page.getByRole('button', { name: 'Nouvelle procédure' }).click();
   const title = page.getByLabel('Titre de l’entrée');
   await expect(title).toHaveValue('Sans titre');
   await title.fill('Dallage terrasse');
   await expect(page.getByText('Enregistré')).toBeVisible();
   await expect(panel(page).getByText('Dallage terrasse')).toBeVisible();
+  // Une procédure n'apparaît jamais dans le journal.
+  await expect(page.getByRole('region', { name: 'Journal' }).getByText('Dallage terrasse')).toBeHidden();
 
   await panel(page).getByLabel('Joindre un fichier à Dallage terrasse').setInputFiles({
     name: 'plan.pdf',
@@ -48,7 +49,6 @@ test('sidebar Procédures : repliée, persistée, et envoi direct de fichier', a
 
   const filters = page.getByRole('group', { name: 'Filtrer par projet' });
   await filters.getByRole('button', { name: /Pro/ }).click();
-  await panel(page).locator('summary').click();
   await page.getByRole('button', { name: 'Nouvelle procédure' }).click();
   const title = page.getByLabel('Titre de l’entrée');
   await expect(title).toHaveValue('Sans titre');

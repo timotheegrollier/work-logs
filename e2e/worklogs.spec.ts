@@ -138,7 +138,7 @@ test('cocher une tâche la barre et la range dans Terminé', async ({ page }) =>
 test('joindre un fichier à une entrée puis le récupérer', async ({ page }) => {
   await newEntry(page, 'Avec pièce jointe');
 
-  await page.getByLabel('Joindre un fichier').setInputFiles({
+  await page.getByLabel('Joindre un fichier', { exact: true }).setInputFiles({
     name: 'devis.txt',
     mimeType: 'text/plain',
     buffer: Buffer.from('montant : 1200 euros'),
@@ -159,7 +159,7 @@ test('joindre un fichier à une entrée puis le récupérer', async ({ page }) =
 test('affiche un fichier joint directement dans l’app', async ({ page }) => {
   await newEntry(page, 'Aperçu intégré');
 
-  await page.getByLabel('Joindre un fichier').setInputFiles({
+  await page.getByLabel('Joindre un fichier', { exact: true }).setInputFiles({
     name: 'notes.md',
     mimeType: 'text/markdown',
     buffer: Buffer.from('# Compte rendu\n\nDeux points à retenir'),

@@ -174,6 +174,9 @@ export default function App() {
     reload();
   };
 
+  // Les procédures vivent dans leur propre sidebar, jamais dans le journal ;
+  // archivées, elles restent dans les archives du journal pour être restaurées.
+  const journalEntries = (state?.entries ?? []).filter((e) => e.kind !== 'procedure' || e.archived);
   const createProcedure = async () => {
     const created = await api.createEntry({
       title: 'Sans titre',
@@ -402,7 +405,7 @@ export default function App() {
       <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showDocumentTasks ? ' with-tasks' : '') + (showLeft ? '' : ' hide-left') + (showCenter ? '' : ' hide-center') + (showRight ? '' : ' hide-right') + (showProcedures ? ' show-procedures' : '')}>
         <aside id="workspace-journal" className="left no-print">
           <EntryList
-            entries={state?.entries ?? []}
+            entries={journalEntries}
             projects={state?.projects ?? []}
             selectedId={selectedId}
             onSelect={(id) => {

@@ -31,6 +31,32 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-09-21 (2) — Procédures hors du journal, sidebar dépliée
+
+- Demande : les procédures ne doivent pas être dans la sidebar des entrées.
+  Le journal (`EntryList`) ne reçoit plus que les notes ; une procédure
+  archivée reste dans ses archives pour être restaurable (la sidebar
+  Procédures n'affiche que les actives).
+- La sidebar Procédures n'est plus un `<details>` replié à déplier : panneau
+  toujours ouvert (`section` « Procédures du projet », titre + compteur +
+  projet), masquable par son bouton d'en-tête comme Journal/Tâches.
+- Tests : journal sans procédure (front + e2e). Contenu désormais monté même
+  masqué → sélecteurs `Joindre un fichier` passés en `exact` (e2e web et
+  desktop). `check.sh` vert.
+
+## Lot du 2026-09-21 — « ✨ Mettre en page » : correction IA d'une entrée Markdown
+
+- Bouton à côté de « ✨ Suggérer des sous-tâches » (entrées Markdown seules,
+  documents riches exclus). Un clic = un appel au service IA des Paramètres,
+  avec profil, titre et texte entier (plafond `MAX_PROOFREAD_CHARS` = 12 000).
+- **Jamais d'écrasement aveugle** : la version corrigée s'affiche dans
+  « Mise en page proposée » ; « Appliquer » remplace le texte, « Ignorer » le
+  laisse. Si le texte a changé pendant l'appel, Appliquer refuse et demande
+  de relancer (sinon les frappes seraient perdues).
+- `ai-suggest.ts` : transport commun `postChatCompletions` (suggestions et
+  mise en page), messages d'erreur inchangés. Tests unitaires + deux parcours
+  dans `App.test.tsx`. Aucune dépendance. `check.sh` vert (233 tests front).
+
 ## Lot du 2026-09-19 (7) — Suggérer remplace, fini le bouton Régénérer
 
 - Correctif UX post-0.29.0 (qui embarquait un « ↻ Régénérer » séparé) :

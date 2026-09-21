@@ -565,41 +565,31 @@ button:disabled {
 .entry.is-archived {
   opacity: 0.72;
 }
-/* Panneau Procédures : mêmes codes que le journal et les archives. */
+/* Sidebar Procédures : panneau à part entière, déplié comme le journal. */
 .procedures {
-  margin-top: 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
+  display: grid;
+  gap: 10px;
+  align-content: start;
 }
-.procedures summary {
+.procedures-head {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 9px 12px;
+  margin: 0;
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
-  cursor: pointer;
-  border-radius: 10px;
-  list-style: none;
 }
-.procedures summary::-webkit-details-marker {
-  display: none;
-}
-.procedures summary:hover {
-  color: var(--text);
-}
-.procedures summary .count {
+.procedures-head .count {
   font-variant-numeric: tabular-nums;
   background: var(--surface-2);
   border-radius: 99px;
   padding: 0 7px;
   letter-spacing: 0;
 }
-.procedures summary .procedure-project {
+.procedures-head .procedure-project {
   margin-left: auto;
   font-weight: 600;
   text-transform: none;
@@ -609,21 +599,16 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.procedures[open] summary {
-  border-bottom: 1px solid var(--line);
-  border-radius: 10px 10px 0 0;
-}
 .procedures .new-entry {
-  margin: 10px 10px 0;
-  width: calc(100% - 20px);
+  width: 100%;
 }
 .procedures .empty {
-  margin: 10px 12px;
+  margin: 0;
 }
 .procedure-items {
   list-style: none;
   margin: 0;
-  padding: 10px;
+  padding: 0;
   display: grid;
   gap: 8px;
 }
@@ -1645,8 +1630,7 @@ button:disabled {
   /* Intitulés des cartes : mêmes mots que les boutons de l'en-tête. */
   .left::before,
   .center::before,
-  .right::before,
-  .procedures-bar::before {
+  .right::before {
     display: block;
     margin: 0 0 10px;
     font-size: 11px;
@@ -1658,7 +1642,7 @@ button:disabled {
   .left::before { content: 'Journal'; }
   .center::before { content: 'Écriture'; }
   .right::before { content: 'Tâches'; }
-  .procedures-bar::before { content: 'Procédures'; }
+  /* La sidebar Procédures porte déjà son titre (compteur + projet). */
   .editor {
     padding: 16px;
   }

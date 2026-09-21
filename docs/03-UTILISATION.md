@@ -160,8 +160,10 @@ mêmes fichiers, mêmes sauvegardes), simplement aiguillé ici par son type.
 **Nouvelle procédure** en crée une déjà rattachée au projet filtré ; chaque ligne
 a son **＋ Fichier** pour joindre sans ouvrir l'éditeur ; cliquer son titre
 l'ouvre au centre, cliquer un fichier le télécharge. Sans filtre, toutes les
-procédures s'y retrouvent, pastille projet à l'appui. Comme les autres panneaux,
-la sidebar se replie et l'état est retenu.
+procédures s'y retrouvent, pastille projet à l'appui. Les procédures ne
+figurent **pas** dans le journal (seulement dans ses archives une fois archivées,
+pour pouvoir les restaurer). Comme les autres panneaux, la sidebar est toujours
+dépliée quand elle est affichée, se masque par son bouton et l'état est retenu.
 
 ## Retrouver
 

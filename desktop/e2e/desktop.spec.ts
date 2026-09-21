@@ -134,7 +134,7 @@ test('document riche : fermeture, reprise et panneau Drive dans Electron', async
 });
 
 test('fichiers joints et export JSON fonctionnent dans l’application empaquetée', async () => {
-  await page.getByLabel('Joindre un fichier').setInputFiles({ name: 'pièce.txt', mimeType: 'text/plain', buffer: Buffer.from('contenu desktop') });
+  await page.getByLabel('Joindre un fichier', { exact: true }).setInputFiles({ name: 'pièce.txt', mimeType: 'text/plain', buffer: Buffer.from('contenu desktop') });
   await expect(page.getByRole('link', { name: 'pièce.txt' })).toBeVisible();
 
   const fileTarget = path.join(directory, 'pièce.txt');

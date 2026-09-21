@@ -26,7 +26,6 @@ export function ProcedureList({
   onCreate: () => void;
   onChanged: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
   const colors = new Map(projects.map((p) => [p.id, p.color]));
   const project = projects.find((p) => p.id === projectId);
@@ -47,85 +46,81 @@ export function ProcedureList({
   };
 
   return (
-    <details className="procedures" role="group" aria-label="Procédures du projet" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary>
+    <section className="procedures" aria-label="Procédures du projet">
+      <h2 className="procedures-head">
         Procédures{' '}
         <span className="count" title={`${procedures.length} procédure${procedures.length > 1 ? 's' : ''}`}>
           {procedures.length}
         </span>
         {project && <span className="procedure-project">{project.name}</span>}
-      </summary>
-      {open && (
-        <>
-          <button className="new-entry" onClick={onCreate}>
-            <span aria-hidden="true">＋</span> Nouvelle procédure
-          </button>
-          {procedures.length === 0 && (
-            <p className="empty">
-              {projectId ? `Aucune procédure pour ${project?.name ?? 'ce projet'}.` : 'Aucune procédure pour l’instant.'}
-            </p>
-          )}
-          <ol className="procedure-items">
-            {procedures.map((entry) => {
-              const entryFiles = files.filter((file) => file.entry_id === entry.id);
-              return (
-                <li key={entry.id}>
-                  <button
-                    className={'entry' + (entry.id === selectedId ? ' is-selected' : '')}
-                    aria-current={entry.id === selectedId ? 'true' : undefined}
-                    onClick={() => onSelect(entry.id)}
-                  >
-                    <span className="entry-title">
-                      {entry.project_id && (
-                        <span
-                          className="dot"
-                          style={{ background: colors.get(entry.project_id) }}
-                          aria-hidden="true"
-                        />
-                      )}
-                      {entry.title}
-                    </span>
-                    <span className="entry-excerpt">
-                      {plainText(entry.excerpt) || 'Vide'}
-                      {entry.attachments > 0 && (
-                        <span className="clip" title={`${entry.attachments} fichier(s)`}>
-                          {' '}📎 {entry.attachments}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                  <div className="procedure-row-actions">
-                    <label className="ghost file-button">
-                      ＋ Fichier
-                      <input
-                        type="file"
-                        multiple
-                        aria-label={`Joindre un fichier à ${entry.title}`}
-                        onChange={(e) => {
-                          void attach(entry.id, e.target.files);
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
-                  </div>
-                  {entryFiles.length > 0 && (
-                    <ul className="procedure-files" aria-label={`Pièces jointes de ${entry.title}`}>
-                      {entryFiles.map((file) => (
-                        <li key={file.id}>
-                          <a href={api.fileUrl(file.stored)} download={file.filename}>
-                            {file.filename}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        </>
+      </h2>
+      <button className="new-entry" onClick={onCreate}>
+        <span aria-hidden="true">＋</span> Nouvelle procédure
+      </button>
+      {procedures.length === 0 && (
+        <p className="empty">
+          {projectId ? `Aucune procédure pour ${project?.name ?? 'ce projet'}.` : 'Aucune procédure pour l’instant.'}
+        </p>
       )}
+      <ol className="procedure-items">
+        {procedures.map((entry) => {
+          const entryFiles = files.filter((file) => file.entry_id === entry.id);
+          return (
+            <li key={entry.id}>
+              <button
+                className={'entry' + (entry.id === selectedId ? ' is-selected' : '')}
+                aria-current={entry.id === selectedId ? 'true' : undefined}
+                onClick={() => onSelect(entry.id)}
+              >
+                <span className="entry-title">
+                  {entry.project_id && (
+                    <span
+                      className="dot"
+                      style={{ background: colors.get(entry.project_id) }}
+                      aria-hidden="true"
+                    />
+                  )}
+                  {entry.title}
+                </span>
+                <span className="entry-excerpt">
+                  {plainText(entry.excerpt) || 'Vide'}
+                  {entry.attachments > 0 && (
+                    <span className="clip" title={`${entry.attachments} fichier(s)`}>
+                      {' '}📎 {entry.attachments}
+                    </span>
+                  )}
+                </span>
+              </button>
+              <div className="procedure-row-actions">
+                <label className="ghost file-button">
+                  ＋ Fichier
+                  <input
+                    type="file"
+                    multiple
+                    aria-label={`Joindre un fichier à ${entry.title}`}
+                    onChange={(e) => {
+                      void attach(entry.id, e.target.files);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              </div>
+              {entryFiles.length > 0 && (
+                <ul className="procedure-files" aria-label={`Pièces jointes de ${entry.title}`}>
+                  {entryFiles.map((file) => (
+                    <li key={file.id}>
+                      <a href={api.fileUrl(file.stored)} download={file.filename}>
+                        {file.filename}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ol>
       {error && <p role="alert" className="error">{error}</p>}
-    </details>
+    </section>
   );
 }
