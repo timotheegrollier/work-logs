@@ -12,7 +12,7 @@ beforeEach(() => {
 
 const connected = { available: true, configured: true, connected: true, pending: false, error: '', selectedIds: [] };
 const entry: Entry = { id: 'en_google', title: 'Document partagé', content_md: 'Original', content_json: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Original' }] }] },
-  entry_date: '2026-09-14', project_id: null, archived: 0, created_at: '', updated_at: '', attachments: [], google_sync: { document_id: 'doc-1', synced_at: '', dirty: true } };
+  entry_date: '2026-09-14', project_id: null, archived: 0, kind: 'note', created_at: '', updated_at: '', attachments: [], google_sync: { document_id: 'doc-1', synced_at: '', dirty: true } };
 
 function integratedBridge() {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });

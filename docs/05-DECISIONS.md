@@ -479,3 +479,22 @@ contrôles qui tiennent en trois lignes une fois compactés.
 l'absorbe. Chaque icône mobile demande son `aria-label`, verrouillé par test.
 Rouvrir si l'en-tête accueille un neuvième contrôle : ce sera le signe qu'il faut
 sortir une action de la barre, pas d'y ajouter un tiroir.
+
+## 18. Les procédures sont des entrées, pas une table — 2026-09-21
+
+**Le besoin.** Rassembler par projet les modes d'emploi, documents et pièces jointes,
+sans multiplier les concepts : une procédure s'écrit, s'imprime, se sauvegarde et se
+synchronise exactement comme une entrée — parce que c'en est une (`entries.kind`,
+`'note'` par défaut).
+
+**Pas de nouvelle table.** Une table `procedures` aurait dupliqué le texte riche, les
+pièces jointes, Google, la corbeille, le backup, l'outbox et la PWA. Le coût aurait été
+une deuxième entrée sous un autre nom ; le gain, aucun. La colonne `kind` (migration
+additive, défaut `'note'`) et le panneau `ProcedureList` (section repliable comme les
+Archives, mêmes classes) suffisent : création, ouverture, suppression et archivage
+passent par les chemins existants, et `/api/state` porte déjà tout l'écran — il expose
+en plus `procedure_attachments`, les pièces jointes des procédures du filtre.
+
+**Ce que ça coûte.** Un champ, une validation, un test par étage. Rouvrir si une
+procédure doit un jour porter des données propres (étapes cochables persistées,
+versionnage) : ce jour-là, une table fille liée à l'entrée vaudra mieux qu'un champ.

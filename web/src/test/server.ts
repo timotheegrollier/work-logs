@@ -72,7 +72,7 @@ export function seedData(
   },
   {
     projects = [] as { id: string; name: string; color?: string }[],
-    entries = [] as { id: string; title: string; content_md?: string; date?: string; project_id?: string | null }[],
+    entries = [] as { id: string; title: string; content_md?: string; date?: string; project_id?: string | null; kind?: 'note' | 'procedure' }[],
     tasks = [] as { id: string; title: string; status?: string; due_date?: string | null; pinned?: 0 | 1; project_id?: string | null }[],
   }
 ) {
@@ -88,8 +88,8 @@ export function seedData(
   }
   entries.forEach((e) => {
     db.prepare(
-      'INSERT INTO entries (id,title,content_md,entry_date,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)'
-    ).run(e.id, e.title, e.content_md ?? '', e.date ?? today, e.project_id ?? null, now, now);
+      'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)'
+    ).run(e.id, e.title, e.content_md ?? '', e.date ?? today, e.project_id ?? null, e.kind ?? 'note', now, now);
   });
   tasks.forEach((t, index) => {
     db.prepare(

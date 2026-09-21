@@ -565,6 +565,83 @@ button:disabled {
 .entry.is-archived {
   opacity: 0.72;
 }
+/* Panneau Procédures : mêmes codes que le journal et les archives. */
+.procedures {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.procedures summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 10px;
+  list-style: none;
+}
+.procedures summary::-webkit-details-marker {
+  display: none;
+}
+.procedures summary:hover {
+  color: var(--text);
+}
+.procedures summary .count {
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  border-radius: 99px;
+  padding: 0 7px;
+  letter-spacing: 0;
+}
+.procedures summary .procedure-project {
+  margin-left: auto;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.procedures[open] summary {
+  border-bottom: 1px solid var(--line);
+  border-radius: 10px 10px 0 0;
+}
+.procedures .new-entry {
+  margin: 10px 10px 0;
+  width: calc(100% - 20px);
+}
+.procedures .empty {
+  margin: 10px 12px;
+}
+.procedure-items {
+  list-style: none;
+  margin: 0;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+.procedure-items > li {
+  display: grid;
+  gap: 4px;
+}
+.procedure-files {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0 2px 26px;
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+.procedure-files a {
+  overflow-wrap: anywhere;
+}
 .drive-panel { margin-top: 12px; }
 .drive-open { width: 100%; text-align: left; }
 .drive-toggle { display: flex; justify-content: space-between; width: 100%; }

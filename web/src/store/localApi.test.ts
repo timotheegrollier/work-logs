@@ -97,6 +97,37 @@ describe('entrées', () => {
   });
 });
 
+describe('procédures', () => {
+  test('type note par défaut, invalide refusé, conversion conservée', async () => {
+    const note = await localApi.createEntry({ title: 'Simple note' });
+    expect(note.kind).toBe('note');
+    await expect(localApi.createEntry({ title: 'X', kind: 'mode-emploi' as never })).rejects.toThrow(
+      'type de document invalide (note ou procédure attendu)'
+    );
+    const procedure = await localApi.createEntry({ title: 'Montage', kind: 'procedure' });
+    expect(procedure.kind).toBe('procedure');
+    const renamed = await localApi.updateEntry(procedure.id, { title: 'Montage v2' });
+    expect(renamed.kind).toBe('procedure');
+    expect((await localApi.updateEntry(procedure.id, { kind: 'note' })).kind).toBe('note');
+    expect((await localApi.copyEntry(procedure.id)).kind).toBe('note');
+  });
+
+  test('state() expose le type et rassemble les pièces jointes des procédures', async () => {
+    const id = await projectId('Villa');
+    const procedure = await localApi.createEntry({ title: 'Dallage', project_id: id, kind: 'procedure' });
+    const note = await localApi.createEntry({ title: 'Pense-bête', project_id: id });
+    await localApi.upload(new File(['contenu'], 'devis.pdf', { type: 'application/pdf' }), procedure.id);
+    await localApi.upload(new File(['pixels'], 'photo.jpg', { type: 'image/jpeg' }), note.id);
+    const state = await localApi.state('', id);
+    const summaries = new Map(state.entries.map((row) => [row.id, row]));
+    expect(summaries.get(procedure.id)?.kind).toBe('procedure');
+    expect(summaries.get(note.id)?.kind).toBe('note');
+    expect(state.procedure_attachments).toHaveLength(1);
+    expect(state.procedure_attachments[0]).toMatchObject({ filename: 'devis.pdf', entry_title: 'Dallage' });
+    expect((await localApi.state()).procedure_attachments.some((file) => file.filename === 'devis.pdf')).toBe(true);
+  });
+});
+
 describe('tâches', () => {
   test('création, priorités, statuts et erreurs', async () => {
     await expect(localApi.createTask({ title: '' })).rejects.toThrow('titre requis');

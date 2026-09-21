@@ -1269,6 +1269,44 @@ describe('espace Google Docs', () => {
   });
 });
 
+describe('panneau Procédures', () => {
+  test('rassemble procédures et pièces jointes du projet filtré, ouvre au clic', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      projects: [{ id: 'pr_villa', name: 'Villa' }, { id: 'pr_autre', name: 'Autre' }],
+      entries: [
+        { id: 'en_proc', title: 'Dallage', project_id: 'pr_villa', kind: 'procedure' },
+        { id: 'en_note', title: 'Pense-bête', project_id: 'pr_villa' },
+        { id: 'en_ailleurs', title: 'Élec', project_id: 'pr_autre', kind: 'procedure' },
+      ],
+    });
+    await api.upload('devis.pdf', 'contenu', { entry_id: 'en_proc' });
+    render(<App />);
+    await user.click(await within(filters()).findByRole('button', { name: /Villa/ }));
+    const panel = screen.getByRole('group', { name: 'Procédures du projet' });
+    await user.click(within(panel).getByText('Procédures', { selector: 'summary' }));
+    expect(await within(panel).findByText('Dallage')).toBeVisible();
+    expect(within(panel).queryByText('Élec')).not.toBeInTheDocument();
+    expect(within(panel).queryByText('Pense-bête')).not.toBeInTheDocument();
+    expect(within(panel).getByRole('link', { name: 'devis.pdf' })).toHaveAttribute('href', expect.stringContaining('/api/files/'));
+    await user.click(within(panel).getByText('Dallage'));
+    expect(await screen.findByLabelText('Titre de l’entrée')).toHaveValue('Dallage');
+  });
+
+  test('crée une procédure riche dans le projet filtré', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { projects: [{ id: 'pr_villa', name: 'Villa' }] });
+    render(<App />);
+    await user.click(await within(filters()).findByRole('button', { name: /Villa/ }));
+    await user.click(await screen.findByText('Procédures', { selector: 'summary' }));
+    expect(await screen.findByText('Aucune procédure pour Villa.')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Nouvelle procédure' }));
+    expect(await screen.findByLabelText('Titre de l’entrée')).toHaveValue('Sans titre');
+    await waitFor(() => expect(row(api.db, "SELECT kind, project_id FROM entries WHERE title='Sans titre'")).toEqual(
+      expect.objectContaining({ kind: 'procedure', project_id: 'pr_villa' })));
+  });
+});
+
 describe('panneaux repliables', () => {
   const columns = () => document.querySelector('.columns') as HTMLElement;
   test('masquer le journal et les tâches ne garde que l’écriture', async () => {

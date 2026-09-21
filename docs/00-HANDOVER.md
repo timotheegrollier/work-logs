@@ -1,15 +1,14 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-18 · Version : v0.23.0.
-> **Lots v0.20.0–v0.23.0 publiés sans retouche de cette fiche** (menu Paramètres,
-> partie centrale repliable, pièces jointes adossées à Drive, archives, URLs PWA
-> en sous-dossier — voir `git log`).
-> **Lot courant :** aller-retour complet des sauvegardes PWA ↔ Drive ↔ desktop —
-> **Sauvegarder dans Google Drive** depuis la PWA (même fichier canonique
-> `WorkLogs backup.json`, remplacement sinon création) et **Importer un fichier**
-> JSON local ; nom canonique partagé via `backup-format.js`.
-> **Validation :** `./scripts/check.sh` vert : **137 tests API, 221 front,
-> 33 desktop unitaires, 25 scripts, 32 navigateur et 10 desktop e2e**.
+> **Mise à jour :** 2026-09-21 · Version : v0.30.0.
+> **Lot courant :** panneau Procédures par projet — les modes d'emploi sont des
+> entrées (`entries.kind`, `'note'` par défaut, migration additive), rassemblées
+> avec leurs pièces jointes dans une section repliable du journal ; création,
+> ouverture, copie et archivage par les chemins existants, `/api/state` enrichi
+> (`kind`, `procedure_attachments`), sauvegardes et boîte mobile inchangées de
+> forme. Aucune dépendance ajoutée.
+> **Validation :** `./scripts/check.sh` vert : **141 tests API, 225 front,
+> 33 desktop unitaires, 25 scripts, 33 navigateur et 10 desktop e2e**.
 >
 > **Lot précédent (candidat v0.24.0) :** en-tête mobile aéré (Pixel 9a, 412 px),
 > rebasé sur v0.23.0 : marque, recherche, panneaux en trois lignes, cibles 44 px,

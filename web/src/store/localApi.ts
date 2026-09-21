@@ -55,6 +55,12 @@ const priorityOf = (value: unknown, fallback: string | null = 'normal'): string 
   if (cleaned === '') return fallback;
   return PRIORITIES.includes(cleaned) ? cleaned : null;
 };
+/** `undefined`/`""` → type par défaut ; toute autre valeur inconnue est refusée. */
+const kindOf = (value: unknown, fallback: 'note' | 'procedure' | null = 'note'): 'note' | 'procedure' | null => {
+  const cleaned = str(value);
+  if (cleaned === '') return fallback;
+  return cleaned === 'note' || cleaned === 'procedure' ? cleaned : null;
+};
 const fail = (message: string): never => {
   throw new ApiError(message);
 };
@@ -64,7 +70,7 @@ const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 interface EntryRow {
   id: string; title: string; content_md: string; content_json: string | null;
-  entry_date: string; project_id: string | null; archived: 0 | 1;
+  entry_date: string; project_id: string | null; archived: 0 | 1; kind: 'note' | 'procedure';
   created_at: string; updated_at: string;
 }
 interface TaskRow {
@@ -203,6 +209,7 @@ async function seed(db: Database): Promise<void> {
     entry_date: d,
     project_id: 'pr_perso',
     archived: 0,
+    kind: 'note',
     created_at: t,
     updated_at: t,
   });
@@ -242,7 +249,7 @@ async function googleSync(entryId: string, contentJson: string | null): Promise<
     if (!target) continue;
     tabs.push({
       id: target.id, title: target.title, entry_date: target.entry_date, project_id: target.project_id,
-      archived: target.archived ?? 0,
+      archived: target.archived ?? 0, kind: target.kind ?? 'note',
       updated_at: target.updated_at, excerpt: '', attachments: 0,
       google_document_id: sibling.document_id, google_tab_id: sibling.tab_id,
       google_tab_title: sibling.tab_title, google_tab_order: sibling.tab_order,
@@ -283,7 +290,7 @@ function taskDocuments(taskId: string, entries: EntryRow[], links: LinkRow[], go
       const link = googleByEntry.get(entry.id);
       return {
         id: entry.id, title: entry.title, entry_date: entry.entry_date,
-        project_id: entry.project_id, archived: entry.archived ?? 0, updated_at: entry.updated_at,
+        project_id: entry.project_id, archived: entry.archived ?? 0, kind: entry.kind ?? 'note', updated_at: entry.updated_at,
         excerpt: '', attachments: 0,
         google_document_id: link?.document_id ?? null, google_tab_id: link?.tab_id ?? null,
         google_document_title: link?.document_title ?? null, google_tab_title: link?.tab_title ?? null,
@@ -382,7 +389,7 @@ export const localApi: Api = {
     const t = await tables();
     await t.entries.put({
       id, title: clean, content_md: '', content_json: serialized, entry_date: today(),
-      project_id: null, archived: 0, created_at: time, updated_at: time,
+      project_id: null, archived: 0, kind: 'note', created_at: time, updated_at: time,
     });
     const tabs = documentTabs(created);
     const createdRevision = typeof created['revisionId'] === 'string' ? created['revisionId'] : '';
@@ -430,7 +437,7 @@ export const localApi: Api = {
       await t.entries.put({
         id, title: list.length > 1 ? `${documentTitle} — ${tab.title}` : documentTitle,
         content_md: documentText(rich), content_json: JSON.stringify(rich),
-        entry_date: today(), project_id: null, archived: 0, created_at: time, updated_at: time,
+        entry_date: today(), project_id: null, archived: 0, kind: 'note', created_at: time, updated_at: time,
       });
       await t.google.put({
         entry_id: id, document_id: documentId, tab_id: tab.id, revision_id: (source.revisionId as string) || '',
@@ -532,7 +539,7 @@ export const localApi: Api = {
       const link = googleByEntry.get(entry.id);
       return {
         id: entry.id, title: entry.title, entry_date: entry.entry_date, project_id: entry.project_id,
-        archived: entry.archived ?? 0,
+        archived: entry.archived ?? 0, kind: entry.kind ?? 'note',
         updated_at: entry.updated_at, excerpt: entry.content_md.slice(0, 240),
         attachments: counts.get(entry.id) ?? 0,
         google_document_id: link?.document_id ?? null, google_tab_id: link?.tab_id ?? null,
@@ -552,6 +559,18 @@ export const localApi: Api = {
     for (const task of allTasks) byStatus[task.status]++;
     const day = today();
     const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+    // Pièces jointes rassemblées pour le panneau Procédures : celles des
+    // procédures du filtre courant, métadonnées seules, plus récentes d'abord.
+    const procedureIds = new Set(matching.filter((entry) => (entry.kind ?? 'note') === 'procedure').map((entry) => entry.id));
+    const procedureEntries = new Map(allEntries.map((entry) => [entry.id, entry]));
+    const procedureAttachments = allAttachments
+      .filter((file) => procedureIds.has(file.entry_id))
+      .sort((a, b) => cmp(b.created_at, a.created_at))
+      .map((file) => {
+        const parent = procedureEntries.get(file.entry_id);
+        const { blob: _blob, driveFileId: _drive, ...meta } = file;
+        return { ...meta, driveFileId: file.driveFileId ?? null, entry_title: parent?.title ?? '' };
+      });
     return {
       projects: allProjects.map((project) => ({
         ...project,
@@ -560,6 +579,7 @@ export const localApi: Api = {
       })),
       entries: summaries,
       tasks: matchingTasks,
+      procedure_attachments: procedureAttachments,
       stats: {
         entries: allEntries.length,
         entriesThisWeek: allEntries.filter((entry) => entry.entry_date >= weekAgo).length,
@@ -578,12 +598,13 @@ export const localApi: Api = {
     const date = str(body.entry_date) || today();
     if (!DATE_RE.test(date)) fail('date invalide (AAAA-MM-JJ attendu)');
     if (orNull(body.project_id) && !(await projects.get(str(body.project_id)))) fail('projet introuvable');
+    const kind: 'note' | 'procedure' = kindOf(body.kind) ?? fail('type de document invalide (note ou procédure attendu)');
     const id = uid('en_');
     const t = nowISO();
     const rich = body.content_json == null ? null : validateDocument(body.content_json);
     await entries.put({
       id, title, content_md: rich ? documentText(rich) : typeof body.content_md === 'string' ? body.content_md : '',
-      entry_date: date, project_id: orNull(body.project_id), archived: 0, created_at: t, updated_at: t,
+      entry_date: date, project_id: orNull(body.project_id), archived: 0, kind, created_at: t, updated_at: t,
       content_json: rich ? JSON.stringify(rich) : null,
     });
     track('entries', id);
@@ -605,10 +626,12 @@ export const localApi: Api = {
     if (current.content_json && rich === null) fail('la conversion d’un document riche en Markdown n’est pas prise en charge');
     const row = (await entries.get(id)) as EntryRow;
     const archived = pick(patch, 'archived', row.archived ?? 0, (v) => (v ? 1 : 0));
+    const kind: 'note' | 'procedure' = pick(patch, 'kind', row.kind ?? 'note', (v) => kindOf(v, row.kind ?? 'note'))
+      ?? fail('type de document invalide (note ou procédure attendu)');
     await entries.put({
       ...row, title,
       content_md: rich ? documentText(rich) : pick(patch, 'content_md', current.content_md, (v) => (typeof v === 'string' ? v : current.content_md)),
-      entry_date: date, project_id: projectId, archived, updated_at: nowISO(),
+      entry_date: date, project_id: projectId, archived, kind, updated_at: nowISO(),
       content_json: rich ? JSON.stringify(rich) : null,
     });
     track('entries', id);
@@ -648,7 +671,7 @@ export const localApi: Api = {
     await entries.put({
       id: copyId, title: `${original.title} — copie locale`, content_md: markdown,
       content_json: rich ? JSON.stringify(rich) : null, entry_date: original.entry_date,
-      project_id: original.project_id, archived: 0, created_at: time, updated_at: time,
+      project_id: original.project_id, archived: 0, kind: original.kind ?? 'note', created_at: time, updated_at: time,
     });
     for (const file of (await attachments.all()).filter((row) => row.entry_id === id)) {
       const stored = uid('copy_') + ext(file.stored);
@@ -698,7 +721,7 @@ export const localApi: Api = {
     const time = nowISO();
     await entries.put({
       id, title, content_md: content, entry_date: today(), project_id: source.project_id,
-      archived: 0, created_at: time, updated_at: time, content_json: null,
+      archived: 0, kind: 'note', created_at: time, updated_at: time, content_json: null,
     });
     await links.put({ id: linkId(source.id, id), task_id: source.id, entry_id: id, created_at: time });
     if (source.status === 'done') await archiveTaskDocuments(source.id);
@@ -888,7 +911,7 @@ export const localApi: Api = {
  */
 export async function importLocalBackup(input: unknown): Promise<{ ok: true; projects: number; entries: number; tasks: number }> {
   const data = validateBackup(input) as {
-    projects: ProjectRow[]; entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; archived: 0 | 1; created_at: string; updated_at: string }[];
+    projects: ProjectRow[]; entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; archived: 0 | 1; kind: 'note' | 'procedure'; created_at: string; updated_at: string }[];
     tasks: TaskRow[]; task_entries: { task_id: string; entry_id: string; created_at: string }[];
     google_documents: GoogleRow[]; attachments: { id: string; filename: string; stored: string; mime: string; size: number; entry_id: string; created_at: string; driveFileId?: string | null }[];
   };
@@ -918,7 +941,7 @@ export interface OutboxPayload {
   base_exported_at: string | null;
   device: 'pwa';
   projects: ProjectRow[];
-  entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; archived: 0 | 1; created_at: string; updated_at: string }[];
+  entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; archived: 0 | 1; kind: 'note' | 'procedure'; created_at: string; updated_at: string }[];
   tasks: TaskRow[];
   task_entries: { task_id: string; entry_id: string; created_at: string }[];
   attachments: { id: string; filename: string; stored: string; mime: string; size: number; entry_id: string; created_at: string; driveFileId: string | null }[];

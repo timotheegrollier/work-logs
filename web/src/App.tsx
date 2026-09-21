@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import './styles.css';
 import { api, emptyDocument, todayISO, type AppState, type Entry } from './lib';
 import { EntryList } from './components/EntryList';
+import { ProcedureList } from './components/ProcedureList';
 import { EntryEditor } from './components/EntryEditor';
 import { Logo } from './components/Logo';
 import { UpdateBar } from './components/UpdateBar';
@@ -158,6 +159,21 @@ export default function App() {
       entry_date: todayISO(),
       project_id: projectId || null,
       ...(rich ? { content_json: emptyDocument() } : {}),
+    });
+    setSearch('');
+    setFreshEntry(true);
+    setSelectedId(created.id);
+    setEntry({ ...created, attachments: [] });
+    reload();
+  };
+
+  const createProcedure = async () => {
+    const created = await api.createEntry({
+      title: 'Sans titre',
+      entry_date: todayISO(),
+      project_id: projectId || null,
+      kind: 'procedure',
+      content_json: emptyDocument(),
     });
     setSearch('');
     setFreshEntry(true);
@@ -379,6 +395,18 @@ export default function App() {
             onCreate={() => void createEntry()}
             onCreateDocument={() => void createEntry(true)}
             searching={query !== ''}
+          />
+          <ProcedureList
+            entries={state?.entries ?? []}
+            attachments={state?.procedure_attachments ?? []}
+            projects={state?.projects ?? []}
+            projectId={projectId}
+            selectedId={selectedId}
+            onSelect={(id) => {
+              setFreshEntry(false);
+              setSelectedId(id);
+            }}
+            onCreate={() => void createProcedure()}
           />
         </aside>
 

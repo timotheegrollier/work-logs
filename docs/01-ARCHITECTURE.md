@@ -56,7 +56,7 @@ projects(id, name, color, created_at)
 
 entries(id, title, content_md, content_json JSON|NULL, entry_date 'AAAA-MM-JJ',
         project_id → projects ON DELETE SET NULL, archived 0|1 DEFAULT 0,
-        created_at, updated_at)
+        kind ∈ {'note','procedure'} DEFAULT 'note', created_at, updated_at)
 
 tasks(id, title, status ∈ {todo, doing, done}, due_date 'AAAA-MM-JJ'|NULL,
       pinned 0|1, position, priority ∈ {low, normal, high} DEFAULT 'normal',
@@ -116,7 +116,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | Méthode | Route | Effet |
 |---|---|---|
 | GET | `/api/health` | `{ok, ts}` |
-| GET | `/api/state?q=&project_id=` | **tout l'écran en un appel** : projets, entrées (extrait seul), tâches avec `documents`, compteurs |
+| GET | `/api/state?q=&project_id=` | **tout l'écran en un appel** : projets, entrées (extrait seul, avec `kind`), tâches avec `documents`, pièces jointes des procédures du filtre, compteurs |
 | GET | `/api/entries/:id` | l'entrée complète + ses pièces jointes |
 | POST · PUT · DELETE | `/api/entries[/:id]` | créer · modifier · supprimer |
 | POST | `/api/entries/:id/task` | crée une tâche `todo` et la lie atomiquement à l’entrée |
@@ -165,6 +165,7 @@ une tâche, une entrée ou une association inconnue renvoie `404` avec un messag
 | `lib.ts` | types, client API, helpers purs (`dayLabel`, `isOverdue`, `plainText`, `groupByDay`) |
 | `markdown.ts` | `marked` (GFM, `breaks`) puis `DOMPurify` — le rendu part en `dangerouslySetInnerHTML` |
 | `components/EntryList.tsx` | journal groupé par jour, extrait sur une ligne |
+| `components/ProcedureList.tsx` | procédures du projet (entrées `kind='procedure'`) + pièces jointes rassemblées |
 | `components/EntryEditor.tsx` | titre, date, projet, Écrire/Lire, enregistrement auto, pièces jointes |
 | `components/RichEditor.tsx` | éditeur Tiptap et barre de mise en forme |
 | `components/GoogleDrive.tsx` | dialogue Drive dédié, configuration et documents autorisés |

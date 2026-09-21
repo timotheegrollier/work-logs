@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS entries (
   entry_date TEXT NOT NULL,
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   archived INTEGER NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL DEFAULT 'note',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -154,7 +155,7 @@ function seed(db) {
   ins.run('pr_pro', 'Pro', '#0ea5e9', t);
 
   db.prepare(
-    'INSERT INTO entries (id,title,content_md,entry_date,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)'
+    'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)'
   ).run(
     'en_welcome',
     'Comment ça marche',
@@ -180,6 +181,7 @@ function seed(db) {
     ].join('\n'),
     d,
     'pr_perso',
+    'note',
     t,
     t
   );
@@ -205,6 +207,8 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   // Archivage (2026-09-18) : masque du journal sans rien détruire. Les entrées
   // existantes restent visibles (`0`), les associations sont conservées.
   if (!columns(db, 'entries').includes('archived')) db.exec('ALTER TABLE entries ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
+  // Procédures : les anciennes entrées restent des notes, sans rien changer d'autre.
+  if (!columns(db, 'entries').includes('kind')) db.exec("ALTER TABLE entries ADD COLUMN kind TEXT NOT NULL DEFAULT 'note'");
   // Priorités (2026-09-18) : les tâches existantes deviennent « normale », sans toucher
   // à l'ordre des colonnes — la position et l'épingle gardent leur rôle.
   if (!columns(db, 'tasks').includes('priority')) db.exec("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'");

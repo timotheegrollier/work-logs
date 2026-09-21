@@ -26,10 +26,11 @@ describe('état global et recherche', () => {
     await make.task(api);
 
     const { body } = await api.get('/api/state');
-    assert.deepEqual(Object.keys(body).sort(), ['entries', 'projects', 'stats', 'tasks']);
+    assert.deepEqual(Object.keys(body).sort(), ['entries', 'procedure_attachments', 'projects', 'stats', 'tasks']);
     assert.equal(body.projects.length, 1);
     assert.equal(body.entries.length, 1);
     assert.equal(body.tasks.length, 1);
+    assert.deepEqual(body.procedure_attachments, []);
   });
 
   test('la liste des entrées porte un extrait, pas le corps entier', async () => {

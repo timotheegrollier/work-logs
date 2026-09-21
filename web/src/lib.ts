@@ -28,6 +28,8 @@ export interface EntrySummary {
   project_id: string | null;
   /** 1 = rangée dans les archives (masquée du journal, sans rien détruire). */
   archived: 0 | 1;
+  /** `procedure` = mode d'emploi du projet, rassemblé dans le panneau Procédures. */
+  kind: 'note' | 'procedure';
   updated_at: string;
   excerpt: string;
   attachments: number;
@@ -90,6 +92,7 @@ export interface Entry {
   entry_date: string;
   project_id: string | null;
   archived: 0 | 1;
+  kind: 'note' | 'procedure';
   created_at: string;
   updated_at: string;
   attachments: Attachment[];
@@ -141,6 +144,8 @@ export interface AppState {
   projects: Project[];
   entries: EntrySummary[];
   tasks: Task[];
+  /** Pièces jointes des procédures du filtre courant, pour le panneau Procédures. */
+  procedure_attachments: (Attachment & { entry_title: string })[];
   stats: Stats;
 }
 

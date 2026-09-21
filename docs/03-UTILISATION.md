@@ -151,6 +151,15 @@ seulement sa copie locale, y compris si le fichier est déjà absent ou dans la 
 changer leur couleur, de les supprimer. Supprimer un projet ne supprime **rien** : les entrées
 et les tâches restent, simplement détachées.
 
+## Procédures
+
+Sous le journal, le panneau **Procédures** rassemble les modes d'emploi du projet
+sélectionné avec leurs pièces jointes : une procédure est un document comme un
+autre (même éditeur, mêmes fichiers, mêmes sauvegardes), simplement aiguillé ici
+par son type. **Nouvelle procédure** en crée une déjà rattachée au projet filtré ;
+cliquer son titre l'ouvre au centre, cliquer un fichier le télécharge. Sans filtre,
+toutes les procédures s'y retrouvent, pastille projet à l'appui.
+
 ## Retrouver
 
 La recherche en haut cherche dans les **titres et le corps** des entrées, et dans les titres des
