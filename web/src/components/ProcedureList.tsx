@@ -15,6 +15,7 @@ export function ProcedureList({
   selectedId,
   onSelect,
   onCreate,
+  onChanged,
 }: {
   entries: EntrySummary[];
   attachments: (Attachment & { entry_title: string })[];
@@ -23,14 +24,27 @@ export function ProcedureList({
   selectedId: string | null;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState('');
   const colors = new Map(projects.map((p) => [p.id, p.color]));
   const project = projects.find((p) => p.id === projectId);
   const procedures = entries.filter(
     (entry) => entry.kind === 'procedure' && !entry.archived && (!projectId || entry.project_id === projectId)
   );
   const files = attachments.filter((file) => procedures.some((entry) => entry.id === file.entry_id));
+
+  const attach = async (entryId: string, selected: FileList | null) => {
+    if (!selected?.length) return;
+    setError('');
+    try {
+      await Promise.all(Array.from(selected, (file) => api.upload(file, entryId)));
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   return (
     <details className="procedures" role="group" aria-label="Procédures du projet" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
@@ -80,6 +94,20 @@ export function ProcedureList({
                       )}
                     </span>
                   </button>
+                  <div className="procedure-row-actions">
+                    <label className="ghost file-button">
+                      ＋ Fichier
+                      <input
+                        type="file"
+                        multiple
+                        aria-label={`Joindre un fichier à ${entry.title}`}
+                        onChange={(e) => {
+                          void attach(entry.id, e.target.files);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
                   {entryFiles.length > 0 && (
                     <ul className="procedure-files" aria-label={`Pièces jointes de ${entry.title}`}>
                       {entryFiles.map((file) => (
@@ -97,6 +125,7 @@ export function ProcedureList({
           </ol>
         </>
       )}
+      {error && <p role="alert" className="error">{error}</p>}
     </details>
   );
 }

@@ -1629,7 +1629,8 @@ button:disabled {
   .column-resizer { display: none; }
   .left,
   .center,
-  .right {
+  .right,
+  .procedures-bar {
     overflow: visible;
     background: var(--surface);
     border: 1px solid var(--line);
@@ -1640,7 +1641,8 @@ button:disabled {
   /* Intitulés des cartes : mêmes mots que les boutons de l'en-tête. */
   .left::before,
   .center::before,
-  .right::before {
+  .right::before,
+  .procedures-bar::before {
     display: block;
     margin: 0 0 10px;
     font-size: 11px;
@@ -1652,6 +1654,7 @@ button:disabled {
   .left::before { content: 'Journal'; }
   .center::before { content: 'Écriture'; }
   .right::before { content: 'Tâches'; }
+  .procedures-bar::before { content: 'Procédures'; }
   .editor {
     padding: 16px;
   }
@@ -1768,6 +1771,29 @@ button:disabled {
 .columns.is-document.hide-right, .columns.is-document.with-tasks.hide-right { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr); grid-template-areas: "journal resize-left editor"; }
 .columns.is-document.with-tasks.hide-left { grid-template-columns: minmax(320px, 1fr) 8px minmax(120px, var(--col-right, 320px)); grid-template-areas: "editor resize-right tasks"; }
 .columns.is-document.with-tasks.hide-right > .right, .columns.is-document.with-tasks.hide-right > .column-resizer-right { display: none; }
+/* Panneau Procédures : 4e sidebar à droite, repliable comme les autres. Sans
+   poignée (largeur fixe) : une ligne de règles par combinaison, comme ci-dessus. */
+.procedures-bar { display: none; }
+.columns.show-procedures { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr) 8px minmax(120px, var(--col-right, 320px)) 8px minmax(260px, 320px); grid-template-areas: "journal resize-left editor resize-right tasks procedures"; }
+.columns.show-procedures > .procedures-bar { display: flex; flex-direction: column; gap: 14px; grid-area: procedures; overflow-y: auto; padding: 14px; background: var(--surface); min-width: 0; }
+.columns.show-procedures.hide-left { grid-template-columns: minmax(320px, 1fr) 8px minmax(120px, var(--col-right, 320px)) 8px minmax(260px, 320px); grid-template-areas: "editor resize-right tasks procedures"; }
+.columns.show-procedures.hide-right { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr) 8px minmax(260px, 320px); grid-template-areas: "journal resize-left editor procedures"; }
+.columns.show-procedures.hide-left.hide-right { grid-template-columns: minmax(0, 1fr) 8px minmax(260px, 320px); grid-template-areas: "editor procedures"; }
+.columns.show-procedures.hide-center { grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) minmax(260px, 320px); grid-template-areas: "journal tasks procedures"; }
+.columns.show-procedures.hide-center.hide-left { grid-template-columns: minmax(0, 1fr) 8px minmax(260px, 320px); grid-template-areas: "tasks procedures"; }
+.columns.show-procedures.hide-center.hide-right { grid-template-columns: minmax(0, 1fr) 8px minmax(260px, 320px); grid-template-areas: "journal procedures"; }
+.columns.show-procedures.hide-center.hide-left.hide-right { grid-template-columns: minmax(0, 1fr); grid-template-areas: "procedures"; }
+.columns.is-document.show-procedures { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr) 8px minmax(260px, 320px); grid-template-areas: "journal resize-left editor procedures"; }
+.columns.is-document.show-procedures.hide-left { grid-template-columns: minmax(0, 1fr) 8px minmax(260px, 320px); grid-template-areas: "editor procedures"; }
+.columns.is-document.show-procedures.hide-center { grid-template-columns: minmax(120px, 1fr) 8px minmax(260px, 320px); grid-template-areas: "journal procedures"; }
+.columns.is-document.show-procedures.hide-center.hide-left { grid-template-columns: minmax(0, 1fr); grid-template-areas: "procedures"; }
+.columns.is-document.with-tasks.show-procedures { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr) 8px minmax(120px, var(--col-right, 320px)) 8px minmax(260px, 320px); grid-template-areas: "journal resize-left editor resize-right tasks procedures"; }
+.columns.is-document.with-tasks.show-procedures.hide-left { grid-template-columns: minmax(320px, 1fr) 8px minmax(120px, var(--col-right, 320px)) 8px minmax(260px, 320px); grid-template-areas: "editor resize-right tasks procedures"; }
+.columns.is-document.with-tasks.show-procedures.hide-right { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr) 8px minmax(260px, 320px); grid-template-areas: "journal resize-left editor procedures"; }
+.columns.is-document.with-tasks.show-procedures.hide-center { grid-template-columns: minmax(120px, 1fr) 8px minmax(120px, 1fr) 8px minmax(260px, 320px); grid-template-areas: "journal tasks procedures"; }
+.columns.is-document.with-tasks.show-procedures.hide-center.hide-left { grid-template-columns: minmax(0, 1fr) 8px minmax(260px, 320px); grid-template-areas: "tasks procedures"; }
+.columns.is-document.with-tasks.show-procedures.hide-center.hide-right { grid-template-columns: minmax(0, 1fr) 8px minmax(260px, 320px); grid-template-areas: "journal procedures"; }
+.columns.is-document.with-tasks.show-procedures.hide-center.hide-left.hide-right, .columns.is-document.show-procedures.hide-center.hide-right { grid-template-columns: minmax(0, 1fr); grid-template-areas: "procedures"; }
 .google-editor { max-width: none; padding: 24px 28px 40px; gap: 16px; }
 .document-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .document-heading > div { min-width: 0; }
@@ -2027,7 +2053,7 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .head .panel-toggles {
     grid-area: panels;
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: repeat(4, 1fr);
     gap: 8px;
   }
   .head .panel-toggles .ghost {

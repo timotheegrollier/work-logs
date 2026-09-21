@@ -153,12 +153,15 @@ et les tâches restent, simplement détachées.
 
 ## Procédures
 
-Sous le journal, le panneau **Procédures** rassemble les modes d'emploi du projet
-sélectionné avec leurs pièces jointes : une procédure est un document comme un
-autre (même éditeur, mêmes fichiers, mêmes sauvegardes), simplement aiguillé ici
-par son type. **Nouvelle procédure** en crée une déjà rattachée au projet filtré ;
-cliquer son titre l'ouvre au centre, cliquer un fichier le télécharge. Sans filtre,
-toutes les procédures s'y retrouvent, pastille projet à l'appui.
+Le bouton **Procédures** de l'en-tête affiche une sidebar dédiée, à droite des
+tâches : elle rassemble les modes d'emploi du projet sélectionné avec leurs
+pièces jointes. Une procédure est un document comme un autre (même éditeur,
+mêmes fichiers, mêmes sauvegardes), simplement aiguillé ici par son type.
+**Nouvelle procédure** en crée une déjà rattachée au projet filtré ; chaque ligne
+a son **＋ Fichier** pour joindre sans ouvrir l'éditeur ; cliquer son titre
+l'ouvre au centre, cliquer un fichier le télécharge. Sans filtre, toutes les
+procédures s'y retrouvent, pastille projet à l'appui. Comme les autres panneaux,
+la sidebar se replie et l'état est retenu.
 
 ## Retrouver
 

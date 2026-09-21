@@ -36,6 +36,9 @@ export default function App() {
   const [showLeft, setShowLeft] = useState(() => readPanel('worklogs-show-left'));
   const [showCenter, setShowCenter] = useState(() => readPanel('worklogs-show-center'));
   const [showRight, setShowRight] = useState(() => readPanel('worklogs-show-right'));
+  // Procédures : masqué par défaut pour ne pas rétrécir l'éditeur d'office ;
+  // un clic suffit, l'état est retenu comme les autres panneaux.
+  const [showProcedures, setShowProcedures] = useState(() => readPanel('worklogs-show-procedures', false));
   const [showSettings, setShowSettings] = useState(false);
   const settingsRef = useRef<HTMLDialogElement>(null);
   const selectedRef = useRef<string | null>(null);
@@ -98,6 +101,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('worklogs-show-right', showRight ? '1' : '0');
   }, [showRight]);
+
+  useEffect(() => {
+    localStorage.setItem('worklogs-show-procedures', showProcedures ? '1' : '0');
+  }, [showProcedures]);
 
   // La recherche attend une pause de frappe avant d'interroger l'API.
   useEffect(() => {
@@ -309,6 +316,16 @@ export default function App() {
           >
             Tâches
           </button>
+          <button
+            type="button"
+            className={'ghost' + (showProcedures ? ' is-on' : '')}
+            aria-pressed={showProcedures}
+            aria-controls="workspace-procedures"
+            title={showProcedures ? 'Masquer les procédures' : 'Afficher les procédures'}
+            onClick={() => setShowProcedures((v) => !v)}
+          >
+            Procédures
+          </button>
         </div>
         <div className="col-widths">
           <div className="col-width-control">
@@ -382,7 +399,7 @@ export default function App() {
       {isGoogleDocument && <div className="workspace-switch no-print"><span>Document Google · {siblingTabs.length} onglet{siblingTabs.length > 1 ? 's' : ''}</span>
         <button aria-expanded={showDocumentTasks} aria-controls="workspace-tasks" onClick={() => setShowDocumentTasks(!showDocumentTasks)}>{showDocumentTasks ? 'Masquer les tâches' : 'Afficher les tâches'}</button>
       </div>}
-      <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showDocumentTasks ? ' with-tasks' : '') + (showLeft ? '' : ' hide-left') + (showCenter ? '' : ' hide-center') + (showRight ? '' : ' hide-right')}>
+      <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showDocumentTasks ? ' with-tasks' : '') + (showLeft ? '' : ' hide-left') + (showCenter ? '' : ' hide-center') + (showRight ? '' : ' hide-right') + (showProcedures ? ' show-procedures' : '')}>
         <aside id="workspace-journal" className="left no-print">
           <EntryList
             entries={state?.entries ?? []}
@@ -395,18 +412,6 @@ export default function App() {
             onCreate={() => void createEntry()}
             onCreateDocument={() => void createEntry(true)}
             searching={query !== ''}
-          />
-          <ProcedureList
-            entries={state?.entries ?? []}
-            attachments={state?.procedure_attachments ?? []}
-            projects={state?.projects ?? []}
-            projectId={projectId}
-            selectedId={selectedId}
-            onSelect={(id) => {
-              setFreshEntry(false);
-              setSelectedId(id);
-            }}
-            onCreate={() => void createProcedure()}
           />
         </aside>
 
@@ -447,6 +452,22 @@ export default function App() {
             projectId={projectId}
             projects={state?.projects ?? []}
             onOpenDocument={openDocument}
+            onChanged={reload}
+          />
+        </aside>
+
+        <aside id="workspace-procedures" className="procedures-bar no-print">
+          <ProcedureList
+            entries={state?.entries ?? []}
+            attachments={state?.procedure_attachments ?? []}
+            projects={state?.projects ?? []}
+            projectId={projectId}
+            selectedId={selectedId}
+            onSelect={(id) => {
+              setFreshEntry(false);
+              setSelectedId(id);
+            }}
+            onCreate={() => void createProcedure()}
             onChanged={reload}
           />
         </aside>
@@ -515,7 +536,8 @@ function readColRight() {
 }
 
 /** Panneau visible par défaut ; `'0'` enregistré le replie durablement. */
-function readPanel(key: string) {
-  if (typeof localStorage === 'undefined') return true;
-  return localStorage.getItem(key) !== '0';
+function readPanel(key: string, fallback = true) {
+  if (typeof localStorage === 'undefined') return fallback;
+  const stored = localStorage.getItem(key);
+  return stored === null ? fallback : stored !== '0';
 }

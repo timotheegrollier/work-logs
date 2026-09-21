@@ -1270,6 +1270,12 @@ describe('espace Google Docs', () => {
 });
 
 describe('panneau Procédures', () => {
+  async function openPanel(user: { click: (element: Element) => Promise<void> }) {
+    await user.click(screen.getByRole('button', { name: 'Procédures' }));
+    const panel = await screen.findByRole('group', { name: 'Procédures du projet' });
+    await user.click(within(panel).getByText('Procédures', { selector: 'summary' }));
+    return panel;
+  }
   test('rassemble procédures et pièces jointes du projet filtré, ouvre au clic', async () => {
     const user = userEvent.setup();
     seedData(api.db, {
@@ -1283,8 +1289,7 @@ describe('panneau Procédures', () => {
     await api.upload('devis.pdf', 'contenu', { entry_id: 'en_proc' });
     render(<App />);
     await user.click(await within(filters()).findByRole('button', { name: /Villa/ }));
-    const panel = screen.getByRole('group', { name: 'Procédures du projet' });
-    await user.click(within(panel).getByText('Procédures', { selector: 'summary' }));
+    const panel = await openPanel(user);
     expect(await within(panel).findByText('Dallage')).toBeVisible();
     expect(within(panel).queryByText('Élec')).not.toBeInTheDocument();
     expect(within(panel).queryByText('Pense-bête')).not.toBeInTheDocument();
@@ -1298,13 +1303,34 @@ describe('panneau Procédures', () => {
     seedData(api.db, { projects: [{ id: 'pr_villa', name: 'Villa' }] });
     render(<App />);
     await user.click(await within(filters()).findByRole('button', { name: /Villa/ }));
-    await user.click(await screen.findByText('Procédures', { selector: 'summary' }));
-    expect(await screen.findByText('Aucune procédure pour Villa.')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Nouvelle procédure' }));
+    const panel = await openPanel(user);
+    expect(await within(panel).findByText('Aucune procédure pour Villa.')).toBeVisible();
+    await user.click(within(panel).getByRole('button', { name: 'Nouvelle procédure' }));
     expect(await screen.findByLabelText('Titre de l’entrée')).toHaveValue('Sans titre');
     await waitFor(() => expect(row(api.db, "SELECT kind, project_id FROM entries WHERE title='Sans titre'")).toEqual(
       expect.objectContaining({ kind: 'procedure', project_id: 'pr_villa' })));
   });
+
+  test('la sidebar se replie et persiste, comme les autres panneaux', async () => {
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+    // Repliée par défaut : seul le câblage se teste ici (le DOM reste monté,
+    // la visibilité réelle est couverte en e2e).
+    expect(document.querySelector('.columns')).not.toHaveClass('show-procedures');
+    const toggle = screen.getByRole('button', { name: 'Procédures' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(toggle);
+    await screen.findByRole('group', { name: 'Procédures du projet' });
+    expect(document.querySelector('.columns')).toHaveClass('show-procedures');
+    expect(globalThis.localStorage.getItem('worklogs-show-procedures')).toBe('1');
+    fireEvent.click(toggle);
+    expect(document.querySelector('.columns')).not.toHaveClass('show-procedures');
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(globalThis.localStorage.getItem('worklogs-show-procedures')).toBe('0');
+  });
+
+  // Envoi réel depuis le panneau : couvert en e2e (jsdom n'encode pas le
+  // multipart vers le vrai serveur — voir le commentaire de test/server.ts).
 });
 
 describe('panneaux repliables', () => {
