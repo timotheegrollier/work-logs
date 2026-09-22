@@ -27,6 +27,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(readSelected);
   const [entry, setEntry] = useState<Entry | null>(null);
   const [freshEntry, setFreshEntry] = useState(false);
+  const [procedureEdit, setProcedureEdit] = useState({ id: '', sequence: 0 });
   const [showDocumentTasks, setShowDocumentTasks] = useState(false);
   const documentRef = useRef<string | undefined>(undefined);
   documentRef.current = entry?.google_sync?.document_id;
@@ -124,7 +125,8 @@ export default function App() {
       const selectedSummary = next.entries.find((e) => e.id === selectedRef.current);
       if (selectedSummary) {
         setEntry((current) => current && current.id === selectedSummary.id
-          ? { ...current, archived: selectedSummary.archived, updated_at: selectedSummary.updated_at }
+          ? { ...current, archived: selectedSummary.archived, updated_at: selectedSummary.updated_at,
+              ...(selectedSummary.kind === 'procedure' ? { attachments: next.procedure_attachments.filter((file) => file.entry_id === current.id) } : {}) }
           : current);
       }
       // Rien de sélectionné (premier chargement, ou entrée supprimée) : on ouvre la
@@ -188,6 +190,7 @@ export default function App() {
     });
     setSearch('');
     setFreshEntry(true);
+    setShowCenter(true);
     setSelectedId(created.id);
     setEntry({ ...created, attachments: [] });
     reload();
@@ -433,6 +436,7 @@ export default function App() {
                 .filter((task) => (task.documents ?? []).some((document) => document.id === entry.id))
                 .map((task) => ({ title: task.title, status: task.status }))}
               autoFocusTitle={freshEntry}
+              editRequest={procedureEdit.id === entry.id ? procedureEdit.sequence : 0}
               onChanged={reload}
               onTaskCreated={reload}
               onDeleted={() => {
@@ -470,9 +474,24 @@ export default function App() {
             onSelect={(id) => {
               setFreshEntry(false);
               setSelectedId(id);
+              setShowCenter(true);
+            }}
+            onEdit={(id) => {
+              setFreshEntry(false);
+              setSelectedId(id);
+              setShowCenter(true);
+              setProcedureEdit((current) => ({ id, sequence: current.sequence + 1 }));
             }}
             onCreate={() => void createProcedure()}
             onChanged={reload}
+            onDeleted={(id) => {
+              if (selectedRef.current === id) {
+                selectedRef.current = null;
+                setSelectedId(null);
+                setEntry(null);
+              }
+              void reload();
+            }}
           />
         </aside>
       </div>

@@ -11,7 +11,7 @@ import { previewKind, previewNotice } from '../file-preview';
  * Le dialogue est rendu par `EntryEditor` avec `key` sur la pièce jointe : un
  * changement de fichier remonte le composant, donc jamais d'aperçu périmé.
  */
-export function FileViewer({ file, onClose, onFetch, fetching }: { file: Attachment; onClose: () => void; onFetch?: () => void; fetching?: boolean }) {
+export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { file: Attachment; onClose: () => void; onFetch?: () => void; fetching?: boolean; fetchError?: string }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const kind = previewKind(file);
   const [text, setText] = useState<string | null>(null);
@@ -58,17 +58,19 @@ export function FileViewer({ file, onClose, onFetch, fetching }: { file: Attachm
           <small>{formatSize(file.size)}</small>
         </div>
         <div className="viewer-actions">
+          {file.driveFileId && onFetch && <button className="ghost" type="button" disabled={fetching} onClick={onFetch}>{fetching ? 'Récupération…' : '⬇ Récupérer depuis Drive'}</button>}
           <a className="ghost" href={api.fileUrl(file.stored)} download={file.filename}>Télécharger</a>
           <button className="ghost" type="button" onClick={onClose}>Fermer</button>
         </div>
       </div>
       <div className="viewer-body">
+        {fetchError && <p className="error" role="alert">{fetchError}</p>}
         {file.driveFileId && <p className="viewer-notice">☁ Conservé sur Google Drive — l’aperçu fonctionne après récupération, même sur un autre appareil.</p>}
         {kind === 'image' && <img src={url} alt={file.filename} />}
         {kind === 'pdf' && <iframe className="viewer-frame" src={url} title={file.filename} />}
         {kind === 'text' && (
           error
-            ? <div><p role="alert">{error}</p>{file.driveFileId && onFetch && <button className="ghost" type="button" disabled={fetching} onClick={onFetch}>{fetching ? 'Récupération…' : '⬇ Récupérer depuis Drive'}</button>}</div>
+            ? <p role="alert">{error}</p>
             : text === null
               ? <p>Chargement…</p>
               : <pre className="viewer-text">{text}</pre>

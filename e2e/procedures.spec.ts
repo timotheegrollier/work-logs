@@ -26,7 +26,12 @@ test('procédures du projet : création, pièce jointe rassemblée, ouverture', 
     mimeType: 'application/pdf',
     buffer: Buffer.from('plan de la terrasse'),
   });
-  await expect(panel(page).getByRole('link', { name: 'plan.pdf' })).toBeVisible();
+  await expect(panel(page).getByRole('button', { name: 'Consulter plan.pdf' })).toBeVisible();
+  await panel(page).getByRole('button', { name: 'Consulter plan.pdf' }).click();
+  const preview = page.getByRole('dialog', { name: 'Aperçu de plan.pdf' });
+  await expect(preview).toBeVisible();
+  await expect(preview.locator('iframe')).toHaveAttribute('src', /\/preview$/);
+  await preview.getByRole('button', { name: 'Fermer' }).click();
 
   // L'autre projet ne voit rien : le panneau suit le filtre.
   await filters.getByRole('button', { name: /Perso/ }).click();
@@ -62,7 +67,9 @@ test('sidebar Procédures : repliée, persistée, et envoi direct de fichier', a
     mimeType: 'application/pdf',
     buffer: Buffer.from('envoyé depuis le panneau'),
   });
-  await expect(panel(page).getByRole('link', { name: 'direct.pdf' })).toBeVisible();
+  await expect(panel(page).getByRole('button', { name: 'Consulter direct.pdf' })).toBeVisible();
+  // L'éditeur déjà ouvert reçoit les pièces jointes ajoutées dans la sidebar.
+  await expect(page.getByRole('region', { name: 'Entrée' }).getByRole('button', { name: 'Aperçu de direct.pdf' })).toBeVisible();
 
   // On rend un journal sans filtre : les specs suivantes partent d'un écran complet.
   await page.getByRole('group', { name: 'Filtrer par projet' }).getByRole('button', { name: 'Tout' }).click();

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { api, plainText, type Attachment, type EntrySummary, type Project } from '../lib';
+import { flushPendingSaves } from '../autosave';
+import { FileViewer } from './FileViewer';
 
 /**
  * Panneau Procédures : les modes d'emploi d'un projet, avec leurs pièces
@@ -14,8 +16,10 @@ export function ProcedureList({
   projectId,
   selectedId,
   onSelect,
+  onEdit,
   onCreate,
   onChanged,
+  onDeleted,
 }: {
   entries: EntrySummary[];
   attachments: (Attachment & { entry_title: string })[];
@@ -23,10 +27,17 @@ export function ProcedureList({
   projectId: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onEdit: (id: string) => void;
   onCreate: () => void;
   onChanged: () => void;
+  onDeleted: (id: string) => void;
 }) {
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [previewing, setPreviewing] = useState<Attachment | null>(null);
+  const [previewVersion, setPreviewVersion] = useState(0);
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState('');
   const colors = new Map(projects.map((p) => [p.id, p.color]));
   const project = projects.find((p) => p.id === projectId);
   const procedures = entries.filter(
@@ -37,11 +48,47 @@ export function ProcedureList({
   const attach = async (entryId: string, selected: FileList | null) => {
     if (!selected?.length) return;
     setError('');
+    setBusy(true);
     try {
-      await Promise.all(Array.from(selected, (file) => api.upload(file, entryId)));
-      onChanged();
+      const results = await Promise.allSettled(Array.from(selected, (file) => api.upload(file, entryId)));
+      const failed = results.find((result) => result.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      onChanged();
+      setBusy(false);
+    }
+  };
+
+  const remove = async (entry: EntrySummary) => {
+    if (!confirm(`Supprimer la procédure « ${entry.title} » et ses fichiers ?${entry.google_document_id ? ' Le document Google distant sera conservé.' : ''}`)) return;
+    setError('');
+    setBusy(true);
+    try {
+      // L'éditeur peut encore avoir une frappe à enregistrer, même masqué.
+      await flushPendingSaves();
+      await api.deleteEntry(entry.id);
+      onDeleted(entry.id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const recover = async (file: Attachment) => {
+    setFetching(true);
+    setFetchError('');
+    try {
+      const updated = await api.fetchDriveAttachment(file.id);
+      setPreviewing((current) => current?.id === file.id ? updated : current);
+      setPreviewVersion((version) => version + 1);
+      onChanged();
+    } catch (e) {
+      setFetchError((e as Error).message);
+    } finally {
+      setFetching(false);
     }
   };
 
@@ -54,7 +101,7 @@ export function ProcedureList({
         </span>
         {project && <span className="procedure-project">{project.name}</span>}
       </h2>
-      <button className="new-entry" onClick={onCreate}>
+      <button className="new-entry" disabled={busy} onClick={onCreate}>
         <span aria-hidden="true">＋</span> Nouvelle procédure
       </button>
       {procedures.length === 0 && (
@@ -70,6 +117,7 @@ export function ProcedureList({
               <button
                 className={'entry' + (entry.id === selectedId ? ' is-selected' : '')}
                 aria-current={entry.id === selectedId ? 'true' : undefined}
+                disabled={busy}
                 onClick={() => onSelect(entry.id)}
               >
                 <span className="entry-title">
@@ -92,11 +140,18 @@ export function ProcedureList({
                 </span>
               </button>
               <div className="procedure-row-actions">
+                <button className="ghost" disabled={busy} aria-label={`Modifier la procédure ${entry.title}`} onClick={() => onEdit(entry.id)}>
+                  Modifier
+                </button>
+                <button className="ghost danger" disabled={busy} aria-label={`Supprimer la procédure ${entry.title}`} onClick={() => void remove(entry)}>
+                  Supprimer
+                </button>
                 <label className="ghost file-button">
                   ＋ Fichier
                   <input
                     type="file"
                     multiple
+                    disabled={busy}
                     aria-label={`Joindre un fichier à ${entry.title}`}
                     onChange={(e) => {
                       void attach(entry.id, e.target.files);
@@ -109,8 +164,15 @@ export function ProcedureList({
                 <ul className="procedure-files" aria-label={`Pièces jointes de ${entry.title}`}>
                   {entryFiles.map((file) => (
                     <li key={file.id}>
-                      <a href={api.fileUrl(file.stored)} download={file.filename}>
+                      <button
+                        className="procedure-file-open"
+                        aria-label={`Consulter ${file.filename}`}
+                        onClick={() => { setFetchError(''); setPreviewing(file); }}
+                      >
                         {file.filename}
+                      </button>
+                      <a className="ghost" href={api.fileUrl(file.stored)} download={file.filename} aria-label={`Télécharger ${file.filename}`}>
+                        ↓
                       </a>
                     </li>
                   ))}
@@ -121,6 +183,14 @@ export function ProcedureList({
         })}
       </ol>
       {error && <p role="alert" className="error">{error}</p>}
+      {previewing && <FileViewer
+        key={`${previewing.id}-${previewVersion}`}
+        file={previewing}
+        onClose={() => setPreviewing(null)}
+        onFetch={() => void recover(previewing)}
+        fetching={fetching}
+        fetchError={fetchError}
+      />}
     </section>
   );
 }

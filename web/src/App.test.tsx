@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import App from './App';
 import { seedData, useRealApi } from './test/server';
 import { flushPendingSaves } from './autosave';
+import { api as clientApi } from './lib';
 
 let api: Awaited<ReturnType<typeof useRealApi>>;
 
@@ -1384,7 +1385,7 @@ describe('panneau Procédures', () => {
     expect(await within(panel).findByText('Dallage')).toBeVisible();
     expect(within(panel).queryByText('Élec')).not.toBeInTheDocument();
     expect(within(panel).queryByText('Pense-bête')).not.toBeInTheDocument();
-    expect(within(panel).getByRole('link', { name: 'devis.pdf' })).toHaveAttribute('href', expect.stringContaining('/api/files/'));
+    expect(within(panel).getByRole('link', { name: 'Télécharger devis.pdf' })).toHaveAttribute('href', expect.stringContaining('/api/files/'));
     await user.click(within(panel).getByText('Dallage'));
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Dallage'));
     // Le journal ne liste que les notes : les procédures ont leur sidebar.
@@ -1406,6 +1407,7 @@ describe('panneau Procédures', () => {
 
   test('crée une procédure riche dans le projet filtré', async () => {
     const user = userEvent.setup();
+    localStorage.setItem('worklogs-show-center', '0');
     seedData(api.db, { projects: [{ id: 'pr_villa', name: 'Villa' }] });
     render(<App />);
     await user.click(await within(filters()).findByRole('button', { name: /Villa/ }));
@@ -1413,6 +1415,7 @@ describe('panneau Procédures', () => {
     expect(await within(panel).findByText('Aucune procédure pour Villa.')).toBeVisible();
     await user.click(within(panel).getByRole('button', { name: 'Nouvelle procédure' }));
     expect(await screen.findByLabelText('Titre de l’entrée')).toHaveValue('Sans titre');
+    expect(document.querySelector('.columns')).not.toHaveClass('hide-center');
     await waitFor(() => expect(row(api.db, "SELECT kind, project_id FROM entries WHERE title='Sans titre'")).toEqual(
       expect.objectContaining({ kind: 'procedure', project_id: 'pr_villa' })));
   });
@@ -1433,6 +1436,129 @@ describe('panneau Procédures', () => {
     expect(document.querySelector('.columns')).not.toHaveClass('show-procedures');
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
     expect(globalThis.localStorage.getItem('worklogs-show-procedures')).toBe('0');
+  });
+
+  test('Modifier réaffiche l’écriture et permet de modifier le titre et le contenu, même déjà sélectionnés', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [
+      { id: 'en_note', title: 'Journal' },
+      { id: 'en_proc', title: 'Dallage', kind: 'procedure', content_md: 'Avant' },
+    ] });
+    localStorage.setItem('worklogs-show-center', '0');
+    render(<App />);
+    const panel = await openPanel(user);
+    await user.click(await within(panel).findByRole('button', { name: 'Modifier la procédure Dallage' }));
+    expect(document.querySelector('.columns')).not.toHaveClass('hide-center');
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Dallage'));
+    await user.clear(screen.getByLabelText('Titre de l’entrée'));
+    await user.type(screen.getByLabelText('Titre de l’entrée'), 'Dallage corrigé');
+    fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Étapes corrigées' } });
+    await waitFor(() => expect(row(api.db, 'SELECT title, content_md FROM entries WHERE id=?', 'en_proc')).toMatchObject({ title: 'Dallage corrigé', content_md: 'Étapes corrigées' }));
+    await user.click(screen.getByRole('button', { name: 'Lire' }));
+    await user.click(within(panel).getByRole('button', { name: 'Modifier la procédure Dallage corrigé' }));
+    expect(screen.getByRole('button', { name: 'Écrire' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('ouvre une procédure Google dans l’éditeur de l’app quand Écriture est masqué', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_proc', title: 'Consignes Google', kind: 'procedure' }] });
+    seedGoogleLink(api.db, 'en_proc', 'doc-procedure');
+    localStorage.setItem('worklogs-show-center', '0');
+    render(<App />);
+    const panel = await openPanel(user);
+    await user.click(await within(panel).findByRole('button', { name: 'Modifier la procédure Consignes Google' }));
+    expect(document.querySelector('.columns')).not.toHaveClass('hide-center');
+    const content = await screen.findByRole('textbox', { name: 'Contenu du document' });
+    expect(content).toHaveTextContent('Google');
+    expect(content).toHaveAttribute('contenteditable', 'true');
+  });
+
+  test('consulte une pièce jointe dans l’app sans changer l’entrée ouverte', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [
+      { id: 'en_note', title: 'Note ouverte' },
+      { id: 'en_proc', title: 'Dallage', kind: 'procedure' },
+    ] });
+    const uploaded = await api.upload('consignes.txt', 'Contenu de la pièce jointe', { entry_id: 'en_proc' });
+    render(<App />);
+    const panel = await openPanel(user);
+    await user.click(await within(panel).findByRole('button', { name: 'Consulter consignes.txt' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Aperçu de consignes.txt' });
+    expect(await within(dialog).findByText('Contenu de la pièce jointe')).toBeVisible();
+    expect(within(dialog).getByRole('link', { name: 'Télécharger' })).toHaveAttribute('href', `/api/files/${uploaded.body.stored}`);
+    await user.click(within(dialog).getByRole('button', { name: 'Fermer' }));
+    expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Note ouverte');
+  });
+
+  test('annule ou supprime une procédure non ouverte et ses fichiers depuis la sidebar', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [
+      { id: 'en_note', title: 'Note ouverte' },
+      { id: 'en_proc', title: 'Dallage', kind: 'procedure' },
+    ] });
+    const uploaded = await api.upload('plan.pdf', '%PDF', { entry_id: 'en_proc' });
+    render(<App />);
+    const panel = await openPanel(user);
+    const remove = await within(panel).findByRole('button', { name: 'Supprimer la procédure Dallage' });
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    await user.click(remove);
+    expect(row(api.db, 'SELECT id FROM entries WHERE id=?', 'en_proc')).toBeDefined();
+    await user.click(remove);
+    await waitFor(() => expect(row(api.db, 'SELECT id FROM entries WHERE id=?', 'en_proc')).toBeUndefined());
+    await waitFor(() => expect(within(panel).queryByText('Dallage')).not.toBeInTheDocument());
+    expect((await fetch(`/api/files/${uploaded.body.stored}`)).status).toBe(404);
+    expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Note ouverte');
+  });
+
+  test('supprimer la procédure ouverte termine sa sauvegarde et revient au journal', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [
+      { id: 'en_note', title: 'Note ouverte' },
+      { id: 'en_proc', title: 'Dallage', kind: 'procedure' },
+    ] });
+    render(<App />);
+    const panel = await openPanel(user);
+    await user.click(await within(panel).findByRole('button', { name: 'Modifier la procédure Dallage' }));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Dallage'));
+    fireEvent.change(await screen.findByLabelText('Contenu en Markdown'), { target: { value: 'Dernière frappe' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Supprimer la procédure Dallage' }));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Note ouverte'));
+    expect(row(api.db, 'SELECT id FROM entries WHERE id=?', 'en_proc')).toBeUndefined();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  test('une suppression refusée conserve la procédure et permet de réessayer', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_proc', title: 'Dallage', kind: 'procedure' }] });
+    vi.spyOn(clientApi, 'deleteEntry').mockRejectedValueOnce(new Error('Suppression impossible'));
+    render(<App />);
+    const panel = await openPanel(user);
+    const remove = await within(panel).findByRole('button', { name: 'Supprimer la procédure Dallage' });
+    await user.click(remove);
+    expect(await within(panel).findByRole('alert')).toHaveTextContent('Suppression impossible');
+    expect(remove).toBeEnabled();
+    expect(row(api.db, 'SELECT id FROM entries WHERE id=?', 'en_proc')).toBeDefined();
+    await user.click(remove);
+    await waitFor(() => expect(within(panel).queryByText('Dallage')).not.toBeInTheDocument());
+  });
+
+  test('récupère une pièce jointe Drive depuis son aperçu et affiche les erreurs dans le dialogue', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_proc', title: 'Dallage', kind: 'procedure' }] });
+    const uploaded = await api.upload('consignes.txt', 'Consignes', { entry_id: 'en_proc' });
+    api.db.prepare('UPDATE attachments SET drive_file_id=? WHERE id=?').run('drive-consignes', uploaded.body.id);
+    vi.spyOn(clientApi, 'fetchDriveAttachment').mockRejectedValueOnce(new Error('Drive indisponible'));
+    render(<App />);
+    const panel = await openPanel(user);
+    await user.click(await within(panel).findByRole('button', { name: 'Consulter consignes.txt' }));
+    let dialog = await screen.findByRole('dialog', { name: 'Aperçu de consignes.txt' });
+    await user.click(within(dialog).getByRole('button', { name: /Récupérer depuis Drive/ }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Drive indisponible');
+    vi.mocked(clientApi.fetchDriveAttachment).mockResolvedValueOnce({ ...uploaded.body, driveFileId: 'drive-consignes' });
+    await user.click(within(dialog).getByRole('button', { name: /Récupérer depuis Drive/ }));
+    dialog = await screen.findByRole('dialog', { name: 'Aperçu de consignes.txt' });
+    expect(await within(dialog).findByText('Consignes')).toBeVisible();
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
   });
 
   // Envoi réel depuis le panneau : couvert en e2e (jsdom n'encode pas le

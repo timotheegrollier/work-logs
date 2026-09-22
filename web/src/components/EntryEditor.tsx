@@ -31,6 +31,7 @@ export function EntryEditor({
   onDeleted,
   onTaskCreated,
   autoFocusTitle = false,
+  editRequest = 0,
 }: {
   tabs?: EntrySummary[];
   onSelectTab?: (id: string) => void;
@@ -41,6 +42,7 @@ export function EntryEditor({
   onDeleted: () => void;
   onTaskCreated?: () => void;
   autoFocusTitle?: boolean;
+  editRequest?: number;
 }) {
   const [draft, setDraft] = useState({
     title: entry.title,
@@ -58,6 +60,9 @@ export function EntryEditor({
   const [archived, setArchived] = useState(entry.archived ?? 0);
   const [save, setSave] = useState<SaveState>('saved');
   const [writing, setWriting] = useState(autoFocusTitle);
+  useEffect(() => { if (editRequest) setWriting(true); }, [editRequest]);
+  // Les fichiers peuvent aussi être ajoutés depuis la sidebar Procédures.
+  useEffect(() => { setAttachments(entry.attachments ?? []); }, [entry.attachments]);
   const [error, setError] = useState('');
   const [googleSync, setGoogleSync] = useState(entry.google_sync);
   const integratedGoogle = Boolean(window.worklogsDesktop?.googleDocs);
