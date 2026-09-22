@@ -399,7 +399,7 @@ export function registerGoogleRoutes(app, { db, google, uploadDir, autoSync = fa
   });
   route('post', '/api/google/configure', (req, res) => res.json(google.configure(req.body)));
   route('post', '/api/google/use-builtin', (_req, res) => res.json(google.useBuiltin()));
-  route('post', '/api/google/connect', async (_req, res) => res.json(await google.connect()));
+  route('post', '/api/google/connect', async (req, res) => res.json(await google.connect({ pick: req.body?.pick === true })));
   route('post', '/api/google/disconnect', async (_req, res) => { sync?.reset(); res.json(await google.disconnect()); });
   route('get', '/api/google/documents/:id/tabs', async (req, res) => {
     const id = fileId(req.params.id);

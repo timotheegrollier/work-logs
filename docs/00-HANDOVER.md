@@ -71,8 +71,9 @@
   `stage-desktop.mjs` depuis les secrets CI), client personnel prioritaire, route
   `POST /api/google/use-builtin` pour y revenir. Scopes `+ openid email profile`,
   compte (`userinfo`) stocké chiffré et exposé dans `status().account`.
-- PWA : `VITE_GOOGLE_CLIENT_ID`, flux « jeton » sans secret (1 h), retour lu dans le
-  fragment puis effacé, expiration/401 → `GOOGLE_REAUTH` → « Reprendre la session Google ».
+- PWA : `VITE_GOOGLE_CLIENT_ID`, flux code + PKCE sans secret, `refresh_token` conservé
+  pour le renouvellement silencieux ; les anciens retours « jeton » restent acceptés,
+  mais une session sans renouvellement tombe sur `GOOGLE_REAUTH` → « Reprendre la session Google ».
 - UI : bouton principal « Se connecter avec Google », « Connecté : Nom · e-mail »,
   repli « Utiliser mon propre client OAuth », « Se déconnecter de Google ».
 - **À faire hors code** (sinon rien ne change pour l'utilisateur) : scopes + passage en

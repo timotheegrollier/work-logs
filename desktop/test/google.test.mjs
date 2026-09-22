@@ -24,10 +24,10 @@ function fixture({ backend = 'gnome_libsecret', token = {}, response = 200, defa
     defaultClient,
   });
   if (custom) client.configure({ installed: { client_id: 'unit-test.apps.googleusercontent.com', client_secret: 'public-desktop-value' } });
-  return { client, calls, dir, url: () => opened, async authorize() {
-    await client.connect();
+  return { client, calls, dir, url: () => opened, async authorize({ pick = false, pickedFileId = '' } = {}) {
+    await client.connect({ pick });
     const callback = new URL(opened.searchParams.get('redirect_uri'));
-    callback.search = new URLSearchParams({ state: opened.searchParams.get('state'), code: 'test-code', picked_file_ids: 'doc-test' }).toString();
+    callback.search = new URLSearchParams({ state: opened.searchParams.get('state'), code: 'test-code', ...(pickedFileId ? { picked_file_ids: pickedFileId } : {}) }).toString();
     const res = await fetch(callback);
     await res.text();
     return res.status;
@@ -41,7 +41,8 @@ test('OAuth desktop : navigateur système, PKCE, état contrôlé et jetons hors
     const opened = f.url();
     assert.equal(opened.origin, 'https://accounts.google.com');
     assert.equal(opened.searchParams.get('scope'), `${scope} openid email profile`);
-    assert.equal(opened.searchParams.get('trigger_onepick'), 'true');
+    assert.equal(opened.searchParams.has('trigger_onepick'), false);
+    assert.equal(opened.searchParams.has('mimetypes'), false);
     const callback = new URL(opened.searchParams.get('redirect_uri'));
     assert.equal(callback.hostname, '127.0.0.1');
     callback.search = '?state=incorrect&code=test-code';
@@ -52,7 +53,7 @@ test('OAuth desktop : navigateur système, PKCE, état contrôlé et jetons hors
     const params = f.calls[0].options.body;
     assert.equal(createHash('sha256').update(params.get('code_verifier')).digest('base64url'), f.url().searchParams.get('code_challenge'));
     assert.equal(f.client.status().connected, true);
-    assert.deepEqual(f.client.status().selectedIds, ['doc-test']);
+    assert.deepEqual(f.client.status().selectedIds, []);
     // Photo hors googleusercontent.com : ignorée (jamais d'URL arbitraire dans l'en-tête).
     assert.deepEqual(f.client.status().account, { email: 'timo@example.com', name: 'Timo', picture: '' });
     assert.equal(f.calls.find(c => c.url.endsWith('/userinfo')).options.headers.Authorization, 'Bearer test-access');
@@ -63,7 +64,7 @@ test('OAuth desktop : navigateur système, PKCE, état contrôlé et jetons hors
     const restored = createGoogleClient({ profileDir: f.dir, openExternal: async () => {},
       secureStorage: { isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'gnome_libsecret',
         decryptString: value => Buffer.from(value.toString(), 'base64').toString() } });
-    assert.deepEqual(restored.status().selectedIds, ['doc-test'], 'retrouve la sélection après redémarrage');
+    assert.deepEqual(restored.status().selectedIds, [], 'ne retrouve aucune sélection quand le premier clic ne lance pas le Picker');
     restored.close();
     await assert.rejects(f.client.request('https://example.com'), /non autorisée/);
   } finally { f.close(); }
@@ -164,13 +165,16 @@ test('client intégré : un clic suffit, le client personnel reste prioritaire, 
     assert.equal(f.client.status().builtin, true);
     assert.equal(await f.authorize(), 200);
     assert.equal(f.url().searchParams.get('client_id'), builtin.client_id);
+    assert.equal(f.url().searchParams.has('trigger_onepick'), false);
     assert.equal(f.calls[0].options.body.get('client_secret'), 'public-builtin');
     assert.equal(f.client.status().account.picture, 'https://lh3.googleusercontent.com/a/photo');
     f.client.configure({ installed: { client_id: 'perso.apps.googleusercontent.com' } });
     assert.equal(f.client.status().builtin, false);
     assert.equal(f.client.status().connected, false, 'changer de client déconnecte');
-    await f.client.connect();
+    await f.client.connect({ pick: true });
     assert.equal(f.url().searchParams.get('client_id'), 'perso.apps.googleusercontent.com');
+    assert.equal(f.url().searchParams.get('trigger_onepick'), 'true');
+    assert.equal(f.url().searchParams.get('mimetypes'), 'application/vnd.google-apps.document');
     const back = f.client.useBuiltin();
     assert.equal(back.builtin, true);
     assert.equal(back.pending, false);

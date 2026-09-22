@@ -198,7 +198,7 @@ export const remoteApi = {
   googleStatus: () => req<GoogleStatus>('/api/google/status'),
   configureGoogle: (configuration: unknown) => send<GoogleStatus>('POST', '/api/google/configure', configuration),
   useBuiltinGoogle: () => send<GoogleStatus>('POST', '/api/google/use-builtin'),
-  connectGoogle: () => send<GoogleStatus>('POST', '/api/google/connect'),
+  connectGoogle: (pick = false) => send<GoogleStatus>('POST', '/api/google/connect', { pick }),
   disconnectGoogle: () => send<GoogleStatus>('POST', '/api/google/disconnect'),
   /** État de la synchro automatique Drive (révision : le front recharge quand elle avance). */
   googleSync: () => req<GoogleSyncStatus>('/api/google/sync'),

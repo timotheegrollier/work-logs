@@ -132,8 +132,10 @@ test('client intégré : un clic connecte, le compte s’affiche, sans rien impo
   expect(screen.queryByLabelText('Configuration Google JSON')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Utiliser mon propre client OAuth' })).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Se connecter avec Google' }));
-  await waitFor(() => expect(connect).toHaveBeenCalledOnce());
+  await waitFor(() => expect(connect).toHaveBeenCalledWith(false));
   expect(await screen.findByLabelText('Compte Google connecté')).toHaveTextContent('Connecté : Timo · timo@example.com');
+  fireEvent.click(screen.getByRole('button', { name: 'Choisir des documents dans Drive' }));
+  await waitFor(() => expect(connect).toHaveBeenLastCalledWith(true));
 });
 
 test('client personnel : retour au client intégré en un clic', async () => {

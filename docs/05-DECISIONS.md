@@ -520,10 +520,13 @@ secret comme non confidentiel pour une app installée, mais il reste hors de git
 rotation). L'ID du client Web est public par nature : variable de dépôt.
 
 **PWA sans secret.** Un client « Web » est confidentiel et la PWA est un site public :
-publier son secret est interdit. Seul le flux « jeton » (`response_type=token`) marche
-sans serveur ; le prix est une session d'une heure, reprise par une redirection
-`login_hint` sans nouveau consentement, jamais déclenchée d'office en pleine saisie.
-Un client personnel avec secret garde le flux code + PKCE (session longue).
+publier son secret est interdit. Le flux utilise donc le code + PKCE (`response_type=code`)
+et `access_type=offline`, sans secret dans le bundle ni dans l'échange du code. Quand Google
+émet un `refresh_token`, il est conservé localement et renouvelle silencieusement le jeton
+d'accès ; l'utilisateur ne reprend pas la session à chaque heure. Un ancien retour du flux
+« jeton » (`response_type=token`) reste accepté pour ne pas casser les sessions déjà ouvertes,
+mais ce flux ne peut pas être renouvelé. Un client personnel avec secret garde le même flux
+code + PKCE, avec le secret envoyé uniquement à Google si le client l'exige.
 
 **Identité minimale.** `openid email profile` en plus de `drive.file`, lus une fois via
 `userinfo` pour l'affichage ; un échec n'empêche jamais Drive. **Avatar ajouté le 2026-09-22**
@@ -531,8 +534,9 @@ Un client personnel avec secret garde le flux code + PKCE (session longue).
 `…googleusercontent.com` sont retenues, chargées en `referrerPolicy="no-referrer"`, avec
 l'initiale sur une pastille si l'image échoue.
 
-**Rouvrir si** un serveur WorkLogs hébergé apparaît (il pourrait garder un jeton de
-rafraîchissement pour la PWA), ou si Google retire le flux « jeton ».
+**Rouvrir si** Google refuse durablement les jetons de renouvellement pour les clients Web
+publics, ou si un serveur WorkLogs hébergé apparaît (il pourrait gérer le renouvellement
+côté serveur).
 
 ## 20. Synchro automatique par fusion, un seul fichier Drive — 2026-09-22
 

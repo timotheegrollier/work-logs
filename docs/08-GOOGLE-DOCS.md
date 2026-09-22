@@ -233,13 +233,16 @@ uniquement pour afficher « Connecté : Nom · e-mail ».
 | | Desktop | PWA |
 |---|---|---|
 | Client intégré | secrets CI `GOOGLE_DESKTOP_CLIENT_ID` / `GOOGLE_DESKTOP_CLIENT_SECRET` → `desktop/google-default.json` écrit par `scripts/stage-desktop.mjs` (jamais dans git) ; en dev : variables `WORKLOGS_GOOGLE_CLIENT_ID` / `_SECRET` | variable de dépôt `GOOGLE_WEB_CLIENT_ID` → `VITE_GOOGLE_CLIENT_ID` (`pwa.yml`) |
-| Flux | inchangé : navigateur système + PKCE, jeton de rafraîchissement dans le trousseau | **sans secret** : `response_type=token`, jeton d'**une heure** lu dans le fragment `#access_token` puis effacé de l'URL |
-| Expiration | renouvellement silencieux | « Reprendre la session Google » : une redirection avec `login_hint`, sans nouveau consentement ; le compte et les données locales restent |
-| Compte | `userinfo` après connexion, stocké chiffré avec les jetons | `userinfo` au retour, stocké avec le jeton |
+| Flux | inchangé : navigateur système + PKCE, jeton de rafraîchissement dans le trousseau | **sans secret** : code + PKCE (`response_type=code`, `access_type=offline`), `refresh_token` conservé localement puis jeton d'accès renouvelé silencieusement |
+| Expiration | renouvellement silencieux | renouvellement silencieux si Google émet un `refresh_token` ; les anciennes sessions « jeton » sans renouvellement proposent encore « Reprendre la session Google » |
+| Compte | `userinfo` après connexion, stocké chiffré avec les jetons | `userinfo` après échange, stocké avec les jetons |
 
 Pourquoi pas de secret côté PWA : un client « Web » est confidentiel et la PWA est un
-site public ; publier son secret est interdit. Le flux « jeton » est le seul possible
-sans serveur. Coller un client personnel **avec** secret garde l'ancien flux (session longue).
+site public ; publier son secret est interdit. Le code + PKCE permet l'échange sans secret
+et `access_type=offline` demande le renouvellement silencieux. Google peut toutefois refuser
+de délivrer un `refresh_token` selon la configuration du client ou l'autorisation ; dans ce
+cas l'interface garde une reprise explicite comme filet de sécurité. Coller un client
+personnel **avec** secret reste possible : le secret n'est jamais inclus dans le build.
 
 Le client personnel reste disponible : **Utiliser mon propre client OAuth** (repli),
 prioritaire sur l'intégré ; **Revenir au client intégré** l'oublie (et déconnecte).
@@ -268,9 +271,9 @@ Une ancienne autorisation sans `openid` fonctionne toujours, simplement sans com
    (objet `installed`, avec `client_id` et, si fourni, `client_secret`).
 5. Lancer `npm run desktop`, déplier **Google Drive**, puis **Importer la configuration
    Google**. Ce fichier identifie le client desktop ; ce n’est pas un compte de service.
-6. **Connecter Google Drive** ouvre le navigateur système. Autoriser et sélectionner
-   un Google Docs de test compatible. Revenir dans WorkLogs puis ouvrir le document
-   depuis la liste. **Choisir des documents dans Drive** accorde l’accès à d’autres fichiers.
+6. **Connecter Google Drive** ouvre le navigateur système. Autoriser suffit : revenir dans
+   WorkLogs finalise la connexion sans imposer de document. **Choisir des documents dans
+   Drive** lance ensuite le Picker dans le navigateur et accorde l’accès aux fichiers choisis.
 
 Le [flux OAuth desktop](https://developers.google.com/identity/protocols/oauth2/native-app)
 utilise PKCE et un retour HTTP sur `127.0.0.1` à port éphémère. Google interdit les

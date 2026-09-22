@@ -162,7 +162,7 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
       fs.rmSync(configPath, { force: true });
       return status();
     },
-    async connect() {
+    async connect({ pick = false } = {}) {
       if (!client().client_id) throw fail('Configure d’abord le client Google Drive.');
       if (!protectedStorage()) throw fail('Active le trousseau de ta session Linux pour connecter Google Drive.');
       cancel(); error = ''; selected = [];
@@ -200,10 +200,12 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
       const timer = setTimeout(() => { error = 'La connexion Google a expiré. Réessaie.'; cancel(); }, timeoutMs);
       timer.unref(); pending = { server, timer };
       const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-      url.search = new URLSearchParams({ client_id: client().client_id, redirect_uri: redirect, response_type: 'code', scope: LOGIN_SCOPE,
+      const params = { client_id: client().client_id, redirect_uri: redirect, response_type: 'code', scope: LOGIN_SCOPE,
         // select_account : « Changer de compte » propose toujours le choix du compte.
-        access_type: 'offline', prompt: 'select_account consent', trigger_onepick: 'true', mimetypes: 'application/vnd.google-apps.document',
-        state, code_challenge_method: 'S256', code_challenge: createHash('sha256').update(verifier).digest('base64url') }).toString();
+        access_type: 'offline', prompt: 'select_account consent', state, code_challenge_method: 'S256',
+        code_challenge: createHash('sha256').update(verifier).digest('base64url') };
+      if (pick) Object.assign(params, { trigger_onepick: 'true', mimetypes: 'application/vnd.google-apps.document' });
+      url.search = new URLSearchParams(params).toString();
       try { await openExternal(url.href); } catch { cancel(); throw fail('Impossible d’ouvrir le navigateur pour la connexion Google.'); }
       return status();
     },

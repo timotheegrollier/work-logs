@@ -206,9 +206,11 @@ seul**). Cliquer un fichier le télécharge ; s'il n'est pas encore sur cet appa
 Drive, il est rapatrié automatiquement.
 
 **Se connecter avec Google** suffit (desktop comme mobile) : rien à configurer, la connexion
-reste facultative et le compte connecté s'affiche en haut du dialogue. Sur mobile, la session
-dure une heure ; ensuite **Reprendre la session Google** la rouvre en un instant, sans rien
-ressaisir. **Utiliser mon propre client OAuth** reste possible pour qui a son projet Google Cloud.
+reste facultative et le compte connecté s'affiche en haut du dialogue. Sur mobile, WorkLogs
+renouvelle normalement la session en arrière-plan : il n'est pas nécessaire de se reconnecter
+à chaque heure. Si Google ne fournit pas de jeton de renouvellement pour une ancienne
+autorisation, **Reprendre la session Google** reste proposé, sans ressaisir le compte.
+**Utiliser mon propre client OAuth** reste possible pour qui a son projet Google Cloud.
 
 Dans **Sauvegardes WorkLogs**, **Sauvegarder dans Google Drive** maintient un seul fichier JSON
 canonique (`WorkLogs backup.json`) : une nouvelle sauvegarde remplace la précédente et les anciennes

@@ -40,7 +40,7 @@ interface WebTokens {
 
 interface PendingLogin {
   state: string;
-  /** Absent : flux « jeton » sans secret (client intégré). */
+  /** Facultatif uniquement pour accepter le retour d'un ancien flux « jeton ». */
   verifier?: string;
   redirectUri: string;
 }
@@ -145,20 +145,20 @@ export async function pkceChallenge(verifier: string, subtle: Pick<SubtleCrypto,
 }
 
 /** URL d'autorisation Google (pure : `beginWebLogin` y envoie le navigateur). */
-export function loginUrl(clientId: string, redirectUri: string, state: string, challenge: string): string {
+export function loginUrl(clientId: string, redirectUri: string, state: string, challenge: string, hint = '', selectAccount = false): string {
   const url = new URL(AUTH_URL);
   url.search = new URLSearchParams({
     client_id: clientId, redirect_uri: redirectUri, response_type: 'code', scope: LOGIN_SCOPE,
-    access_type: 'offline', prompt: 'select_account consent', state,
-    code_challenge: challenge, code_challenge_method: 'S256',
+    access_type: 'offline', prompt: selectAccount ? 'select_account' : 'select_account consent', state,
+    code_challenge: challenge, code_challenge_method: 'S256', ...(!selectAccount && hint ? { login_hint: hint } : {}),
   }).toString();
   return url.href;
 }
 
 /**
- * Flux « jeton » sans secret : le seul possible dans un site public. Le jeton
- * dure une heure ; `login_hint` rend la reprise immédiate (pas de consentement
- * redemandé une fois accordé).
+ * Ancien flux « jeton » conservé pour accepter un retour commencé par une version
+ * précédente. Les nouvelles connexions passent toujours par `loginUrl`, avec code
+ * + PKCE et demande de renouvellement hors ligne.
  */
 export function tokenLoginUrl(clientId: string, redirectUri: string, state: string, hint = '', selectAccount = false): string {
   const url = new URL(AUTH_URL);
@@ -180,21 +180,18 @@ function rememberPending(login: PendingLogin): void {
 }
 
 /**
- * Démarre la connexion puis quitte vers Google. Sans argument : client intégré
- * (ou personnel déjà enregistré). Avec un secret personnel : code + PKCE,
- * session longue ; sinon flux « jeton » d'une heure.
+ * Démarre toujours le flux code + PKCE puis quitte vers Google. Le client intégré
+ * reste public : aucun secret n'est nécessaire dans le navigateur. `access_type=offline`
+ * permet à Google d'émettre un `refresh_token` pour renouveler la session sans clic.
  */
 export async function beginWebLogin(clientId = '', options: { selectAccount?: boolean } = {}): Promise<void> {
   const cleaned = clientId ? setWebClientId(clientId) : activeWebClientId() || fail('Aucun client Google configuré.');
+  const redirectUri = webRedirectUri();
   const state = randomString(32);
-  if (!getWebClientSecret()) {
-    rememberPending({ state, redirectUri: webRedirectUri() });
-    location.assign(tokenLoginUrl(cleaned, webRedirectUri(), state, readTokens()?.account?.email ?? '', options.selectAccount));
-    return;
-  }
+  // Tous les clients utilisent le code + PKCE : le client intégré ne met aucun secret dans le bundle.
   const verifier = randomString(64);
-  rememberPending({ state, verifier, redirectUri: webRedirectUri() });
-  location.assign(loginUrl(cleaned, webRedirectUri(), state, await pkceChallenge(verifier)));
+  rememberPending({ state, verifier, redirectUri });
+  location.assign(loginUrl(cleaned, redirectUri, state, await pkceChallenge(verifier), readTokens()?.account?.email ?? '', options.selectAccount));
 }
 
 /** Nom et e-mail du compte, pour l'affichage seulement ; un échec n'empêche pas Drive. */
@@ -276,8 +273,8 @@ export function hasRedirectCallback(search = location.search, hash = location.ha
 }
 
 /**
- * Traite le retour de Google au chargement : `?code=…` (client avec secret) ou
- * `#access_token=…` (flux « jeton »). À appeler une fois, puis à nettoyer
+ * Traite le retour de Google au chargement : `?code=…` (flux code + PKCE) ou
+ * `#access_token=…` (ancien flux « jeton »). À appeler une fois, puis à nettoyer
  * l'URL (`history.replaceState`). Renvoie `false` s'il n'y a rien à traiter.
  */
 export async function handleRedirectCallback(search = location.search, hash = location.hash): Promise<boolean> {
@@ -310,12 +307,17 @@ export async function handleRedirectCallback(search = location.search, hash = lo
   }
   if (!login.verifier) fail('Retour Google invalide : recommence la connexion.');
   const code = params.get('code') ?? fail('Code de connexion Google absent.');
+  const previous = readTokens();
   const tokens = await tokenRequest({ grant_type: 'authorization_code', code, code_verifier: login.verifier as string, redirect_uri: login.redirectUri });
-  writeTokens({ ...tokens, account: await fetchAccount(tokens.access_token) });
+  writeTokens({
+    ...(previous?.refresh_token && !tokens.refresh_token ? { refresh_token: previous.refresh_token } : {}),
+    ...tokens,
+    account: await fetchAccount(tokens.access_token),
+  });
   return true;
 }
 
-/** Session « jeton » expirée : l'UI propose de la reprendre (une redirection éclair). */
+/** Session sans `refresh_token` expirée : l'UI propose une reconnexion explicite. */
 export const GOOGLE_REAUTH = 'GOOGLE_REAUTH';
 
 export async function webAccessToken(): Promise<string> {

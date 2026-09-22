@@ -58,24 +58,29 @@ describe('panneau Drive de la PWA', () => {
     }
   });
 
-  test('retour « jeton » : compte affiché, puis reprise proposée quand la session expire', async () => {
+  test('retour du client intégré : compte affiché et session renouvelable sans reprise manuelle', async () => {
     vi.stubEnv('VITE_GOOGLE_CLIENT_ID', CLIENT);
     try {
-      sessionStorage.setItem('worklogs-google-web-pending', JSON.stringify({ state: 's', redirectUri: 'http://localhost:3000/' }));
+      sessionStorage.setItem('worklogs-google-web-pending', JSON.stringify({ state: 's', verifier: 'v', redirectUri: 'http://localhost:3000/' }));
       vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [] });
-      vi.stubGlobal('fetch', async (url: unknown) => {
+      vi.stubGlobal('fetch', async (url: unknown, init?: RequestInit) => {
         const target = String(url);
+        if (target.endsWith('/token')) {
+          const body = new URLSearchParams((init?.body as URLSearchParams).toString());
+          expect(body.get('client_secret')).toBeNull();
+          expect(body.get('code_verifier')).toBe('v');
+          return Response.json({ access_token: 'acces', refresh_token: 'renouvellement', expires_in: 3600, scope: 'https://www.googleapis.com/auth/drive.file' });
+        }
         if (target.endsWith('/userinfo')) return Response.json({ email: 'timo@example.com', name: 'Timo' });
-        if (target.includes('/drive/v3/files?')) return new Response('{}', { status: 401 });
+        if (target.includes('/drive/v3/files?')) return Response.json({ files: [] });
         throw new Error(`appel inattendu : ${target}`);
       });
-      window.history.replaceState(null, '', '/#access_token=jeton&expires_in=3599&state=s');
+      window.history.replaceState(null, '', '/?code=code&state=s');
       render(<GoogleDriveWeb onOpen={() => {}} />);
       expect(await screen.findByLabelText('Compte Google connecté')).toHaveTextContent('Connecté : Timo · timo@example.com');
-      expect(window.location.hash).toBe('');
-      // Le premier appel Drive tombe sur un jeton refusé : reprise en un clic.
-      expect(await screen.findByRole('button', { name: 'Reprendre la session Google' })).toBeVisible();
-      expect(screen.getByLabelText('Compte Google connecté')).toHaveTextContent('timo@example.com');
+      expect(window.location.search).toBe('');
+      expect(screen.queryByRole('button', { name: 'Reprendre la session Google' })).not.toBeInTheDocument();
+      expect(JSON.parse(localStorage.getItem('worklogs-google-web-tokens') as string).refresh_token).toBe('renouvellement');
     } finally {
       vi.unstubAllEnvs();
     }

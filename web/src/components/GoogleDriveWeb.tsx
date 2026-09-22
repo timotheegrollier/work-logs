@@ -44,7 +44,7 @@ export function GoogleDriveWeb({ onRestored, onDocuments }: { onOpen?: (entry: E
   const showError = (e: unknown) => {
     setError((e as Error).message);
     setHelpUrl(googleHelpUrl(e));
-    // Session « jeton » expirée pendant l'action : le bouton de reprise apparaît.
+    // Un ancien jeton sans renouvellement peut expirer pendant l'action : le bouton de reprise apparaît.
     refreshStatus();
   };
   const run = async (action: () => Promise<void>) => {
@@ -61,7 +61,7 @@ export function GoogleDriveWeb({ onRestored, onDocuments }: { onOpen?: (entry: E
     }
   };
 
-  // Retour de Google (`?code=…` ou `#access_token=…`) : traité une fois, puis URL nettoyée.
+  // Retour de Google (`?code=…` ou ancien `#access_token=…`) : traité une fois, puis URL nettoyée.
   useEffect(() => {
     let alive = true;
     if (!hasRedirectCallback()) return;
@@ -239,7 +239,7 @@ export function GoogleDriveWeb({ onRestored, onDocuments }: { onOpen?: (entry: E
         />
       </label>
       <label>
-        Secret client Web (facultatif : garde la session au-delà d’une heure)
+        Secret client Web (facultatif : requis seulement par certains clients)
         <input
           type="password"
           aria-label="Secret client Google Web"
@@ -295,7 +295,7 @@ export function GoogleDriveWeb({ onRestored, onDocuments }: { onOpen?: (entry: E
           </p>
           {status.expired && (
             <div className="notice drive-reauth">
-              <p>Session Google expirée (elle dure une heure sur mobile). Tes notes restent sur cet appareil.</p>
+              <p>Session Google expirée. Google n’a pas fourni de renouvellement automatique pour cette autorisation. Tes notes restent sur cet appareil.</p>
               <button type="button" className="primary" disabled={busy} onClick={() => void run(() => beginWebLogin())}>
                 Reprendre la session Google
               </button>

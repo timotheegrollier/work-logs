@@ -48,10 +48,10 @@ test('refuse les contenus non pris en charge et les révisions absentes au lieu 
 
 function stub() {
   let source = doc();
-  const calls = [];
-  return { calls, setSource(next) { source = next; },
+  const calls = [], connectCalls = [];
+  return { calls, connectCalls, setSource(next) { source = next; },
     status: () => ({ available: true, configured: true, connected: true, pending: false, selectedIds: [] }),
-    configure: () => ({ configured: true }), useBuiltin: () => ({ configured: true, builtin: true }), connect: async () => ({ pending: true }), disconnect: async () => ({ connected: false }),
+    configure: () => ({ configured: true }), useBuiltin: () => ({ configured: true, builtin: true }), connect: async options => { connectCalls.push(options); return { pending: true }; }, disconnect: async () => ({ connected: false }),
     async request(url, options) {
       calls.push({ url, options });
       if (url.includes('/comments?')) return { comments: [] };
@@ -70,6 +70,9 @@ test('API Drive : configuration, sélection, import idempotent, envoi et conflit
     assert.equal((await api.post('/api/google/configure', {})).body.configured, true);
     assert.equal((await api.post('/api/google/use-builtin', {})).body.builtin, true);
     assert.equal((await api.post('/api/google/connect')).body.pending, true);
+    assert.deepEqual(google.connectCalls.at(-1), { pick: false });
+    assert.equal((await api.post('/api/google/connect', { pick: true })).body.pending, true);
+    assert.deepEqual(google.connectCalls.at(-1), { pick: true });
     assert.equal((await api.get('/api/google/documents')).body.files.length, 1);
     assert.equal((await api.post('/api/google/documents/open', { document_id: '../secrets' })).status, 400);
     const opened = await api.post('/api/google/documents/open', { document_id: 'google-123' });
