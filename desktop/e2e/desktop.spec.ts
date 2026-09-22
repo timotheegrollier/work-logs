@@ -125,7 +125,8 @@ test('document riche : fermeture, reprise et panneau Drive dans Electron', async
   await expect(reopened.locator('strong')).toHaveText('Texte riche retrouvé');
   await reopened.press('Control+s');
   await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '⚙ Paramètres' }).click();
+  await page.getByRole('button', { name: 'Compte et paramètres' }).click();
+  await page.getByRole('menuitem', { name: 'Paramètres' }).click();
   await page.getByRole('dialog', { name: 'Paramètres' }).getByRole('button', { name: 'Gérer Google Drive' }).click();
   // Paquet CI avec client intégré : un bouton suffit ; sinon, import manuel.
   const signin = page.getByRole('button', { name: 'Se connecter avec Google' });

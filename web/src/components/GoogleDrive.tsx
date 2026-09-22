@@ -1,25 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api, googleHelpUrl, type Entry, type GoogleBackup, type GoogleFile, type GoogleStatus } from '../lib';
+import { api, googleHelpUrl, type Entry, type GoogleBackup, type GoogleStatus } from '../lib';
 import { GoogleDriveWeb } from './GoogleDriveWeb';
 
 /** PWA statique : Drive direct navigateur, sans passer par `/api`. */
 const isPwa = import.meta.env.VITE_PWA === '1';
 
 /** Gestion Drive dans une fenêtre dédiée, sans route ni onglet supplémentaire. */
-export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => void; onRestored?: () => void | Promise<void> }) {
+export function GoogleDrive({ onOpen, onRestored, onDocuments }: { onOpen: (entry: Entry) => void; onRestored?: () => void | Promise<void>; onDocuments?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState<GoogleStatus | null>(null);
-  const [files, setFiles] = useState<GoogleFile[]>([]);
   const [backups, setBackups] = useState<GoogleBackup[]>([]);
-  const [page, setPage] = useState('');
   const [error, setError] = useState('');
   const [helpUrl, setHelpUrl] = useState('');
-  const [warnings, setWarnings] = useState<string[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [title, setTitle] = useState('');
-  const [filter, setFilter] = useState('');
   const [busy, setBusy] = useState(false);
   const [configure, setConfigure] = useState(false);
   const [backupMessage, setBackupMessage] = useState('');
@@ -28,13 +21,6 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
   const [attachmentStatus, setAttachmentStatus] = useState<{ total: number; onDrive: number; missingLocal: number } | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  const refreshFiles = async (token = '') => {
-    const result = await api.googleDocuments(token);
-    setFiles(current => Array.from(new Map((token ? [...current, ...result.files] : result.files).map(file => [file.id, file])).values()));
-    setPage(result.nextPageToken || '');
-    setWarnings(result.warnings || []);
-    setLoaded(true);
-  };
   const refreshBackups = async () => {
     const result = await api.googleBackups();
     setBackups(result.files);
@@ -69,7 +55,8 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
   };
 
   useEffect(() => {
-    if (!expanded) return;
+    // La PWA a son propre panneau (GoogleDriveWeb) : pas d'appels desktop ici.
+    if (!expanded || isPwa) return;
     let alive = true;
     setError('');
     setHelpUrl('');
@@ -78,7 +65,6 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
       if (!alive) return;
       setStatus(next);
       if (next.connected) {
-        await refreshFiles();
         await refreshBackups();
         await refreshOutbox();
         await refreshAttachments();
@@ -107,7 +93,6 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
         if (!next.pending) {
           clearInterval(timer);
           if (next.connected) {
-            await refreshFiles();
             await refreshBackups();
             await refreshOutbox();
             await refreshAttachments();
@@ -133,13 +118,10 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
         throw new Error('Choisis le fichier JSON téléchargé depuis Google Cloud.');
       }
       setStatus(await api.configureGoogle(config));
-      setFiles([]);
-      setLoaded(false);
       setConfigure(false);
     });
   };
 
-  const openFile = async (file: GoogleFile) => onOpen(await api.openGoogleDocument(file.id));
   const saveBackup = async () => {
     await run(async () => {
       const saved = await api.exportGoogleBackup();
@@ -204,7 +186,7 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
             </button>
           </div>
           <div className="drive-content">
-            {isPwa ? <GoogleDriveWeb onOpen={onOpen} onRestored={onRestored} /> : (!status ? <p>Chargement…</p> : !status.available ? <p>La connexion Drive est disponible dans l’application desktop Linux.</p> : <>
+            {isPwa ? <GoogleDriveWeb onOpen={onOpen} onRestored={onRestored} onDocuments={onDocuments} /> : (!status ? <p>Chargement…</p> : !status.available ? <p>La connexion Drive est disponible dans l’application desktop Linux.</p> : <>
               {status.connected
                 ? <p className="drive-account" aria-label="Compte Google connecté">{status.account ? <>Connecté : <strong>{status.account.name || status.account.email}</strong>{status.account.name && <> · {status.account.email}</>}</> : 'Google Drive connecté'}</p>
                 : <p>{status.pending ? 'Termine la connexion dans ton navigateur, puis reviens ici.' : 'Facultatif : connecte ton compte Google pour sauvegarder dans Drive et éditer tes documents Google dans WorkLogs. Sans connexion, tout reste sur cet appareil.'}</p>}
@@ -235,37 +217,15 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
                   {outbox.length > 0 ? <ul className="drive-backups-list">{outbox.map(box => <li key={box.id}><div><strong>{box.name}</strong><small>{box.modifiedTime ? new Date(box.modifiedTime).toLocaleString('fr-FR') : 'Date inconnue'}{box.size ? ` · ${Math.round(box.size / 1024)} Ko` : ''}</small></div><button className="ghost" type="button" disabled={busy} onClick={() => void importOutboxFile(box)}>Importer</button></li>)}</ul> : <p className="drive-hint">Aucune boîte mobile dans ce compte.</p>}
                   {outboxMessage && <p className="drive-success" role="status">{outboxMessage}</p>}
                 </section>
-                <button className="primary" type="button" disabled={busy || status.pending} onClick={() => setCreating(!creating)}>Créer un Google Docs</button>
-                {creating && <form className="drive-create" onSubmit={event => {
-                  event.preventDefault();
-                  void run(async () => {
-                    const entry = await api.createGoogleDocument(title.trim());
-                    setCreating(false);
-                    setTitle('');
-                    setFiles(current => [{ id: entry.google_sync!.document_id, name: entry.title, modifiedTime: entry.updated_at }, ...current]);
-                    setLoaded(true);
-                    onOpen(entry);
-                  });
-                }}>
-                  <label>Titre du nouveau document<input autoFocus required maxLength={240} value={title} onChange={e => setTitle(e.target.value)} /></label>
-                  <button type="submit" disabled={busy || !title.trim()}>Créer et ouvrir</button>
-                  <button type="button" className="ghost" disabled={busy} onClick={() => setCreating(false)}>Annuler la création</button>
-                </form>}
-                <p className="drive-hint">Documents autorisés pour WorkLogs. La connexion et l’autorisation de nouveaux fichiers passent par Google dans le navigateur.</p>
-                <button type="button" disabled={busy} onClick={() => void run(() => refreshFiles())}>Actualiser la liste</button>
-                {files.length > 0 && <input type="search" aria-label="Filtrer les documents Drive" placeholder="Rechercher un document…" value={filter} onChange={e => setFilter(e.target.value)} />}
-                <ul className="drive-files">{files.filter(file => file.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase())).map(file => <li key={file.id}>
-                  <button type="button" disabled={busy} onClick={() => void run(() => openFile(file))}>{file.name}</button>
-                  {status.selectedIds.includes(file.id) && <small>Dernière sélection Google</small>}
-                </li>)}</ul>
+                <section className="drive-backups" aria-label="Documents Google">
+                  <div className="drive-subheading"><div><h3>Documents Google</h3><p>Ouvrir, ranger dans un projet, créer ou mettre à la corbeille : tout se fait dans leur propre fenêtre.</p></div>
+                    {onDocuments && <button className="primary" type="button" disabled={busy} onClick={onDocuments}>Documents Google</button>}</div>
+                </section>
                 {busy && <p role="status">Opération Google en cours…</p>}
-                {!busy && !error && loaded && !files.length && <p>Aucun document autorisé. Utilise « Choisir des documents dans Drive ».</p>}
-                {warnings.map(warning => <p key={warning} role="status">{warning}</p>)}
-                {page && <button type="button" disabled={busy} onClick={() => void run(() => refreshFiles(page))}>Voir la suite</button>}
-                <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.disconnectGoogle()); setFiles([]); setBackups([]); setOutbox([]); setAttachmentStatus(null); setLoaded(false); setCreating(false); setWarnings([]); setBackupMessage(''); setOutboxMessage(''); })}>Se déconnecter de Google</button>
+                <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.disconnectGoogle()); setBackups([]); setOutbox([]); setAttachmentStatus(null); setBackupMessage(''); setOutboxMessage(''); })}>Se déconnecter de Google</button>
               </>}
               {status.configured && !status.pending && <button className="ghost" type="button" disabled={busy} onClick={() => setConfigure(!configure)}>{status.builtin ? 'Utiliser mon propre client OAuth' : 'Configuration Google'}</button>}
-              {status.builtinAvailable && !status.builtin && !status.pending && <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.useBuiltinGoogle()); setFiles([]); setBackups([]); setOutbox([]); setLoaded(false); setConfigure(false); })}>Revenir au client intégré</button>}
+              {status.builtinAvailable && !status.builtin && !status.pending && <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.useBuiltinGoogle()); setBackups([]); setOutbox([]); setConfigure(false); })}>Revenir au client intégré</button>}
               {status.secureStorage === false && <p>Le trousseau Linux doit être déverrouillé pour conserver ta connexion Google.</p>}
             </>)}
             {(error || status?.error) && <p className="error" role="alert">{error || status?.error}</p>}

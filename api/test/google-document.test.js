@@ -439,3 +439,31 @@ test('le retour de l’éditeur Google actualise les onglets intacts et importe 
     assert.match(base.synced_content_json, /Deuxième/);
   } finally { await api.close(); }
 });
+
+test('documents Google : projet de toutes les copies, corbeille Drive puis retrait local', async () => {
+  const google = stub(), api = await startApi({ google });
+  try {
+    const project = await make.project(api, 'Chantier');
+    // Pas encore ouvert : rien à ranger, la liste le dit.
+    assert.deepEqual((await api.get('/api/google/documents')).body.files[0], { id: 'google-123', name: 'Document Google', linked: false, project_id: null });
+    assert.equal((await api.post('/api/google/documents/google-123/project', { project_id: project.id })).status, 409);
+    const opened = await api.post('/api/google/documents/open', { document_id: 'google-123' });
+    const ranged = await api.post('/api/google/documents/google-123/project', { project_id: project.id });
+    assert.equal(ranged.status, 200);
+    assert.equal(ranged.body.project_id, project.id);
+    assert.equal((await api.get(`/api/entries/${opened.body.id}`)).body.project_id, project.id);
+    assert.equal((await api.get('/api/google/documents')).body.files[0].project_id, project.id);
+    assert.equal((await api.post('/api/google/documents/google-123/project', { project_id: 'pr_inconnu' })).status, 400);
+    assert.equal((await api.post('/api/google/documents/google-123/project', { project_id: null })).body.project_id, null);
+    assert.equal((await api.post('/api/google/documents/..%2Fx/trash')).status, 400);
+
+    const trashed = await api.post('/api/google/documents/google-123/trash');
+    assert.deepEqual(trashed.body, { ok: true, removed: 1 });
+    const call = google.calls.at(-1);
+    assert.match(call.url, /^\/drive\/v3\/files\/google-123\?/);
+    assert.equal(call.options.method, 'PATCH');
+    assert.deepEqual(JSON.parse(call.options.body), { trashed: true });
+    assert.equal((await api.get(`/api/entries/${opened.body.id}`)).status, 404);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM google_documents').get().n, 0);
+  } finally { await api.close(); }
+});

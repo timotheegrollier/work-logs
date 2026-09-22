@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project, type Status } from '../lib';
 import { parseChecklist, proofreadEntry, readAiSettings, suggestSubtasks } from '../ai-suggest';
 import { renderMarkdown, toggleChecklistItem } from '../markdown';
+import { downloadAttachment } from '../attachment-download';
 import { Autosave } from '../autosave';
 import { RichEditor } from './RichEditor';
 import { DocumentTabs } from './DocumentTabs';
@@ -588,7 +589,16 @@ export function EntryEditor({
         </label>
         {attachments.map((file) => (
           <span className="file" key={file.id}>
-            <a href={api.fileUrl(file.stored)}>{file.filename}</a>
+            <a
+              href={api.fileUrl(file.stored)}
+              onClick={(event) => {
+                event.preventDefault();
+                setError('');
+                void downloadAttachment(file).catch((e: Error) => setError(e.message));
+              }}
+            >
+              {file.filename}
+            </a>
             <small>{formatSize(file.size)}</small>
             {file.driveFileId
               ? <small className="picker-source is-google" title="Binaire conservé sur Google Drive">☁ Drive</small>

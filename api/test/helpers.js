@@ -9,11 +9,12 @@ import { openDb } from '../src/db.js';
  * Démarre une API isolée : base SQLite et dossier d'uploads jetables dans /tmp,
  * port éphémère. Chaque test repart d'un état propre, rien ne touche `api/data`.
  */
-export async function startApi({ withSeed = false, google = null } = {}) {
+export async function startApi({ withSeed = false, google = null, autoSync = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-test-'));
   const uploadDir = path.join(dir, 'uploads');
   const db = openDb(path.join(dir, 'worklogs.db'), { withSeed });
-  const server = createApp({ db, uploadDir, google }).listen(0);
+  const app = createApp({ db, uploadDir, google, autoSync });
+  const server = app.listen(0);
   await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`;
 
@@ -48,6 +49,7 @@ export async function startApi({ withSeed = false, google = null } = {}) {
       return { status: res.status, body: await res.json() };
     },
     async close() {
+      app.locals.googleSync?.stop();
       server.close();
       await once(server, 'close');
       db.close();

@@ -141,7 +141,8 @@ describe('synchronisation Docs dans le navigateur', () => {
     expect(created.google_sync?.document_id).toBe('g-new');
     await expect(localApi.createGoogleDocument('   ')).rejects.toThrow('1 et 240');
     const listed = await localApi.googleDocuments();
-    expect(listed.files).toEqual([{ id: 'd1', name: 'Doc', modifiedTime: T }]);
+    // `d1` n'a jamais été ouvert ici : pas de copie locale, donc pas de projet.
+    expect(listed.files).toEqual([{ id: 'd1', name: 'Doc', modifiedTime: T, linked: false, project_id: null }]);
     expect(listed.nextPageToken).toBe('p2');
   });
 

@@ -432,10 +432,11 @@ describe('documents Google multi-onglets', () => {
 });
 
 describe('Google sans serveur (lots suivants couverts ailleurs)', () => {
-  test('état non disponible et refus explicite des flux desktop', async () => {
-    expect(await localApi.googleStatus()).toMatchObject({ available: false, connected: false });
+  test('état réel du navigateur et refus explicite des flux desktop', async () => {
+    // Même forme que le desktop : le menu du compte lit un seul état.
+    expect(await localApi.googleStatus()).toMatchObject({ available: true, configured: false, connected: false, account: null });
     await expect(localApi.configureGoogle({})).rejects.toThrow('disponible dans l’application desktop');
-    await expect(localApi.connectGoogle()).rejects.toThrow('disponible dans l’application desktop');
+    await expect(localApi.connectGoogle()).rejects.toThrow('Aucun client Google configuré');
     await expect(localApi.googleBackups()).rejects.toThrow('disponible dans l’application desktop');
     await expect(localApi.googleDocumentTabs('x')).rejects.toThrow('disponible dans l’application desktop');
   });

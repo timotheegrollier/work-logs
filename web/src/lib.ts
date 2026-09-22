@@ -108,9 +108,21 @@ export interface GoogleStatus {
   /** Client OAuth intégré au paquet en service / disponible (sinon client personnel importé). */
   builtin?: boolean; builtinAvailable?: boolean;
   /** Compte connecté, pour l'affichage (absent avec une ancienne autorisation). */
-  account?: { email: string; name: string } | null;
+  account?: { email: string; name: string; picture?: string } | null;
+  /** PWA : session « jeton » expirée, à reprendre en un clic. */
+  expired?: boolean;
 }
-export interface GoogleFile { id: string; name: string; modifiedTime: string }
+export interface GoogleSyncStatus {
+  state: 'idle' | 'syncing' | 'error' | 'off';
+  error: string;
+  lastSyncedAt: string | null;
+  revision: number;
+}
+export interface GoogleFile {
+  id: string; name: string; modifiedTime: string;
+  /** Copie locale existante (ouverte au moins une fois) et son projet. */
+  linked?: boolean; project_id?: string | null;
+}
 export interface GoogleBackup { id: string; name: string; modifiedTime: string; size: number | null }
 export interface GoogleTab { id: string; title: string; depth: number; editable?: boolean; reason?: string }
 export interface Task {
@@ -188,6 +200,18 @@ export const remoteApi = {
   useBuiltinGoogle: () => send<GoogleStatus>('POST', '/api/google/use-builtin'),
   connectGoogle: () => send<GoogleStatus>('POST', '/api/google/connect'),
   disconnectGoogle: () => send<GoogleStatus>('POST', '/api/google/disconnect'),
+  /** État de la synchro automatique Drive (révision : le front recharge quand elle avance). */
+  googleSync: () => req<GoogleSyncStatus>('/api/google/sync'),
+  syncGoogleNow: () => send<GoogleSyncStatus>('POST', '/api/google/sync'),
+  /** Déconnecte puis relance la connexion : Google propose le choix du compte. */
+  switchGoogleAccount: async () => {
+    await send<GoogleStatus>('POST', '/api/google/disconnect');
+    return send<GoogleStatus>('POST', '/api/google/connect');
+  },
+  setGoogleDocumentProject: (documentId: string, projectId: string | null) =>
+    send<{ ok: true; entries: number; linked: boolean; project_id: string | null }>('POST', `/api/google/documents/${encodeURIComponent(documentId)}/project`, { project_id: projectId }),
+  trashGoogleDocument: (documentId: string) =>
+    send<{ ok: true; removed: number }>('POST', `/api/google/documents/${encodeURIComponent(documentId)}/trash`),
   googleDocuments: (pageToken = '') => req<{ files: GoogleFile[]; nextPageToken?: string; warnings?: string[] }>('/api/google/documents' + (pageToken ? '?page_token=' + encodeURIComponent(pageToken) : '')),
   googleBackups: () => req<{ files: GoogleBackup[] }>('/api/google/backup/list'),
   exportGoogleBackup: () => send<GoogleBackup & { binaries?: number }>('POST', '/api/google/backup/export'),

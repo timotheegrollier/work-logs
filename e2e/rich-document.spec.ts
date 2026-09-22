@@ -79,7 +79,8 @@ test('tableau et image locale survivent au rechargement', async ({ page }) => {
 });
 
 test('le panneau Drive explique la disponibilité desktop sans bloquer le document local', async ({ page }) => {
-  await page.getByRole('button', { name: '⚙ Paramètres' }).click();
+  await page.getByRole('button', { name: 'Compte et paramètres' }).click();
+  await page.getByRole('menuitem', { name: 'Paramètres' }).click();
   // En desktop la pastille de l'en-tête affiche déjà la version : le doublon
   // du dialogue reste masqué (il ne sert qu'en mobile).
   await expect(page.getByRole('dialog', { name: 'Paramètres' }).getByText(/WorkLogs \d+\.\d+\.\d+/)).toBeHidden();

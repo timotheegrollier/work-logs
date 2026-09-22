@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { api, googleHelpUrl, type Entry, type GoogleBackup, type GoogleFile } from '../lib';
+import { googleHelpUrl, type Entry, type GoogleBackup } from '../lib';
 import { clearLocalOutbox, exportLocalOutbox, fetchMissingDriveAttachments, importLocalBackup, listPendingUploads, markAttachmentUploaded, outboxSize } from '../store/localApi';
 import {
+  attachmentFolderId,
   beginWebLogin,
   clearWebClient,
   disconnectWeb,
@@ -11,7 +12,6 @@ import {
   handleRedirectCallback,
   hasRedirectCallback,
   listWebBackups,
-  saveBackupJson,
   setWebClientId,
   setWebClientSecret,
   uploadDriveFile,
@@ -19,6 +19,7 @@ import {
   webGoogleStatus,
   builtinWebClientId,
 } from '../store/google-web';
+import { syncWebNow, webSyncStatus } from '../store/sync-web';
 
 /**
  * Panneau Drive de la PWA (sans serveur) : OAuth Web en direct, liste des
@@ -26,7 +27,7 @@ import {
  * doit vivre dans le même projet Google Cloud que le client desktop (voir
  * `docs/08-GOOGLE-DOCS.md`) : c'est ce qui rend les sauvegardes du PC visibles ici.
  */
-export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) => void; onRestored?: () => void | Promise<void> }) {
+export function GoogleDriveWeb({ onRestored, onDocuments }: { onOpen?: (entry: Entry) => void; onRestored?: () => void | Promise<void>; onDocuments?: () => void }) {
   const [clientId, setClientId] = useState(getWebClientId());
   const [clientSecret, setClientSecret] = useState(getWebClientSecret());
   const [savedClientId, setSavedClientId] = useState(getWebClientId());
@@ -34,8 +35,6 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
   const connected = status.connected;
   const refreshStatus = () => setStatus(webGoogleStatus());
   const [backups, setBackups] = useState<GoogleBackup[]>([]);
-  const [files, setFiles] = useState<GoogleFile[]>([]);
-  const [page, setPage] = useState('');
   const [pending, setPending] = useState(outboxSize());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -89,14 +88,15 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
     };
   }, []);
 
-  // Documents Drive : liste chargée dès que la session est établie (et valide).
+  // Sauvegardes : liste chargée dès que la session est établie (et valide) ; un
+  // jeton refusé fait apparaître la reprise de session.
   useEffect(() => {
     if (!connected || status.expired) return;
     let alive = true;
     setBusy(true);
     setError('');
     setHelpUrl('');
-    void refreshFiles()
+    void refreshBackups()
       .catch((e) => {
         if (alive) showError(e);
       })
@@ -129,15 +129,15 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
     setBackups(await listWebBackups());
   };
 
+  // Synchro active : « Sauvegarder » fusionne au lieu d'écraser ce que le PC a écrit.
   const saveBackup = async () => {
     await run(async () => {
-      const { blob } = await api.exportBackup();
-      const saved = await saveBackupJson(await blob.text());
-      setBackups((current) => [
-        { id: saved.id, name: saved.name, modifiedTime: new Date().toISOString(), size: blob.size },
-        ...current.filter((backup) => backup.id !== saved.id),
-      ]);
-      setMessage(`Sauvegarde enregistrée dans Google Drive : ${saved.name}`);
+      await syncWebNow();
+      const sync = webSyncStatus();
+      if (sync.state === 'error') throw new Error(sync.error);
+      await refreshBackups();
+      setMessage('Synchronisé avec Google Drive : WorkLogs backup.json est à jour.');
+      await onRestored?.();
     });
   };
 
@@ -162,14 +162,6 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
       await onRestored?.();
     });
   };
-
-  const refreshFiles = async (token = '') => {
-    const result = await api.googleDocuments(token);
-    setFiles((current) => Array.from(new Map((token ? [...current, ...result.files] : result.files).map((file) => [file.id, file])).values()));
-    setPage(result.nextPageToken || '');
-  };
-
-  const openFile = async (file: GoogleFile) => onOpen(await api.openGoogleDocument(file.id));
 
   const charger = async (backup: GoogleBackup) => {
     if (
@@ -215,7 +207,8 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
           name: row.filename,
           mimeType: row.mime || 'application/octet-stream',
           data: row.blob,
-          appProperties: { worklogs_type: 'attachment', worklogs_version: '1' },
+          appProperties: { worklogs_type: 'attachment', worklogs_version: '2', worklogs_attachment_id: row.id, worklogs_entry_id: row.entry_id },
+          parent: await attachmentFolderId(),
         });
         await markAttachmentUploaded(row.stored, uploaded.id);
       }
@@ -374,38 +367,14 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
             <div className="drive-subheading">
               <div>
                 <h3>Documents Google</h3>
-                <p>Ouvre un document dans WorkLogs pour l’éditer et l’envoyer.</p>
+                <p>Ouvrir, ranger dans un projet, créer ou mettre à la corbeille : tout se fait dans leur propre fenêtre.</p>
               </div>
-            </div>
-            <div className="drive-backup-actions">
-              <button type="button" disabled={busy} onClick={() => void run(() => refreshFiles())}>
-                Actualiser la liste
-              </button>
-            </div>
-            {files.length > 0 ? (
-              <ul className="drive-backups-list">
-                {files.map((file) => (
-                  <li key={file.id}>
-                    <div>
-                      <strong>{file.name}</strong>
-                      <small>{file.modifiedTime ? new Date(file.modifiedTime).toLocaleString('fr-FR') : 'Date inconnue'}</small>
-                    </div>
-                    <button type="button" className="ghost" disabled={busy} onClick={() => void run(() => openFile(file))}>
-                      Ouvrir
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="drive-hint">Aucun document Google dans ce compte.</p>
-            )}
-            {page !== '' && (
-              <div className="drive-backup-actions">
-                <button type="button" disabled={busy} onClick={() => void run(() => refreshFiles(page))}>
-                  Voir la suite
+              {onDocuments && (
+                <button type="button" className="primary" disabled={busy} onClick={onDocuments}>
+                  Documents Google
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </section>
           <button
             className="ghost"
@@ -415,8 +384,6 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
               disconnectWeb();
               refreshStatus();
               setBackups([]);
-              setFiles([]);
-              setPage('');
               setMessage('');
             }}
           >

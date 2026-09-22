@@ -23,7 +23,28 @@ import { buildGoogleUpdate, documentBody, documentTabs, selectDocumentTab } from
 import { buildPreservingUpdate, importGoogleDocument } from '../../../api/src/google-preserve.js';
 // @ts-expect-error — idem : réconciliation locale/distance, sans `node:sqlite`.
 import { mergeGoogleChanges } from '../../../api/src/google-merge.js';
-import { downloadDriveBinary, webGoogleRequest, webGoogleStatus } from './google-web';
+import { beginWebLogin, builtinWebClientId, clearWebClient, disconnectWeb, downloadDriveBinary, webGoogleRequest, webGoogleStatus } from './google-web';
+
+/** Projet et présence locale de chaque document Drive (ses onglets partagent le projet). */
+async function localDocuments(): Promise<Map<string, { linked: boolean; project_id: string | null }>> {
+  const { google, entries } = await tables();
+  const map = new Map<string, { linked: boolean; project_id: string | null }>();
+  for (const row of await google.all()) {
+    const entry = await entries.get(row.entry_id);
+    const current = map.get(row.document_id);
+    map.set(row.document_id, { linked: true, project_id: current?.project_id || entry?.project_id || null });
+  }
+  return map;
+}
+
+function pwaGoogleStatus(): GoogleStatus {
+  const status = webGoogleStatus();
+  return {
+    available: true, configured: status.configured, connected: status.connected, pending: false, error: '',
+    selectedIds: [], builtin: status.builtin, builtinAvailable: builtinWebClientId() !== '',
+    account: status.account, expired: status.expired,
+  };
+}
 import { createIndexedDbDatabase, createMemoryDatabase, type Database } from './storage';
 
 /**
@@ -78,7 +99,7 @@ interface TaskRow {
   position: number; priority: 'low' | 'normal' | 'high'; project_id: string | null;
   created_at: string; updated_at: string;
 }
-interface ProjectRow { id: string; name: string; color: string; created_at: string }
+interface ProjectRow { id: string; name: string; color: string; created_at: string; updated_at?: string }
 interface LinkRow { id: string; task_id: string; entry_id: string; created_at: string }
 interface AttachmentRow {
   id: string; filename: string; stored: string; mime: string; size: number;
@@ -162,12 +183,47 @@ function track(kind: keyof LocalOutbox, id: string): void {
     outbox[kind].push(id);
     writeOutbox(outbox);
   }
+  notifyLocalChange();
 }
 
 function untrack(kind: keyof LocalOutbox, id: string): void {
   const outbox = readLocalOutbox();
   outbox[kind] = outbox[kind].filter((current) => current !== id);
   writeOutbox(outbox);
+  notifyLocalChange();
+}
+
+// ---------------------------------------------------------------- synchro Drive
+// Suppressions à propager (pierres tombales, même format que le desktop) et
+// signal « quelque chose a changé » pour la synchro automatique (sync-web.ts).
+const DELETED_KEY = 'worklogs-sync-deleted';
+export interface LocalTombstone { kind: 'project' | 'entry' | 'task' | 'link' | 'attachment'; id: string; deleted_at: string }
+let changeListener: (() => void) | null = null;
+
+export function onLocalChange(listener: (() => void) | null): void {
+  changeListener = listener;
+}
+function notifyLocalChange(): void {
+  changeListener?.();
+}
+export function readLocalTombstones(): LocalTombstone[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DELETED_KEY) || '[]') as unknown;
+    return Array.isArray(parsed) ? (parsed as LocalTombstone[]) : [];
+  } catch {
+    return [];
+  }
+}
+export function writeLocalTombstones(list: LocalTombstone[]): void {
+  try {
+    localStorage.setItem(DELETED_KEY, JSON.stringify(list));
+  } catch {
+    // Stockage plein : la suppression restera locale jusqu'au prochain essai.
+  }
+}
+function tombstone(kind: LocalTombstone['kind'], id: string): void {
+  writeLocalTombstones([...readLocalTombstones().filter((t) => !(t.kind === kind && t.id === id)), { kind, id, deleted_at: nowISO() }]);
+  notifyLocalChange();
 }
 
 export function clearLocalOutbox(): void {
@@ -333,14 +389,36 @@ async function readGoogleSource(documentId: string, tabId = '') {
 const blankGoogleSource = () => ({ body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } });
 
 export const localApi: Api = {
-  googleStatus: async (): Promise<GoogleStatus> => ({
-    // Lot 3 : connexion directe à Google depuis le navigateur.
-    available: false, configured: false, connected: false, pending: false, error: '', selectedIds: [],
-  }),
+  // Connexion directe à Google depuis le navigateur : même forme que le desktop,
+  // pour que l'en-tête (menu du compte) n'ait qu'un seul chemin.
+  googleStatus: async (): Promise<GoogleStatus> => pwaGoogleStatus(),
   configureGoogle: async () => fail('Google Drive est disponible dans l’application desktop.'),
-  useBuiltinGoogle: async () => fail('Google Drive est disponible dans l’application desktop.'),
-  connectGoogle: async () => fail('Google Drive est disponible dans l’application desktop.'),
-  disconnectGoogle: async () => fail('Google Drive est disponible dans l’application desktop.'),
+  useBuiltinGoogle: async () => {
+    clearWebClient();
+    return pwaGoogleStatus();
+  },
+  connectGoogle: async () => {
+    await beginWebLogin();
+    return pwaGoogleStatus();
+  },
+  disconnectGoogle: async () => {
+    disconnectWeb();
+    (await import('./sync-web')).resetWebSync();
+    return pwaGoogleStatus();
+  },
+  // Import dynamique : sync-web dépend de ce module, pas l'inverse.
+  googleSync: async () => (await import('./sync-web')).webSyncStatus(),
+  syncGoogleNow: async () => {
+    const sync = await import('./sync-web');
+    await sync.syncWebNow();
+    return sync.webSyncStatus();
+  },
+  switchGoogleAccount: async () => {
+    (await import('./sync-web')).resetWebSync();
+    disconnectWeb();
+    await beginWebLogin('', { selectAccount: true });
+    return pwaGoogleStatus();
+  },
   googleDocuments: async (pageToken = '') => {
     const params = new URLSearchParams({
       q: "mimeType='application/vnd.google-apps.document' and trashed=false",
@@ -349,7 +427,29 @@ export const localApi: Api = {
     });
     if (pageToken && pageToken.length < 5000) params.set('pageToken', pageToken);
     const result = (await webGoogleRequest(`/drive/v3/files?${params}`)) as { files?: { id: string; name: string; modifiedTime: string }[]; nextPageToken?: string };
-    return { files: result.files || [], ...(result.nextPageToken ? { nextPageToken: result.nextPageToken } : {}) };
+    const local = await localDocuments();
+    return {
+      files: (result.files || []).map((file) => ({ ...file, ...(local.get(file.id) ?? { linked: false, project_id: null }) })),
+      ...(result.nextPageToken ? { nextPageToken: result.nextPageToken } : {}),
+    };
+  },
+  setGoogleDocumentProject: async (documentId, projectId) => {
+    const { google, projects } = await tables();
+    if (projectId && !(await projects.get(projectId))) fail('projet introuvable');
+    const ids = (await google.all()).filter((row) => row.document_id === documentId).map((row) => row.entry_id);
+    if (!ids.length) fail('Ouvre d’abord ce document dans WorkLogs pour le ranger dans un projet.');
+    for (const id of ids) await localApi.updateEntry(id, { project_id: projectId || null });
+    return { ok: true, entries: ids.length, ...((await localDocuments()).get(documentId) ?? { linked: false, project_id: null }) };
+  },
+  trashGoogleDocument: async (documentId) => {
+    if (!/^[\w-]{1,200}$/.test(documentId)) fail('Identifiant de document Google invalide.');
+    await webGoogleRequest(`/drive/v3/files/${documentId}?supportsAllDrives=true&fields=id,trashed`, {
+      method: 'PATCH', body: JSON.stringify({ trashed: true }),
+    });
+    const { google } = await tables();
+    const ids = (await google.all()).filter((row) => row.document_id === documentId).map((row) => row.entry_id);
+    for (const id of ids) await localApi.deleteEntry(id);
+    return { ok: true, removed: ids.length };
   },
   googleBackups: async () => fail('Google Drive est disponible dans l’application desktop.'),
   exportGoogleBackup: async () => fail('Google Drive est disponible dans l’application desktop.'),
@@ -653,6 +753,7 @@ export const localApi: Api = {
     }
     await google.remove(id);
     untrack('entries', id);
+    tombstone('entry', id);
     return { ok: true };
   },
 
@@ -799,6 +900,7 @@ export const localApi: Api = {
     }
     await renumber(current.status);
     untrack('tasks', id);
+    tombstone('task', id);
     return { ok: true };
   },
 
@@ -822,6 +924,7 @@ export const localApi: Api = {
     if (!(await links.get(linkId(taskId, entryId)))) fail('association introuvable');
     await links.remove(linkId(taskId, entryId));
     untrack('links', linkId(taskId, entryId));
+    tombstone('link', `${taskId}|${entryId}`);
     return { ok: true };
   },
 
@@ -829,7 +932,8 @@ export const localApi: Api = {
     const { projects } = await tables();
     const name = str(body.name);
     if (!name) fail('nom requis');
-    const row: ProjectRow = { id: uid('pr_'), name, color: str(body.color) || '#4f7cff', created_at: nowISO() };
+    const time = nowISO();
+    const row: ProjectRow = { id: uid('pr_'), name, color: str(body.color) || '#4f7cff', created_at: time, updated_at: time };
     await projects.put(row);
     track('projects', row.id);
     // Comme le serveur (`SELECT *`), sans les compteurs de `/api/state`.
@@ -842,7 +946,7 @@ export const localApi: Api = {
     const patch = (body ?? {}) as { name?: string; color?: string };
     const name = pick(patch as Record<string, unknown>, 'name', current.name, (v) => str(v));
     if (!name) fail('nom requis');
-    const next = { ...current, name, color: pick(patch as Record<string, unknown>, 'color', current.color, (v) => str(v) || current.color) };
+    const next = { ...current, name, color: pick(patch as Record<string, unknown>, 'color', current.color, (v) => str(v) || current.color), updated_at: nowISO() };
     await projects.put(next);
     track('projects', id);
     return next as unknown as Project;
@@ -860,6 +964,7 @@ export const localApi: Api = {
       await tasks.put({ ...task, project_id: null });
     }
     untrack('projects', id);
+    tombstone('project', id);
     return { ok: true };
   },
 
@@ -868,6 +973,7 @@ export const localApi: Api = {
     if (!(await attachments.get(id))) fail('pièce jointe introuvable');
     await attachments.remove(id);
     untrack('attachments', id);
+    tombstone('attachment', id);
     return { ok: true };
   },
 
@@ -890,20 +996,101 @@ export const localApi: Api = {
   },
 
   exportBackup: async () => {
-    const { projects, entries, tasks, links, attachments, google } = await tables();
-    const backup = {
-      version: BACKUP_VERSION,
-      exported_at: nowISO(),
-      projects: await projects.all(),
-      entries: (await entries.all()).map((row) => decodeEntry(row)),
-      tasks: await tasks.all(),
-      task_entries: (await links.all()).map(({ task_id, entry_id, created_at }) => ({ task_id, entry_id, created_at })),
-      google_documents: await google.all(),
-      attachments: (await attachments.all()).map(stripBlob),
-    };
+    const backup = await backupObject();
     return { filename: 'worklogs.json', blob: new Blob([JSON.stringify(backup)], { type: 'application/json' }) };
   },
 };
+
+async function backupObject() {
+  const { projects, entries, tasks, links, attachments, google } = await tables();
+  return {
+    version: BACKUP_VERSION,
+    exported_at: nowISO(),
+    projects: await projects.all(),
+    entries: (await entries.all()).map((row) => decodeEntry(row)),
+    tasks: await tasks.all(),
+    task_entries: (await links.all()).map(({ task_id, entry_id, created_at }) => ({ task_id, entry_id, created_at })),
+    google_documents: await google.all(),
+    attachments: (await attachments.all()).map(stripBlob),
+  };
+}
+
+/** Instantané local pour la fusion : même forme validée que le fichier Drive, suppressions comprises. */
+export async function localSyncSnapshot(): Promise<SyncSnapshot> {
+  return { ...(validateBackup(await backupObject()) as Omit<SyncSnapshot, 'deleted'>), deleted: readLocalTombstones() };
+}
+
+export interface SyncSnapshot {
+  projects: (ProjectRow & { updated_at: string })[];
+  entries: (Omit<EntryRow, 'content_json'> & { content_json: RichDocument | null })[];
+  tasks: TaskRow[];
+  task_entries: { task_id: string; entry_id: string; created_at: string }[];
+  google_documents: GoogleRow[];
+  attachments: (Omit<AttachmentRow, 'blob'>)[];
+  deleted: LocalTombstone[];
+}
+
+/**
+ * Applique le résultat d'une fusion en ne touchant que ce qui a changé depuis
+ * `base` (l'instantané local d'avant fusion). Une ligne modifiée ici entre-temps
+ * (saisie pendant la synchro) n'est jamais écrasée : elle est comptée dans
+ * `skipped` et repartira au passage suivant. Les binaires présents sont conservés.
+ */
+export async function applySyncSnapshot(merged: SyncSnapshot, base: SyncSnapshot): Promise<{ changed: number; skipped: number }> {
+  const t = await tables();
+  let changed = 0;
+  let skipped = 0;
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const stampOf = (row: { updated_at?: string; created_at?: string } | undefined) => row?.updated_at || row?.created_at || '';
+  async function sync<Wanted extends object, Row extends object>(
+    table: { all(): Promise<Row[]>; put(value: Row): Promise<void>; remove(key: string): Promise<void> },
+    wanted: Wanted[], before: Wanted[], key: (row: Wanted | Row) => string, toRow: (row: Wanted, current?: Row) => Row,
+    fields: string[],
+  ) {
+    const guarded = fields.length > 0;
+    const baseMap = new Map(before.map((row) => [key(row), row]));
+    const wantedMap = new Map(wanted.map((row) => [key(row), row]));
+    const current = new Map((await table.all()).map((row) => [key(row), row]));
+    // Modifiée depuis l'instantané ? Horodatage OU contenu : deux saisies peuvent
+    // tomber dans la même milliseconde.
+    const moved = (id: string) => {
+      if (!guarded) return false;
+      const now = current.get(id) as Record<string, unknown> | undefined;
+      const was = baseMap.get(id) ? (toRow(baseMap.get(id) as Wanted) as Record<string, unknown>) : undefined;
+      if (stampOf(now as never) !== stampOf(was as never)) return true;
+      return fields.some((field) => JSON.stringify(now?.[field] ?? null) !== JSON.stringify(was?.[field] ?? null));
+    };
+    for (const [id, row] of wantedMap) {
+      if (same(row, baseMap.get(id))) continue;
+      if (baseMap.has(id) ? moved(id) : current.has(id) && guarded) { skipped++; continue; }
+      await table.put(toRow(row, current.get(id)));
+      changed++;
+    }
+    for (const id of baseMap.keys()) {
+      if (wantedMap.has(id) || !current.has(id)) continue;
+      if (moved(id)) { skipped++; continue; }
+      await table.remove(id);
+      changed++;
+    }
+  }
+  await sync(t.projects, merged.projects, base.projects, (row) => (row as ProjectRow).id, (row) => ({ ...row }), ['name', 'color']);
+  await sync(t.entries, merged.entries, base.entries, (row) => (row as EntryRow).id,
+    (row) => ({ ...row, content_json: row.content_json ? JSON.stringify(row.content_json) : null }) as EntryRow,
+    ['title', 'content_md', 'content_json', 'entry_date', 'project_id', 'archived', 'kind']);
+  await sync(t.tasks, merged.tasks, base.tasks, (row) => (row as TaskRow).id, (row) => ({ ...row }),
+    ['title', 'status', 'due_date', 'pinned', 'position', 'priority', 'project_id']);
+  await sync(t.links, merged.task_entries, base.task_entries, (row) => linkId(row.task_id, row.entry_id),
+    (row) => ({ id: linkId(row.task_id, row.entry_id), ...row }), []);
+  await sync(t.google, merged.google_documents, base.google_documents, (row) => (row as GoogleRow).entry_id, (row) => ({ ...row }), []);
+  await sync(t.attachments, merged.attachments, base.attachments, (row) => (row as AttachmentRow).id,
+    (row, current) => ({ ...row, ...(current?.blob ? { blob: current.blob } : {}) }) as AttachmentRow, []);
+  // Une suppression faite pendant la synchro n'est pas dans `base` : on la garde.
+  const known = new Set(base.deleted.map((item) => `${item.kind}:${item.id}`));
+  const fresh = readLocalTombstones().filter((item) => !known.has(`${item.kind}:${item.id}`));
+  if (fresh.length) skipped++;
+  writeLocalTombstones([...merged.deleted.filter((item) => !fresh.some((f) => f.kind === item.kind && f.id === item.id)), ...fresh]);
+  return { changed, skipped };
+}
 
 /**
  * Remplace le contenu local par une sauvegarde validée — miroir de
@@ -986,6 +1173,12 @@ export function outboxSize(outbox: LocalOutbox = readLocalOutbox()): number {
 }
 
 /** Pièces jointes avec binaire local en attente d'envoi sur Drive. */
+/** Synchro : tout binaire présent ici mais pas encore sur Drive (envoi raté, fichier d'avant la synchro…). */
+export async function listLocalOnlyAttachments(): Promise<AttachmentRow[]> {
+  const { attachments } = await tables();
+  return (await attachments.all()).filter((row) => row.blob && !row.driveFileId);
+}
+
 export async function listPendingUploads(): Promise<AttachmentRow[]> {
   const { attachments } = await tables();
   const tracked = new Set(readLocalOutbox().attachments);

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api, plainText, type Attachment, type EntrySummary, type Project } from '../lib';
 import { flushPendingSaves } from '../autosave';
 import { FileViewer } from './FileViewer';
+import { downloadAttachment } from '../attachment-download';
 
 /**
  * Panneau Procédures : les modes d'emploi d'un projet, avec leurs pièces
@@ -171,9 +172,23 @@ export function ProcedureList({
                       >
                         {file.filename}
                       </button>
-                      <a className="ghost" href={api.fileUrl(file.stored)} download={file.filename} aria-label={`Télécharger ${file.filename}`}>
+                      <a
+                        className="ghost"
+                        href={api.fileUrl(file.stored)}
+                        download={file.filename}
+                        aria-label={`Télécharger ${file.filename}`}
+                        onClick={(event) => {
+                          // Pas de lien `download` direct : la PWA contournerait son service worker.
+                          event.preventDefault();
+                          setError('');
+                          void downloadAttachment(file).catch((e: Error) => setError(e.message));
+                        }}
+                      >
                         ↓
                       </a>
+                      {file.driveFileId
+                        ? <small className="picker-source is-google" title="Conservé sur Google Drive">☁ Drive</small>
+                        : <small className="picker-source" title="Uniquement sur cet appareil tant que Google Drive n’est pas connecté">local seul</small>}
                     </li>
                   ))}
                 </ul>

@@ -3,7 +3,7 @@ import cors from 'cors';
 import multer from 'multer';
 import fs from 'node:fs';
 import path from 'node:path';
-import { uid, nowISO, today } from './db.js';
+import { uid, nowISO, today, tombstone } from './db.js';
 import { decodeEntry, documentText, validateDocument } from './rich-document.js';
 import { buildBackup } from './backup.js';
 import { googleLink, registerGoogleRoutes } from './google-routes.js';
@@ -70,12 +70,20 @@ const attachmentHeader = (filename) => {
  */
 const inlineHeader = (filename) => `inline; ${attachmentHeader(filename).slice('attachment; '.length)}`;
 
-export function createApp({ db, uploadDir, staticDir = null, google = null }) {
+export function createApp({ db, uploadDir, staticDir = null, google = null, autoSync = false }) {
   fs.mkdirSync(uploadDir, { recursive: true });
 
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: '5mb' }));
+  // Synchro Drive : toute écriture réussie relance un passage (regroupé par le moteur).
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.path.startsWith('/api/')
+      && !/^\/api\/google\/(?:sync|status|connect|disconnect|configure|use-builtin|backup)/.test(req.path)) {
+      res.on('finish', () => { if (res.statusCode < 400) app.locals.googleSync?.schedule(); });
+    }
+    next();
+  });
 
   const upload = multer({
     storage: multer.diskStorage({
@@ -285,6 +293,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     }
     db.prepare('DELETE FROM google_documents WHERE entry_id=?').run(cur.id);
     db.prepare('DELETE FROM entries WHERE id=?').run(cur.id);
+    tombstone(db, 'entry', cur.id);
     res.json({ ok: true });
   });
 
@@ -498,6 +507,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     if (!entry) return notFound(res, 'entrée introuvable');
     const result = db.prepare('DELETE FROM task_entries WHERE task_id=? AND entry_id=?').run(task.id, entry.id);
     if (!result.changes) return notFound(res, 'association introuvable');
+    tombstone(db, 'link', `${task.id}|${entry.id}`);
     res.json({ ok: true });
   });
 
@@ -505,6 +515,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     const cur = getTask(req.params.id);
     if (!cur) return notFound(res, 'tâche introuvable');
     db.prepare('DELETE FROM tasks WHERE id=?').run(cur.id);
+    tombstone(db, 'task', cur.id);
     renumber(db, cur.status);
     res.json({ ok: true });
   });
@@ -530,9 +541,10 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     const b = req.body || {};
     const name = pick(b, 'name', cur.name, str);
     if (!name) return bad(res, 'nom requis');
-    db.prepare('UPDATE projects SET name=?, color=? WHERE id=?').run(
+    db.prepare('UPDATE projects SET name=?, color=?, updated_at=? WHERE id=?').run(
       name,
       pick(b, 'color', cur.color, (v) => str(v) || cur.color),
+      nowISO(),
       cur.id
     );
     res.json(getProject(cur.id));
@@ -543,6 +555,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     const cur = getProject(req.params.id);
     if (!cur) return notFound(res, 'projet introuvable');
     db.prepare('DELETE FROM projects WHERE id=?').run(cur.id);
+    tombstone(db, 'project', cur.id);
     res.json({ ok: true });
   });
 
@@ -610,13 +623,14 @@ export function createApp({ db, uploadDir, staticDir = null, google = null }) {
     if (!att) return notFound(res, 'pièce jointe introuvable');
     fs.rmSync(path.join(uploadDir, att.stored), { force: true });
     db.prepare('DELETE FROM attachments WHERE id=?').run(att.id);
+    tombstone(db, 'attachment', att.id);
     res.json({ ok: true });
   });
 
   // ---------------------------------------------------------------- export
   app.get('/api/export', (_req, res) => res.json(buildBackup(db)));
 
-  registerGoogleRoutes(app, { db, google, uploadDir });
+  registerGoogleRoutes(app, { db, google, uploadDir, autoSync });
   app.use('/api', (_req, res) => notFound(res, 'route inconnue'));
 
   // En production, l'API sert aussi le front construit : une seule URL.

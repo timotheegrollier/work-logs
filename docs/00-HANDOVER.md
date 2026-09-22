@@ -31,6 +31,40 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-09-22 (3) — pièces jointes des procédures retéléchargeables, rangées sur Drive
+
+- **Bug** : « Fichier non disponible sur le site » en cliquant un fichier de procédure (PWA).
+  Un lien `<a download>` part au gestionnaire de téléchargements du navigateur, qui
+  **contourne le service worker** : la requête tombait sur GitHub Pages (404). Même défaut
+  sur « Télécharger » de l'aperçu. Correctif : `web/src/attachment-download.ts` —
+  `fetch` (service worker / protocole desktop) puis enregistrement d'un blob ; binaire
+  absent mais sur Drive → rapatrié d'abord (`fetchDriveAttachment`) ; sinon message clair.
+  Utilisé par la colonne Procédures, l'aperçu et les fichiers de l'éditeur.
+- **Rangement Drive** : binaires dans `WorkLogs/Pièces jointes` (dossiers retrouvés par
+  `appProperties.worklogs_type`, créés au besoin, racine en repli), desktop comme PWA.
+  La synchro envoie tout binaire local sans `driveFileId` (plus seulement la boîte d'envoi,
+  vidée à chaque passage). Hors connexion : le fichier reste local, badge « local seul ».
+- Tests : téléchargement (3), dossier desktop (1), dossier PWA (1).
+
+## Lot du 2026-09-22 (2) — menu du compte, Documents Google, synchro automatique
+
+- **Menu du compte** (`AccountMenu.tsx`) à la place du bouton ⚙ Paramètres : avatar Google
+  (`picture` de userinfo, repli initiale), état de synchro, Documents Google, Synchroniser
+  maintenant, Paramètres, Changer de compte (`prompt=select_account`), Se déconnecter.
+  Statut Google tenu par `App` (PWA : `localApi.googleStatus` renvoie désormais l'état réel).
+- **Documents Google** (`GoogleDocuments.tsx`), sortis du dialogue Drive : ouvrir, projet
+  (`POST /api/google/documents/:id/project`, toutes les copies-onglets), corbeille Drive
+  (`POST /api/google/documents/:id/trash`), créer. Même API côté PWA.
+- **Synchro auto par fusion** (décision §20) : `api/src/sync-merge.js` (partagé),
+  `api/src/google-sync.js` (desktop, `autoSync` seulement dans l'app), `web/src/store/sync-web.ts`
+  (PWA). Pierres tombales : table `sync_tombstones` / `localStorage worklogs-sync-deleted`.
+  Projets : colonne `updated_at` (migration additive). « Sauvegarder » = synchroniser.
+  La connexion PWA est traitée au démarrage (plus besoin d'ouvrir le panneau Drive).
+- Tests : fusion (11), moteur desktop (3), moteur PWA (4), menu (8), documents (5 + API).
+- **Incident poste** : disque plein à répétition pendant le lot (hors WorkLogs : journaux
+  Symfony `dev.log` d'autres projets en écriture). Deux fichiers vidés par l'échec d'écriture,
+  reconstruits depuis git + le travail en cours ; aucune perte.
+
 ## Lot du 2026-09-22 — « Se connecter avec Google » en un clic (facultatif)
 
 - Desktop : client OAuth intégré (`readDefaultClient`, `google-default.json` écrit par

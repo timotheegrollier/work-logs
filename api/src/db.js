@@ -212,6 +212,14 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   // Priorités (2026-09-18) : les tâches existantes deviennent « normale », sans toucher
   // à l'ordre des colonnes — la position et l'épingle gardent leur rôle.
   if (!columns(db, 'tasks').includes('priority')) db.exec("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'");
+  // Synchro Drive (2026-09-22) : un renommage de projet doit pouvoir gagner la fusion,
+  // et une suppression doit se propager (pierres tombales, purgées après 60 jours).
+  if (!columns(db, 'projects').includes('updated_at')) {
+    db.exec("ALTER TABLE projects ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''");
+    db.exec("UPDATE projects SET updated_at=created_at WHERE updated_at=''");
+  }
+  db.exec(`CREATE TABLE IF NOT EXISTS sync_tombstones (
+    kind TEXT NOT NULL, id TEXT NOT NULL, deleted_at TEXT NOT NULL, PRIMARY KEY (kind, id))`);
   const googleSchema = `CREATE TABLE IF NOT EXISTS google_documents (
     entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
     document_id TEXT NOT NULL,
@@ -252,4 +260,9 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   db.exec('PRAGMA foreign_keys = ON;');
   if (withSeed) seed(db);
   return db;
+}
+
+/** Note une suppression pour la synchro (ignoré si la table n'existe pas encore). */
+export function tombstone(db, kind, id) {
+  db.prepare('INSERT OR REPLACE INTO sync_tombstones (kind,id,deleted_at) VALUES (?,?,?)').run(kind, id, nowISO());
 }

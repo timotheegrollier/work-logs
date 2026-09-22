@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, formatSize, type Attachment } from '../lib';
+import { downloadAttachment } from '../attachment-download';
 import { previewKind, previewNotice } from '../file-preview';
 
 /**
@@ -59,7 +60,17 @@ export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { f
         </div>
         <div className="viewer-actions">
           {file.driveFileId && onFetch && <button className="ghost" type="button" disabled={fetching} onClick={onFetch}>{fetching ? 'Récupération…' : '⬇ Récupérer depuis Drive'}</button>}
-          <a className="ghost" href={api.fileUrl(file.stored)} download={file.filename}>Télécharger</a>
+          <a
+            className="ghost"
+            href={api.fileUrl(file.stored)}
+            download={file.filename}
+            onClick={(event) => {
+              event.preventDefault();
+              void downloadAttachment(file).catch((e: Error) => setError(e.message));
+            }}
+          >
+            Télécharger
+          </a>
           <button className="ghost" type="button" onClick={onClose}>Fermer</button>
         </div>
       </div>

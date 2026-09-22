@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GoogleDriveWeb } from './GoogleDriveWeb';
 import { api } from '../lib';
@@ -142,48 +142,30 @@ describe('panneau Drive de la PWA', () => {
     expect(await screen.findByText(/Rien à envoyer/)).toBeInTheDocument();
   });
 
-  test('documents Drive listés puis ouverts dans WorkLogs', async () => {
-    const user = userEvent.setup();
-    localStorage.setItem('worklogs-google-web-client', CLIENT);
-    localStorage.setItem('worklogs-google-web-tokens', JSON.stringify({ access_token: 'acces', expires_at: Date.now() + 3600_000 }));
-    vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [{ id: 'd1', name: 'Doc distant', modifiedTime: '' }] });
-    const opened = { id: 'en_doc', title: 'Doc distant' };
-    const open = vi.spyOn(api, 'openGoogleDocument').mockResolvedValue(opened as never);
-    const onOpen = vi.fn();
-    render(<GoogleDriveWeb onOpen={onOpen} />);
-    expect(await screen.findByText('Doc distant')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Ouvrir' }));
-    await waitFor(() => expect(open).toHaveBeenCalledWith('d1'));
-    expect(onOpen).toHaveBeenCalledWith(opened);
-  });
-
-  test('sauvegarder envoie la base complète et actualise la liste', async () => {
+  test('sauvegarder synchronise : la base locale part avec ses suppressions, la liste s’actualise', async () => {
     const user = userEvent.setup();
     const { disconnectWeb } = await import('../store/google-web');
     disconnectWeb();
     localStorage.setItem('worklogs-google-web-client', CLIENT);
     localStorage.setItem('worklogs-google-web-tokens', JSON.stringify({ access_token: 'acces', expires_at: Date.now() + 3600_000 }));
     await localApi.createEntry({ title: 'Note locale' });
-    vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [] });
-    vi.spyOn(api, 'exportBackup').mockResolvedValue({
-      filename: 'worklogs.json',
-      blob: new Blob([JSON.stringify({ version: 2, note: 'locale' })], { type: 'application/json' }),
-    });
     const uploaded: string[] = [];
     vi.stubGlobal('fetch', async (url: unknown, init?: RequestInit) => {
       const target = String(url);
       if (target.includes('/upload/')) {
         uploaded.push(await ((init?.body as Blob).text()));
-        return Response.json({ id: 'canon', name: 'WorkLogs backup.json' });
+        return Response.json({ id: 'canon', name: 'WorkLogs backup.json', modifiedTime: '2026-09-22T10:00:00.000Z' });
       }
-      return Response.json({ files: [{ id: 'canon', name: 'WorkLogs backup.json', mimeType: 'application/json' }] });
+      // Pas encore de fichier canonique : la synchro le crée.
+      return Response.json({ files: uploaded.length ? [{ id: 'canon', name: 'WorkLogs backup.json', mimeType: 'application/json', modifiedTime: '2026-09-22T10:00:00.000Z' }] : [] });
     });
     render(<GoogleDriveWeb onOpen={() => {}} />);
     await user.click(screen.getByRole('button', { name: 'Sauvegarder dans Google Drive' }));
-    expect(await screen.findByText(/Sauvegarde enregistrée dans Google Drive/)).toBeInTheDocument();
+    expect(await screen.findByText(/Synchronisé avec Google Drive/)).toBeInTheDocument();
     expect(uploaded).toHaveLength(1);
     expect(uploaded[0]).toContain('"worklogs_type":"backup"');
-    expect(uploaded[0]).toContain('locale');
+    expect(uploaded[0]).toContain('Note locale');
+    expect(uploaded[0]).toContain('"deleted":[');
     expect(await screen.findByText('WorkLogs backup.json')).toBeInTheDocument();
   });
 

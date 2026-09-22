@@ -26,6 +26,8 @@ const PENDING_KEY = 'worklogs-google-web-pending';
 export interface GoogleAccount {
   email: string;
   name: string;
+  /** Photo du compte (`…googleusercontent.com`), vide sinon. */
+  picture?: string;
 }
 
 interface WebTokens {
@@ -147,7 +149,7 @@ export function loginUrl(clientId: string, redirectUri: string, state: string, c
   const url = new URL(AUTH_URL);
   url.search = new URLSearchParams({
     client_id: clientId, redirect_uri: redirectUri, response_type: 'code', scope: LOGIN_SCOPE,
-    access_type: 'offline', prompt: 'consent', state,
+    access_type: 'offline', prompt: 'select_account consent', state,
     code_challenge: challenge, code_challenge_method: 'S256',
   }).toString();
   return url.href;
@@ -158,11 +160,13 @@ export function loginUrl(clientId: string, redirectUri: string, state: string, c
  * dure une heure ; `login_hint` rend la reprise immédiate (pas de consentement
  * redemandé une fois accordé).
  */
-export function tokenLoginUrl(clientId: string, redirectUri: string, state: string, hint = ''): string {
+export function tokenLoginUrl(clientId: string, redirectUri: string, state: string, hint = '', selectAccount = false): string {
   const url = new URL(AUTH_URL);
   url.search = new URLSearchParams({
     client_id: clientId, redirect_uri: redirectUri, response_type: 'token', scope: LOGIN_SCOPE,
-    include_granted_scopes: 'true', state, ...(hint ? { login_hint: hint } : {}),
+    include_granted_scopes: 'true', state,
+    // Changer de compte : le sélecteur Google, sans suggérer l'ancien compte.
+    ...(selectAccount ? { prompt: 'select_account' } : hint ? { login_hint: hint } : {}),
   }).toString();
   return url.href;
 }
@@ -180,12 +184,12 @@ function rememberPending(login: PendingLogin): void {
  * (ou personnel déjà enregistré). Avec un secret personnel : code + PKCE,
  * session longue ; sinon flux « jeton » d'une heure.
  */
-export async function beginWebLogin(clientId = ''): Promise<void> {
+export async function beginWebLogin(clientId = '', options: { selectAccount?: boolean } = {}): Promise<void> {
   const cleaned = clientId ? setWebClientId(clientId) : activeWebClientId() || fail('Aucun client Google configuré.');
   const state = randomString(32);
   if (!getWebClientSecret()) {
     rememberPending({ state, redirectUri: webRedirectUri() });
-    location.assign(tokenLoginUrl(cleaned, webRedirectUri(), state, readTokens()?.account?.email ?? ''));
+    location.assign(tokenLoginUrl(cleaned, webRedirectUri(), state, readTokens()?.account?.email ?? '', options.selectAccount));
     return;
   }
   const verifier = randomString(64);
@@ -198,9 +202,10 @@ async function fetchAccount(accessToken: string): Promise<GoogleAccount | null> 
   try {
     const response = await fetch(USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!response.ok) return null;
-    const info = (await response.json()) as { email?: unknown; name?: unknown };
+    const info = (await response.json()) as { email?: unknown; name?: unknown; picture?: unknown };
     if (typeof info.email !== 'string' || !info.email) return null;
-    return { email: info.email.slice(0, 320), name: typeof info.name === 'string' ? info.name.slice(0, 200) : '' };
+    const picture = typeof info.picture === 'string' && /^https:\/\/[\w.-]+\.googleusercontent\.com\//.test(info.picture) ? info.picture.slice(0, 2000) : '';
+    return { email: info.email.slice(0, 320), name: typeof info.name === 'string' ? info.name.slice(0, 200) : '', picture };
   } catch {
     return null;
   }
@@ -457,12 +462,12 @@ export async function downloadWebBackup(id: string): Promise<unknown> {
  * `multipartBackup` côté serveur). Les photos de la PWA partent ainsi, une
  * par une, avant le JSON qui les référence.
  */
-export async function uploadDriveFile({ name, mimeType, data, appProperties }: {
-  name: string; mimeType: string; data: Blob; appProperties: Record<string, string>;
+export async function uploadDriveFile({ name, mimeType, data, appProperties, parent = null }: {
+  name: string; mimeType: string; data: Blob; appProperties: Record<string, string>; parent?: string | null;
 }): Promise<{ id: string; name: string }> {
   if (!name.trim() || name.length > 240) fail('Nom de fichier Google invalide.');
   const boundary = `worklogs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  const metadata = JSON.stringify({ name, mimeType, appProperties });
+  const metadata = JSON.stringify({ name, mimeType, appProperties, ...(parent ? { parents: [parent] } : {}) });
   const body = new Blob([
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`,
     `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
@@ -475,6 +480,39 @@ export async function uploadDriveFile({ name, mimeType, data, appProperties }: {
   )) as { id?: string; name?: string };
   const id = result?.id ?? fail('Google n’a pas confirmé l’envoi du fichier.');
   return { id, name: result?.name || name };
+}
+
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+let folderPromise: Promise<string | null> | null = null;
+
+/**
+ * Dossier `WorkLogs/Pièces jointes` (le même que le desktop, retrouvé par étiquette),
+ * créé au besoin. `null` si Google refuse : le fichier part à la racine plutôt que
+ * de rester bloqué sur l'appareil.
+ */
+export function attachmentFolderId(): Promise<string | null> {
+  folderPromise ??= (async () => {
+    const find = async (type: string) => {
+      const params = new URLSearchParams({
+        q: `mimeType='${FOLDER_MIME}' and appProperties has { key='worklogs_type' and value='${type}' } and trashed=false`,
+        fields: 'files(id)', pageSize: '1', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
+      });
+      return ((await webGoogleRequest(`/drive/v3/files?${params}`)) as { files?: { id: string }[] }).files?.[0]?.id || null;
+    };
+    const create = async (name: string, type: string, parent: string | null) =>
+      ((await webGoogleRequest('/drive/v3/files?supportsAllDrives=true&fields=id', {
+        method: 'POST',
+        body: JSON.stringify({ name, mimeType: FOLDER_MIME, appProperties: { worklogs_type: type }, ...(parent ? { parents: [parent] } : {}) }),
+      })) as { id?: string }).id || null;
+    const existing = await find('attachments-folder');
+    if (existing) return existing;
+    const root = (await find('root-folder')) || (await create('WorkLogs', 'root-folder', null));
+    return create('Pièces jointes', 'attachments-folder', root);
+  })().catch(() => {
+    folderPromise = null;
+    return null;
+  });
+  return folderPromise;
 }
 
 /** Envoie la boîte mobile (JSON v1) : le PC la fusionnera sans rien écraser. */
@@ -493,7 +531,7 @@ export async function uploadOutbox(payload: { version: number }): Promise<{ id: 
  * fichier canonique `WorkLogs backup.json` (PATCH) ou le crée (POST), pour que
  * le PC la retrouve dans ses sauvegardes et puisse la restaurer.
  */
-export async function saveBackupJson(jsonText: string): Promise<{ id: string; name: string }> {
+export async function saveBackupJson(jsonText: string): Promise<{ id: string; name: string; modifiedTime?: string }> {
   if (new Blob([jsonText]).size > MAX_BACKUP_BYTES) fail('La sauvegarde est trop volumineuse (20 Mo max).');
   const existing = await listWebBackups();
   const canonical = existing.find((file) => file.name === BACKUP_NAME) || existing[0];
@@ -507,13 +545,13 @@ export async function saveBackupJson(jsonText: string): Promise<{ id: string; na
     `\r\n--${boundary}--\r\n`,
   ]);
   const target = canonical?.id
-    ? `/upload/drive/v3/files/${encodeURIComponent(canonical.id)}?uploadType=multipart&supportsAllDrives=true&fields=id,name`
-    : '/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name';
+    ? `/upload/drive/v3/files/${encodeURIComponent(canonical.id)}?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime`
+    : '/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime';
   const result = (await webGoogleRequest(target, {
     method: canonical?.id ? 'PATCH' : 'POST',
     headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
     body,
-  })) as { id?: string; name?: string };
+  })) as { id?: string; name?: string; modifiedTime?: string };
   const id = result?.id ?? fail('Google n’a pas confirmé l’enregistrement de la sauvegarde.');
-  return { id, name: result?.name || BACKUP_NAME };
+  return { id, name: result?.name || BACKUP_NAME, ...(typeof result?.modifiedTime === 'string' ? { modifiedTime: result.modifiedTime } : {}) };
 }

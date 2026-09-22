@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './styles.css';
-import { api, emptyDocument, todayISO, type AppState, type Entry } from './lib';
+import { api, emptyDocument, todayISO, type AppState, type Entry, type GoogleStatus, type GoogleSyncStatus } from './lib';
+import { startWebSync, subscribeWebSync } from './store/sync-web';
 import { EntryList } from './components/EntryList';
 import { ProcedureList } from './components/ProcedureList';
 import { EntryEditor } from './components/EntryEditor';
@@ -11,8 +12,12 @@ import { TaskBoard } from './components/TaskBoard';
 import { ProjectBar } from './components/ProjectBar';
 import { GoogleDrive } from './components/GoogleDrive';
 import { AiSettings } from './components/AiSettings';
+import { AccountMenu } from './components/AccountMenu';
+import { GoogleDocuments } from './components/GoogleDocuments';
 import { ColumnResizer } from './components/ColumnResizer';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
+
+const isPwa = import.meta.env.VITE_PWA === '1';
 
 export default function App() {
   const [state, setState] = useState<AppState | null>(null);
@@ -41,6 +46,45 @@ export default function App() {
   // un clic suffit, l'état est retenu comme les autres panneaux.
   const [showProcedures, setShowProcedures] = useState(() => readPanel('worklogs-show-procedures', false));
   const [showSettings, setShowSettings] = useState(false);
+  const [showDocuments, setShowDocuments] = useState(false);
+  // Compte Google au niveau de l'app : le menu de l'en-tête le montre partout.
+  const [google, setGoogle] = useState<GoogleStatus | null>(null);
+  const refreshGoogle = useCallback(async () => {
+    try { setGoogle(await api.googleStatus()); } catch { setGoogle(null); }
+  }, []);
+  useEffect(() => {
+    void refreshGoogle();
+    const onFocus = () => void refreshGoogle();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refreshGoogle]);
+  // Desktop : la connexion se termine dans le navigateur système, on suit son issue.
+  useEffect(() => {
+    if (!google?.pending) return;
+    const timer = setInterval(() => void refreshGoogle(), 1500);
+    return () => clearInterval(timer);
+  }, [google?.pending, refreshGoogle]);
+  // Synchro Drive : la PWA la porte elle-même, le desktop la fait côté serveur.
+  const [sync, setSync] = useState<GoogleSyncStatus | null>(null);
+  const syncRevision = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isPwa) return;
+    const stop = startWebSync(() => void refreshGoogle());
+    const unsubscribe = subscribeWebSync(setSync);
+    return () => { unsubscribe(); stop(); };
+  }, [refreshGoogle]);
+  useEffect(() => {
+    if (isPwa || !google?.connected) return;
+    let alive = true;
+    const poll = () => void api.googleSync().then((next) => { if (alive) setSync(next); }).catch(() => {});
+    poll();
+    const timer = setInterval(poll, 5000);
+    return () => { alive = false; clearInterval(timer); };
+  }, [google?.connected]);
+  const googleAction = (action: () => Promise<GoogleStatus>) => async () => {
+    setError('');
+    try { setGoogle(await action()); } catch (e) { setError((e as Error).message); }
+  };
   const settingsRef = useRef<HTMLDialogElement>(null);
   const selectedRef = useRef<string | null>(null);
   const reloadSequence = useRef(0);
@@ -137,6 +181,13 @@ export default function App() {
       setError('API injoignable. Lance `npm run dev` dans /home/timo/WorkLogs.');
     }
   }, [query, projectId]);
+
+  // Des changements sont arrivés de l'autre appareil : l'écran se met à jour seul.
+  useEffect(() => {
+    if (!sync) return;
+    if (syncRevision.current !== null && sync.revision !== syncRevision.current) void reload();
+    syncRevision.current = sync.revision;
+  }, [sync, reload]);
 
   useEffect(() => {
     reload();
@@ -378,17 +429,16 @@ export default function App() {
           <span className="export-icon" aria-hidden="true">⤓</span>
           <span className="export-label">Exporter</span>
         </button>
-        <button
-          className="ghost settings-btn"
-          type="button"
-          aria-haspopup="dialog"
-          aria-label="⚙ Paramètres"
-          title="Paramètres (dont Google Drive)"
-          onClick={() => setShowSettings(true)}
-        >
-          <span className="settings-icon" aria-hidden="true">⚙</span>
-          <span className="settings-label">Paramètres</span>
-        </button>
+        <AccountMenu
+          status={google}
+          onSettings={() => setShowSettings(true)}
+          onDocuments={() => setShowDocuments(true)}
+          onConnect={googleAction(api.connectGoogle)}
+          onSwitch={googleAction(api.switchGoogleAccount)}
+          onDisconnect={googleAction(api.disconnectGoogle)}
+          sync={sync}
+          onSyncNow={() => void api.syncGoogleNow().then(setSync).catch((e) => setError((e as Error).message))}
+        />
       </header>
 
       {error && <p className="error banner no-print">{error}</p>}
@@ -506,16 +556,17 @@ export default function App() {
           onCancel={(event) => {
             event.preventDefault();
             setShowSettings(false);
+            void refreshGoogle();
           }}
         >
           <div className="settings-dialog-heading">
             <h2>Paramètres</h2>
-            <button className="ghost" type="button" onClick={() => setShowSettings(false)}>
+            <button className="ghost" type="button" onClick={() => { setShowSettings(false); void refreshGoogle(); }}>
               Fermer
             </button>
           </div>
           <div className="settings-content">
-            <GoogleDrive onRestored={reload} onOpen={openDriveEntry} />
+            <GoogleDrive onRestored={reload} onOpen={openDriveEntry} onDocuments={() => { setShowSettings(false); setShowDocuments(true); }} />
             <AiSettings />
           </div>
           {/* La pastille de version de l'en-tête est masquée sur mobile :
@@ -523,6 +574,14 @@ export default function App() {
           <p className="settings-version">WorkLogs {__WORKLOGS_VERSION__}</p>
         </dialog>
       ), document.body)}
+      {showDocuments && (
+        <GoogleDocuments
+          projects={state?.projects ?? []}
+          onClose={() => setShowDocuments(false)}
+          onOpen={openDriveEntry}
+          onChanged={reload}
+        />
+      )}
     </div>
   );
 }

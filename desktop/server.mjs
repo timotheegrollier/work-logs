@@ -8,7 +8,8 @@ import { openDb } from '../api/src/db.js';
 export async function startDesktopServer({ dataDir, staticDir, withSeed = true, google = null }) {
   const db = openDb(path.join(dataDir, 'worklogs.db'), { withSeed });
   const token = randomBytes(32).toString('hex');
-  const application = createApp({ db, uploadDir: path.join(dataDir, 'uploads'), staticDir, google });
+  // Synchro Drive automatique : seulement l'application desktop (un seul processus, une seule base).
+  const application = createApp({ db, uploadDir: path.join(dataDir, 'uploads'), staticDir, google, autoSync: Boolean(google) });
   const server = createServer((req, res) => {
     if (req.headers['x-worklogs-token'] !== token) {
       res.writeHead(403, { 'Content-Type': 'application/json' });

@@ -15,7 +15,7 @@ test('en-tête mobile : trois lignes aérées, sans débordement, cibles tactile
   const writing = page.getByRole('button', { name: 'Écriture', exact: true });
   const tasks = page.getByRole('button', { name: 'Tâches', exact: true });
   const exporter = page.getByRole('button', { name: 'Exporter' });
-  const settings = page.getByRole('button', { name: '⚙ Paramètres' });
+  const settings = page.getByRole('button', { name: 'Compte et paramètres' });
   for (const control of [search, theme, journal, writing, tasks, exporter, settings]) {
     await expect(control).toBeVisible();
   }
@@ -59,7 +59,8 @@ test('paramètres mobiles : la version s’y lit et les trois blocs sont des car
 
   // La pastille de l'en-tête est masquée à 412 px : le dialogue prend le relais.
   await expect(page.locator('.head .logo .version')).toBeHidden();
-  await page.getByRole('button', { name: '⚙ Paramètres' }).click();
+  await page.getByRole('button', { name: 'Compte et paramètres' }).click();
+  await page.getByRole('menuitem', { name: 'Paramètres' }).click();
   const dialog = page.getByRole('dialog', { name: 'Paramètres' });
   await expect(dialog.getByText(/WorkLogs \d+\.\d+\.\d+/)).toBeVisible();
   await dialog.getByRole('button', { name: 'Fermer' }).click();

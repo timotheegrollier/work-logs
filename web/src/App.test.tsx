@@ -177,7 +177,7 @@ describe('en-tête', () => {
     expect(within(header).getByRole('button', { name: 'Tâches' })).toBeInTheDocument();
     // Noms en aria-label : ils survivent au passage en icônes seules sur mobile.
     expect(within(header).getByRole('button', { name: 'Exporter' })).toHaveAttribute('aria-label', 'Exporter');
-    expect(within(header).getByRole('button', { name: '⚙ Paramètres' })).toHaveAttribute('aria-label', '⚙ Paramètres');
+    expect(within(header).getByRole('button', { name: 'Compte et paramètres' })).toHaveAttribute('aria-haspopup', 'menu');
   });
 });
 
@@ -191,7 +191,8 @@ describe('gestion Google Drive', () => {
     expect(screen.queryByRole('dialog', { name: 'Gestion Google Drive' })).not.toBeInTheDocument();
     expect(screen.queryByText('La connexion Drive est disponible dans l’application desktop Linux.')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '⚙ Paramètres' }));
+    await user.click(screen.getByRole('button', { name: 'Compte et paramètres' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
     expect(await screen.findByRole('dialog', { name: 'Paramètres' })).toBeVisible();
     // La pastille de version de l'en-tête est masquée sur mobile : le dialogue
     // garde le numéro accessible partout.
@@ -213,7 +214,8 @@ describe('réglages IA', () => {
     render(<App />);
     await screen.findByRole('region', { name: 'Journal' });
 
-    await user.click(screen.getByRole('button', { name: '⚙ Paramètres' }));
+    await user.click(screen.getByRole('button', { name: 'Compte et paramètres' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
     const dialog = await screen.findByRole('dialog', { name: 'Paramètres' });
     expect(within(dialog).getByLabelText('Endpoint IA')).toHaveValue(
       'https://generativelanguage.googleapis.com/v1beta/openai'

@@ -2094,6 +2094,9 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .head .export-btn .export-icon {
     display: inline;
   }
+  .head .account-menu {
+    grid-area: settings;
+  }
   .head .settings-btn {
     grid-area: settings;
     min-width: 44px;
@@ -2168,3 +2171,60 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .google-native-bar strong, .google-native-bar span { display: block; }
 .google-native-bar span { color: var(--muted); margin-top: 4px; }
 .google-native-host { flex: 1; min-height: 180px; background: var(--surface); border: 1px solid var(--line); }
+
+/* Menu du compte : même place que l'ancien ⚙ Paramètres, avatar Google une fois connecté. */
+.account-menu { position: relative; display: inline-flex; }
+.account-menu .settings-btn { display: inline-flex; align-items: center; gap: 7px; position: relative; }
+.account-menu .settings-btn.has-account { padding-block: 3px; padding-inline: 4px 10px; border-radius: 99px; }
+.avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: none; }
+.avatar.is-initial { display: inline-grid; place-items: center; color: #fff; font-size: 13px; font-weight: 700; }
+.avatar.is-large { width: 42px; height: 42px; font-size: 18px; }
+.sync-dot { position: absolute; left: 22px; bottom: 3px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--surface); background: var(--ok); }
+.sync-dot.is-syncing { background: var(--accent); animation: sync-pulse 1s ease-in-out infinite; }
+.sync-dot.is-error { background: var(--danger, #c0392b); }
+.sync-dot.is-off { background: var(--muted); }
+@keyframes sync-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .sync-dot.is-syncing { animation: none; } }
+.account-popover {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 60;
+  width: min(300px, calc(100vw - 24px));
+  display: grid; gap: 2px; padding: 6px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 18px 40px rgb(0 0 0 / 18%);
+}
+.account-card { display: flex; align-items: center; gap: 12px; padding: 10px 10px 12px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.account-card > div { display: grid; gap: 2px; min-width: 0; }
+.account-card strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-card small { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.account-card .sync-line.is-error { color: var(--danger, #c0392b); }
+.account-popover [role="menuitem"] {
+  text-align: left; border: 0; background: transparent; color: inherit;
+  padding: 9px 10px; min-height: 40px; border-radius: 9px; font-size: 14px; cursor: pointer;
+}
+.account-popover [role="menuitem"]:hover:not(:disabled),
+.account-popover [role="menuitem"]:focus-visible { background: var(--surface-2); outline: none; }
+.account-popover [role="menuitem"].is-primary { color: var(--accent); font-weight: 650; }
+.account-popover [role="menuitem"].is-danger { color: var(--danger, #c0392b); }
+
+/* Documents Google : une ligne par document, actions à portée de main. */
+.documents-dialog { width: min(760px, calc(100vw - 24px)); }
+.documents-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.documents-toolbar input[type="search"] { flex: 1 1 220px; min-width: 0; }
+.documents-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.documents-list li {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 170px) auto auto;
+  align-items: center; gap: 8px; padding: 6px 6px 6px 10px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+}
+.documents-list li[aria-busy="true"] { opacity: .6; }
+.documents-name { display: grid; gap: 2px; text-align: left; border: 0; background: transparent; color: inherit; padding: 4px 0; min-width: 0; cursor: pointer; }
+.documents-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.documents-name small { color: var(--muted); font-size: 12px; }
+.documents-name:hover strong { color: var(--accent); }
+.danger-text { color: var(--danger); }
+@media (max-width: 600px) {
+  .documents-list li { grid-template-columns: minmax(0, 1fr) auto; }
+  .documents-list li select { grid-column: 1; }
+  .documents-list li .documents-name { grid-column: 1 / -1; }
+}

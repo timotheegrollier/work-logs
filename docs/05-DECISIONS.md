@@ -526,9 +526,57 @@ sans serveur ; le prix est une session d'une heure, reprise par une redirection
 Un client personnel avec secret garde le flux code + PKCE (session longue).
 
 **Identité minimale.** `openid email profile` en plus de `drive.file`, lus une fois via
-`userinfo` pour l'affichage ; un échec n'empêche jamais Drive. Pas d'avatar : il faudrait
-élargir la CSP à `googleusercontent.com` pour une image décorative.
+`userinfo` pour l'affichage ; un échec n'empêche jamais Drive. **Avatar ajouté le 2026-09-22**
+(demande explicite) : la CSP desktop autorisait déjà `img-src https:` ; seules les URL
+`…googleusercontent.com` sont retenues, chargées en `referrerPolicy="no-referrer"`, avec
+l'initiale sur une pastille si l'image échoue.
 
 **Rouvrir si** un serveur WorkLogs hébergé apparaît (il pourrait garder un jeton de
 rafraîchissement pour la PWA), ou si Google retire le flux « jeton ».
+
+## 20. Synchro automatique par fusion, un seul fichier Drive — 2026-09-22
+
+**Le besoin.** Connecté au même compte sur le PC et le téléphone, tout doit suivre sans
+geste : à la première connexion d'un appareil, la sauvegarde du compte est chargée ; ensuite
+chaque modification repart, tant qu'on est connecté. Choix validés : **fusion par élément**
+(pas « dernier qui écrit gagne »), **PC et mobile**.
+
+**Un seul fichier.** Le même `WorkLogs backup.json` que la sauvegarde manuelle, enrichi de
+`deleted` (pierres tombales). Pas de fichier par appareil ni de journal d'opérations : Drive
+reste lisible, restaurable à la main, et « Sauvegarder » devient simplement « synchroniser
+maintenant » (plus jamais d'écrasement de ce que l'autre appareil a écrit).
+
+**La fusion** (`api/src/sync-merge.js`, JS pur partagé, testé seul) : `updated_at` le plus
+récent gagne par entrée, tâche, projet (les projets ont gagné `updated_at`) ; une suppression
+gagne sur toute version antérieure, une modification postérieure ressuscite ; liens et pièces
+jointes : union moins suppressions ; l'amorçage jamais modifié ne gagne jamais (sinon le
+téléphone installé après le PC écraserait le mode d'emploi édité) ; deux copies locales du
+même onglet Google : la plus récente reste. Pierres tombales purgées après 60 jours.
+
+**Les moteurs.** Desktop : `api/src/google-sync.js`, dans le serveur (un middleware relance un
+passage après toute écriture réussie, regroupée 4 s ; plus une minute ; application
+transactionnelle via `restoreBackup`). PWA : `web/src/store/sync-web.ts` (signal de
+`localApi`, 3 s ; minute ; retour sur l'onglet ; application *différentielle* et gardée :
+une ligne modifiée pendant le passage n'est jamais écrasée, elle repart au passage suivant,
+trois passages au plus). Le fichier distant n'est retéléchargé que si son `modifiedTime` a
+bougé. L'écran se recharge quand la `revision` de synchro avance.
+
+**Limites assumées.** Deux écritures simultanées du fichier : la seconde gagne sur Drive, mais
+chaque appareil garde ses données et les renvoie au passage suivant — tout converge. Une
+entrée ouverte dans l'éditeur n'est pas rafraîchie sous les doigts : la version distante
+s'affiche à la réouverture ; si l'on continue d'écrire, la saisie (plus récente) gagne.
+Pas de synchro en mode web/dev (`autoSync` seulement dans l'app desktop).
+
+**Rouvrir si** la base dépasse ~10 Mo (le fichier entier circule à chaque changement) : il
+faudra alors un fichier par appareil ou des deltas.
+
+## 21. Documents Google dans leur propre fenêtre, menu du compte à la place de ⚙ — 2026-09-22
+
+Le dialogue Drive mélangeait connexion, sauvegardes et liste des documents. Les documents ont
+leur fenêtre (`GoogleDocuments.tsx`) ouverte depuis le menu du compte : ouvrir, ranger dans
+un projet (toutes les copies-onglets du document), corbeille Google Drive (récupérable 30
+jours, copie locale retirée), créer. Le menu du compte **remplace** le bouton ⚙ Paramètres,
+même place et même taille : l'en-tête garde huit contrôles (§16 respecté). Déconnecté, il
+reste l'accès aux Paramètres ; connecté, il montre l'avatar, l'état de synchro, et « Changer
+de compte » (sélecteur de compte Google, `prompt=select_account`).
 

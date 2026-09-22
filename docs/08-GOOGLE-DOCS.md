@@ -209,6 +209,20 @@ n’a été configuré dans cette session : la connexion réelle et l’aller-re
 un document Google de test restent à valider.** Ne pas annoncer ce parcours comme
 validé en production avant la recette ci-dessous.
 
+## Synchro automatique et Documents Google — depuis le 2026-09-22
+
+Connecté, chaque appareil fusionne sa base avec `WorkLogs backup.json` (le fichier canonique,
+enrichi des suppressions `deleted`) : après chaque modification (4 s desktop, 3 s PWA),
+toutes les minutes, au retour sur l'onglet, et à la connexion — la première connexion d'un
+téléphone charge donc la sauvegarde du compte. Règles de fusion : `docs/05-DECISIONS.md` §20.
+État visible dans le menu du compte (pastille sur l'avatar + « Synchronisé il y a … »),
+routes desktop `GET`/`POST /api/google/sync`.
+
+La liste des documents est dans sa propre fenêtre (menu du compte → **Documents Google**) :
+ouvrir, ranger dans un projet, corbeille Google Drive (`drive.file` : seulement les fichiers
+créés ou choisis pour WorkLogs), créer. Le dialogue Google Drive des Paramètres ne garde que
+la connexion, les sauvegardes, les pièces jointes et la boîte mobile.
+
 ## Connexion en un clic (client intégré) — depuis le 2026-09-22
 
 **« Se connecter avec Google »** suffit : les clients OAuth du projet WorkLogs sont

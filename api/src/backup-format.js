@@ -69,6 +69,10 @@ export function validateBackup(input) {
       name: requiredText(project.name, 'Nom de projet', 500),
       color: requiredText(project.color, 'Couleur de projet', 100),
       created_at: timestamp(project.created_at, 'Date de création du projet'),
+      // Synchro (2026-09-22) : absent des anciens exports, il vaut alors la création.
+      updated_at: project.updated_at === undefined || project.updated_at === null || project.updated_at === ''
+        ? timestamp(project.created_at, 'Date de création du projet')
+        : timestamp(project.updated_at, 'Date de modification du projet'),
     };
   });
   const projectIds = unique(projects.map((project) => project.id), 'Identifiant de projet');

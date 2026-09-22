@@ -86,7 +86,8 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
       if (!response.ok) return null;
       const info = await response.json();
       if (typeof info.email !== 'string' || !info.email) return null;
-      return { email: info.email.slice(0, 320), name: typeof info.name === 'string' ? info.name.slice(0, 200) : '' };
+      return { email: info.email.slice(0, 320), name: typeof info.name === 'string' ? info.name.slice(0, 200) : '',
+        picture: typeof info.picture === 'string' && /^https:\/\/[\w.-]+\.googleusercontent\.com\//.test(info.picture) ? info.picture.slice(0, 2000) : '' };
     } catch { return null; }
   }
   const cancel = () => {
@@ -200,7 +201,8 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
       timer.unref(); pending = { server, timer };
       const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
       url.search = new URLSearchParams({ client_id: client().client_id, redirect_uri: redirect, response_type: 'code', scope: LOGIN_SCOPE,
-        access_type: 'offline', prompt: 'consent', trigger_onepick: 'true', mimetypes: 'application/vnd.google-apps.document',
+        // select_account : « Changer de compte » propose toujours le choix du compte.
+        access_type: 'offline', prompt: 'select_account consent', trigger_onepick: 'true', mimetypes: 'application/vnd.google-apps.document',
         state, code_challenge_method: 'S256', code_challenge: createHash('sha256').update(verifier).digest('base64url') }).toString();
       try { await openExternal(url.href); } catch { cancel(); throw fail('Impossible d’ouvrir le navigateur pour la connexion Google.'); }
       return status();

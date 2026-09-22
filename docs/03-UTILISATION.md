@@ -184,6 +184,27 @@ gestion Drive s'y trouve : configuration OAuth, connexion, choix des fichiers au
 recherche, ouverture, sauvegardes et déconnexion. Le dialogue est au premier plan ; fermer le dialogue
 ne ferme pas le document actuellement ouvert au centre.
 
+**Le menu du compte** (en haut à droite, à la place de ⚙) : déconnecté, il ouvre les
+**Paramètres** et propose **Se connecter avec Google** ; connecté, il montre ta photo, ton
+e-mail et l'état de synchro, et donne accès à **Documents Google**, **Synchroniser
+maintenant**, **Paramètres**, **Changer de compte** et **Se déconnecter**.
+
+**Synchronisation automatique.** Connecté au même compte sur le PC et le téléphone, tout suit
+tout seul : à la première connexion d'un appareil, la sauvegarde du compte est chargée ;
+ensuite chaque modification part quelques secondes après, et ce que l'autre appareil a
+changé arrive dans la minute (ou au retour sur l'onglet). Rien n'est écrasé : chaque note,
+tâche ou projet garde sa version la plus récente, et une suppression se propage.
+
+**Documents Google** (menu du compte) : la liste des documents autorisés pour WorkLogs,
+avec pour chacun **Ouvrir**, un choix de **projet**, et 🗑 (**corbeille Google Drive**,
+récupérable 30 jours ; la copie dans WorkLogs est retirée). On y crée aussi un Google Docs.
+
+**Pièces jointes et Drive.** Connecté, chaque fichier joint (procédures comprises) part dans
+le dossier `WorkLogs/Pièces jointes` de ton Drive quelques secondes après l'ajout, et reste
+aussi sur l'appareil ; badge **☁ Drive**. Sans connexion, il reste sur l'appareil (**local
+seul**). Cliquer un fichier le télécharge ; s'il n'est pas encore sur cet appareil mais sur
+Drive, il est rapatrié automatiquement.
+
 **Se connecter avec Google** suffit (desktop comme mobile) : rien à configurer, la connexion
 reste facultative et le compte connecté s'affiche en haut du dialogue. Sur mobile, la session
 dure une heure ; ensuite **Reprendre la session Google** la rouvre en un instant, sans rien

@@ -108,7 +108,7 @@ describe('retour OAuth et jetons', () => {
     expect(calls).toHaveLength(2);
     expect(webGoogleStatus()).toEqual({
       configured: true, connected: true, builtin: false, expired: false,
-      account: { email: 'timo@example.com', name: 'Timo' },
+      account: { email: 'timo@example.com', name: 'Timo', picture: '' },
     });
     expect(JSON.parse(localStorage.getItem('worklogs-google-web-tokens') as string).refresh_token).toBe('renouvellement');
   });

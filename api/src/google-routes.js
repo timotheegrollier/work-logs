@@ -1,4 +1,4 @@
-import { uid, nowISO, today } from './db.js';
+import { uid, nowISO, today, tombstone } from './db.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { decodeEntry, documentText } from './rich-document.js';
@@ -6,6 +6,7 @@ import { buildGoogleUpdate, documentBody, documentTabs, selectDocumentTab } from
 import { mergeGoogleChanges } from './google-merge.js';
 import { buildPreservingUpdate, googlePreservedCount, importGoogleDocument as googleToDocument } from './google-preserve.js';
 import { buildBackup, BACKUP_NAME, MAX_BACKUP_BYTES, restoreBackup, validateBackup } from './backup.js';
+import { createSyncEngine } from './google-sync.js';
 import { validateOutbox } from './backup-format.js';
 
 const blankSource = { body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } };
@@ -39,11 +40,43 @@ const multipartBackup = (name, payload) => {
  * sauvegardes, avec `appProperties` qui permet de retrouver le fichier sans
  * nouvelle table (`worklogs_type=attachment` + ids WorkLogs).
  */
-const multipartAttachment = (name, mimeType, content, attachmentId, entryId) => {
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+const folders = new WeakMap();
+/**
+ * Dossier Drive `WorkLogs/Pièces jointes`, retrouvé par étiquette (renommable sans
+ * rien casser), créé au besoin. Mis en cache par client ; `null` si Google refuse :
+ * le fichier part alors à la racine plutôt que de rester bloqué.
+ */
+export function attachmentFolder(google) {
+  if (!folders.has(google)) {
+    const find = async (type) => {
+      const params = new URLSearchParams({
+        q: `mimeType='${FOLDER_MIME}' and appProperties has { key='worklogs_type' and value='${type}' } and trashed=false`,
+        fields: 'files(id)', pageSize: '1', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
+      });
+      return (await google.request(`/drive/v3/files?${params}`)).files?.[0]?.id || null;
+    };
+    const create = async (name, type, parent) => (await google.request('/drive/v3/files?supportsAllDrives=true&fields=id', {
+      method: 'POST',
+      body: JSON.stringify({ name, mimeType: FOLDER_MIME, appProperties: { worklogs_type: type }, ...(parent ? { parents: [parent] } : {}) }),
+    })).id || null;
+    const pending = (async () => {
+      const existing = await find('attachments-folder');
+      if (existing) return existing;
+      const root = (await find('root-folder')) || await create('WorkLogs', 'root-folder');
+      return create('Pièces jointes', 'attachments-folder', root);
+    })().catch(() => { folders.delete(google); return null; });
+    folders.set(google, pending);
+  }
+  return folders.get(google);
+}
+
+const multipartAttachment = (name, mimeType, content, attachmentId, entryId, parent = null) => {
   const boundary = backupBoundary();
   const metadata = JSON.stringify({
     name,
     mimeType: mimeType || 'application/octet-stream',
+    ...(parent ? { parents: [parent] } : {}),
     appProperties: {
       worklogs_type: 'attachment',
       worklogs_version: '2',
@@ -66,13 +99,14 @@ const multipartAttachment = (name, mimeType, content, attachmentId, entryId) => 
 async function uploadMissingAttachments(db, google, uploadDir) {
   const rows = db.prepare("SELECT * FROM attachments WHERE drive_file_id IS NULL OR drive_file_id=''").all();
   let binaries = 0;
+  const parent = rows.length ? await attachmentFolder(google) : null;
   for (const row of rows) {
     const target = path.join(uploadDir, path.basename(row.stored));
     if (!fs.existsSync(target)) continue;
     try {
       const content = fs.readFileSync(target);
       if (content.length > 100 * 1024 * 1024) continue;
-      const part = multipartAttachment(row.filename, row.mime, content, row.id, row.entry_id);
+      const part = multipartAttachment(row.filename, row.mime, content, row.id, row.entry_id, parent);
       const result = await google.request('/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id', {
         method: 'POST',
         headers: { 'Content-Type': part.contentType },
@@ -239,7 +273,18 @@ export function googleLink(db, entry) {
   } : null;
 }
 
-export function registerGoogleRoutes(app, { db, google, uploadDir }) {
+export function registerGoogleRoutes(app, { db, google, uploadDir, autoSync = false }) {
+  /** Projet et présence locale d'un document Drive (ses onglets partagent le même projet). */
+  const localDocument = (documentId) => {
+    const rows = db.prepare('SELECT e.project_id FROM google_documents g JOIN entries e ON e.id=g.entry_id WHERE g.document_id=?').all(documentId);
+    return { linked: rows.length > 0, project_id: rows.find(row => row.project_id)?.project_id || null };
+  };
+  const removeLocalEntry = (id) => {
+    for (const a of db.prepare('SELECT stored FROM attachments WHERE entry_id=?').all(id)) fs.rmSync(path.join(uploadDir, path.basename(a.stored)), { force: true });
+    db.prepare('DELETE FROM google_documents WHERE entry_id=?').run(id);
+    db.prepare('DELETE FROM entries WHERE id=?').run(id);
+    tombstone(db, 'entry', id);
+  };
   const route = (method, url, fn) => app[method](url, (req, res, next) => {
     Promise.resolve().then(() => {
       if (!google) fail('Google Drive est disponible dans l’application desktop. Les documents locaux fonctionnent aussi dans le navigateur.', 503);
@@ -279,11 +324,29 @@ export function registerGoogleRoutes(app, { db, google, uploadDir }) {
     } while (pageToken);
     return files.map(backupInfo);
   };
-  const downloadBackup = async (id) => {
+  const downloadText = async (id) => {
     fileId(id);
     const raw = await google.request(`/drive/v3/files/${id}?alt=media&supportsAllDrives=true`, { responseType: 'text' });
     const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : typeof raw === 'string' ? raw : JSON.stringify(raw);
     if (Buffer.byteLength(text, 'utf8') > MAX_BACKUP_BYTES) fail('La sauvegarde Google est trop volumineuse (20 Mo max).', 413);
+    return text;
+  };
+  /** Remplace (PATCH) ou crée (POST) le fichier canonique `WorkLogs backup.json`. */
+  const writeCanonical = async (payload, canonical) => {
+    const multipart = multipartBackup(BACKUP_NAME, payload);
+    const target = canonical
+      ? `/upload/drive/v3/files/${fileId(canonical.id)}?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime,size,mimeType`
+      : '/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime,size,mimeType';
+    const result = await google.request(target, {
+      method: canonical ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': multipart.contentType },
+      body: multipart.body,
+    });
+    if (!result?.id) fail(`Google n’a pas confirmé le ${canonical ? 'remplacement' : 'création'} de la sauvegarde.`, 502);
+    return backupInfo({ ...result, name: result.name || BACKUP_NAME, mimeType: 'application/json', size: result.size || Buffer.byteLength(payload, 'utf8') });
+  };
+  const downloadBackup = async (id) => {
+    const text = await downloadText(id);
     try { return validateBackup(JSON.parse(text)); } catch (error) {
       if (error.status) throw error;
       fail('Le contenu de cette sauvegarde Google est invalide.', 422);
@@ -308,11 +371,36 @@ export function registerGoogleRoutes(app, { db, google, uploadDir }) {
     try { return await fn(); } finally { busy.delete(id); }
   };
 
-  app.get('/api/google/status', (_req, res) => res.json(google ? google.status() : { available: false, configured: false, connected: false, pending: false, error: '', selectedIds: [] }));
+  const sync = google && autoSync ? createSyncEngine({ db, uploadDir, drive: {
+    connected: () => Boolean(google.status().connected),
+    uploadMissingAttachments: () => uploadMissingAttachments(db, google, uploadDir),
+    listBackups: () => backupList(),
+    downloadText: (id) => downloadText(id),
+    writeCanonical: (payload, file) => writeCanonical(payload, file),
+    downloadMissingAttachments: (attachments) => downloadMissingAttachments(db, google, uploadDir, attachments),
+  } }) : null;
+  if (sync) { app.locals.googleSync = sync; sync.start(); }
+  // Première connexion (ou nouveau compte) : on synchronise tout de suite, sans attendre la minute.
+  const kick = () => {
+    if (sync && google.status().connected && !sync.status().lastSyncedAt && sync.status().state !== 'syncing') void sync.syncNow();
+  };
+  app.get('/api/google/status', (_req, res) => {
+    kick();
+    res.json(google ? { ...google.status(), sync: sync?.status() ?? null } : { available: false, configured: false, connected: false, pending: false, error: '', selectedIds: [] });
+  });
+  app.get('/api/google/sync', (_req, res) => {
+    kick();
+    res.json(sync?.status() ?? { state: 'off', error: '', lastSyncedAt: null, revision: 0 });
+  });
+  route('post', '/api/google/sync', async (_req, res) => {
+    if (!sync) fail('La synchronisation automatique est disponible dans l’application desktop.', 503);
+    await sync.syncNow();
+    res.json(sync.status());
+  });
   route('post', '/api/google/configure', (req, res) => res.json(google.configure(req.body)));
   route('post', '/api/google/use-builtin', (_req, res) => res.json(google.useBuiltin()));
   route('post', '/api/google/connect', async (_req, res) => res.json(await google.connect()));
-  route('post', '/api/google/disconnect', async (_req, res) => res.json(await google.disconnect()));
+  route('post', '/api/google/disconnect', async (_req, res) => { sync?.reset(); res.json(await google.disconnect()); });
   route('get', '/api/google/documents/:id/tabs', async (req, res) => {
     const id = fileId(req.params.id);
     const source = await google.request(`/docs/v1/documents/${id}?includeTabsContent=true`);
@@ -335,16 +423,13 @@ export function registerGoogleRoutes(app, { db, google, uploadDir }) {
     // horodatées sont nettoyées seulement après le remplacement réussi.
     const existing = await backupList();
     const canonical = existing.find((file) => file.name === BACKUP_NAME) || existing[0];
-    const multipart = multipartBackup(BACKUP_NAME, payload);
-    const target = canonical
-      ? `/upload/drive/v3/files/${fileId(canonical.id)}?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime,size,mimeType`
-      : '/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime,size,mimeType';
-    const result = await google.request(target, {
-      method: canonical ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': multipart.contentType },
-      body: multipart.body,
-    });
-    if (!result?.id) fail(`Google n’a pas confirmé le ${canonical ? 'remplacement' : 'création'} de la sauvegarde.`, 502);
+    // Synchro active : « Sauvegarder » fusionne au lieu d'écraser ce que le téléphone a écrit.
+    const result = sync ? await (async () => {
+      await sync.syncNow();
+      if (sync.status().state === 'error') fail(sync.status().error, 502);
+      const files = await backupList();
+      return files.find((file) => file.name === BACKUP_NAME) || files[0];
+    })() : await writeCanonical(payload, canonical);
 
     // Une panne pendant le nettoyage ne doit pas invalider la sauvegarde déjà
     // écrite ; le prochain export retentera la mise à la corbeille.
@@ -359,7 +444,7 @@ export function registerGoogleRoutes(app, { db, google, uploadDir }) {
       }
     }
 
-    res.status(201).json({ ...backupInfo({ ...result, name: result.name || BACKUP_NAME, mimeType: 'application/json', size: result.size || Buffer.byteLength(payload, 'utf8') }), binaries: uploadedBinaries });
+    res.status(201).json({ ...result, binaries: uploadedBinaries });
   }));
   route('get', '/api/google/backup/:id', async (req, res) => {
     res.json(await downloadBackup(req.params.id));
@@ -450,7 +535,25 @@ export function registerGoogleRoutes(app, { db, google, uploadDir }) {
       }
     }
     files.sort((a, b) => Number(selectedIds.includes(b.id)) - Number(selectedIds.includes(a.id)));
-    res.json({ ...result, files, warnings: [...new Set(warnings)] });
+    res.json({ ...result, files: files.map(file => ({ ...file, ...localDocument(file.id) })), warnings: [...new Set(warnings)] });
+  });
+  // Ranger un document dans un projet : toutes ses copies locales (une par onglet).
+  route('post', '/api/google/documents/:id/project', async (req, res) => {
+    const documentId = fileId(req.params.id);
+    const projectId = req.body?.project_id || null;
+    if (projectId !== null && (typeof projectId !== 'string' || !db.prepare('SELECT 1 FROM projects WHERE id=?').get(projectId))) fail('projet introuvable');
+    const changed = db.prepare('UPDATE entries SET project_id=?, updated_at=? WHERE id IN (SELECT entry_id FROM google_documents WHERE document_id=?)')
+      .run(projectId, nowISO(), documentId).changes;
+    if (!changed) fail('Ouvre d’abord ce document dans WorkLogs pour le ranger dans un projet.', 409);
+    res.json({ ok: true, entries: changed, ...localDocument(documentId) });
+  });
+  // Corbeille Google Drive (récupérable 30 jours) puis retrait des copies locales.
+  route('post', '/api/google/documents/:id/trash', async (req, res) => {
+    const documentId = fileId(req.params.id);
+    await google.request(`/drive/v3/files/${documentId}?supportsAllDrives=true&fields=id,trashed`, { method: 'PATCH', body: JSON.stringify({ trashed: true }) });
+    const ids = db.prepare('SELECT entry_id FROM google_documents WHERE document_id=?').all(documentId).map(row => row.entry_id);
+    for (const id of ids) removeLocalEntry(id);
+    res.json({ ok: true, removed: ids.length });
   });
   route('post', '/api/google/documents', async (req, res) => {
     const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';

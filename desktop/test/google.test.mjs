@@ -18,7 +18,7 @@ function fixture({ backend = 'gnome_libsecret', token = {}, response = 200, defa
     fetchImpl: async (url, options) => {
       calls.push({ url, options });
       if (url.endsWith('/token')) return Response.json({ access_token: 'test-access', refresh_token: 'test-refresh', expires_in: 3600, scope, ...token });
-      if (url.endsWith('/userinfo') && response === 200) return Response.json({ email: 'timo@example.com', name: 'Timo', picture: 'https://x' });
+      if (url.endsWith('/userinfo') && response === 200) return Response.json({ email: 'timo@example.com', name: 'Timo', picture: defaultClient ? 'https://lh3.googleusercontent.com/a/photo' : 'https://x' });
       return Response.json({ ok: true }, { status: response });
     },
     defaultClient,
@@ -53,7 +53,8 @@ test('OAuth desktop : navigateur système, PKCE, état contrôlé et jetons hors
     assert.equal(createHash('sha256').update(params.get('code_verifier')).digest('base64url'), f.url().searchParams.get('code_challenge'));
     assert.equal(f.client.status().connected, true);
     assert.deepEqual(f.client.status().selectedIds, ['doc-test']);
-    assert.deepEqual(f.client.status().account, { email: 'timo@example.com', name: 'Timo' });
+    // Photo hors googleusercontent.com : ignorée (jamais d'URL arbitraire dans l'en-tête).
+    assert.deepEqual(f.client.status().account, { email: 'timo@example.com', name: 'Timo', picture: '' });
     assert.equal(f.calls.find(c => c.url.endsWith('/userinfo')).options.headers.Authorization, 'Bearer test-access');
     assert.ok(!JSON.stringify(f.client.status()).includes('test-access'));
     const file = fs.readFileSync(path.join(f.dir, 'google-tokens.enc'), 'utf8');
@@ -164,6 +165,7 @@ test('client intégré : un clic suffit, le client personnel reste prioritaire, 
     assert.equal(await f.authorize(), 200);
     assert.equal(f.url().searchParams.get('client_id'), builtin.client_id);
     assert.equal(f.calls[0].options.body.get('client_secret'), 'public-builtin');
+    assert.equal(f.client.status().account.picture, 'https://lh3.googleusercontent.com/a/photo');
     f.client.configure({ installed: { client_id: 'perso.apps.googleusercontent.com' } });
     assert.equal(f.client.status().builtin, false);
     assert.equal(f.client.status().connected, false, 'changer de client déconnecte');
