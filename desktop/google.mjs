@@ -4,7 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
+// Identité en plus de Drive : afficher le compte connecté, rien d'autre.
+const LOGIN_SCOPE = [SCOPE, 'openid', 'email', 'profile'].join(' ');
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
+const CLIENT_ID = /^[\w.-]+\.apps\.googleusercontent\.com$/;
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 
 /** Google renvoie aussi 403 quand une API est désactivée, pas seulement pour les droits d'un fichier. */
@@ -30,8 +34,20 @@ export function googleApiError(status, body, apiPath, clientId = '') {
   return fail(messages[status] || 'Google a refusé la requête. Recharge le document avant de réessayer.', status);
 }
 
+/**
+ * Client « Application de bureau » intégré au paquet (écrit par stage-desktop
+ * depuis les secrets CI) ou fourni en dev par l'environnement. Absent : l'app
+ * retombe sur la configuration manuelle, comme avant.
+ */
+export function readDefaultClient({ file, env = process.env } = {}) {
+  let value = { client_id: env.WORKLOGS_GOOGLE_CLIENT_ID, client_secret: env.WORKLOGS_GOOGLE_CLIENT_SECRET };
+  if (!value.client_id && file) { try { value = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } }
+  if (typeof value?.client_id !== 'string' || !CLIENT_ID.test(value.client_id)) return null;
+  return { client_id: value.client_id, ...(typeof value.client_secret === 'string' && value.client_secret ? { client_secret: value.client_secret } : {}) };
+}
+
 /** OAuth desktop : navigateur système + PKCE, aucun jeton dans le renderer. */
-export function createGoogleClient({ profileDir, secureStorage, openExternal, fetchImpl = fetch, timeoutMs = 300_000 }) {
+export function createGoogleClient({ profileDir, secureStorage, openExternal, fetchImpl = fetch, timeoutMs = 300_000, defaultClient = null }) {
   const configPath = path.join(profileDir, 'google-client.json');
   const tokenPath = path.join(profileDir, 'google-tokens.enc');
   let config = {};
@@ -42,6 +58,8 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
   let refreshing = null;
   let generation = 0;
   try { config = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch {}
+  // Le client personnel importé reste prioritaire sur le client intégré.
+  const client = () => (config.client_id ? config : defaultClient || {});
 
   const protectedStorage = () => secureStorage.isEncryptionAvailable() && secureStorage.getSelectedStorageBackend() !== 'basic_text';
   if (protectedStorage()) {
@@ -58,15 +76,26 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
     fs.writeFileSync(temporary, secureStorage.encryptString(JSON.stringify(tokens)), { mode: 0o600 });
     fs.renameSync(temporary, tokenPath);
   }
-  const status = () => ({ available: true, configured: !!config.client_id, connected: !!tokens,
+  const status = () => ({ available: true, configured: !!client().client_id, builtin: !config.client_id && !!defaultClient, builtinAvailable: !!defaultClient,
+    connected: !!tokens, account: tokens?.account || null,
     pending: !!pending, error, selectedIds: selected, secureStorage: protectedStorage() });
+  /** Nom et e-mail du compte, pour l'affichage seulement ; un échec n'empêche pas Drive. */
+  async function account(accessToken) {
+    try {
+      const response = await fetchImpl(USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` }, redirect: 'error', signal: AbortSignal.timeout(10_000) });
+      if (!response.ok) return null;
+      const info = await response.json();
+      if (typeof info.email !== 'string' || !info.email) return null;
+      return { email: info.email.slice(0, 320), name: typeof info.name === 'string' ? info.name.slice(0, 200) : '' };
+    } catch { return null; }
+  }
   const cancel = () => {
     generation++;
     if (pending) { clearTimeout(pending.timer); pending.server.close(); pending.server.closeAllConnections(); pending = null; }
   };
   async function tokenRequest(params) {
     const response = await fetchImpl(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ client_id: config.client_id, ...(config.client_secret ? { client_secret: config.client_secret } : {}), ...params }),
+      body: new URLSearchParams({ client_id: client().client_id, ...(client().client_secret ? { client_secret: client().client_secret } : {}), ...params }),
       signal: AbortSignal.timeout(30_000) });
     const result = await response.json();
     if (!response.ok) {
@@ -106,7 +135,7 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
       const errorBody = typeof body === 'string' ? (() => { try { return JSON.parse(body); } catch { return {}; } })()
         : Buffer.isBuffer(body) ? (() => { try { return JSON.parse(body.toString('utf8')); } catch { return {}; } })()
         : body;
-      throw googleApiError(response.status, errorBody, apiPath, config.client_id);
+      throw googleApiError(response.status, errorBody, apiPath, client().client_id);
     }
     return body;
   }
@@ -114,7 +143,7 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
     status, request, close: cancel,
     configure(input) {
       const value = input?.installed || input;
-      if (!value || typeof value.client_id !== 'string' || !/^[\w.-]+\.apps\.googleusercontent\.com$/.test(value.client_id)) throw fail('Identifiant OAuth desktop Google invalide.');
+      if (!value || typeof value.client_id !== 'string' || !CLIENT_ID.test(value.client_id)) throw fail('Identifiant OAuth desktop Google invalide.');
       if (value.client_secret !== undefined && (typeof value.client_secret !== 'string' || value.client_secret.length > 500)) throw fail('Configuration OAuth invalide.');
       cancel(); tokens = null; selected = []; error = '';
       fs.rmSync(tokenPath, { force: true });
@@ -124,8 +153,16 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
       fs.writeFileSync(configPath, JSON.stringify(config), { mode: 0o600 });
       return status();
     },
+    /** Oublie le client personnel pour revenir au client intégré (déconnecte). */
+    useBuiltin() {
+      if (!defaultClient) throw fail('Aucun client Google intégré dans cette version.');
+      cancel(); tokens = null; selected = []; error = ''; config = {};
+      fs.rmSync(tokenPath, { force: true });
+      fs.rmSync(configPath, { force: true });
+      return status();
+    },
     async connect() {
-      if (!config.client_id) throw fail('Configure d’abord le client Google Drive.');
+      if (!client().client_id) throw fail('Configure d’abord le client Google Drive.');
       if (!protectedStorage()) throw fail('Active le trousseau de ta session Linux pour connecter Google Drive.');
       cancel(); error = ''; selected = [];
       const currentGeneration = generation;
@@ -147,7 +184,7 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
           if (currentGeneration !== generation) throw fail('Connexion Google annulée.');
           // Ne pas réutiliser le refresh token d'un autre compte sélectionné.
           selected = (url.searchParams.get('picked_file_ids') || '').split(',').filter(id => /^[\w-]{1,200}$/.test(id));
-          tokens = { ...next, selected_ids: selected }; persist();
+          tokens = { ...next, selected_ids: selected, account: await account(next.access_token) }; persist();
           res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }).end('Google Drive est connecté. Tu peux fermer cette page et revenir dans WorkLogs.');
         } catch (e) {
           if (currentGeneration === generation) error = e.message || 'Connexion Google impossible.';
@@ -162,7 +199,7 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
       const timer = setTimeout(() => { error = 'La connexion Google a expiré. Réessaie.'; cancel(); }, timeoutMs);
       timer.unref(); pending = { server, timer };
       const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-      url.search = new URLSearchParams({ client_id: config.client_id, redirect_uri: redirect, response_type: 'code', scope: SCOPE,
+      url.search = new URLSearchParams({ client_id: client().client_id, redirect_uri: redirect, response_type: 'code', scope: LOGIN_SCOPE,
         access_type: 'offline', prompt: 'consent', trigger_onepick: 'true', mimetypes: 'application/vnd.google-apps.document',
         state, code_challenge_method: 'S256', code_challenge: createHash('sha256').update(verifier).digest('base64url') }).toString();
       try { await openExternal(url.href); } catch { cancel(); throw fail('Impossible d’ouvrir le navigateur pour la connexion Google.'); }

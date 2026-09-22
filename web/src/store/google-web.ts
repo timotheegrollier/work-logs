@@ -14,21 +14,32 @@ import { BACKUP_NAME, BACKUP_VERSION, MAX_BACKUP_BYTES, OUTBOX_VERSION } from '.
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
+// Identité en plus de Drive : afficher le compte connecté, rien d'autre.
+const LOGIN_SCOPE = [SCOPE, 'openid', 'email', 'profile'].join(' ');
+const USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
+const CLIENT_ID = /^[\w.-]+\.apps\.googleusercontent\.com$/;
 const CLIENT_KEY = 'worklogs-google-web-client';
 const CLIENT_SECRET_KEY = 'worklogs-google-web-secret';
 const TOKENS_KEY = 'worklogs-google-web-tokens';
 const PENDING_KEY = 'worklogs-google-web-pending';
+
+export interface GoogleAccount {
+  email: string;
+  name: string;
+}
 
 interface WebTokens {
   access_token: string;
   refresh_token?: string;
   expires_at: number;
   scope?: string;
+  account?: GoogleAccount | null;
 }
 
 interface PendingLogin {
   state: string;
-  verifier: string;
+  /** Absent : flux « jeton » sans secret (client intégré). */
+  verifier?: string;
   redirectUri: string;
 }
 
@@ -39,6 +50,7 @@ const fail = (message: string, code?: string, helpUrl?: string): never => {
   throw new ApiError(message, code, helpUrl);
 };
 
+/** Client « Web » personnel collé en Paramètres (prioritaire sur l'intégré). */
 export function getWebClientId(): string {
   try {
     return localStorage.getItem(CLIENT_KEY) ?? '';
@@ -47,10 +59,31 @@ export function getWebClientId(): string {
   }
 }
 
+/** Client « Web » intégré au build (`VITE_GOOGLE_CLIENT_ID`) : un ID client est public. */
+export function builtinWebClientId(): string {
+  const value = String(import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '').trim();
+  return CLIENT_ID.test(value) ? value : '';
+}
+
+export function activeWebClientId(): string {
+  return getWebClientId() || builtinWebClientId();
+}
+
+/** Oublie le client personnel : retour au client intégré, session effacée. */
+export function clearWebClient(): void {
+  try {
+    localStorage.removeItem(CLIENT_KEY);
+    localStorage.removeItem(CLIENT_SECRET_KEY);
+  } catch {
+    // Stockage indisponible : rien à oublier.
+  }
+  writeTokens(null);
+}
+
 /** L'identifiant public du client « Web » (`…apps.googleusercontent.com`). */
 export function setWebClientId(clientId: string): string {
   const cleaned = clientId.trim();
-  if (!/^[\w.-]+\.apps\.googleusercontent\.com$/.test(cleaned)) {
+  if (!CLIENT_ID.test(cleaned)) {
     fail('Identifiant client Google invalide (…apps.googleusercontent.com attendu).');
   }
   try {
@@ -113,24 +146,64 @@ export async function pkceChallenge(verifier: string, subtle: Pick<SubtleCrypto,
 export function loginUrl(clientId: string, redirectUri: string, state: string, challenge: string): string {
   const url = new URL(AUTH_URL);
   url.search = new URLSearchParams({
-    client_id: clientId, redirect_uri: redirectUri, response_type: 'code', scope: SCOPE,
+    client_id: clientId, redirect_uri: redirectUri, response_type: 'code', scope: LOGIN_SCOPE,
     access_type: 'offline', prompt: 'consent', state,
     code_challenge: challenge, code_challenge_method: 'S256',
   }).toString();
   return url.href;
 }
 
-/** Démarre la connexion : mémorise l'état anti-rejeu puis quitte vers Google. */
-export async function beginWebLogin(clientId: string): Promise<void> {
-  const cleaned = setWebClientId(clientId);
-  const state = randomString(32);
-  const verifier = randomString(64);
+/**
+ * Flux « jeton » sans secret : le seul possible dans un site public. Le jeton
+ * dure une heure ; `login_hint` rend la reprise immédiate (pas de consentement
+ * redemandé une fois accordé).
+ */
+export function tokenLoginUrl(clientId: string, redirectUri: string, state: string, hint = ''): string {
+  const url = new URL(AUTH_URL);
+  url.search = new URLSearchParams({
+    client_id: clientId, redirect_uri: redirectUri, response_type: 'token', scope: LOGIN_SCOPE,
+    include_granted_scopes: 'true', state, ...(hint ? { login_hint: hint } : {}),
+  }).toString();
+  return url.href;
+}
+
+function rememberPending(login: PendingLogin): void {
   try {
-    sessionStorage.setItem(PENDING_KEY, JSON.stringify({ state, verifier, redirectUri: webRedirectUri() }));
+    sessionStorage.setItem(PENDING_KEY, JSON.stringify(login));
   } catch {
     fail('Stockage de session indisponible : impossible de démarrer la connexion Google.');
   }
+}
+
+/**
+ * Démarre la connexion puis quitte vers Google. Sans argument : client intégré
+ * (ou personnel déjà enregistré). Avec un secret personnel : code + PKCE,
+ * session longue ; sinon flux « jeton » d'une heure.
+ */
+export async function beginWebLogin(clientId = ''): Promise<void> {
+  const cleaned = clientId ? setWebClientId(clientId) : activeWebClientId() || fail('Aucun client Google configuré.');
+  const state = randomString(32);
+  if (!getWebClientSecret()) {
+    rememberPending({ state, redirectUri: webRedirectUri() });
+    location.assign(tokenLoginUrl(cleaned, webRedirectUri(), state, readTokens()?.account?.email ?? ''));
+    return;
+  }
+  const verifier = randomString(64);
+  rememberPending({ state, verifier, redirectUri: webRedirectUri() });
   location.assign(loginUrl(cleaned, webRedirectUri(), state, await pkceChallenge(verifier)));
+}
+
+/** Nom et e-mail du compte, pour l'affichage seulement ; un échec n'empêche pas Drive. */
+async function fetchAccount(accessToken: string): Promise<GoogleAccount | null> {
+  try {
+    const response = await fetch(USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!response.ok) return null;
+    const info = (await response.json()) as { email?: unknown; name?: unknown };
+    if (typeof info.email !== 'string' || !info.email) return null;
+    return { email: info.email.slice(0, 320), name: typeof info.name === 'string' ? info.name.slice(0, 200) : '' };
+  } catch {
+    return null;
+  }
 }
 
 function readTokens(): WebTokens | null {
@@ -158,7 +231,7 @@ function writeTokens(tokens: WebTokens | null): void {
 }
 
 async function tokenRequest(params: Record<string, string>): Promise<WebTokens> {
-  const clientId = getWebClientId();
+  const clientId = activeWebClientId();
   if (!clientId) fail('Configure d’abord l’identifiant client Google.');
   const secret = getWebClientSecret();
   const response = await fetch(TOKEN_URL, {
@@ -190,14 +263,23 @@ async function tokenRequest(params: Record<string, string>): Promise<WebTokens> 
   };
 }
 
+/** Y a-t-il un retour de Google à traiter dans l'URL (requête ou fragment) ? */
+export function hasRedirectCallback(search = location.search, hash = location.hash): boolean {
+  const query = new URLSearchParams(search.startsWith('?') ? search : '');
+  const fragment = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : '');
+  return query.has('code') || query.has('error') || fragment.has('access_token') || (fragment.has('error') && fragment.has('state'));
+}
+
 /**
- * Traite le retour de Google (`?code=…&state=…`) au chargement. À appeler une
- * fois, puis à nettoyer l'URL (`history.replaceState`). Renvoie `false` s'il
- * n'y a aucun retour à traiter.
+ * Traite le retour de Google au chargement : `?code=…` (client avec secret) ou
+ * `#access_token=…` (flux « jeton »). À appeler une fois, puis à nettoyer
+ * l'URL (`history.replaceState`). Renvoie `false` s'il n'y a rien à traiter.
  */
-export async function handleRedirectCallback(search = location.search): Promise<boolean> {
-  const params = new URLSearchParams(search.startsWith('?') ? search : '');
-  if (!params.has('code') && !params.has('error')) return false;
+export async function handleRedirectCallback(search = location.search, hash = location.hash): Promise<boolean> {
+  const fragment = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : '');
+  const tokenFlow = fragment.has('access_token') || (fragment.has('error') && fragment.has('state'));
+  const params = tokenFlow ? fragment : new URLSearchParams(search.startsWith('?') ? search : '');
+  if (!tokenFlow && !params.has('code') && !params.has('error')) return false;
   let pending: PendingLogin | null = null;
   try {
     pending = JSON.parse(sessionStorage.getItem(PENDING_KEY) ?? '') as PendingLogin;
@@ -208,17 +290,35 @@ export async function handleRedirectCallback(search = location.search): Promise<
   const login: PendingLogin =
     !pending || params.get('state') !== pending.state ? fail('Retour Google invalide : recommence la connexion.') : pending;
   if (params.has('error')) fail('Connexion Google annulée.');
+  if (tokenFlow) {
+    const scope = params.get('scope') ?? '';
+    if (scope && !scope.split(' ').includes(SCOPE)) fail('L’accès aux documents sélectionnés n’a pas été accordé.');
+    const access = params.get('access_token') ?? fail('Réponse de connexion Google invalide.');
+    const previous = readTokens()?.account ?? null;
+    writeTokens({
+      access_token: access,
+      expires_at: Date.now() + Number(params.get('expires_in') || 3600) * 1000,
+      ...(scope ? { scope } : {}),
+      account: (await fetchAccount(access)) ?? previous,
+    });
+    return true;
+  }
+  if (!login.verifier) fail('Retour Google invalide : recommence la connexion.');
   const code = params.get('code') ?? fail('Code de connexion Google absent.');
-  writeTokens(await tokenRequest({ grant_type: 'authorization_code', code, code_verifier: login.verifier, redirect_uri: login.redirectUri }));
+  const tokens = await tokenRequest({ grant_type: 'authorization_code', code, code_verifier: login.verifier as string, redirect_uri: login.redirectUri });
+  writeTokens({ ...tokens, account: await fetchAccount(tokens.access_token) });
   return true;
 }
+
+/** Session « jeton » expirée : l'UI propose de la reprendre (une redirection éclair). */
+export const GOOGLE_REAUTH = 'GOOGLE_REAUTH';
 
 export async function webAccessToken(): Promise<string> {
   const tokens = readTokens() ?? fail('Connecte Google Drive pour continuer.');
   if (tokens.expires_at > Date.now() + 60_000) return tokens.access_token;
   if (!tokens.refresh_token) {
-    writeTokens(null);
-    fail('Reconnecte Google Drive pour renouveler l’autorisation.');
+    // On garde le compte : la reprise se fait en un clic, sans rien ressaisir.
+    fail('Session Google expirée : reprends-la en un clic dans le panneau Drive.', GOOGLE_REAUTH);
   }
   refreshing ??= tokenRequest({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token as string })
     .then((next) => {
@@ -249,7 +349,15 @@ export function mapGoogleError(status: number, body: { error?: { errors?: { reas
   if (reasons.some((reason) => ['ACCESS_TOKEN_SCOPE_INSUFFICIENT', 'insufficientPermissions'].includes(reason ?? ''))) {
     fail('L’autorisation Google est incomplète. Reconnecte Google Drive.', 'GOOGLE_SCOPE_REQUIRED');
   }
-  if (status === 401) fail('Autorisation Google expirée. Reconnecte Google Drive.');
+  if (status === 401) {
+    const tokens = readTokens();
+    if (tokens && !tokens.refresh_token) {
+      // Jeton révoqué ou expiré plus tôt que prévu : même reprise en un clic.
+      writeTokens({ ...tokens, expires_at: 0 });
+      fail('Session Google expirée : reprends-la en un clic dans le panneau Drive.', GOOGLE_REAUTH);
+    }
+    fail('Autorisation Google expirée. Reconnecte Google Drive.');
+  }
   if (status === 403) fail('Accès Google refusé : vérifie que le client Web est dans le même projet que le desktop.');
   if (status === 404) fail('Fichier Google introuvable ou non autorisé.');
   throw new ApiError('Google a refusé la requête. Réessaie dans quelques instants.');
@@ -297,8 +405,17 @@ export async function downloadDriveBinary(driveFileId: string): Promise<Blob> {
   return response.blob();
 }
 
-export function webGoogleStatus(): { configured: boolean; connected: boolean } {
-  return { configured: getWebClientId() !== '', connected: readTokens() !== null };
+export function webGoogleStatus(): {
+  configured: boolean; connected: boolean; builtin: boolean; account: GoogleAccount | null; expired: boolean;
+} {
+  const tokens = readTokens();
+  return {
+    configured: activeWebClientId() !== '',
+    connected: tokens !== null,
+    builtin: getWebClientId() === '' && builtinWebClientId() !== '',
+    account: tokens?.account ?? null,
+    expired: tokens !== null && !tokens.refresh_token && tokens.expires_at <= Date.now() + 60_000,
+  };
 }
 
 export function disconnectWeb(): void {

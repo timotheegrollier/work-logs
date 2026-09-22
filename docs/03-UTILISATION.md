@@ -184,6 +184,11 @@ gestion Drive s'y trouve : configuration OAuth, connexion, choix des fichiers au
 recherche, ouverture, sauvegardes et déconnexion. Le dialogue est au premier plan ; fermer le dialogue
 ne ferme pas le document actuellement ouvert au centre.
 
+**Se connecter avec Google** suffit (desktop comme mobile) : rien à configurer, la connexion
+reste facultative et le compte connecté s'affiche en haut du dialogue. Sur mobile, la session
+dure une heure ; ensuite **Reprendre la session Google** la rouvre en un instant, sans rien
+ressaisir. **Utiliser mon propre client OAuth** reste possible pour qui a son projet Google Cloud.
+
 Dans **Sauvegardes WorkLogs**, **Sauvegarder dans Google Drive** maintient un seul fichier JSON
 canonique (`WorkLogs backup.json`) : une nouvelle sauvegarde remplace la précédente et les anciennes
 copies sont placées à la corbeille. Le fichier est lisible par une autre installation WorkLogs

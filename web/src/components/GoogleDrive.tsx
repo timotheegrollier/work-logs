@@ -205,16 +205,19 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
           </div>
           <div className="drive-content">
             {isPwa ? <GoogleDriveWeb onOpen={onOpen} onRestored={onRestored} /> : (!status ? <p>Chargement…</p> : !status.available ? <p>La connexion Drive est disponible dans l’application desktop Linux.</p> : <>
-              <p>{status.connected ? 'Google Drive connecté' : status.pending ? 'Termine la connexion dans ton navigateur, puis reviens ici.' : 'Ouvre et édite tes documents Google dans WorkLogs.'}</p>
+              {status.connected
+                ? <p className="drive-account" aria-label="Compte Google connecté">{status.account ? <>Connecté : <strong>{status.account.name || status.account.email}</strong>{status.account.name && <> · {status.account.email}</>}</> : 'Google Drive connecté'}</p>
+                : <p>{status.pending ? 'Termine la connexion dans ton navigateur, puis reviens ici.' : 'Facultatif : connecte ton compte Google pour sauvegarder dans Drive et éditer tes documents Google dans WorkLogs. Sans connexion, tout reste sur cet appareil.'}</p>}
               {(!status.configured || configure) && <div className="drive-setup">
                 <p>Première connexion : crée un client OAuth de type « Application de bureau » dans Google Cloud, puis importe son fichier JSON. Active les API Google Docs, Drive et Google Picker.</p>
                 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Ouvrir Google Cloud</a>
                 <label className="ghost file-button">Importer la configuration Google<input type="file" aria-label="Configuration Google JSON" accept=".json,application/json" disabled={busy}
                   onChange={(e) => { void importConfig(e.target.files?.[0]); e.target.value = ''; }} /></label>
               </div>}
-              {status.configured && <button type="button" disabled={busy || status.pending} onClick={() => void run(async () => { setStatus(await api.connectGoogle()); })}>
-                {status.connected ? 'Choisir des documents dans Drive' : 'Connecter Google Drive'}
+              {status.configured && <button type="button" className={status.connected ? undefined : 'primary google-signin'} disabled={busy || status.pending} onClick={() => void run(async () => { setStatus(await api.connectGoogle()); })}>
+                {status.connected ? 'Choisir des documents dans Drive' : 'Se connecter avec Google'}
               </button>}
+              {status.configured && !status.connected && <p className="drive-hint">WorkLogs lit ton nom et ton e-mail pour les afficher, et n’accède qu’aux fichiers qu’il crée ou que tu choisis.</p>}
               {status.connected && <>
                 <section className="drive-backups" aria-label="Sauvegardes WorkLogs">
                   <div className="drive-subheading"><div><h3>Sauvegardes WorkLogs</h3><p>Un fichier JSON lisible par WorkLogs sur un autre PC connecté au même compte. Les pièces jointes partent avec, automatiquement.</p></div><button className="primary" type="button" disabled={busy} onClick={() => void saveBackup()}>Sauvegarder dans Google Drive</button></div>
@@ -259,9 +262,10 @@ export function GoogleDrive({ onOpen, onRestored }: { onOpen: (entry: Entry) => 
                 {!busy && !error && loaded && !files.length && <p>Aucun document autorisé. Utilise « Choisir des documents dans Drive ».</p>}
                 {warnings.map(warning => <p key={warning} role="status">{warning}</p>)}
                 {page && <button type="button" disabled={busy} onClick={() => void run(() => refreshFiles(page))}>Voir la suite</button>}
-                <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.disconnectGoogle()); setFiles([]); setBackups([]); setOutbox([]); setAttachmentStatus(null); setLoaded(false); setCreating(false); setWarnings([]); setBackupMessage(''); setOutboxMessage(''); })}>Déconnecter Google Drive</button>
+                <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.disconnectGoogle()); setFiles([]); setBackups([]); setOutbox([]); setAttachmentStatus(null); setLoaded(false); setCreating(false); setWarnings([]); setBackupMessage(''); setOutboxMessage(''); })}>Se déconnecter de Google</button>
               </>}
-              {status.configured && !status.pending && <button className="ghost" type="button" disabled={busy} onClick={() => setConfigure(!configure)}>Configuration Google</button>}
+              {status.configured && !status.pending && <button className="ghost" type="button" disabled={busy} onClick={() => setConfigure(!configure)}>{status.builtin ? 'Utiliser mon propre client OAuth' : 'Configuration Google'}</button>}
+              {status.builtinAvailable && !status.builtin && !status.pending && <button className="ghost" type="button" disabled={busy} onClick={() => void run(async () => { setStatus(await api.useBuiltinGoogle()); setFiles([]); setBackups([]); setOutbox([]); setLoaded(false); setConfigure(false); })}>Revenir au client intégré</button>}
               {status.secureStorage === false && <p>Le trousseau Linux doit être déverrouillé pour conserver ta connexion Google.</p>}
             </>)}
             {(error || status?.error) && <p className="error" role="alert">{error || status?.error}</p>}

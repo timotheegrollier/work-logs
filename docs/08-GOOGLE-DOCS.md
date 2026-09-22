@@ -209,6 +209,39 @@ n’a été configuré dans cette session : la connexion réelle et l’aller-re
 un document Google de test restent à valider.** Ne pas annoncer ce parcours comme
 validé en production avant la recette ci-dessous.
 
+## Connexion en un clic (client intégré) — depuis le 2026-09-22
+
+**« Se connecter avec Google »** suffit : les clients OAuth du projet WorkLogs sont
+intégrés au build, plus rien à importer ni à coller. La connexion reste **facultative**
+(sans elle, tout reste sur l'appareil). L'app demande en plus `openid email profile`,
+uniquement pour afficher « Connecté : Nom · e-mail ».
+
+| | Desktop | PWA |
+|---|---|---|
+| Client intégré | secrets CI `GOOGLE_DESKTOP_CLIENT_ID` / `GOOGLE_DESKTOP_CLIENT_SECRET` → `desktop/google-default.json` écrit par `scripts/stage-desktop.mjs` (jamais dans git) ; en dev : variables `WORKLOGS_GOOGLE_CLIENT_ID` / `_SECRET` | variable de dépôt `GOOGLE_WEB_CLIENT_ID` → `VITE_GOOGLE_CLIENT_ID` (`pwa.yml`) |
+| Flux | inchangé : navigateur système + PKCE, jeton de rafraîchissement dans le trousseau | **sans secret** : `response_type=token`, jeton d'**une heure** lu dans le fragment `#access_token` puis effacé de l'URL |
+| Expiration | renouvellement silencieux | « Reprendre la session Google » : une redirection avec `login_hint`, sans nouveau consentement ; le compte et les données locales restent |
+| Compte | `userinfo` après connexion, stocké chiffré avec les jetons | `userinfo` au retour, stocké avec le jeton |
+
+Pourquoi pas de secret côté PWA : un client « Web » est confidentiel et la PWA est un
+site public ; publier son secret est interdit. Le flux « jeton » est le seul possible
+sans serveur. Coller un client personnel **avec** secret garde l'ancien flux (session longue).
+
+Le client personnel reste disponible : **Utiliser mon propre client OAuth** (repli),
+prioritaire sur l'intégré ; **Revenir au client intégré** l'oublie (et déconnecte).
+Une ancienne autorisation sans `openid` fonctionne toujours, simplement sans compte affiché.
+
+**Prérequis Google Cloud (une fois, dans le projet des clients existants)** :
+1. Auth Platform → Accès aux données : ajouter `openid`, `email`, `profile` à `drive.file`.
+2. **Publier l'application en production** : en mode test, les jetons de rafraîchissement
+   expirent au bout de 7 jours et seuls les comptes de test peuvent se connecter.
+   `drive.file` et ces scopes sont non sensibles : pas de vérification approfondie.
+3. Client Web : origine `https://timotheegrollier.github.io`, redirection
+   `https://timotheegrollier.github.io/work-logs/app/` (déjà en place).
+4. GitHub → Settings → Secrets and variables → Actions : secrets
+   `GOOGLE_DESKTOP_CLIENT_ID`, `GOOGLE_DESKTOP_CLIENT_SECRET`, variable `GOOGLE_WEB_CLIENT_ID`.
+   Sans eux, la CI construit comme avant (configuration manuelle).
+
 ## Configuration depuis l’application desktop
 
 1. Dans [Google Cloud](https://console.cloud.google.com/), créer ou choisir un projet.

@@ -8,6 +8,7 @@ files:
   - desktop/*.mjs
   - desktop/preload.cjs
   - desktop/icon.png
+  - desktop/google-default.json
   - api/src/**
   - api/package.json
   - web/dist/**

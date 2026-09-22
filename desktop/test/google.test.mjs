@@ -4,10 +4,10 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createGoogleClient, googleApiError } from '../google.mjs';
+import { createGoogleClient, googleApiError, readDefaultClient } from '../google.mjs';
 
 const scope = 'https://www.googleapis.com/auth/drive.file';
-function fixture({ backend = 'gnome_libsecret', token = {}, response = 200 } = {}) {
+function fixture({ backend = 'gnome_libsecret', token = {}, response = 200, defaultClient = null, custom = true } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-google-test-'));
   const calls = [];
   let opened;
@@ -18,10 +18,12 @@ function fixture({ backend = 'gnome_libsecret', token = {}, response = 200 } = {
     fetchImpl: async (url, options) => {
       calls.push({ url, options });
       if (url.endsWith('/token')) return Response.json({ access_token: 'test-access', refresh_token: 'test-refresh', expires_in: 3600, scope, ...token });
+      if (url.endsWith('/userinfo') && response === 200) return Response.json({ email: 'timo@example.com', name: 'Timo', picture: 'https://x' });
       return Response.json({ ok: true }, { status: response });
     },
+    defaultClient,
   });
-  client.configure({ installed: { client_id: 'unit-test.apps.googleusercontent.com', client_secret: 'public-desktop-value' } });
+  if (custom) client.configure({ installed: { client_id: 'unit-test.apps.googleusercontent.com', client_secret: 'public-desktop-value' } });
   return { client, calls, dir, url: () => opened, async authorize() {
     await client.connect();
     const callback = new URL(opened.searchParams.get('redirect_uri'));
@@ -38,7 +40,7 @@ test('OAuth desktop : navigateur système, PKCE, état contrôlé et jetons hors
     await f.client.connect();
     const opened = f.url();
     assert.equal(opened.origin, 'https://accounts.google.com');
-    assert.equal(opened.searchParams.get('scope'), scope);
+    assert.equal(opened.searchParams.get('scope'), `${scope} openid email profile`);
     assert.equal(opened.searchParams.get('trigger_onepick'), 'true');
     const callback = new URL(opened.searchParams.get('redirect_uri'));
     assert.equal(callback.hostname, '127.0.0.1');
@@ -51,6 +53,8 @@ test('OAuth desktop : navigateur système, PKCE, état contrôlé et jetons hors
     assert.equal(createHash('sha256').update(params.get('code_verifier')).digest('base64url'), f.url().searchParams.get('code_challenge'));
     assert.equal(f.client.status().connected, true);
     assert.deepEqual(f.client.status().selectedIds, ['doc-test']);
+    assert.deepEqual(f.client.status().account, { email: 'timo@example.com', name: 'Timo' });
+    assert.equal(f.calls.find(c => c.url.endsWith('/userinfo')).options.headers.Authorization, 'Bearer test-access');
     assert.ok(!JSON.stringify(f.client.status()).includes('test-access'));
     const file = fs.readFileSync(path.join(f.dir, 'google-tokens.enc'), 'utf8');
     assert.ok(!file.includes('test-refresh'));
@@ -124,6 +128,7 @@ test('révocation distante et déconnexion locale effacent les identifiants enre
   const f = fixture({ response: 401 });
   try {
     await f.authorize();
+    assert.equal(f.client.status().account, null, 'userinfo refusé : connecté quand même, sans compte affiché');
     await assert.rejects(f.client.request('/drive/v3/files'), /expirée/);
     assert.equal(f.client.status().connected, false);
     assert.equal(fs.existsSync(path.join(f.dir, 'google-tokens.enc')), false);
@@ -147,4 +152,44 @@ test('un refus utilisateur ou un scope manquant ne connecte pas le compte', asyn
     assert.equal((await fetch(callback)).status, 400);
     assert.match(f.client.status().error, /annulée/);
   } finally { f.close(); }
+});
+
+const builtin = { client_id: 'builtin.apps.googleusercontent.com', client_secret: 'public-builtin' };
+
+test('client intégré : un clic suffit, le client personnel reste prioritaire, retour possible', async () => {
+  const f = fixture({ defaultClient: builtin, custom: false });
+  try {
+    assert.equal(f.client.status().configured, true);
+    assert.equal(f.client.status().builtin, true);
+    assert.equal(await f.authorize(), 200);
+    assert.equal(f.url().searchParams.get('client_id'), builtin.client_id);
+    assert.equal(f.calls[0].options.body.get('client_secret'), 'public-builtin');
+    f.client.configure({ installed: { client_id: 'perso.apps.googleusercontent.com' } });
+    assert.equal(f.client.status().builtin, false);
+    assert.equal(f.client.status().connected, false, 'changer de client déconnecte');
+    await f.client.connect();
+    assert.equal(f.url().searchParams.get('client_id'), 'perso.apps.googleusercontent.com');
+    const back = f.client.useBuiltin();
+    assert.equal(back.builtin, true);
+    assert.equal(back.pending, false);
+    assert.equal(fs.existsSync(path.join(f.dir, 'google-client.json')), false);
+  } finally { f.close(); }
+  const none = fixture({ custom: false });
+  try {
+    assert.equal(none.client.status().configured, false);
+    assert.throws(() => none.client.useBuiltin(), /Aucun client Google intégré/);
+  } finally { none.close(); }
+});
+
+test('client intégré lu depuis l’environnement puis le fichier du paquet, validé', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-google-default-'));
+  const file = path.join(dir, 'google-default.json');
+  try {
+    assert.equal(readDefaultClient({ file, env: {} }), null);
+    fs.writeFileSync(file, JSON.stringify(builtin));
+    assert.deepEqual(readDefaultClient({ file, env: {} }), builtin);
+    assert.deepEqual(readDefaultClient({ file, env: { WORKLOGS_GOOGLE_CLIENT_ID: 'dev.apps.googleusercontent.com' } }), { client_id: 'dev.apps.googleusercontent.com' });
+    fs.writeFileSync(file, JSON.stringify({ client_id: 'https://evil.example' }));
+    assert.equal(readDefaultClient({ file, env: {} }), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

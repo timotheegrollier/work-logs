@@ -506,3 +506,29 @@ en plus `procedure_attachments`, les pièces jointes des procédures du filtre.
 **Ce que ça coûte.** Un champ, une validation, un test par étage. Rouvrir si une
 procédure doit un jour porter des données propres (étapes cochables persistées,
 versionnage) : ce jour-là, une table fille liée à l'entrée vaudra mieux qu'un champ.
+
+## 19. Connexion Google en un clic : client intégré, PWA sans secret — 2026-09-22
+
+**Le besoin.** Brancher Drive exigeait de créer un client OAuth et de l'importer (desktop)
+ou de coller ID + secret (PWA). Demande : « Se connecter avec Google », **facultatif**.
+Ce n'est **pas** un verrou d'app : le §10 tient (desktop protégé par son jeton local,
+PWA sur l'appareil) ; la connexion ne sert qu'à Drive et à afficher le compte.
+
+**Client intégré, hors dépôt.** Le client « Application de bureau » vient des secrets CI
+(`stage-desktop.mjs` écrit `google-default.json` dans le paquet). Google considère ce
+secret comme non confidentiel pour une app installée, mais il reste hors de git (scanners,
+rotation). L'ID du client Web est public par nature : variable de dépôt.
+
+**PWA sans secret.** Un client « Web » est confidentiel et la PWA est un site public :
+publier son secret est interdit. Seul le flux « jeton » (`response_type=token`) marche
+sans serveur ; le prix est une session d'une heure, reprise par une redirection
+`login_hint` sans nouveau consentement, jamais déclenchée d'office en pleine saisie.
+Un client personnel avec secret garde le flux code + PKCE (session longue).
+
+**Identité minimale.** `openid email profile` en plus de `drive.file`, lus une fois via
+`userinfo` pour l'affichage ; un échec n'empêche jamais Drive. Pas d'avatar : il faudrait
+élargir la CSP à `googleusercontent.com` pour une image décorative.
+
+**Rouvrir si** un serveur WorkLogs hébergé apparaît (il pourrait garder un jeton de
+rafraîchissement pour la PWA), ou si Google retire le flux « jeton ».
+

@@ -31,6 +31,21 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-09-22 — « Se connecter avec Google » en un clic (facultatif)
+
+- Desktop : client OAuth intégré (`readDefaultClient`, `google-default.json` écrit par
+  `stage-desktop.mjs` depuis les secrets CI), client personnel prioritaire, route
+  `POST /api/google/use-builtin` pour y revenir. Scopes `+ openid email profile`,
+  compte (`userinfo`) stocké chiffré et exposé dans `status().account`.
+- PWA : `VITE_GOOGLE_CLIENT_ID`, flux « jeton » sans secret (1 h), retour lu dans le
+  fragment puis effacé, expiration/401 → `GOOGLE_REAUTH` → « Reprendre la session Google ».
+- UI : bouton principal « Se connecter avec Google », « Connecté : Nom · e-mail »,
+  repli « Utiliser mon propre client OAuth », « Se déconnecter de Google ».
+- **À faire hors code** (sinon rien ne change pour l'utilisateur) : scopes + passage en
+  production dans Google Cloud, secrets/variable GitHub — détail
+  `docs/08-GOOGLE-DOCS.md` « Connexion en un clic ». Décision §19.
+- Non vérifié en réel : aucun vrai client OAuth dans cette session (réponses simulées).
+
 ## Lot du 2026-09-21 (2) — Procédures hors du journal, sidebar dépliée
 
 - Demande : les procédures ne doivent pas être dans la sidebar des entrées.

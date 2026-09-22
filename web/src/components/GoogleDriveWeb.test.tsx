@@ -42,7 +42,43 @@ describe('panneau Drive de la PWA', () => {
     await user.type(screen.getByLabelText('Identifiant client Google Web'), CLIENT);
     await user.type(screen.getByLabelText('Secret client Google Web'), 'secret-abc');
     await user.click(screen.getByRole('button', { name: 'Enregistrer l’identifiant' }));
-    expect(await screen.findByRole('button', { name: 'Connecter Google Drive' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Se connecter avec Google' })).toBeInTheDocument();
+  });
+
+  test('client intégré : bouton unique, client personnel replié', async () => {
+    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', CLIENT);
+    try {
+      render(<GoogleDriveWeb onOpen={() => {}} />);
+      expect(screen.getByRole('button', { name: 'Se connecter avec Google' })).toBeVisible();
+      expect(screen.getByText(/Sans connexion, tout reste sur cet appareil/)).toBeVisible();
+      expect(screen.getByText('Utiliser mon propre client OAuth')).toBeVisible();
+      expect(screen.getByLabelText('Identifiant client Google Web')).not.toBeVisible();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test('retour « jeton » : compte affiché, puis reprise proposée quand la session expire', async () => {
+    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', CLIENT);
+    try {
+      sessionStorage.setItem('worklogs-google-web-pending', JSON.stringify({ state: 's', redirectUri: 'http://localhost:3000/' }));
+      vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [] });
+      vi.stubGlobal('fetch', async (url: unknown) => {
+        const target = String(url);
+        if (target.endsWith('/userinfo')) return Response.json({ email: 'timo@example.com', name: 'Timo' });
+        if (target.includes('/drive/v3/files?')) return new Response('{}', { status: 401 });
+        throw new Error(`appel inattendu : ${target}`);
+      });
+      window.history.replaceState(null, '', '/#access_token=jeton&expires_in=3599&state=s');
+      render(<GoogleDriveWeb onOpen={() => {}} />);
+      expect(await screen.findByLabelText('Compte Google connecté')).toHaveTextContent('Connecté : Timo · timo@example.com');
+      expect(window.location.hash).toBe('');
+      // Le premier appel Drive tombe sur un jeton refusé : reprise en un clic.
+      expect(await screen.findByRole('button', { name: 'Reprendre la session Google' })).toBeVisible();
+      expect(screen.getByLabelText('Compte Google connecté')).toHaveTextContent('timo@example.com');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   test('retour OAuth échangé puis sauvegardes listées et chargées', async () => {

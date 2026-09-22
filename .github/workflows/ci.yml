@@ -60,6 +60,11 @@ jobs:
             node scripts/check-release.mjs
           fi
       - run: npm run desktop:dist
+        env:
+          # Client Google « Application de bureau » intégré au paquet (connexion
+          # en un clic). Absent (fork, PR) : configuration manuelle, comme avant.
+          WORKLOGS_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
+          WORKLOGS_GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
       - name: Vérifier le contenu empaqueté
         run: node scripts/verify-package.mjs
       - name: Blockmap différentiel de l’AppImage

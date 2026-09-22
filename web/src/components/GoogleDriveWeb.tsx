@@ -3,11 +3,13 @@ import { api, googleHelpUrl, type Entry, type GoogleBackup, type GoogleFile } fr
 import { clearLocalOutbox, exportLocalOutbox, fetchMissingDriveAttachments, importLocalBackup, listPendingUploads, markAttachmentUploaded, outboxSize } from '../store/localApi';
 import {
   beginWebLogin,
+  clearWebClient,
   disconnectWeb,
   downloadWebBackup,
   getWebClientId,
   getWebClientSecret,
   handleRedirectCallback,
+  hasRedirectCallback,
   listWebBackups,
   saveBackupJson,
   setWebClientId,
@@ -15,6 +17,7 @@ import {
   uploadDriveFile,
   uploadOutbox,
   webGoogleStatus,
+  builtinWebClientId,
 } from '../store/google-web';
 
 /**
@@ -27,7 +30,9 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
   const [clientId, setClientId] = useState(getWebClientId());
   const [clientSecret, setClientSecret] = useState(getWebClientSecret());
   const [savedClientId, setSavedClientId] = useState(getWebClientId());
-  const [connected, setConnected] = useState(webGoogleStatus().connected);
+  const [status, setStatus] = useState(webGoogleStatus);
+  const connected = status.connected;
+  const refreshStatus = () => setStatus(webGoogleStatus());
   const [backups, setBackups] = useState<GoogleBackup[]>([]);
   const [files, setFiles] = useState<GoogleFile[]>([]);
   const [page, setPage] = useState('');
@@ -40,6 +45,8 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
   const showError = (e: unknown) => {
     setError((e as Error).message);
     setHelpUrl(googleHelpUrl(e));
+    // Session « jeton » expirée pendant l'action : le bouton de reprise apparaît.
+    refreshStatus();
   };
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -55,16 +62,16 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
     }
   };
 
-  // Retour de Google (`?code=…`) : échange unique, puis URL nettoyée.
+  // Retour de Google (`?code=…` ou `#access_token=…`) : traité une fois, puis URL nettoyée.
   useEffect(() => {
     let alive = true;
-    if (!location.search.includes('code=') && !location.search.includes('error=')) return;
+    if (!hasRedirectCallback()) return;
     setBusy(true);
     void handleRedirectCallback()
       .then(async (handled) => {
         if (!alive || !handled) return;
         history.replaceState(null, '', location.pathname);
-        setConnected(true);
+        refreshStatus();
         setMessage('Google Drive connecté. Voici les sauvegardes de ce compte.');
         setBackups(await listWebBackups());
       })
@@ -82,9 +89,9 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
     };
   }, []);
 
-  // Documents Drive : liste chargée dès que la session est établie.
+  // Documents Drive : liste chargée dès que la session est établie (et valide).
   useEffect(() => {
-    if (!connected) return;
+    if (!connected || status.expired) return;
     let alive = true;
     setBusy(true);
     setError('');
@@ -100,14 +107,23 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected]);
+  }, [connected, status.expired]);
 
   const saveClient = () =>
     run(async () => {
       setSavedClientId(setWebClientId(clientId));
       setClientSecret(setWebClientSecret(clientSecret));
       setMessage('');
+      refreshStatus();
     });
+  const useBuiltinClient = () => {
+    clearWebClient();
+    setSavedClientId('');
+    setClientId('');
+    setClientSecret('');
+    setMessage('');
+    refreshStatus();
+  };
 
   const refreshBackups = async () => {
     setBackups(await listWebBackups());
@@ -210,55 +226,88 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
     });
   };
 
+  const ownClientForm = (
+    <div className="drive-setup">
+      <p>
+        Première connexion : crée un client OAuth de type « Application Web » dans le <em>même</em> projet Google
+        Cloud que le desktop, puis colle son identifiant ci-dessous. Active les API Google Drive et Google Docs.
+      </p>
+      <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">
+        Ouvrir Google Cloud
+      </a>
+      <label>
+        Identifiant client Web
+        <input
+          aria-label="Identifiant client Google Web"
+          placeholder="…apps.googleusercontent.com"
+          value={clientId}
+          disabled={busy}
+          onChange={(e) => setClientId(e.target.value)}
+        />
+      </label>
+      <label>
+        Secret client Web (facultatif : garde la session au-delà d’une heure)
+        <input
+          type="password"
+          aria-label="Secret client Google Web"
+          placeholder="Colle le secret affiché dans Google Cloud"
+          value={clientSecret}
+          disabled={busy}
+          autoComplete="off"
+          onChange={(e) => setClientSecret(e.target.value)}
+        />
+      </label>
+      <button type="button" className="primary" disabled={busy || !clientId.trim()} onClick={() => void saveClient()}>
+        Enregistrer l’identifiant
+      </button>
+    </div>
+  );
+  const account = status.account;
+
   return (
     <div className="drive-content">
-      {!savedClientId ? (
+      {!connected && !status.configured ? (
+        ownClientForm
+      ) : !connected && !savedClientId ? (
         <div className="drive-setup">
-          <p>
-            Première connexion : crée un client OAuth de type « Application Web » dans le <em>même</em> projet Google
-            Cloud que le desktop, puis colle son identifiant ci-dessous. Active les API Google Drive et Google Docs.
-          </p>
-          <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">
-            Ouvrir Google Cloud
-          </a>
-          <label>
-            Identifiant client Web
-            <input
-              aria-label="Identifiant client Google Web"
-              placeholder="…apps.googleusercontent.com"
-              value={clientId}
-              disabled={busy}
-              onChange={(e) => setClientId(e.target.value)}
-            />
-          </label>
-          <label>
-            Secret client Web (exigé par Google pour un client confidentiel)
-            <input
-              type="password"
-              aria-label="Secret client Google Web"
-              placeholder="Colle le secret affiché dans Google Cloud"
-              value={clientSecret}
-              disabled={busy}
-              autoComplete="off"
-              onChange={(e) => setClientSecret(e.target.value)}
-            />
-          </label>
-          <button type="button" className="primary" disabled={busy || !clientId.trim()} onClick={() => void saveClient()}>
-            Enregistrer l’identifiant
+          <p>Facultatif : connecte ton compte Google pour sauvegarder dans Drive et retrouver tes notes sur le PC. Sans connexion, tout reste sur cet appareil.</p>
+          <button type="button" className="primary google-signin" disabled={busy} onClick={() => void run(() => beginWebLogin())}>
+            Se connecter avec Google
           </button>
+          <p className="drive-hint">WorkLogs lit ton nom et ton e-mail pour les afficher, et n’accède qu’aux fichiers qu’il crée ou que tu choisis.</p>
+          <details className="drive-own-client">
+            <summary>Utiliser mon propre client OAuth</summary>
+            {ownClientForm}
+          </details>
         </div>
       ) : !connected ? (
         <div className="drive-setup">
-          <p>Connexion directe à Google depuis cet appareil, sans serveur. La session reste conservée ici.</p>
-          <button type="button" className="primary" disabled={busy} onClick={() => void beginWebLogin(savedClientId)}>
-            Connecter Google Drive
+          <p>Connexion directe à Google depuis cet appareil, sans serveur, avec ton propre client OAuth.</p>
+          <button type="button" className="primary google-signin" disabled={busy} onClick={() => void run(() => beginWebLogin())}>
+            Se connecter avec Google
           </button>
           <button type="button" className="ghost" disabled={busy} onClick={() => { setSavedClientId(''); setClientId(''); setClientSecret(''); setWebClientSecret(''); }}>
             Changer d’identifiant client
           </button>
+          {builtinWebClientId() && (
+            <button type="button" className="ghost" disabled={busy} onClick={useBuiltinClient}>
+              Revenir au client intégré
+            </button>
+          )}
         </div>
       ) : (
         <section className="drive-backups" aria-label="Sauvegardes WorkLogs">
+          <p className="drive-account" aria-label="Compte Google connecté">
+            {account ? <>Connecté : <strong>{account.name || account.email}</strong>{account.name && <> · {account.email}</>}</> : 'Compte Google connecté.'}
+          </p>
+          {status.expired && (
+            <div className="notice drive-reauth">
+              <p>Session Google expirée (elle dure une heure sur mobile). Tes notes restent sur cet appareil.</p>
+              <button type="button" className="primary" disabled={busy} onClick={() => void run(() => beginWebLogin())}>
+                Reprendre la session Google
+              </button>
+            </div>
+          )}
           <div className="drive-subheading">
             <div>
               <h3>Sauvegardes WorkLogs</h3>
@@ -364,14 +413,14 @@ export function GoogleDriveWeb({ onOpen, onRestored }: { onOpen: (entry: Entry) 
             disabled={busy}
             onClick={() => {
               disconnectWeb();
-              setConnected(false);
+              refreshStatus();
               setBackups([]);
               setFiles([]);
               setPage('');
               setMessage('');
             }}
           >
-            Déconnecter Google Drive
+            Se déconnecter de Google
           </button>
         </section>
       )}

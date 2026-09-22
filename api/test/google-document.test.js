@@ -51,7 +51,7 @@ function stub() {
   const calls = [];
   return { calls, setSource(next) { source = next; },
     status: () => ({ available: true, configured: true, connected: true, pending: false, selectedIds: [] }),
-    configure: () => ({ configured: true }), connect: async () => ({ pending: true }), disconnect: async () => ({ connected: false }),
+    configure: () => ({ configured: true }), useBuiltin: () => ({ configured: true, builtin: true }), connect: async () => ({ pending: true }), disconnect: async () => ({ connected: false }),
     async request(url, options) {
       calls.push({ url, options });
       if (url.includes('/comments?')) return { comments: [] };
@@ -68,6 +68,7 @@ test('API Drive : configuration, sélection, import idempotent, envoi et conflit
   try {
     assert.equal((await api.get('/api/google/status')).body.connected, true);
     assert.equal((await api.post('/api/google/configure', {})).body.configured, true);
+    assert.equal((await api.post('/api/google/use-builtin', {})).body.builtin, true);
     assert.equal((await api.post('/api/google/connect')).body.pending, true);
     assert.equal((await api.get('/api/google/documents')).body.files.length, 1);
     assert.equal((await api.post('/api/google/documents/open', { document_id: '../secrets' })).status, 400);

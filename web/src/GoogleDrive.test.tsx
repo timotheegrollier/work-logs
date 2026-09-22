@@ -117,9 +117,36 @@ test('ouvre un document autorisé dans WorkLogs puis permet de déconnecter Driv
   fireEvent.click(await screen.findByRole('button', { name: 'Document partagé' }));
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(entry));
   expect(open).toHaveBeenCalledWith('doc-1');
-  fireEvent.click(screen.getByRole('button', { name: 'Déconnecter Google Drive' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Se déconnecter de Google' }));
   await waitFor(() => expect(disconnect).toHaveBeenCalledOnce());
-  expect(await screen.findByRole('button', { name: 'Connecter Google Drive' })).toBeVisible();
+  expect(await screen.findByRole('button', { name: 'Se connecter avec Google' })).toBeVisible();
+});
+
+test('client intégré : un clic connecte, le compte s’affiche, sans rien importer', async () => {
+  const builtin = { ...connected, connected: false, builtin: true, builtinAvailable: true };
+  vi.spyOn(api, 'googleStatus').mockResolvedValue(builtin);
+  vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [] });
+  const connect = vi.spyOn(api, 'connectGoogle').mockResolvedValue({ ...builtin, connected: true, account: { email: 'timo@example.com', name: 'Timo' } });
+  render(<GoogleDrive onOpen={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Gérer Google Drive' }));
+  expect(await screen.findByText(/Sans connexion, tout reste sur cet appareil/)).toBeVisible();
+  expect(screen.queryByLabelText('Configuration Google JSON')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Utiliser mon propre client OAuth' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Se connecter avec Google' }));
+  await waitFor(() => expect(connect).toHaveBeenCalledOnce());
+  expect(await screen.findByLabelText('Compte Google connecté')).toHaveTextContent('Connecté : Timo · timo@example.com');
+});
+
+test('client personnel : retour au client intégré en un clic', async () => {
+  const custom = { ...connected, connected: false, builtin: false, builtinAvailable: true };
+  vi.spyOn(api, 'googleStatus').mockResolvedValue(custom);
+  const back = vi.spyOn(api, 'useBuiltinGoogle').mockResolvedValue({ ...custom, builtin: true });
+  render(<GoogleDrive onOpen={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Gérer Google Drive' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Revenir au client intégré' }));
+  await waitFor(() => expect(back).toHaveBeenCalledOnce());
+  expect(await screen.findByRole('button', { name: 'Utiliser mon propre client OAuth' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Revenir au client intégré' })).not.toBeInTheDocument();
 });
 
 test('un conflit Drive affiche l’erreur et conserve le contenu local éditable', async () => {

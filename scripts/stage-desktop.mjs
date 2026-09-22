@@ -20,6 +20,17 @@ for (const name of ['api/src', 'api/package.json', 'web/dist']) {
 fs.mkdirSync(path.join(stage, 'desktop'), { recursive: true });
 for (const name of ['main.mjs', 'preload.cjs', 'server.mjs', 'update.mjs', 'google.mjs', 'google-view.mjs', 'icon.png'])
   fs.copyFileSync(path.join(root, 'desktop', name), path.join(stage, 'desktop', name));
+// Client Google « Application de bureau » intégré (secrets CI) : un clic suffit
+// pour se connecter. Ce n'est pas un secret utilisateur (client public selon
+// Google), mais il reste hors du dépôt. Absent : configuration manuelle.
+if (process.env.WORKLOGS_GOOGLE_CLIENT_ID) {
+  if (!/^[\w.-]+\.apps\.googleusercontent\.com$/.test(process.env.WORKLOGS_GOOGLE_CLIENT_ID)) throw new Error('WORKLOGS_GOOGLE_CLIENT_ID invalide');
+  fs.writeFileSync(path.join(stage, 'desktop', 'google-default.json'), JSON.stringify({
+    client_id: process.env.WORKLOGS_GOOGLE_CLIENT_ID,
+    ...(process.env.WORKLOGS_GOOGLE_CLIENT_SECRET ? { client_secret: process.env.WORKLOGS_GOOGLE_CLIENT_SECRET } : {}),
+  }));
+  console.log('Client Google intégré au paquet.');
+}
 const manifest = {
   name: 'worklogs', productName: 'WorkLogs', desktopName: 'worklogs.desktop', version: project.version,
   description: project.description, main: 'desktop/main.mjs',

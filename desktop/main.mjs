@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
-import { createGoogleClient } from './google.mjs';
+import { createGoogleClient, readDefaultClient } from './google.mjs';
 import { installGoogleView } from './google-view.mjs';
 import { checkForUpdate, hasPackageKit, hasPkexec, installedVersionCommand, installKind, installedMatches, isAuthorizationFailure, isNewer, logUpdateEvent, packageManager, parseManagerProgress, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, privilegedInstallCommand, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
@@ -397,7 +397,8 @@ if (!app.requestSingleInstanceLock()) {
   // attend lui-même la fin du module avant d’émettre cet événement.
   void app.whenReady().then(async () => {
     try {
-      google = createGoogleClient({ profileDir, secureStorage: safeStorage, openExternal: (url) => shell.openExternal(url) });
+      google = createGoogleClient({ profileDir, secureStorage: safeStorage, openExternal: (url) => shell.openExternal(url),
+        defaultClient: readDefaultClient({ file: path.join(root, 'desktop', 'google-default.json') }) });
       backend = await startDesktopServer({ dataDir, staticDir: path.join(root, 'web', 'dist'), google });
       const browserSession = session.defaultSession;
       browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));

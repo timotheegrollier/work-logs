@@ -105,6 +105,10 @@ export interface GoogleSync {
 export interface GoogleStatus {
   available: boolean; configured: boolean; connected: boolean; pending: boolean; error: string;
   selectedIds: string[]; secureStorage?: boolean;
+  /** Client OAuth intégré au paquet en service / disponible (sinon client personnel importé). */
+  builtin?: boolean; builtinAvailable?: boolean;
+  /** Compte connecté, pour l'affichage (absent avec une ancienne autorisation). */
+  account?: { email: string; name: string } | null;
 }
 export interface GoogleFile { id: string; name: string; modifiedTime: string }
 export interface GoogleBackup { id: string; name: string; modifiedTime: string; size: number | null }
@@ -181,6 +185,7 @@ const send = <T>(method: string, url: string, body?: unknown) =>
 export const remoteApi = {
   googleStatus: () => req<GoogleStatus>('/api/google/status'),
   configureGoogle: (configuration: unknown) => send<GoogleStatus>('POST', '/api/google/configure', configuration),
+  useBuiltinGoogle: () => send<GoogleStatus>('POST', '/api/google/use-builtin'),
   connectGoogle: () => send<GoogleStatus>('POST', '/api/google/connect'),
   disconnectGoogle: () => send<GoogleStatus>('POST', '/api/google/disconnect'),
   googleDocuments: (pageToken = '') => req<{ files: GoogleFile[]; nextPageToken?: string; warnings?: string[] }>('/api/google/documents' + (pageToken ? '?page_token=' + encodeURIComponent(pageToken) : '')),

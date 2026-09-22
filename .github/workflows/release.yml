@@ -58,6 +58,8 @@ jobs:
     needs: precheck
     if: needs.precheck.outputs.skip != 'true'
     uses: ./.github/workflows/ci.yml
+    # Le paquet reconstruit embarque le même client Google que la CI.
+    secrets: inherit
     with:
       ref: ${{ inputs.tag || github.ref }}
 

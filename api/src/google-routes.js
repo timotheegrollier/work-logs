@@ -310,6 +310,7 @@ export function registerGoogleRoutes(app, { db, google, uploadDir }) {
 
   app.get('/api/google/status', (_req, res) => res.json(google ? google.status() : { available: false, configured: false, connected: false, pending: false, error: '', selectedIds: [] }));
   route('post', '/api/google/configure', (req, res) => res.json(google.configure(req.body)));
+  route('post', '/api/google/use-builtin', (_req, res) => res.json(google.useBuiltin()));
   route('post', '/api/google/connect', async (_req, res) => res.json(await google.connect()));
   route('post', '/api/google/disconnect', async (_req, res) => res.json(await google.disconnect()));
   route('get', '/api/google/documents/:id/tabs', async (req, res) => {

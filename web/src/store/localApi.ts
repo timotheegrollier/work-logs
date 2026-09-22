@@ -338,6 +338,7 @@ export const localApi: Api = {
     available: false, configured: false, connected: false, pending: false, error: '', selectedIds: [],
   }),
   configureGoogle: async () => fail('Google Drive est disponible dans l’application desktop.'),
+  useBuiltinGoogle: async () => fail('Google Drive est disponible dans l’application desktop.'),
   connectGoogle: async () => fail('Google Drive est disponible dans l’application desktop.'),
   disconnectGoogle: async () => fail('Google Drive est disponible dans l’application desktop.'),
   googleDocuments: async (pageToken = '') => {

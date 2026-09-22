@@ -69,7 +69,7 @@ describe('configuration et PKCE', () => {
     expect(params.get('client_id')).toBe(CLIENT);
     expect(params.get('redirect_uri')).toBe('https://pwa.test/app/');
     expect(params.get('response_type')).toBe('code');
-    expect(params.get('scope')).toBe('https://www.googleapis.com/auth/drive.file');
+    expect(params.get('scope')).toBe('https://www.googleapis.com/auth/drive.file openid email profile');
     expect(params.get('access_type')).toBe('offline');
     expect(params.get('code_challenge')).toBe('defi');
     expect(params.get('code_challenge_method')).toBe('S256');
@@ -97,6 +97,7 @@ describe('retour OAuth et jetons', () => {
     setWebClientSecret('secret-abc');
     sessionStorage.setItem('worklogs-google-web-pending', JSON.stringify({ state: 's', verifier: 'v', redirectUri: 'https://pwa.test/' }));
     const calls = stubFetch(async (url, init) => {
+      if (url.endsWith('/userinfo')) return jsonResponse({ email: 'timo@example.com', name: 'Timo' });
       expect(url).toBe('https://oauth2.googleapis.com/token');
       const body = new URLSearchParams((init?.body as URLSearchParams).toString());
       expect(body.get('client_secret')).toBe('secret-abc');
@@ -104,8 +105,11 @@ describe('retour OAuth et jetons', () => {
       return jsonResponse({ access_token: 'acces', refresh_token: 'renouvellement', expires_in: 3600, scope: 'https://www.googleapis.com/auth/drive.file' });
     });
     expect(await handleRedirectCallback('?code=code&state=s')).toBe(true);
-    expect(calls).toHaveLength(1);
-    expect(webGoogleStatus()).toEqual({ configured: true, connected: true });
+    expect(calls).toHaveLength(2);
+    expect(webGoogleStatus()).toEqual({
+      configured: true, connected: true, builtin: false, expired: false,
+      account: { email: 'timo@example.com', name: 'Timo' },
+    });
     expect(JSON.parse(localStorage.getItem('worklogs-google-web-tokens') as string).refresh_token).toBe('renouvellement');
   });
 
@@ -129,9 +133,80 @@ describe('retour OAuth et jetons', () => {
     vi.resetModules();
     const expired = await import('./google-web');
     stubFetch(async () => jsonResponse({}));
-    await expect(expired.webAccessToken()).rejects.toThrow('renouveler l’autorisation');
-    expect(expired.webGoogleStatus().connected).toBe(false);
+    // Session « jeton » sans renouvellement : on garde le compte, reprise en un clic.
+    await expect(expired.webAccessToken()).rejects.toMatchObject({ code: 'GOOGLE_REAUTH' });
+    expect(expired.webGoogleStatus()).toMatchObject({ connected: true, expired: true });
     expired.disconnectWeb();
+  });
+});
+
+describe('client intégré et session sans secret', () => {
+  test('le client intégré sert par défaut, le client personnel reste prioritaire', async () => {
+    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', CLIENT);
+    try {
+      const { activeWebClientId, builtinWebClientId, setWebClientId, clearWebClient, webGoogleStatus } = await googleWeb();
+      expect(builtinWebClientId()).toBe(CLIENT);
+      expect(webGoogleStatus()).toMatchObject({ configured: true, builtin: true, connected: false });
+      setWebClientId('999-perso.apps.googleusercontent.com');
+      expect(activeWebClientId()).toBe('999-perso.apps.googleusercontent.com');
+      expect(webGoogleStatus().builtin).toBe(false);
+      clearWebClient();
+      expect(activeWebClientId()).toBe(CLIENT);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    vi.resetModules();
+    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', 'pas-un-client');
+    try {
+      expect((await googleWeb()).webGoogleStatus()).toMatchObject({ configured: false, builtin: false });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test('URL « jeton » : sans secret ni PKCE, identité demandée, compte suggéré', async () => {
+    const { tokenLoginUrl } = await googleWeb();
+    const params = new URL(tokenLoginUrl(CLIENT, 'https://pwa.test/', 'etat', 'timo@example.com')).searchParams;
+    expect(params.get('response_type')).toBe('token');
+    expect(params.get('scope')).toBe('https://www.googleapis.com/auth/drive.file openid email profile');
+    expect(params.get('login_hint')).toBe('timo@example.com');
+    expect(params.get('state')).toBe('etat');
+    expect(params.has('code_challenge')).toBe(false);
+    expect(params.has('prompt')).toBe(false);
+    expect(new URL(tokenLoginUrl(CLIENT, 'https://pwa.test/', 'etat')).searchParams.has('login_hint')).toBe(false);
+  });
+
+  test('retour « jeton » dans le fragment : état vérifié, compte lu, une heure de session', async () => {
+    const { handleRedirectCallback, hasRedirectCallback, webGoogleStatus, webAccessToken } = await googleWeb();
+    const scope = encodeURIComponent('https://www.googleapis.com/auth/drive.file openid email profile');
+    expect(hasRedirectCallback('', `#access_token=a&state=s`)).toBe(true);
+    expect(hasRedirectCallback('', '#section')).toBe(false);
+
+    sessionStorage.setItem('worklogs-google-web-pending', JSON.stringify({ state: 's', redirectUri: 'https://pwa.test/' }));
+    await expect(handleRedirectCallback('', '#access_token=a&state=autre')).rejects.toThrow('Retour Google invalide');
+
+    sessionStorage.setItem('worklogs-google-web-pending', JSON.stringify({ state: 's', redirectUri: 'https://pwa.test/' }));
+    await expect(handleRedirectCallback('', '#access_token=a&state=s&scope=openid')).rejects.toThrow('pas été accordé');
+    expect(webGoogleStatus().connected).toBe(false);
+
+    sessionStorage.setItem('worklogs-google-web-pending', JSON.stringify({ state: 's', redirectUri: 'https://pwa.test/' }));
+    await expect(handleRedirectCallback('', '#error=access_denied&state=s')).rejects.toThrow('Connexion Google annulée');
+
+    const calls = stubFetch(async (url) => url.endsWith('/userinfo') ? jsonResponse({ email: 'timo@example.com', name: 'Timo' }) : jsonResponse({}));
+    sessionStorage.setItem('worklogs-google-web-pending', JSON.stringify({ state: 's', redirectUri: 'https://pwa.test/' }));
+    expect(await handleRedirectCallback('', `#access_token=jeton&expires_in=3599&state=s&scope=${scope}`)).toBe(true);
+    expect(calls.map((c) => c.url)).toEqual(['https://openidconnect.googleapis.com/v1/userinfo']);
+    expect(webGoogleStatus()).toMatchObject({ connected: true, expired: false, account: { email: 'timo@example.com', name: 'Timo' } });
+    expect(await webAccessToken()).toBe('jeton');
+  });
+
+  test('401 en session « jeton » : reprise proposée, compte conservé', async () => {
+    const { mapGoogleError, webGoogleStatus } = await googleWeb();
+    localStorage.setItem('worklogs-google-web-tokens', JSON.stringify({
+      access_token: 'a', expires_at: Date.now() + 3600_000, account: { email: 'timo@example.com', name: 'Timo' },
+    }));
+    expect(() => mapGoogleError(401, {}, '/drive/v3/files')).toThrow(expect.objectContaining({ code: 'GOOGLE_REAUTH' }));
+    expect(webGoogleStatus()).toMatchObject({ connected: true, expired: true, account: { email: 'timo@example.com' } });
   });
 });
 
