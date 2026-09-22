@@ -36,7 +36,7 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false, d
     ],
     content,
     shouldRerenderOnTransaction: true,
-    editorProps: { attributes: { class: 'prose rich-content', role: 'textbox', 'aria-label': 'Contenu du document', 'aria-multiline': 'true' } },
+    editorProps: { attributes: { class: 'prose rich-content', role: 'textbox', 'aria-label': 'Contenu du document', 'aria-multiline': 'true', spellcheck: 'true' } },
     onUpdate: ({ editor: current }) => change.current(current.getJSON()),
   });
   useEffect(() => { editor?.setEditable(!disabled, false); }, [editor, disabled]);

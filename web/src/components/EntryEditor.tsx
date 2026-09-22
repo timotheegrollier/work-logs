@@ -306,7 +306,6 @@ export function EntryEditor({
     if (proofreading || syncing || draftRef.current.content_json) return;
     setProofreading(true);
     setError('');
-    setProofreadPreview(null);
     try {
       await autosave.flush();
       const source = draftRef.current.content_md;
@@ -514,6 +513,7 @@ export function EntryEditor({
         <article className="prose" dangerouslySetInnerHTML={{ __html: proofreadHtml }} />
         <div className="task-creator-actions">
           <button className="task-primary" type="button" disabled={syncing} onClick={applyProofread}>Appliquer la mise en page</button>
+          <button className="ghost" type="button" disabled={proofreading || syncing} onClick={() => void proofreadEntryText()}>{proofreading ? 'Mise en page…' : 'Rafraîchir'}</button>
           <button className="ghost" type="button" onClick={() => setProofreadPreview(null)}>Ignorer</button>
         </div>
       </div>}
@@ -553,6 +553,7 @@ export function EntryEditor({
             aria-label="Contenu en Markdown"
             placeholder={'## Ce que j’ai fait\n\n- …\n\n> Décision : …'}
             value={draft.content_md}
+            spellCheck
             onChange={(e) => update({ content_md: e.target.value })}
           />
         )}

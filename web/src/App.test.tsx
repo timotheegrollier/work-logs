@@ -571,6 +571,26 @@ describe('écrire une entrée', () => {
     });
   });
 
+  test('rafraîchir remplace la proposition de mise en page affichée', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('Première proposition.');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'texte original' }] });
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Mettre en page' }));
+    const proposal = await screen.findByRole('region', { name: 'Mise en page proposée' });
+    expect(within(proposal).getByText('Première proposition.')).toBeInTheDocument();
+
+    mockAiSuggest('Nouvelle proposition.');
+    await user.click(within(proposal).getByRole('button', { name: 'Rafraîchir' }));
+    await waitFor(() => {
+      const refreshed = screen.getByRole('region', { name: 'Mise en page proposée' });
+      expect(within(refreshed).getByText('Nouvelle proposition.')).toBeInTheDocument();
+      expect(within(refreshed).queryByText('Première proposition.')).not.toBeInTheDocument();
+    });
+  });
+
   test('mise en page ignorée ou dépassée par une frappe : le texte reste intact', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-key', 'cle-test');

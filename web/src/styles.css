@@ -1978,9 +1978,9 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .google-preserved { border: 0; color: inherit; background: transparent; }
 }
 
-.rich-content [data-indent-start] { margin-inline-start: calc(attr(data-indent-start type(<number>), 0) * 1pt); }
-.rich-content [data-indent-end] { margin-inline-end: calc(attr(data-indent-end type(<number>), 0) * 1pt); }
-.rich-content [data-indent-first] { text-indent: calc((attr(data-indent-first type(<number>), 0) - attr(data-indent-start type(<number>), 0)) * 1pt); }
+.rich-content [data-indent-start] { margin-inline-start: var(--google-indent-start, 0pt); }
+.rich-content [data-indent-end] { margin-inline-end: var(--google-indent-end, 0pt); }
+.rich-content [data-indent-first] { text-indent: calc(var(--google-indent-first, 0pt) - var(--google-indent-start, 0pt)); }
 @media (max-width: 1180px) { .head .stats { display: none; } }
 @media (max-width: 600px) {
   /* Mobile : en-tête aéré en trois lignes — marque, recherche, panneaux —

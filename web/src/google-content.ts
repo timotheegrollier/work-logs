@@ -3,15 +3,24 @@ import { Plugin } from '@tiptap/pm/state';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 
 /** These attributes round-trip through Tiptap without becoming arbitrary HTML. */
+const indentStyle = (attrs: Record<string, unknown>) => {
+  const styles = [
+    attrs.googleIndentStart != null ? `--google-indent-start: ${attrs.googleIndentStart}pt` : '',
+    attrs.googleIndentEnd != null ? `--google-indent-end: ${attrs.googleIndentEnd}pt` : '',
+    attrs.googleIndentFirstLine != null ? `--google-indent-first: ${attrs.googleIndentFirstLine}pt` : '',
+  ].filter(Boolean).join('; ');
+  return styles ? { style: styles } : {};
+};
+
 export const GoogleFormatting = Extension.create({
   name: 'googleFormatting',
   addGlobalAttributes() {
     return [
       { types: ['paragraph', 'heading'], attributes: {
         googleNamedStyle: { default: null, renderHTML: attrs => attrs.googleNamedStyle ? { 'data-google-style': attrs.googleNamedStyle } : {} },
-        googleIndentStart: { default: null, renderHTML: attrs => attrs.googleIndentStart ? { 'data-indent-start': attrs.googleIndentStart } : {} },
-        googleIndentEnd: { default: null, renderHTML: attrs => attrs.googleIndentEnd ? { 'data-indent-end': attrs.googleIndentEnd } : {} },
-        googleIndentFirstLine: { default: null, renderHTML: attrs => attrs.googleIndentFirstLine ? { 'data-indent-first': attrs.googleIndentFirstLine } : {} },
+        googleIndentStart: { default: null, renderHTML: attrs => ({ ...(attrs.googleIndentStart != null ? { 'data-indent-start': attrs.googleIndentStart } : {}), ...indentStyle(attrs) }) },
+        googleIndentEnd: { default: null, renderHTML: attrs => attrs.googleIndentEnd != null ? { 'data-indent-end': attrs.googleIndentEnd } : {} },
+        googleIndentFirstLine: { default: null, renderHTML: attrs => attrs.googleIndentFirstLine != null ? { 'data-indent-first': attrs.googleIndentFirstLine } : {} },
       } },
       { types: ['textStyle'], attributes: {
         baselineOffset: { default: null, renderHTML: attrs => attrs.baselineOffset ? { 'data-baseline': attrs.baselineOffset } : {} },
