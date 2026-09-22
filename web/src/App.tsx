@@ -226,6 +226,7 @@ export default function App() {
       ?? state?.tasks.flatMap((task) => task.documents ?? []).find((candidate) => candidate.id === entryId);
     if (summary && summary.project_id !== projectId) setProjectId(summary.project_id ?? '');
     setFreshEntry(false);
+    setShowCenter(true);
     selectedRef.current = entryId;
     setSelectedId(entryId);
   }, [projectId, state]);
@@ -415,6 +416,7 @@ export default function App() {
             onSelect={(id) => {
               setFreshEntry(false);
               setSelectedId(id);
+              setShowCenter(true);
             }}
             onCreate={() => void createEntry()}
             onCreateDocument={() => void createEntry(true)}

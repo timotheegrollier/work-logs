@@ -1619,4 +1619,38 @@ describe('panneaux repliables', () => {
     expect(columns()).toHaveClass('hide-center');
     expect(screen.getByRole('button', { name: 'Écriture' })).toHaveAttribute('aria-pressed', 'false');
   });
+
+  test('cliquer sur une entrée du journal réaffiche directement l’écriture', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-show-center', '0');
+    seedData(api.db, {
+      entries: [
+        { id: 'en_recent', title: 'Entrée récente', date: '2026-09-22' },
+        { id: 'en_journal', title: 'Entrée du journal', date: '2026-09-21' },
+      ],
+    });
+    render(<App />);
+
+    await user.click(await within(journal()).findByText('Entrée du journal'));
+    await waitFor(() => expect(columns()).not.toHaveClass('hide-center'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Entrée du journal'));
+  });
+
+  test('ouvrir une entrée depuis les tâches réaffiche directement l’écriture', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-show-center', '0');
+    seedData(api.db, {
+      entries: [{ id: 'en_task_doc', title: 'Document de la tâche' }],
+      tasks: [{ id: 'tk_task', title: 'Tâche avec document' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run(
+      'tk_task', 'en_task_doc', new Date().toISOString()
+    );
+    render(<App />);
+
+    const card = (await within(board()).findByText('Tâche avec document')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: 'Ouvrir Document de la tâche' }));
+    await waitFor(() => expect(columns()).not.toHaveClass('hide-center'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Document de la tâche'));
+  });
 });
