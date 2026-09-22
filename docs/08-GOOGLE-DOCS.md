@@ -237,7 +237,7 @@ Une ancienne autorisation sans `openid` fonctionne toujours, simplement sans com
    expirent au bout de 7 jours et seuls les comptes de test peuvent se connecter.
    `drive.file` et ces scopes sont non sensibles : pas de vérification approfondie.
 3. Client Web : origine `https://timotheegrollier.github.io`, redirection
-   `https://timotheegrollier.github.io/work-logs/app/` (déjà en place).
+   `https://timotheegrollier.github.io/work-logs/` (la PWA est servie à la racine du dépôt, plus sous `/app/`).
 4. GitHub → Settings → Secrets and variables → Actions : secrets
    `GOOGLE_DESKTOP_CLIENT_ID`, `GOOGLE_DESKTOP_CLIENT_SECRET`, et `GOOGLE_WEB_CLIENT_ID`
    (variable ou secret : `pwa.yml` accepte les deux).
@@ -281,7 +281,7 @@ sans elle, les données restent simplement sur l'appareil.
 1. Dans le **même projet** que le desktop, créer un client OAuth de type **Application Web**.
 2. Origines JavaScript autorisées : l'URL de la PWA
    (`https://timotheegrollier.github.io`), plus `http://localhost:8411` pour les essais en dev.
-3. URI de redirection autorisés : `https://timotheegrollier.github.io/work-logs/app/`
+3. URI de redirection autorisés : `https://timotheegrollier.github.io/work-logs/`
    (et `http://localhost:8411/` en dev). Copier aussi le **secret client** (fiche du
    client) : un client « Web » est confidentiel, Google refuse l'échange du code
    sans lui.

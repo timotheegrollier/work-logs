@@ -127,8 +127,11 @@ test('document riche : fermeture, reprise et panneau Drive dans Electron', async
   await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '⚙ Paramètres' }).click();
   await page.getByRole('dialog', { name: 'Paramètres' }).getByRole('button', { name: 'Gérer Google Drive' }).click();
-  await expect(page.getByLabel('Configuration Google JSON')).toBeAttached();
-  await expect(page.getByRole('link', { name: 'Ouvrir Google Cloud' })).toBeVisible();
+  // Paquet CI avec client intégré : un bouton suffit ; sinon, import manuel.
+  const signin = page.getByRole('button', { name: 'Se connecter avec Google' });
+  await expect(signin.or(page.getByLabel('Configuration Google JSON'))).toBeAttached();
+  if (await signin.count()) await expect(page.getByRole('button', { name: 'Utiliser mon propre client OAuth' })).toBeVisible();
+  else await expect(page.getByRole('link', { name: 'Ouvrir Google Cloud' })).toBeVisible();
   await page.getByRole('dialog', { name: 'Gestion Google Drive' }).getByRole('button', { name: 'Fermer' }).click();
   await page.getByRole('dialog', { name: 'Paramètres' }).getByRole('button', { name: 'Fermer' }).click();
 });
