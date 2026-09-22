@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api, plainText, type Attachment, type EntrySummary, type Project } from '../lib';
 import { flushPendingSaves } from '../autosave';
 import { FileViewer } from './FileViewer';
-import { downloadAttachment } from '../attachment-download';
+import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-download';
 
 /**
  * Panneau Procédures : les modes d'emploi d'un projet, avec leurs pièces
@@ -74,6 +74,21 @@ export function ProcedureList({
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeFile = async (file: Attachment) => {
+    if (!confirm(deleteAttachmentQuestion(file))) return;
+    setError('');
+    setBusy(true);
+    try {
+      await api.deleteAttachment(file.id);
+      if (previewing?.id === file.id) setPreviewing(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      onChanged();
       setBusy(false);
     }
   };
@@ -189,6 +204,16 @@ export function ProcedureList({
                       {file.driveFileId
                         ? <small className="picker-source is-google" title="Conservé sur Google Drive">☁ Drive</small>
                         : <small className="picker-source" title="Uniquement sur cet appareil tant que Google Drive n’est pas connecté">local seul</small>}
+                      <button
+                        className="icon"
+                        type="button"
+                        disabled={busy}
+                        aria-label={`Supprimer ${file.filename}`}
+                        title="Supprimer la pièce jointe"
+                        onClick={() => void removeFile(file)}
+                      >
+                        ✕
+                      </button>
                     </li>
                   ))}
                 </ul>

@@ -57,6 +57,12 @@ export async function openAttachmentWith(file: DownloadableFile): Promise<'opene
   return 'downloaded';
 }
 
+/** Question posée avant de supprimer une pièce jointe : dit ce qu'il advient de Drive. */
+export const deleteAttachmentQuestion = (file: { filename: string; driveFileId?: string | null }): string =>
+  `Supprimer « ${file.filename} » ?` + (file.driveFileId
+    ? ' Son exemplaire Google Drive part à la corbeille (récupérable 30 jours).'
+    : '');
+
 /** Page Google Drive du fichier : Drive affiche tableurs, documents Office, vidéos… */
 export const driveViewUrl = (driveFileId: string): string =>
   `https://drive.google.com/file/d/${encodeURIComponent(driveFileId)}/view`;

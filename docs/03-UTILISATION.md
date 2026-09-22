@@ -210,6 +210,12 @@ les confie à ton application (LibreOffice sur le PC, en lecture seule — « En
 puis rejoins la version modifiée ; sur le téléphone, choix de l'application), et **Ouvrir
 dans Drive** les affiche dans Google Drive quand ils y sont déjà.
 
+**Supprimer une pièce jointe** : ✕ à côté du fichier, dans la colonne Procédures comme dans
+n'importe quelle entrée (y compris un document Google ouvert dans l'éditeur intégré). Après
+confirmation, le fichier disparaît de WorkLogs et de tes autres appareils ; son exemplaire
+Google Drive part à la corbeille (récupérable 30 jours), sauf si une copie locale d'entrée
+utilise encore le même fichier.
+
 **Se connecter avec Google** suffit (desktop comme mobile) : rien à configurer, la connexion
 reste facultative et le compte connecté s'affiche en haut du dialogue. Sur mobile, WorkLogs
 renouvelle normalement la session en arrière-plan : il n'est pas nécessaire de se reconnecter

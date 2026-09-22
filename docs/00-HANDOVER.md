@@ -31,6 +31,16 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-09-22 (4) — supprimer les pièces jointes partout
+
+- ✕ dans la colonne Procédures (`ProcedureList.tsx`) ; l'éditeur l'avait déjà, mais la
+  barre de fichiers était masquée pour un document Google ouvert en natif : elle s'affiche
+  désormais dès qu'il y a une pièce jointe. Erreur de suppression affichée (avant : rejet muet).
+- `DELETE /api/attachments/:id` (et `localApi.deleteAttachment`) met l'exemplaire Drive à la
+  corbeille, best-effort, sauf s'il est partagé par une autre fiche (copie locale d'entrée).
+  Réponse : `{ ok, driveTrashed }`. La pierre tombale propage la suppression aux appareils.
+- Tests : API (4, `api/test/attachment-delete.test.js`), PWA (1), éditeur (3), Procédures (1).
+
 ## Lot du 2026-09-22 (3) — pièces jointes des procédures retéléchargeables, rangées sur Drive
 
 - **Bug** : « Fichier non disponible sur le site » en cliquant un fichier de procédure (PWA).

@@ -239,7 +239,7 @@ describe('projets et fichiers', () => {
     expect((await localApi.state()).entries.find((e) => e.id === entry.id)?.attachments).toBe(1);
     await expect(localApi.upload(file, 'en_x')).rejects.toThrow('entry_id requis et valide');
     await expect(localApi.upload({ ...file, size: 200 * 1024 * 1024 } as File, entry.id)).rejects.toThrow('100 Mo max');
-    expect(await localApi.deleteAttachment(saved.id)).toEqual({ ok: true });
+    expect(await localApi.deleteAttachment(saved.id)).toEqual({ ok: true, driveTrashed: false });
     await expect(localApi.deleteAttachment(saved.id)).rejects.toThrow('pièce jointe introuvable');
   });
 

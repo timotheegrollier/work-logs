@@ -618,13 +618,29 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     res.sendFile(found.file);
   });
 
-  app.delete('/api/attachments/:id', (req, res) => {
+  app.delete('/api/attachments/:id', async (req, res) => {
     const att = db.prepare('SELECT * FROM attachments WHERE id=?').get(req.params.id);
     if (!att) return notFound(res, 'pièce jointe introuvable');
     fs.rmSync(path.join(uploadDir, att.stored), { force: true });
     db.prepare('DELETE FROM attachments WHERE id=?').run(att.id);
     tombstone(db, 'attachment', att.id);
-    res.json({ ok: true });
+    // L'exemplaire Drive part à la corbeille (récupérable 30 jours), sauf si une
+    // « copie locale » d'entrée le partage encore. Best-effort : la suppression
+    // locale est faite, un Drive injoignable ne doit pas la faire échouer.
+    let driveTrashed = false;
+    const driveId = att.drive_file_id || '';
+    if (driveId && /^[\w-]{1,200}$/.test(driveId) && google?.status().connected
+      && !db.prepare('SELECT 1 FROM attachments WHERE drive_file_id=?').get(driveId)) {
+      try {
+        await google.request(`/drive/v3/files/${driveId}?supportsAllDrives=true&fields=id,trashed`, {
+          method: 'PATCH', body: JSON.stringify({ trashed: true }),
+        });
+        driveTrashed = true;
+      } catch {
+        // Déjà supprimé, accès retiré, hors ligne : rien à faire de plus.
+      }
+    }
+    res.json({ ok: true, driveTrashed });
   });
 
   // ---------------------------------------------------------------- export

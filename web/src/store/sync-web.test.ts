@@ -5,10 +5,14 @@ const CLIENT = '123456789012-abc.apps.googleusercontent.com';
 
 /** Faux Drive : un fichier canonique, réécrit par multipart, avec un compteur de téléchargements. */
 function fakeDrive() {
-  const drive = { text: '', modifiedTime: '', downloads: 0, uploads: [] as string[], folders: [] as { id: string; type: string }[], files: [] as { name: string; parents?: string[] }[] };
+  const drive = { text: '', modifiedTime: '', downloads: 0, uploads: [] as string[], trashed: [] as string[], folders: [] as { id: string; type: string }[], files: [] as { name: string; parents?: string[] }[] };
   let tick = 0;
   vi.stubGlobal('fetch', async (url: unknown, init?: RequestInit) => {
     const target = String(url);
+    if (init?.method === 'PATCH' && !target.includes('/upload/')) {
+      drive.trashed.push(/\/drive\/v3\/files\/([^?]+)/.exec(target)![1]);
+      return Response.json({ id: 'x', trashed: true });
+    }
     const folderType = /value='(root-folder|attachments-folder)'/.exec(decodeURIComponent(target))?.[1];
     if (folderType) return Response.json({ files: drive.folders.filter((f) => f.type === folderType) });
     if (target.includes('/drive/v3/files?supportsAllDrives=true&fields=id') && init?.method === 'POST') {
@@ -129,6 +133,31 @@ describe('synchro PWA', () => {
     expect(sent.driveFileId).toBe('drive-file-1');
     // Le binaire reste aussi sur l'appareil.
     expect((await local.localApi.state('', '')).procedure_attachments[0].driveFileId).toBe('drive-file-1');
+  });
+
+  test('supprimer une pièce jointe : exemplaire Drive à la corbeille, sauf s’il est partagé ; la suppression part à la synchro', async () => {
+    const drive = fakeDrive();
+    connect();
+    const { local, sync } = await load();
+    const procedure = await local.localApi.createEntry({ title: 'Dallage', kind: 'procedure' });
+    const plan = await local.localApi.upload(new File(['pdf'], 'plan.pdf', { type: 'application/pdf' }), procedure.id);
+    await sync.syncWebNow();
+    expect(drive.files).toHaveLength(1);
+
+    expect(await local.localApi.deleteAttachment(plan.id)).toEqual({ ok: true, driveTrashed: true });
+    expect(drive.trashed).toEqual(['drive-file-1']);
+    await sync.syncWebNow();
+    const sent = JSON.parse(drive.text);
+    expect(sent.attachments).toHaveLength(0);
+    expect(sent.deleted).toContainEqual(expect.objectContaining({ kind: 'attachment', id: plan.id }));
+
+    // Deux fiches pour le même exemplaire Drive : on n'y touche pas.
+    const a = await local.localApi.upload(new File(['x'], 'a.pdf'), procedure.id);
+    const b = await local.localApi.upload(new File(['x'], 'b.pdf'), procedure.id);
+    await local.markAttachmentUploaded(a.stored, 'drive-commun');
+    await local.markAttachmentUploaded(b.stored, 'drive-commun');
+    expect(await local.localApi.deleteAttachment(a.id)).toEqual({ ok: true, driveTrashed: false });
+    expect(drive.trashed).toEqual(['drive-file-1']);
   });
 
   test('une saisie pendant la synchro n’est jamais écrasée par la version fusionnée', async () => {

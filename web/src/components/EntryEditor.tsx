@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project, type Status } from '../lib';
 import { parseChecklist, proofreadEntry, readAiSettings, suggestSubtasks } from '../ai-suggest';
 import { renderMarkdown, toggleChecklistItem } from '../markdown';
-import { downloadAttachment } from '../attachment-download';
+import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-download';
 import { Autosave } from '../autosave';
 import { RichEditor } from './RichEditor';
 import { DocumentTabs } from './DocumentTabs';
@@ -165,10 +165,16 @@ export function EntryEditor({
   };
 
   const removeFile = async (file: Attachment) => {
-    if (!confirm(`Supprimer « ${file.filename} » ?`)) return;
-    await api.deleteAttachment(file.id);
-    setAttachments((prev) => prev.filter((a) => a.id !== file.id));
-    onChanged();
+    if (!confirm(deleteAttachmentQuestion(file))) return;
+    setError('');
+    try {
+      await api.deleteAttachment(file.id);
+      setAttachments((prev) => prev.filter((a) => a.id !== file.id));
+      if (previewing?.id === file.id) setPreviewing(null);
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    }
   };
 
   // Fichier adossé à Drive mais absent en local (restauration, autre appareil) :
@@ -573,7 +579,7 @@ export function EntryEditor({
 
       </div>
       </div>}
-      {!nativeGoogle && <div className="files no-print">
+      {(!nativeGoogle || attachments.length > 0) && <div className="files no-print">
         <label className="ghost file-button">
           📎 Joindre un fichier
           <input

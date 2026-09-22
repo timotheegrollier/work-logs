@@ -970,11 +970,27 @@ export const localApi: Api = {
 
   deleteAttachment: async (id) => {
     const { attachments } = await tables();
-    if (!(await attachments.get(id))) fail('pièce jointe introuvable');
+    const row = (await attachments.get(id)) ?? fail('pièce jointe introuvable');
     await attachments.remove(id);
     untrack('attachments', id);
     tombstone('attachment', id);
-    return { ok: true };
+    // Même règle que le desktop : l'exemplaire Drive part à la corbeille, sauf s'il
+    // est encore partagé par une copie ; un échec ne remet pas la pièce jointe.
+    let driveTrashed = false;
+    const driveId = row.driveFileId || '';
+    const google = webGoogleStatus();
+    if (driveId && /^[\w-]{1,200}$/.test(driveId) && google.connected && !google.expired
+      && !(await attachments.all()).some((other) => other.driveFileId === driveId)) {
+      try {
+        await webGoogleRequest(`/drive/v3/files/${driveId}?supportsAllDrives=true&fields=id,trashed`, {
+          method: 'PATCH', body: JSON.stringify({ trashed: true }),
+        });
+        driveTrashed = true;
+      } catch {
+        // Best-effort.
+      }
+    }
+    return { ok: true, driveTrashed };
   },
 
   fileUrl: (stored: string) => localFileUrl(stored),

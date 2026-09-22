@@ -213,3 +213,35 @@ test('une copie locale inaccessible après Google reste récupérable avec un é
   expect(screen.getByRole('alert')).toHaveTextContent('Connexion interrompue');
   expect(screen.queryByText('À jour sur Google Drive')).not.toBeInTheDocument();
 });
+
+test('éditeur Google natif : les pièces jointes restent visibles et supprimables', async () => {
+  integratedBridge();
+  const photo = { id: 'at_photo', filename: 'photo.png', stored: 'x_photo.png', mime: 'image/png', size: 3, entry_id: entry.id, created_at: '', driveFileId: 'drive-photo' };
+  const remove = vi.spyOn(api, 'deleteAttachment').mockResolvedValue({ ok: true, driveTrashed: true });
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
+  const onChanged = vi.fn();
+  const { container } = render(<EntryEditor entry={{ ...entry, attachments: [photo], google_sync: { ...entry.google_sync!, dirty: false } }} projects={[]} onChanged={onChanged} onDeleted={() => {}} />);
+  expect(container.querySelector('.has-google-native')).not.toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Supprimer photo.png' }));
+  expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('corbeille'));
+  await waitFor(() => expect(remove).toHaveBeenCalledWith('at_photo'));
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Supprimer photo.png' })).not.toBeInTheDocument());
+  expect(onChanged).toHaveBeenCalled();
+});
+
+test('éditeur Google natif sans pièce jointe : pas de barre de fichiers', () => {
+  integratedBridge();
+  render(<EntryEditor entry={{ ...entry, google_sync: { ...entry.google_sync!, dirty: false } }} projects={[]} onChanged={() => {}} onDeleted={() => {}} />);
+  expect(screen.queryByLabelText('Joindre un fichier')).not.toBeInTheDocument();
+});
+
+test('une suppression refusée par le serveur s’affiche et garde le fichier', async () => {
+  const note = { ...entry, google_sync: undefined, attachments: [{ id: 'at_1', filename: 'devis.pdf', stored: 'x.pdf', mime: 'application/pdf', size: 1, entry_id: entry.id, created_at: '', driveFileId: null }] };
+  vi.spyOn(api, 'deleteAttachment').mockRejectedValue(new ApiError('pièce jointe introuvable'));
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
+  render(<EntryEditor entry={note} projects={[]} onChanged={() => {}} onDeleted={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Supprimer devis.pdf' }));
+  expect(window.confirm).toHaveBeenCalledWith('Supprimer « devis.pdf » ?');
+  expect(await screen.findByText(/pièce jointe introuvable/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Supprimer devis.pdf' })).toBeInTheDocument();
+});

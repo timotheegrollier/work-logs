@@ -258,7 +258,7 @@ export const remoteApi = {
     send<Project>('PUT', `/api/projects/${id}`, body),
   deleteProject: (id: string) => send<{ ok: true }>('DELETE', `/api/projects/${id}`),
 
-  deleteAttachment: (id: string) => send<{ ok: true }>('DELETE', `/api/attachments/${id}`),
+  deleteAttachment: (id: string) => send<{ ok: true; driveTrashed?: boolean }>('DELETE', `/api/attachments/${id}`),
   fileUrl: (stored: string) => `/api/files/${stored}`,
   /** Même fichier, servi `inline` : sert l'aperçu intégré, jamais le téléchargement. */
   previewUrl: (stored: string) => `/api/files/${stored}/preview`,

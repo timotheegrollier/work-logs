@@ -1489,6 +1489,28 @@ describe('panneau Procédures', () => {
     expect(screen.getByRole('button', { name: 'Écrire' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  test('supprime une pièce jointe depuis la colonne Procédures, après confirmation', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_proc', title: 'Dallage', kind: 'procedure' }] });
+    const kept = await api.upload('devis.pdf', '%PDF', { entry_id: 'en_proc' });
+    const plan = await api.upload('plan.pdf', '%PDF', { entry_id: 'en_proc' });
+    api.db.prepare('UPDATE attachments SET drive_file_id=? WHERE id=?').run('drive-plan', plan.body.id);
+    render(<App />);
+    const panel = await openPanel(user);
+    const files = await within(panel).findByRole('list', { name: 'Pièces jointes de Dallage' });
+
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    await user.click(within(files).getByRole('button', { name: 'Supprimer plan.pdf' }));
+    expect(row(api.db, 'SELECT COUNT(*) n FROM attachments')).toMatchObject({ n: 2 });
+
+    await user.click(within(files).getByRole('button', { name: 'Supprimer plan.pdf' }));
+    // La question annonce la corbeille Drive pour un fichier qui y est.
+    expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining('corbeille'));
+    await waitFor(() => expect(within(files).queryByText('plan.pdf')).not.toBeInTheDocument());
+    expect(within(files).getByText('devis.pdf')).toBeInTheDocument();
+    expect(row(api.db, 'SELECT id FROM attachments')).toMatchObject({ id: kept.body.id });
+  });
+
   test('ouvre une procédure Google dans l’éditeur de l’app quand Écriture est masqué', async () => {
     const user = userEvent.setup();
     seedData(api.db, { entries: [{ id: 'en_proc', title: 'Consignes Google', kind: 'procedure' }] });
