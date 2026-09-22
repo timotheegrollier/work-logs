@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('worklogsDesktop', {
     beforeClose = callback;
     return () => { beforeClose = async () => {}; };
   },
+  // Renvoie '' si l'application du système a pris le fichier, sinon le message d'erreur.
+  openAttachment: (stored, filename) => ipcRenderer.invoke('worklogs:open-attachment', { stored, filename }),
   checkUpdatesNow() {
     return ipcRenderer.invoke('worklogs:check-updates-now');
   },

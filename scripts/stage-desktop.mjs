@@ -18,7 +18,7 @@ for (const name of ['api/src', 'api/package.json', 'web/dist']) {
   fs.cpSync(path.join(root, name), path.join(stage, name), { recursive: true });
 }
 fs.mkdirSync(path.join(stage, 'desktop'), { recursive: true });
-for (const name of ['main.mjs', 'preload.cjs', 'server.mjs', 'update.mjs', 'google.mjs', 'google-view.mjs', 'icon.png'])
+for (const name of ['main.mjs', 'preload.cjs', 'server.mjs', 'update.mjs', 'google.mjs', 'google-view.mjs', 'open-file.mjs', 'icon.png'])
   fs.copyFileSync(path.join(root, 'desktop', name), path.join(stage, 'desktop', name));
 // Client Google « Application de bureau » intégré (secrets CI) : un clic suffit
 // pour se connecter. Ce n'est pas un secret utilisateur (client public selon

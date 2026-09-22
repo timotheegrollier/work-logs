@@ -433,6 +433,15 @@ téléchargement en solution. Décoder ces formats demanderait une bibliothèque
 requis) et un rendu qu'on ne peut pas garantir fidèle : afficher du charabia serait pire que
 de dire la vérité. Le `.csv`, lui, reste du texte et s'affiche très bien tel quel.
 
+**Complété le 2026-09-22 : « Ouvrir avec… » et « Ouvrir dans Drive »** (sans dépendance).
+Desktop : une **copie en lecture seule** sous le vrai nom, dans le dossier temporaire, est
+confiée à `shell.openPath` (`desktop/open-file.mjs`). Jamais le fichier d'`uploads` lui-même :
+une modification enregistrée dessus divergerait en silence de la copie Drive. Les types que
+`xdg-open` exécuterait ou installerait (`.desktop`, `.sh`, `.AppImage`, `.deb`…) sont refusés.
+PWA : feuille de partage (`navigator.share` avec le fichier), repli sur le téléchargement.
+Fichier déjà sur Drive : lien `drive.google.com/file/d/<id>/view`, ouvert dans le navigateur.
+L'aperçu intégré des tableurs (SheetJS) reste écarté : rendu non fidèle, dépendance ~1 Mo.
+
 **Types dangereux neutralisés.** Un `text/html` ou un `image/svg+xml` servi en `inline` dans
 notre origine deviendrait du code actif. La route d'aperçu les renvoie en
 `text/plain; charset=utf-8` avec `X-Content-Type-Options: nosniff`.

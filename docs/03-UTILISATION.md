@@ -205,6 +205,11 @@ aussi sur l'appareil ; badge **☁ Drive**. Sans connexion, il reste sur l'appar
 seul**). Cliquer un fichier le télécharge ; s'il n'est pas encore sur cet appareil mais sur
 Drive, il est rapatrié automatiquement.
 
+**Tableurs et autres formats** (`.ods`, `.xlsx`, `.docx`…) : dans l'aperçu, **Ouvrir avec…**
+les confie à ton application (LibreOffice sur le PC, en lecture seule — « Enregistrer sous »
+puis rejoins la version modifiée ; sur le téléphone, choix de l'application), et **Ouvrir
+dans Drive** les affiche dans Google Drive quand ils y sont déjà.
+
 **Se connecter avec Google** suffit (desktop comme mobile) : rien à configurer, la connexion
 reste facultative et le compte connecté s'affiche en haut du dialogue. Sur mobile, WorkLogs
 renouvelle normalement la session en arrière-plan : il n'est pas nécessaire de se reconnecter

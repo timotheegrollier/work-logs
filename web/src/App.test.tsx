@@ -712,6 +712,34 @@ describe('écrire une entrée', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Aperçu de budget.xlsx' });
     expect(within(dialog).getByText(/tableur/)).toBeInTheDocument();
     expect(within(dialog).queryByRole('img')).not.toBeInTheDocument();
+    // Pas encore sur Drive : seule l'ouverture par l'application du système est proposée.
+    expect(within(dialog).queryByRole('link', { name: 'Ouvrir dans Drive' })).not.toBeInTheDocument();
+
+    const openAttachment = vi.fn(async () => '');
+    window.worklogsDesktop = { onBeforeClose: () => () => {}, openAttachment };
+    try {
+      await user.click(within(dialog).getByRole('button', { name: 'Ouvrir avec…' }));
+      await waitFor(() => expect(openAttachment).toHaveBeenCalledWith(upload.body.stored, 'budget.xlsx'));
+      expect(await within(dialog).findByRole('status')).toHaveTextContent(/lecture seule/);
+    } finally {
+      delete window.worklogsDesktop;
+    }
+  });
+
+  test('un tableur déjà sur Drive propose « Ouvrir dans Drive »', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_ods', title: 'Stock' }] });
+    const upload = await api.upload('stock.ods', 'PK', { entry_id: 'en_ods' });
+    api.db.prepare('UPDATE attachments SET drive_file_id=? WHERE id=?').run('drive-ods-1', upload.body.id);
+
+    render(<App />);
+    await user.click(await within(journal()).findByText('Stock'));
+    await user.click(await screen.findByRole('button', { name: 'Aperçu de stock.ods' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Aperçu de stock.ods' });
+    const link = within(dialog).getByRole('link', { name: 'Ouvrir dans Drive' });
+    expect(link).toHaveAttribute('href', 'https://drive.google.com/file/d/drive-ods-1/view');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
   });
 
   test('une pièce jointe adossée à Drive affiche son badge et propose Récupérer', async () => {

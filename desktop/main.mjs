@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
 import { createGoogleClient, readDefaultClient } from './google.mjs';
 import { installGoogleView } from './google-view.mjs';
+import { prepareOpenCopy } from './open-file.mjs';
 import { checkForUpdate, hasPackageKit, hasPkexec, installedVersionCommand, installKind, installedMatches, isAuthorizationFailure, isNewer, logUpdateEvent, packageManager, parseManagerProgress, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, privilegedInstallCommand, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
@@ -479,6 +480,20 @@ if (!app.requestSingleInstanceLock()) {
       });
       // Clic sur la pastille de version : revérifie tout de suite, même si la
       // version a déjà été refusée (force ignore dismissedVersion).
+      // « Ouvrir avec… » : copie en lecture seule confiée à l'application du système.
+      ipcMain.handle('worklogs:open-attachment', async (event, request) => {
+        if (event.sender !== window.webContents) return 'Demande refusée.';
+        try {
+          const target = prepareOpenCopy({
+            uploadDir: path.join(dataDir, 'uploads'), tmpDir: app.getPath('temp'),
+            stored: request?.stored, filename: request?.filename,
+          });
+          const failure = await shell.openPath(target);
+          return failure ? `Aucune application ne sait ouvrir ce fichier (${failure}).` : '';
+        } catch (error) {
+          return error.message;
+        }
+      });
       ipcMain.handle('worklogs:check-updates-now', async (event) => {
         if (event.sender !== window.webContents) return null;
         await notifyUpdateIfAvailable({ force: true });

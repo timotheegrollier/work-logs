@@ -34,7 +34,7 @@ export function previewKind(file: { filename: string; mime?: string }): PreviewK
 /** Message affiché pour les formats qu'on ne peut pas rendre honnêtement. */
 export function previewNotice(kind: PreviewKind, filename: string): string {
   if (kind === 'sheet') {
-    return `« ${filename} » est un tableur : son affichage intégré demanderait un outil supplémentaire. Télécharge-le pour l’ouvrir.`;
+    return `« ${filename} » est un tableur : WorkLogs ne l’affiche pas lui-même. « Ouvrir avec… » le confie à ton tableur (LibreOffice, Google Sheets…), « Ouvrir dans Drive » l’affiche dans Google Drive.`;
   }
-  return `L’aperçu intégré ne prend pas encore en charge « ${filename} ». Télécharge-le pour l’ouvrir.`;
+  return `L’aperçu intégré ne prend pas en charge « ${filename} ». « Ouvrir avec… » le confie à l’application qui sait le lire.`;
 }

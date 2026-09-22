@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, formatSize, type Attachment } from '../lib';
-import { downloadAttachment } from '../attachment-download';
+import { downloadAttachment, driveViewUrl, openAttachmentWith } from '../attachment-download';
 import { previewKind, previewNotice } from '../file-preview';
 
 /**
@@ -17,6 +17,23 @@ export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { f
   const kind = previewKind(file);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [opening, setOpening] = useState(false);
+
+  const openWith = async () => {
+    setError('');
+    setNotice('');
+    setOpening(true);
+    try {
+      const outcome = await openAttachmentWith(file);
+      if (outcome === 'opened') setNotice('Ouvert dans l’application du système, en lecture seule : « Enregistrer sous » pour garder une version modifiée, puis joins-la ici.');
+      if (outcome === 'downloaded') setNotice('Fichier téléchargé : ouvre-le depuis tes téléchargements.');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setOpening(false);
+    }
+  };
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -59,6 +76,12 @@ export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { f
           <small>{formatSize(file.size)}</small>
         </div>
         <div className="viewer-actions">
+          <button className="ghost" type="button" disabled={opening} onClick={() => void openWith()}>
+            {opening ? 'Ouverture…' : 'Ouvrir avec…'}
+          </button>
+          {file.driveFileId && (
+            <a className="ghost" href={driveViewUrl(file.driveFileId)} target="_blank" rel="noopener noreferrer">Ouvrir dans Drive</a>
+          )}
           {file.driveFileId && onFetch && <button className="ghost" type="button" disabled={fetching} onClick={onFetch}>{fetching ? 'Récupération…' : '⬇ Récupérer depuis Drive'}</button>}
           <a
             className="ghost"
@@ -76,6 +99,8 @@ export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { f
       </div>
       <div className="viewer-body">
         {fetchError && <p className="error" role="alert">{fetchError}</p>}
+        {notice && <p className="viewer-notice" role="status">{notice}</p>}
+        {error && kind !== 'text' && <p className="error" role="alert">{error}</p>}
         {file.driveFileId && <p className="viewer-notice">☁ Conservé sur Google Drive — l’aperçu fonctionne après récupération, même sur un autre appareil.</p>}
         {kind === 'image' && <img src={url} alt={file.filename} />}
         {kind === 'pdf' && <iframe className="viewer-frame" src={url} title={file.filename} />}

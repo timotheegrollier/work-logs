@@ -147,6 +147,23 @@ test('fichiers joints et export JSON fonctionnent dans l’application empaquet�
   await fileDownload;
   expect(fs.readFileSync(fileTarget, 'utf8')).toBe('contenu desktop');
 
+  // « Ouvrir avec… » : une copie en lecture seule, sous son vrai nom, part vers le système.
+  await application!.evaluate(({ shell }) => {
+    shell.openPath = async (target: string) => { (globalThis as unknown as { openedPath: string }).openedPath = target; return ''; };
+  });
+  await page.getByRole('button', { name: 'Aperçu de pièce.txt' }).click();
+  const viewer = page.getByRole('dialog', { name: 'Aperçu de pièce.txt' });
+  await viewer.getByRole('button', { name: 'Ouvrir avec…' }).click();
+  await expect(viewer.getByRole('status')).toContainText('lecture seule');
+  const opened = await application!.evaluate(() => (globalThis as unknown as { openedPath: string }).openedPath);
+  expect(path.basename(opened)).toBe('pièce.txt');
+  expect(fs.readFileSync(opened, 'utf8')).toBe('contenu desktop');
+  expect(fs.statSync(opened).mode & 0o222).toBe(0);
+  // Le pont refuse ce que le système exécuterait.
+  expect(await page.evaluate(() => (window as unknown as { worklogsDesktop: { openAttachment: (s: string, f: string) => Promise<string> } })
+    .worklogsDesktop.openAttachment('../worklogs.db', 'base.db'))).toMatch(/invalide/);
+  await viewer.getByRole('button', { name: 'Fermer' }).click();
+
   const exportTarget = path.join(directory, 'export.json');
   const exportDownload = downloadNext(exportTarget);
   await page.getByRole('button', { name: 'Exporter' }).click();
