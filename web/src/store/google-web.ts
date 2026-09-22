@@ -146,10 +146,15 @@ export async function pkceChallenge(verifier: string, subtle: Pick<SubtleCrypto,
 
 /** URL d'autorisation Google (pure : `beginWebLogin` y envoie le navigateur). */
 export function loginUrl(clientId: string, redirectUri: string, state: string, challenge: string, hint = '', selectAccount = false): string {
+  // Reprise avec compte connu : consentement direct, sans repasser par le
+  // sélecteur (`login_hint` pré-remplit le compte) — un seul « Continuer ».
+  // `prompt=consent` fait réémettre un `refresh_token`, donc la session
+  // redevient silencieuse après cette unique reprise.
+  const prompt = selectAccount ? 'select_account' : hint ? 'consent' : 'select_account consent';
   const url = new URL(AUTH_URL);
   url.search = new URLSearchParams({
     client_id: clientId, redirect_uri: redirectUri, response_type: 'code', scope: LOGIN_SCOPE,
-    access_type: 'offline', prompt: selectAccount ? 'select_account' : 'select_account consent', state,
+    access_type: 'offline', prompt, state,
     code_challenge: challenge, code_challenge_method: 'S256', ...(!selectAccount && hint ? { login_hint: hint } : {}),
   }).toString();
   return url.href;
@@ -315,6 +320,21 @@ export async function handleRedirectCallback(search = location.search, hash = lo
     account: await fetchAccount(tokens.access_token),
   });
   return true;
+}
+
+let consumedCallback: Promise<boolean> | null = null;
+
+/**
+ * Retour Google consommé une seule fois par chargement : `startWebSync` et le
+ * panneau Drive l'appellent en parallèle au retour de Google. Sans ce verrou,
+ * le second échange un code déjà brûlé (`invalid_grant`) et efface
+ * (`writeTokens(null)`) la session que le premier vient d'enregistrer —
+ * la reprise échouait donc à chaque fois, surtout sur mobile où les deux
+ * montent ensemble. Appeler plutôt que `handleRedirectCallback`.
+ */
+export function consumeRedirectCallback(search = location.search, hash = location.hash): Promise<boolean> {
+  consumedCallback ??= handleRedirectCallback(search, hash);
+  return consumedCallback;
 }
 
 /** Session sans `refresh_token` expirée : l'UI propose une reconnexion explicite. */

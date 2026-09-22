@@ -31,6 +31,23 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-09-22 (5) — reprise de session Google en vol unique (PWA)
+
+- **Bug** : « Reprendre la session Google » échouait à chaque fois sur la PWA mobile.
+  Le retour Google (`?code=…`, code + `pending` à usage unique) était consommé en
+  parallèle par `startWebSync` (`sync-web.ts`) et le panneau Drive (`GoogleDriveWeb.tsx`) :
+  le second échangeait un code déjà brûlé (`invalid_grant`), et cet échec effaçait
+  (`writeTokens(null)`) la session que le premier venait d'enregistrer.
+- Correctif : `consumeRedirectCallback()` (`store/google-web.ts`) — un seul échange par
+  chargement, même promesse partagée aux deux appelants. `handleRedirectCallback` gardé
+  pour les tests. Aucune dépendance ajoutée.
+- Tests : front (1, `store/google-web.test.ts` — deux appels parallèles, un seul `/token`,
+  session connectée et non expirée).
+- **Parcours réduit** : la reprise avec compte connu (`login_hint`) demande `prompt=consent`
+  seul, sans repasser par le sélecteur — un seul « Continuer », et Google réémet un
+  `refresh_token` qui rend la session à nouveau silencieuse. Première connexion (compte
+  inconnu) et changement de compte inchangés.
+
 ## Lot du 2026-09-22 (4) — supprimer les pièces jointes partout
 
 - ✕ dans la colonne Procédures (`ProcedureList.tsx`) ; l'éditeur l'avait déjà, mais la

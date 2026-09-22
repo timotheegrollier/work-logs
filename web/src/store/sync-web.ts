@@ -7,7 +7,7 @@ import {
   markAttachmentUploaded, onLocalChange, type SyncSnapshot,
 } from './localApi';
 import {
-  attachmentFolderId, downloadWebBackup, handleRedirectCallback, hasRedirectCallback, listWebBackups, saveBackupJson,
+  attachmentFolderId, consumeRedirectCallback, downloadWebBackup, hasRedirectCallback, listWebBackups, saveBackupJson,
   uploadDriveFile, webGoogleStatus,
 } from './google-web';
 
@@ -162,7 +162,7 @@ export function startWebSync(onGoogleChanged: () => void): () => void {
   void (async () => {
     if (hasRedirectCallback()) {
       try {
-        await handleRedirectCallback();
+        await consumeRedirectCallback();
         resetWebSync();
       } catch (e) {
         publish({ state: 'error', error: (e as Error).message });

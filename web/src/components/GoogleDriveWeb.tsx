@@ -5,11 +5,11 @@ import {
   attachmentFolderId,
   beginWebLogin,
   clearWebClient,
+  consumeRedirectCallback,
   disconnectWeb,
   downloadWebBackup,
   getWebClientId,
   getWebClientSecret,
-  handleRedirectCallback,
   hasRedirectCallback,
   listWebBackups,
   setWebClientId,
@@ -66,7 +66,7 @@ export function GoogleDriveWeb({ onRestored, onDocuments }: { onOpen?: (entry: E
     let alive = true;
     if (!hasRedirectCallback()) return;
     setBusy(true);
-    void handleRedirectCallback()
+    void consumeRedirectCallback()
       .then(async (handled) => {
         if (!alive || !handled) return;
         history.replaceState(null, '', location.pathname);

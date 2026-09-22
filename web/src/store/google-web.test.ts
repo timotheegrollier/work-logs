@@ -76,6 +76,10 @@ describe('configuration et PKCE', () => {
     expect(params.get('state')).toBe('etat');
     expect(params.get('login_hint')).toBeNull();
     expect(new URL(loginUrl(CLIENT, 'https://pwa.test/app/', 'etat', 'defi', 'timo@example.com')).searchParams.get('login_hint')).toBe('timo@example.com');
+    // Reprise avec compte connu : consentement direct, sans le sélecteur.
+    const resumeParams = new URL(loginUrl(CLIENT, 'https://pwa.test/app/', 'etat', 'defi', 'timo@example.com')).searchParams;
+    expect(resumeParams.get('prompt')).toBe('consent');
+    expect(new URL(loginUrl(CLIENT, 'https://pwa.test/app/', 'etat', 'defi')).searchParams.get('prompt')).toBe('select_account consent');
     const switchParams = new URL(loginUrl(CLIENT, 'https://pwa.test/app/', 'etat', 'defi', 'timo@example.com', true)).searchParams;
     expect(switchParams.get('prompt')).toBe('select_account');
     expect(switchParams.has('login_hint')).toBe(false);
@@ -116,6 +120,26 @@ describe('retour OAuth et jetons', () => {
       account: { email: 'timo@example.com', name: 'Timo', picture: '' },
     });
     expect(JSON.parse(localStorage.getItem('worklogs-google-web-tokens') as string).refresh_token).toBe('renouvellement');
+  });
+
+  test('retour Google consommé une seule fois : synchro auto + panneau en parallèle', async () => {
+    const { setWebClientId, consumeRedirectCallback, webGoogleStatus } = await googleWeb();
+    setWebClientId(CLIENT);
+    sessionStorage.setItem('worklogs-google-web-pending', JSON.stringify({ state: 's', verifier: 'v', redirectUri: 'https://pwa.test/' }));
+    const calls = stubFetch(async (url) => {
+      if (url.endsWith('/userinfo')) return jsonResponse({ email: 'timo@example.com', name: 'Timo' });
+      return jsonResponse({ access_token: 'acces', refresh_token: 'renouvellement', expires_in: 3600, scope: 'https://www.googleapis.com/auth/drive.file' });
+    });
+    // Au retour de Google, `startWebSync` et le panneau Drive appellent ensemble :
+    // un seul échange du code, sinon le second brûle le code (`invalid_grant`)
+    // et efface la session que le premier vient d'enregistrer.
+    const search = '?code=code&state=s';
+    const [first, second] = await Promise.all([consumeRedirectCallback(search), consumeRedirectCallback(search)]);
+    expect([first, second]).toEqual([true, true]);
+    expect(calls.filter((c) => c.url.includes('/token'))).toHaveLength(1);
+    expect(webGoogleStatus()).toMatchObject({ connected: true, expired: false });
+    expect(await consumeRedirectCallback(search)).toBe(true);
+    expect(calls.filter((c) => c.url.includes('/token'))).toHaveLength(1);
   });
 
   test('jeton frais réutilisé, renouvellement unique en concurrence', async () => {
