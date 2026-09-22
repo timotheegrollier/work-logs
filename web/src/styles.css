@@ -170,7 +170,9 @@ button:disabled {
   background: var(--surface);
   box-shadow: 0 1px 0 rgb(0 0 0 / 0.04);
   position: relative;
-  z-index: 1;
+  /* Au-dessus des barres collantes du contenu (`.quick`, z-index 2) : le menu du
+     compte s'ouvre par-dessus les colonnes au lieu de passer dessous. */
+  z-index: 20;
 }
 .logo {
   margin: 0;
@@ -2031,7 +2033,9 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .rich-content [data-indent-start] { margin-inline-start: var(--google-indent-start, 0pt); }
 .rich-content [data-indent-end] { margin-inline-end: var(--google-indent-end, 0pt); }
 .rich-content [data-indent-first] { text-indent: calc(var(--google-indent-first, 0pt) - var(--google-indent-start, 0pt)); }
-@media (max-width: 1180px) { .head .stats { display: none; } }
+/* En dessous de 1560 px, l'en-tête (recherche, panneaux, largeurs, export, compte) n'a plus
+   la place pour les statistiques : la recherche était écrasée à 22 px et le menu débordait. */
+@media (max-width: 1560px) { .head .stats { display: none; } }
 @media (max-width: 600px) {
   /* Mobile : en-tête aéré en trois lignes — marque, recherche, panneaux —
      au lieu d'une rangée unique où logo, version, thème, Journal, Écriture,
