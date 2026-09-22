@@ -239,7 +239,8 @@ Une ancienne autorisation sans `openid` fonctionne toujours, simplement sans com
 3. Client Web : origine `https://timotheegrollier.github.io`, redirection
    `https://timotheegrollier.github.io/work-logs/app/` (déjà en place).
 4. GitHub → Settings → Secrets and variables → Actions : secrets
-   `GOOGLE_DESKTOP_CLIENT_ID`, `GOOGLE_DESKTOP_CLIENT_SECRET`, variable `GOOGLE_WEB_CLIENT_ID`.
+   `GOOGLE_DESKTOP_CLIENT_ID`, `GOOGLE_DESKTOP_CLIENT_SECRET`, et `GOOGLE_WEB_CLIENT_ID`
+   (variable ou secret : `pwa.yml` accepte les deux).
    Sans eux, la CI construit comme avant (configuration manuelle).
 
 ## Configuration depuis l’application desktop

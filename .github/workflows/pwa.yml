@@ -43,7 +43,8 @@ jobs:
           # La PWA utilise le backend local IndexedDB au lieu de `/api`.
           VITE_PWA: '1'
           # Client Google « Web » intégré : un ID client est public par nature.
-          VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
+          # Variable ou secret : les deux sont acceptés (l'ID finit de toute façon dans le JS public).
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_WEB_CLIENT_ID }}
       - name: Publier la PWA à la racine sans toucher aux dépôts
         run: |
           git clone -q --branch gh-pages --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" .pages
