@@ -296,12 +296,17 @@ export async function suggestSubtasks(
 /** Au-delà, la réponse serait tronquée : on refuse plutôt que de corrompre. */
 export const MAX_PROOFREAD_CHARS = 12000;
 
-/** Consigne : corriger et mettre en page, sans inventer ni changer le sens. */
-export function buildProofreadPrompt(title: string, text: string, profile = ''): { system: string; user: string } {
-  const user = `${profile.trim() ? `Profil : ${profile.trim()}\n` : ''}Titre : ${title.trim()}\n\nTexte :\n${text}`;
+/**
+ * Consigne : corriger et mettre en page, sans inventer ni changer le sens. Une
+ * procédure (mode opératoire) garde en plus ses étapes en liste numérotée.
+ */
+export function buildProofreadPrompt(title: string, text: string, profile = '', procedure = false): { system: string; user: string } {
+  const user = `${profile.trim() ? `Profil : ${profile.trim()}\n` : ''}${procedure ? 'Procédure' : 'Titre'} : ${title.trim()}\n\nTexte :\n${text}`;
   return {
-    system: `Tu relis le journal de travail personnel de l'utilisateur dans WorkLogs : il y écrit ce qu'il fait en Markdown.
-Corrige l'orthographe, la grammaire, la conjugaison et la typographie française (accents, majuscules, espaces), et mets en page le Markdown (titres, listes, tableaux, citations) sans changer le sens et sans rien inventer. Conserve tels quels les liens, images, blocs de code et cases à cocher.
+    system: `${procedure
+      ? "Tu relis une procédure de l'utilisateur dans WorkLogs, son journal de travail personnel : un mode opératoire en Markdown qu'il suivra plus tard, pas à pas."
+      : "Tu relis le journal de travail personnel de l'utilisateur dans WorkLogs : il y écrit ce qu'il fait en Markdown."}
+Corrige l'orthographe, la grammaire, la conjugaison et la typographie française (accents, majuscules, espaces), et mets en page le Markdown (titres, listes, tableaux, citations) sans changer le sens et sans rien inventer.${procedure ? ' Présente les étapes en liste numérotée, une action par étape.' : ''} Conserve tels quels les liens, images, blocs de code et cases à cocher.
 Réponds uniquement avec le texte corrigé en Markdown, sans introduction ni explication.`,
     user,
   };
@@ -324,18 +329,72 @@ export async function proofreadEntry(
   settings: AiSettings,
   title: string,
   content: string,
-  options: { timeoutMs?: number } = {}
+  options: { timeoutMs?: number; procedure?: boolean } = {}
 ): Promise<string> {
   const text = content.trim();
   if (!text) throw new AiError('Rien à corriger : l’entrée est vide.');
   if (text.length > MAX_PROOFREAD_CHARS) {
     throw new AiError(`Texte trop long pour une relecture (${text.length} caractères, ${MAX_PROOFREAD_CHARS} maximum).`);
   }
-  const prompt = buildProofreadPrompt(title, text, settings.profile);
+  const prompt = buildProofreadPrompt(title, text, settings.profile, options.procedure);
   const cleaned = cleanProofreadMarkdown(
     await postChatCompletions(settings, 'la mise en page', prompt.system, prompt.user,
       Math.min(8000, Math.max(1200, Math.ceil(text.length / 2))), options.timeoutMs ?? AI_TIMEOUT_MS)
   );
   if (!cleaned) throw new AiError('Réponse IA illisible : réessaie.');
   return cleaned;
+}
+
+/** Au-delà, la procédure deviendrait une liste qu'on ne suit plus. */
+const MAX_PROCEDURE_STEPS = 15;
+
+/** Ce que l'IA sait d'une procédure : son projet, ses fichiers, ce qui est déjà écrit. */
+export interface ProcedureContext {
+  project?: string;
+  attachments?: string[];
+  /** Procédure déjà écrite, en Markdown : gardée et complétée, jamais effacée. */
+  text?: string;
+}
+
+/** Consigne : un mode opératoire pas à pas, sans rien inventer de précis. */
+export function buildProcedurePrompt(title: string, context: ProcedureContext = {}, profile = ''): { system: string; user: string } {
+  const sections: string[] = [];
+  if (profile.trim()) sections.push(`Profil : ${profile.trim()}`);
+  sections.push(`Procédure : ${title.trim()}`);
+  if (context.project) sections.push(`Projet : ${context.project}`);
+  const attachments = compactTitles(context.attachments ?? []);
+  if (attachments.length > 0) sections.push(`Pièces jointes : ${attachments.join(', ')}`);
+  sections.push(context.text?.trim() ? `Déjà écrit :\n${context.text.trim()}` : 'Déjà écrit : rien pour l’instant.');
+  return {
+    system: `Tu aides l'utilisateur à rédiger ses procédures dans WorkLogs, son journal de travail personnel : une procédure est un mode opératoire qu'il suivra plus tard, pas à pas.
+Propose la procédure complète en Markdown, en français : une phrase d'objectif, puis « ## Prérequis » (matériel, accès, sécurité) si utile, « ## Étapes » en liste numérotée — une action concrète et vérifiable par étape, ${MAX_PROCEDURE_STEPS} au plus — et « ## Vérifications » si utile.
+Garde tout ce qui est déjà écrit (étapes, valeurs, liens, images) en l'intégrant au bon endroit. N'invente ni valeur chiffrée, ni référence, ni nom propre absents du contexte : écris « à préciser » à la place.
+Réponds uniquement avec la procédure en Markdown, sans titre de premier niveau, sans introduction ni explication.`,
+    user: sections.join('\n'),
+  };
+}
+
+/**
+ * Suggestion de procédure : un clic = un appel avec le titre, le projet, les
+ * noms des pièces jointes et ce qui est déjà écrit. La proposition revient en
+ * Markdown, à relire avant application — comme la mise en page.
+ */
+export async function suggestProcedure(
+  settings: AiSettings,
+  title: string,
+  options: { context?: ProcedureContext; timeoutMs?: number } = {}
+): Promise<string> {
+  const text = options.context?.text?.trim() ?? '';
+  const named = title.trim() && !/^sans titre$/i.test(title.trim());
+  if (!named && !text) throw new AiError('Donne un titre à la procédure : l’IA s’en sert pour proposer les étapes.');
+  if (text.length > MAX_PROOFREAD_CHARS) {
+    throw new AiError(`Procédure trop longue pour une suggestion (${text.length} caractères, ${MAX_PROOFREAD_CHARS} maximum).`);
+  }
+  const prompt = buildProcedurePrompt(title, options.context, settings.profile);
+  const cleaned = cleanProofreadMarkdown(
+    await postChatCompletions(settings, 'les suggestions de procédure', prompt.system, prompt.user,
+      Math.min(8000, Math.max(1500, Math.ceil(text.length / 2) + 1000)), options.timeoutMs ?? AI_TIMEOUT_MS)
+  ).replace(/^#\s[^\n]*\n*/, ''); // le titre existe déjà : un `# Titre` en tête ferait doublon
+  if (!cleaned.trim()) throw new AiError('Réponse IA illisible : réessaie.');
+  return cleaned.trim();
 }

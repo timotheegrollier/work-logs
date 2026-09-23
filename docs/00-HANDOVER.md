@@ -31,6 +31,32 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-09-23 (2) — IA dans l'éditeur de procédures
+
+- Demande : « Mise en page / correction » et « Suggérer une procédure » sur les procédures.
+  Les boutons IA n'existaient que pour les entrées Markdown ; une procédure est riche.
+- **✨ Suggérer une procédure** (à la place de « Suggérer des sous-tâches » sur une procédure) :
+  titre, projet, noms des pièces jointes et contenu partent au service IA des Paramètres ; la
+  proposition (objectif, prérequis, étapes numérotées, vérifications ; « à préciser » plutôt
+  qu'une valeur inventée) se relit dans « Procédure proposée » avant « Appliquer la procédure ».
+- **✨ Mettre en page** sur une procédure riche : même relecture que pour le Markdown, consigne
+  adaptée (étapes en liste numérotée).
+- Pont Markdown ⇄ document riche (`web/src/rich-markdown.ts`) : schéma partagé avec l'éditeur
+  (`rich-extensions.ts`), `validateDocument` du serveur avant application, liens et images hors
+  règles retirés. Surlignage, couleurs et alignements remis à plat (dit dans la proposition).
+  Documents Google exclus. Aucune dépendance. Décision §23.
+- Tests : conversion (6, `rich-markdown.test.ts`), IA (5, `ai-suggest.test.ts`), gestes (4,
+  `App.test.tsx` : suggérer puis appliquer, mise en page riche, contenu modifié pendant l'appel,
+  procédure Google sans IA), navigateur (1, `e2e/procedures.spec.ts` : suggestion appliquée,
+  relue après rechargement, dans Chromium avec service IA simulé). Chaque garde-fou retiré fait
+  échouer au moins un test (mutation). `check.sh` : 161 API, 309 front, 38 desktop unitaires,
+  25 scripts, 7 relais, 38 navigateur, 9 desktop e2e (+1 ignoré sans gestionnaire de fenêtres).
+- Non vérifié avec un vrai modèle : la qualité des procédures proposées dépend du service IA
+  des Paramètres (Gemini par défaut) ; les tests simulent sa réponse.
+- **Piège jsdom** : un bouton de la barre de l'éditeur riche (`focus()` puis défilement) lève
+  `getClientRects is not a function` hors du test (erreur non gérée, run rouge) ; pour modifier
+  un document riche dans un test, passer par « Rechercher et remplacer », qui ne défile pas.
+
 ## Lot du 2026-09-23 — connexion Google de la PWA réparée (relais de jetons)
 
 - **Bug** : « Se connecter avec Google » échouait sur la PWA depuis la v0.35.0 (`0030b79`),

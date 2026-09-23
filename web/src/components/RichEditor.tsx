@@ -1,14 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import { TableKit } from '@tiptap/extension-table';
-import Image from '@tiptap/extension-image';
-import TextAlign from '@tiptap/extension-text-align';
-import { TextStyleKit } from '@tiptap/extension-text-style';
-import Highlight from '@tiptap/extension-highlight';
 import { api, type RichDocument } from '../lib';
-import { RichSearch, replaceMatches, searchKey, setSearch } from '../rich-search';
-import { GoogleBlock, GoogleFormatting, GoogleInline, PreserveGoogleObjects } from '../google-content';
+import { replaceMatches, searchKey, setSearch } from '../rich-search';
+import { richExtensions } from '../rich-extensions';
 
 export function RichEditor({ content, entryId, onChange, googleLinked = false, disabled = false }: {
   disabled?: boolean; googleLinked?: boolean; content: RichDocument; entryId: string; onChange: (document: RichDocument) => void;
@@ -27,13 +21,7 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false, d
   const [outline, setOutline] = useState(false);
   const [uploading, setUploading] = useState(false);
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({ link: { openOnClick: false, HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' } } }),
-      TableKit.configure({ table: { resizable: true } }), Image.configure({ allowBase64: false }),
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      TextStyleKit.configure({ lineHeight: false }), Highlight.configure({ multicolor: true }), RichSearch,
-      GoogleFormatting, GoogleInline, GoogleBlock, PreserveGoogleObjects.configure({ enabled: googleLinked, onBlocked: () => setError('Cet élément est conservé dans Google. Pour le modifier ou le supprimer, utilise « Ouvrir dans Google Docs ».') }),
-    ],
+    extensions: richExtensions({ googleLinked, onBlocked: () => setError('Cet élément est conservé dans Google. Pour le modifier ou le supprimer, utilise « Ouvrir dans Google Docs ».') }),
     content,
     shouldRerenderOnTransaction: true,
     editorProps: { attributes: { class: 'prose rich-content', role: 'textbox', 'aria-label': 'Contenu du document', 'aria-multiline': 'true', spellcheck: 'true' } },

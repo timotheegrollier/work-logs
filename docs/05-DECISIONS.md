@@ -631,3 +631,30 @@ hors navigateur. Le secret, lui, ne quitte jamais Cloudflare.
 
 **Rouvrir si** Google accepte un jour le code + PKCE sans secret pour les clients Web, ou si
 le quota gratuit ne suffit plus.
+
+## 23. IA dans les procédures : le Markdown comme pont — 2026-09-23
+
+**Le besoin.** « ✨ Mettre en page » n'existait que pour les entrées Markdown ; une procédure
+est un document riche (JSON de l'éditeur), les boutons IA y étaient masqués. Demande :
+mise en page et « suggérer une procédure » dans l'éditeur de procédures.
+
+**Le choix.** Le document riche part vers l'IA en Markdown (`rich-markdown.ts`,
+`richToMarkdown`) et la réponse revient par `renderMarkdown` puis `generateJSON` de Tiptap,
+avec **exactement** les extensions de l'éditeur (`rich-extensions.ts`, partagé), et passe
+`validateDocument` du serveur avant d'être appliquée : ce qui s'affiche dans la proposition
+s'enregistre. Liens et images hors des règles du serveur sont retirés (le texte reste), un
+style que le serveur refuserait donne une erreur explicite plutôt qu'un enregistrement en
+échec. Même relecture obligatoire que la mise en page Markdown : rien n'est écrit avant
+« Appliquer », et rien si le contenu a changé pendant l'appel. « Suggérer une procédure »
+remplace « Suggérer des sous-tâches » sur une procédure : l'IA garde ce qui est écrit, le
+complète en étapes numérotées et écrit « à préciser » plutôt que d'inventer une valeur.
+
+**Ce que ça coûte.** Le Markdown ne porte ni surlignage, ni couleurs, ni soulignement, ni
+alignements : appliquer une proposition les remet à plat (la proposition le dit). Aucune
+dépendance : `generateJSON` vient de `@tiptap/core`, déjà là.
+
+**Pas pour les documents Google.** Leur JSON ne transite pas vers l'IA et n'est pas réécrit
+en bloc : la synchronisation Google envoie des modifications ciblées (§ onglets Google).
+
+**Rouvrir si** la perte de mise en forme gêne en usage réel : il faudrait alors faire
+travailler l'IA en HTML, avec une validation plus fine.
