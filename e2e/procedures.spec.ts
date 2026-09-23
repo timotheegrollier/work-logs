@@ -74,3 +74,45 @@ test('sidebar Procédures : repliée, persistée, et envoi direct de fichier', a
   // On rend un journal sans filtre : les specs suivantes partent d'un écran complet.
   await page.getByRole('group', { name: 'Filtrer par projet' }).getByRole('button', { name: 'Tout' }).click();
 });
+
+test('IA dans une procédure : étapes proposées, relues puis appliquées au document riche', async ({ page }) => {
+  // Service IA simulé dans le navigateur : rien ne sort, la clé reste locale.
+  let prompt = '';
+  await page.route('**/chat/completions', async (route) => {
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    prompt = route.request().postDataJSON().messages[1].content;
+    return route.fulfill({ headers: cors, json: { choices: [{ message: { content: [
+      'Vidanger sans stresser les poissons.',
+      '## Étapes',
+      '1. Couper l’arrivée d’eau\n2. Ouvrir la vanne de fond',
+      '| Bassin | Durée |\n| --- | --- |\n| B3 | à préciser |',
+    ].join('\n\n') } }] } });
+  });
+  await page.evaluate(() => localStorage.setItem('worklogs-ai-key', 'cle-e2e'));
+
+  await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  await page.getByRole('button', { name: 'Nouvelle procédure' }).click();
+  const title = page.getByLabel('Titre de l’entrée');
+  await expect(title).toHaveValue('Sans titre');
+  await title.fill('Vidange du bassin 3');
+  await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: '✨ Suggérer une procédure' }).click();
+  const proposal = page.getByRole('region', { name: 'Procédure proposée' });
+  await expect(proposal.getByText('Ouvrir la vanne de fond')).toBeVisible();
+  expect(prompt).toContain('Procédure : Vidange du bassin 3');
+  await proposal.getByRole('button', { name: 'Appliquer la procédure' }).click();
+
+  const content = page.getByRole('textbox', { name: 'Contenu du document' });
+  await expect(content.locator('ol > li')).toHaveCount(2);
+  await expect(content.locator('table')).toContainText('à préciser');
+  await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
+
+  // Relue depuis le serveur, la procédure garde ses étapes et son tableau.
+  await page.reload();
+  await panel(page).getByText('Vidange du bassin 3').click();
+  await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Vidange du bassin 3');
+  await expect(page.getByRole('textbox', { name: 'Contenu du document' }).locator('ol > li')).toHaveCount(2);
+  await expect(page.getByRole('textbox', { name: 'Contenu du document' }).locator('table')).toContainText('à préciser');
+});

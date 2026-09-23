@@ -1,6 +1,7 @@
 import { describe, expect, test, vi, afterEach } from 'vitest';
 import {
   AiError,
+  buildProcedurePrompt,
   buildProofreadPrompt,
   buildSuggestPrompt,
   cleanProofreadMarkdown,
@@ -11,6 +12,7 @@ import {
   readAiSettings,
   recurringVocabulary,
   saveAiSettings,
+  suggestProcedure,
   suggestSubtasks,
   taskSuggestContext,
   truncate,
@@ -269,5 +271,57 @@ describe('mise en page', () => {
   test('réponse réduite à une enveloppe vide : illisible', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => aiResponse('```\n\n```')));
     await expect(proofreadEntry(settings, 'T', 'texte')).rejects.toThrow(/illisible/);
+  });
+});
+
+describe('procédures', () => {
+  test('mise en page d’une procédure : annoncée comme telle, étapes en liste numérotée', () => {
+    const prompt = buildProofreadPrompt('Vidange', '1. couper', '', true);
+    expect(prompt.user).toBe('Procédure : Vidange\n\nTexte :\n1. couper');
+    expect(prompt.system).toMatch(/mode opératoire/);
+    expect(prompt.system).toMatch(/liste numérotée, une action par étape/);
+    expect(prompt.system).toMatch(/sans rien inventer/);
+    // Une note garde sa consigne d'origine.
+    expect(buildProofreadPrompt('T', 'x').system).not.toMatch(/liste numérotée/);
+  });
+
+  test('la consigne de suggestion garde l’existant et n’invente rien de précis', () => {
+    const prompt = buildProcedurePrompt(' Changer le filtre ', {
+      project: 'Ferme', attachments: ['notice.pdf', 'notice.pdf', 'photo.jpg'], text: ' Bassin 3 seulement. ',
+    }, ' Pisciculteur ');
+    expect(prompt.user).toBe('Profil : Pisciculteur\nProcédure : Changer le filtre\nProjet : Ferme\nPièces jointes : notice.pdf, photo.jpg\nDéjà écrit :\nBassin 3 seulement.');
+    expect(prompt.system).toMatch(/Garde tout ce qui est déjà écrit/);
+    expect(prompt.system).toMatch(/« à préciser »/);
+    expect(prompt.system).toMatch(/« ## Étapes » en liste numérotée/);
+    expect(prompt.system).toMatch(/sans titre de premier niveau/);
+    expect(buildProcedurePrompt('Vidange').user).toBe('Procédure : Vidange\nDéjà écrit : rien pour l’instant.');
+  });
+
+  test('un appel rend la procédure en Markdown, sans enveloppe ni titre en doublon', async () => {
+    const fetch = vi.fn(async () => aiResponse('```markdown\n# Changer le filtre\n\nObjectif.\n\n## Étapes\n\n1. Couper l’eau\n```'));
+    vi.stubGlobal('fetch', fetch);
+    const result = await suggestProcedure({ ...settings, profile: 'Pisciculteur' }, 'Changer le filtre', { context: { project: 'Ferme', text: 'Bassin 3.' } });
+    expect(result).toBe('Objectif.\n\n## Étapes\n\n1. Couper l’eau');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.messages[1].content).toBe('Profil : Pisciculteur\nProcédure : Changer le filtre\nProjet : Ferme\nDéjà écrit :\nBassin 3.');
+    expect(body.max_tokens).toBe(1500);
+  });
+
+  test('sans titre ni contenu, trop longue ou sans clé : aucun appel réseau', async () => {
+    const fetch = vi.fn(async () => aiResponse('1. Étape'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestProcedure(settings, 'Sans titre')).rejects.toThrow(/Donne un titre/);
+    await expect(suggestProcedure(settings, '  ')).rejects.toThrow(/Donne un titre/);
+    await expect(suggestProcedure(settings, 'T', { context: { text: 'a'.repeat(MAX_PROOFREAD_CHARS + 1) } })).rejects.toThrow(/trop longue/);
+    await expect(suggestProcedure({ ...settings, key: '' }, 'Vidange')).rejects.toThrow('activer les suggestions de procédure');
+    expect(fetch).not.toHaveBeenCalled();
+    // « Sans titre » mais déjà du texte : l'IA a de quoi travailler.
+    await expect(suggestProcedure(settings, 'Sans titre', { context: { text: 'Vider le bassin' } })).resolves.toBe('1. Étape');
+  });
+
+  test('réponse réduite au titre : illisible', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse('# Vidange')));
+    await expect(suggestProcedure(settings, 'Vidange')).rejects.toBeInstanceOf(AiError);
   });
 });

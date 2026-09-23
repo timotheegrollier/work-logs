@@ -616,6 +616,122 @@ describe('écrire une entrée', () => {
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('corige!');
   });
 
+  /** Procédure ouverte depuis sa sidebar : le journal ne liste que les notes. */
+  async function openProcedure(user: ReturnType<typeof userEvent.setup>, title: string) {
+    await user.click(await screen.findByRole('button', { name: 'Procédures' }));
+    const panel = await screen.findByRole('region', { name: 'Procédures du projet' });
+    await user.click(await within(panel).findByText(title));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue(title));
+  }
+  const richText = (...paragraphs: string[]) =>
+    JSON.stringify({ type: 'doc', content: paragraphs.map((text) => ({ type: 'paragraph', content: [{ type: 'text', text }] })) });
+  const documentContent = () => screen.getByRole('textbox', { name: 'Contenu du document' });
+
+  test('procédure riche : « Suggérer une procédure » propose les étapes, appliquées après relecture', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('```markdown\n# Changer le filtre\n\nRemplacer le filtre du bassin 3.\n\n## Étapes\n\n1. Couper l’arrivée d’eau\n2. Changer la cartouche\n```');
+    seedData(api.db, {
+      projects: [{ id: 'pr_ferme', name: 'Ferme' }],
+      entries: [{ id: 'en_note', title: 'Journal' }, { id: 'en_proc', title: 'Changer le filtre', project_id: 'pr_ferme', kind: 'procedure' }],
+    });
+    api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(richText('Bassin 3 seulement.'), 'en_proc');
+    await api.upload('notice.pdf', '%PDF', { entry_id: 'en_proc' });
+    render(<App />);
+    await openProcedure(user, 'Changer le filtre');
+
+    // Une procédure propose ses étapes, pas des sous-tâches.
+    expect(screen.queryByRole('button', { name: '✨ Suggérer des sous-tâches' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '✨ Suggérer une procédure' }));
+    const proposal = await screen.findByRole('region', { name: 'Procédure proposée' });
+    expect(within(proposal).getByText('Changer la cartouche')).toBeInTheDocument();
+    // Le titre en tête de réponse ferait doublon avec celui de l'entrée.
+    expect(within(proposal).queryByRole('heading', { name: 'Changer le filtre' })).not.toBeInTheDocument();
+    const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+    expect(sent).toContain('Procédure : Changer le filtre');
+    expect(sent).toContain('Projet : Ferme');
+    expect(sent).toContain('Pièces jointes : notice.pdf');
+    expect(sent).toContain('Déjà écrit :\nBassin 3 seulement.');
+    // Rien n'est écrit avant « Appliquer ».
+    expect(documentContent()).toHaveTextContent('Bassin 3 seulement.');
+    expect(documentContent()).not.toHaveTextContent('Couper l’arrivée d’eau');
+
+    await user.click(within(proposal).getByRole('button', { name: 'Appliquer la procédure' }));
+    await waitFor(() => expect(documentContent()).toHaveTextContent('Couper l’arrivée d’eau'));
+    expect(documentContent().querySelectorAll('ol > li')).toHaveLength(2);
+    expect(screen.queryByRole('region', { name: 'Procédure proposée' })).not.toBeInTheDocument();
+    await waitFor(() => {
+      const saved = JSON.parse(row(api.db, "SELECT content_json FROM entries WHERE id='en_proc'").content_json as string);
+      // (L'éditeur ajoute ensuite son paragraphe de fin, après la liste.)
+      expect(saved.content.map((node: { type: string }) => node.type).slice(0, 3)).toEqual(['paragraph', 'heading', 'orderedList']);
+      expect(JSON.stringify(saved)).toContain('Changer la cartouche');
+    });
+  });
+
+  test('procédure riche : « Mettre en page » envoie le document en Markdown et applique la correction', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('## Étapes\n\n1. Couper l’eau\n2. Vider le bassin');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Journal' }, { id: 'en_proc', title: 'Vidange', kind: 'procedure' }] });
+    api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(JSON.stringify({ type: 'doc', content: [
+      { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'etapes' }] },
+      { type: 'orderedList', attrs: { start: 1 }, content: [
+        { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'coupé l’eau' }] }] },
+        { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'vider le bassin' }] }] },
+      ] },
+    ] }), 'en_proc');
+    render(<App />);
+    await openProcedure(user, 'Vidange');
+
+    await user.click(screen.getByRole('button', { name: '✨ Mettre en page' }));
+    const proposal = await screen.findByRole('region', { name: 'Mise en page proposée' });
+    // Le document riche part en Markdown, annoncé comme une procédure.
+    const request = aiBodies.at(-1) as { messages: { role: string; content: string }[] };
+    expect(request.messages[1].content).toBe('Procédure : Vidange\n\nTexte :\n## etapes\n\n1. coupé l’eau\n2. vider le bassin');
+    expect(request.messages[0].content).toContain('liste numérotée');
+    expect(within(proposal).getByText(/surlignage, couleurs et alignements sont remis à plat/)).toBeInTheDocument();
+
+    await user.click(within(proposal).getByRole('button', { name: 'Appliquer la mise en page' }));
+    await waitFor(() => expect(documentContent()).toHaveTextContent('Couper l’eau'));
+    await waitFor(() => expect(row(api.db, "SELECT content_json FROM entries WHERE id='en_proc'").content_json).toContain('Couper l’eau'));
+  });
+
+  test('procédure riche modifiée avant d’appliquer : la proposition est refusée, rien n’est écrasé', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('1. Tout autre chose');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Journal' }, { id: 'en_proc', title: 'Vidange', kind: 'procedure' }] });
+    api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(richText('Texte gardé'), 'en_proc');
+    render(<App />);
+    await openProcedure(user, 'Vidange');
+
+    await user.click(screen.getByRole('button', { name: '✨ Suggérer une procédure' }));
+    const proposal = await screen.findByRole('region', { name: 'Procédure proposée' });
+    // Le document change après la demande (Rechercher et remplacer) : appliquer l'écraserait.
+    await user.click(screen.getByRole('button', { name: 'Rechercher et remplacer' }));
+    const search = screen.getByRole('search', { name: 'Rechercher dans le document' });
+    await user.type(within(search).getByLabelText('Rechercher'), 'gardé');
+    await user.type(within(search).getByLabelText('Remplacer par'), 'modifié');
+    await user.click(within(search).getByRole('button', { name: 'Remplacer' }));
+    await waitFor(() => expect(documentContent()).toHaveTextContent('Texte modifié'));
+    await user.click(within(proposal).getByRole('button', { name: 'Appliquer la procédure' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('relance-la');
+    expect(documentContent()).toHaveTextContent('Texte modifié');
+    expect(documentContent()).not.toHaveTextContent('Tout autre chose');
+  });
+
+  test('procédure liée à Google : pas d’IA, le document Google ne transite pas', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Journal' }, { id: 'en_proc', title: 'Consignes Google', kind: 'procedure' }] });
+    seedGoogleLink(api.db, 'en_proc', 'doc-procedure');
+    render(<App />);
+    await openProcedure(user, 'Consignes Google');
+    expect(documentContent()).toHaveTextContent('Google');
+    expect(screen.queryByRole('button', { name: '✨ Suggérer une procédure' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '✨ Mettre en page' })).not.toBeInTheDocument();
+  });
+
   test('crée une tâche liée depuis un document Google', async () => {
     const user = userEvent.setup();
     seedData(api.db, { entries: [{ id: 'en_google_task', title: 'Contexte Google' }] });
