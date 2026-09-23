@@ -16,3 +16,7 @@ web/.vitest/
 .desktop-app/
 release/
 .env*.local
+
+# Relais Google (Cloudflare Worker) : état local de wrangler, secrets de dev.
+.wrangler/
+.dev.vars*

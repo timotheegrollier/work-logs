@@ -232,17 +232,18 @@ uniquement pour afficher « Connecté : Nom · e-mail ».
 
 | | Desktop | PWA |
 |---|---|---|
-| Client intégré | secrets CI `GOOGLE_DESKTOP_CLIENT_ID` / `GOOGLE_DESKTOP_CLIENT_SECRET` → `desktop/google-default.json` écrit par `scripts/stage-desktop.mjs` (jamais dans git) ; en dev : variables `WORKLOGS_GOOGLE_CLIENT_ID` / `_SECRET` | variable de dépôt `GOOGLE_WEB_CLIENT_ID` → `VITE_GOOGLE_CLIENT_ID` (`pwa.yml`) |
-| Flux | inchangé : navigateur système + PKCE, jeton de rafraîchissement dans le trousseau | **sans secret** : code + PKCE (`response_type=code`, `access_type=offline`), `refresh_token` conservé localement puis jeton d'accès renouvelé silencieusement |
-| Expiration | renouvellement silencieux | renouvellement silencieux si Google émet un `refresh_token` ; les anciennes sessions « jeton » sans renouvellement proposent encore « Reprendre la session Google » |
+| Client intégré | secrets CI `GOOGLE_DESKTOP_CLIENT_ID` / `GOOGLE_DESKTOP_CLIENT_SECRET` → `desktop/google-default.json` écrit par `scripts/stage-desktop.mjs` (jamais dans git) ; en dev : variables `WORKLOGS_GOOGLE_CLIENT_ID` / `_SECRET` | variable de dépôt `GOOGLE_WEB_CLIENT_ID` → `VITE_GOOGLE_CLIENT_ID` ; relais : variable `GOOGLE_TOKEN_PROXY_URL` → `VITE_GOOGLE_TOKEN_PROXY` (`pwa.yml`) |
+| Flux | inchangé : navigateur système + PKCE, jeton de rafraîchissement dans le trousseau | code + PKCE (`response_type=code`, `access_type=offline`) ; échange du code et renouvellement par le **relais de jetons** (`oauth-proxy/`), qui détient le secret. Sans relais : flux « jeton » (`response_type=token`) |
+| Expiration | renouvellement silencieux | renouvellement silencieux par le relais ; sans relais, « Reprendre la session Google » au bout d'une heure (un clic, consentement non redemandé) |
 | Compte | `userinfo` après connexion, stocké chiffré avec les jetons | `userinfo` après échange, stocké avec les jetons |
 
 Pourquoi pas de secret côté PWA : un client « Web » est confidentiel et la PWA est un
-site public ; publier son secret est interdit. Le code + PKCE permet l'échange sans secret
-et `access_type=offline` demande le renouvellement silencieux. Google peut toutefois refuser
-de délivrer un `refresh_token` selon la configuration du client ou l'autorisation ; dans ce
-cas l'interface garde une reprise explicite comme filet de sécurité. Coller un client
-personnel **avec** secret reste possible : le secret n'est jamais inclus dans le build.
+site public ; publier son secret est interdit. Or Google **exige** ce secret pour échanger
+le code et renouveler la session, PKCE ou pas (`400 invalid_request — client_secret is
+missing`, mesuré le 2026-09-23 ; supposer l'inverse a cassé la connexion en un clic de la
+v0.35.0 à la v0.36.1). Le secret vit donc dans le relais de jetons (section suivante,
+décision §22). Coller un client personnel **avec** secret reste possible : le secret reste
+sur l'appareil, jamais dans le build.
 
 Le client personnel reste disponible : **Utiliser mon propre client OAuth** (repli),
 prioritaire sur l'intégré ; **Revenir au client intégré** l'oublie (et déconnecte).
@@ -259,6 +260,48 @@ Une ancienne autorisation sans `openid` fonctionne toujours, simplement sans com
    `GOOGLE_DESKTOP_CLIENT_ID`, `GOOGLE_DESKTOP_CLIENT_SECRET`, et `GOOGLE_WEB_CLIENT_ID`
    (variable ou secret : `pwa.yml` accepte les deux).
    Sans eux, la CI construit comme avant (configuration manuelle).
+5. Relais de jetons déployé (section suivante) et variable de dépôt `GOOGLE_TOKEN_PROXY_URL`.
+   Sans lui, la PWA se connecte en flux « jeton », à reprendre toutes les heures.
+
+## Relais de jetons (Cloudflare Worker) — depuis le 2026-09-23
+
+`oauth-proxy/worker.mjs`, sans dépendance, testé par `node --test oauth-proxy/*.test.mjs`
+(dans `check.sh`). Il détient le secret du client Web et ne fait que l'ajouter : `POST /token`
+venant de la PWA, échange du code (avec `code_verifier` et un retour de la PWA) ou
+renouvellement, réponse de Google rendue telle quelle. Pourquoi et limites : décision §22.
+
+**Déployer** (une fois, compte Cloudflare gratuit), depuis `oauth-proxy/` :
+
+```bash
+npx wrangler login                             # ouvre le navigateur
+npx wrangler deploy                            # → https://worklogs-google.<sous-domaine>.workers.dev
+npx wrangler secret put GOOGLE_CLIENT_SECRET   # coller le secret du client « Application Web »
+```
+
+`wrangler` n'est pas une dépendance du projet : `npx` le télécharge le temps de la commande.
+Au premier déploiement, Cloudflare fait choisir le sous-domaine `workers.dev`. Ensuite :
+GitHub → Settings → Secrets and variables → Actions → Variables : `GOOGLE_TOKEN_PROXY_URL`
+= l'adresse du Worker, puis relancer le workflow **PWA** (le build lit la variable).
+
+**Vérifier**
+- Ouvrir l'adresse du Worker : `{"ok":true,"configured":true}` ; `false` = secret absent.
+- Un faux code doit aller jusqu'à Google et revenir `invalid_grant` (secret accepté) ;
+  `invalid_client` = mauvais secret :
+
+  ```bash
+  curl -s -X POST https://worklogs-google.<sous-domaine>.workers.dev/token \
+    -H 'Origin: https://timotheegrollier.github.io' \
+    -d client_id=<ID du client Web> -d grant_type=authorization_code -d code=faux \
+    -d code_verifier=verificateur-de-test-0123456789abcdefghijklmnop \
+    --data-urlencode redirect_uri=https://timotheegrollier.github.io/work-logs/
+  ```
+- En local, sans compte : `npx wrangler dev --var GOOGLE_CLIENT_SECRET:faux`, puis le même
+  appel sur `http://127.0.0.1:8787/token` → `invalid_client` venu de Google (mesuré le
+  2026-09-23 : aller-retour complet dans `workerd`).
+
+**Piège** : `workerd` prend tout export nommé du module principal pour un point d'entrée ;
+seul `export default` est permis (sinon `Incorrect type for map entry …` au démarrage,
+invisible aux tests Node).
 
 ## Configuration depuis l’application desktop
 
@@ -290,7 +333,7 @@ accès. Aucun serveur hébergé ni SDK Google supplémentaire n’est nécessair
 
 La PWA parle à Google **directement depuis le navigateur** (`web/src/store/google-web.ts` :
 autorisation par code + PKCE en `fetch`, jeton d'accès en mémoire, renouvellement en
-stockage local). Le client « Web » **doit vivre dans le même projet Google Cloud que le
+stockage local), sauf l'échange des jetons du client intégré, qui passe par le relais. Le client « Web » **doit vivre dans le même projet Google Cloud que le
 client desktop** : le périmètre `drive.file` est partagé par projet, c'est ce qui rend
 les sauvegardes du PC visibles sur le téléphone (et inversement). Connexion facultative :
 sans elle, les données restent simplement sur l'appareil.

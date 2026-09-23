@@ -3,12 +3,13 @@ import { ApiError, type GoogleBackup } from '../lib';
 import { BACKUP_NAME, BACKUP_VERSION, MAX_BACKUP_BYTES, OUTBOX_VERSION } from '../../../api/src/backup-format.js';
 
 /**
- * Connexion directe à Google depuis le navigateur (PWA, sans serveur) : OAuth
- * autorisé par code + PKCE en `fetch`, sans SDK. Le client « Application Web »
- * DOIT vivre dans le même projet Google Cloud que le client desktop : le
- * périmètre `drive.file` est partagé par projet, donc les sauvegardes créées
- * sur le PC sont visibles ici (et inversement). Connexion facultative :
- * sans elle, les données restent simplement sur l'appareil.
+ * Connexion directe à Google depuis le navigateur (PWA) : OAuth en `fetch`, sans
+ * SDK. Google exige le secret d'un client « Web » pour échanger le code : celui
+ * du client intégré vit dans un relais (`oauth-proxy/`), jamais dans la PWA.
+ * Le client « Application Web » DOIT vivre dans le même projet Google Cloud que
+ * le client desktop : le périmètre `drive.file` est partagé par projet, donc les
+ * sauvegardes créées sur le PC sont visibles ici (et inversement). Connexion
+ * facultative : sans elle, les données restent simplement sur l'appareil.
  */
 
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -69,6 +70,24 @@ export function builtinWebClientId(): string {
 
 export function activeWebClientId(): string {
   return getWebClientId() || builtinWebClientId();
+}
+
+/**
+ * Relais de jetons du client intégré (`VITE_GOOGLE_TOKEN_PROXY`, Cloudflare Worker
+ * `oauth-proxy/`) : il ajoute le secret à l'échange du code et au renouvellement.
+ */
+export function builtinTokenProxy(): string {
+  try {
+    const url = new URL('/token', String(import.meta.env.VITE_GOOGLE_TOKEN_PROXY ?? '').trim());
+    return url.protocol === 'https:' || url.hostname === 'localhost' ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+/** Le relais ne sert que le client intégré : un client personnel parle à Google avec son propre secret. */
+function tokenProxy(): string {
+  return getWebClientId() === '' && builtinWebClientId() !== '' ? builtinTokenProxy() : '';
 }
 
 /** Oublie le client personnel : retour au client intégré, session effacée. */
@@ -161,9 +180,9 @@ export function loginUrl(clientId: string, redirectUri: string, state: string, c
 }
 
 /**
- * Ancien flux « jeton » conservé pour accepter un retour commencé par une version
- * précédente. Les nouvelles connexions passent toujours par `loginUrl`, avec code
- * + PKCE et demande de renouvellement hors ligne.
+ * Flux « jeton » : le seul que Google accepte pour un client « Web » quand ni le
+ * relais ni un secret personnel ne sont disponibles. Jeton d'une heure, sans
+ * renouvellement ; `login_hint` rend la reprise immédiate.
  */
 export function tokenLoginUrl(clientId: string, redirectUri: string, state: string, hint = '', selectAccount = false): string {
   const url = new URL(AUTH_URL);
@@ -185,18 +204,25 @@ function rememberPending(login: PendingLogin): void {
 }
 
 /**
- * Démarre toujours le flux code + PKCE puis quitte vers Google. Le client intégré
- * reste public : aucun secret n'est nécessaire dans le navigateur. `access_type=offline`
- * permet à Google d'émettre un `refresh_token` pour renouveler la session sans clic.
+ * Démarre la connexion puis quitte vers Google. Code + PKCE avec `access_type=offline`
+ * dès que l'échange peut aboutir (relais du client intégré, ou client personnel avec
+ * secret) : Google émet alors un `refresh_token` et la session se renouvelle sans clic.
  */
 export async function beginWebLogin(clientId = '', options: { selectAccount?: boolean } = {}): Promise<void> {
   const cleaned = clientId ? setWebClientId(clientId) : activeWebClientId() || fail('Aucun client Google configuré.');
   const redirectUri = webRedirectUri();
   const state = randomString(32);
-  // Tous les clients utilisent le code + PKCE : le client intégré ne met aucun secret dans le bundle.
+  const hint = readTokens()?.account?.email ?? '';
+  // Sans secret, Google refuse d'échanger le code d'un client « Web »
+  // (`client_secret is missing`, mesuré le 2026-09-23) : seul le flux « jeton » aboutit.
+  if (!tokenProxy() && !getWebClientSecret()) {
+    rememberPending({ state, redirectUri });
+    location.assign(tokenLoginUrl(cleaned, redirectUri, state, hint, options.selectAccount));
+    return;
+  }
   const verifier = randomString(64);
   rememberPending({ state, verifier, redirectUri });
-  location.assign(loginUrl(cleaned, redirectUri, state, await pkceChallenge(verifier), readTokens()?.account?.email ?? '', options.selectAccount));
+  location.assign(loginUrl(cleaned, redirectUri, state, await pkceChallenge(verifier), hint, options.selectAccount));
 }
 
 /** Nom et e-mail du compte, pour l'affichage seulement ; un échec n'empêche pas Drive. */
@@ -240,12 +266,14 @@ function writeTokens(tokens: WebTokens | null): void {
 async function tokenRequest(params: Record<string, string>): Promise<WebTokens> {
   const clientId = activeWebClientId();
   if (!clientId) fail('Configure d’abord l’identifiant client Google.');
-  const secret = getWebClientSecret();
-  const response = await fetch(TOKEN_URL, {
+  // Le relais ajoute lui-même le secret du client intégré.
+  const proxy = tokenProxy();
+  const secret = proxy ? '' : getWebClientSecret();
+  const response = await fetch(proxy || TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: clientId, ...(secret ? { client_secret: secret } : {}), ...params }),
-  });
+  }).catch(() => fail('Google injoignable : vérifie la connexion puis réessaie.'));
   const result = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
     if (result['error'] === 'invalid_grant') writeTokens(null);
@@ -325,12 +353,11 @@ export async function handleRedirectCallback(search = location.search, hash = lo
 let consumedCallback: Promise<boolean> | null = null;
 
 /**
- * Retour Google consommé une seule fois par chargement : `startWebSync` et le
- * panneau Drive l'appellent en parallèle au retour de Google. Sans ce verrou,
- * le second échange un code déjà brûlé (`invalid_grant`) et efface
- * (`writeTokens(null)`) la session que le premier vient d'enregistrer —
- * la reprise échouait donc à chaque fois, surtout sur mobile où les deux
- * montent ensemble. Appeler plutôt que `handleRedirectCallback`.
+ * Retour Google consommé une seule fois par chargement, quel que soit le nombre
+ * d'appelants (`startWebSync`, panneau Drive, double effet du mode strict en dev).
+ * Sans ce verrou, le second échangerait un code déjà brûlé (`invalid_grant`) et
+ * effacerait (`writeTokens(null)`) la session que le premier vient d'enregistrer.
+ * Appeler plutôt que `handleRedirectCallback`.
  */
 export function consumeRedirectCallback(search = location.search, hash = location.hash): Promise<boolean> {
   consumedCallback ??= handleRedirectCallback(search, hash);

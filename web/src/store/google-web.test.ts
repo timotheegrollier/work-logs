@@ -193,54 +193,129 @@ describe('client intégré et session sans secret', () => {
     }
   });
 
-  test('connexion intégrée : code + PKCE sans secret et renouvellement silencieux', async () => {
-    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', CLIENT);
+  /** Navigateur simulé : `assign` reçoit l'URL de Google au lieu de quitter la page. */
+  function browser() {
     vi.stubGlobal('crypto', webcrypto);
     const assign = vi.fn();
     vi.stubGlobal('location', { origin: 'https://pwa.test', pathname: '/', search: '', hash: '', assign });
+    return (call: number) => new URL(assign.mock.calls[call][0] as string).searchParams;
+  }
+  const pendingLogin = () => JSON.parse(sessionStorage.getItem('worklogs-google-web-pending') as string) as { state: string; verifier?: string };
+  const bodyOf = (init?: RequestInit) => new URLSearchParams((init?.body as URLSearchParams).toString());
+
+  test('client intégré sans relais : flux « jeton », le seul que Google accepte sans secret', async () => {
+    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', CLIENT);
+    const sentTo = browser();
+    try {
+      const { beginWebLogin } = await googleWeb();
+      localStorage.setItem('worklogs-google-web-tokens', JSON.stringify({
+        access_token: 'a', expires_at: 0, account: { email: 'timo@example.com', name: 'Timo' },
+      }));
+      await beginWebLogin();
+      // Code + PKCE sans secret : `client_secret is missing` chez Google (mesuré le 2026-09-23).
+      expect(sentTo(0).get('response_type')).toBe('token');
+      expect(sentTo(0).has('code_challenge')).toBe(false);
+      expect(sentTo(0).get('login_hint')).toBe('timo@example.com');
+      expect(pendingLogin().verifier).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test('client intégré avec relais : code + PKCE, échange et renouvellement par le relais, aucun secret dans la PWA', async () => {
+    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', CLIENT);
+    vi.stubEnv('VITE_GOOGLE_TOKEN_PROXY', 'https://relais.test');
+    const sentTo = browser();
     try {
       const { beginWebLogin, handleRedirectCallback, webGoogleStatus } = await googleWeb();
-      const setClientId = (await googleWeb()).setWebClientId;
-      setClientId(CLIENT);
       await beginWebLogin();
-      expect(assign).toHaveBeenCalledOnce();
-      const login = new URL(assign.mock.calls[0][0] as string);
-      expect(login.searchParams.get('response_type')).toBe('code');
-      expect(login.searchParams.get('access_type')).toBe('offline');
-      expect(login.searchParams.get('code_challenge_method')).toBe('S256');
-      expect(login.searchParams.has('client_secret')).toBe(false);
-      const pending = JSON.parse(sessionStorage.getItem('worklogs-google-web-pending') as string) as { state: string; verifier: string };
+      expect(sentTo(0).get('response_type')).toBe('code');
+      expect(sentTo(0).get('access_type')).toBe('offline');
+      expect(sentTo(0).get('code_challenge_method')).toBe('S256');
+      const pending = pendingLogin();
       expect(pending.verifier).toBeTruthy();
 
+      const bodies: URLSearchParams[] = [];
       const calls = stubFetch(async (url, init) => {
         if (url.endsWith('/userinfo')) return jsonResponse({ email: 'timo@example.com', name: 'Timo' });
-        const body = new URLSearchParams((init?.body as URLSearchParams).toString());
-        expect(body.get('client_id')).toBe(CLIENT);
-        expect(body.get('client_secret')).toBeNull();
-        expect(body.get('code_verifier')).toBe(pending.verifier);
+        bodies.push(bodyOf(init));
         return jsonResponse({ access_token: 'acces', refresh_token: 'renouvellement', expires_in: 3600, scope: 'https://www.googleapis.com/auth/drive.file' });
       });
       expect(await handleRedirectCallback(`?code=code&state=${encodeURIComponent(pending.state)}`, '')).toBe(true);
-      expect(calls.map((call) => call.url)).toEqual([
-        'https://oauth2.googleapis.com/token',
-        'https://openidconnect.googleapis.com/v1/userinfo',
-      ]);
-      expect(webGoogleStatus()).toMatchObject({ connected: true, expired: false, account: { email: 'timo@example.com', name: 'Timo' } });
+      expect(calls.map((call) => call.url)).toEqual(['https://relais.test/token', 'https://openidconnect.googleapis.com/v1/userinfo']);
+      expect(bodies[0].get('client_id')).toBe(CLIENT);
+      expect(bodies[0].get('code_verifier')).toBe(pending.verifier);
+      expect(bodies[0].has('client_secret')).toBe(false);
+      expect(webGoogleStatus()).toMatchObject({ connected: true, expired: false, builtin: true, account: { email: 'timo@example.com', name: 'Timo' } });
       expect(JSON.parse(localStorage.getItem('worklogs-google-web-tokens') as string).refresh_token).toBe('renouvellement');
 
       vi.resetModules();
       const reloaded = await import('./google-web');
-      const refreshCalls = stubFetch(async (_url, init) => {
-        const body = new URLSearchParams((init?.body as URLSearchParams).toString());
-        expect(body.get('client_secret')).toBeNull();
-        expect(body.get('refresh_token')).toBe('renouvellement');
-        return jsonResponse({ access_token: 'renouvele', expires_in: 3600 });
-      });
       localStorage.setItem('worklogs-google-web-tokens', JSON.stringify({
         access_token: 'expire', refresh_token: 'renouvellement', expires_at: Date.now() - 1,
       }));
+      const refreshBodies: URLSearchParams[] = [];
+      const refreshCalls = stubFetch(async (_url, init) => {
+        refreshBodies.push(bodyOf(init));
+        return jsonResponse({ access_token: 'renouvele', expires_in: 3600 });
+      });
       expect(await reloaded.webAccessToken()).toBe('renouvele');
-      expect(refreshCalls).toHaveLength(1);
+      expect(refreshCalls.map((call) => call.url)).toEqual(['https://relais.test/token']);
+      expect(refreshBodies[0].get('refresh_token')).toBe('renouvellement');
+      expect(refreshBodies[0].has('client_secret')).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test('client personnel : jamais par le relais ; son secret va à Google, sans secret flux « jeton »', async () => {
+    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', CLIENT);
+    vi.stubEnv('VITE_GOOGLE_TOKEN_PROXY', 'https://relais.test');
+    const sentTo = browser();
+    try {
+      const { beginWebLogin, setWebClientSecret, handleRedirectCallback } = await googleWeb();
+      await beginWebLogin('999-perso.apps.googleusercontent.com');
+      expect(sentTo(0).get('response_type')).toBe('token');
+      setWebClientSecret('secret-perso');
+      await beginWebLogin();
+      expect(sentTo(1).get('response_type')).toBe('code');
+      const bodies: URLSearchParams[] = [];
+      const calls = stubFetch(async (url, init) => {
+        if (url.endsWith('/userinfo')) return jsonResponse({ email: 'timo@example.com', name: 'Timo' });
+        bodies.push(bodyOf(init));
+        return jsonResponse({ access_token: 'acces', expires_in: 3600 });
+      });
+      await handleRedirectCallback(`?code=code&state=${encodeURIComponent(pendingLogin().state)}`, '');
+      expect(calls[0].url).toBe('https://oauth2.googleapis.com/token');
+      expect(bodies[0].get('client_id')).toBe('999-perso.apps.googleusercontent.com');
+      expect(bodies[0].get('client_secret')).toBe('secret-perso');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test('adresse du relais validée ; relais injoignable : message clair, session gardée', async () => {
+    try {
+      const { builtinTokenProxy, webAccessToken } = await googleWeb();
+      const proxyFor = (value: string) => {
+        vi.stubEnv('VITE_GOOGLE_TOKEN_PROXY', value);
+        return builtinTokenProxy();
+      };
+      expect(proxyFor('https://worklogs-google.exemple.workers.dev')).toBe('https://worklogs-google.exemple.workers.dev/token');
+      expect(proxyFor('https://worklogs-google.exemple.workers.dev/token')).toBe('https://worklogs-google.exemple.workers.dev/token');
+      expect(proxyFor('http://localhost:8787')).toBe('http://localhost:8787/token');
+      expect(proxyFor('http://relais.exemple')).toBe('');
+      expect(proxyFor('')).toBe('');
+
+      vi.stubEnv('VITE_GOOGLE_CLIENT_ID', CLIENT);
+      vi.stubEnv('VITE_GOOGLE_TOKEN_PROXY', 'https://relais.test');
+      localStorage.setItem('worklogs-google-web-tokens', JSON.stringify({ access_token: 'expire', refresh_token: 'r', expires_at: Date.now() - 1 }));
+      vi.stubGlobal('fetch', async () => {
+        throw new TypeError('Failed to fetch');
+      });
+      await expect(webAccessToken()).rejects.toThrow('Google injoignable');
+      // Réseau revenu, le prochain essai renouvellera la même session.
+      expect(JSON.parse(localStorage.getItem('worklogs-google-web-tokens') as string).refresh_token).toBe('r');
     } finally {
       vi.unstubAllEnvs();
     }

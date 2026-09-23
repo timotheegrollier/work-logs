@@ -150,8 +150,10 @@ export function resetWebSync(): void {
  * Démarre la synchro (une fois, à l'ouverture de la PWA). Traite d'abord un
  * retour de connexion Google dans l'URL : la connexion depuis le menu du compte
  * aboutit ici, sans passer par le panneau Drive. Renvoie la fonction d'arrêt.
+ * Un retour en échec est remonté à `onLoginError` : l'état publié repasse
+ * aussitôt à « off » (compte non connecté), il ne suffit pas à l'afficher.
  */
-export function startWebSync(onGoogleChanged: () => void): () => void {
+export function startWebSync(onGoogleChanged: () => void, onLoginError: (message: string) => void = () => {}): () => void {
   let stopped = false;
   onLocalChange(scheduleWebSync);
   const kick = () => { if (!stopped) void syncWebNow(); };
@@ -166,6 +168,7 @@ export function startWebSync(onGoogleChanged: () => void): () => void {
         resetWebSync();
       } catch (e) {
         publish({ state: 'error', error: (e as Error).message });
+        onLoginError((e as Error).message);
       } finally {
         history.replaceState(null, '', location.pathname);
         onGoogleChanged();
