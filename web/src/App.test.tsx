@@ -220,7 +220,7 @@ describe('réglages IA', () => {
     expect(within(dialog).getByLabelText('Endpoint IA')).toHaveValue(
       'https://generativelanguage.googleapis.com/v1beta/openai'
     );
-    expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('gemini-3.5-flash-lite');
+    expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('gemini-2.5-flash-lite');
     expect(within(dialog).getByLabelText('Clé IA')).toHaveValue('');
 
     await user.type(within(dialog).getByLabelText('Clé IA'), 'cle-test');
@@ -228,7 +228,7 @@ describe('réglages IA', () => {
 
     await user.clear(within(dialog).getByLabelText('Modèle IA'));
     await user.click(within(dialog).getByRole('button', { name: 'Valeurs Gemini gratuites' }));
-    expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('gemini-3.5-flash-lite');
+    expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('gemini-2.5-flash-lite');
     // La clé collée survit au reset des valeurs.
     expect(within(dialog).getByLabelText('Clé IA')).toHaveValue('cle-test');
 

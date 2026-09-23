@@ -5,7 +5,7 @@
  * `Authorization: Bearer <clé>`) : il parle aussi bien à OpenAI qu'à la clé
  * gratuite d'AI Studio via l'endpoint OpenAI-compatible de Gemini
  * (`https://generativelanguage.googleapis.com/v1beta/openai`, modèle
- * `gemini-3.5-flash-lite` par défaut). Aucune dépendance, `fetch` natif.
+ * `gemini-2.5-flash-lite` par défaut). Aucune dépendance, `fetch` natif.
  */
 
 export interface AiSettings {
@@ -17,7 +17,15 @@ export interface AiSettings {
 }
 
 export const DEFAULT_AI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai';
-export const DEFAULT_AI_MODEL = 'gemini-3.5-flash-lite';
+export const DEFAULT_AI_MODEL = 'gemini-2.5-flash-lite';
+/**
+ * Ancien défaut (jusqu'à 0.37) : saturé chez Google en septembre 2026 (503 ou
+ * 45–50 s par réponse). Enregistré tel quel par « Valeurs Gemini gratuites » ou
+ * un simple enregistrement des réglages : on le lit comme « le défaut ».
+ */
+const PREVIOUS_DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+/** Modèle de secours sur l'endpoint Gemini : stable, ~1,5 s par réponse. */
+export const FALLBACK_AI_MODEL = 'gemini-2.5-flash-lite';
 const AI_TIMEOUT_MS = 30_000;
 const MAX_SUGGESTIONS = 8;
 
@@ -41,7 +49,8 @@ export function readAiSettings(): AiSettings {
     import.meta.env.MODE === 'test' ? '' : import.meta.env[name] || '';
   return {
     endpoint: stored(LS_ENDPOINT).trim() || envDefault('VITE_DEFAULT_AI_ENDPOINT') || DEFAULT_AI_ENDPOINT,
-    model: stored(LS_MODEL).trim() || envDefault('VITE_DEFAULT_AI_MODEL') || DEFAULT_AI_MODEL,
+    model: [stored(LS_MODEL).trim()].map((model) => (model === PREVIOUS_DEFAULT_MODEL ? '' : model))[0]
+      || envDefault('VITE_DEFAULT_AI_MODEL') || DEFAULT_AI_MODEL,
     key: stored(LS_KEY).trim() || envDefault('VITE_DEFAULT_AI_KEY'),
     profile: stored(LS_PROFILE).trim(),
   };
@@ -224,8 +233,16 @@ export function taskSuggestContext(
 
 export class AiError extends Error {}
 
+/** Le modèle est saturé ou trop lent : un autre modèle a sa chance. */
+class AiOverloaded extends AiError {}
+
+const OVERLOADED_MESSAGE = 'Modèle IA surchargé chez le fournisseur : réessaie dans quelques minutes, ou choisis un autre modèle dans ⚙ Paramètres.';
+
 /**
- * Appel unique : jamais d'envoi automatique, jamais de nouvel essai en boucle.
+ * Un clic = une demande : jamais d'envoi automatique, jamais de boucle. Seule
+ * exception, bornée : sur l'endpoint Gemini, si le modèle choisi est saturé
+ * (503…) ou ne répond pas à temps, **un** essai avec le modèle de secours. Il
+ * n'aurait aucun sens ailleurs (un autre fournisseur n'a pas ce modèle).
  * Tout échec rend un message français, jamais d'exception réseau brute.
  */
 async function postChatCompletions(
@@ -238,6 +255,28 @@ async function postChatCompletions(
 ): Promise<string> {
   const key = settings.key.trim();
   if (!key) throw new AiError(`Colle ta clé IA dans ⚙ Paramètres pour activer ${feature}.`);
+  const model = settings.model.trim();
+  const canFallBack = /^https:\/\/generativelanguage\.googleapis\.com\//.test(settings.endpoint.trim()) && model !== FALLBACK_AI_MODEL;
+  if (!canFallBack) return postOnce(settings, model, key, system, user, maxTokens, timeoutMs);
+  try {
+    // La moitié du délai : un modèle sain répond bien avant, et il reste de quoi
+    // laisser le secours finir sans faire attendre une minute.
+    return await postOnce(settings, model, key, system, user, maxTokens, Math.round(timeoutMs / 2));
+  } catch (e) {
+    if (!(e instanceof AiOverloaded)) throw e;
+    return postOnce(settings, FALLBACK_AI_MODEL, key, system, user, maxTokens, timeoutMs);
+  }
+}
+
+async function postOnce(
+  settings: AiSettings,
+  model: string,
+  key: string,
+  system: string,
+  user: string,
+  maxTokens: number,
+  timeoutMs: number
+): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
@@ -246,7 +285,7 @@ async function postChatCompletions(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        model: settings.model.trim(),
+        model,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
@@ -257,9 +296,14 @@ async function postChatCompletions(
       signal: controller.signal,
     });
   } catch {
-    throw new AiError('IA injoignable : hors ligne, délai dépassé ou endpoint incorrect.');
+    // Délai dépassé ≠ hors ligne : le message « injoignable » accusait à tort la connexion.
+    if (controller.signal.aborted) throw new AiOverloaded(OVERLOADED_MESSAGE);
+    throw new AiError('IA injoignable : hors ligne ou endpoint incorrect.');
   } finally {
     clearTimeout(timer);
+  }
+  if (res.status === 503 || res.status === 502 || res.status === 504 || res.status === 500) {
+    throw new AiOverloaded(OVERLOADED_MESSAGE);
   }
   if (res.status === 401 || res.status === 403) {
     throw new AiError('Clé IA refusée : vérifie-la dans ⚙ Paramètres (une clé AI Studio suffit).');

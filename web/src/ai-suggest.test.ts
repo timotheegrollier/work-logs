@@ -18,6 +18,7 @@ import {
   truncate,
   DEFAULT_AI_ENDPOINT,
   DEFAULT_AI_MODEL,
+  FALLBACK_AI_MODEL,
 } from './ai-suggest';
 
 afterEach(() => {
@@ -323,5 +324,74 @@ describe('procédures', () => {
   test('réponse réduite au titre : illisible', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => aiResponse('# Vidange')));
     await expect(suggestProcedure(settings, 'Vidange')).rejects.toBeInstanceOf(AiError);
+  });
+});
+
+describe('modèle saturé', () => {
+  const gemini = { endpoint: DEFAULT_AI_ENDPOINT, model: 'gemini-3.5-flash-lite', key: 'cle-test', profile: '' };
+  const modelOf = (call: unknown) => JSON.parse((call as [string, RequestInit])[1].body as string).model;
+
+  test('Gemini répond 503 : un seul essai de secours avec le modèle stable', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('Relire'));
+    vi.stubGlobal('fetch', fetch);
+    expect(await suggestSubtasks(gemini, 'Dossier')).toBe('Relire');
+    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', FALLBACK_AI_MODEL]);
+  });
+
+  test('Gemini trop lent : abandonné à mi-délai, le secours prend le relais', async () => {
+    const fetch = vi.fn()
+      .mockImplementationOnce((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        init.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      }))
+      .mockResolvedValueOnce(aiResponse('## Propre'));
+    vi.stubGlobal('fetch', fetch);
+    const started = Date.now();
+    expect(await proofreadEntry(gemini, 'Titre', 'brouillon', { timeoutMs: 200 })).toBe('## Propre');
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', FALLBACK_AI_MODEL]);
+  });
+
+  test('secours saturé aussi : message « surchargé », jamais de troisième appel', async () => {
+    const fetch = vi.fn(async () => aiResponse('x', 503));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow(/surchargé/);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('pas de secours : autre fournisseur, modèle déjà stable, clé refusée ou hors ligne', async () => {
+    let fetch = vi.fn(async () => aiResponse('x', 503));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks(settings, 'T')).rejects.toThrow(/surchargé/);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    fetch = vi.fn(async () => aiResponse('x', 503));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks({ ...gemini, model: FALLBACK_AI_MODEL }, 'T')).rejects.toThrow(/surchargé/);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    fetch = vi.fn(async () => aiResponse('x', 401));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow(/refusée/);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    fetch = vi.fn(async () => { throw new TypeError('fetch failed'); });
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow('IA injoignable : hors ligne ou endpoint incorrect.');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('délai dépassé sans secours : « surchargé », plus « hors ligne »', async () => {
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    })));
+    await expect(suggestSubtasks(settings, 'T', { timeoutMs: 50 })).rejects.toThrow(/surchargé/);
+  });
+
+  test('l’ancien défaut enregistré se lit comme le nouveau ; un autre choix est gardé', () => {
+    localStorage.setItem('worklogs-ai-model', 'gemini-3.5-flash-lite');
+    expect(readAiSettings().model).toBe(DEFAULT_AI_MODEL);
+    expect(DEFAULT_AI_MODEL).toBe('gemini-2.5-flash-lite');
+    localStorage.setItem('worklogs-ai-model', 'gemini-3.6-flash');
+    expect(readAiSettings().model).toBe('gemini-3.6-flash');
   });
 });

@@ -477,6 +477,17 @@ l'appel et Suggérer échouait en « IA injoignable ». L'allowlist reste limit�
 personnalisé reste inutilisable côté desktop — c'est le prix assumé pour ne pas
 ouvrir `connect-src` en grand et garder la garde anti-exfiltration.
 
+**Révisé le 2026-09-23 : modèle par défaut `gemini-2.5-flash-lite`, un seul secours.**
+Suggestions et mise en page « ne fonctionnaient plus » : aucun bug, `gemini-3.5-flash-lite`
+(comme les autres 3.x flash) était saturé chez Google — 503 « high demand » ou 45–50 s par
+réponse, au-delà des 30 s de WorkLogs ; `gemini-2.5-flash-lite` répondait en 1,5 s. Donc :
+nouveau défaut ; l'ancien défaut enregistré dans les réglages est relu comme le nouveau ;
+sur l'endpoint Gemini seulement, si le modèle choisi répond 500/502/503/504 ou ne répond
+pas à mi-délai, **un** essai avec `gemini-2.5-flash-lite` (borné, jamais de boucle) ; et
+un délai dépassé s'annonce « modèle surchargé » au lieu de « hors ligne », qui accusait à
+tort la connexion. Vérifié en réel : mise en page avec le 3.5 saturé = 15,8 s au lieu d'un
+échec.
+
 ## 16. L'en-tête mobile se réorganise, sans hamburger — 2026-09-18
 
 **Le besoin.** Sur un Pixel 9a (412 px), la barre entassait logo, version, recherche,

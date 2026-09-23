@@ -318,7 +318,7 @@
   erreurs en français (clé refusée, limite 429, hors-ligne, réponse illisible),
   jamais d'envoi automatique — un clic = un envoi du titre seul.
 - ⚙ Paramètres, section « IA » : endpoint (défaut l'URL OpenAI de Google),
-  modèle (défaut `gemini-3.5-flash-lite`), clé en champ password sur l'appareil,
+  modèle (défaut `gemini-2.5-flash-lite` depuis 0.37.1, voir §17 des décisions), clé en champ password sur l'appareil,
   bouton « Valeurs Gemini gratuites ». Sans clé, les boutons Suggérer expliquent
   au lieu d'appeler.
 - Boutons « ✨ Suggérer » : créateur d'entrée liée (remplit la zone, modifiable
