@@ -31,6 +31,45 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-09-23 — connexion Google de la PWA réparée (relais de jetons)
+
+- **Bug** : « Se connecter avec Google » échouait sur la PWA depuis la v0.35.0 (`0030b79`),
+  sans message : au retour de Google, « Non connecté », ou « Reprendre la session Google »
+  à chaque essai.
+- **Mesure** (PWA en ligne v0.36.1, client intégré) : l'autorisation passe ; l'échange du
+  code sans secret répond `400 invalid_request — client_secret is missing` (faux secret :
+  `401 invalid_client`). Google exige le secret d'un client « Web », même avec PKCE ; déjà vu
+  le 17/09 (`22f4cd4`), §19 affirmait l'inverse.
+- **Diagnostic du lot (5) corrigé** : la course « code échangé deux fois » ne se produit pas
+  au retour de Google (le panneau Drive n'est monté qu'avec les Paramètres ouverts). Le verrou
+  `consumeRedirectCallback` reste utile (double effet du mode strict en dev) ; commentaire rectifié.
+- **Correctif** :
+  - `oauth-proxy/` : relais Cloudflare Worker (secret chez Cloudflare, deux échanges, origine et
+    retour de la PWA seuls). Vérifié dans `workerd` local : relais → Google → réponse avec CORS.
+  - PWA : client intégré → relais (`VITE_GOOGLE_TOKEN_PROXY` ← variable `GOOGLE_TOKEN_PROXY_URL`,
+    `pwa.yml`) ; sans relais ni secret → flux « jeton » d'une heure ; client personnel inchangé ;
+    relais injoignable → « Google injoignable ».
+  - L'échec du retour Google s'affiche dans la bannière d'erreur (`startWebSync(…, onLoginError)`,
+    état à part pour survivre au `reload`).
+- **Tests** : relais (7, `oauth-proxy/worker.test.mjs`, ajoutés à `check.sh`), PWA (4 dans
+  `store/google-web.test.ts`, 1 refait dans `GoogleDriveWeb.test.tsx`), app PWA (1,
+  `App.local.test.tsx`). Chaque retour arrière du correctif fait échouer au moins un test
+  (vérifié par mutation). `check.sh` : 161 API, 294 front, 38 desktop unitaires, 25 scripts,
+  7 relais, 37 navigateur, 9 desktop e2e (+1 ignoré sans gestionnaire de fenêtres).
+- **Piège de recette** : lancer `check.sh` sous Xvfb depuis une session graphique en gardant
+  `XDG_CURRENT_DESKTOP` fait échouer « démarre en fenêtre maximisée » (aucun WM sous Xvfb,
+  mais le test croit en avoir un). Même échec sur `master` ; retirer aussi `XDG_CURRENT_DESKTOP`,
+  `DESKTOP_SESSION` et `GDMSESSION` pour reproduire la CI.
+- **À faire par Timo** (sinon la PWA reste en flux « jeton », fonctionnel mais d'une heure) :
+  compte Cloudflare, `npx wrangler deploy` puis `secret put` dans `oauth-proxy/`, variable
+  `GOOGLE_TOKEN_PROXY_URL`, relancer le workflow PWA. Détail : `08-GOOGLE-DOCS.md`
+  « Relais de jetons ». Décision §22.
+- **Non vérifié en réel** tant que le relais n'est pas déployé avec le vrai secret : la
+  connexion complète sur le téléphone reste à constater.
+- **Connu, non traité** : dans `GoogleDriveWeb.test.tsx`, le verrou `consumeRedirectCallback`
+  (module importé statiquement, `resetModules` sans effet) rend le 2e test de retour OAuth
+  dépendant du 1er : il ne refait pas l'échange.
+
 ## Lot du 2026-09-22 (5) — reprise de session Google en vol unique (PWA)
 
 - **Bug** : « Reprendre la session Google » échouait à chaque fois sur la PWA mobile.

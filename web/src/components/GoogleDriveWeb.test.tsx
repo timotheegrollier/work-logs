@@ -58,14 +58,16 @@ describe('panneau Drive de la PWA', () => {
     }
   });
 
-  test('retour du client intégré : compte affiché et session renouvelable sans reprise manuelle', async () => {
+  test('retour du client intégré : échange par le relais, compte affiché et session renouvelable sans reprise manuelle', async () => {
     vi.stubEnv('VITE_GOOGLE_CLIENT_ID', CLIENT);
+    vi.stubEnv('VITE_GOOGLE_TOKEN_PROXY', 'https://relais.test');
     try {
       sessionStorage.setItem('worklogs-google-web-pending', JSON.stringify({ state: 's', verifier: 'v', redirectUri: 'http://localhost:3000/' }));
       vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [] });
       vi.stubGlobal('fetch', async (url: unknown, init?: RequestInit) => {
         const target = String(url);
-        if (target.endsWith('/token')) {
+        // Le relais détient le secret : la PWA n'en envoie jamais.
+        if (target === 'https://relais.test/token') {
           const body = new URLSearchParams((init?.body as URLSearchParams).toString());
           expect(body.get('client_secret')).toBeNull();
           expect(body.get('code_verifier')).toBe('v');

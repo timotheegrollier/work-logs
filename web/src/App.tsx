@@ -67,9 +67,11 @@ export default function App() {
   // Synchro Drive : la PWA la porte elle-même, le desktop la fait côté serveur.
   const [sync, setSync] = useState<GoogleSyncStatus | null>(null);
   const syncRevision = useRef<number | null>(null);
+  // Retour de Google en échec (PWA) : à part d'`error`, que chaque `reload` efface.
+  const [loginError, setLoginError] = useState('');
   useEffect(() => {
     if (!isPwa) return;
-    const stop = startWebSync(() => void refreshGoogle());
+    const stop = startWebSync(() => void refreshGoogle(), setLoginError);
     const unsubscribe = subscribeWebSync(setSync);
     return () => { unsubscribe(); stop(); };
   }, [refreshGoogle]);
@@ -441,7 +443,7 @@ export default function App() {
         />
       </header>
 
-      {error && <p className="error banner no-print">{error}</p>}
+      {(error || loginError) && <p className="error banner no-print">{error || loginError}</p>}
 
       {/* Projets hors de la sidebar : le filtre et la gestion restent accessibles
           même quand le journal est replié, sur mobile comme sur desktop. */}

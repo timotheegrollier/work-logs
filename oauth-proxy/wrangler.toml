@@ -1,0 +1,10 @@
+# Relais de jetons Google de la PWA (Cloudflare Worker, offre gratuite).
+# Déploiement, depuis ce dossier :
+#   npx wrangler login
+#   npx wrangler deploy
+#   npx wrangler secret put GOOGLE_CLIENT_SECRET   # secret du client « Application Web »
+# Détail et vérification : docs/08-GOOGLE-DOCS.md « Relais de jetons ».
+name = "worklogs-google"
+main = "worker.mjs"
+compatibility_date = "2026-09-01"
+workers_dev = true

@@ -45,6 +45,9 @@ jobs:
           # Client Google « Web » intégré : un ID client est public par nature.
           # Variable ou secret : les deux sont acceptés (l'ID finit de toute façon dans le JS public).
           VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_WEB_CLIENT_ID }}
+          # Relais de jetons (Cloudflare Worker `oauth-proxy/`) : il détient le secret du
+          # client Web, que Google exige à l'échange du code. Absent : flux « jeton » d'une heure.
+          VITE_GOOGLE_TOKEN_PROXY: ${{ vars.GOOGLE_TOKEN_PROXY_URL }}
       - name: Publier la PWA à la racine sans toucher aux dépôts
         run: |
           git clone -q --branch gh-pages --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" .pages

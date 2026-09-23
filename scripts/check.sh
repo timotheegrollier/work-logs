@@ -20,6 +20,9 @@ npm run test:desktop:unit
 echo "== tests scripts release =="
 node --test scripts/*.test.mjs
 
+echo "== tests relais Google de la PWA (Worker) =="
+node --test oauth-proxy/*.test.mjs
+
 echo "== build =="
 npm run build
 

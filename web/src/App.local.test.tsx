@@ -104,4 +104,22 @@ describe('PWA locale (mêmes écrans, backend IndexedDB/mémoire)', () => {
     expect(document.querySelector('.columns')).toHaveClass('hide-right');
     expect(editor()).toBeInTheDocument();
   });
+
+  test('retour de Google refusé : l’erreur s’affiche au lieu d’un « Non connecté » muet', async () => {
+    localStorage.setItem('worklogs-google-web-client', '123456789012-abc.apps.googleusercontent.com');
+    sessionStorage.setItem('worklogs-google-web-pending', JSON.stringify({ state: 's', verifier: 'v', redirectUri: 'http://localhost:3000/' }));
+    // Ce que Google répond à un client « Web » sans secret (mesuré le 2026-09-23).
+    vi.stubGlobal('fetch', async () => Response.json({ error: 'invalid_request', error_description: 'client_secret is missing.' }, { status: 400 }));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    window.history.replaceState(null, '', '/?code=code&state=s');
+    try {
+      render(<App />);
+      await screen.findByRole('region', { name: 'Journal' });
+      expect(await screen.findByText(/Google a refusé la connexion/)).toBeInTheDocument();
+      expect(window.location.search).toBe('');
+    } finally {
+      vi.unstubAllGlobals();
+      sessionStorage.clear();
+    }
+  });
 });

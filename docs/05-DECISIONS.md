@@ -528,6 +528,11 @@ PWA sur l'appareil) ; la connexion ne sert qu'à Drive et à afficher le compte.
 secret comme non confidentiel pour une app installée, mais il reste hors de git (scanners,
 rotation). L'ID du client Web est public par nature : variable de dépôt.
 
+> **Corrigé le 2026-09-23 (§22)** : Google **refuse** d'échanger le code d'un client « Web »
+> sans son secret, PKCE ou pas (`400 invalid_request — client_secret is missing`, mesuré
+> contre la PWA en ligne). Le paragraphe suivant a cassé la connexion en un clic de la
+> v0.35.0 à la v0.36.1 ; il reste pour l'historique.
+
 **PWA sans secret.** Un client « Web » est confidentiel et la PWA est un site public :
 publier son secret est interdit. Le flux utilise donc le code + PKCE (`response_type=code`)
 et `access_type=offline`, sans secret dans le bundle ni dans l'échange du code. Quand Google
@@ -593,3 +598,36 @@ même place et même taille : l'en-tête garde huit contrôles (§16 respecté).
 reste l'accès aux Paramètres ; connecté, il montre l'avatar, l'état de synchro, et « Changer
 de compte » (sélecteur de compte Google, `prompt=select_account`).
 
+
+## 22. Relais de jetons pour la PWA (Cloudflare Worker) — 2026-09-23
+
+**Le constat.** De la v0.35.0 à la v0.36.1, « Se connecter avec Google » échouait sur la PWA,
+sans message : Google accepte l'autorisation, puis refuse d'échanger le code sans
+`client_secret` pour un client « Application Web » (`400 invalid_request — client_secret is
+missing`, mesuré le 2026-09-23 contre le client intégré ; avec un faux secret :
+`401 invalid_client`). §19 supposait l'inverse ; les tests simulaient Google et ne pouvaient
+pas le voir. Sans secret, seul le flux « jeton » aboutit : une heure, sans `refresh_token`.
+
+**Le choix.** Un relais minuscule détient le secret : `oauth-proxy/worker.mjs`, Cloudflare
+Worker sans dépendance. Il n'accepte que `POST /token` venant de la PWA (et de
+`localhost:8411` en dev), et deux échanges : `authorization_code` (avec `code_verifier` et un
+retour de la PWA) et `refresh_token`. Il ajoute le secret, rend la réponse de Google telle
+quelle, ne stocke ni ne journalise rien ; `GET /` dit seulement si le secret est en place.
+La PWA ne l'appelle que pour le client intégré (`VITE_GOOGLE_TOKEN_PROXY` au build) ; un client
+personnel parle toujours à Google avec son propre secret. Sans relais ni secret, la PWA
+repasse au flux « jeton » : la connexion en un clic ne peut plus casser de cette façon.
+`wrangler` sert au déploiement via `npx`, sans entrer dans les dépendances.
+
+**Pourquoi Cloudflare.** Gratuit (100 000 requêtes par jour, 10 ms de CPU par requête,
+l'attente de Google non comptée ; la PWA en fait une à la connexion puis une par heure
+d'usage), secret chiffré côté Cloudflare, pas de mise en veille. Écartés : Google Cloud Run
+(carte bancaire exigée), Render (veille, 30 à 50 s au réveil), Apps Script (toujours
+HTTP 200, 1 à 3 s par appel, aucun filtre d'origine).
+
+**Limite assumée.** Un `refresh_token` volé sur l'appareil suffit, via le relais, à obtenir
+de nouveaux jetons : le niveau d'un client public, comme le client desktop dont Google tient
+le secret pour non confidentiel. Le filtre d'origine arrête les autres sites, pas un script
+hors navigateur. Le secret, lui, ne quitte jamais Cloudflare.
+
+**Rouvrir si** Google accepte un jour le code + PKCE sans secret pour les clients Web, ou si
+le quota gratuit ne suffit plus.
