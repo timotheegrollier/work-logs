@@ -1,14 +1,19 @@
 import { useRef, useState, type PointerEvent } from 'react';
 
 /** La capture garde le glissement actif même quand le pointeur quitte la poignée. */
-export function ColumnResizer({ side, panelId, value, onChange }: {
+/**
+ * `side` dit de quel côté de la poignée est le panneau (gauche : il grandit vers
+ * la droite). `area` place la poignée dans la grille ; par défaut `resize-<side>`.
+ */
+export function ColumnResizer({ side, panelId, value, onChange, label: customLabel, area, min = 120, max = 600 }: {
   side: 'left' | 'right'; panelId: string; value: number; onChange: (width: number) => void;
+  label?: string; area?: string; min?: number; max?: number;
 }) {
   const drag = useRef<{ pointerId: number; x: number; width: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   const direction = side === 'left' ? 1 : -1;
-  const label = `Redimensionner la colonne de ${side === 'left' ? 'gauche' : 'droite'}`;
-  const resize = (width: number) => onChange(Math.max(120, Math.min(600, Math.round(width))));
+  const label = customLabel ?? `Redimensionner la colonne de ${side === 'left' ? 'gauche' : 'droite'}`;
+  const resize = (width: number) => onChange(Math.max(min, Math.min(max, Math.round(width))));
   // La grille peut réduire une largeur mémorisée lorsque la fenêtre rétrécit.
   const currentWidth = () => document.getElementById(panelId)?.getBoundingClientRect().width ?? value;
 
@@ -24,13 +29,13 @@ export function ColumnResizer({ side, panelId, value, onChange }: {
   };
 
   return <div
-    className={`column-resizer column-resizer-${side} no-print${dragging ? ' is-dragging' : ''}`}
+    className={`column-resizer column-resizer-${area ?? side} no-print${dragging ? ' is-dragging' : ''}`}
     role="separator"
     aria-label={label}
     aria-controls={panelId}
     aria-orientation="vertical"
-    aria-valuemin={120}
-    aria-valuemax={600}
+    aria-valuemin={min}
+    aria-valuemax={max}
     aria-valuenow={value}
     aria-valuetext={`${value} pixels`}
     tabIndex={0}
@@ -52,8 +57,8 @@ export function ColumnResizer({ side, panelId, value, onChange }: {
       let width: number;
       if (event.key === 'ArrowLeft') width = currentWidth() - direction * step;
       else if (event.key === 'ArrowRight') width = currentWidth() + direction * step;
-      else if (event.key === 'Home') width = 120;
-      else if (event.key === 'End') width = 600;
+      else if (event.key === 'Home') width = min;
+      else if (event.key === 'End') width = max;
       else return;
       event.preventDefault();
       resize(width);

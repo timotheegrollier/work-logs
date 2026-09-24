@@ -134,3 +134,48 @@ test('panneaux : replier l’écriture garde le journal et les tâches', async (
   await expect(page.locator('.columns')).toHaveClass(/hide-center/);
   await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
 });
+
+test('largeur des procédures : glisser le bord, clavier, limites, Paramètres et rechargement', async ({ page }) => {
+  await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  const bar = page.locator('#workspace-procedures');
+  const edge = page.getByRole('separator', { name: 'Redimensionner la colonne des procédures' });
+  await expect(bar).toHaveCSS('width', '320px');
+  // La poignée est sur le bord gauche de la colonne.
+  const [e, b] = [(await edge.boundingBox())!, (await bar.boundingBox())!];
+  expect(Math.abs(e.x + e.width / 2 - b.x)).toBeLessThanOrEqual(1);
+
+  const x = e.x + e.width / 2, y = e.y + e.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 100, y, { steps: 8 });
+  await expect(bar).toHaveCSS('width', '420px');
+  await page.mouse.up();
+
+  await edge.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(bar).toHaveCSS('width', '430px');
+  await page.keyboard.press('Home');
+  await expect(bar).toHaveCSS('width', '260px');
+  await page.keyboard.press('End');
+  await expect(bar).toHaveCSS('width', '600px');
+
+  await page.getByRole('button', { name: 'Compte et paramètres' }).click();
+  await page.getByRole('menuitem', { name: 'Paramètres' }).click();
+  const field = page.getByRole('dialog', { name: 'Paramètres' }).getByLabel('Largeur de la colonne des procédures (px)');
+  await expect(field).toHaveValue('600');
+  await field.fill('380');
+  await closeSettings(page);
+  await expect(bar).toHaveCSS('width', '380px');
+
+  await page.reload();
+  await expect(page.locator('#workspace-procedures')).toHaveCSS('width', '380px');
+  await page.getByRole('button', { name: 'Compte et paramètres' }).click();
+  await page.getByRole('menuitem', { name: 'Paramètres' }).click();
+  await page.getByRole('button', { name: 'Largeurs par défaut' }).click();
+  await closeSettings(page);
+  await expect(page.locator('#workspace-procedures')).toHaveCSS('width', '320px');
+
+  // Sur mobile, les colonnes s'empilent : pas de poignée.
+  await page.setViewportSize({ width: 412, height: 900 });
+  await expect(edge).toBeHidden();
+});

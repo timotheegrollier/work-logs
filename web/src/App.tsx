@@ -39,6 +39,7 @@ export default function App() {
   const [theme, setTheme] = useState(readTheme);
   const [colLeft, setColLeft] = useState(readColLeft);
   const [colRight, setColRight] = useState(readColRight);
+  const [colProcedures, setColProcedures] = useState(readColProcedures);
   const [showLeft, setShowLeft] = useState(() => readPanel('worklogs-show-left'));
   const [showCenter, setShowCenter] = useState(() => readPanel('worklogs-show-center'));
   const [showRight, setShowRight] = useState(() => readPanel('worklogs-show-right'));
@@ -135,7 +136,9 @@ export default function App() {
     document.documentElement.style.setProperty('--col-right', `${colRight}px`);
     localStorage.setItem('worklogs-col-left', String(colLeft));
     localStorage.setItem('worklogs-col-right', String(colRight));
-  }, [colLeft, colRight]);
+    document.documentElement.style.setProperty('--col-procedures', `${colProcedures}px`);
+    localStorage.setItem(COL_PROC_KEY, String(colProcedures));
+  }, [colLeft, colRight, colProcedures]);
 
   useEffect(() => {
     localStorage.setItem('worklogs-show-left', showLeft ? '1' : '0');
@@ -486,6 +489,16 @@ export default function App() {
           />
         </aside>
 
+        <ColumnResizer
+          side="right"
+          area="procedures"
+          panelId="workspace-procedures"
+          label="Redimensionner la colonne des procédures"
+          min={PROC_MIN}
+          value={colProcedures}
+          onChange={setColProcedures}
+        />
+
         <aside id="workspace-procedures" className="procedures-bar no-print">
           <ProcedureList
             entries={state?.entries ?? []}
@@ -570,12 +583,26 @@ export default function App() {
                   />
                   <span aria-hidden="true">px</span>
                 </label>
+                <label className="col-width-control">
+                  Procédures
+                  <input
+                    id="col-procedures-width"
+                    type="number"
+                    min={PROC_MIN}
+                    max={600}
+                    value={colProcedures}
+                    onChange={(e) => setColProcedures(Math.max(PROC_MIN, Math.min(600, Number(e.target.value) || 320)))}
+                    aria-label="Largeur de la colonne des procédures (px)"
+                  />
+                  <span aria-hidden="true">px</span>
+                </label>
                 <button
                   className="ghost"
                   type="button"
                   onClick={() => {
                     setColLeft(290);
                     setColRight(320);
+                    setColProcedures(320);
                   }}
                   aria-label="Largeurs par défaut"
                 >
@@ -621,6 +648,9 @@ function readTheme() {
 
 const COL_LS_KEY = 'worklogs-col-left';
 const COL_RS_KEY = 'worklogs-col-right';
+const COL_PROC_KEY = 'worklogs-col-procedures';
+/** En dessous, les boutons d'une procédure ne tiennent plus sur leur ligne. */
+const PROC_MIN = 260;
 
 function readColLeft() {
   if (typeof localStorage === 'undefined') return 290;
@@ -632,6 +662,12 @@ function readColRight() {
   if (typeof localStorage === 'undefined') return 320;
   const v = Number(localStorage.getItem(COL_RS_KEY));
   return Number.isFinite(v) && v >= 120 && v <= 600 ? v : 320;
+}
+
+function readColProcedures() {
+  if (typeof localStorage === 'undefined') return 320;
+  const v = Number(localStorage.getItem(COL_PROC_KEY));
+  return Number.isFinite(v) && v >= PROC_MIN && v <= 600 ? v : 320;
 }
 
 /** Panneau visible par défaut ; `'0'` enregistré le replie durablement. */

@@ -131,6 +131,16 @@
   `refresh_token` qui rend la session à nouveau silencieuse. Première connexion (compte
   inconnu) et changement de compte inchangés.
 
+## Lot du 2026-09-24 (2) — colonne Procédures redimensionnable
+
+- Poignée sur le bord gauche des Procédures (`ColumnResizer` généralisé : `area`, `label`,
+  `min`/`max`), posée dans la même case de grille que la colonne : aucune des dix variantes
+  de `grid-template-areas` n'a changé, seule leur largeur passe à `var(--col-procedures)`.
+- 260–600 px (en dessous, les boutons d'une procédure ne tiennent plus), défaut 320,
+  `localStorage worklogs-col-procedures`, champ « Procédures » dans Paramètres › Affichage,
+  remis à 320 par « Largeurs par défaut ». Masquée sur mobile et quand la colonne est seule.
+- Test : `e2e/sidebar-widths.spec.ts` (glisser, clavier, limites, Paramètres, rechargement).
+
 ## Correctif du 2026-09-24 — « document riche invalide » en tapant « 0. »
 
 - Taper `0. ` (ou un numéro > 10 000) en début de ligne : Tiptap crée une liste numérotée
