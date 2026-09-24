@@ -438,64 +438,10 @@ export function EntryEditor({
         <div><span className="document-eyebrow">Google Docs</span><h1>{googleSync.document_title || draft.title}</h1></div>
         {integratedGoogle ? !nativeGoogle && <button className="sync-primary" disabled={syncing} onClick={() => void openIntegratedGoogle()}>{googleSync.dirty ? 'Envoyer le brouillon et ouvrir l’éditeur complet' : 'Modifier dans WorkLogs'}</button> : <a className="ghost" href={googleUrl} target="_blank" rel="noopener noreferrer">Ouvrir dans Google Docs ↗</a>}
       </div>}
-      <div className="entry-task-action no-print">
-        {!taskCreator ? <button className="task-primary" type="button" disabled={syncing} onClick={openTaskCreator}>Créer une tâche liée</button> : <form className="task-creator" onSubmit={(event) => { event.preventDefault(); void createTask(); }}>          <strong>Nouvelle tâche liée à cette entrée</strong>
-          <label>Titre de la tâche<input aria-label="Titre de la tâche liée" autoFocus value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} /></label>
-          <label>Échéance facultative<input aria-label="Échéance de la tâche liée" type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} /></label>
-          <div className="task-creator-actions">
-            <button className="task-primary" type="submit" disabled={taskCreating || !taskTitle.trim()}>{taskCreating ? 'Création…' : 'Créer et lier'}</button>
-            <button className="ghost" type="button" disabled={taskCreating} onClick={() => setTaskCreator(false)}>Annuler</button>
-          </div>
-        </form>}
-        {taskMessage && <p className="task-message" role="status">{taskMessage}</p>}
-        {!draft.content_json && !isProcedure && (
-          <button
-            className="ghost"
-            type="button"
-            disabled={suggesting || syncing}
-            title="Remplace le bloc suggéré, ou l’ajoute (envoie le titre et le contenu de l’entrée au service IA configuré en Paramètres)"
-            onClick={() => void suggestForEntry()}
-          >
-            {suggesting ? 'Suggestion…' : '✨ Suggérer des sous-tâches'}
-          </button>
-        )}
-        {aiAvailable && isProcedure && (
-          <button
-            className="ghost"
-            type="button"
-            disabled={aiBusy !== null || syncing}
-            title="Propose les étapes à partir du titre et de ce qui est déjà écrit (envoyés au service IA configuré en Paramètres, à relire avant application)"
-            onClick={() => void requestAi('procedure')}
-          >
-            {aiBusy === 'procedure' ? 'Suggestion…' : '✨ Suggérer une procédure'}
-          </button>
-        )}
-        {aiAvailable && (
-          <button
-            className="ghost"
-            type="button"
-            disabled={suggesting || aiBusy !== null || syncing || !aiText.trim()}
-            title="Corrige les fautes et met en page (envoie le titre et le contenu de l’entrée au service IA configuré en Paramètres, à relire avant application)"
-            onClick={() => void requestAi('layout')}
-          >
-            {aiBusy === 'layout' ? 'Mise en page…' : '✨ Mettre en page'}
-          </button>
-        )}
-        {suggestedBlock && (
-          <button
-            className="ghost"
-            type="button"
-            disabled={suggesting || syncing}
-            aria-label="Retirer la suggestion"
-            title="Supprime le bloc suggéré sans toucher au reste"
-            onClick={removeSuggestion}
-          >
-            Retirer
-          </button>
-        )}
-      </div>
-      <details className={'document-details no-print' + (googleSync ? '' : ' local-details')} open={googleSync ? undefined : true}>
-      {googleSync && <summary>Détails du document</summary>}
+      {/* Document Google : titre et réglages repliés sous le vrai titre Google.
+          Entrée locale : pas de dépliant — un <details> sans <summary> affichait
+          le libellé « Details » du navigateur au-dessus du titre. */}
+      <DetailsWrapper google={Boolean(googleSync)}>
       <div className="editor-bar no-print">
         <input
           className="title"
@@ -565,7 +511,63 @@ export function EntryEditor({
         </button>
       </div>
 
-      </details>
+      </DetailsWrapper>
+      <div className="entry-task-action no-print">
+        {!taskCreator ? <button className="ghost" type="button" disabled={syncing} onClick={openTaskCreator}><span aria-hidden="true">＋ </span>Créer une tâche liée</button> : <form className="task-creator" onSubmit={(event) => { event.preventDefault(); void createTask(); }}>          <strong>Nouvelle tâche liée à cette entrée</strong>
+          <label>Titre de la tâche<input aria-label="Titre de la tâche liée" autoFocus value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} /></label>
+          <label>Échéance facultative<input aria-label="Échéance de la tâche liée" type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} /></label>
+          <div className="task-creator-actions">
+            <button className="task-primary" type="submit" disabled={taskCreating || !taskTitle.trim()}>{taskCreating ? 'Création…' : 'Créer et lier'}</button>
+            <button className="ghost" type="button" disabled={taskCreating} onClick={() => setTaskCreator(false)}>Annuler</button>
+          </div>
+        </form>}
+        {taskMessage && <p className="task-message" role="status">{taskMessage}</p>}
+        {!draft.content_json && !isProcedure && (
+          <button
+            className="ghost"
+            type="button"
+            disabled={suggesting || syncing}
+            title="Remplace le bloc suggéré, ou l’ajoute (envoie le titre et le contenu de l’entrée au service IA configuré en Paramètres)"
+            onClick={() => void suggestForEntry()}
+          >
+            {suggesting ? 'Suggestion…' : '✨ Suggérer des sous-tâches'}
+          </button>
+        )}
+        {aiAvailable && isProcedure && (
+          <button
+            className="ghost"
+            type="button"
+            disabled={aiBusy !== null || syncing}
+            title="Propose les étapes à partir du titre et de ce qui est déjà écrit (envoyés au service IA configuré en Paramètres, à relire avant application)"
+            onClick={() => void requestAi('procedure')}
+          >
+            {aiBusy === 'procedure' ? 'Suggestion…' : '✨ Suggérer une procédure'}
+          </button>
+        )}
+        {aiAvailable && (
+          <button
+            className="ghost"
+            type="button"
+            disabled={suggesting || aiBusy !== null || syncing || !aiText.trim()}
+            title="Corrige les fautes et met en page (envoie le titre et le contenu de l’entrée au service IA configuré en Paramètres, à relire avant application)"
+            onClick={() => void requestAi('layout')}
+          >
+            {aiBusy === 'layout' ? 'Mise en page…' : '✨ Mettre en page'}
+          </button>
+        )}
+        {suggestedBlock && (
+          <button
+            className="ghost"
+            type="button"
+            disabled={suggesting || syncing}
+            aria-label="Retirer la suggestion"
+            title="Supprime le bloc suggéré sans toucher au reste"
+            onClick={removeSuggestion}
+          >
+            Retirer
+          </button>
+        )}
+      </div>
       {error && <p role="alert" className="error no-print">{error}</p>}
       {error && googleHelp && <a className="no-print" href={googleHelp} target="_blank" rel="noopener noreferrer">Activer l’API dans Google Cloud</a>}
       {aiProposal && aiAvailable && <div className="proofread-preview no-print" role="region" aria-label={aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'}>
@@ -689,5 +691,16 @@ export function EntryEditor({
       </div>}
       {previewing && <FileViewer key={previewing.id + (previewing.driveFileId || '')} file={previewing} onClose={() => setPreviewing(null)} onFetch={() => previewing && void fetchFromDrive(previewing)} fetching={fetchingId === previewing.id} />}
     </section>
+  );
+}
+
+function DetailsWrapper({ google, children }: { google: boolean; children: React.ReactNode }) {
+  return google ? (
+    <details className="document-details no-print">
+      <summary>Détails du document</summary>
+      {children}
+    </details>
+  ) : (
+    <div className="document-details local-details no-print">{children}</div>
   );
 }

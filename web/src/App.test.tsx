@@ -33,12 +33,29 @@ function seedGoogleLink(db: typeof api.db, entryId: string, documentId: string) 
     VALUES (?,?,?,?,?,?,?,?,?)`).run(entryId, documentId, 'tab-0', 'r1', rich, 'Document Google', 'Onglet', 0, 0);
 }
 
+/** Les largeurs au pixel près vivent dans Paramètres › Affichage. */
+async function openDisplaySettings() {
+  fireEvent.click(await screen.findByRole('button', { name: 'Compte et paramètres' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
+  return within(await screen.findByRole('region', { name: 'Affichage' }));
+}
+
 describe('contrôles de largeur des colonnes', () => {
+  test('ne sont plus dans l’en-tête : ils vivent dans Paramètres › Affichage', async () => {
+    render(<App />);
+    const header = await screen.findByRole('banner');
+    expect(within(header).queryByLabelText('Largeur de la colonne de gauche (px)')).not.toBeInTheDocument();
+    const display = await openDisplaySettings();
+    expect(display.getByLabelText('Largeur de la colonne de gauche (px)')).toBeInTheDocument();
+    expect(display.getByRole('button', { name: 'Largeurs par défaut' })).toBeInTheDocument();
+  });
+
   test('les contrôles affichent les valeurs lues depuis localStorage', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }, { id: 'en_2', title: 'Deuxième' }] });
     render(<App />);
 
     await screen.findByRole('region', { name: 'Journal' });
+    await openDisplaySettings();
     expect(screen.getByLabelText('Largeur de la colonne de gauche (px)')).toHaveValue(290);
     expect(screen.getByLabelText('Largeur de la colonne de droite (px)')).toHaveValue(320);
   });
@@ -47,6 +64,7 @@ describe('contrôles de largeur des colonnes', () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
     render(<App />);
     await screen.findByRole('region', { name: 'Journal' });
+    await openDisplaySettings();
 
     const leftInput = screen.getByLabelText('Largeur de la colonne de gauche (px)');
     fireEvent.change(leftInput, { target: { value: '400' } });
@@ -60,6 +78,7 @@ describe('contrôles de largeur des colonnes', () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
     render(<App />);
     await screen.findByRole('region', { name: 'Journal' });
+    await openDisplaySettings();
 
     const rightInput = screen.getByLabelText('Largeur de la colonne de droite (px)');
     fireEvent.change(rightInput, { target: { value: '480' } });
@@ -73,6 +92,7 @@ describe('contrôles de largeur des colonnes', () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
     render(<App />);
     await screen.findByRole('region', { name: 'Journal' });
+    await openDisplaySettings();
 
     const leftInput = screen.getByLabelText('Largeur de la colonne de gauche (px)');
     const rightInput = screen.getByLabelText('Largeur de la colonne de droite (px)');
@@ -92,6 +112,7 @@ describe('contrôles de largeur des colonnes', () => {
     globalThis.localStorage.setItem('worklogs-col-right', '420');
     render(<App />);
     await screen.findByRole('region', { name: 'Journal' });
+    await openDisplaySettings();
 
     expect(screen.getByLabelText('Largeur de la colonne de gauche (px)')).toHaveValue(360);
     expect(screen.getByLabelText('Largeur de la colonne de droite (px)')).toHaveValue(420);
@@ -178,6 +199,27 @@ describe('en-tête', () => {
     // Noms en aria-label : ils survivent au passage en icônes seules sur mobile.
     expect(within(header).getByRole('button', { name: 'Exporter' })).toHaveAttribute('aria-label', 'Exporter');
     expect(within(header).getByRole('button', { name: 'Compte et paramètres' })).toHaveAttribute('aria-haspopup', 'menu');
+  });
+
+  test('masque Exporter une fois connecté à Google : la synchro automatique suffit', async () => {
+    const connected = { available: true, configured: true, connected: true, pending: false, error: '', selectedIds: [],
+      account: { email: 'timo@example.com', name: 'Timo' } };
+    vi.spyOn(clientApi, 'googleStatus').mockResolvedValue(connected);
+    vi.spyOn(clientApi, 'googleSync').mockResolvedValue({ state: 'idle', error: '', lastSyncedAt: null, revision: 0 });
+    render(<App />);
+    const header = await screen.findByRole('banner');
+    await within(header).findByRole('button', { name: /Compte Google : Timo/ });
+    expect(within(header).queryByRole('button', { name: 'Exporter' })).not.toBeInTheDocument();
+  });
+
+  test('garde Exporter si la session Google a expiré : la synchro est en pause', async () => {
+    vi.spyOn(clientApi, 'googleStatus').mockResolvedValue({ available: true, configured: true, connected: true, pending: false,
+      error: '', selectedIds: [], expired: true, account: { email: 'timo@example.com', name: 'Timo' } });
+    vi.spyOn(clientApi, 'googleSync').mockResolvedValue({ state: 'off', error: '', lastSyncedAt: null, revision: 0 });
+    render(<App />);
+    const header = await screen.findByRole('banner');
+    await within(header).findByRole('button', { name: /Compte Google : Timo/ });
+    expect(within(header).getByRole('button', { name: 'Exporter' })).toBeInTheDocument();
   });
 });
 
@@ -1068,7 +1110,8 @@ describe('organiser les tâches', () => {
 
     // Les tâches d’avant la fonctionnalité (sans colonne) arrivent en « Normale ».
     const card = (await within(board()).findByText('À trier')).closest('.card') as HTMLElement;
-    expect(within(card).getByText('Normale')).toBeInTheDocument();
+    // « Normale » est la valeur par défaut : elle ne s'affiche plus sur chaque carte.
+    expect(within(card).queryByText('Normale')).not.toBeInTheDocument();
 
     await user.click(within(card).getByRole('button', { name: 'À trier' }));
     await user.selectOptions(screen.getByLabelText('Priorité'), 'high');

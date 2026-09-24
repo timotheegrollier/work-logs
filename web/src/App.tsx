@@ -271,6 +271,8 @@ export default function App() {
     .map(tab => ({ ...tab, ...state?.entries.find(e => e.id === tab.id) }))
     .sort((a, b) => (a.google_tab_order ?? 0) - (b.google_tab_order ?? 0));
   const isGoogleDocument = Boolean(entry?.google_sync);
+  // Session Google active (pas expirée) : la synchro automatique tourne.
+  const autoSynced = Boolean(google?.connected && !google.expired);
 
   const stats = state?.stats;
 
@@ -339,17 +341,10 @@ export default function App() {
             )}
           </p>
         )}
-        <button
-          className="ghost theme-btn"
-          aria-label="Changer de thème"
-          onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-        >
-          {theme === 'dark' ? '☀' : '☾'}
-        </button>
         <div className="panel-toggles no-print" role="group" aria-label="Panneaux latéraux">
           <button
             type="button"
-            className={'ghost' + (showLeft ? ' is-on' : '')}
+            className={'panel-toggle' + (showLeft ? ' is-on' : '')}
             aria-pressed={showLeft}
             aria-controls="workspace-journal"
             title={showLeft ? 'Masquer le journal' : 'Afficher le journal'}
@@ -359,7 +354,7 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={'ghost' + (showCenter ? ' is-on' : '')}
+            className={'panel-toggle' + (showCenter ? ' is-on' : '')}
             aria-pressed={showCenter}
             aria-controls="workspace-editor"
             title={showCenter ? 'Masquer l’écriture' : 'Afficher l’écriture'}
@@ -369,7 +364,7 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={'ghost' + (showRight ? ' is-on' : '')}
+            className={'panel-toggle' + (showRight ? ' is-on' : '')}
             aria-pressed={showRight}
             aria-controls="workspace-tasks"
             title={showRight ? 'Masquer les tâches' : 'Afficher les tâches'}
@@ -379,7 +374,7 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={'ghost' + (showProcedures ? ' is-on' : '')}
+            className={'panel-toggle' + (showProcedures ? ' is-on' : '')}
             aria-pressed={showProcedures}
             aria-controls="workspace-procedures"
             title={showProcedures ? 'Masquer les procédures' : 'Afficher les procédures'}
@@ -388,49 +383,22 @@ export default function App() {
             Procédures
           </button>
         </div>
-        <div className="col-widths">
-          <div className="col-width-control">
-            <label htmlFor="col-left-width">Gauche</label>
-            <input
-              id="col-left-width"
-              type="number"
-              min={120}
-              max={600}
-              value={colLeft}
-              onChange={(e) => setColLeft(Math.max(120, Math.min(600, Number(e.target.value) || 290)))}
-              aria-label="Largeur de la colonne de gauche (px)"
-            />
-            <span aria-hidden="true">px</span>
-          </div>
-          <div className="col-width-control">
-            <label htmlFor="col-right-width">Droite</label>
-            <input
-              id="col-right-width"
-              type="number"
-              min={120}
-              max={600}
-              value={colRight}
-              onChange={(e) => setColRight(Math.max(120, Math.min(600, Number(e.target.value) || 320)))}
-              aria-label="Largeur de la colonne de droite (px)"
-            />
-            <span aria-hidden="true">px</span>
-          </div>
-          <button
-            className="col-width-reset"
-            type="button"
-            onClick={() => {
-              setColLeft(290);
-              setColRight(320);
-            }}
-            aria-label="Largeurs par défaut"
-          >
-            Par défaut
-          </button>
-        </div>
-        <button className="ghost export-btn" type="button" aria-label="Exporter" onClick={() => void exportJson()}>
-          <span className="export-icon" aria-hidden="true">⤓</span>
-          <span className="export-label">Exporter</span>
+        <button
+          className="ghost theme-btn"
+          aria-label="Changer de thème"
+          title={theme === 'dark' ? 'Passer en thème clair' : 'Passer en thème sombre'}
+          onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+        >
+          {theme === 'dark' ? '☀' : '☾'}
         </button>
+        {/* Connecté à Google, la synchro automatique garde déjà une copie à jour
+            sur Drive : l'export manuel n'a plus sa place dans l'en-tête. */}
+        {!autoSynced && (
+          <button className="ghost export-btn" type="button" aria-label="Exporter" title="Télécharger toute la base en JSON" onClick={() => void exportJson()}>
+            <span className="export-icon" aria-hidden="true">⤓</span>
+            <span className="export-label">Exporter</span>
+          </button>
+        )}
         <AccountMenu
           status={google}
           onSettings={() => setShowSettings(true)}
@@ -570,6 +538,51 @@ export default function App() {
           <div className="settings-content">
             <GoogleDrive onRestored={reload} onOpen={openDriveEntry} onDocuments={() => { setShowSettings(false); setShowDocuments(true); }} />
             <AiSettings />
+            {/* Largeurs au pixel près : les poignées entre les colonnes font le
+                geste courant, ce réglage fin n'a pas besoin de l'en-tête. */}
+            <section className="display-settings" aria-label="Affichage">
+              <h3>Affichage</h3>
+              <p className="ai-hint">Largeur des colonnes latérales, en pixels. Les poignées entre les colonnes font la même chose à la souris.</p>
+              <div className="col-widths">
+                <label className="col-width-control">
+                  Journal
+                  <input
+                    id="col-left-width"
+                    type="number"
+                    min={120}
+                    max={600}
+                    value={colLeft}
+                    onChange={(e) => setColLeft(Math.max(120, Math.min(600, Number(e.target.value) || 290)))}
+                    aria-label="Largeur de la colonne de gauche (px)"
+                  />
+                  <span aria-hidden="true">px</span>
+                </label>
+                <label className="col-width-control">
+                  Tâches
+                  <input
+                    id="col-right-width"
+                    type="number"
+                    min={120}
+                    max={600}
+                    value={colRight}
+                    onChange={(e) => setColRight(Math.max(120, Math.min(600, Number(e.target.value) || 320)))}
+                    aria-label="Largeur de la colonne de droite (px)"
+                  />
+                  <span aria-hidden="true">px</span>
+                </label>
+                <button
+                  className="ghost"
+                  type="button"
+                  onClick={() => {
+                    setColLeft(290);
+                    setColRight(320);
+                  }}
+                  aria-label="Largeurs par défaut"
+                >
+                  Largeurs par défaut
+                </button>
+              </div>
+            </section>
           </div>
           {/* La pastille de version de l'en-tête est masquée sur mobile :
               le numéro reste accessible ici. */}

@@ -43,7 +43,10 @@ Une seule page, trois zones, jamais de navigation.
 | **Centre — Écriture** | écrire l'entrée ouverte, la relire, l'imprimer, y joindre des fichiers |
 | **Droite — Tâches** | ajouter, avancer, terminer, relier les documents de contexte |
 
-En haut : la recherche, le résumé de la semaine, le thème clair/sombre, l'export.
+En haut : la recherche, le résumé de la semaine, les interrupteurs de panneaux, le thème
+clair/sombre, l'export (masqué une fois connecté à Google : la synchro automatique garde
+déjà une copie sur Drive) et le menu du compte. Sur téléphone, les interrupteurs de
+panneaux passent dans une barre fixée en bas de l'écran, à portée de pouce.
 
 Les boutons **Journal** et **Tâches** de l'en-tête replient les panneaux latéraux
 pour ne garder que ce qui sert (l'écriture en grand, par exemple) ; l'état est
@@ -52,8 +55,8 @@ plein écran.
 
 Pour régler les barres latérales, **cliquer-glisser la poignée entre le journal et
 le document, ou entre le document et les tâches**. La largeur change immédiatement
-et reste mémorisée après redémarrage. Les champs de largeur et **Par défaut** restent
-disponibles dans l’en-tête. Au clavier, sélectionner une poignée avec Tab puis utiliser
+et reste mémorisée après redémarrage. Les champs de largeur au pixel près et **Largeurs par défaut**
+sont dans **Paramètres → Affichage**. Au clavier, sélectionner une poignée avec Tab puis utiliser
 les flèches gauche/droite (10 px, ou 50 px avec Maj) ; Début/Fin donnent les limites.
 Sur une petite fenêtre, les colonnes se resserrent pour conserver la place du document.
 Les poignées disparaissent lorsque les panneaux sont empilés ou masqués.
@@ -237,7 +240,7 @@ elles attendent une fusion explicite sur le PC.
 | Quoi | Comment | Quand |
 |---|---|---|
 | Copie complète (base + fichiers joints) | `./scripts/backup.sh` | avant toute manipulation risquée, et chaque vendredi |
-| Export lisible (JSON) | bouton **Exporter** | pour archiver ou relire ailleurs |
+| Export lisible (JSON) | bouton **Exporter** (hors connexion Google) | pour archiver ou relire ailleurs |
 | Sauvegarde JSON Drive | **Gérer Google Drive → Sauvegardes WorkLogs** | pour restaurer sur un autre PC du même compte |
 
 La sauvegarde atterrit dans `~/WorkLogs-backups/worklogs-AAAAMMJJ-HHMMSS/`.
