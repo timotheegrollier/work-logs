@@ -3,6 +3,8 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { api, type RichDocument } from '../lib';
 import { replaceMatches, searchKey, setSearch } from '../rich-search';
 import { richExtensions } from '../rich-extensions';
+// @ts-expect-error — rich-document.js est du JavaScript pur partagé avec l'API.
+import { normalizeDocument } from '../../../api/src/rich-document.js';
 
 export function RichEditor({ content, entryId, onChange, googleLinked = false, disabled = false }: {
   disabled?: boolean; googleLinked?: boolean; content: RichDocument; entryId: string; onChange: (document: RichDocument) => void;
@@ -25,7 +27,7 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false, d
     content,
     shouldRerenderOnTransaction: true,
     editorProps: { attributes: { class: 'prose rich-content', role: 'textbox', 'aria-label': 'Contenu du document', 'aria-multiline': 'true', spellcheck: 'true' } },
-    onUpdate: ({ editor: current }) => change.current(current.getJSON()),
+    onUpdate: ({ editor: current }) => change.current(normalizeDocument(current.getJSON())),
   });
   useEffect(() => { editor?.setEditable(!disabled, false); }, [editor, disabled]);
   useEffect(() => {

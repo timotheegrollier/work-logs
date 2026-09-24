@@ -95,7 +95,7 @@ function clean(node: JSONContent): JSONContent | null {
   if (next.attrs) {
     const attrs = withoutEmpty(next.attrs);
     for (const key of ['width', 'height']) if (attrs[key] != null && !Number.isInteger(attrs[key])) attrs[key] = null;
-    if (next.type === 'orderedList' && !(Number.isInteger(attrs.start) && (attrs.start as number) >= 1)) attrs.start = 1;
+    if (next.type === 'orderedList' && !(Number.isSafeInteger(attrs.start) && (attrs.start as number) >= 0)) attrs.start = 1;
     next.attrs = attrs;
   }
   if (next.marks) {

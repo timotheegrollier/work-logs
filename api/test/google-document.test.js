@@ -470,3 +470,9 @@ test('documents Google : projet de toutes les copies, corbeille Drive puis retra
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM google_documents').get().n, 0);
   } finally { await api.close(); }
 });
+
+test('liste commençant à 0 : signalée comme non exportable, pas exportée à 1 en silence', () => {
+  const source = doc('Texte');
+  const rich = { type: 'doc', content: [{ type: 'orderedList', attrs: { start: 0 }, content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Étape' }] }] }] }] };
+  assert.throws(() => buildGoogleUpdate(source, rich), /autre nombre que 1/);
+});

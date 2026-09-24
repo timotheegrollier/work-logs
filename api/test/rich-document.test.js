@@ -127,3 +127,30 @@ test('refuse les documents malformés, trop profonds et les liens dangereux sans
     assert.throws(() => validateDocument({ type: 'doc', content: [nested] }), /invalide/);
   } finally { await api.close(); }
 });
+
+test('liste numérotée tapée « 0. » ou « 10001. » : acceptée et relue telle quelle', async () => {
+  const list = (start) => ({ type: 'doc', content: [{ type: 'orderedList', attrs: { start, type: null }, content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Préparer' }] }] }] }] });
+  for (const start of [0, 1, 10001, 123456]) assert.doesNotThrow(() => validateDocument(list(start)), `start ${start}`);
+  for (const start of [-1, 1.5, '3', 1e20]) assert.throws(() => validateDocument(list(start)), /document riche invalide/, `start ${start}`);
+  // Les autres nombres gardent leurs bornes.
+  assert.throws(() => validateDocument({ type: 'doc', content: [{ type: 'image', attrs: { src: 'https://x.fr/a.png', width: 0 } }] }), /invalide/);
+  const api = await startApi();
+  try {
+    const entry = await make.entry(api, { title: 'Procédure', kind: 'procedure', content_json: list(0) });
+    assert.equal((await api.get(`/api/entries/${entry.id}`)).body.content_json.content[0].attrs.start, 0);
+    const res = await api.put(`/api/entries/${entry.id}`, { content_json: list(10001) });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+  } finally { await api.close(); }
+});
+
+test('normalizeDocument : un début de liste hors des entiers sûrs repart de 1, le reste intact', async () => {
+  const { normalizeDocument } = await import('../src/rich-document.js');
+  const ok = { type: 'doc', content: [{ type: 'orderedList', attrs: { start: 0 }, content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }] }] };
+  assert.equal(normalizeDocument(ok), ok);
+  const huge = structuredClone(ok);
+  huge.content[0].attrs.start = 1e20;
+  const fixed = normalizeDocument(huge);
+  assert.equal(fixed.content[0].attrs.start, 1);
+  assert.equal(huge.content[0].attrs.start, 1e20, 'l’original n’est pas modifié');
+  assert.doesNotThrow(() => validateDocument(fixed));
+});

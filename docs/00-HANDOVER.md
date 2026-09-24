@@ -131,6 +131,18 @@
   `refresh_token` qui rend la session à nouveau silencieuse. Première connexion (compte
   inconnu) et changement de compte inchangés.
 
+## Correctif du 2026-09-24 — « document riche invalide » en tapant « 0. »
+
+- Taper `0. ` (ou un numéro > 10 000) en début de ligne : Tiptap crée une liste numérotée
+  `start: 0` ; `validateDocument` n'acceptait que 1–10 000 → **tout** le document refusé,
+  plus rien ne s'enregistrait. `start` accepte désormais tout entier sûr ≥ 0 ; l'éditeur
+  ramène à 1 un début hors des entiers sûrs (`normalizeDocument`, `RichEditor` → onUpdate).
+- Export Google : `start || 1` traitait 0 comme 1 (liste exportée à 1 en silence) ; 0 est
+  maintenant signalé « nécessite Google Docs » comme tout départ ≠ 1.
+- Sonde navigateur : 48 saisies (Markdown, listes, Tab/Entrée, liens, émoji, contrôles)
+  dans une note et une procédure ; seuls `0.`/`00.`/`10001.` échouaient.
+- Tests : API (3), navigateur (1, `e2e/rich-document.spec.ts`).
+
 ## Lot du 2026-09-22 (4) — supprimer les pièces jointes partout
 
 - ✕ dans la colonne Procédures (`ProcedureList.tsx`) ; l'éditeur l'avait déjà, mais la

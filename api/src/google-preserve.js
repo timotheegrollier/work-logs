@@ -136,7 +136,7 @@ export function diff(before, after) {
 }
 
 const paragraphs = (nodes, list = null, depth = -1) => nodes.flatMap(node => {
-  if (['bulletList', 'orderedList'].includes(node.type)) return paragraphs(node.content || [], { type: node.type, depth: depth + 1, start: node.attrs?.start || 1 }, depth + 1);
+  if (['bulletList', 'orderedList'].includes(node.type)) return paragraphs(node.content || [], { type: node.type, depth: depth + 1, start: node.attrs?.start ?? 1 }, depth + 1);
   if (node.type === 'listItem') return paragraphs(node.content || [], list, depth);
   return [{ node, list }];
 });

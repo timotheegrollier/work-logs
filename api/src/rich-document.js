@@ -42,7 +42,10 @@ export function validateDocument(document) {
       else if (key === 'fontSize') { if (typeof v !== 'string' || !/^\d{1,3}(\.\d{1,3})?(px|pt)$/.test(v)) fail(); }
       else if (key === 'fontFamily') { if (typeof v !== 'string' || !/^[\w\s,'-]{1,100}$/.test(v)) fail(); }
       else if (key === 'level') { if (![1, 2, 3, 4, 5, 6].includes(v)) fail(); }
-      else if (['start', 'colspan', 'rowspan', 'width', 'height'].includes(key)) { if (!Number.isInteger(v) || v < 1 || v > 10000) fail(); }
+      // Taper « 0. » ou « 10001. » en début de ligne crée une liste numérotée qui
+      // part de ce nombre : c'est une saisie légitime, pas une structure inconnue.
+      else if (key === 'start') { if (!Number.isSafeInteger(v) || v < 0) fail(); }
+      else if (['colspan', 'rowspan', 'width', 'height'].includes(key)) { if (!Number.isInteger(v) || v < 1 || v > 10000) fail(); }
       else if (key === 'colwidth') { if (!Array.isArray(v) || v.length > 50 || v.some(n => !Number.isInteger(n) || n < 1 || n > 10000)) fail(); }
       else if (['alt', 'title', 'language', 'target', 'rel', 'class'].includes(key)) { if (typeof v !== 'string' || v.length > 1000) fail(); }
       else fail();
@@ -76,6 +79,26 @@ export function validateDocument(document) {
   if (document?.type !== 'doc') fail();
   node(document);
   return document;
+}
+
+/**
+ * Rend enregistrable ce que l'éditeur peut produire mais que la validation
+ * refuserait à juste titre : une liste qui partirait d'un nombre au-delà des
+ * entiers sûrs (« 99999999999999999999. » tapé en début de ligne) repart de 1.
+ * Renvoie le même objet si rien n'est à corriger.
+ */
+export function normalizeDocument(node) {
+  if (!node || typeof node !== 'object') return node;
+  let next = node;
+  const start = node.attrs?.start;
+  if (node.type === 'orderedList' && start !== undefined && start !== null && !(Number.isSafeInteger(start) && start >= 0)) {
+    next = { ...node, attrs: { ...node.attrs, start: 1 } };
+  }
+  if (Array.isArray(node.content)) {
+    const content = node.content.map(normalizeDocument);
+    if (content.some((child, i) => child !== node.content[i])) next = { ...next, content };
+  }
+  return next;
 }
 
 /** Texte de recherche/export de secours ; le JSON reste la source de vérité. */

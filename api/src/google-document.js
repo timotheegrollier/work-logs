@@ -213,7 +213,7 @@ function flatten(document) {
   }
   for (const node of document.content) {
     if (['bulletList', 'orderedList'].includes(node.type)) {
-      if (node.attrs?.start && node.attrs.start !== 1) unsupported('les listes commençant à un autre nombre que 1');
+      if (node.attrs?.start != null && node.attrs.start !== 1) unsupported('les listes commençant à un autre nombre que 1');
       const startIndex = text.length + 1;
       for (const item of node.content) {
         if (item.content.length !== 1 || item.content[0].type !== 'paragraph') unsupported('les listes imbriquées ou à plusieurs paragraphes');

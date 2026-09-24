@@ -255,3 +255,17 @@ test('tableaux : lignes, colonnes, en-têtes, fusion et scission conservent le c
   await expect(content.locator('tr')).toHaveCount(3);
   await expect(content.locator('table')).toHaveJSProperty('innerHTML', tableBeforeReload);
 });
+
+test('taper « 0. » en début de ligne crée une liste qui part de 0 et s’enregistre', async ({ page }) => {
+  const content = page.getByRole('textbox', { name: 'Contenu du document' });
+  await page.getByLabel('Titre de l’entrée').fill('Étapes depuis zéro');
+  await content.click();
+  await page.keyboard.type('0. Préparer le coffrage');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Couler');
+  await expect(content.locator('ol[start="0"] li')).toHaveCount(2);
+  await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
+  await expect(page.getByText('document riche invalide')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: 'Contenu du document' }).locator('ol[start="0"] li')).toHaveText(['Préparer le coffrage', 'Couler']);
+});
