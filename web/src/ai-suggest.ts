@@ -5,7 +5,7 @@
  * `Authorization: Bearer <clé>`) : il parle aussi bien à OpenAI qu'à la clé
  * gratuite d'AI Studio via l'endpoint OpenAI-compatible de Gemini
  * (`https://generativelanguage.googleapis.com/v1beta/openai`, modèle
- * `gemini-2.5-flash-lite` par défaut). Aucune dépendance, `fetch` natif.
+ * `gemini-3.5-flash-lite` par défaut). Aucune dépendance, `fetch` natif.
  */
 
 export interface AiSettings {
@@ -17,15 +17,34 @@ export interface AiSettings {
 }
 
 export const DEFAULT_AI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai';
-export const DEFAULT_AI_MODEL = 'gemini-2.5-flash-lite';
+export const DEFAULT_AI_MODEL = 'gemini-3.5-flash-lite';
 /**
- * Ancien défaut (jusqu'à 0.37) : saturé chez Google en septembre 2026 (503 ou
- * 45–50 s par réponse). Enregistré tel quel par « Valeurs Gemini gratuites » ou
- * un simple enregistrement des réglages : on le lit comme « le défaut ».
+ * Modèle de secours sur l'endpoint Gemini : « OK » en direct le 2026-09-24
+ * (~3 s). `gemini-2.5-flash-lite` (secours de la 0.37.1) est exclu : Google le
+ * refuse en 404 aux nouvelles clés (« no longer available to new users »).
  */
-const PREVIOUS_DEFAULT_MODEL = 'gemini-3.5-flash-lite';
-/** Modèle de secours sur l'endpoint Gemini : stable, ~1,5 s par réponse. */
-export const FALLBACK_AI_MODEL = 'gemini-2.5-flash-lite';
+export const FALLBACK_AI_MODEL = 'gemini-3.1-flash-lite';
+
+export interface AiModelOption {
+  id: string;
+  label: string;
+}
+
+/**
+ * Modèles proposés dans le select des Paramètres : chacun a répondu « OK » à
+ * un appel réel le 2026-09-24 (clé de l'appareil, consigne « Réponds uniquement
+ * avec : OK »). `gemini-2.5-flash-lite` en est exclu : Google le refuse en 404
+ * (« no longer available to new users »). Le bouton « Tester » de l'écran ne
+ * sert plus qu'au diagnostic de connexion.
+ */
+export const AI_MODELS: AiModelOption[] = [
+  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — rapide et économique (défaut)' },
+  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — le plus capable' },
+  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — stable et léger' },
+];
+
+/** Valeur du select quand le modèle enregistré n'est dans aucune option. */
+export const AI_CUSTOM_MODEL = 'personnalise';
 const AI_TIMEOUT_MS = 30_000;
 const MAX_SUGGESTIONS = 8;
 
@@ -49,8 +68,7 @@ export function readAiSettings(): AiSettings {
     import.meta.env.MODE === 'test' ? '' : import.meta.env[name] || '';
   return {
     endpoint: stored(LS_ENDPOINT).trim() || envDefault('VITE_DEFAULT_AI_ENDPOINT') || DEFAULT_AI_ENDPOINT,
-    model: [stored(LS_MODEL).trim()].map((model) => (model === PREVIOUS_DEFAULT_MODEL ? '' : model))[0]
-      || envDefault('VITE_DEFAULT_AI_MODEL') || DEFAULT_AI_MODEL,
+    model: stored(LS_MODEL).trim() || envDefault('VITE_DEFAULT_AI_MODEL') || DEFAULT_AI_MODEL,
     key: stored(LS_KEY).trim() || envDefault('VITE_DEFAULT_AI_KEY'),
     profile: stored(LS_PROFILE).trim(),
   };
@@ -239,6 +257,22 @@ class AiOverloaded extends AiError {}
 const OVERLOADED_MESSAGE = 'Modèle IA surchargé chez le fournisseur : réessaie dans quelques minutes, ou choisis un autre modèle dans ⚙ Paramètres.';
 
 /**
+ * Motif renvoyé par le fournisseur (ex. Google `models/… is not found`) :
+ * plafonné à 200 caractères, chaîne vide si le corps est illisible. Une 404
+ * avec une clé valide vient presque toujours du modèle ou de l'endpoint
+ * enregistrés en Paramètres, pas de la clé — autant le montrer.
+ */
+async function providerDetail(res: Response): Promise<string> {
+  try {
+    const body = await res.json();
+    const message = body?.error?.message ?? body?.message;
+    return typeof message === 'string' && message.trim() ? message.trim().slice(0, 200) : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Un clic = une demande : jamais d'envoi automatique, jamais de boucle. Seule
  * exception, bornée : sur l'endpoint Gemini, si le modèle choisi est saturé
  * (503…) ou ne répond pas à temps, **un** essai avec le modèle de secours. Il
@@ -312,11 +346,34 @@ async function postOnce(
     throw new AiError('Limite du service IA atteinte : réessaie dans une minute.');
   }
   if (!res.ok) {
-    throw new AiError(`Service IA indisponible (${res.status}) : réessaie plus tard.`);
+    const detail = await providerDetail(res);
+    throw new AiError(
+      detail
+        ? `Service IA indisponible (${res.status}) : ${detail} — vérifie le modèle et l’endpoint dans ⚙ Paramètres.`
+        : `Service IA indisponible (${res.status}) : réessaie plus tard.`
+    );
   }
   const content = await res.json().catch(() => null).then((body) => body?.choices?.[0]?.message?.content);
   if (typeof content !== 'string' || !content.trim()) throw new AiError('Réponse IA illisible : réessaie.');
   return content;
+}
+
+/**
+ * Essai réel avec la clé de l'appareil : un appel minimal (« OK » attendu),
+ * jamais de nouvel essai. Rend la durée en millisecondes ; tout échec rend le
+ * motif du fournisseur via `postChatCompletions` (modèle inconnu, clé refusée…).
+ * Budget de 300 jetons : les modèles à raisonnement (`gemini-3.5-flash`) y
+ * consomment leur réflexion avant le premier jeton de réponse (mesuré : 10 ne
+ * suffisent pas, 200 oui).
+ */
+export async function testAiConnection(
+  settings: AiSettings,
+  options: { model?: string; timeoutMs?: number } = {}
+): Promise<number> {
+  const model = (options.model ?? settings.model).trim() || settings.model;
+  const started = Date.now();
+  await postChatCompletions({ ...settings, model }, 'le test de connexion', 'Réponds uniquement avec : OK', 'test', 300, options.timeoutMs ?? 15_000);
+  return Date.now() - started;
 }
 
 /**

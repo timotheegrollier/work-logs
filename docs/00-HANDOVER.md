@@ -318,9 +318,18 @@
   erreurs en français (clé refusée, limite 429, hors-ligne, réponse illisible),
   jamais d'envoi automatique — un clic = un envoi du titre seul.
 - ⚙ Paramètres, section « IA » : endpoint (défaut l'URL OpenAI de Google),
-  modèle (défaut `gemini-2.5-flash-lite` depuis 0.37.1, voir §17 des décisions), clé en champ password sur l'appareil,
-  bouton « Valeurs Gemini gratuites ». Sans clé, les boutons Suggérer expliquent
-  au lieu d'appeler.
+  modèle en select (3 options testées en direct le 2026-09-24 avec la clé du
+  demandeur, « OK » reçu : `gemini-3.5-flash-lite` (défaut), `gemini-3.5-flash`,
+  `gemini-3.1-flash-lite`, ce dernier servant aussi de secours automatique sur
+  5xx/délai ; `gemini-2.5-flash-lite` — défaut et secours de la 0.37.1 — exclu
+  car Google le refuse en 404 aux nouvelles clés « no longer available » —
+  clé essayée puis écartée du dépôt) + « Personnalisé… », bouton « Tester le
+  modèle » gardé en diagnostic (budget 300 jetons : `gemini-3.5-flash` y
+  consomme sa réflexion avant de répondre), motif du fournisseur affiché en
+  cas d'échec (une 404 vient du modèle/endpoint, pas de la clé), clé en champ
+  password sur l'appareil, bouton « Valeurs Gemini gratuites ». Sans clé, les
+  boutons Suggérer expliquent au lieu d'appeler. Réglages par appareil : PWA
+  et desktop ont chacun leur localStorage, à régler des deux côtés.
 - Boutons « ✨ Suggérer » : créateur d'entrée liée (remplit la zone, modifiable
   avant création) et éditeur Markdown (ajoute le bloc en fin de contenu) ;
   documents riches exclus en v1 (pas de cases). Le parse réutilise `subtasksMd`,

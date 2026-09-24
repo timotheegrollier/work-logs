@@ -1,6 +1,7 @@
 import { describe, expect, test, vi, afterEach } from 'vitest';
 import {
   AiError,
+  AI_MODELS,
   buildProcedurePrompt,
   buildProofreadPrompt,
   buildSuggestPrompt,
@@ -15,6 +16,7 @@ import {
   suggestProcedure,
   suggestSubtasks,
   taskSuggestContext,
+  testAiConnection,
   truncate,
   DEFAULT_AI_ENDPOINT,
   DEFAULT_AI_MODEL,
@@ -171,6 +173,11 @@ describe('réglages', () => {
     expect(readAiSettings()).toEqual({ endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL, key: '', profile: '' });
   });
 
+  test('le modèle par défaut figure dans les options du select', () => {
+    expect(AI_MODELS.map((option) => option.id)).toContain(DEFAULT_AI_MODEL);
+    expect(new Set(AI_MODELS.map((option) => option.id)).size).toBe(AI_MODELS.length);
+  });
+
   test('les valeurs collées en Paramètres sont relues et rognées', () => {
     saveAiSettings({ endpoint: 'https://autre/v1/ ', model: '  perso ', key: ' k ', profile: ' solo ' });
     expect(readAiSettings()).toEqual({ endpoint: 'https://autre/v1/', model: 'perso', key: 'k', profile: 'solo' });
@@ -232,6 +239,45 @@ describe('appel', () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed'); }));
     await expect(suggestSubtasks(settings, 'T')).rejects.toBeInstanceOf(AiError);
     await expect(suggestSubtasks(settings, 'T')).rejects.toThrow(/injoignable/);
+  });
+
+  test('essai réel : appel minimal avec le modèle choisi, durée rendue', async () => {
+    const fetch = vi.fn(async () => aiResponse('OK'));
+    vi.stubGlobal('fetch', fetch);
+    const ms = await testAiConnection({ ...settings, model: 'gemini-3.5-flash' });
+    expect(typeof ms).toBe('number');
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://ia.example/v1/chat/completions');
+    const body = JSON.parse(init.body as string);
+    expect(body.model).toBe('gemini-3.5-flash');
+    expect(body.max_tokens).toBe(300);
+  });
+
+  test('essai réel en échec : le motif du fournisseur remonte', async () => {
+    const google404 = {
+      ok: false,
+      status: 404,
+      json: async () => ({ error: { message: 'models/inconnu is not found', code: 404 } }),
+    } as Response;
+    vi.stubGlobal('fetch', vi.fn(async () => google404));
+    await expect(testAiConnection(settings)).rejects.toThrow(/inconnu/);
+  });
+
+  test('404 avec motif du fournisseur : le message dit quoi vérifier', async () => {
+    const google404 = {
+      ok: false,
+      status: 404,
+      json: async () => ({ error: { code: 404, message: 'models/vieux-modele is not found for API version v1beta', status: 'NOT_FOUND' } }),
+    } as Response;
+    vi.stubGlobal('fetch', vi.fn(async () => google404));
+    await expect(suggestSubtasks(settings, 'T')).rejects.toThrow(/vieux-modele/);
+    await expect(suggestSubtasks(settings, 'T')).rejects.toThrow(/Paramètres/);
+  });
+
+  test('404 sans corps lisible : message générique conservé', async () => {
+    const empty404 = { ok: false, status: 404, json: async () => { throw new SyntaxError('corps vide'); } } as unknown as Response;
+    vi.stubGlobal('fetch', vi.fn(async () => empty404));
+    await expect(suggestSubtasks(settings, 'T')).rejects.toThrow(/Service IA indisponible \(404\)/);
   });
 });
 
@@ -387,11 +433,12 @@ describe('modèle saturé', () => {
     await expect(suggestSubtasks(settings, 'T', { timeoutMs: 50 })).rejects.toThrow(/surchargé/);
   });
 
-  test('l’ancien défaut enregistré se lit comme le nouveau ; un autre choix est gardé', () => {
+  test('le modèle enregistré est gardé tel quel, même hors select', () => {
     localStorage.setItem('worklogs-ai-model', 'gemini-3.5-flash-lite');
     expect(readAiSettings().model).toBe(DEFAULT_AI_MODEL);
-    expect(DEFAULT_AI_MODEL).toBe('gemini-2.5-flash-lite');
-    localStorage.setItem('worklogs-ai-model', 'gemini-3.6-flash');
-    expect(readAiSettings().model).toBe('gemini-3.6-flash');
+    // Choix explicite conservé : pas de migration silencieuse (un modèle peut
+    // marcher pour une ancienne clé et pas pour une nouvelle).
+    localStorage.setItem('worklogs-ai-model', 'gemini-2.5-flash-lite');
+    expect(readAiSettings().model).toBe('gemini-2.5-flash-lite');
   });
 });

@@ -488,6 +488,16 @@ un délai dépassé s'annonce « modèle surchargé » au lieu de « hors ligne 
 tort la connexion. Vérifié en réel : mise en page avec le 3.5 saturé = 15,8 s au lieu d'un
 échec.
 
+**Re-révisé le 2026-09-24 : retour à `gemini-3.5-flash-lite`, secours `gemini-3.1-flash-lite`.**
+Testé en direct avec une clé neuve : `gemini-3.5-flash-lite` répond « OK » en 0,7 s,
+`gemini-3.1-flash-lite` en 3,2 s, `gemini-3.5-flash` aussi (avec un budget ≥ 200 jetons,
+sa réflexion consommant le reste) — mais `gemini-2.5-flash-lite` est refusé en 404
+« no longer available to new users ». Le défaut et le secours de la 0.37.1 ne marchent
+donc que pour les anciennes clés ; pour les nouvelles, tout échouait. La migration
+silencieuse est abandonnée avec : un modèle enregistré est gardé tel quel (il peut
+marcher pour une ancienne clé), et le select des Paramètres ne propose que les trois
+modèles validés en réel, avec bouton de diagnostic.
+
 ## 16. L'en-tête mobile se réorganise, sans hamburger — 2026-09-18
 
 **Le besoin.** Sur un Pixel 9a (412 px), la barre entassait logo, version, recherche,
