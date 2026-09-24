@@ -20,11 +20,13 @@ import {
   truncate,
   DEFAULT_AI_ENDPOINT,
   DEFAULT_AI_MODEL,
-  FALLBACK_AI_MODEL,
+  GEMINI_FALLBACK_MODELS,
+  resetAiFallbackMemory,
 } from './ai-suggest';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  resetAiFallbackMemory();
   localStorage.clear();
 });
 
@@ -377,42 +379,78 @@ describe('modèle saturé', () => {
   const gemini = { endpoint: DEFAULT_AI_ENDPOINT, model: 'gemini-3.5-flash-lite', key: 'cle-test', profile: '' };
   const modelOf = (call: unknown) => JSON.parse((call as [string, RequestInit])[1].body as string).model;
 
-  test('Gemini répond 503 : un seul essai de secours avec le modèle stable', async () => {
+  const hang = (_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    init.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+  });
+
+  test('Gemini répond 503 : le modèle suivant de la chaîne prend le relais', async () => {
     const fetch = vi.fn().mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('Relire'));
     vi.stubGlobal('fetch', fetch);
     expect(await suggestSubtasks(gemini, 'Dossier')).toBe('Relire');
-    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', FALLBACK_AI_MODEL]);
+    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', GEMINI_FALLBACK_MODELS[0]]);
   });
 
-  test('Gemini trop lent : abandonné à mi-délai, le secours prend le relais', async () => {
+  test('saturé, absent pour la clé, quota, réponse vide ou trop lent : on passe au suivant, chaque modèle une fois', async () => {
     const fetch = vi.fn()
-      .mockImplementationOnce((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
-        init.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
-      }))
+      .mockResolvedValueOnce(aiResponse('x', 503))
+      .mockImplementationOnce(hang)
+      .mockResolvedValueOnce(aiResponse('x', 404))
+      .mockResolvedValueOnce(aiResponse('x', 429))
+      .mockResolvedValueOnce(aiResponse('   '))
       .mockResolvedValueOnce(aiResponse('## Propre'));
     vi.stubGlobal('fetch', fetch);
     const started = Date.now();
-    expect(await proofreadEntry(gemini, 'Titre', 'brouillon', { timeoutMs: 200 })).toBe('## Propre');
-    expect(Date.now() - started).toBeLessThan(1000);
-    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', FALLBACK_AI_MODEL]);
+    expect(await proofreadEntry(gemini, 'Titre', 'brouillon', { timeoutMs: 600 })).toBe('## Propre');
+    expect(Date.now() - started).toBeLessThan(900);
+    const models = fetch.mock.calls.map(modelOf);
+    expect(models).toEqual(['gemini-3.5-flash-lite', ...GEMINI_FALLBACK_MODELS.filter((m) => m !== 'gemini-3.5-flash-lite').slice(0, 5)]);
+    expect(new Set(models).size).toBe(models.length);
   });
 
-  test('secours saturé aussi : message « surchargé », jamais de troisième appel', async () => {
+  test('tous saturés : message « surchargé », un appel par modèle au plus, jamais de boucle', async () => {
     const fetch = vi.fn(async () => aiResponse('x', 503));
     vi.stubGlobal('fetch', fetch);
     await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow(/surchargé/);
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(GEMINI_FALLBACK_MODELS.length);
   });
 
-  test('pas de secours : autre fournisseur, modèle déjà stable, clé refusée ou hors ligne', async () => {
+  test('budget total borné : des modèles qui traînent ne font pas attendre indéfiniment', async () => {
+    const fetch = vi.fn(hang);
+    vi.stubGlobal('fetch', fetch);
+    const started = Date.now();
+    await expect(suggestSubtasks(gemini, 'T', { timeoutMs: 300 })).rejects.toThrow(/surchargé/);
+    // 1,5 × le délai, à la marge du minuteur près.
+    expect(Date.now() - started).toBeLessThan(600);
+    expect(fetch.mock.calls.length).toBeLessThan(GEMINI_FALLBACK_MODELS.length);
+  });
+
+  test('le secours qui a répondu passe en tête dix minutes, puis le modèle choisi retrouve sa chance', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      let fetch = vi.fn().mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('Relire'));
+      vi.stubGlobal('fetch', fetch);
+      await suggestSubtasks(gemini, 'T');
+      fetch = vi.fn(async () => aiResponse('Relire'));
+      vi.stubGlobal('fetch', fetch);
+      await suggestSubtasks(gemini, 'T');
+      expect(fetch.mock.calls.map(modelOf)).toEqual([GEMINI_FALLBACK_MODELS[0]]);
+      // Un autre modèle choisi n'hérite pas de la mémoire.
+      fetch.mockClear();
+      await suggestSubtasks({ ...gemini, model: 'gemini-3.5-flash' }, 'T');
+      expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash']);
+      vi.setSystemTime(Date.now() + 11 * 60_000);
+      fetch.mockClear();
+      await suggestSubtasks(gemini, 'T');
+      expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('pas de chaîne : autre fournisseur, clé refusée ou hors ligne', async () => {
     let fetch = vi.fn(async () => aiResponse('x', 503));
     vi.stubGlobal('fetch', fetch);
     await expect(suggestSubtasks(settings, 'T')).rejects.toThrow(/surchargé/);
-    expect(fetch).toHaveBeenCalledTimes(1);
-
-    fetch = vi.fn(async () => aiResponse('x', 503));
-    vi.stubGlobal('fetch', fetch);
-    await expect(suggestSubtasks({ ...gemini, model: FALLBACK_AI_MODEL }, 'T')).rejects.toThrow(/surchargé/);
     expect(fetch).toHaveBeenCalledTimes(1);
 
     fetch = vi.fn(async () => aiResponse('x', 401));
@@ -424,6 +462,19 @@ describe('modèle saturé', () => {
     vi.stubGlobal('fetch', fetch);
     await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow('IA injoignable : hors ligne ou endpoint incorrect.');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('les sous-tâches laissent aux modèles qui raisonnent de quoi répondre', async () => {
+    const fetch = vi.fn(async () => aiResponse('Relire'));
+    vi.stubGlobal('fetch', fetch);
+    await suggestSubtasks(gemini, 'T');
+    expect(JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).max_tokens).toBeGreaterThanOrEqual(1024);
+  });
+
+  test('un 404 isolé du modèle choisi, puis tous saturés : le motif utile reste « surchargé » seulement si tout l’était', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(aiResponse('x', 404)).mockResolvedValue(aiResponse('x', 503));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow(/surchargé/);
   });
 
   test('délai dépassé sans secours : « surchargé », plus « hors ligne »', async () => {

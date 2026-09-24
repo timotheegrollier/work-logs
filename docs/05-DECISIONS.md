@@ -516,6 +516,21 @@ silencieuse est abandonnée avec : un modèle enregistré est gardé tel quel (i
 marcher pour une ancienne clé), et le select des Paramètres ne propose que les trois
 modèles validés en réel, avec bouton de diagnostic.
 
+**Révisé le 2026-09-24 (soir) : une chaîne de secours plutôt qu'un secours unique.**
+« Modèle surchargé » à chaque fonction IA d'une procédure. Mesures réelles (clé gratuite,
+trois passages) : les trois modèles du select (`3.5-flash-lite`, `3.5-flash`,
+`3.1-flash-lite`) répondaient 503 « high demand » en ~0,5 s ou traînaient 20–60 s ;
+`3-flash-preview` et `2.5-flash` répondaient 3/3 en ~3 s. Google sert les clés gratuites
+en dernier : aucun modèle n'est sûr seul. Donc, sur l'endpoint Gemini : le modèle choisi,
+puis `GEMINI_FALLBACK_MODELS` (du plus fiable au moins fiable), **chaque modèle une fois**,
+tranche de ⅔ du délai par modèle, budget total 1,5 × le délai ; on passe au suivant sur
+5xx, délai, 404 (modèle absent pour la clé), 429 (quota compté par modèle) ou réponse
+vide ; on s'arrête net sur clé refusée ou hors ligne. Le secours qui a répondu passe en
+tête 10 minutes (mémoire vive), pour que seul le premier appel paie un modèle qui traîne.
+Budget des sous-tâches : 300 → 1 024 jetons (les modèles à raisonnement décomptent leur
+réflexion ; à 300, la réponse revenait tronquée). Vérifié en réel : 18/18 réponses avec
+`3.5-flash-lite` saturé, 4–7 s d'ordinaire.
+
 ## 16. L'en-tête mobile se réorganise, sans hamburger — 2026-09-18
 
 **Le besoin.** Sur un Pixel 9a (412 px), la barre entassait logo, version, recherche,

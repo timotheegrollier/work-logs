@@ -131,6 +131,13 @@
   `refresh_token` qui rend la session à nouveau silencieuse. Première connexion (compte
   inconnu) et changement de compte inchangés.
 
+## Correctif du 2026-09-24 (4) — IA des procédures toujours « surchargée »
+
+- Chaîne de secours Gemini (`GEMINI_FALLBACK_MODELS`, `ai-suggest.ts`) au lieu d'un
+  secours unique lui aussi saturé ; mémoire de 10 min du secours qui a répondu ;
+  sous-tâches à 1 024 jetons. Mesures et règles : `05-DECISIONS.md` §17.
+- Tests : chaîne (saturé/lent/404/429/vide), budget borné, arrêt net, mémoire.
+
 ## Lot du 2026-09-24 (3) — aperçu des .docx, « Ouvrir avec… » réparé
 
 - Aperçu Word natif (`docx-preview.ts` + `DocxView.tsx`, kind `docx`), sans dépendance :
