@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 
 /**
  * « Ouvrir avec… » : la pièce jointe est confiée à l'application par défaut du
@@ -44,4 +45,39 @@ export function prepareOpenCopy({ uploadDir, tmpDir, stored, filename }) {
   fs.copyFileSync(source, target);
   fs.chmodSync(target, 0o400);
   return target;
+}
+
+/**
+ * Confie le fichier à l'application du système **sans attendre qu'elle se ferme**.
+ * `shell.openPath` attend la fin de `xdg-open`, qui, selon le bureau, ne rend la
+ * main qu'à la fermeture de LibreOffice : l'appel IPC restait alors sans réponse
+ * (« reply was never sent »). Ici `xdg-open` part détaché ; on répond dès qu'il est
+ * lancé. Absent (autre système, conteneur) : repli sur `fallback`, borné dans le temps.
+ */
+export function launchDetached(target, { command = 'xdg-open', spawnImpl = spawn, platform = process.platform, fallback = null, fallbackTimeoutMs = 5000, settleMs = 1500 } = {}) {
+  const viaFallback = () => {
+    if (!fallback) return Promise.resolve('aucun programme pour ouvrir les fichiers');
+    // Un repli qui ne répond jamais vaut « lancé » : l'utilisateur voit l'application s'ouvrir ou non.
+    return Promise.race([
+      Promise.resolve().then(() => fallback(target)).then((failure) => failure || '', (error) => error?.message || String(error)),
+      new Promise((resolve) => setTimeout(() => resolve(''), fallbackTimeoutMs)),
+    ]);
+  };
+  if (platform !== 'linux') return viaFallback();
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawnImpl(command, [target], { detached: true, stdio: 'ignore' });
+    } catch {
+      resolve(viaFallback());
+      return;
+    }
+    let done = false;
+    const finish = (value) => { if (!done) { done = true; child.unref(); resolve(value); } };
+    // Un échec immédiat (aucune application pour ce type) se voit au code de sortie ;
+    // passé ce délai, l'application est lancée : on n'attend pas sa fermeture.
+    child.once('spawn', () => setTimeout(() => finish(''), settleMs));
+    child.once('exit', (code) => finish(code === 0 ? '' : `${command} a échoué, code ${code}`));
+    child.once('error', () => { if (!done) { done = true; resolve(viaFallback()); } });
+  });
 }

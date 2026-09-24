@@ -34,7 +34,7 @@ export async function useRealApi() {
      * DOM et le `fetch` de Node ne sait pas l'encoder — multer ne verrait alors
      * aucun fichier. Un corps `Buffer` avec sa frontière marche dans les deux.
      */
-    async upload(filename: string, contents: string, fields: Record<string, string> = {}) {
+    async upload(filename: string, contents: string | Buffer, fields: Record<string, string> = {}) {
       const boundary = '----worklogs' + Math.random().toString(36).slice(2);
       const chunks: Buffer[] = [];
       const part = (header: string, body: Buffer) => {

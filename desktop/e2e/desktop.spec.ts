@@ -28,6 +28,16 @@ function downloadNext(target: string): Promise<void> {
   }), target);
 }
 
+/**
+ * Remplace `xdg-open` : note le fichier reçu puis **reste ouvert** 3 s, comme LibreOffice.
+ * Un `shell.openPath` qui attendrait sa fin ne répondrait jamais (bug de la 0.35).
+ */
+function fakeOpener(): string {
+  const script = path.join(directory, 'ouvrir-avec.sh');
+  fs.writeFileSync(script, `#!/bin/sh\nprintf '%s' "$1" > "${path.join(directory, 'ouvert.txt')}"\nexec sleep 3\n`, { mode: 0o755 });
+  return script;
+}
+
 async function launch(expectedTitle = 'Comment ça marche') {
   const env = Object.fromEntries(Object.entries(process.env).filter((item): item is [string, string] =>
     item[1] !== undefined && item[0] !== 'ELECTRON_RUN_AS_NODE'));
@@ -36,7 +46,8 @@ async function launch(expectedTitle = 'Comment ça marche') {
       : { args: [path.resolve('desktop/main.mjs')] }),
     // Uniquement les environnements CI/conteneurs sans sandbox Chromium utilisable.
     chromiumSandbox: process.env.WORKLOGS_TEST_NO_SANDBOX !== '1',
-    env: { ...env, WORKLOGS_DATA_DIR: path.join(directory, 'data'), WORKLOGS_PROFILE_DIR: path.join(directory, 'profile'), WORKLOGS_SKIP_UPDATE_CHECK: '1' },
+    env: { ...env, WORKLOGS_DATA_DIR: path.join(directory, 'data'), WORKLOGS_PROFILE_DIR: path.join(directory, 'profile'), WORKLOGS_SKIP_UPDATE_CHECK: '1',
+      WORKLOGS_OPEN_COMMAND: fakeOpener() },
   });
   page = await application.firstWindow();
   await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(expectedTitle);
@@ -148,14 +159,15 @@ test('fichiers joints et export JSON fonctionnent dans l’application empaquet�
   expect(fs.readFileSync(fileTarget, 'utf8')).toBe('contenu desktop');
 
   // « Ouvrir avec… » : une copie en lecture seule, sous son vrai nom, part vers le système.
-  await application!.evaluate(({ shell }) => {
-    shell.openPath = async (target: string) => { (globalThis as unknown as { openedPath: string }).openedPath = target; return ''; };
-  });
   await page.getByRole('button', { name: 'Aperçu de pièce.txt' }).click();
   const viewer = page.getByRole('dialog', { name: 'Aperçu de pièce.txt' });
   await viewer.getByRole('button', { name: 'Ouvrir avec…' }).click();
-  await expect(viewer.getByRole('status')).toContainText('lecture seule');
-  const opened = await application!.evaluate(() => (globalThis as unknown as { openedPath: string }).openedPath);
+  // L'« application » reste ouverte 3 s : la réponse arrive avant, sans erreur IPC.
+  // (La fermeture de l'app de test attend ce faux programme : il hérite du canal de
+  // débogage de Playwright. Une vraie session n'a pas ce canal.)
+  await expect(viewer.getByRole('status')).toContainText('lecture seule', { timeout: 2500 });
+  await expect(viewer.getByRole('alert')).toHaveCount(0);
+  const opened = fs.readFileSync(path.join(directory, 'ouvert.txt'), 'utf8');
   expect(path.basename(opened)).toBe('pièce.txt');
   expect(fs.readFileSync(opened, 'utf8')).toBe('contenu desktop');
   expect(fs.statSync(opened).mode & 0o222).toBe(0);

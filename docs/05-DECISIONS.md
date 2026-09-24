@@ -442,6 +442,24 @@ PWA : feuille de partage (`navigator.share` avec le fichier), repli sur le tél�
 Fichier déjà sur Drive : lien `drive.google.com/file/d/<id>/view`, ouvert dans le navigateur.
 L'aperçu intégré des tableurs (SheetJS) reste écarté : rendu non fidèle, dépendance ~1 Mo.
 
+**Complété le 2026-09-24 : aperçu des `.docx`, toujours sans dépendance.** Un `.docx` est
+un zip de XML : `DecompressionStream('deflate-raw')` et `DOMParser` suffisent
+(`web/src/docx-preview.ts`, ~250 lignes). Rendu : titres (nom de style anglais canonique,
+qui survit à « Titre1 »), paragraphes et alignement, gras/italique/souligné/barré, listes
+imbriquées d'un seul tenant (numérotation continue), tableaux, liens http(s)/mailto,
+images PNG/JPEG/GIF/BMP/WebP en `data:` (les CSP n'autorisent pas `blob:`). Écarté :
+mise en page fine, en-têtes/pieds, zones de texte, EMF/WMF — l'aperçu le dit et renvoie
+à « Ouvrir avec… ». Sécurité : éléments React seulement, jamais de HTML brut ; lien
+`javascript:` ignoré ; bornes contre les archives piégées (5 000 entrées, 40 Mo par
+entrée **vérifiés pendant la décompression**, 20 000 blocs). L'ancien `.doc` (binaire)
+reste sans aperçu.
+
+**Corrigé le même jour : « Ouvrir avec… » sans réponse sur le desktop.** `shell.openPath`
+attend la fin de `xdg-open`, qui selon le bureau ne rend la main qu'à la fermeture de
+l'application ouverte : « Error invoking remote method 'worklogs:open-attachment': reply
+was never sent ». `xdg-open` part maintenant détaché (`launchDetached`) ; on répond après
+1,5 s ou dès un échec immédiat (code de sortie), sans attendre la fermeture.
+
 **Types dangereux neutralisés.** Un `text/html` ou un `image/svg+xml` servi en `inline` dans
 notre origine deviendrait du code actif. La route d'aperçu les renvoie en
 `text/plain; charset=utf-8` avec `X-Content-Type-Options: nosniff`.

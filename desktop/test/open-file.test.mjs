@@ -41,3 +41,37 @@ test('nom de fichier nettoyé', () => {
   assert.equal(safeFilename('.cache', 'x'), 'cache');
   assert.equal(safeFilename('', 'at_1.ods'), 'at_1.ods');
 });
+
+test('lancement détaché : répond sans attendre la fermeture de l’application', async () => {
+  const { launchDetached } = await import('../open-file.mjs');
+  const { EventEmitter } = await import('node:events');
+  const fake = (behaviour) => (command, args, options) => {
+    const child = Object.assign(new EventEmitter(), { unrefed: false, unref() { this.unrefed = true; } });
+    fake.last = { command, args, options, child };
+    setImmediate(() => behaviour(child));
+    return child;
+  };
+  // L'application reste ouverte indéfiniment : réponse après le délai de grâce.
+  const started = Date.now();
+  assert.equal(await launchDetached('/tmp/a.docx', { platform: 'linux', settleMs: 50, spawnImpl: fake((c) => c.emit('spawn')) }), '');
+  assert.ok(Date.now() - started < 1000);
+  assert.deepEqual(fake.last.args, ['/tmp/a.docx']);
+  assert.equal(fake.last.options.detached, true);
+  assert.equal(fake.last.child.unrefed, true);
+  // xdg-open qui rend la main tout de suite : succès ou échec lisible.
+  assert.equal(await launchDetached('/tmp/a', { platform: 'linux', settleMs: 5000, spawnImpl: fake((c) => { c.emit('spawn'); c.emit('exit', 0); }) }), '');
+  assert.match(await launchDetached('/tmp/a', { platform: 'linux', settleMs: 5000, spawnImpl: fake((c) => { c.emit('spawn'); c.emit('exit', 3); }) }), /code 3/);
+  // Commande absente : repli, lui-même borné s'il ne répond jamais.
+  assert.equal(await launchDetached('/tmp/a', { platform: 'linux', spawnImpl: fake((c) => c.emit('error', new Error('ENOENT'))), fallback: async () => 'refus' }), 'refus');
+  assert.equal(await launchDetached('/tmp/a', { platform: 'darwin', fallback: () => new Promise(() => {}), fallbackTimeoutMs: 30 }), '');
+  assert.match(await launchDetached('/tmp/a', { platform: 'linux', spawnImpl: fake((c) => c.emit('error', new Error('ENOENT'))) }), /aucun programme/);
+});
+
+test('lancement réel : un vrai processus détaché, sans attendre sa fin', async () => {
+  const { launchDetached } = await import('../open-file.mjs');
+  const started = Date.now();
+  // `sleep 30` joue l'application qui reste ouverte.
+  assert.equal(await launchDetached('30', { platform: 'linux', command: 'sleep', settleMs: 100 }), '');
+  assert.ok(Date.now() - started < 2000);
+  assert.match(await launchDetached('/nulle/part', { platform: 'linux', command: 'false', settleMs: 2000 }), /code 1/);
+});

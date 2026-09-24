@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, formatSize, type Attachment } from '../lib';
 import { downloadAttachment, driveViewUrl, openAttachmentWith } from '../attachment-download';
 import { previewKind, previewNotice } from '../file-preview';
+import { DocxView } from './DocxView';
 
 /**
  * Aperçu intégré d'une pièce jointe : image, PDF ou texte s'affichent dans un
@@ -104,6 +105,7 @@ export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { f
         {file.driveFileId && <p className="viewer-notice">☁ Conservé sur Google Drive — l’aperçu fonctionne après récupération, même sur un autre appareil.</p>}
         {kind === 'image' && <img src={url} alt={file.filename} />}
         {kind === 'pdf' && <iframe className="viewer-frame" src={url} title={file.filename} />}
+        {kind === 'docx' && <DocxView url={url} filename={file.filename} />}
         {kind === 'text' && (
           error
             ? <p role="alert">{error}</p>

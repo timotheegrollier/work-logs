@@ -855,6 +855,24 @@ describe('écrire une entrée', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Aperçu de notes.md' })).not.toBeInTheDocument());
   });
 
+  test('un document Word s’affiche dans l’aperçu : titres, liste, lien, image', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_docx', title: 'Étiqueteuse' }] });
+    const docx = (await import('node:fs')).readFileSync((await import('node:path')).resolve('src/__fixtures__/procedure.docx'));
+    await api.upload('Changer format balance etiqueteuse.docx', docx, { entry_id: 'en_docx' });
+
+    render(<App />);
+    await user.click(await within(journal()).findByText('Étiqueteuse'));
+    await user.click(await screen.findByRole('button', { name: 'Aperçu de Changer format balance etiqueteuse.docx' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Aperçu de Changer format balance etiqueteuse.docx' });
+    const page = await within(dialog).findByRole('article', { name: 'Contenu de Changer format balance etiqueteuse.docx' });
+    expect(within(page).getByRole('heading', { level: 1, name: 'Changer le format de la balance' })).toBeInTheDocument();
+    expect(within(page).getAllByRole('listitem').map((li) => li.textContent)).toContain('Valider');
+    expect(within(page).getByRole('link', { name: 'notice du fabricant' })).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(within(page).getByRole('img', { name: 'schéma' })).toHaveAttribute('src', expect.stringMatching(/^data:image\/png/));
+    expect(within(dialog).queryByText(/ne prend pas en charge/)).not.toBeInTheDocument();
+  });
+
   test('un tableur est annoncé tel quel plutôt que rendu de travers', async () => {
     const user = userEvent.setup();
     seedData(api.db, { entries: [{ id: 'en_xlsx', title: 'Budget' }] });

@@ -18,6 +18,10 @@ describe('classement des pièces jointes pour l’aperçu', () => {
 
   test('les tableurs sont annoncés, jamais rendus de travers', () => {
     expect(previewKind({ filename: 'budget.xlsx' })).toBe('sheet');
+    expect(previewKind({ filename: 'Changer format balance.DOCX' })).toBe('docx');
+    expect(previewKind({ filename: 'sans-extension', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })).toBe('docx');
+    // L'ancien format binaire n'a pas d'aperçu.
+    expect(previewKind({ filename: 'ancien.doc' })).toBe('other');
     expect(previewKind({ filename: 'budget.ods' })).toBe('sheet');
     expect(previewKind({ filename: 'budget', mime: 'application/vnd.oasis.opendocument.spreadsheet' })).toBe('sheet');
     // Un CSV reste du texte : il s’affiche très bien tel quel.

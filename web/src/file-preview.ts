@@ -4,7 +4,7 @@
  * classement se fait sur l'extension **et** le type MIME, car un fichier
  * déposé par glisser-déposer peut arriver sans type.
  */
-export type PreviewKind = 'image' | 'pdf' | 'text' | 'sheet' | 'other';
+export type PreviewKind = 'image' | 'pdf' | 'text' | 'docx' | 'sheet' | 'other';
 
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico'];
 const TEXT_EXT = [
@@ -26,6 +26,8 @@ export function previewKind(file: { filename: string; mime?: string }): PreviewK
   const mime = (file.mime || '').toLowerCase();
   if (SHEET_EXT.includes(ext) || /spreadsheet|ms-excel|opendocument\.spreadsheet/.test(mime)) return 'sheet';
   if (ext === 'pdf' || mime === 'application/pdf') return 'pdf';
+  // Word moderne seulement : l'ancien .doc est un format binaire, sans aperçu.
+  if (ext === 'docx' || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
   if (IMAGE_EXT.includes(ext) || mime.startsWith('image/')) return 'image';
   if (TEXT_EXT.includes(ext) || mime.startsWith('text/')) return 'text';
   return 'other';

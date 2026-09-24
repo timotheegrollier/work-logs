@@ -131,6 +131,18 @@
   `refresh_token` qui rend la session à nouveau silencieuse. Première connexion (compte
   inconnu) et changement de compte inchangés.
 
+## Lot du 2026-09-24 (3) — aperçu des .docx, « Ouvrir avec… » réparé
+
+- Aperçu Word natif (`docx-preview.ts` + `DocxView.tsx`, kind `docx`), sans dépendance :
+  détail et limites dans `05-DECISIONS.md` §15. Fixture réelle produite par LibreOffice :
+  `web/src/__fixtures__/procedure.docx`.
+- Desktop : « Ouvrir avec… » ne répondait plus (« reply was never sent ») — `xdg-open`
+  lancé détaché (`desktop/open-file.mjs` › `launchDetached`). Les parcours desktop
+  remplacent `xdg-open` par `WORKLOGS_OPEN_COMMAND` (un script qui reste ouvert 3 s).
+- Tests : lecteur (3), classement (1), interface (1), navigateur (1), lancement (2 + desktop).
+- Travail fait dans un worktree (`../work-logs-docx`) : d'autres sessions tournent sur le
+  même dépôt.
+
 ## Lot du 2026-09-24 (2) — colonne Procédures redimensionnable
 
 - Poignée sur le bord gauche des Procédures (`ColumnResizer` généralisé : `area`, `label`,

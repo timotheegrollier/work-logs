@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
 import { createGoogleClient, readDefaultClient } from './google.mjs';
 import { installGoogleView } from './google-view.mjs';
-import { prepareOpenCopy } from './open-file.mjs';
+import { launchDetached, prepareOpenCopy } from './open-file.mjs';
 import { checkForUpdate, hasPackageKit, hasPkexec, installedVersionCommand, installKind, installedMatches, isAuthorizationFailure, isNewer, logUpdateEvent, packageManager, parseManagerProgress, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, privilegedInstallCommand, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
@@ -488,7 +488,11 @@ if (!app.requestSingleInstanceLock()) {
             uploadDir: path.join(dataDir, 'uploads'), tmpDir: app.getPath('temp'),
             stored: request?.stored, filename: request?.filename,
           });
-          const failure = await shell.openPath(target);
+          // WORKLOGS_OPEN_COMMAND : les parcours de test enregistrent le fichier au lieu de l'ouvrir.
+          const failure = await launchDetached(target, {
+            command: process.env.WORKLOGS_OPEN_COMMAND || 'xdg-open',
+            fallback: (file) => shell.openPath(file),
+          });
           return failure ? `Aucune application ne sait ouvrir ce fichier (${failure}).` : '';
         } catch (error) {
           return error.message;

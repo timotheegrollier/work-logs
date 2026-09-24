@@ -1215,6 +1215,17 @@ button:disabled {
   overflow: auto;
   background: var(--surface-2);
 }
+/* Aperçu Word : une page lisible, en haut du panneau, le texte au premier plan. */
+.viewer-body .docx-view { align-self: start; justify-self: center; width: min(100%, 820px); padding: 28px 36px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; }
+.docx-view > .viewer-notice { margin-top: 0; }
+.viewer-body .docx-view img { max-height: none; height: auto; }
+.docx-view .docx-blank { min-height: 1em; margin: 0; }
+.docx-table { overflow-x: auto; margin: 12px 0; }
+.docx-table table { border-collapse: collapse; }
+.docx-table td { border: 1px solid var(--line); padding: 6px 10px; vertical-align: top; }
+.docx-table td > :first-child { margin-top: 0; }
+.docx-table td > :last-child { margin-bottom: 0; }
+@media (max-width: 600px) { .viewer-body .docx-view { padding: 16px; } }
 .viewer-body img {
   max-width: 100%;
   max-height: 100%;
