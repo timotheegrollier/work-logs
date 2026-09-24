@@ -31,6 +31,24 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-09-24 — en-tête allégé, journal en fil, ergonomie desktop et mobile
+
+- Demande : retirer **Exporter** de l'en-tête une fois connecté à Google (la synchro auto suffit)
+  et améliorer nettement l'interface, desktop comme mobile. Pourquoi : `05-DECISIONS.md` §24.
+- En-tête : Exporter masqué si session Google active et non expirée ; largeurs au pixel près
+  déplacées dans **Paramètres → Affichage** ; panneaux en contrôle segmenté ; recherche à loupe.
+- Mobile (≤ 600 px) : en-tête sur deux lignes, interrupteurs de panneaux dans une barre fixée en
+  bas (toujours `aria-pressed`), pastilles projets sans retour à la ligne, fondu de défilement.
+- Éditeur : titre d'abord, actions (tâche liée, IA) en pastilles dessous ; plus de « Details »
+  parasite sur les entrées locales. Tâches : priorité affichée seulement si ≠ normale, pied de
+  carte « ＋ Documents / ＋ Entrée liée » (noms accessibles inchangés).
+- Journal en fil (ligne + nœud par jour, plein pour aujourd'hui) ; libellés en casse de phrase ;
+  `--accent-solid` pour les aplats blancs ; pile de polices humanistes. Aucune dépendance.
+- Tests : App (3 nouveaux : largeurs dans Paramètres, Exporter masqué connecté, gardé si expiré ;
+  largeurs et priorité adaptés), e2e `mobile-header` (barre du bas) et `sidebar-widths` (champs
+  dans Paramètres) réécrits. `check.sh` : 161 API, 318 front, 38 desktop unitaires, 25 scripts,
+  7 relais, 38 navigateur, 9 desktop e2e (+1 ignoré sans gestionnaire de fenêtres).
+
 ## Lot du 2026-09-23 (2) — IA dans l'éditeur de procédures
 
 - Demande : « Mise en page / correction » et « Suggérer une procédure » sur les procédures.

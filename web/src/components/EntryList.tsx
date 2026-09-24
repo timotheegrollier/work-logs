@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { dayLabel, groupByDay, groupTabs, plainText, type EntrySummary, type JournalItem, type Project } from '../lib';
+import { dayLabel, groupByDay, groupTabs, plainText, todayISO, type EntrySummary, type JournalItem, type Project } from '../lib';
 
 export function EntryList({
   entries,
@@ -32,7 +32,7 @@ export function EntryList({
       <button className="new-entry" onClick={onCreate}>
         <span aria-hidden="true">＋</span> Nouvelle entrée
       </button>
-      <button className="new-document" onClick={onCreateDocument}>＋ Nouveau document</button>
+      <button className="ghost new-document" onClick={onCreateDocument}>＋ Nouveau document</button>
 
       {active.length === 0 && (
         <p className="empty">
@@ -72,7 +72,7 @@ function DayGroups({
   return (
     <ol className="days">
       {groupByDay(items.map(item => item.entry)).map(([date, ofDay]) => (
-        <li key={date}>
+        <li key={date} className={date === todayISO() ? 'is-today' : undefined}>
           <h2 className="day">{dayLabel(date)}</h2>
           <ul>
             {ofDay.map(representative => items.find(item => item.entry.id === representative.id)!).map(({ entry, title, tabs }) => (

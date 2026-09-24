@@ -1,28 +1,36 @@
 /* WorkLogs — un seul écran : journal à gauche, écriture au centre, tâches à droite. */
 
 :root[data-theme='dark'] {
-  --bg: #0e1118;
-  --surface: #151a24;
-  --surface-2: #1c2230;
-  --line: #29313f;
-  --text: #e7ecf4;
-  --muted: #8e9bb0;
-  --accent: #5b8cff;
-  --accent-soft: #1d2a4a;
+  --bg: #0f1219;
+  --surface: #151922;
+  --surface-2: #1b202b;
+  --line: #272e3b;
+  --text: #e8ebf1;
+  --muted: #8d97a9;
+  --accent: #7896ff;
+  /* Aplats pleins (boutons primaires) : assez sombres pour porter du blanc. */
+  --accent-solid: #3d67e6;
+  --accent-soft: #1c2641;
+  /* Le fil du journal : l'encre qui relie les jours. */
+  --rule: #2e3647;
+  --search-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%238d97a9' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.6'/%3E%3Cpath d='m10.6 10.6 3.4 3.4'/%3E%3C/svg%3E");
   --danger: #f2637e;
   --danger-soft: #3a1a24;
   --ok: #4ade80;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
 }
 :root[data-theme='light'] {
-  --bg: #f2f4f8;
+  --bg: #f3f4f7;
   --surface: #ffffff;
-  --surface-2: #f6f8fb;
-  --line: #dde3ec;
-  --text: #1a2233;
-  --muted: #64748b;
+  --surface-2: #f6f7fa;
+  --line: #e1e5ec;
+  --text: #171d29;
+  --muted: #5f6b7f;
   --accent: #2f5fe0;
-  --accent-soft: #e4ecff;
+  --accent-solid: #2f5fe0;
+  --accent-soft: #e6edff;
+  --rule: #cfd6e3;
+  --search-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235f6b7f' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.6'/%3E%3Cpath d='m10.6 10.6 3.4 3.4'/%3E%3C/svg%3E");
   --danger: #c62b4c;
   --danger-soft: #fde8ed;
   --ok: #12894f;
@@ -41,20 +49,22 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.55 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Pas de police embarquée (zéro dépendance) : on évite DejaVu Sans, large et
+     lourde, au profit des sans-serif humanistes présentes sur Linux. */
+  font: 15px/1.55 Inter, 'Noto Sans', Cantarell, Ubuntu, Lato, 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 a {
   color: var(--accent);
 }
 ::selection {
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
 }
 h1,
 h2,
 h3 {
-  font-weight: 640;
+  font-weight: 650;
   letter-spacing: -0.01em;
 }
 
@@ -164,8 +174,8 @@ button:disabled {
 .head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 10px;
+  padding: 9px 16px;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
   box-shadow: 0 1px 0 rgb(0 0 0 / 0.04);
@@ -177,7 +187,7 @@ button:disabled {
 .logo {
   margin: 0;
   font-size: 17px;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: -0.02em;
   display: flex;
   align-items: center;
@@ -202,10 +212,40 @@ button:disabled {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.search {
-  width: min(380px, 36vw);
-  border-radius: 99px;
-  padding-left: 14px;
+.head input.search {
+  flex: 0 1 420px;
+  min-width: 180px;
+  height: 36px;
+  border-radius: 10px;
+  padding-left: 34px;
+  /* Loupe en SVG intégré : aucune ressource externe, teinte par thème. */
+  background-image: var(--search-icon);
+  background-position: 11px 50%;
+  background-repeat: no-repeat;
+  margin-left: 10px;
+}
+.search:focus-visible {
+  outline-offset: 0;
+}
+.head > .ghost,
+.head .account-menu .settings-btn {
+  height: 36px;
+}
+.theme-btn {
+  width: 36px;
+  padding: 0 !important;
+  display: inline-grid;
+  place-items: center;
+  font-size: 15px;
+}
+.export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.export-btn .export-icon {
+  display: inline;
+  color: var(--muted);
 }
 .stats {
   margin: 0;
@@ -221,49 +261,35 @@ button:disabled {
   color: var(--danger);
 }
 
-/* Contrôles de largeur des colonnes */
+/* Paramètres › Affichage : largeurs de colonnes au pixel près. */
+.display-settings {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.display-settings h3 { margin: 0; font-size: 14px; }
 .col-widths {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-left: auto;
-  font-size: 12px;
+  gap: 10px 14px;
+  font-size: 13px;
   color: var(--muted);
 }
 .col-width-control {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-.col-width-control label {
   white-space: nowrap;
 }
 .col-width-control input[type="number"] {
-  width: 56px;
-  padding: 3px 6px;
-  font-size: 12px;
+  width: 72px;
   text-align: right;
-  -moz-appearance: textfield;
-  appearance: textfield;
+  font-variant-numeric: tabular-nums;
 }
-.col-width-control input[type="number"]::-webkit-outer-spin-button,
-.col-width-control input[type="number"]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-.col-width-reset {
-  background: none;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--muted);
-  padding: 3px 8px;
-  font-size: 11px;
-  cursor: pointer;
-}
-.col-width-reset:hover {
-  color: var(--text);
-  border-color: var(--accent);
-}
+.col-widths .ghost { font-size: 13px; }
 
 .columns {
   flex: 1;
@@ -339,8 +365,12 @@ button:disabled {
   min-width: 0;
   flex-wrap: wrap;
 }
-/* Les pastilles défilent horizontalement au lieu de pousser le bandeau. */
+/* Les pastilles défilent horizontalement au lieu de pousser le bandeau ;
+   le fondu à droite montre qu'il en reste à faire défiler. */
 .project-strip .chips {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  padding-right: 24px;
   flex-wrap: nowrap;
   overflow-x: auto;
   flex: 1;
@@ -362,6 +392,8 @@ button:disabled {
 }
 .chip {
   display: inline-flex;
+  flex: none;
+  white-space: nowrap;
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
@@ -454,12 +486,12 @@ button:disabled {
 
 /* ------------------------------------------------------------ journal */
 .new-entry {
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
   font-weight: 600;
   padding: 9px 12px;
   width: 100%;
-  box-shadow: 0 6px 16px -10px var(--accent);
+  box-shadow: 0 6px 16px -10px var(--accent-solid);
   transition: filter 0.12s ease, transform 0.12s ease;
 }
 .new-entry:hover {
@@ -474,37 +506,78 @@ button:disabled {
   margin: 0;
   padding: 0;
 }
+/* Le journal est un fil : une ligne d'encre relie les jours, chaque jour y
+   pose un nœud. C'est la seule signature visuelle de l'app — le reste se tait. */
+.days > li {
+  position: relative;
+  padding-left: 18px;
+}
+.days > li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 16px;
+  bottom: -16px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rule);
+}
+.days > li:last-child::before {
+  bottom: 10px;
+}
 .days > li + li {
-  margin-top: 14px;
+  margin-top: 16px;
 }
 .day {
-  margin: 0 0 6px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
   color: var(--muted);
   position: sticky;
   top: -14px;
-  background: var(--bg);
-  padding: 6px 0;
+  background: var(--panel-bg, var(--bg));
+  padding: 6px 0 6px 10px;
   z-index: 1;
+}
+.day::before {
+  content: '';
+  position: absolute;
+  left: -18px;
+  top: calc(50% - 5px);
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--panel-bg, var(--bg));
+  border: 2px solid var(--rule);
+}
+/* Aujourd'hui : nœud plein. Jour de l'entrée ouverte : nœud à l'encre. */
+.days > li.is-today > .day {
+  color: var(--text);
+}
+.days > li.is-today > .day::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.days > li:has(.entry.is-selected) > .day::before {
+  border-color: var(--accent);
 }
 .entry {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 8px 10px;
-  border-radius: 10px;
+  padding: 7px 10px;
+  border-radius: 9px;
   border: 1px solid transparent;
 }
 .entry:hover {
   background: var(--surface-2);
-  border-color: var(--line);
 }
 .entry.is-selected {
   background: var(--accent-soft);
-  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
+  border-radius: 2px 9px 9px 2px;
 }
 .entry-title {
   display: flex;
@@ -523,7 +596,15 @@ button:disabled {
   white-space: nowrap;
 }
 
-.new-document { width: 100%; margin: 0 0 12px; }
+.new-document {
+  width: 100%;
+  margin: 8px 0 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+.new-document:hover { color: var(--text); border-color: var(--accent); }
 .archives {
   margin-top: 14px;
   border: 1px solid var(--line);
@@ -535,10 +616,8 @@ button:disabled {
   align-items: center;
   gap: 7px;
   padding: 9px 12px;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--muted);
   cursor: pointer;
   border-radius: 10px;
@@ -579,11 +658,9 @@ button:disabled {
   align-items: center;
   gap: 7px;
   margin: 0;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text);
 }
 .procedures-head .count {
   flex: none;
@@ -597,8 +674,7 @@ button:disabled {
   min-width: 0;
   margin-left: auto;
   font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0;
+  font-size: 12.5px;
   color: var(--accent);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -707,7 +783,7 @@ button:disabled {
 .rich-toolbar { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .rich-toolbar button, .rich-toolbar select, .rich-toolbar .file-button { font-size: 12px; padding: 3px 6px; line-height: 1.25; }
 .rich-toolbar select { padding-block: 2px; }
-.rich-toolbar .is-on { background: var(--accent); color: white; }
+.rich-toolbar .is-on { background: var(--accent-solid); color: white; }
 .rich-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding-right: 5px; border-right: 1px solid var(--line); }
 .rich-tools:last-child { border-right: 0; }
 .rich-tools button { min-width: 28px; }
@@ -766,9 +842,9 @@ button:disabled {
 .title {
   flex: 1;
   min-width: 0;
-  font-size: 28px;
-  font-weight: 750;
-  letter-spacing: -0.025em;
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   background: none !important;
   border: none !important;
   padding: 4px 0 !important;
@@ -803,18 +879,37 @@ button:disabled {
   gap: 8px;
   flex-wrap: wrap;
   font-size: 13px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
+}
+.editor-meta .ghost,
+.editor-meta .danger {
+  font-size: 13px;
+  padding: 5px 11px;
 }
 .editor-meta input,
 .editor-meta select {
   font-size: 13px;
   padding: 5px 8px;
 }
-.entry-task-action { display: grid; gap: 8px; }
-.task-primary { background: var(--accent); color: #fff; border-color: transparent; padding: 7px 12px; font-weight: 650; }
+/* Actions secondaires de l'entrée (tâche liée, IA) : une rangée de pastilles
+   sous les réglages, jamais au-dessus du titre. Le trait ferme l'en-tête. */
+.entry-task-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.entry-task-action > .ghost {
+  font-size: 12.5px;
+  padding: 4px 11px;
+  border-radius: 99px;
+  color: var(--muted);
+}
+.entry-task-action > .ghost:hover:not(:disabled) { color: var(--text); }
+.entry-task-action > :not(.ghost) { flex-basis: 100%; }
+.task-primary { background: var(--accent-solid); color: #fff; border-color: transparent; padding: 7px 12px; font-weight: 650; }
 .task-primary:hover:not(:disabled) { filter: brightness(1.08); }
-.entry-task-action > .task-primary { justify-self: start; }
 .task-creator { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(150px, .6fr) auto; align-items: end; gap: 8px; padding: 10px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
 .task-creator strong { grid-column: 1 / -1; font-size: 13px; }
 .task-creator label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
@@ -832,7 +927,6 @@ button:disabled {
 /* Mise en page IA : la version corrigée se relit ici avant d'écraser l'entrée. */
 .proofread-preview { display: grid; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
 .proofread-preview strong { font-size: 13px; }
-.proofread-preview small { font-size: 12px; color: var(--muted); }
 .proofread-preview .prose { max-height: 50vh; overflow: auto; padding: 8px 12px; border-radius: 8px; background: var(--surface); }
 @media (max-width: 680px) { .task-creator { grid-template-columns: 1fr; } .task-creator-actions { grid-column: 1; } }
 .modes {
@@ -1153,6 +1247,7 @@ button:disabled {
 /* ------------------------------------------------------------ tâches */
 .board {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 .quick {
@@ -1169,7 +1264,7 @@ button:disabled {
   border-radius: 10px;
 }
 .quick button:not(:disabled) {
-  background: var(--accent);
+  background: var(--accent-solid);
   border-color: transparent;
   color: #fff;
   font-weight: 650;
@@ -1197,11 +1292,9 @@ button:disabled {
   align-items: center;
   gap: 8px;
   margin: 0 0 10px;
-  font-size: 11px;
-  font-weight: 750;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--text);
   position: sticky;
   top: 52px;
   z-index: 1;
@@ -1236,9 +1329,7 @@ button:disabled {
   transition: border-color 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
 }
 .card:hover {
-  border-color: var(--accent);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
 }
 .card:focus-within {
   border-color: var(--accent);
@@ -1292,6 +1383,10 @@ button:disabled {
   align-items: center;
   justify-content: center;
   font-size: 14px;
+}
+.card-meta:empty,
+.card-documents:empty {
+  display: none;
 }
 .card-meta {
   display: flex;
@@ -1384,7 +1479,7 @@ button:disabled {
   padding: 7px 8px;
 }
 .card-actions .primary:not(:disabled) {
-  background: var(--accent);
+  background: var(--accent-solid);
   border-color: transparent;
   color: #fff;
   font-weight: 650;
@@ -1403,10 +1498,8 @@ button:disabled {
 }
 .task-documents-title {
   margin: 0;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--muted);
 }
 .history-toggle {
@@ -1586,19 +1679,24 @@ button:disabled {
   font-size: 12px;
   padding: 4px 8px;
 }
-.link-document {
-  width: 100%;
-  padding: 7px 10px;
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 600;
-  border: 1px dashed var(--line);
-  border-radius: 9px;
+/* Pied de carte : deux petites actions en texte, pas deux gros boutons
+   pointillés qui doublaient la hauteur de chaque tâche. */
+.card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: -2px -6px -4px;
 }
-.link-document:hover {
+.card-link {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: 7px;
+}
+.card-link:hover {
+  color: var(--accent);
   background: var(--accent-soft);
-  border-color: var(--accent);
-  border-style: solid;
 }
 
 /* ------------------------------------------------------------ progression des mises à jour */
@@ -1705,12 +1803,11 @@ button:disabled {
   .right::before {
     display: block;
     margin: 0 0 10px;
-    font-size: 11px;
-    font-weight: 750;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--text);
   }
+  .left { --panel-bg: var(--surface); }
   .left::before { content: 'Journal'; }
   .center::before { content: 'Écriture'; }
   .right::before { content: 'Tâches'; }
@@ -1809,8 +1906,47 @@ button:disabled {
 .columns.is-document.with-tasks > .right, .columns.is-document.with-tasks > .column-resizer-right { display: flex; }
 
 /* Panneaux repliables : ne garder à l'écran que ce qui sert (desktop comme PWA). */
-.panel-toggles { display: flex; gap: 6px; }
-.panel-toggles .ghost.is-on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+/* Interrupteurs de panneaux : un seul contrôle segmenté, même langage que
+   Écrire / Lire dans l'éditeur. Allumé = le panneau est à l'écran. */
+.panel-toggles {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  height: 36px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* Témoin d'état : un point plein quand le panneau est affiché. */
+.panel-toggle::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  opacity: 0.7;
+}
+.panel-toggle:hover { color: var(--text); }
+.panel-toggle.is-on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+}
+.panel-toggle.is-on::before {
+  background: var(--accent);
+  border-color: var(--accent);
+  opacity: 1;
+}
 .columns.hide-left { grid-template-columns: minmax(320px, 1fr) 8px minmax(120px, var(--col-right, 320px)); grid-template-areas: "editor resize-right tasks"; }
 .columns.hide-right { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr); grid-template-areas: "journal resize-left editor"; }
 .columns.hide-left.hide-right { grid-template-columns: minmax(0, 1fr); grid-template-areas: "editor"; }
@@ -1852,7 +1988,7 @@ button:disabled {
 .google-editor { max-width: none; padding: 24px 28px 40px; gap: 16px; }
 .document-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .document-heading > div { min-width: 0; }
-.document-eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.document-eyebrow { color: var(--accent); font-size: 12.5px; font-weight: 600; }
 .document-heading h1 { font-size: 25px; line-height: 1.25; margin: 4px 0 0; overflow-wrap: anywhere; }
 .document-heading a { font-size: 12px; }
 .document-details summary { width: fit-content; font-size: 12px; color: var(--muted); cursor: pointer; }
@@ -1885,7 +2021,7 @@ button:disabled {
 .sync-status { display: grid; gap: 2px; margin-right: auto; }
 .sync-status strong { color: var(--text); font-weight: 600; font-size: 12px; }
 .sync-status span { font-size: 11px; }
-.sync-primary { padding: 8px 12px; background: var(--accent); color: white; font-weight: 600; }
+.sync-primary { padding: 8px 12px; background: var(--accent-solid); color: white; font-weight: 600; }
 .document-actions { position: relative; }
 .document-actions summary { padding: 7px 10px; color: var(--muted); cursor: pointer; list-style: none; border: 1px solid var(--line); border-radius: 8px; }
 .document-actions > div { position: absolute; right: 0; top: 100%; z-index: 5; padding: 8px; border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); background: var(--surface); }
@@ -1998,8 +2134,6 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .drive-files button:hover { background: var(--accent-soft); }
 .drive-content .primary { background: var(--accent-soft); color: var(--accent); }
 @media (max-width: 1200px) {
-  .head { flex-wrap: wrap; }
-  .head .search { flex: 1; min-width: 160px; }
   .google-editor { padding: 20px; }
   .document-workspace.has-tabs { grid-template-columns: 165px minmax(0, 1fr); gap: 18px; }
   .columns.is-document.with-tasks:where(:not(.show-procedures)) { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr); grid-template-areas: "journal resize-left editor" ". . tasks"; }
@@ -2037,6 +2171,19 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 /* En dessous de 1560 px, l'en-tête (recherche, panneaux, largeurs, export, compte) n'a plus
    la place pour les statistiques : la recherche était écrasée à 22 px et le menu débordait. */
 @media (max-width: 1560px) { .head .stats { display: none; } }
+/* Écran étroit mais pas mobile : l'export et les témoins passent en icône seule,
+   l'en-tête reste sur une ligne. */
+@media (max-width: 1180px) and (min-width: 601px) {
+  .head .export-btn .export-label { display: none; }
+  .head .export-btn { width: 36px; padding: 0; justify-content: center; }
+  .panel-toggle { padding: 0 8px; }
+  .panel-toggle::before { display: none; }
+  .head .logo .version { display: none; }
+}
+@media (max-width: 860px) and (min-width: 601px) {
+  .head { flex-wrap: wrap; }
+  .head input.search { order: 10; flex: 1 1 100%; margin-left: 0; }
+}
 @media (max-width: 600px) {
   /* Mobile : en-tête aéré en trois lignes — marque, recherche, panneaux —
      au lieu d'une rangée unique où logo, version, thème, Journal, Écriture,
@@ -2046,8 +2193,7 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
     grid-template-columns: minmax(0, 1fr) auto auto auto;
     grid-template-areas:
       'logo theme export settings'
-      'search search search search'
-      'panels panels panels panels';
+      'search search search search';
     gap: 10px;
     padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px;
   }
@@ -2071,10 +2217,11 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
     text-align: center;
     font-variant-numeric: tabular-nums;
   }
-  .head .search {
+  .head input.search {
     grid-area: search;
     width: 100%;
     min-height: 44px;
+    margin: 0;
     font-size: 16px;
   }
   .head .grow {
@@ -2115,26 +2262,52 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .head .settings-btn .settings-icon {
     display: inline;
   }
+  /* Panneaux : barre du bas, sous le pouce, comme la navigation d'une app
+     Android. Ce sont toujours des interrupteurs (aria-pressed), pas des onglets :
+     plusieurs cartes peuvent rester affichées à la fois. */
   .head .panel-toggles {
-    grid-area: panels;
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 30;
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
+    gap: 4px;
+    height: auto;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    backdrop-filter: blur(12px);
   }
-  .head .panel-toggles .ghost {
-    min-height: 44px;
-    font-size: 14px;
-    display: inline-flex;
-    align-items: center;
+  .panel-toggle {
+    flex-direction: column;
     justify-content: center;
+    gap: 5px;
+    min-height: 50px;
+    padding: 4px 2px;
+    font-size: 12.5px;
+    border-radius: 12px;
   }
-  /* Les largeurs de colonnes n'ont aucun sens en pile unique : on les cache. */
-  .head .col-widths {
-    display: none;
+  .panel-toggle::before {
+    width: 22px;
+    height: 4px;
+    border: 0;
+    border-radius: 99px;
+    background: currentColor;
+    opacity: 0.3;
+  }
+  .panel-toggle.is-on {
+    background: var(--accent-soft);
+    box-shadow: none;
+  }
+  .panel-toggle.is-on::before { background: var(--accent); }
+  .update-progress-label {
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
   }
   /* Marge basse pour la navigation gestuelle des PWA. */
   .columns {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   }
   /* Cibles tactiles dans le contenu : chips, saisie rapide, lignes du journal. */
   .chip {

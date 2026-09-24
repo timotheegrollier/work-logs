@@ -2,9 +2,10 @@ import { expect, test } from '@playwright/test';
 
 // Pixel 9a : 412 px de large CSS. L'en-tête y était une rangée unique où logo,
 // version, thème, Journal, Écriture, Tâches, Exporter et Paramètres se marchaient dessus.
+// Depuis la refonte, les panneaux vivent dans une barre fixée en bas, à portée de pouce.
 test.use({ viewport: { width: 412, height: 860 } });
 
-test('en-tête mobile : trois lignes aérées, sans débordement, cibles tactiles', async ({ page }) => {
+test('en-tête mobile : deux lignes aérées, panneaux dans la barre du bas, cibles tactiles', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
 
@@ -14,9 +15,10 @@ test('en-tête mobile : trois lignes aérées, sans débordement, cibles tactile
   const journal = page.getByRole('button', { name: 'Journal', exact: true });
   const writing = page.getByRole('button', { name: 'Écriture', exact: true });
   const tasks = page.getByRole('button', { name: 'Tâches', exact: true });
+  const procedures = page.getByRole('button', { name: 'Procédures', exact: true });
   const exporter = page.getByRole('button', { name: 'Exporter' });
   const settings = page.getByRole('button', { name: 'Compte et paramètres' });
-  for (const control of [search, theme, journal, writing, tasks, exporter, settings]) {
+  for (const control of [search, theme, journal, writing, tasks, procedures, exporter, settings]) {
     await expect(control).toBeVisible();
   }
 
@@ -25,29 +27,32 @@ test('en-tête mobile : trois lignes aérées, sans débordement, cibles tactile
     await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
   ).toBe(true);
 
-  // Marque et actions en haut, recherche toute largeur, panneaux en dessous.
+  // Marque et actions en haut, recherche toute largeur dessous.
   const searchBox = (await search.boundingBox())!;
   const themeBox = (await theme.boundingBox())!;
-  const journalBox = (await journal.boundingBox())!;
-  const writingBox = (await writing.boundingBox())!;
-  const tasksBox = (await tasks.boundingBox())!;
   const headBox = (await head.boundingBox())!;
   expect(themeBox.y + themeBox.height).toBeLessThanOrEqual(searchBox.y + 1);
   expect(searchBox.width).toBeGreaterThan(headBox.width * 0.9);
-  for (const box of [journalBox, writingBox, tasksBox]) {
-    expect(box.y).toBeGreaterThan(searchBox.y + searchBox.height - 1);
+
+  // Panneaux : barre fixée en bas de l'écran, sous le pouce, quatre parts égales.
+  const viewport = page.viewportSize()!;
+  const boxes = await Promise.all([journal, writing, tasks, procedures].map(async (b) => (await b.boundingBox())!));
+  for (const box of boxes) {
+    expect(box.y + box.height).toBeGreaterThan(viewport.height - 70);
+    expect(box.y).toBeGreaterThan(headBox.y + headBox.height);
+    expect(Math.abs(box.width - boxes[0].width)).toBeLessThan(8);
   }
-  // Les trois panneaux se partagent la largeur à parts égales.
-  expect(Math.abs(journalBox.width - writingBox.width)).toBeLessThan(8);
-  expect(Math.abs(writingBox.width - tasksBox.width)).toBeLessThan(8);
+  // Elle reste en place quand le contenu défile.
+  await page.locator('.columns').evaluate((el) => el.scrollTo(0, 400));
+  expect((await journal.boundingBox())!.y).toBeCloseTo(boxes[0].y, 0);
 
   // Cibles tactiles : 40 px minimum dans les deux dimensions.
-  for (const box of [themeBox, journalBox, writingBox, tasksBox, (await exporter.boundingBox())!, (await settings.boundingBox())!]) {
+  for (const box of [themeBox, ...boxes, (await exporter.boundingBox())!, (await settings.boundingBox())!]) {
     expect(box.height).toBeGreaterThanOrEqual(40);
     expect(box.width).toBeGreaterThanOrEqual(40);
   }
 
-  // Toujours utilisable : replier le journal depuis la barre mobile.
+  // Toujours utilisable : replier le journal depuis la barre du bas.
   await journal.click();
   await expect(page.getByRole('region', { name: 'Journal' })).toBeHidden();
   await expect(journal).toHaveAttribute('aria-pressed', 'false');

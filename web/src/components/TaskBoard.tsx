@@ -275,9 +275,15 @@ function TaskCard({
       </div>
       {suggestError && <p className="error" role="alert">{suggestError}</p>}
     </form>
-  ) : (
-    <button className="link-document" type="button" onClick={startEntryCreator}>
-      ＋ Créer une entrée liée
+  ) : null;
+  const entryButton = (
+    <button className="card-link" type="button" aria-label="Créer une entrée liée" title="Créer une entrée de journal liée à cette tâche" onClick={startEntryCreator}>
+      <span aria-hidden="true">＋ </span>Entrée liée
+    </button>
+  );
+  const linkButton = (
+    <button className="card-link" type="button" aria-label="Lier des documents" title="Lier des entrées ou des documents Google existants" onClick={startLinking}>
+      <span aria-hidden="true">＋ </span>Documents
     </button>
   );
 
@@ -412,11 +418,7 @@ function TaskCard({
             </button>
           </div>
         </div>
-      ) : (
-        <button className="link-document" type="button" onClick={startLinking}>
-          ＋ Lier des documents
-        </button>
-      )}
+      ) : null}
     </div>
   );
 
@@ -462,6 +464,7 @@ function TaskCard({
           </button>
         </div>
         {documentControls}
+        {!linking && <div className="card-links">{linkButton}</div>}
       </div>
     );
   }
@@ -511,13 +514,16 @@ function TaskCard({
         </span>
       </div>
       <div className="card-meta">
-        <span
-          className={'priority is-' + (task.priority ?? 'normal')}
-          title={`Priorité ${priorityLabel(task.priority ?? 'normal').toLowerCase()}`}
-        >
-          <span aria-hidden="true">{task.priority === 'high' ? '▲ ' : task.priority === 'low' ? '▼ ' : '● '}</span>
-          {priorityLabel(task.priority ?? 'normal')}
-        </span>
+        {/* « Normale » sur chaque carte n'apprenait rien : seul l'écart se signale. */}
+        {task.priority && task.priority !== 'normal' && (
+          <span
+            className={'priority is-' + task.priority}
+            title={`Priorité ${priorityLabel(task.priority).toLowerCase()}`}
+          >
+            <span aria-hidden="true">{task.priority === 'high' ? '▲ ' : '▼ '}</span>
+            {priorityLabel(task.priority)}
+          </span>
+        )}
         {task.due_date && (
           <span className={'due' + (late ? ' is-late' : '')} title={late ? 'En retard' : 'Échéance'}>
             <span aria-hidden="true">📅 </span>
@@ -532,6 +538,7 @@ function TaskCard({
       </div>
       {documentControls}
       {entryCreator}
+      {!linking && !creatingEntry && <div className="card-links">{linkButton}{entryButton}</div>}
     </div>
   );
 }

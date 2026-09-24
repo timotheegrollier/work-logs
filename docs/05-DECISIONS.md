@@ -669,3 +669,35 @@ en bloc : la synchronisation Google envoie des modifications ciblées (§ onglet
 
 **Rouvrir si** la perte de mise en forme gêne en usage réel : il faudrait alors faire
 travailler l'IA en HTML, avec une validation plus fine.
+
+## 24. En-tête allégé, journal en fil, cartes de tâche resserrées — 2026-09-24
+
+**Le besoin.** « Retirer Exporter quand on est connecté à Google, et améliorer nettement
+l'interface et l'ergonomie, desktop comme mobile. » L'en-tête portait dix contrôles, dont
+des champs de largeur en pixels redondants avec les poignées ; l'éditeur empilait trois
+boutons pleine largeur au-dessus du titre ; chaque tâche affichait « Normale » et deux
+gros boutons pointillés.
+
+**Décisions.**
+- **Exporter** disparaît de l'en-tête quand une session Google est active (`connected` et
+  non `expired`) : la synchro automatique (§20) garde déjà le fichier Drive à jour. Session
+  expirée (PWA) ou pas de compte : le bouton revient, la sauvegarde reste possible.
+- Les **largeurs au pixel près** passent dans Paramètres → Affichage (mêmes libellés
+  accessibles). Les poignées (§ lot du 16/09) font le geste courant.
+- Les **panneaux** deviennent un contrôle segmenté (même langage que Écrire / Lire) ; sur
+  mobile, une **barre fixée en bas** — ce sont toujours des interrupteurs `aria-pressed`,
+  pas des onglets : §1 et §16 tiennent (pas de hamburger, pas de mode). L'en-tête mobile
+  perd ainsi une ligne.
+- **Éditeur** : titre d'abord, puis réglages, puis une rangée de pastilles (tâche liée, IA).
+  L'entrée locale n'est plus dans un `<details>` sans `<summary>`, qui affichait « Details ».
+- **Tâches** : la priorité ne s'affiche que si elle s'écarte de la normale (§2 : trois
+  niveaux, mais le défaut n'apprend rien) ; « ＋ Documents » et « ＋ Entrée liée » en pied de
+  carte (noms accessibles inchangés).
+- **Identité** : le journal devient un fil — une ligne relie les jours, un nœud par jour,
+  plein pour aujourd'hui. C'est la seule signature ; le reste est plus calme (libellés en
+  casse de phrase au lieu de petites capitales espacées, `--accent-solid` pour les aplats
+  qui portent du blanc, pile de polices humanistes avant DejaVu Sans).
+
+**Pas de police embarquée** : ce serait une dépendance (règle « zéro nouvelle dépendance »).
+Le rendu dépend donc des polices du système ; à rouvrir si l'on accepte un fichier de police.
+

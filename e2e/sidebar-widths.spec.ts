@@ -3,6 +3,16 @@ import { expect, test, type Page } from '@playwright/test';
 const handle = (page: Page, side: 'gauche' | 'droite') =>
   page.getByRole('separator', { name: `Redimensionner la colonne de ${side}` });
 
+/** Les champs au pixel près vivent dans Paramètres › Affichage. */
+async function widthField(page: Page, side: 'gauche' | 'droite') {
+  await page.getByRole('button', { name: 'Compte et paramètres' }).click();
+  await page.getByRole('menuitem', { name: 'Paramètres' }).click();
+  return page.getByRole('dialog', { name: 'Paramètres' }).getByLabel(`Largeur de la colonne de ${side} (px)`);
+}
+async function closeSettings(page: Page) {
+  await page.getByRole('dialog', { name: 'Paramètres' }).getByRole('button', { name: 'Fermer' }).click();
+}
+
 async function drag(page: Page, side: 'gauche' | 'droite', delta: number) {
   const box = (await handle(page, side).boundingBox())!;
   const x = box.x + box.width / 2, y = box.y + box.height / 2;
@@ -20,15 +30,17 @@ test.beforeEach(async ({ page }) => {
 test('largeurs : glisser les deux bords ajuste les panneaux en direct et survit au rechargement', async ({ page }, testInfo) => {
   await drag(page, 'gauche', 90);
   await expect(page.locator('.left')).toHaveCSS('width', '380px');
-  await expect(page.getByLabel('Largeur de la colonne de gauche (px)')).toHaveValue('380');
   await page.mouse.up();
+  await expect(await widthField(page, 'gauche')).toHaveValue('380');
+  await closeSettings(page);
   await page.mouse.move(700, 400);
   await expect(page.locator('.left')).toHaveCSS('width', '380px');
 
   await drag(page, 'droite', -100);
   await expect(page.locator('.right')).toHaveCSS('width', '420px');
-  await expect(page.getByLabel('Largeur de la colonne de droite (px)')).toHaveValue('420');
   await page.mouse.up();
+  await expect(await widthField(page, 'droite')).toHaveValue('420');
+  await closeSettings(page);
   expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('');
   await expect(page.locator('.column-resizer.is-dragging')).toHaveCount(0);
 
@@ -36,7 +48,9 @@ test('largeurs : glisser les deux bords ajuste les panneaux en direct et survit 
   await expect(page.locator('.left')).toHaveCSS('width', '380px');
   await expect(page.locator('.right')).toHaveCSS('width', '420px');
   await page.screenshot({ path: testInfo.outputPath('sidebar-widths.png') });
+  await widthField(page, 'gauche');
   await page.getByRole('button', { name: 'Largeurs par défaut' }).click();
+  await closeSettings(page);
   await expect(page.locator('.left')).toHaveCSS('width', '290px');
   await expect(page.locator('.right')).toHaveCSS('width', '320px');
 
