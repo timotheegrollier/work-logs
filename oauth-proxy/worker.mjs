@@ -1,4 +1,7 @@
 // Relais de jetons Google de la PWA WorkLogs — Cloudflare Worker, sans dépendance.
+// Depuis l'option B, ce même Worker sert aussi le front statique (`web/dist/`,
+// voir `[assets]` dans `wrangler.toml`) : la PWA est à `/`, le relais à `/token`.
+// Vérification : ouvrir `/token` dans un navigateur (`{"ok":true,…}`).
 //
 // Google exige le secret d'un client OAuth « Application Web » pour échanger le
 // code de connexion et pour renouveler la session (`client_secret is missing`
@@ -9,10 +12,21 @@
 // Seul `default` est exporté : workerd prend tout autre export pour un point d'entrée.
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-/** Origines autorisées : la PWA publiée, et le serveur Vite en dev. */
-const ORIGINS = ['https://timotheegrollier.github.io', 'http://localhost:8411'];
+/**
+ * Origines autorisées : la PWA servie par ce Worker (option B, même URL que le
+ * relais), l'ancienne PWA GitHub Pages (transition) et le serveur Vite en dev.
+ */
+const ORIGINS = [
+  'https://worklogs-google.cocodexcocoder.workers.dev',
+  'https://timotheegrollier.github.io',
+  'http://localhost:8411',
+];
 /** URI de retour enregistrées dans Google Cloud pour le client Web. */
-const REDIRECTS = ['https://timotheegrollier.github.io/work-logs/', 'http://localhost:8411/'];
+const REDIRECTS = [
+  'https://worklogs-google.cocodexcocoder.workers.dev/',
+  'https://timotheegrollier.github.io/work-logs/',
+  'http://localhost:8411/',
+];
 const CLIENT_ID = /^[\w.-]+\.apps\.googleusercontent\.com$/;
 const MAX_BODY = 8192;
 
@@ -58,8 +72,10 @@ function tokenParams(form) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    // Vérification à la main : ouvrir l'adresse du relais dans un navigateur.
-    if (request.method === 'GET' && url.pathname === '/') {
+    // Vérification à la main : ouvrir `/token` dans un navigateur. En production
+    // `/` sert la PWA (assets, sans passer par ce code), donc la sonde vit sur
+    // `/token` ; `/` n'est gardé que pour `wrangler dev` sans assets.
+    if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/token')) {
       return reply({ ok: true, configured: Boolean(env.GOOGLE_CLIENT_SECRET) }, 200);
     }
     const origin = request.headers.get('Origin') ?? '';

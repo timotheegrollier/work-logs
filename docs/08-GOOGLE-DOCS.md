@@ -254,8 +254,10 @@ Une ancienne autorisation sans `openid` fonctionne toujours, simplement sans com
 2. **Publier l'application en production** : en mode test, les jetons de rafraîchissement
    expirent au bout de 7 jours et seuls les comptes de test peuvent se connecter.
    `drive.file` et ces scopes sont non sensibles : pas de vérification approfondie.
-3. Client Web : origine `https://timotheegrollier.github.io`, redirection
-   `https://timotheegrollier.github.io/work-logs/` (la PWA est servie à la racine du dépôt, plus sous `/app/`).
+3. Client Web : origines `https://worklogs-google.cocodexcocoder.workers.dev` (PWA servie
+   par le Worker, option B) et `https://timotheegrollier.github.io` (transition GitHub
+   Pages), redirections `https://worklogs-google.cocodexcocoder.workers.dev/` et
+   `https://timotheegrollier.github.io/work-logs/`.
 4. GitHub → Settings → Secrets and variables → Actions : secrets
    `GOOGLE_DESKTOP_CLIENT_ID`, `GOOGLE_DESKTOP_CLIENT_SECRET`, et `GOOGLE_WEB_CLIENT_ID`
    (variable ou secret : `pwa.yml` accepte les deux).
@@ -269,31 +271,39 @@ Une ancienne autorisation sans `openid` fonctionne toujours, simplement sans com
 (dans `check.sh`). Il détient le secret du client Web et ne fait que l'ajouter : `POST /token`
 venant de la PWA, échange du code (avec `code_verifier` et un retour de la PWA) ou
 renouvellement, réponse de Google rendue telle quelle. Pourquoi et limites : décision §22.
+Depuis l'option B, ce même Worker sert aussi le front (`[assets]` dans `wrangler.toml`,
+`web/dist/` construit avec `VITE_PWA=1`) : la PWA est à `/`, le relais à `/token`.
 
-**Déployer** (une fois, compte Cloudflare gratuit), depuis `oauth-proxy/` :
+**Déployer** (compte Cloudflare gratuit), depuis la racine puis `oauth-proxy/` :
 
 ```bash
-npx wrangler login                             # ouvre le navigateur
-npx wrangler deploy                            # → https://worklogs-google.<sous-domaine>.workers.dev
-npx wrangler secret put GOOGLE_CLIENT_SECRET   # coller le secret du client « Application Web »
+VITE_PWA=1 VITE_GOOGLE_TOKEN_PROXY=https://worklogs-google.cocodexcocoder.workers.dev npm --prefix web run build
+# (+ VITE_GOOGLE_CLIENT_ID=…apps.googleusercontent.com : repris de la PWA publiée, public par nature)
+npx wrangler login                             # ouvre le navigateur (une fois)
+npx wrangler deploy                            # → https://worklogs-google.cocodexcocoder.workers.dev
+npx wrangler secret put GOOGLE_CLIENT_SECRET   # secret du client « Application Web » (conservé entre déploiements)
 ```
 
 `wrangler` n'est pas une dépendance du projet : `npx` le télécharge le temps de la commande.
-Au premier déploiement, Cloudflare fait choisir le sous-domaine `workers.dev`. Ensuite :
+Le sous-domaine `workers.dev` se change dans le dashboard (Workers & Pages → Change) :
+il s'applique à tout le compte, penser à mettre à jour `ORIGINS`/`REDIRECTS`
+(`worker.mjs`), la console Google Cloud et la variable ci-dessous.
 GitHub → Settings → Secrets and variables → Actions → Variables : `GOOGLE_TOKEN_PROXY_URL`
-= l'adresse du Worker, puis relancer le workflow **PWA** (le build lit la variable).
+= l'adresse du Worker (= `VITE_GOOGLE_TOKEN_PROXY` au build), puis relancer le workflow **PWA**
+(le build lit la variable). Valeur actuelle : `https://worklogs-google.cocodexcocoder.workers.dev`.
 
 **Vérifier**
-- Ouvrir l'adresse du Worker : `{"ok":true,"configured":true}` ; `false` = secret absent.
+- Ouvrir `https://worklogs-google.cocodexcocoder.workers.dev/token` :
+  `{"ok":true,"configured":true}` ; `false` = secret absent. `/` sert la PWA.
 - Un faux code doit aller jusqu'à Google et revenir `invalid_grant` (secret accepté) ;
   `invalid_client` = mauvais secret :
 
   ```bash
-  curl -s -X POST https://worklogs-google.<sous-domaine>.workers.dev/token \
-    -H 'Origin: https://timotheegrollier.github.io' \
+  curl -s -X POST https://worklogs-google.cocodexcocoder.workers.dev/token \
+    -H 'Origin: https://worklogs-google.cocodexcocoder.workers.dev' \
     -d client_id=<ID du client Web> -d grant_type=authorization_code -d code=faux \
     -d code_verifier=verificateur-de-test-0123456789abcdefghijklmnop \
-    --data-urlencode redirect_uri=https://timotheegrollier.github.io/work-logs/
+    --data-urlencode redirect_uri=https://worklogs-google.cocodexcocoder.workers.dev/
   ```
 - En local, sans compte : `npx wrangler dev --var GOOGLE_CLIENT_SECRET:faux`, puis le même
   appel sur `http://127.0.0.1:8787/token` → `invalid_client` venu de Google (mesuré le
@@ -339,9 +349,11 @@ les sauvegardes du PC visibles sur le téléphone (et inversement). Connexion fa
 sans elle, les données restent simplement sur l'appareil.
 
 1. Dans le **même projet** que le desktop, créer un client OAuth de type **Application Web**.
-2. Origines JavaScript autorisées : l'URL de la PWA
-   (`https://timotheegrollier.github.io`), plus `http://localhost:8411` pour les essais en dev.
-3. URI de redirection autorisés : `https://timotheegrollier.github.io/work-logs/`
+2. Origines JavaScript autorisées : `https://worklogs-google.cocodexcocoder.workers.dev`
+   (PWA servie par le Worker) et `https://timotheegrollier.github.io` (transition),
+   plus `http://localhost:8411` pour les essais en dev.
+3. URI de redirection autorisés : `https://worklogs-google.cocodexcocoder.workers.dev/`
+   et `https://timotheegrollier.github.io/work-logs/`
    (et `http://localhost:8411/` en dev). Copier aussi le **secret client** (fiche du
    client) : un client « Web » est confidentiel, Google refuse l'échange du code
    sans lui.

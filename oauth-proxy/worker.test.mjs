@@ -4,13 +4,15 @@ import worker from './worker.mjs';
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
-const PWA = 'https://timotheegrollier.github.io';
+const PWA = 'https://worklogs-google.cocodexcocoder.workers.dev';
+const PWA_GITHUB = 'https://timotheegrollier.github.io';
 const CLIENT = '123456789012-abc.apps.googleusercontent.com';
 const ENV = { GOOGLE_CLIENT_SECRET: 'secret-relais' };
 const EXCHANGE = {
   client_id: CLIENT, grant_type: 'authorization_code', code: '4/code', code_verifier: 'verificateur',
-  redirect_uri: 'https://timotheegrollier.github.io/work-logs/',
+  redirect_uri: 'https://worklogs-google.cocodexcocoder.workers.dev/',
 };
+const EXCHANGE_GITHUB = { ...EXCHANGE, redirect_uri: 'https://timotheegrollier.github.io/work-logs/' };
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -42,6 +44,15 @@ test('échange du code : le secret est ajouté, la réponse de Google revient te
   assert.deepEqual(await response.json(), { access_token: 'acces', refresh_token: 'renouvellement', expires_in: 3599 });
   // Seuls les champs attendus partent, avec le secret du relais (jamais celui de l'appelant).
   assert.deepEqual(calls, [{ url: GOOGLE_TOKEN_URL, fields: { ...EXCHANGE, client_secret: 'secret-relais' } }]);
+});
+
+test('transition GitHub Pages : l’ancienne origine et son retour restent acceptés', async () => {
+  const calls = stubGoogle();
+  const response = await post(EXCHANGE_GITHUB, { origin: PWA_GITHUB });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), PWA_GITHUB);
+  assert.deepEqual(await response.json(), { access_token: 'acces', refresh_token: 'renouvellement', expires_in: 3599 });
+  assert.deepEqual(calls, [{ url: GOOGLE_TOKEN_URL, fields: { ...EXCHANGE_GITHUB, client_secret: 'secret-relais' } }]);
 });
 
 test('renouvellement : le refresh_token part avec le secret', async () => {
@@ -98,6 +109,9 @@ test('adresse ouverte dans un navigateur : dit si le secret est en place, sans l
   assert.deepEqual(await configured.json(), { ok: true, configured: true });
   const empty = await worker.fetch(new Request('https://relais.test/'), {});
   assert.deepEqual(await empty.json(), { ok: true, configured: false });
+  // En production `/` sert la PWA : la même sonde est exposée sur `/token`.
+  const token = await worker.fetch(new Request('https://relais.test/token'), ENV);
+  assert.deepEqual(await token.json(), { ok: true, configured: true });
 });
 
 test('secret absent ou Google injoignable : erreur explicite, jamais de plantage', async () => {

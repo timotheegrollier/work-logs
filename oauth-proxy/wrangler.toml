@@ -1,5 +1,8 @@
 # Relais de jetons Google de la PWA (Cloudflare Worker, offre gratuite).
-# Déploiement, depuis ce dossier :
+# Option B : ce même Worker sert le front statique `web/dist/` (PWA à `/`,
+# relais à `/token`). Construire le front avant de déployer, depuis la racine :
+#   VITE_PWA=1 VITE_GOOGLE_TOKEN_PROXY=https://worklogs-google.cocodexcocoder.workers.dev npm --prefix web run build
+# Puis, depuis ce dossier :
 #   npx wrangler login
 #   npx wrangler deploy
 #   npx wrangler secret put GOOGLE_CLIENT_SECRET   # secret du client « Application Web »
@@ -8,3 +11,10 @@ name = "worklogs-google"
 main = "worker.mjs"
 compatibility_date = "2026-09-01"
 workers_dev = true
+
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+# `/token` va au Worker en premier, sinon la PWA (`index.html`) répondrait à sa place.
+run_worker_first = ["/token"]
