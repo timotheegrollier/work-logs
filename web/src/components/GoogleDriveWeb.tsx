@@ -17,6 +17,7 @@ import {
   uploadDriveFile,
   uploadOutbox,
   webGoogleStatus,
+  webRedirectUri,
   builtinWebClientId,
 } from '../store/google-web';
 import { syncWebNow, webSyncStatus } from '../store/sync-web';
@@ -224,6 +225,10 @@ export function GoogleDriveWeb({ onRestored, onDocuments }: { onOpen?: (entry: E
       <p>
         Première connexion : crée un client OAuth de type « Application Web » dans le <em>même</em> projet Google
         Cloud que le desktop, puis colle son identifiant ci-dessous. Active les API Google Drive et Google Docs.
+      </p>
+      <p className="drive-hint">
+        URI de redirection à autoriser dans Google Cloud (exacte, barre oblique comprise) :{' '}
+        <code>{webRedirectUri()}</code>
       </p>
       <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">
         Ouvrir Google Cloud

@@ -31,6 +31,16 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-09-24 (4) — échec de connexion Google visible, URI de redirection affichée
+
+- Reste du lot « secret exigé » (2026-09-22, rendu caduc par le relais : le relais détient
+  le secret, la PWA n'en a plus besoin) : l'échec du retour Google restait invisible quand
+  on partait du menu du compte (l'erreur de synchro ne s'affichait que connecté).
+- `AccountMenu` affiche désormais l'erreur de synchro aussi déconnecté ; le formulaire
+  client personnel montre l'URI de redirection exacte à autoriser (`webRedirectUri()`).
+  Aucune dépendance ajoutée.
+- Tests : front (2 — erreur visible déconnecté, URI exacte).
+
 ## Lot du 2026-09-24 — en-tête allégé, journal en fil, ergonomie desktop et mobile
 
 - Demande : retirer **Exporter** de l'en-tête une fois connecté à Google (la synchro auto suffit)

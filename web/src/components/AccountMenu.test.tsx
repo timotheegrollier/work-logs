@@ -32,6 +32,13 @@ describe('menu du compte', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
+  test('déconnecté : l’échec de connexion reste visible dans le menu', async () => {
+    const user = userEvent.setup();
+    setup(base, { state: 'error', lastSyncedAt: null, error: 'Google a refusé la connexion' });
+    await user.click(screen.getByRole('button', { name: 'Compte et paramètres' }));
+    expect(screen.getByRole('menu')).toHaveTextContent('Google a refusé la connexion');
+  });
+
   test('sans client configuré : seulement les Paramètres', async () => {
     const user = userEvent.setup();
     setup({ ...base, configured: false });
