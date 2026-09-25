@@ -5,7 +5,7 @@
  * `Authorization: Bearer <clé>`) : il parle aussi bien à OpenAI qu'à la clé
  * gratuite d'AI Studio via l'endpoint OpenAI-compatible de Gemini
  * (`https://generativelanguage.googleapis.com/v1beta/openai`, modèle
- * `gemini-3.5-flash-lite` par défaut). Aucune dépendance, `fetch` natif.
+ * `gemini-3-flash-preview` par défaut, chaîne de secours sur les autres modèles gratuits). Aucune dépendance, `fetch` natif.
  */
 
 export interface AiSettings {
@@ -17,7 +17,13 @@ export interface AiSettings {
 }
 
 export const DEFAULT_AI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai';
-export const DEFAULT_AI_MODEL = 'gemini-3.5-flash-lite';
+export const DEFAULT_AI_MODEL = 'gemini-3-flash-preview';
+/**
+ * Défaut jusqu'à la 0.41.0, saturé chez Google depuis (503 ou 20–60 s sans réponse).
+ * Les Paramètres l'enregistrent avec la clé : sans cette relecture, le nouveau défaut
+ * ne toucherait personne. Seule cette valeur exacte est migrée ; un autre choix reste.
+ */
+const PREVIOUS_DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 /**
  * Chaîne de secours sur l'endpoint Gemini, du plus fiable au moins fiable d'après
  * des appels réels le 2026-09-24 (trois passages, clé gratuite) : `3-flash-preview`
@@ -39,16 +45,18 @@ export interface AiModelOption {
 }
 
 /**
- * Modèles proposés dans le select des Paramètres : chacun a répondu « OK » à
- * un appel réel le 2026-09-24 (clé de l'appareil, consigne « Réponds uniquement
- * avec : OK »). `gemini-2.5-flash-lite` en est exclu : Google le refuse en 404
+ * Modèles proposés dans le select des Paramètres, du plus fiable au moins fiable
+ * d'après les mesures du 2026-09-24 (voir `GEMINI_FALLBACK_MODELS`) ; la chaîne de
+ * secours couvre les autres quand celui choisi est saturé. `gemini-2.5-flash-lite` en est exclu : Google le refuse en 404
  * (« no longer available to new users »). Le bouton « Tester » de l'écran ne
  * sert plus qu'au diagnostic de connexion.
  */
 export const AI_MODELS: AiModelOption[] = [
-  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — rapide et économique (défaut)' },
-  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — le plus capable' },
-  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — stable et léger' },
+  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (preview) — le plus fiable en gratuit (défaut)' },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — fiable, parfois indisponible aux nouvelles clés' },
+  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — le plus capable, souvent lent' },
+  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — souvent saturé en gratuit' },
+  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — souvent saturé en gratuit' },
 ];
 
 /** Valeur du select quand le modèle enregistré n'est dans aucune option. */
@@ -82,7 +90,8 @@ export function readAiSettings(): AiSettings {
     import.meta.env.MODE === 'test' ? '' : import.meta.env[name] || '';
   return {
     endpoint: stored(LS_ENDPOINT).trim() || envDefault('VITE_DEFAULT_AI_ENDPOINT') || DEFAULT_AI_ENDPOINT,
-    model: stored(LS_MODEL).trim() || envDefault('VITE_DEFAULT_AI_MODEL') || DEFAULT_AI_MODEL,
+    model: [stored(LS_MODEL).trim()].map((model) => (model === PREVIOUS_DEFAULT_MODEL ? '' : model))[0]
+      || envDefault('VITE_DEFAULT_AI_MODEL') || DEFAULT_AI_MODEL,
     key: stored(LS_KEY).trim() || envDefault('VITE_DEFAULT_AI_KEY'),
     profile: stored(LS_PROFILE).trim(),
   };

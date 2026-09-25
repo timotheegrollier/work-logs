@@ -18,11 +18,13 @@ describe('réglages IA', () => {
   test('le select propose les modèles vérifiés et le défaut est sélectionné', () => {
     render(<AiSettings />);
     const select = screen.getByLabelText('Modèle IA');
-    expect(select).toHaveValue('gemini-3.5-flash-lite');
+    expect(select).toHaveValue('gemini-3-flash-preview');
     const options = [...(select as HTMLSelectElement).options].map((option) => option.value);
     expect(options).toEqual([
-      'gemini-3.5-flash-lite',
+      'gemini-3-flash-preview',
+      'gemini-2.5-flash',
       'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
       'gemini-3.1-flash-lite',
       'personnalise',
     ]);
@@ -55,7 +57,7 @@ describe('réglages IA', () => {
     await user.click(screen.getByRole('button', { name: 'Tester le modèle' }));
     expect(await screen.findByRole('status')).toHaveTextContent(/Modèle OK/);
     const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
-    expect(body.model).toBe('gemini-3.5-flash-lite');
+    expect(body.model).toBe('gemini-3-flash-preview');
   });
 
   test('« Tester le modèle » en échec affiche le motif du fournisseur', async () => {

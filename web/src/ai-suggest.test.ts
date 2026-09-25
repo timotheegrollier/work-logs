@@ -484,9 +484,12 @@ describe('modèle saturé', () => {
     await expect(suggestSubtasks(settings, 'T', { timeoutMs: 50 })).rejects.toThrow(/surchargé/);
   });
 
-  test('le modèle enregistré est gardé tel quel, même hors select', () => {
+  test('l’ancien défaut enregistré se lit comme le nouveau ; tout autre choix est gardé tel quel', () => {
     localStorage.setItem('worklogs-ai-model', 'gemini-3.5-flash-lite');
     expect(readAiSettings().model).toBe(DEFAULT_AI_MODEL);
+    expect(DEFAULT_AI_MODEL).toBe('gemini-3-flash-preview');
+    localStorage.setItem('worklogs-ai-model', 'gemini-3.5-flash');
+    expect(readAiSettings().model).toBe('gemini-3.5-flash');
     // Choix explicite conservé : pas de migration silencieuse (un modèle peut
     // marcher pour une ancienne clé et pas pour une nouvelle).
     localStorage.setItem('worklogs-ai-model', 'gemini-2.5-flash-lite');

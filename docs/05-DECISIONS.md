@@ -529,7 +529,11 @@ vide ; on s'arrête net sur clé refusée ou hors ligne. Le secours qui a répon
 tête 10 minutes (mémoire vive), pour que seul le premier appel paie un modèle qui traîne.
 Budget des sous-tâches : 300 → 1 024 jetons (les modèles à raisonnement décomptent leur
 réflexion ; à 300, la réponse revenait tronquée). Vérifié en réel : 18/18 réponses avec
-`3.5-flash-lite` saturé, 4–7 s d'ordinaire.
+`3.5-flash-lite` saturé, 4–7 s d'ordinaire. **Défaut → `gemini-3-flash-preview`** (demande
+explicite, 0.41.1), en tête du select avec `2.5-flash` ; libellés honnêtes pour les autres.
+L'ancien défaut **exact** (`3.5-flash-lite`), enregistré avec la clé par les Paramètres, est
+relu comme le nouveau : sans ça, le changement ne toucherait personne. Tout autre choix
+enregistré reste intact (pas de migration silencieuse d'un choix réel).
 
 ## 16. L'en-tête mobile se réorganise, sans hamburger — 2026-09-18
 

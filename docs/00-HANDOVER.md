@@ -136,7 +136,9 @@
 - Chaîne de secours Gemini (`GEMINI_FALLBACK_MODELS`, `ai-suggest.ts`) au lieu d'un
   secours unique lui aussi saturé ; mémoire de 10 min du secours qui a répondu ;
   sous-tâches à 1 024 jetons. Mesures et règles : `05-DECISIONS.md` §17.
-- Tests : chaîne (saturé/lent/404/429/vide), budget borné, arrêt net, mémoire.
+- Défaut `gemini-3-flash-preview` (le plus fiable en gratuit), `2.5-flash` ajouté au select ;
+  l'ancien défaut exact enregistré est relu comme le nouveau.
+- Tests : chaîne (saturé/lent/404/429/vide), budget borné, arrêt net, mémoire, migration.
 
 ## Lot du 2026-09-24 (3) — aperçu des .docx, « Ouvrir avec… » réparé
 
