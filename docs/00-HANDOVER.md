@@ -41,6 +41,16 @@
   Aucune dépendance ajoutée.
 - Tests : front (2 — erreur visible déconnecté, URI exacte).
 
+## Lot du 2026-09-26 — bandeau projets mobile : pastilles toute largeur
+
+- Sur 412 px (Pixel 9a), le choix du projet partageait sa rangée avec « Gérer les
+  projets » et devenait trop étroit dès 2-3 projets. Les pastilles occupent désormais
+  toute leur rangée (`.project-strip .chips { flex: 1 1 100% }`, le conteneur
+  enveloppait déjà), la gestion passe dessous, pastilles à 44 px de haut.
+  Desktop inchangé. Aucune dépendance ajoutée.
+- Tests : e2e (1, `e2e/project-strip.spec.ts` — largeur ≥ 90 % du bandeau, gestion
+  dessous, 44 px, création + filtre + pas de défilement horizontal).
+
 ## Lot du 2026-09-24 — en-tête allégé, journal en fil, ergonomie desktop et mobile
 
 - Demande : retirer **Exporter** de l'en-tête une fois connecté à Google (la synchro auto suffit)

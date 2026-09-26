@@ -2330,9 +2330,17 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
     padding: 8px 14px;
     font-size: 14px;
   }
-  /* Bandeau projets : compact, pastilles en défilement horizontal. */
+  /* Bandeau projets : pastilles toute largeur sur leur rangée, gestion dessous.
+     Sur 412 px, partager la rangée avec « Gérer les projets » écrasait le choix
+     dès 2-3 projets (`.projects` enveloppe déjà, il suffit d'élargir `.chips`). */
   .project-strip {
     padding: 8px 12px;
+  }
+  .project-strip .chips {
+    flex: 1 1 100%;
+  }
+  .project-strip .chip {
+    min-height: 44px;
   }
   .project-strip .manage summary {
     padding: 8px 12px;
