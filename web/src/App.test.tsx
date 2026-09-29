@@ -417,6 +417,26 @@ describe('écrire une entrée', () => {
     expect(within(card).getByText('local')).toBeInTheDocument();
   });
 
+  test('lie l’entrée ouverte à une tâche existante, sans en créer', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      entries: [{ id: 'en_reunion', title: 'Contexte de réunion' }],
+      tasks: [{ id: 'tk_dossier', title: 'Préparer le dossier' }, { id: 'tk_facture', title: 'Envoyer la facture' }],
+    });
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Lier une tâche existante' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Lier Préparer le dossier à cette entrée' }));
+    await user.click(screen.getByRole('button', { name: 'Relier la sélection (1)' }));
+
+    await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
+    expect(await within(editor()).findByText('Tâche liée à cette entrée.')).toBeVisible();
+    // La tâche liée sort du lieur, l’autre reste proposée.
+    await user.click(await screen.findByRole('button', { name: 'Lier une tâche existante' }));
+    expect(screen.queryByRole('checkbox', { name: 'Lier Préparer le dossier à cette entrée' })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Lier Envoyer la facture à cette entrée' })).toBeVisible();
+  });
+
   test('crée une entrée liée depuis une tâche, avec ses sous-tâches en cases', async () => {
     const user = userEvent.setup();
     seedData(api.db, { tasks: [{ id: 'tk_dossier', title: 'Préparer le dossier' }] });

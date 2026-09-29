@@ -459,7 +459,8 @@ export default function App() {
               projects={state.projects}
               linkedTasks={state.tasks
                 .filter((task) => (task.documents ?? []).some((document) => document.id === entry.id))
-                .map((task) => ({ title: task.title, status: task.status }))}
+                .map((task) => ({ id: task.id, title: task.title, status: task.status }))}
+              tasks={state.tasks.map((task) => ({ id: task.id, title: task.title, status: task.status }))}
               autoFocusTitle={freshEntry}
               editRequest={procedureEdit.id === entry.id ? procedureEdit.sequence : 0}
               onChanged={reload}

@@ -41,6 +41,16 @@
   Aucune dépendance ajoutée.
 - Tests : front (2 — erreur visible déconnecté, URI exacte).
 
+## Lot du 2026-09-26 (2) — lier une entrée à une tâche existante
+
+- L'éditeur ne savait que *créer* une tâche liée ; le sens inverse existait côté carte
+  (« Lier des documents »). Nouveau geste miroir dans l'entrée : **Lier une tâche
+  existante** (recherche + sélection multiple, mêmes classes `document-linker`), via
+  `POST /api/tasks/:id/documents/:entryId` (déjà idempotent) et `localApi`
+  existant — aucune route ajoutée. `linkedTasks` porte désormais l'`id` pour exclure
+  les déjà-liées. Aucune dépendance ajoutée.
+- Tests : front (1, `App.test.tsx` — lie sans créer, la liée sort du lieur).
+
 ## Lot du 2026-09-26 — bandeau projets mobile : pastilles toute largeur
 
 - Sur 412 px (Pixel 9a), le choix du projet partageait sa rangée avec « Gérer les
