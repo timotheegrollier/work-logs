@@ -23,13 +23,16 @@
     "desktop:stage": "node scripts/stage-desktop.mjs",
     "desktop:pack": "npm run build && npm run desktop:stage && electron-builder --linux --x64 --dir --publish never",
     "desktop:blockmap": "node scripts/appimage-blockmap.mjs",
-    "desktop:dist": "npm run build && npm run desktop:stage && electron-builder --linux --x64 --publish never"
+    "desktop:dist": "npm run build && npm run desktop:stage && electron-builder --linux --x64 --publish never",
+    "deploy": "wrangler deploy --config oauth-proxy/wrangler.toml",
+    "preview": "wrangler dev --config oauth-proxy/wrangler.toml"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "concurrently": "^10.0.5",
     "electron": "44.3.0",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "wrangler": "^4.143.0"
   },
   "author": "Timothée Grollier <timotheegrollier@gmail.com>",
   "homepage": "https://github.com/timotheegrollier/work-logs",
