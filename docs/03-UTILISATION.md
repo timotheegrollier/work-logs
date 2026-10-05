@@ -180,10 +180,17 @@ remonte d'un clic. Un dossier déjà monté se choisit aussi par « ou choisir u
 monté… ». Le choix est retenu sur cet ordinateur seulement ; la section ne lit le partage que
 lorsque la colonne Procédures est affichée.
 
-- Cliquer un fichier l'ouvre **au centre**, comme une entrée. `.txt`, `.md`, `.csv` et
-  `.tsv` se modifient directement (grille pour les CSV : flèches, Entrée, Tab, F2,
-  copier-coller depuis un tableur, ＋/− ligne et colonne). Les documents Word et Excel
-  arrivent dans les prochains lots.
+- Cliquer un fichier l'ouvre **au centre**, comme une entrée. `.txt`, `.md`, `.csv`,
+  `.tsv` et **`.docx`** se modifient directement (grille pour les CSV : flèches, Entrée, Tab,
+  F2, copier-coller depuis un tableur, ＋/− ligne et colonne). Les classeurs Excel arrivent
+  au prochain lot.
+- **Documents Word** : texte, gras/italique/souligné/barré, style de paragraphe (Normal,
+  Titre 1, Titre 2…), alignement, niveau de liste (Tab / Maj+Tab), texte des liens et des
+  cellules de tableau. Images, champs, table des matières, zones de texte… s'affichent en
+  « objet conservé » : ils repartent tels quels, modifiables dans Word (« Ouvrir avec… »).
+  Seuls les paragraphes que tu as touchés sont réécrits ; le reste du fichier (styles,
+  en-têtes, numérotation, images) ne change pas d'un octet. Un document en suivi des
+  modifications s'ouvre en lecture seule.
 - Tes modifications s'enregistrent **seules sur cet ordinateur** (« Brouillon sur cet
   ordinateur »). Elles ne partent sur le partage qu'avec **Enregistrer sur le partage**
   ou `Ctrl+S`. Le fichier garde son encodage (Windows-1252 pour un CSV d'Excel), son

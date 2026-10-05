@@ -6,6 +6,8 @@ import { bannerFor, idleExpired, lockBlocks, lockForgotten, lockMessage } from '
 import { requestLeave, setLeaveGuard } from '../shared-leave';
 import { TextFileEditor } from './TextFileEditor';
 import { CsvFileEditor } from './CsvFileEditor';
+import { DocxFileEditor } from './DocxFileEditor';
+import { docxAuthor } from '../docx';
 
 type LocalSave = 'saved' | 'dirty' | 'saving' | 'error';
 const POLL_MS = 5000;
@@ -60,6 +62,10 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
   const [held, setHeld] = useState(false);
   const [leaving, setLeaving] = useState<((proceed: boolean) => void) | null>(null);
   const [versions, setVersions] = useState<SharedVersion[] | null>(null);
+  /** Nom affiché dans les verrous : aussi le dernier auteur inscrit dans un .docx envoyé. */
+  const [author, setAuthor] = useState('');
+  /** Qui a enregistré la version du collègue (propriétés du document Word). */
+  const [theirsAuthor, setTheirsAuthor] = useState<string | null>(null);
   const handleRef = useRef<FileEditorHandle | null>(null);
   const fileRef = useRef(file);
   fileRef.current = file;
@@ -125,6 +131,22 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
   useEffect(() => {
     load().catch((e: Error) => setError(e.message));
   }, [load]);
+
+  useEffect(() => {
+    let alive = true;
+    api.sharedStatus().then((status) => { if (alive) setAuthor(status.displayName ?? ''); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // Conflit sur un document Word : son dernier auteur dit qui a enregistré entre-temps.
+  const theirsHash = file?.state === 'conflict' && file.ext === 'docx' ? file.theirs?.hash ?? null : null;
+  useEffect(() => {
+    setTheirsAuthor(null);
+    if (!theirsHash) return;
+    let alive = true;
+    api.sharedContent(theirsHash).then(docxAuthor).then((name) => { if (alive) setTheirsAuthor(name); }).catch(() => {});
+    return () => { alive = false; };
+  }, [theirsHash]);
 
   // ------------------------------------------------------------ notre verrou
   /** Prendre la main. Refusée : on affiche qui la tient, le texte tapé reste en brouillon. */
@@ -394,14 +416,16 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
 
   const name = file?.name ?? basename(path);
   const kind = file ? editorKind(file.ext) : null;
-  const tooBig = Boolean(loaded && loaded.bytes.length > MAX_EDITABLE_TEXT);
+  const tooBig = Boolean(loaded && kind !== 'docx' && loaded.bytes.length > MAX_EDITABLE_TEXT);
   const blocked = (lockBlocks(file?.lock) || (lockForgotten(file?.lock) && !held)) && !override;
   const readOnly = sending ? 'Envoi en cours…'
     : file?.state === 'conflict' ? 'Règle d’abord le conflit.'
       : blocked && file?.lock ? `${lockMessage(file.lock)}.`
         : tooBig ? 'Fichier trop volumineux pour être modifié ici (4 Mo au plus).'
           : null;
-  const banner = file ? bannerFor(file, { dirty, override }) : null;
+  const banner = file
+    ? bannerFor(theirsAuthor && file.theirs ? { ...file, theirs: { ...file.theirs, author: theirsAuthor } } : file, { dirty, override })
+    : null;
   const hasDraft = Boolean(file?.draft) || dirty;
   const status = sending ? 'Envoi…'
     : save === 'saving' ? 'Brouillon…'
@@ -492,11 +516,13 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
       ) : !kind ? (
         <div className="notice">
           <p>
-            WorkLogs ne modifie pas encore les fichiers .{file?.ext || '?'} : les documents Word et les classeurs Excel arrivent dans les prochains lots.
+            WorkLogs ne modifie pas encore les fichiers .{file?.ext || '?'} : les classeurs Excel arrivent dans le prochain lot.
             {canOpenWith && ' « Ouvrir avec… » les ouvre dans LibreOffice, sur le vrai fichier du partage.'}
           </p>
           <a className="ghost" href={downloadUrl} download={name}>Télécharger cette version</a>
         </div>
+      ) : kind === 'docx' ? (
+        <DocxFileEditor key={loaded.version} name={name} bytes={loaded.bytes} initialDraft={loaded.draft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} author={author} />
       ) : kind === 'csv' ? (
         <CsvFileEditor key={loaded.version} name={name} bytes={loaded.bytes} initialDraft={loaded.draft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} />
       ) : (

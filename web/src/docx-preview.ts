@@ -7,6 +7,8 @@
  * texte) est volontairement laissée de côté : « Ouvrir avec… » reste là pour ça.
  */
 
+import { readZip, readZipEntry, ZipError, type ZipArchive } from './zip';
+
 export interface DocxListItem { depth: number; ordered: boolean; runs: DocxRun[] }
 
 export interface DocxRun {
@@ -30,76 +32,11 @@ const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const WP = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
 
-// Garde-fous contre une archive piégée : tailles et nombre d'entrées bornés.
-const MAX_ENTRIES = 5000;
-const MAX_ENTRY_BYTES = 40 * 1024 * 1024;
+// Garde-fous contre une archive piégée : tailles et nombre d'entrées bornés (`zip.ts`).
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_BLOCKS = 20000;
 
 export class DocxError extends Error {}
-
-interface ZipEntry { name: string; method: number; compressed: number; size: number; offset: number }
-
-/** Répertoire central d'une archive zip (sans zip64 : un .docx de plus de 4 Go n'a rien à faire ici). */
-function readZipDirectory(bytes: Uint8Array): Map<string, ZipEntry> {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  let end = -1;
-  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 0xffff); i--) {
-    if (view.getUint32(i, true) === 0x06054b50) { end = i; break; }
-  }
-  if (end < 0) throw new DocxError('Ce fichier n’est pas un document Word lisible (archive introuvable).');
-  const count = view.getUint16(end + 10, true);
-  let at = view.getUint32(end + 16, true);
-  if (count > MAX_ENTRIES) throw new DocxError('Document Word trop complexe pour l’aperçu.');
-  const entries = new Map<string, ZipEntry>();
-  const decoder = new TextDecoder();
-  for (let i = 0; i < count; i++) {
-    if (at + 46 > bytes.length || view.getUint32(at, true) !== 0x02014b50) throw new DocxError('Document Word abîmé (répertoire de l’archive).');
-    const method = view.getUint16(at + 10, true);
-    const compressed = view.getUint32(at + 20, true);
-    const size = view.getUint32(at + 24, true);
-    const nameLength = view.getUint16(at + 28, true);
-    const extraLength = view.getUint16(at + 30, true);
-    const commentLength = view.getUint16(at + 32, true);
-    const local = view.getUint32(at + 42, true);
-    const name = decoder.decode(bytes.subarray(at + 46, at + 46 + nameLength));
-    entries.set(name, { name, method, compressed, size, offset: local });
-    at += 46 + nameLength + extraLength + commentLength;
-  }
-  return entries;
-}
-
-async function inflate(data: Uint8Array, limit: number): Promise<Uint8Array> {
-  const source = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(data); controller.close(); } });
-  const stream = source.pipeThrough(new DecompressionStream('deflate-raw') as unknown as TransformStream<Uint8Array, Uint8Array>);
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.length;
-    // Taille annoncée mensongère (bombe de décompression) : on coupe.
-    if (total > limit) { await reader.cancel(); throw new DocxError('Document Word trop volumineux pour l’aperçu.'); }
-    chunks.push(value);
-  }
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length; }
-  return out;
-}
-
-async function readEntry(bytes: Uint8Array, entry: ZipEntry, limit = MAX_ENTRY_BYTES): Promise<Uint8Array> {
-  if (entry.size > limit) throw new DocxError('Document Word trop volumineux pour l’aperçu.');
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const at = entry.offset;
-  if (at + 30 > bytes.length || view.getUint32(at, true) !== 0x04034b50) throw new DocxError('Document Word abîmé (entrée de l’archive).');
-  const start = at + 30 + view.getUint16(at + 26, true) + view.getUint16(at + 28, true);
-  const data = bytes.subarray(start, start + entry.compressed);
-  if (entry.method === 0) return data.slice(0, limit);
-  if (entry.method === 8) return inflate(data, limit);
-  throw new DocxError('Document Word compressé d’une façon que l’aperçu ne connaît pas.');
-}
 
 const children = (node: Element, ns: string, name: string) =>
   Array.from(node.children).filter((child) => child.namespaceURI === ns && child.localName === name);
@@ -131,10 +68,23 @@ function toBase64(bytes: Uint8Array): string {
 /** Lit un .docx et rend son modèle d'aperçu. Lève `DocxError` avec un message français. */
 export async function readDocx(buffer: ArrayBuffer): Promise<DocxBlock[]> {
   const bytes = new Uint8Array(buffer);
-  const entries = readZipDirectory(bytes);
+  let archive: ZipArchive;
+  try {
+    archive = readZip(bytes);
+  } catch (error) {
+    throw new DocxError(error instanceof ZipError ? `Document Word illisible : ${error.message}` : 'Ce fichier n’est pas un document Word lisible.');
+  }
+  const entries = archive.byName;
+  const readEntry = async (entry: Parameters<typeof readZipEntry>[1], limit?: number) => {
+    try {
+      return await readZipEntry(archive, entry, limit);
+    } catch (error) {
+      throw new DocxError(error instanceof ZipError ? `Document Word illisible : ${error.message}` : 'Document Word abîmé.');
+    }
+  };
   const text = async (name: string) => {
     const entry = entries.get(name);
-    return entry ? new TextDecoder().decode(await readEntry(bytes, entry)) : null;
+    return entry ? new TextDecoder().decode(await readEntry(entry)) : null;
   };
   const main = await text('word/document.xml');
   if (main === null) throw new DocxError('Ce fichier n’est pas un document Word (.docx) : contenu principal absent.');
@@ -186,7 +136,7 @@ export async function readDocx(buffer: ArrayBuffer): Promise<DocxBlock[]> {
     const entry = entries.get(name);
     // EMF/WMF et images géantes : ignorées plutôt que de bloquer l'aperçu.
     if (!mime || !entry || entry.size > MAX_IMAGE_BYTES) return null;
-    const src = `data:${mime};base64,${toBase64(await readEntry(bytes, entry, MAX_IMAGE_BYTES))}`;
+    const src = `data:${mime};base64,${toBase64(await readEntry(entry, MAX_IMAGE_BYTES))}`;
     images.set(id, src);
     return src;
   };

@@ -166,6 +166,10 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | POST · DELETE | `/api/shared/lock?path=` | prendre/renouveler la main (`{take_over}`) · la rendre ; `409 SHARED_LOCKED` / `SHARED_LOCK_STALE` + `{lock}` |
 | PUT · DELETE | `/api/shared/projects/:id/folder` | relier un projet à un sous-dossier (`{dir}`) · le délier |
 
+Formats du dossier partagé, côté front (le serveur ne voit que des octets) : `text-codec.ts`,
+`text-file.ts`, `csv-file.ts`, `zip.ts` (archive, réécriture fidèle), `xml-scan.ts` (XML à
+positions), `docx.ts` + `docx-extensions.ts` (Word, §26).
+
 Les routes `/api/shared/*` ne répondent qu'à cet ordinateur (`localOnly`) et ne fixent jamais
 le chemin du partage (dialogue natif desktop ou `WORKLOGS_SHARED_ROOT`). Elles passent par
 `shared-service.js` (garde, versions, réessais) et `shared-io.js` (worker borné, disjoncteur).

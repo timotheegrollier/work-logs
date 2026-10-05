@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { wordDocx } from '../web/src/test/docx-fixture';
+import { readZip, readZipText } from '../web/src/zip';
 
 /**
  * Dossier partagé dans un vrai navigateur. `.e2e-share` joue le partage du TSE
@@ -114,4 +116,28 @@ test('un projet relié à un sous-dossier : son filtre n’affiche que lui', asy
   await expect(page.getByRole('button', { name: /^Ouvrir ailleurs\.md/ })).toBeHidden();
   await page.getByRole('button', { name: 'Délier Pro de son dossier' }).click();
   await expect(page.getByRole('button', { name: /^Ouvrir ailleurs\.md/ })).toBeVisible();
+});
+
+test('document Word : taper dans un paragraphe puis Ctrl+S ne réécrit que lui, mise en forme d’origine gardée', async ({ page }) => {
+  const original = wordDocx();
+  put('procédure.docx', Buffer.from(original));
+  const editor = await openShared(page, 'procédure.docx');
+  const content = editor.getByRole('textbox', { name: 'Contenu du document Word' });
+  await content.getByText('chaque lundi.').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Puis rincer.');
+  await expect(editor.getByText('Tu as la main')).toBeVisible();
+  await expect(editor.getByText('Brouillon sur cet ordinateur')).toBeVisible();
+  await page.keyboard.press('Control+s');
+  await expect(editor.getByText('Enregistré sur le partage.')).toBeVisible();
+
+  const sent = readZip(new Uint8Array(fs.readFileSync(path.join(share, 'procédure.docx'))));
+  const before = (await readZipText(readZip(original), 'word/document.xml'))!;
+  const after = (await readZipText(sent, 'word/document.xml'))!;
+  expect(after).toContain('<w:t xml:space="preserve"> chaque lundi. Puis rincer.</w:t>');
+  // Le run en italique rouge, les autres paragraphes, le tableau et l'image : intacts.
+  expect(after).toContain('<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:i/><w:color w:val="FF0000"/><w:lang w:val="fr-FR"/></w:rPr>');
+  const start = before.indexOf('<w:p><w:r><w:t xml:space="preserve">Voir </w:t>');
+  expect(after.slice(after.indexOf('<w:p><w:r><w:t xml:space="preserve">Voir </w:t>'))).toBe(before.slice(start));
+  expect(await readZipText(sent, 'word/styles.xml')).toBe(await readZipText(readZip(original), 'word/styles.xml'));
 });

@@ -2173,6 +2173,48 @@ describe('dossier partagé', () => {
     expect((await clientApi.sharedStatus()).displayName).toBe('T. Grollier');
   });
 
+  test('un document Word s’ouvre dans son éditeur ; changer un style ne réécrit que ce paragraphe', async () => {
+    const { wordDocx } = await import('./test/docx-fixture');
+    const { readZip, readZipText } = await import('./zip');
+    const original = wordDocx();
+    await write('Procédure filtration.docx', original);
+    await clientApi.setSharedDisplayName('T. Grollier');
+    render(<App />);
+    const editorRegion = await openFromTree('Procédure filtration.docx');
+    const content = await within(editorRegion).findByRole('textbox', { name: 'Contenu du document Word' });
+    expect(content).toHaveTextContent('Filtration');
+    expect(content.querySelector('h1')).toHaveTextContent('Filtration');
+    expect(within(editorRegion).getByText(/Image — conservé/)).toBeInTheDocument();
+    expect(within(editorRegion).getByText(/Table des matières — conservé/)).toBeInTheDocument();
+    await waitFor(() => expect(content.querySelector('[data-marker="1."]')).toHaveTextContent('Arrêter la pompe'));
+    expect(content.querySelector('[data-marker="a)"]')).toHaveTextContent('Vanne fermée');
+
+    const style = within(editorRegion).getByLabelText('Style du paragraphe');
+    expect(style).toHaveValue('Titre1');
+    fireEvent.change(style, { target: { value: '' } });
+    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Enregistrer sur le partage' }));
+    await waitFor(() => expect(within(sharedEditor()).getByText('Enregistré sur le partage.')).toBeInTheDocument());
+
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    const sent = new Uint8Array(fs.readFileSync(path.join(share, 'Procédure filtration.docx')));
+    const before = (await readZipText(readZip(original), 'word/document.xml'))!;
+    const after = (await readZipText(readZip(sent), 'word/document.xml'))!;
+    expect(after).toBe(before.replace('<w:pPr><w:pStyle w:val="Titre1"/><w:spacing w:after="120"/></w:pPr><w:bookmarkStart w:id="0" w:name="_Toc1"/><w:r><w:t>Filtration</w:t></w:r>',
+      '<w:pPr><w:spacing w:after="120"/></w:pPr><w:bookmarkStart w:id="0" w:name="_Toc1"/><w:r><w:t xml:space="preserve">Filtration</w:t></w:r>'));
+    expect(await readZipText(readZip(sent), 'docProps/core.xml')).toContain('<cp:lastModifiedBy>T. Grollier</cp:lastModifiedBy>');
+  });
+
+  test('document Word en suivi des modifications : lecture seule, raison donnée', async () => {
+    const { wordDocx } = await import('./test/docx-fixture');
+    await write('suivi.docx', wordDocx({ trackRevisions: true }));
+    render(<App />);
+    const editorRegion = await openFromTree('suivi.docx');
+    expect(await within(editorRegion).findByText(/Le suivi des modifications est activé/)).toBeInTheDocument();
+    expect(within(editorRegion).getByLabelText('Style du paragraphe')).toBeDisabled();
+    expect(within(editorRegion).getByRole('textbox', { name: 'Contenu du document Word' })).toHaveAttribute('contenteditable', 'false');
+  });
+
   test('choisir une entrée referme le fichier partagé', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Compte rendu' }] });
     await write('notes.md', 'v1\n');

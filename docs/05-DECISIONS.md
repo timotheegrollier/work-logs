@@ -894,3 +894,52 @@ qu'un dossier **déjà monté**, pas une adresse `smb://`.
 **Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :
 `libsmbclient`, dépendance native), ou si l'équipe veut écrire à plusieurs en même temps
 (suite bureautique en ligne : Google, Microsoft 365, OnlyOffice/Collabora).
+
+## 26. Documents Word du partage : réécrire au plus juste — 2026-10-05
+
+**Le besoin.** Modifier dans WorkLogs les `.docx` que les collègues ouvrent dans Word sur le
+TSE, sans abîmer leur mise en forme. Un éditeur qui reconvertirait tout le document (Word →
+éditeur → Word) perdrait en route styles fins, en-têtes, champs, images ancrées : chaque envoi
+dégraderait le fichier de l'équipe.
+
+**Le choix : on ne réécrit que ce qui a changé.**
+- `web/src/xml-scan.ts` lit le XML **en gardant les positions** de chaque élément ;
+  `web/src/zip.ts` lit l'archive et la réécrit en **recopiant telles quelles** les entrées non
+  touchées. Aucune dépendance : `DecompressionStream`/`CompressionStream`, CRC maison.
+- `web/src/docx.ts` : chaque paragraphe garde sa **tranche XML d'origine**. Inchangé → recopié
+  octet pour octet. Modifié → reconstruit sur son `<w:pPr>` (seuls `pStyle`, `jc` et le niveau
+  `ilvl` sont retouchés) et sur les `<w:rPr>` de ses runs ; gras/italique/souligné/barré
+  insérés **dans l'ordre du schéma** (`rStyle, rFonts, b, bCs, i, iCs…` — Word répare un
+  document dont l'ordre est faux). Signets autour du paragraphe gardés ; un paragraphe né d'un
+  Entrée hérite des propriétés de son voisin, sans `w14:paraId` ni signet en double. Les
+  marqueurs du correcteur (`proofErr`) tombent quand le paragraphe est réécrit.
+- **Objets conservés** (nœud `docxAtom`, non éditable, recopié tel quel) : tout paragraphe qui
+  contient autre chose que du texte et des liens (image, champ, commentaire, note, modification
+  suivie, saut de page, contrôle de contenu, équation), la table des matières, les tableaux à
+  fusion verticale. Supprimer un objet le retire ; le coller ailleurs est refusé (identités en
+  double = document à réparer).
+- **Tableaux** simples : texte des cellules modifiable, structure (lignes, colonnes, fusions)
+  intouchable — un changement de structure est refusé à l'envoi avec une explication. Seules
+  les cellules modifiées sont réécrites.
+- **Liens existants** : leur texte se modifie, leur balise d'origine et leur cible restent.
+  Pas de création de lien (il faudrait ajouter des relations) : à faire dans Word.
+- Propriétés du document (`docProps/core.xml`) : seul le texte de `lastModifiedBy` (nom des
+  verrous), `modified` et `revision` change. En cas de conflit, ce `lastModifiedBy` du fichier
+  du collègue dit **qui** a enregistré entre-temps.
+- **Lecture seule motivée** : suivi des modifications actif (WorkLogs écrirait des changements
+  non suivis dans un document que l'équipe suit), document protégé, OOXML strict.
+- Garde-fou final : le `document.xml` produit est relu par `DOMParser` ; invalide → rien ne part.
+- Schéma Tiptap **dédié** (`docx-extensions.ts`) plutôt que celui des entrées : couleurs,
+  polices ou fusions de l'éditeur riche ne se ramènent pas à Word. Les listes sont des
+  attributs de paragraphe (`numId`/`ilvl`), numéros et puces recalculés pour l'affichage.
+- `setEditable(…, false)` : basculer en lecture seule (pendant l'envoi) n'est pas une
+  modification — sans ce `false`, Tiptap en émettait une, recréait un brouillon juste après
+  l'envoi et effaçait « Enregistré sur le partage » (vu par un parcours Playwright instable).
+
+**Limites assumées (v1).** En-têtes et pieds de page, texte des notes, zones de texte, images
+(insertion), création de tableaux et de liens, modification de structure de tableau : dans
+Word (« Ouvrir avec… »). Rendu simplifié (polices et couleurs du thème non affichées).
+
+**À vérifier sur le TSE** : ouvrir dans Word un document modifié par WorkLogs — aucune
+réparation proposée, mise en forme, numérotation, en-tête et images intacts ; puis le faire
+réenregistrer par un collègue et le rouvrir dans WorkLogs.

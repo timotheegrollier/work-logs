@@ -31,6 +31,33 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-10-05 (4) — dossier partagé, lot 3 : documents Word (.docx) — v0.44.0
+
+Décision : §26. Éditeur `DocxFileEditor.tsx` ; cœur `docx.ts` (lecture → document Tiptap +
+tranches d'origine ; écriture au plus juste), `docx-extensions.ts` (schéma dédié, numéros de
+liste, refus de coller un objet conservé), `zip.ts` (extrait de `docx-preview.ts`, qui s'en
+sert désormais, + écrivain), `xml-scan.ts`. Fixture Word construite pour les tests :
+`web/src/test/docx-fixture.ts` ; la fixture LibreOffice réelle (`procedure.docx`) fait
+l'aller-retour à l'identique.
+- **Trouvé en route** : `setEditable()` de Tiptap émettait une modification ; l'éditeur
+  recréait un brouillon juste après chaque envoi (parcours Playwright instable, 1 fois sur 2).
+- **Tests** : `./scripts/check.sh` vert — 212 API, **406 front** (+22 : `docx.test.ts`,
+  `zip.test.ts`, 2 gestes dans `App.test.tsx`), 44 desktop, 25 scripts, 8 relais,
+  **48 navigateur** (+1 : taper dans un `.docx` puis Ctrl+S), 13 desktop : 756 en tout.
+- **Vu dans le navigateur intégré** : document de test type Word ouvert (titre, italique et gras
+  d'origine, lien, liste 1./a), image et table des matières conservées, tableau), phrase
+  ajoutée + nouveau paragraphe, Ctrl+S ; le fichier écrit garde `w14:paraId`, espacements et
+  `rPr` d'origine, et **LibreOffice l'ouvre** (conversion texte : tout y est). Word : sur le TSE.
+
+### À vérifier par Timo (documents Word)
+
+1. Ouvrir une vraie procédure `.docx` de l'équipe : le texte, les titres, les listes et les
+   tableaux s'affichent-ils correctement ? Quels objets apparaissent « conservés » ?
+2. Modifier une phrase, un titre, une cellule ; envoyer ; ouvrir le fichier **dans Word sur le
+   TSE** : aucune réparation proposée ? Mise en forme, numérotation, en-tête, images intacts ?
+3. Le faire modifier et réenregistrer par un collègue dans Word, puis le rouvrir dans WorkLogs.
+4. M'envoyer (sans données de l'entreprise) un `.docx` qui pose problème, s'il y en a.
+
 ## Lot du 2026-10-05 (3) — se connecter au partage par son adresse, lecture GVFS — v0.43.1
 
 Retour de Timo : « je n'arrive pas à ouvrir le dossier partagé par le TSE dans l'app desktop

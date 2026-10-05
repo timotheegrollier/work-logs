@@ -74,7 +74,8 @@ export function bannerFor(file: SharedFile, { dirty, override, now = new Date() 
       return { kind: 'conflict', deleted: true, message: 'Ce fichier a été supprimé du dossier partagé pendant que tu le modifiais.' };
     }
     const when = sinceLabel(file.theirs?.mtime ?? null, now);
-    return { kind: 'conflict', deleted: false, message: `Quelqu’un a enregistré ce fichier sur le partage${when ? ` (${when})` : ''} pendant que tu le modifiais. Rien n’a été écrasé.` };
+    const who = file.theirs?.author ? `${file.theirs.author} a` : 'Quelqu’un a';
+    return { kind: 'conflict', deleted: false, message: `${who} enregistré ce fichier sur le partage${when ? ` (${when})` : ''} pendant que tu le modifiais. Rien n’a été écrasé.` };
   }
   if (lockBlocks(file.lock) && !override) return { kind: 'readonly', forgotten: false, message: `Lecture seule — ${lockMessage(file.lock, now)}.` };
   if (lockForgotten(file.lock) && !override && !file.held) {

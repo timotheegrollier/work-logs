@@ -25,16 +25,19 @@ export interface FileEditorProps {
   readOnly: string | null;
   onEdit(): void;
   handleRef: RefObject<FileEditorHandle | null>;
+  /** Nom inscrit comme dernier auteur (propriétés d'un document Word). */
+  author?: string;
 }
 
 export class FormatError extends Error {}
 
-export type EditorKind = 'text' | 'markdown' | 'csv';
+export type EditorKind = 'text' | 'markdown' | 'csv' | 'docx';
 
 const KINDS: Record<string, EditorKind> = {
   txt: 'text', text: 'text', log: 'text',
   md: 'markdown', markdown: 'markdown',
   csv: 'csv', tsv: 'csv',
+  docx: 'docx',
 };
 
 /** Éditeur maison pour cette extension, ou `null` (ouvrir avec une autre application). */
