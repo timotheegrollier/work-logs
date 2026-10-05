@@ -18,8 +18,18 @@ for (const name of ['api/src', 'api/package.json', 'web/dist']) {
   fs.cpSync(path.join(root, name), path.join(stage, name), { recursive: true });
 }
 fs.mkdirSync(path.join(stage, 'desktop'), { recursive: true });
-for (const name of ['main.mjs', 'preload.cjs', 'server.mjs', 'update.mjs', 'google.mjs', 'google-view.mjs', 'open-file.mjs', 'icon.png'])
+for (const name of ['main.mjs', 'preload.cjs', 'server.mjs', 'update.mjs', 'google.mjs', 'google-view.mjs', 'open-file.mjs', 'shared-mount.mjs', 'icon.png'])
   fs.copyFileSync(path.join(root, 'desktop', name), path.join(stage, 'desktop', name));
+// Garde-fou : un module importé par le desktop mais oublié dans la liste donne une
+// application qui ne démarre pas (vu en CI avec `shared-mount.mjs`). On s'arrête ici.
+for (const name of fs.readdirSync(path.join(stage, 'desktop')).filter((file) => /\.(?:mjs|cjs|js)$/.test(file))) {
+  const source = fs.readFileSync(path.join(stage, 'desktop', name), 'utf8');
+  for (const match of source.matchAll(/(?:from\s+|import\(\s*|require\(\s*)['"]\.\/([^'"]+)['"]/g)) {
+    if (!fs.existsSync(path.join(stage, 'desktop', match[1]))) {
+      throw new Error(`desktop/${match[1]} (importé par ${name}) manque au paquet : l'ajouter à la liste de scripts/stage-desktop.mjs`);
+    }
+  }
+}
 // Client Google « Application de bureau » intégré (secrets CI) : un clic suffit
 // pour se connecter. Ce n'est pas un secret utilisateur (client public selon
 // Google), mais il reste hors du dépôt. Absent : configuration manuelle.
