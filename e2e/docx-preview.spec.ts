@@ -7,6 +7,9 @@ test('un .docx joint se lit dans l’aperçu, sans quitter l’app', async ({ pa
   try {
     await page.goto('/');
     await page.getByRole('region', { name: 'Journal' }).getByText('Étiqueteuse', { exact: true }).click();
+    // L'éditeur de cette entrée doit être là avant de joindre : sinon le champ visé
+    // peut encore être celui de l'entrée précédente, démonté juste après.
+    await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Étiqueteuse');
     await page.getByLabel('Joindre un fichier', { exact: true }).setInputFiles({
       name: 'Changer format balance etiqueteuse.docx',
       mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

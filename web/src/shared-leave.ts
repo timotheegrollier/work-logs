@@ -15,5 +15,8 @@ export function setLeaveGuard(next: LeaveGuard): () => void {
   };
 }
 
+/** Un fichier partagé est-il ouvert (et donc susceptible de poser la question) ? */
+export const hasLeaveGuard = () => guard !== null;
+
 /** `true` : on peut quitter le fichier ouvert. */
 export const requestLeave = (): Promise<boolean> => (guard ? guard() : Promise.resolve(true));

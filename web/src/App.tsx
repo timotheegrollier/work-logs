@@ -18,7 +18,7 @@ import { ColumnResizer } from './components/ColumnResizer';
 import { SharedFolder } from './components/SharedFolder';
 import { SharedFileEditor } from './components/SharedFileEditor';
 import { SharedSettings } from './components/SharedSettings';
-import { requestLeave } from './shared-leave';
+import { hasLeaveGuard, requestLeave } from './shared-leave';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
 
 const isPwa = import.meta.env.VITE_PWA === '1';
@@ -121,6 +121,13 @@ export default function App() {
    * envoyé, l'éditeur demande d'abord : Envoyer · Garder le brouillon ici · Annuler.
    */
   const selectEntry = useCallback((id: string | null) => {
+    // Aucun fichier partagé ouvert : sélection immédiate, comme avant (les gestes
+    // qui enchaînent sur l'entrée — joindre un fichier… — ne doivent pas attendre).
+    if (!hasLeaveGuard()) {
+      setSharedPath(null);
+      setSelectedId(id);
+      return;
+    }
     void requestLeave().then((ok) => {
       if (!ok) return;
       setSharedPath(null);
