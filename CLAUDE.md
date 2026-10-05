@@ -31,10 +31,10 @@ au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + V
 
 - **Aucune fonctionnalité sans test.** Route API → test dans `api/test/`. Geste utilisateur →
   test dans `web/src/App.test.tsx`, ou dans `e2e/` si ça dépend d'un vrai navigateur.
-- **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 211 tests API, 384 tests front,
-  41 tests desktop (serveur/OAuth/mise à jour/vue Google/dossier partagé), 25 tests des scripts
-  de release, 8 tests du relais, build, 47 parcours navigateur et 12 parcours de l'application
-  desktop — **728 tests**, et finit par `CHECK OK`.
+- **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 212 tests API, 384 tests front,
+  44 tests desktop (serveur/OAuth/mise à jour/vue Google/dossier partagé), 25 tests des scripts
+  de release, 8 tests du relais, build, 47 parcours navigateur et 13 parcours de l'application
+  desktop — **733 tests**, et finit par `CHECK OK`.
 - **Rien de nouveau sans accord** : ni dépendance, ni onglet, ni mode. La valeur de cette
   application est qu'elle tient sur un écran.
 
@@ -46,7 +46,7 @@ npm run desktop      # l'application Electron
 npm test             # API + front (~20 s)
 npm run test:e2e     # build + Playwright (web)
 npm run test:desktop # parcours Electron (xvfb-run si pas d'affichage)
-./scripts/check.sh   # tout, 728 tests
+./scripts/check.sh   # tout, 733 tests
 ./scripts/backup.sh  # sauvegarde base + fichiers joints
 ```
 

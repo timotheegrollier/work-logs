@@ -7,6 +7,7 @@ import { startDesktopServer } from './server.mjs';
 import { createGoogleClient, readDefaultClient } from './google.mjs';
 import { installGoogleView } from './google-view.mjs';
 import { launchDetached, prepareOpenCopy, REFUSED } from './open-file.mjs';
+import { connectShare } from './shared-mount.mjs';
 import { checkForUpdate, hasPackageKit, hasPkexec, installedVersionCommand, installKind, installedMatches, isAuthorizationFailure, isNewer, logUpdateEvent, packageManager, parseManagerProgress, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, privilegedInstallCommand, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
@@ -538,6 +539,23 @@ if (!app.requestSingleInstanceLock()) {
           return failure ? `Aucune application ne sait ouvrir ce fichier (${failure}).` : '';
         } catch (error) {
           return error.message;
+        }
+      });
+      // Se connecter au partage par son adresse (\\serveur\partage) : monté par GVFS,
+      // comme dans Nemo. Le mot de passe, s'il en faut un, se saisit dans la fenêtre
+      // du gestionnaire de fichiers — jamais dans WorkLogs.
+      ipcMain.handle('worklogs:shared-connect', async (event, request) => {
+        if (event.sender !== window.webContents) return { error: 'Demande refusée.' };
+        try {
+          const share = await connectShare(String(request?.address ?? ''), {
+            openLocation: (uri) => launchDetached(uri, {
+              command: process.env.WORKLOGS_OPEN_COMMAND || 'xdg-open',
+              fallback: (location) => shell.openExternal(location),
+            }),
+          });
+          return { status: await backend.shared.configure(share.path, { address: share.label }) };
+        } catch (error) {
+          return { error: error.message };
         }
       });
       ipcMain.handle('worklogs:shared-forget-root', async (event) => {

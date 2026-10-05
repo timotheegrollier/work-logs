@@ -31,6 +31,25 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-10-05 (3) — se connecter au partage par son adresse, lecture GVFS — v0.43.1
+
+Retour de Timo : « je n'arrive pas à ouvrir le dossier partagé par le TSE dans l'app desktop
+(Linux Mint) ». Constaté sur sa machine : **aucun partage monté** (ni GVFS, ni CIFS), aucun
+dossier enregistré dans WorkLogs — le sélecteur ne choisit qu'un dossier déjà monté.
+- **Se connecter** par `\\serveur\partage` (GVFS, comme Nemo ; mot de passe dans la
+  fenêtre de Nemo, jamais dans WorkLogs), **Se reconnecter** après redémarrage. Décision : §25.
+- **Bug trouvé en route** : sur un montage GVFS, la lecture positionnée échoue (`ESPIPE`) —
+  WorkLogs n'aurait lu aucun fichier d'un partage ouvert par Nemo. Lecture et écriture
+  séquentielles, repli automatique ; prouvé sur une archive montée par GVFS (le test échoue
+  avec l'ancien worker).
+- Tests : `desktop/test/shared-mount.test.mjs` (3), `api/test/shared-gvfs.test.js` (1), parcours
+  desktop « se connecter par l'adresse, puis se reconnecter ».
+
+**À faire par Timo** : dans WorkLogs (colonne Procédures → Dossier partagé), taper l'adresse
+du partage telle qu'utilisée sous Windows, Se connecter, saisir le mot de passe dans la
+fenêtre qui s'ouvre si elle s'ouvre. Me dire si le montage réussit et si l'**envoi** d'un
+fichier fonctionne (l'écriture par GVFS sur un vrai SMB n'a pas pu être essayée ici).
+
 ## Lot du 2026-10-05 (2) — dossier partagé TSE, lot 2 : verrou, projets, historique — v0.43.0
 
 Demandé par Timo : « vas-y pour le lot 2, commit, pousse et bump : je teste sur la prod ».

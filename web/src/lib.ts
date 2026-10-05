@@ -173,6 +173,8 @@ export interface SharedStatus {
   /** Desktop : le chemin se choisit par le dialogue natif. Ailleurs, il est fixé par la configuration. */
   configurable?: boolean;
   root?: string | null;
+  /** Adresse du partage quand WorkLogs l'a monté lui-même : permet « Se reconnecter ». */
+  address?: string | null;
   label?: string;
   mount?: string | null;
   reach?: SharedReach;

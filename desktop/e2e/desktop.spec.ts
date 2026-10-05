@@ -38,6 +38,14 @@ function fakeOpener(): string {
   return script;
 }
 
+/** Faux `gio mount` : crée le montage GVFS de \\tse01\commun, avec un fichier, comme Nemo. */
+function fakeGio(): string {
+  const share = path.join(directory, 'gvfs', 'smb-share:server=tse01,share=commun');
+  const script = path.join(directory, 'gio.sh');
+  fs.writeFileSync(script, `#!/bin/sh\n[ "$1" = mount ] || exit 1\nmkdir -p "${share}"\n[ -f "${share}/consignes.md" ] || printf '# Consignes\\n' > "${share}/consignes.md"\n`, { mode: 0o755 });
+  return script;
+}
+
 /** `null` : ne pas attendre d'entrée au centre (un fichier partagé y est rouvert). */
 async function launch(expectedTitle: string | null = 'Comment ça marche') {
   const env = Object.fromEntries(Object.entries(process.env).filter((item): item is [string, string] =>
@@ -50,7 +58,9 @@ async function launch(expectedTitle: string | null = 'Comment ça marche') {
     env: { ...env, WORKLOGS_DATA_DIR: path.join(directory, 'data'), WORKLOGS_PROFILE_DIR: path.join(directory, 'profile'), WORKLOGS_SKIP_UPDATE_CHECK: '1',
       WORKLOGS_OPEN_COMMAND: fakeOpener(),
       // Répond à la place du dialogue « Choisir le dossier partagé ».
-      WORKLOGS_CHOOSE_FOLDER: path.join(directory, 'partage') },
+      WORKLOGS_CHOOSE_FOLDER: path.join(directory, 'partage'),
+      // Montage GVFS joué par un faux `gio` : il « monte » \\tse01\commun dans ce dossier.
+      WORKLOGS_GVFS_DIR: path.join(directory, 'gvfs'), WORKLOGS_GIO_COMMAND: fakeGio() },
   });
   page = await application.firstWindow();
   if (expectedTitle !== null) await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(expectedTitle);
@@ -191,7 +201,7 @@ test('dossier partagé : choisi par le dialogue natif, envoyé, retrouvé au red
   fs.mkdirSync(share);
   fs.writeFileSync(path.join(share, 'consignes.md'), '# Consignes\r\n');
   await page.getByRole('button', { name: 'Procédures', exact: true }).click();
-  await page.getByRole('button', { name: 'Choisir le dossier…' }).click();
+  await page.getByRole('button', { name: 'ou choisir un dossier déjà monté…' }).click();
   await page.getByRole('button', { name: /^Ouvrir consignes\.md/ }).click();
   const editor = page.getByRole('region', { name: 'Fichier partagé' });
   await editor.getByLabel('Contenu de consignes.md').fill('# Consignes\n\nDepuis le desktop.\n');
@@ -229,7 +239,7 @@ test('dossier partagé : « Ouvrir avec… » donne le vrai fichier, refusé pou
   fs.writeFileSync(path.join(share, 'notes.md'), 'v1');
   fs.writeFileSync(path.join(share, 'script.sh'), 'echo');
   await page.getByRole('button', { name: 'Procédures', exact: true }).click();
-  await page.getByRole('button', { name: 'Choisir le dossier…' }).click();
+  await page.getByRole('button', { name: 'ou choisir un dossier déjà monté…' }).click();
   await page.getByRole('button', { name: /^Ouvrir filtration\.docx/ }).click();
   const editor = page.getByRole('region', { name: 'Fichier partagé' });
   await editor.getByRole('button', { name: 'Ouvrir avec…' }).click();
@@ -243,6 +253,25 @@ test('dossier partagé : « Ouvrir avec… » donne le vrai fichier, refusé pou
   await expect(editor.getByText('Brouillon sur cet ordinateur')).toBeVisible();
   await expect(editor.getByRole('button', { name: 'Ouvrir avec…' })).toBeDisabled();
   expect(await page.evaluate(() => (window as unknown as SharedBridge).worklogsDesktop.shared.openWith('notes.md'))).toMatch(/brouillon/);
+});
+
+test('dossier partagé : se connecter par l’adresse \\\\serveur\\partage, puis se reconnecter après démontage', async () => {
+  const mounted = path.join(directory, 'gvfs', 'smb-share:server=tse01,share=commun');
+  await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  await page.getByLabel('Adresse du partage').fill('\\\\TSE01\\Commun');
+  await page.getByRole('button', { name: 'Se connecter' }).click();
+  await expect(page.getByRole('button', { name: /^Ouvrir consignes\.md/ })).toBeVisible();
+  await page.getByRole('button', { name: /^Ouvrir consignes\.md/ }).click();
+  await expect(page.getByRole('region', { name: 'Fichier partagé' }).getByLabel('Contenu de consignes.md')).toHaveValue('# Consignes\n');
+
+  // Redémarrage du poste : le montage GVFS disparaît ; WorkLogs propose de se reconnecter.
+  fs.rmSync(mounted, { recursive: true, force: true });
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  const reconnect = page.getByRole('button', { name: 'Se reconnecter à \\\\TSE01\\Commun' });
+  await expect(reconnect).toBeVisible({ timeout: 15_000 });
+  await reconnect.click();
+  await expect(page.getByText('Joignable')).toBeVisible();
+  expect(fs.existsSync(path.join(mounted, 'consignes.md'))).toBe(true);
 });
 
 test('impression PDF et refus de fermeture si l’enregistrement échoue', async () => {

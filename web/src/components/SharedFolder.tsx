@@ -32,6 +32,10 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   const [busy, setBusy] = useState(false);
   /** Choix du sous-dossier du projet filtré : chaque dossier de l'arbre propose « Relier ici ». */
   const [linking, setLinking] = useState(false);
+  /** Adresse du partage à monter (\\serveur\partage) ; formulaire visible sans dossier, ou sur demande. */
+  const [address, setAddress] = useState('');
+  const [showConnect, setShowConnect] = useState(false);
+  const [connecting, setConnecting] = useState('');
   useEffect(() => { setLinking(false); }, [projectId]);
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
@@ -53,10 +57,12 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
       const listing = await api.sharedList(dir);
       setListings((current) => new Map(current).set(dir, listing));
       setError('');
+      // Partage parti (démonté, réseau) : l'état affiché suit, avec « Se reconnecter ».
+      if (listing.offline) void refreshStatus();
     } catch (e) {
       setError((e as Error).message);
     }
-  }, []);
+  }, [refreshStatus]);
 
   const refreshAll = useCallback(async () => {
     await refreshStatus();
@@ -86,6 +92,30 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
 
   if (!status?.available) return null;
 
+  const applyStatus = (next: SharedStatus) => {
+    setStatus(next);
+    setListings(new Map());
+    setExpanded(new Set());
+    setShowConnect(false);
+  };
+
+  /** Monte le partage comme Nemo ; un mot de passe se saisit dans la fenêtre du gestionnaire de fichiers. */
+  const connect = async (target: string) => {
+    const bridge = window.worklogsDesktop?.shared;
+    if (!bridge?.connect) return;
+    setBusy(true);
+    setError('');
+    setConnecting(target);
+    try {
+      const result = await bridge.connect(target);
+      if (result.error) setError(result.error);
+      if (result.status) applyStatus(result.status);
+    } finally {
+      setConnecting('');
+      setBusy(false);
+    }
+  };
+
   const choose = async () => {
     const bridge = window.worklogsDesktop?.shared;
     if (!bridge) return;
@@ -94,11 +124,7 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
     try {
       const result = await bridge.chooseRoot();
       if (result.error) setError(result.error);
-      if (result.status) {
-        setStatus(result.status);
-        setListings(new Map());
-        setExpanded(new Set());
-      }
+      if (result.status) applyStatus(result.status);
     } finally {
       setBusy(false);
     }
@@ -143,6 +169,30 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   };
 
   const reach = status.reach ?? 'unconfigured';
+  const canConnect = Boolean(status.configurable && window.worklogsDesktop?.shared?.connect);
+  const connectForm = canConnect && (
+    <>
+      <form className="shared-connect" onSubmit={(event) => { event.preventDefault(); void connect(address); }}>
+        <label>
+          Adresse du partage
+          <input
+            aria-label="Adresse du partage"
+            placeholder="\\serveur\partage"
+            value={address}
+            spellCheck={false}
+            onChange={(event) => setAddress(event.target.value)}
+          />
+        </label>
+        <button className="task-primary" type="submit" disabled={busy || !address.trim()}>Se connecter</button>
+      </form>
+      {connecting && (
+        <p className="notice" role="status">
+          Connexion à {connecting}… Si une fenêtre te demande ton mot de passe, saisis-le là (coche « mémoriser ») :
+          WorkLogs attend que le partage soit monté.
+        </p>
+      )}
+    </>
+  );
   const renderDir = (dir: string, depth: number) => {
     const listing = listings.get(dir);
     if (!listing) return <p className="empty">Lecture…</p>;
@@ -196,8 +246,12 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
         {!status.root ? (
           status.configurable ? (
             <>
-              <p className="empty">Choisis le dossier de l’équipe (le partage du TSE monté sur cet ordinateur) : ses fichiers s’ouvriront ici, chacun son tour, sans rien écraser.</p>
-              <button className="ghost" disabled={busy} onClick={() => void choose()}>Choisir le dossier…</button>
+              <p className="empty">Le dossier de l’équipe, sur le TSE : son adresse comme sous Windows (\\serveur\partage). Ses fichiers s’ouvriront ici, chacun son tour, sans rien écraser.</p>
+              {connectForm}
+              {error && <p className="error" role="alert">{error}</p>}
+              <button className="ghost shared-change" disabled={busy} onClick={() => void choose()}>
+                {canConnect ? 'ou choisir un dossier déjà monté…' : 'Choisir le dossier…'}
+              </button>
             </>
           ) : <p className="empty">Aucun dossier partagé n’est configuré.</p>
         ) : (
@@ -224,9 +278,28 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
               </div>
             )}
             {REACH_HELP[reach] && <p className="notice">{REACH_HELP[reach]}</p>}
+            {reach === 'unmounted' && status.address && canConnect && (
+              <button className="task-primary" disabled={busy} onClick={() => void connect(status.address!)}>
+                Se reconnecter à {status.address}
+              </button>
+            )}
+            {connecting && !showConnect && <p className="notice" role="status">Connexion à {connecting}… valide ton mot de passe dans la fenêtre du gestionnaire de fichiers si elle s’ouvre.</p>}
             {error && <p className="error" role="alert">{error}</p>}
             {renderDir(root, 0)}
-            {status.configurable && <button className="ghost shared-change" disabled={busy} onClick={() => void choose()}>Changer de dossier…</button>}
+            {status.configurable && !showConnect && (
+              <button className="ghost shared-change" disabled={busy} onClick={() => (canConnect ? setShowConnect(true) : void choose())}>
+                Changer de dossier…
+              </button>
+            )}
+            {showConnect && (
+              <>
+                {connectForm}
+                <div className="shared-project-link">
+                  <button className="ghost" disabled={busy} onClick={() => void choose()}>Choisir un dossier déjà monté…</button>
+                  <button className="ghost" onClick={() => setShowConnect(false)}>Annuler</button>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

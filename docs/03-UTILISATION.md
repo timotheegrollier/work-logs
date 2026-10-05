@@ -170,11 +170,15 @@ dépliée quand elle est affichée, se masque par son bouton et l'état est rete
 
 ## Dossier partagé (le dossier du TSE)
 
-Sous les procédures, la section **Dossier partagé** montre le dossier de l'équipe —
-celui du TSE, monté sur ce PC (Fichiers → Autres emplacements → `smb://serveur/partage`,
-ou montage CIFS). Sur le desktop, **Choisir le dossier…** ouvre le sélecteur ; le choix
-est retenu sur cet ordinateur seulement. La section ne lit le partage que lorsque la
-colonne Procédures est affichée.
+Sous les procédures, la section **Dossier partagé** montre le dossier de l'équipe, celui du
+TSE. Sur le desktop, tape son **adresse comme sous Windows** — `\\serveur\partage` (ou
+`smb://serveur/partage`, éventuellement suivie d'un sous-dossier) — puis **Se connecter** :
+WorkLogs le monte comme le gestionnaire de fichiers (Nemo). S'il faut un mot de passe, c'est
+la fenêtre de Nemo qui le demande (coche « mémoriser ») ; WorkLogs ne voit jamais tes
+identifiants. Après un redémarrage, le partage n'est plus monté : **Se reconnecter** le
+remonte d'un clic. Un dossier déjà monté se choisit aussi par « ou choisir un dossier déjà
+monté… ». Le choix est retenu sur cet ordinateur seulement ; la section ne lit le partage que
+lorsque la colonne Procédures est affichée.
 
 - Cliquer un fichier l'ouvre **au centre**, comme une entrée. `.txt`, `.md`, `.csv` et
   `.tsv` se modifient directement (grille pour les CSV : flèches, Entrée, Tab, F2,

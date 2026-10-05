@@ -872,6 +872,25 @@ rendu par le sélecteur pour un partage GVFS, dialecte SMB. Liste complète :
   octets de la version) — rien ne part avant l'envoi, qui garde sa protection habituelle.
 - Nom affiché dans les verrous : Paramètres › Dossier partagé.
 
+**v0.43.1 (2026-10-05) — se connecter par l'adresse, et GVFS.** Timo n'arrivait pas à ouvrir
+le partage : rien n'était monté sur son Mint, et le sélecteur de dossiers ne sait choisir
+qu'un dossier **déjà monté**, pas une adresse `smb://`.
+- **Se connecter par l'adresse** (`desktop/shared-mount.mjs`, IPC `worklogs:shared-connect`) :
+  `\\serveur\partage`, `//…` ou `smb://…` (+ sous-dossier). Déjà monté par GVFS → utilisé ;
+  sinon `gio mount` (réussit si le trousseau a le mot de passe) ; sinon la fenêtre de
+  connexion du gestionnaire de fichiers (`xdg-open smb://…`) et WorkLogs attend le montage
+  (2 min). **Aucun identifiant ne passe par WorkLogs.** L'adresse est retenue
+  (`shared.address`) : « Se reconnecter » quand le partage n'est plus monté (redémarrage).
+  GVFS plutôt que CIFS : pas de `sudo`, pas de `/etc/fstab`, mêmes identifiants que Nemo.
+- **GVFS refuse les lectures positionnées** (`ESPIPE`, mesuré sur un montage GVFS/FUSE de
+  la machine de Timo) : le worker lit désormais **séquentiellement** partout, écrit
+  séquentiellement sur un descripteur neuf, et n'utilise l'écriture positionnée (même
+  descripteur que la relecture) qu'avec un repli `O_TRUNC` séquentiel si le montage la
+  refuse. Test `api/test/shared-gvfs.test.js` sur une archive montée par GVFS (ignoré là où
+  GVFS ne tourne pas). L'écriture sur un vrai partage SMB par GVFS reste à vérifier.
+- Un `ENOENT` relance aussitôt le contrôle de montage : un partage démonté s'affiche
+  « Non monté » avec « Se reconnecter », sans attendre le cache de 15 s.
+
 **Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :
 `libsmbclient`, dépendance native), ou si l'équipe veut écrire à plusieurs en même temps
 (suite bureautique en ligne : Google, Microsoft 365, OnlyOffice/Collabora).

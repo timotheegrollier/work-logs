@@ -272,6 +272,12 @@ export function createSharedService({
     try {
       checked = await io.call('realpath', [abs]);
     } catch (error) {
+      // Introuvable : peut-être le partage lui-même qui vient d'être démonté
+      // (redémarrage, déconnexion) — on revérifie sans attendre le cache.
+      if (error.code === 'ENOENT') {
+        const again = await reach({ force: true });
+        if (again.reach !== 'ok') throw reachError(again.reach);
+      }
       if (error.code === 'ENOENT' && mayNotExist && parts.length) {
         const parent = await io.call('realpath', [path.dirname(abs)]);
         if (!inside(parent)) throw new SharedError(403, 'SHARED_OUTSIDE', 'Ce chemin sort du dossier partagé.');
@@ -646,6 +652,8 @@ export function createSharedService({
         available: true,
         configurable,
         root: current,
+        /** Adresse du partage (`\\serveur\partage`) quand il a été monté par WorkLogs : « Se reconnecter ». */
+        address: setting('shared.address'),
         label: current ? path.basename(current) : '',
         mount: current && state.type !== null && state.type !== undefined ? mountName(state.type, current) : null,
         reach: state.reach,
@@ -660,7 +668,7 @@ export function createSharedService({
     },
 
     /** Choisi par le dialogue natif (IPC) — jamais par une route HTTP. */
-    async configure(dir) {
+    async configure(dir, { address = null } = {}) {
       if (!configurable) throw new SharedError(403, 'SHARED_NOT_CONFIGURABLE', 'Le dossier partagé est fixé par la configuration.');
       if (typeof dir !== 'string' || !path.isAbsolute(dir)) throw new SharedError(400, 'SHARED_BAD_PATH', 'Chemin absolu attendu.');
       let real;
@@ -680,13 +688,14 @@ export function createSharedService({
       setSetting('shared.root', real);
       setSetting('shared.fs_root', real);
       setSetting('shared.fs_type', type);
+      setSetting('shared.address', address);
       mount = { at: -Infinity, root: null, reach: 'unconfigured', real: null, type: null };
       return this.status();
     },
 
     async forget() {
       if (!configurable) throw new SharedError(403, 'SHARED_NOT_CONFIGURABLE', 'Le dossier partagé est fixé par la configuration.');
-      for (const key of ['shared.root', 'shared.fs_root', 'shared.fs_type']) setSetting(key, null);
+      for (const key of ['shared.root', 'shared.fs_root', 'shared.fs_type', 'shared.address']) setSetting(key, null);
       mount = { at: -Infinity, root: null, reach: 'unconfigured', real: null, type: null };
       return this.status();
     },

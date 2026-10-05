@@ -28,30 +28,49 @@ const describe = (stat) => ({
 });
 const fail = (code, message) => Object.assign(new Error(message), { code });
 
-function readAll(fd, size) {
-  const buffer = Buffer.alloc(size);
-  let offset = 0;
-  while (offset < size) {
-    const read = fs.readSync(fd, buffer, offset, size - offset, offset);
-    if (!read) break;
-    offset += read;
-  }
-  // Un fichier qui grandit pendant la lecture : on lit la suite au lieu de tronquer.
-  const chunks = [buffer.subarray(0, offset)];
+/**
+ * Lecture **séquentielle** (position courante, jamais d'offset explicite) : un
+ * partage monté par GVFS (Nemo, « /run/user/…/gvfs ») refuse les lectures
+ * positionnées (ESPIPE). Le descripteur est toujours frais, donc lu depuis 0.
+ */
+function readAll(fd, max = Infinity) {
+  const chunks = [];
+  let total = 0;
   for (;;) {
-    const more = Buffer.alloc(65536);
-    const read = fs.readSync(fd, more, 0, more.length, offset);
+    const chunk = Buffer.alloc(65536);
+    const read = fs.readSync(fd, chunk, 0, chunk.length, null);
     if (!read) break;
-    chunks.push(more.subarray(0, read));
-    offset += read;
+    total += read;
+    if (total > max) throw fail('EFBIG', 'fichier trop volumineux');
+    chunks.push(chunk.subarray(0, read));
   }
   return chunks.length === 1 ? chunks[0] : Buffer.concat(chunks);
 }
 
-function writeAll(fd, bytes) {
+function readPath(file, max) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    return readAll(fd, max);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** Écriture positionnée (même descripteur que la relecture). */
+function writeAt(fd, bytes) {
   let offset = 0;
   while (offset < bytes.length) offset += fs.writeSync(fd, bytes, offset, bytes.length - offset, offset);
 }
+
+/** Écriture séquentielle, sur un descripteur fraîchement ouvert (donc en 0). */
+function writeSequential(fd, bytes) {
+  let offset = 0;
+  while (offset < bytes.length) offset += fs.writeSync(fd, bytes, offset, bytes.length - offset);
+}
+
+const syncQuietly = (fd) => { try { fs.fsyncSync(fd); } catch {} };
+/** Ce que GVFS (FUSE) répond aux opérations qu'il ne sait pas faire. */
+const UNSUPPORTED = new Set(['ESPIPE', 'ENOSYS', 'EOPNOTSUPP', 'ENOTSUP', 'EINVAL']);
 
 function readSmall(file, max) {
   let fd;
@@ -63,9 +82,8 @@ function readSmall(file, max) {
   }
   try {
     const stat = fs.fstatSync(fd);
-    const buffer = Buffer.alloc(Math.min(stat.size, max));
-    const read = buffer.length ? fs.readSync(fd, buffer, 0, buffer.length, 0) : 0;
-    return { bytes: buffer.subarray(0, read), mtimeMs: Math.round(stat.mtimeMs) };
+    const bytes = readAll(fd, Infinity).subarray(0, max);
+    return { bytes, mtimeMs: Math.round(stat.mtimeMs) };
   } finally {
     fs.closeSync(fd);
   }
@@ -73,11 +91,34 @@ function readSmall(file, max) {
 
 const startsWith = (whole, part) => part.length <= whole.length && Buffer.compare(whole.subarray(0, part.length), part) === 0;
 
+/** Réécrit le fichier depuis zéro par un second descripteur (O_TRUNC), séquentiellement. */
+function rewrite(file, bytes) {
+  let fd;
+  try {
+    fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_TRUNC);
+  } catch (error) {
+    if (error.code === 'EBUSY' || error.code === 'ETXTBSY') return { result: 'busy', code: error.code };
+    if (error.code === 'EACCES' || error.code === 'EPERM') return { result: 'denied', code: error.code };
+    throw error;
+  }
+  try {
+    writeSequential(fd, bytes);
+    syncQuietly(fd);
+  } catch (error) {
+    return { result: 'interrupted', code: error.code || 'EIO' };
+  } finally {
+    try { fs.closeSync(fd); } catch {}
+  }
+  return null;
+}
+
 /**
  * Écriture gardée, **sur place** : on garde les droits NTFS, le propriétaire et
  * l'identité du fichier (un renommage par-dessus hériterait des droits du
  * dossier). Le même descripteur sert à relire avant d'écrire : si le contenu
- * n'est plus celui sur lequel on s'appuie, on n'écrit pas.
+ * n'est plus celui sur lequel on s'appuie, on n'écrit pas. Un montage qui refuse
+ * la troncature ou l'écriture positionnée (GVFS) passe par une réécriture
+ * séquentielle, toujours après la même vérification.
  */
 function writeGuarded(file, input, base, mine, interrupted) {
   const bytes = Buffer.from(input.buffer, input.byteOffset, input.byteLength);
@@ -88,62 +129,56 @@ function writeGuarded(file, input, base, mine, interrupted) {
     if (error.code === 'EBUSY' || error.code === 'ETXTBSY') return { result: 'busy', code: error.code };
     if (error.code === 'EACCES' || error.code === 'EPERM') return { result: 'denied', code: error.code };
     if (error.code === 'ENOENT') return { result: 'missing' };
-    if (error.code === 'EOPNOTSUPP' || error.code === 'ENOTSUP') return writeWithoutReadWrite(file, bytes, base, mine, interrupted);
+    if (UNSUPPORTED.has(error.code)) return writeWithoutReadWrite(file, bytes, base, mine, interrupted);
     throw error;
   }
   let truncated = false;
+  let fallback = false;
   try {
     const stat = fs.fstatSync(fd);
-    const current = readAll(fd, stat.size);
+    const current = readAll(fd);
     const hash = sha256(current);
     if (hash === mine) return { result: 'same', size: current.length, mtimeMs: Math.round(stat.mtimeMs) };
     if (hash !== base && !(interrupted && startsWith(bytes, current))) {
       return { result: 'changed', theirs: current, hash, size: current.length, mtimeMs: Math.round(stat.mtimeMs) };
     }
-    fs.ftruncateSync(fd, 0);
-    truncated = true;
-    writeAll(fd, bytes);
-    fs.fsyncSync(fd);
+    try {
+      fs.ftruncateSync(fd, 0);
+      truncated = true;
+      writeAt(fd, bytes);
+      syncQuietly(fd);
+    } catch (error) {
+      if (!UNSUPPORTED.has(error.code)) throw error;
+      fallback = true;
+    }
   } catch (error) {
     if (truncated) return { result: 'interrupted', code: error.code || 'EIO' };
     throw error;
   } finally {
     try { fs.closeSync(fd); } catch {}
   }
+  if (fallback) {
+    const failed = rewrite(file, bytes);
+    if (failed) return failed;
+  }
   return verify(file, mine);
 }
 
 /** Repli des montages qui refusent la lecture-écriture (certains GVFS). */
 function writeWithoutReadWrite(file, bytes, base, mine, interrupted) {
-  const current = fs.readFileSync(file);
+  const current = readPath(file);
   const hash = sha256(current);
   const stat = fs.statSync(file);
   if (hash === mine) return { result: 'same', size: current.length, mtimeMs: Math.round(stat.mtimeMs) };
   if (hash !== base && !(interrupted && startsWith(bytes, current))) {
     return { result: 'changed', theirs: current, hash, size: current.length, mtimeMs: Math.round(stat.mtimeMs) };
   }
-  let fd;
-  try {
-    fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_TRUNC);
-  } catch (error) {
-    if (error.code === 'EBUSY' || error.code === 'ETXTBSY') return { result: 'busy', code: error.code };
-    if (error.code === 'EACCES' || error.code === 'EPERM') return { result: 'denied', code: error.code };
-    throw error;
-  }
-  try {
-    writeAll(fd, bytes);
-    try { fs.fsyncSync(fd); } catch {}
-  } catch (error) {
-    return { result: 'interrupted', code: error.code || 'EIO' };
-  } finally {
-    try { fs.closeSync(fd); } catch {}
-  }
-  return verify(file, mine);
+  return rewrite(file, bytes) ?? verify(file, mine);
 }
 
 /** Relecture : un collègue qui enregistre juste après nous se voit ici. */
 function verify(file, mine) {
-  const after = fs.readFileSync(file);
+  const after = readPath(file);
   const stat = fs.statSync(file);
   const hash = sha256(after);
   if (hash !== mine) return { result: 'changed', theirs: after, hash, size: after.length, mtimeMs: Math.round(stat.mtimeMs) };
@@ -171,8 +206,7 @@ const ops = {
     try {
       const stat = fs.fstatSync(fd);
       if (stat.size > max) throw fail('EFBIG', 'fichier trop volumineux');
-      const bytes = readAll(fd, stat.size);
-      if (bytes.length > max) throw fail('EFBIG', 'fichier trop volumineux');
+      const bytes = readAll(fd, max);
       return { bytes, size: bytes.length, mtimeMs: Math.round(stat.mtimeMs), hash: sha256(bytes) };
     } finally {
       fs.closeSync(fd);
@@ -190,8 +224,8 @@ const ops = {
       throw error;
     }
     try {
-      writeAll(fd, bytes);
-      try { fs.fsyncSync(fd); } catch {}
+      writeSequential(fd, bytes);
+      syncQuietly(fd);
     } finally {
       fs.closeSync(fd);
     }
@@ -208,7 +242,7 @@ const ops = {
     if (!current) {
       try {
         const fd = fs.openSync(file, 'wx');
-        try { writeAll(fd, bytes); } finally { fs.closeSync(fd); }
+        try { writeSequential(fd, bytes); } finally { fs.closeSync(fd); }
         return { result: 'renewed' };
       } catch (error) {
         if (error.code === 'EEXIST') return { result: 'lost', bytes: readSmall(file, 4096)?.bytes ?? null };
@@ -217,7 +251,7 @@ const ops = {
     }
     if (!Buffer.from(current.bytes).toString('utf8').includes(marker)) return { result: 'lost', bytes: current.bytes };
     const fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_TRUNC);
-    try { writeAll(fd, bytes); } finally { fs.closeSync(fd); }
+    try { writeSequential(fd, bytes); } finally { fs.closeSync(fd); }
     return { result: 'renewed' };
   },
   /** Retire un verrou seulement s'il porte encore notre marque (jamais celui d'un autre). */

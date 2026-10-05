@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('worklogsDesktop', {
     // Renvoient `{ status }`, `{ canceled: true }` ou `{ error }`.
     chooseRoot: () => ipcRenderer.invoke('worklogs:shared-choose-root'),
     forgetRoot: () => ipcRenderer.invoke('worklogs:shared-forget-root'),
+    // Monte le partage par son adresse (comme Nemo) et le choisit.
+    connect: (address) => ipcRenderer.invoke('worklogs:shared-connect', { address }),
     // Renvoie '' si l'application du système a pris le fichier, sinon le message d'erreur.
     openWith: (path) => ipcRenderer.invoke('worklogs:shared-open-with', { path }),
   },
