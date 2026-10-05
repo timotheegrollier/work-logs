@@ -165,6 +165,96 @@ export interface AppState {
   stats: Stats;
 }
 
+// ---------------------------------------------------------------- dossier partagé
+/** Le partage répond-il ? `unmounted` : le dossier est là mais ce n'est plus le partage. */
+export type SharedReach = 'ok' | 'offline' | 'unmounted' | 'blocked' | 'unconfigured';
+export interface SharedStatus {
+  available: boolean;
+  /** Desktop : le chemin se choisit par le dialogue natif. Ailleurs, il est fixé par la configuration. */
+  configurable?: boolean;
+  root?: string | null;
+  label?: string;
+  mount?: string | null;
+  reach?: SharedReach;
+  since?: string | null;
+  displayName?: string;
+  /** Projet → sous-dossier du partage. */
+  projects?: Record<string, string>;
+  pending?: number;
+  conflicts?: number;
+}
+export interface SharedLock {
+  app: 'word' | 'excel' | 'powerpoint' | 'office' | 'libreoffice' | 'worklogs';
+  by: string;
+  since: string | null;
+  /** Posé depuis cet ordinateur. */
+  self: boolean;
+  /** Probablement abandonné. */
+  stale: boolean;
+}
+/** `draft` : brouillon local ; `pending` : envoi demandé, en attente ; `conflict` : à régler. */
+export type SharedLocalState = '' | 'draft' | 'pending' | 'offline' | 'conflict' | 'interrupted';
+export interface SharedEntry {
+  name: string;
+  path: string;
+  type: 'dir' | 'file';
+  size: number | null;
+  mtime: string | null;
+  ext: string;
+  lock: SharedLock | null;
+  local: { state: SharedLocalState; draft: boolean; modified: boolean } | null;
+  cached?: boolean;
+}
+export interface SharedListing {
+  dir: string;
+  reach: SharedReach;
+  entries: SharedEntry[];
+  truncated: boolean;
+  /** Partage injoignable : seuls les fichiers gardés sur cet ordinateur sont listés. */
+  offline?: boolean;
+  error?: string;
+}
+export interface SharedFile {
+  path: string;
+  name: string;
+  ext: string;
+  /** Empreinte du fichier tel que vu sur le partage (ou en cache). */
+  hash: string | null;
+  size: number | null;
+  mtime: string | null;
+  /** Version que le brouillon remplacera. */
+  base_hash: string | null;
+  draft: { model: unknown; template_hash: string | null; updated_at: string | null } | null;
+  state: SharedLocalState;
+  note: string;
+  theirs: { hash: string | null; deleted: boolean; size: number | null; mtime: string | null; author: string | null } | null;
+  send: { hash: string | null; requested: boolean };
+  lock: SharedLock | null;
+  source: 'share' | 'cache';
+  deleted?: boolean;
+  reach?: SharedReach;
+}
+export interface SharedSendResult {
+  state: 'written' | 'pending' | 'offline' | 'interrupted' | 'conflict' | 'theirs' | 'copied' | SharedLocalState;
+  hash?: string;
+  mtime?: string;
+  note?: string;
+  lock?: SharedLock | null;
+  theirs?: SharedFile['theirs'];
+  deleted?: boolean;
+  copyPath?: string | null;
+  file: SharedFile | null;
+}
+export interface SharedVersion {
+  id: string;
+  hash: string;
+  size: number;
+  origin: 'base' | 'mine' | 'theirs' | 'restored';
+  state: string;
+  author: string;
+  created_at: string;
+}
+
 export const COLUMNS: { id: Status; label: string }[] = [
   { id: 'todo', label: 'À faire' },
   { id: 'doing', label: 'En cours' },
@@ -193,6 +283,23 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 }
 const send = <T>(method: string, url: string, body?: unknown) =>
   req<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+
+const enc = encodeURIComponent;
+/**
+ * Envoi d'octets au dossier partagé. 202 (en attente) et 409 (conflit) ne sont pas
+ * des erreurs : ce sont des issues normales, que l'éditeur affiche.
+ */
+async function sendShared(url: string, bytes?: Uint8Array): Promise<SharedSendResult> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    // Les octets eux-mêmes, pas un Blob : partout lisibles tels quels (navigateur, Electron, tests).
+    body: bytes ? new Uint8Array(bytes) : undefined,
+  });
+  const payload = await res.json().catch(() => null);
+  if (res.ok || res.status === 409 && payload?.code === 'SHARED_CONFLICT') return payload as SharedSendResult;
+  throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
+}
 
 export const remoteApi = {
   googleStatus: () => req<GoogleStatus>('/api/google/status'),
@@ -257,6 +364,43 @@ export const remoteApi = {
   updateProject: (id: string, body: { name?: string; color?: string }) =>
     send<Project>('PUT', `/api/projects/${id}`, body),
   deleteProject: (id: string) => send<{ ok: true }>('DELETE', `/api/projects/${id}`),
+
+  sharedStatus: () => req<SharedStatus>('/api/shared/status'),
+  /** Partage injoignable : la liste des fichiers gardés sur cet ordinateur, sans erreur. */
+  async sharedList(dir = '') {
+    const res = await fetch('/api/shared/list' + (dir ? '?dir=' + enc(dir) : ''));
+    const payload = await res.json().catch(() => null);
+    if (res.ok) return payload as SharedListing;
+    if (res.status === 503 && payload?.entries) return { ...payload, offline: true } as SharedListing;
+    throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
+  },
+  sharedFile: (path: string) => req<SharedFile>('/api/shared/file?path=' + enc(path)),
+  async sharedContent(hash: string) {
+    const res = await fetch('/api/shared/content?hash=' + enc(hash));
+    if (!res.ok) throw new ApiError((await res.json().catch(() => null))?.error || 'version introuvable');
+    return new Uint8Array(await res.arrayBuffer());
+  },
+  saveSharedDraft: (path: string, body: { model: unknown; template_hash: string; base_hash: string | null }) =>
+    send<SharedFile>('PUT', '/api/shared/draft?path=' + enc(path), body),
+  async discardSharedDraft(path: string, bytes?: Uint8Array) {
+    const res = await fetch('/api/shared/draft/discard?path=' + enc(path), {
+      method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: bytes ? new Uint8Array(bytes) : undefined,
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
+    return payload as SharedFile;
+  },
+  pushShared: (path: string, base: string | null, bytes: Uint8Array) =>
+    sendShared('/api/shared/push?path=' + enc(path) + (base ? '&base=' + enc(base) : ''), bytes),
+  async resolveShared(path: string, choice: 'mine' | 'theirs' | 'both', theirs: string | null) {
+    const res = await fetch('/api/shared/resolve', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, choice, theirs }),
+    });
+    const payload = await res.json().catch(() => null);
+    if (res.ok || res.status === 409 && payload?.code === 'SHARED_CONFLICT') return payload as SharedSendResult;
+    throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
+  },
+  sharedVersions: (path: string) => req<{ path: string; versions: SharedVersion[] }>('/api/shared/versions?path=' + enc(path)),
 
   deleteAttachment: (id: string) => send<{ ok: true; driveTrashed?: boolean }>('DELETE', `/api/attachments/${id}`),
   fileUrl: (stored: string) => `/api/files/${stored}`,

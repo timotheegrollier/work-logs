@@ -15,6 +15,8 @@ import { AiSettings } from './components/AiSettings';
 import { AccountMenu } from './components/AccountMenu';
 import { GoogleDocuments } from './components/GoogleDocuments';
 import { ColumnResizer } from './components/ColumnResizer';
+import { SharedFolder } from './components/SharedFolder';
+import { SharedFileEditor } from './components/SharedFileEditor';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
 
 const isPwa = import.meta.env.VITE_PWA === '1';
@@ -30,6 +32,11 @@ export default function App() {
   // aussi ce qui rend les recettes déterministes — elles pariaient jusqu'ici sur
   // l'ordre des entrées après un rechargement.
   const [selectedId, setSelectedId] = useState<string | null>(readSelected);
+  // Fichier du dossier partagé ouvert au centre, à la place de l'entrée (§25).
+  // Desktop et dev seulement : la PWA n'atteint pas un partage SMB.
+  const [sharedPath, setSharedPath] = useState<string | null>(() => (isPwa ? null : readSharedPath()));
+  const [sharedRevision, setSharedRevision] = useState(0);
+  const bumpShared = useCallback(() => setSharedRevision((n) => n + 1), []);
   const [entry, setEntry] = useState<Entry | null>(null);
   const [freshEntry, setFreshEntry] = useState(false);
   const [procedureEdit, setProcedureEdit] = useState({ id: '', sequence: 0 });
@@ -101,6 +108,22 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(PROJECT_KEY, projectId);
   }, [projectId]);
+
+  useEffect(() => {
+    if (sharedPath) localStorage.setItem(SHARED_KEY, sharedPath);
+    else localStorage.removeItem(SHARED_KEY);
+  }, [sharedPath]);
+
+  /** Un geste vers une entrée referme le fichier partagé (son brouillon est déjà gardé). */
+  const selectEntry = useCallback((id: string | null) => {
+    setSharedPath(null);
+    setSelectedId(id);
+  }, []);
+  const openShared = useCallback(async (path: string) => {
+    await flushPendingSaves().catch(() => {});
+    setSharedPath(path);
+    setShowCenter(true);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = window.worklogsDesktop?.onBeforeClose(flushPendingSaves);
@@ -228,7 +251,7 @@ export default function App() {
     });
     setSearch('');
     setFreshEntry(true);
-    setSelectedId(created.id);
+    selectEntry(created.id);
     setEntry({ ...created, attachments: [] });
     reload();
   };
@@ -247,7 +270,7 @@ export default function App() {
     setSearch('');
     setFreshEntry(true);
     setShowCenter(true);
-    setSelectedId(created.id);
+    selectEntry(created.id);
     setEntry({ ...created, attachments: [] });
     reload();
   };
@@ -286,8 +309,8 @@ export default function App() {
     setFreshEntry(false);
     setShowCenter(true);
     selectedRef.current = entryId;
-    setSelectedId(entryId);
-  }, [projectId, state]);
+    selectEntry(entryId);
+  }, [projectId, state, selectEntry]);
 
   // Ouverture d'un document Drive : même geste que depuis une carte de tâche,
   // mais en rechargeant l'état sans filtrer par projet.
@@ -295,9 +318,9 @@ export default function App() {
     const sequence = ++reloadSequence.current;
     setSearch(''); setQuery(''); setFreshEntry(false);
     selectedRef.current = opened.id;
-    setSelectedId(opened.id); setEntry(opened);
+    selectEntry(opened.id); setEntry(opened);
     void api.state('', projectId).then(next => { if (sequence === reloadSequence.current) setState(next); }).catch(() => {});
-  }, [projectId]);
+  }, [projectId, selectEntry]);
 
   useEffect(() => {
     if (!showSettings) return;
@@ -435,10 +458,10 @@ export default function App() {
           <EntryList
             entries={journalEntries}
             projects={state?.projects ?? []}
-            selectedId={selectedId}
+            selectedId={sharedPath ? null : selectedId}
             onSelect={(id) => {
               setFreshEntry(false);
-              setSelectedId(id);
+              selectEntry(id);
               setShowCenter(true);
             }}
             onCreate={() => void createEntry()}
@@ -450,7 +473,15 @@ export default function App() {
         <ColumnResizer side="left" panelId="workspace-journal" value={colLeft} onChange={setColLeft} />
 
         <main id="workspace-editor" className="center">
-          {entry && state ? (
+          {sharedPath ? (
+            <SharedFileEditor
+              key={sharedPath}
+              path={sharedPath}
+              onOpenPath={(path) => void openShared(path)}
+              onChanged={bumpShared}
+              onClose={() => setSharedPath(null)}
+            />
+          ) : entry && state ? (
             <EntryEditor
               key={entry.id}
               tabs={siblingTabs}
@@ -506,15 +537,15 @@ export default function App() {
             attachments={state?.procedure_attachments ?? []}
             projects={state?.projects ?? []}
             projectId={projectId}
-            selectedId={selectedId}
+            selectedId={sharedPath ? null : selectedId}
             onSelect={(id) => {
               setFreshEntry(false);
-              setSelectedId(id);
+              selectEntry(id);
               setShowCenter(true);
             }}
             onEdit={(id) => {
               setFreshEntry(false);
-              setSelectedId(id);
+              selectEntry(id);
               setShowCenter(true);
               setProcedureEdit((current) => ({ id, sequence: current.sequence + 1 }));
             }}
@@ -529,6 +560,16 @@ export default function App() {
               void reload();
             }}
           />
+          {!isPwa && (
+            <SharedFolder
+              active={showProcedures}
+              projectId={projectId}
+              projects={state?.projects ?? []}
+              selectedPath={sharedPath}
+              revision={sharedRevision}
+              onOpen={(path) => void openShared(path)}
+            />
+          )}
         </aside>
       </div>
       {showSettings && createPortal((
@@ -631,6 +672,12 @@ export default function App() {
 
 const SELECTED_KEY = 'worklogs-entry';
 const PROJECT_KEY = 'worklogs-project';
+const SHARED_KEY = 'worklogs-shared-path';
+
+function readSharedPath() {
+  if (typeof localStorage === 'undefined') return null;
+  return localStorage.getItem(SHARED_KEY);
+}
 
 function readSelected() {
   if (typeof localStorage === 'undefined') return null;

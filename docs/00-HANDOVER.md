@@ -31,6 +31,61 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-10-05 — dossier partagé TSE, lot 1 : socle + texte (branche `claude/worklogs-file-coedition-bcae02`)
+
+Plan validé par Timo : le dossier du TSE (monté en SMB) devient la référence ; les fichiers
+se modifient **des deux côtés, chacun son tour, sans perte**, dans WorkLogs. Décision : §25.
+
+- **Serveur** : `api/src/shared-io.js` (worker borné, disjoncteur), `shared-locks.js` (`~$` de
+  Word/Excel, `.~lock#` de LibreOffice/WorkLogs), `shared-service.js` (chemins sûrs, magasin de
+  versions, brouillons, envoi gardé sur place, conflits, réessais, rétention),
+  `shared-routes.js` (`/api/shared/*`, garde `localOnly`). Tables locales sans clé étrangère.
+- **Desktop** : IPC `worklogs:shared-choose-root` / `forget-root` (dialogue natif ; parcours de
+  test : `WORKLOGS_CHOOSE_FOLDER`). Web/dev et e2e : `WORKLOGS_SHARED_ROOT`.
+- **Front** : section « Dossier partagé » sous les procédures (`SharedFolder.tsx`, ne lit le
+  partage que colonne affichée), `SharedFileEditor.tsx` au centre (brouillon local, « Enregistrer
+  sur le partage »/`Ctrl+S`, bandeaux lecture seule/attente/hors ligne/conflit et trois choix),
+  `TextFileEditor.tsx` (.txt/.md), `CsvFileEditor.tsx` + `SheetGrid.tsx` (.csv/.tsv),
+  `text-codec.ts`, `text-file.ts`, `csv-file.ts`, `shared-session.ts`.
+- **Trouvés en route** : un worker `unref()` avant ses écouteurs retient le processus ; un worker
+  `eval` hérite de `--input-type=module` (d'où `execArgv: []`) ; `fetch` de Node ignore l'en-tête
+  `Host` et ne sait pas lire le `Blob` de jsdom (envoi des octets en `Uint8Array`) ; la grille
+  doit donner le focus à sa barre **tout de suite**, sinon une frappe rapide perd des caractères
+  (vu seulement dans Chromium) ; une requête de plus au démarrage rendait instable
+  « supprimer un projet garde ses entrées » (le test clique avant le chargement) — la section
+  ne lit plus rien tant que la colonne Procédures est masquée.
+- **Tests** : `./scripts/check.sh` vert — **200 tests API** (+36), **368 front** (+28),
+  **41 desktop unitaires** (+1), 25 scripts, 8 relais, **45 navigateur** (+3) et **11 desktop
+  e2e** (+1) : 698 en tout. Corrigé au passage : une course préexistante de
+  `GoogleDrive.test.tsx` (« un conflit Drive… », ~1 échec sur 7, mesuré aussi sur la version
+  d'origine) attend maintenant l'état final au lieu de le lire à l'instant de l'erreur.
+
+### À vérifier par Timo sur le vrai TSE (rien de cela ne se voit depuis un conteneur)
+
+1. Monter le partage (Fichiers → Autres emplacements, ou CIFS) ; noter le chemin et si c'est
+   GVFS (`/run/user/…/gvfs/…`) ou CIFS. Choisir ce dossier dans WorkLogs (Procédures →
+   Dossier partagé → Choisir le dossier…).
+2. Un collègue ouvre un `.csv` dans Excel : WorkLogs affiche-t-il son nom ? L'envoi passe-t-il
+   en attente, puis part-il quand Excel est fermé ? Noter le message exact.
+3. Même chose avec un `.docx` ouvert dans Word (seul l'affichage du nom compte en lot 1).
+4. Un collègue enregistre un `.md` ou `.csv` pendant ton brouillon : conflit, puis essayer les
+   trois choix.
+5. Après un envoi, onglet Sécurité du fichier sur le TSE : droits inchangés ?
+6. Couper le VPN : l'interface reste-t-elle réactive ? Combien de temps avant « Injoignable » ?
+   L'envoi part-il au retour ?
+7. Ouvrir dans Excel français un CSV modifié par WorkLogs : accents et colonnes corrects ?
+8. Envoyer à Timo (sans données de l'entreprise) des fichiers `~$` réels de Word et d'Excel,
+   et les fixtures du lot 0 (`word-tse.docx`, `excel-tse.xlsx`…) pour les lots .docx/.xlsx.
+
+### Lots suivants (plan validé)
+
+2. Verrou WorkLogs (pris à la première frappe, rendu après 10 min), dialogue de sortie avec
+   brouillon, « Ouvrir avec… » sur le vrai fichier, sous-dossier du partage par projet, versions
+   et restauration.
+3. `.docx` par patch ciblé (zip, analyseur XML à positions, schéma Tiptap dédié).
+4. `.xlsx` cellule par cellule.
+5. À reconfirmer : fusion `.csv/.md`, recherche, arbre hors ligne, procédures ↔ partage.
+
 ## Lot du 2026-09-24 (4) — échec de connexion Google visible, URI de redirection affichée
 
 - Reste du lot « secret exigé » (2026-09-22, rendu caduc par le relais : le relais détient

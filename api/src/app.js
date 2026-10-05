@@ -7,6 +7,7 @@ import { uid, nowISO, today, tombstone } from './db.js';
 import { decodeEntry, documentText, validateDocument } from './rich-document.js';
 import { buildBackup } from './backup.js';
 import { googleLink, registerGoogleRoutes } from './google-routes.js';
+import { registerSharedRoutes } from './shared-routes.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
 export const PRIORITIES = ['low', 'normal', 'high'];
@@ -70,16 +71,17 @@ const attachmentHeader = (filename) => {
  */
 const inlineHeader = (filename) => `inline; ${attachmentHeader(filename).slice('attachment; '.length)}`;
 
-export function createApp({ db, uploadDir, staticDir = null, google = null, autoSync = false }) {
+export function createApp({ db, uploadDir, staticDir = null, google = null, autoSync = false, shared = null }) {
   fs.mkdirSync(uploadDir, { recursive: true });
 
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: '5mb' }));
   // Synchro Drive : toute écriture réussie relance un passage (regroupé par le moteur).
+  // Le dossier partagé n'y entre pas : ses données restent sur cet ordinateur.
   app.use((req, res, next) => {
     if (req.method !== 'GET' && req.path.startsWith('/api/')
-      && !/^\/api\/google\/(?:sync|status|connect|disconnect|configure|use-builtin|backup)/.test(req.path)) {
+      && !/^\/api\/(?:google\/(?:sync|status|connect|disconnect|configure|use-builtin|backup)|shared\/)/.test(req.path)) {
       res.on('finish', () => { if (res.statusCode < 400) app.locals.googleSync?.schedule(); });
     }
     next();
@@ -555,6 +557,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const cur = getProject(req.params.id);
     if (!cur) return notFound(res, 'projet introuvable');
     db.prepare('DELETE FROM projects WHERE id=?').run(cur.id);
+    // Lien vers un sous-dossier du partage : local, sans clé étrangère (§25).
+    db.prepare('DELETE FROM shared_project_folders WHERE project_id=?').run(cur.id);
     tombstone(db, 'project', cur.id);
     res.json({ ok: true });
   });
@@ -647,6 +651,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   app.get('/api/export', (_req, res) => res.json(buildBackup(db)));
 
   registerGoogleRoutes(app, { db, google, uploadDir, autoSync });
+  app.locals.shared = shared;
+  registerSharedRoutes(app, { shared });
   app.use('/api', (_req, res) => notFound(res, 'route inconnue'));
 
   // En production, l'API sert aussi le front construit : une seule URL.

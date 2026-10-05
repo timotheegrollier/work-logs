@@ -45,3 +45,39 @@ test('serveur desktop privé, persistant et fermé avec l’application', async 
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test('dossier partagé desktop : réglable par le dialogue seulement, conservé, et garde-fous', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-desktop-shared-'));
+  const share = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-desktop-share-'));
+  let server;
+  try {
+    server = await startDesktopServer({ dataDir, withSeed: false });
+    const headers = { 'x-worklogs-token': server.token };
+    const status = async () => (await fetch(server.origin + '/api/shared/status', { headers })).json();
+    assert.deepEqual({ ...(await status()), since: null }, {
+      available: true, configurable: true, root: null, label: '', mount: null, reach: 'unconfigured', since: null,
+      displayName: (await status()).displayName, projects: {}, pending: 0, conflicts: 0,
+    });
+    // Trop large, ou pas un dossier : refusé avant d'être retenu.
+    await assert.rejects(server.shared.configure('/'), /racine/);
+    await assert.rejects(server.shared.configure(os.homedir()), /dossier personnel/);
+    fs.writeFileSync(path.join(share, 'a.txt'), 'x');
+    await assert.rejects(server.shared.configure(path.join(share, 'a.txt')), /pas un dossier/);
+    await assert.rejects(server.shared.configure('relatif'), /absolu/);
+
+    const configured = await server.shared.configure(share);
+    assert.equal(configured.root, fs.realpathSync(share));
+    assert.equal(configured.reach, 'ok');
+    await server.close();
+    server = await startDesktopServer({ dataDir, withSeed: false });
+    const again = await (await fetch(server.origin + '/api/shared/status', { headers: { 'x-worklogs-token': server.token } })).json();
+    assert.equal(again.root, fs.realpathSync(share), 'retenu dans la base locale');
+    const listing = await (await fetch(server.origin + '/api/shared/list', { headers: { 'x-worklogs-token': server.token } })).json();
+    assert.deepEqual(listing.entries.map((entry) => entry.name), ['a.txt']);
+    assert.equal((await server.shared.forget()).root, null);
+  } finally {
+    await server?.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    fs.rmSync(share, { recursive: true, force: true });
+  }
+});

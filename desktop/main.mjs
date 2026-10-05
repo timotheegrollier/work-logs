@@ -498,6 +498,37 @@ if (!app.requestSingleInstanceLock()) {
           return error.message;
         }
       });
+      // Dossier partagé : seul ce dialogue natif peut en fixer le chemin (§25).
+      ipcMain.handle('worklogs:shared-choose-root', async (event) => {
+        if (event.sender !== window.webContents) return { error: 'Demande refusée.' };
+        // WORKLOGS_CHOOSE_FOLDER : les parcours de test répondent à la place du dialogue.
+        let folder = process.env.WORKLOGS_CHOOSE_FOLDER || '';
+        if (!folder) {
+          const choice = await dialog.showOpenDialog(window, {
+            title: 'Choisir le dossier partagé', properties: ['openDirectory'],
+            buttonLabel: 'Choisir ce dossier',
+          });
+          if (!window.isDestroyed()) {
+            window.focus();
+            window.webContents.focus();
+          }
+          if (choice.canceled || !choice.filePaths[0]) return { canceled: true };
+          folder = choice.filePaths[0];
+        }
+        try {
+          return { status: await backend.shared.configure(folder) };
+        } catch (error) {
+          return { error: error.message };
+        }
+      });
+      ipcMain.handle('worklogs:shared-forget-root', async (event) => {
+        if (event.sender !== window.webContents) return { error: 'Demande refusée.' };
+        try {
+          return { status: await backend.shared.forget() };
+        } catch (error) {
+          return { error: error.message };
+        }
+      });
       ipcMain.handle('worklogs:check-updates-now', async (event) => {
         if (event.sender !== window.webContents) return null;
         await notifyUpdateIfAvailable({ force: true });

@@ -82,6 +82,7 @@ const kindOf = (value: unknown, fallback: 'note' | 'procedure' | null = 'note'):
   if (cleaned === '') return fallback;
   return cleaned === 'note' || cleaned === 'procedure' ? cleaned : null;
 };
+const SHARED_DESKTOP_ONLY = 'Dossier partagé : disponible dans l’application desktop.';
 const fail = (message: string): never => {
   throw new ApiError(message);
 };
@@ -968,6 +969,17 @@ export const localApi: Api = {
     return { ok: true };
   },
 
+  // Dossier partagé : un navigateur n'atteint pas un partage SMB. La section
+  // n'apparaît pas ; tout autre appel est une erreur explicite.
+  sharedStatus: async () => ({ available: false }),
+  sharedList: async () => fail(SHARED_DESKTOP_ONLY),
+  sharedFile: async () => fail(SHARED_DESKTOP_ONLY),
+  sharedContent: async () => fail(SHARED_DESKTOP_ONLY),
+  saveSharedDraft: async () => fail(SHARED_DESKTOP_ONLY),
+  discardSharedDraft: async () => fail(SHARED_DESKTOP_ONLY),
+  pushShared: async () => fail(SHARED_DESKTOP_ONLY),
+  resolveShared: async () => fail(SHARED_DESKTOP_ONLY),
+  sharedVersions: async () => fail(SHARED_DESKTOP_ONLY),
   deleteAttachment: async (id) => {
     const { attachments } = await tables();
     const row = (await attachments.get(id)) ?? fail('pièce jointe introuvable');

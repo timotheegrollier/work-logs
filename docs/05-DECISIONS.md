@@ -748,3 +748,101 @@ gros boutons pointillés.
 **Pas de police embarquée** : ce serait une dépendance (règle « zéro nouvelle dépendance »).
 Le rendu dépend donc des polices du système ; à rouvrir si l'on accepte un fichier de police.
 
+
+## 25. Dossier partagé : chacun son tour, sans perte — 2026-10-05
+
+**Le besoin.** Les procédures et documents de l'équipe vivent dans un dossier du **TSE**
+(serveur Windows), modifiés par les collègues dans Word et Excel, parfois LibreOffice ou
+WorkLogs. Timo veut les modifier **des deux côtés**, dans WorkLogs, **chacun son tour** :
+voir qui a le fichier, ne jamais écraser une version qu'il n'a pas vue, choisir en cas de
+conflit, continuer hors ligne. Le poste Linux **monte le partage en SMB** (bureau ou VPN).
+Un premier plan (export `.md` par presse-papier, pas de co-édition) a été écarté.
+
+**Le choix.**
+- **Le fichier du partage est la référence**, pas une copie importée. WorkLogs le lit par le
+  montage, garde sur cet ordinateur chaque version **lue, envoyée ou mise de côté**
+  (`<données>/shared-blobs`, adressées par empreinte SHA-256).
+- **Brouillon d'abord, envoi explicite.** Le brouillon (le modèle de l'éditeur, en JSON)
+  s'enregistre seul toutes les 600 ms, **sur cet ordinateur seulement** (§5 tient pour le
+  local). Il ne part sur le partage que sur « Enregistrer sur le partage » ou `Ctrl+S` :
+  les collègues ne voient jamais une version à moitié écrite.
+- **Écriture gardée, sur place.** Le serveur ouvre le fichier en lecture-écriture, le relit
+  par le même descripteur, compare son empreinte à la base du brouillon : différente → pas
+  d'écriture, **conflit**. Sinon il tronque, écrit, `fsync`, puis relit pour vérifier. Sur
+  place plutôt que fichier temporaire + renommage : on garde ACL NTFS, propriétaire et
+  identité du fichier ; un renommage hériterait des droits du dossier. Une écriture
+  interrompue n'est reprise que si le partage contient un **début** de nos octets.
+- **Conflit : trois choix**, jamais automatique : garder ma version (la leur reste dans
+  l'historique), prendre la leur (la mienne reste dans l'historique), garder les deux
+  (`Nom (copie T. Grollier 2026-10-05 10h47).ext`, création exclusive à côté).
+- **Les verrous informent ; seul Windows bloque.** WorkLogs lit le fichier propriétaire
+  `~$…` de Word/Excel (nom de l'utilisateur Office) et le `.~lock.<nom>#` de LibreOffice ;
+  le fichier s'ouvre alors en lecture seule (« Ouvert par Jean Dupont dans Word depuis
+  10h42 »), avec « Écrire un brouillon quand même ». **Word et Excel ignorent les verrous
+  des autres** : leur seul verrou est un fichier ouvert côté Windows, que le client CIFS
+  Linux ne sait pas poser. Rien n'est perdu pour autant : l'envoi échoue tant que Windows
+  tient le fichier (« envoi en attente », réessayé toutes les 30 s), et toute version
+  enregistrée entre-temps est détectée par l'empreinte. Une fenêtre de quelques
+  millisecondes reste entre la relecture et l'écriture ; la relecture après écriture la
+  voit le plus souvent. La sonde d'écriture n'a lieu **qu'à l'envoi** : ouvrir en écriture
+  pendant le sondage pourrait faire croire à Word que le fichier est pris.
+- **Sondage, pas `inotify`** : il ne voit pas les modifications faites depuis le TSE. Le
+  fichier ouvert est relu toutes les 5 s (fenêtre visible) et au retour du focus ; sans
+  brouillon, la version du collègue s'affiche seule ; avec brouillon, un bandeau prévient.
+  Empreinte recalculée seulement si taille ou date changent.
+- **E/S bornées.** Un montage SMB figé bloquerait un appel `fs` des minutes. Tous les accès
+  au partage passent par un `worker_threads` (`api/src/shared-io.js`) qui fait des appels
+  synchrones sous délai (4 s, plus 1 s par Mo). Dépassement ou erreur réseau → disjoncteur
+  ouvert, tout échoue aussitôt ; seule une sonde (toutes les 10 s) le referme ; un worker
+  resté bloqué est abandonné (deux au plus, puis état « bloqué »). Le worker est `unref`
+  **après** l'ajout de ses écouteurs (sinon il retient le processus) et lancé avec
+  `execArgv: []` (il n'hérite pas de `--input-type=module`, qui casserait son code).
+- **Un point de montage vide n'est pas le partage** : le type `statfs` relevé au choix du
+  dossier (CIFS, SMB2/3, FUSE pour GVFS) est comparé à chaque contrôle. Différent → « non
+  monté », rien n'est écrit dans le dossier local vide.
+- **Le chemin ne se règle jamais par HTTP** : seulement par le dialogue natif du desktop
+  (IPC `worklogs:shared-choose-root`) ou `WORKLOGS_SHARED_ROOT` (dev, recettes). Un
+  renderer compromis ne peut pas le pointer sur `/`. La racine et le dossier personnel sont
+  refusés.
+- **Routes réservées à cet ordinateur** (`localOnly` : adresse et `Host` de bouclage,
+  refus de `Sec-Fetch-Site: cross-site`). `api/src/server.js` écoute sur toutes les
+  interfaces en mode dev : §10 supposait l'inverse ; la garde ne dépend pas de l'écoute.
+- **Données de cette machine, sans clé étrangère** : `local_settings`,
+  `shared_project_folders`, `shared_files`, `shared_versions`. `restoreBackup` vide et
+  réinsère projets et entrées à chaque synchro (§20) : une cascade effacerait les liens,
+  une restriction ferait échouer la synchro. Nettoyage explicite à la suppression d'un
+  projet ; jamais exportées ni synchronisées ; une écriture partagée ne déclenche pas la
+  synchro Drive.
+- **Rétention** : les 30 dernières versions par fichier, 90 jours au plus, 1 Go au total —
+  jamais la base, un brouillon, une version de conflit ou mise de côté.
+- **Les formats se traitent dans le front** (le serveur n'a pas de `DOMParser`) et **ne
+  réécrivent que ce qui a changé**. Lot 1 : `.txt`/`.md` (encodage et fins de ligne
+  d'origine) et `.csv`/`.tsv` (séparateur `;` d'Excel français, Windows-1252, CRLF,
+  guillemets ; chaque ligne garde son texte brut, une ligne intacte ressort à l'identique).
+  `.docx` puis `.xlsx` suivent, par patch ciblé du XML d'origine (§26, §27 à venir).
+
+**Amendements.** §1 : une section repliable dans la colonne Procédures, pas un onglet ni un
+mode ; un fichier s'ouvre au centre comme une entrée. §4 : le partage a sa route
+(`/api/shared/list`, sondée), hors de `/api/state` qui reste la base. §5 : deux états
+(brouillon local enregistré seul ; partage sur geste). §10 : inchangé (WorkLogs reste local,
+le partage passe par SMB) ; garde `localOnly`. §15 : « Ouvrir avec… » ouvrira le **vrai**
+fichier du partage (lot 2) — la règle de la copie en lecture seule vaut pour `uploads/`.
+§18 : la section vit avec les procédures. §20 : ces données restent sur la machine.
+La section ne lit le partage que **colonne Procédures affichée** : pas de requête ni de
+sondage sinon (une requête de plus au démarrage avait suffi à rendre instable un test qui
+cliquait avant le chargement des projets).
+
+**Hors périmètre, assumé.** Temps réel ; collègues seulement dans un navigateur (il
+faudrait exposer WorkLogs, donc une authentification — décision à part) ; la PWA (un
+navigateur n'atteint pas un partage SMB).
+
+**À vérifier sur le vrai TSE** (règle « preuve avant annonce ») : `errno` quand Word tient le
+fichier (attendu `EBUSY` en CIFS ; GVFS ?), règle des noms `~$` et décalages 54/55 sur la
+version d'Office du TSE, LibreOffice qui affiche le verrou WorkLogs (lot 2), droits NTFS
+inchangés après envoi, durée de blocage d'un `stat` VPN coupé, type `statfs` réel, chemin
+rendu par le sélecteur pour un partage GVFS, dialecte SMB. Liste complète :
+`00-HANDOVER.md`.
+
+**Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :
+`libsmbclient`, dépendance native), ou si l'équipe veut écrire à plusieurs en même temps
+(suite bureautique en ligne : Google, Microsoft 365, OnlyOffice/Collabora).

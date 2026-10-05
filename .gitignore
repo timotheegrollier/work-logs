@@ -9,6 +9,8 @@ api/data/uploads/*
 .env
 
 .e2e-data/
+.e2e-share/
+api/data/shared-blobs/
 test-results/
 playwright-report/
 web/.vitest/

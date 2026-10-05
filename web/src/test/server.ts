@@ -6,16 +6,22 @@ import { once } from 'node:events';
 import { createApp } from '../../../api/src/app.js';
 // @ts-expect-error — idem.
 import { openDb } from '../../../api/src/db.js';
+// @ts-expect-error — idem.
+import { createSharedService } from '../../../api/src/shared-service.js';
 
 /**
  * Démarre la vraie API sur une base jetable et redirige `fetch('/api/…')`
  * vers elle. Les tests du front exercent donc le backend réel : aucun faux
  * serveur à maintenir, aucune divergence possible.
  */
-export async function useRealApi() {
+export async function useRealApi({ sharedRoot = '' }: { sharedRoot?: string } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-web-'));
   const db = openDb(path.join(dir, 'worklogs.db'), { withSeed: false });
-  const server = createApp({ db, uploadDir: path.join(dir, 'uploads') }).listen(0);
+  // Dossier partagé joué par un dossier temporaire, sans délai de cache.
+  const shared = sharedRoot
+    ? createSharedService({ db, blobDir: path.join(dir, 'shared-blobs'), root: sharedRoot, retryMs: 0, probeMs: 0, mountCheckMs: 0, instance: 'test' })
+    : null;
+  const server = createApp({ db, uploadDir: path.join(dir, 'uploads'), shared }).listen(0);
   await once(server, 'listening');
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 
@@ -27,6 +33,7 @@ export async function useRealApi() {
 
   return {
     db,
+    shared,
     base,
     /**
      * Envoie un fichier en multipart, comme le ferait le navigateur. Le corps
@@ -56,6 +63,7 @@ export async function useRealApi() {
     },
     async close() {
       globalThis.fetch = realFetch;
+      await shared?.stop();
       server.close();
       await once(server, 'close');
       db.close();

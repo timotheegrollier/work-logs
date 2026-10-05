@@ -38,7 +38,8 @@ function fakeOpener(): string {
   return script;
 }
 
-async function launch(expectedTitle = 'Comment ça marche') {
+/** `null` : ne pas attendre d'entrée au centre (un fichier partagé y est rouvert). */
+async function launch(expectedTitle: string | null = 'Comment ça marche') {
   const env = Object.fromEntries(Object.entries(process.env).filter((item): item is [string, string] =>
     item[1] !== undefined && item[0] !== 'ELECTRON_RUN_AS_NODE'));
   application = await _electron.launch({
@@ -47,10 +48,12 @@ async function launch(expectedTitle = 'Comment ça marche') {
     // Uniquement les environnements CI/conteneurs sans sandbox Chromium utilisable.
     chromiumSandbox: process.env.WORKLOGS_TEST_NO_SANDBOX !== '1',
     env: { ...env, WORKLOGS_DATA_DIR: path.join(directory, 'data'), WORKLOGS_PROFILE_DIR: path.join(directory, 'profile'), WORKLOGS_SKIP_UPDATE_CHECK: '1',
-      WORKLOGS_OPEN_COMMAND: fakeOpener() },
+      WORKLOGS_OPEN_COMMAND: fakeOpener(),
+      // Répond à la place du dialogue « Choisir le dossier partagé ».
+      WORKLOGS_CHOOSE_FOLDER: path.join(directory, 'partage') },
   });
   page = await application.firstWindow();
-  await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(expectedTitle);
+  if (expectedTitle !== null) await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(expectedTitle);
 }
 
 test.beforeEach(async () => {
@@ -181,6 +184,41 @@ test('fichiers joints et export JSON fonctionnent dans l’application empaquet�
   await page.getByRole('button', { name: 'Exporter' }).click();
   await exportDownload;
   expect(JSON.parse(fs.readFileSync(exportTarget, 'utf8')).entries[0].title).toBe('Comment ça marche');
+});
+
+test('dossier partagé : choisi par le dialogue natif, envoyé, retrouvé au redémarrage, absent de l’export', async () => {
+  const share = path.join(directory, 'partage');
+  fs.mkdirSync(share);
+  fs.writeFileSync(path.join(share, 'consignes.md'), '# Consignes\r\n');
+  await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  await page.getByRole('button', { name: 'Choisir le dossier…' }).click();
+  await page.getByRole('button', { name: /^Ouvrir consignes\.md/ }).click();
+  const editor = page.getByRole('region', { name: 'Fichier partagé' });
+  await editor.getByLabel('Contenu de consignes.md').fill('# Consignes\n\nDepuis le desktop.\n');
+  await expect(editor.getByText('Brouillon sur cet ordinateur')).toBeVisible();
+  expect(fs.readFileSync(path.join(share, 'consignes.md'), 'utf8')).toBe('# Consignes\r\n');
+  await editor.getByRole('button', { name: 'Enregistrer sur le partage' }).click();
+  await expect(editor.getByText('Enregistré sur le partage.')).toBeVisible();
+  expect(fs.readFileSync(path.join(share, 'consignes.md'), 'utf8')).toBe('# Consignes\r\n\r\nDepuis le desktop.\r\n');
+
+  // Le chemin ne se règle que par le dialogue : aucune route HTTP ne le change.
+  expect(await page.evaluate(async () => (await fetch('/api/shared/root', { method: 'PUT' })).status)).toBe(404);
+
+  await application!.close();
+  application = undefined;
+  await launch(null);
+  const reopened = page.getByRole('region', { name: 'Fichier partagé' });
+  await expect(reopened.getByLabel('Contenu de consignes.md')).toHaveValue('# Consignes\n\nDepuis le desktop.\n');
+  await expect(page.getByRole('button', { name: /^Ouvrir consignes\.md/ })).toBeVisible();
+
+  const exportTarget = path.join(directory, 'export.json');
+  const exportDownload = downloadNext(exportTarget);
+  await page.getByRole('button', { name: 'Exporter' }).click();
+  await exportDownload;
+  const exported = fs.readFileSync(exportTarget, 'utf8');
+  expect(exported).not.toContain(share);
+  expect(exported).not.toContain('consignes.md');
+  expect(Object.keys(JSON.parse(exported)).some((key) => key.startsWith('shared'))).toBe(false);
 });
 
 test('impression PDF et refus de fermeture si l’enregistrement échoue', async () => {

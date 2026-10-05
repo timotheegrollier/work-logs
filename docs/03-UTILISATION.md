@@ -168,6 +168,44 @@ figurent **pas** dans le journal (seulement dans ses archives une fois archivée
 pour pouvoir les restaurer). Comme les autres panneaux, la sidebar est toujours
 dépliée quand elle est affichée, se masque par son bouton et l'état est retenu.
 
+## Dossier partagé (le dossier du TSE)
+
+Sous les procédures, la section **Dossier partagé** montre le dossier de l'équipe —
+celui du TSE, monté sur ce PC (Fichiers → Autres emplacements → `smb://serveur/partage`,
+ou montage CIFS). Sur le desktop, **Choisir le dossier…** ouvre le sélecteur ; le choix
+est retenu sur cet ordinateur seulement. La section ne lit le partage que lorsque la
+colonne Procédures est affichée.
+
+- Cliquer un fichier l'ouvre **au centre**, comme une entrée. `.txt`, `.md`, `.csv` et
+  `.tsv` se modifient directement (grille pour les CSV : flèches, Entrée, Tab, F2,
+  copier-coller depuis un tableur, ＋/− ligne et colonne). Les documents Word et Excel
+  arrivent dans les prochains lots.
+- Tes modifications s'enregistrent **seules sur cet ordinateur** (« Brouillon sur cet
+  ordinateur »). Elles ne partent sur le partage qu'avec **Enregistrer sur le partage**
+  ou `Ctrl+S`. Le fichier garde son encodage (Windows-1252 pour un CSV d'Excel), son
+  séparateur et ses fins de ligne ; une ligne que tu n'as pas touchée ne change pas d'un
+  octet.
+- **Chacun son tour.** Un fichier ouvert dans Word, Excel ou LibreOffice par un collègue
+  s'affiche « Lecture seule — Ouvert par Jean Dupont dans Word depuis 10h42 ». Tu peux
+  quand même préparer un brouillon ; l'envoi attend que le fichier soit libre et part tout
+  seul ensuite (ou **Réessayer maintenant**).
+- **Rien n'est écrasé.** Si quelqu'un a enregistré le fichier pendant que tu le modifiais,
+  WorkLogs ne l'écrase pas et te demande : **Garder ma version**, **Prendre la leur** ou
+  **Garder les deux** (ta version est alors enregistrée à côté, sous
+  « Nom (copie Ton Nom date heure) »). Les versions écartées restent sur cet ordinateur.
+- **Hors ligne** (VPN coupé), les fichiers déjà ouverts restent modifiables ; l'envoi part
+  au retour du partage. Un partage démonté est signalé « Non monté » : WorkLogs n'écrit
+  jamais dans le dossier vide qui reste à sa place.
+- Sans modification de ta part, la version d'un collègue s'affiche d'elle-même (toutes les
+  5 secondes, et quand tu reviens sur la fenêtre).
+- Pastilles de l'arbre : 🔒 ouvert par quelqu'un, ✎ brouillon ici, ⇡ envoi en attente,
+  ⚠ conflit à régler, ↻ modifié sur le partage depuis ta dernière lecture.
+
+Limite à connaître : Word et Excel **ne voient pas** que tu modifies un fichier dans
+WorkLogs (ils ignorent les verrous des autres applications). Rien n'est perdu pour autant :
+si un collègue enregistre avant toi, ton envoi te demande quoi faire. La PWA (téléphone)
+n'a pas accès au dossier partagé.
+
 ## Retrouver
 
 La recherche en haut cherche dans les **titres et le corps** des entrées, et dans les titres des
@@ -247,6 +285,7 @@ La sauvegarde atterrit dans `~/WorkLogs-backups/worklogs-AAAAMMJJ-HHMMSS/`.
 
 ## Ce que l'app ne fait pas — et c'est voulu
 
-Pas de compte ni de partage, pas de synchronisation avec un agenda externe, pas d'application
-mobile, pas de rappel sonore, pas de recherche plein texte avancée. Chaque ajout de ce genre
+Pas de compte, pas d'écriture à plusieurs en même temps (le dossier partagé, c'est chacun son
+tour), pas de synchronisation avec un agenda externe, pas d'application mobile, pas de rappel
+sonore, pas de recherche plein texte avancée. Chaque ajout de ce genre
 ramènerait un onglet ; le raisonnement est dans `05-DECISIONS.md`.
