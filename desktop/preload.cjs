@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('worklogsDesktop', {
     // Renvoient `{ status }`, `{ canceled: true }` ou `{ error }`.
     chooseRoot: () => ipcRenderer.invoke('worklogs:shared-choose-root'),
     forgetRoot: () => ipcRenderer.invoke('worklogs:shared-forget-root'),
+    // Renvoie '' si l'application du système a pris le fichier, sinon le message d'erreur.
+    openWith: (path) => ipcRenderer.invoke('worklogs:shared-open-with', { path }),
   },
   checkUpdatesNow() {
     return ipcRenderer.invoke('worklogs:check-updates-now');

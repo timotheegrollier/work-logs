@@ -843,6 +843,35 @@ inchangés après envoi, durée de blocage d'un `stat` VPN coupé, type `statfs`
 rendu par le sélecteur pour un partage GVFS, dialecte SMB. Liste complète :
 `00-HANDOVER.md`.
 
+**Lot 2 (2026-10-05) — notre verrou, les projets, l'historique.**
+- **La première frappe prend la main** : un `.~lock.<nom>#` au format LibreOffice
+  (`Timothée Grollier (WorkLogs),timo,pc-timo,05.10.2026 10:47,worklogs:<instance>:<nonce>;`),
+  que LibreOffice et les autres WorkLogs respectent. Refusée (fichier ouvert ailleurs) :
+  l'éditeur passe en lecture seule, ce qui a été tapé reste en brouillon. Renouvelé chaque
+  minute tant qu'on écrit ; rendu à la fermeture du fichier, après **10 min sans frappe**,
+  et par le serveur sans nouvelles depuis **3 min** (onglet tué, veille). Les restes d'une
+  session précédente sont rendus au démarrage, et à l'arrêt du desktop (2 s au plus).
+  On ne retire **jamais** un verrou qui ne porte plus notre marque ; le `~$` de Word n'est
+  jamais touché, même en reprise.
+- **Verrou oublié** : celui d'un autre WorkLogs est renouvelé chaque minute ; s'il ne bouge
+  pas pendant **3 min d'observation** (notre horloge seule : un décalage avec le TSE ne
+  fausse rien), il est signalé « probablement oublié » et se reprend sur un clic confirmé.
+  LibreOffice : 24 h. **LibreOffice ouvert sur cet ordinateur bloque aussi** (« Ouvrir
+  avec… » puis taper dans WorkLogs écraserait l'un ou l'autre) ; seul notre propre verrou
+  WorkLogs laisse la main.
+- **Quitter un brouillon non envoyé** (Fermer, une entrée, un autre fichier, une création)
+  demande : Envoyer sur le partage · Garder le brouillon ici · Annuler. Envoi en conflit ou
+  en échec : on reste sur le fichier. Fermer la fenêtre ne demande rien (§ plus haut).
+- **« Ouvrir avec… »** (desktop) ouvre **le vrai fichier** du partage, par la même route
+  détachée que les pièces jointes et la même liste de types refusés. Refusé tant qu'un
+  brouillon n'est pas envoyé ; notre verrou est rendu d'abord, l'application pose le sien.
+  C'est aussi la voie des `.docx`/`.xlsx` en attendant leurs éditeurs.
+- **Un sous-dossier par projet** (`shared_project_folders`) : le filtre de projet n'affiche
+  que lui ; « Délier » rend tout le partage.
+- **Historique** : « Restaurer » fait d'une version gardée le **brouillon** (modèle vide,
+  octets de la version) — rien ne part avant l'envoi, qui garde sa protection habituelle.
+- Nom affiché dans les verrous : Paramètres › Dossier partagé.
+
 **Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :
 `libsmbclient`, dépendance native), ou si l'équipe veut écrire à plusieurs en même temps
 (suite bureautique en ligne : Google, Microsoft 365, OnlyOffice/Collabora).

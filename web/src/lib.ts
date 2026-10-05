@@ -229,6 +229,8 @@ export interface SharedFile {
   note: string;
   theirs: { hash: string | null; deleted: boolean; size: number | null; mtime: string | null; author: string | null } | null;
   send: { hash: string | null; requested: boolean };
+  /** Cette installation tient la main (notre verrou est posé). */
+  held?: boolean;
   lock: SharedLock | null;
   source: 'share' | 'cache';
   deleted?: boolean;
@@ -245,6 +247,9 @@ export interface SharedSendResult {
   copyPath?: string | null;
   file: SharedFile | null;
 }
+export type SharedLockResult =
+  | { ok: true; file: SharedFile }
+  | { ok: false; code: string; error: string; lock: SharedLock | null };
 export interface SharedVersion {
   id: string;
   hash: string;
@@ -401,6 +406,23 @@ export const remoteApi = {
     throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
   },
   sharedVersions: (path: string) => req<{ path: string; versions: SharedVersion[] }>('/api/shared/versions?path=' + enc(path)),
+  restoreSharedVersion: (path: string, id: string) =>
+    send<SharedFile>('POST', `/api/shared/versions/${enc(id)}/restore?path=${enc(path)}`),
+  /** Prendre (ou renouveler) la main. Refusée : qui la tient, sans lever d'erreur. */
+  async lockShared(path: string, takeOver = false): Promise<SharedLockResult> {
+    const res = await fetch('/api/shared/lock?path=' + enc(path), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ take_over: takeOver }),
+    });
+    const payload = await res.json().catch(() => null);
+    if (res.ok) return { ok: true, file: payload as SharedFile };
+    if (res.status === 409) return { ok: false, code: payload?.code ?? '', error: payload?.error ?? '', lock: payload?.lock ?? null };
+    throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
+  },
+  unlockShared: (path: string) => send<SharedFile>('DELETE', '/api/shared/lock?path=' + enc(path)),
+  linkSharedFolder: (projectId: string, dir: string) =>
+    send<SharedStatus>('PUT', `/api/shared/projects/${enc(projectId)}/folder`, { dir }),
+  unlinkSharedFolder: (projectId: string) => send<SharedStatus>('DELETE', `/api/shared/projects/${enc(projectId)}/folder`),
+  setSharedDisplayName: (displayName: string) => send<SharedStatus>('PUT', '/api/shared/settings', { display_name: displayName }),
 
   deleteAttachment: (id: string) => send<{ ok: true; driveTrashed?: boolean }>('DELETE', `/api/attachments/${id}`),
   fileUrl: (stored: string) => `/api/files/${stored}`,

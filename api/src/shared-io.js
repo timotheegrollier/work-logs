@@ -198,6 +198,40 @@ const ops = {
     const stat = fs.statSync(file);
     return { created: true, size: stat.size, mtimeMs: Math.round(stat.mtimeMs) };
   },
+  /**
+   * Renouvelle notre verrou : réécrit le fichier (sa date bouge) **seulement** s'il
+   * porte encore notre marque. Disparu → recréé ; remplacé par un autre → « perdu ».
+   */
+  renewLock(file, input, marker) {
+    const bytes = Buffer.from(input.buffer, input.byteOffset, input.byteLength);
+    const current = readSmall(file, 4096);
+    if (!current) {
+      try {
+        const fd = fs.openSync(file, 'wx');
+        try { writeAll(fd, bytes); } finally { fs.closeSync(fd); }
+        return { result: 'renewed' };
+      } catch (error) {
+        if (error.code === 'EEXIST') return { result: 'lost', bytes: readSmall(file, 4096)?.bytes ?? null };
+        throw error;
+      }
+    }
+    if (!Buffer.from(current.bytes).toString('utf8').includes(marker)) return { result: 'lost', bytes: current.bytes };
+    const fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_TRUNC);
+    try { writeAll(fd, bytes); } finally { fs.closeSync(fd); }
+    return { result: 'renewed' };
+  },
+  /** Retire un verrou seulement s'il porte encore notre marque (jamais celui d'un autre). */
+  unlinkIfMarked(file, marker) {
+    const current = readSmall(file, 4096);
+    if (!current || !Buffer.from(current.bytes).toString('utf8').includes(marker)) return false;
+    try {
+      fs.unlinkSync(file);
+      return true;
+    } catch (error) {
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    }
+  },
   unlink(file) {
     try {
       fs.unlinkSync(file);

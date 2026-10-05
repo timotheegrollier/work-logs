@@ -24,8 +24,20 @@ export function lockMessage(lock: SharedLock, now = new Date()): string {
   return `Ouvert par ${lock.by} dans ${APPS[lock.app] ?? 'une autre application'}${since ? ` depuis ${since}` : ''}`;
 }
 
-/** Un verrou d'autrui, récent : c'est son tour. */
-export const lockBlocks = (lock: SharedLock | null | undefined): lock is SharedLock => Boolean(lock && !lock.self && !lock.stale);
+/**
+ * Ce verrou donne-t-il la main à quelqu'un d'autre ? Seul le nôtre (WorkLogs, cette
+ * installation) ne bloque pas ; LibreOffice ouvert sur cet ordinateur, si.
+ */
+export const lockBlocks = (lock: SharedLock | null | undefined): lock is SharedLock =>
+  Boolean(lock && !lock.stale && !(lock.app === 'worklogs' && lock.self));
+
+/** Un verrou oublié (plantage, coupure) : il se reprend, sur demande explicite. */
+export const lockForgotten = (lock: SharedLock | null | undefined): lock is SharedLock =>
+  Boolean(lock && lock.stale && !(lock.app === 'worklogs' && lock.self));
+
+/** La main se rend après 10 min sans frappe ; le brouillon, lui, reste. */
+export const IDLE_MS = 10 * 60 * 1000;
+export const idleExpired = (lastEdit: number, now: number) => now - lastEdit >= IDLE_MS;
 
 export const REACH_LABELS: Record<SharedReach, string> = {
   ok: 'Joignable',
@@ -45,7 +57,7 @@ export const REACH_HELP: Record<SharedReach, string> = {
 
 export type SharedBanner =
   | { kind: 'conflict'; message: string; deleted: boolean }
-  | { kind: 'readonly'; message: string }
+  | { kind: 'readonly'; message: string; forgotten: boolean }
   | { kind: 'pending'; message: string }
   | { kind: 'offline'; message: string }
   | { kind: 'interrupted'; message: string }
@@ -64,7 +76,10 @@ export function bannerFor(file: SharedFile, { dirty, override, now = new Date() 
     const when = sinceLabel(file.theirs?.mtime ?? null, now);
     return { kind: 'conflict', deleted: false, message: `Quelqu’un a enregistré ce fichier sur le partage${when ? ` (${when})` : ''} pendant que tu le modifiais. Rien n’a été écrasé.` };
   }
-  if (lockBlocks(file.lock) && !override) return { kind: 'readonly', message: `Lecture seule — ${lockMessage(file.lock, now)}.` };
+  if (lockBlocks(file.lock) && !override) return { kind: 'readonly', forgotten: false, message: `Lecture seule — ${lockMessage(file.lock, now)}.` };
+  if (lockForgotten(file.lock) && !override && !file.held) {
+    return { kind: 'readonly', forgotten: true, message: `Lecture seule — ${lockMessage(file.lock, now)}, sans signe de vie depuis plusieurs minutes : verrou probablement oublié.` };
+  }
   if (file.state === 'pending') return { kind: 'pending', message: `Envoi en attente — ${file.note || 'le fichier est ouvert ailleurs'}. Il partira quand le fichier sera libre.` };
   if (file.state === 'offline' || (file.source === 'cache' && file.send.requested)) {
     return { kind: 'offline', message: 'Hors ligne — ta version est gardée sur cet ordinateur et partira dès que le partage répond.' };
@@ -86,7 +101,7 @@ export interface SharedBadge {
 /** Pastilles d'un fichier dans l'arbre, avec leur libellé accessible. */
 export function badgesFor(entry: SharedEntry, now = new Date()): SharedBadge[] {
   const badges: SharedBadge[] = [];
-  if (entry.lock && !entry.lock.self) badges.push({ icon: '🔒', label: lockMessage(entry.lock, now) + (entry.lock.stale ? ' (probablement oublié)' : '') });
+  if (entry.lock && !(entry.lock.app === 'worklogs' && entry.lock.self)) badges.push({ icon: '🔒', label: lockMessage(entry.lock, now) + (entry.lock.stale ? ' (probablement oublié)' : '') });
   const state = entry.local?.state;
   if (state === 'conflict') badges.push({ icon: '⚠', label: 'Conflit à régler' });
   else if (state === 'pending' || state === 'offline' || state === 'interrupted') badges.push({ icon: '⇡', label: 'Envoi en attente' });

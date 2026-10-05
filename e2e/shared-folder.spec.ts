@@ -80,3 +80,38 @@ test('verrou LibreOffice d’un collègue : envoi en attente, parti quand il fer
   await expect(editor.getByText('Enregistré sur le partage.')).toBeVisible();
   expect(get('planning.txt')).toBe('lundi\nmardi\n');
 });
+
+test('première frappe : mon verrou sur le partage ; fermer avec un brouillon demande, puis rend la main', async ({ page }) => {
+  put('consignes.md', '# Consignes\n');
+  const editor = await openShared(page, 'consignes.md');
+  await editor.getByLabel('Contenu de consignes.md').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' (à relire)');
+  await expect(editor.getByText('Tu as la main')).toBeVisible();
+  expect(fs.existsSync(path.join(share, '.~lock.consignes.md#'))).toBe(true);
+  expect(get('.~lock.consignes.md#')).toMatch(/\(WorkLogs\),/);
+
+  await editor.getByRole('button', { name: 'Fermer' }).click();
+  const question = page.getByRole('dialog', { name: 'Tes modifications ne sont pas sur le partage' });
+  await expect(question).toBeVisible();
+  await question.getByRole('button', { name: 'Garder le brouillon ici' }).click();
+  await expect(page.getByRole('region', { name: 'Fichier partagé' })).toBeHidden();
+  await expect.poll(() => fs.existsSync(path.join(share, '.~lock.consignes.md#'))).toBe(false);
+  expect(get('consignes.md')).toBe('# Consignes\n');
+  await expect(page.getByRole('button', { name: /^Ouvrir consignes\.md — Brouillon sur cet ordinateur/ })).toBeVisible();
+});
+
+test('un projet relié à un sous-dossier : son filtre n’affiche que lui', async ({ page }) => {
+  fs.mkdirSync(path.join(share, 'Chantier'));
+  put('Chantier/plan.md', '# Plan');
+  put('ailleurs.md', 'x');
+  await page.goto('/');
+  if (await page.locator('#workspace-procedures').isHidden()) await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  await page.getByRole('group', { name: 'Filtrer par projet' }).getByRole('button', { name: /Pro/ }).click();
+  await page.getByRole('button', { name: 'Relier Pro à un dossier…' }).click();
+  await page.getByRole('button', { name: 'Relier Pro au dossier Chantier' }).click();
+  await expect(page.getByRole('button', { name: /^Ouvrir plan\.md/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Ouvrir ailleurs\.md/ })).toBeHidden();
+  await page.getByRole('button', { name: 'Délier Pro de son dossier' }).click();
+  await expect(page.getByRole('button', { name: /^Ouvrir ailleurs\.md/ })).toBeVisible();
+});

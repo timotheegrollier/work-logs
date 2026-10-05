@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { badgesFor, bannerFor, lockBlocks, lockMessage, sinceLabel } from './shared-session';
+import { badgesFor, bannerFor, idleExpired, IDLE_MS, lockBlocks, lockForgotten, lockMessage, sinceLabel } from './shared-session';
 import type { SharedEntry, SharedFile, SharedLock } from './lib';
 
 const now = new Date(2026, 9, 5, 15, 0);
@@ -19,11 +19,25 @@ describe('messages du dossier partagé', () => {
     expect(sinceLabel(null)).toBe('');
   });
 
-  it('seul un verrou d’autrui, récent, donne la main à quelqu’un d’autre', () => {
+  it('seul notre propre verrou WorkLogs laisse la main ; LibreOffice ouvert ici, non', () => {
     expect(lockBlocks(lock())).toBe(true);
-    expect(lockBlocks(lock({ self: true }))).toBe(false);
+    expect(lockBlocks(lock({ app: 'worklogs', self: true }))).toBe(false);
+    expect(lockBlocks(lock({ app: 'libreoffice', self: true }))).toBe(true);
     expect(lockBlocks(lock({ stale: true }))).toBe(false);
     expect(lockBlocks(null)).toBe(false);
+  });
+
+  it('un verrou oublié se signale, et se reprend sur demande', () => {
+    expect(lockForgotten(lock({ app: 'worklogs', stale: true }))).toBe(true);
+    expect(lockForgotten(lock({ app: 'worklogs', self: true, stale: true }))).toBe(false);
+    const banner = bannerFor(file({ lock: lock({ app: 'worklogs', stale: true }) }), { dirty: false, override: false, now });
+    expect(banner).toMatchObject({ kind: 'readonly', forgotten: true });
+    expect(bannerFor(file({ lock: lock({ app: 'worklogs', stale: true }), held: true }), { dirty: false, override: false })).toBeNull();
+  });
+
+  it('la main se rend après 10 minutes sans frappe', () => {
+    expect(idleExpired(0, IDLE_MS - 1)).toBe(false);
+    expect(idleExpired(0, IDLE_MS)).toBe(true);
   });
 
   it('un conflit prime sur tout, puis la lecture seule, puis l’attente', () => {
@@ -50,6 +64,6 @@ describe('messages du dossier partagé', () => {
     expect(badgesFor(entry({ local: { state: 'conflict', draft: true, modified: true } })).map((b) => b.icon)).toEqual(['⚠', '↻']);
     expect(badgesFor(entry({ local: { state: 'pending', draft: true, modified: false } })).map((b) => b.label)).toEqual(['Envoi en attente']);
     expect(badgesFor(entry({ local: { state: 'draft', draft: true, modified: false } })).map((b) => b.label)).toEqual(['Brouillon sur cet ordinateur']);
-    expect(badgesFor(entry({ lock: lock({ self: true }) }))).toEqual([]);
+    expect(badgesFor(entry({ lock: lock({ app: 'worklogs', self: true }) }))).toEqual([]);
   });
 });

@@ -17,6 +17,8 @@ import { GoogleDocuments } from './components/GoogleDocuments';
 import { ColumnResizer } from './components/ColumnResizer';
 import { SharedFolder } from './components/SharedFolder';
 import { SharedFileEditor } from './components/SharedFileEditor';
+import { SharedSettings } from './components/SharedSettings';
+import { requestLeave } from './shared-leave';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
 
 const isPwa = import.meta.env.VITE_PWA === '1';
@@ -114,12 +116,19 @@ export default function App() {
     else localStorage.removeItem(SHARED_KEY);
   }, [sharedPath]);
 
-  /** Un geste vers une entrée referme le fichier partagé (son brouillon est déjà gardé). */
+  /**
+   * Un geste vers une entrée referme le fichier partagé. Avec un brouillon non
+   * envoyé, l'éditeur demande d'abord : Envoyer · Garder le brouillon ici · Annuler.
+   */
   const selectEntry = useCallback((id: string | null) => {
-    setSharedPath(null);
-    setSelectedId(id);
+    void requestLeave().then((ok) => {
+      if (!ok) return;
+      setSharedPath(null);
+      setSelectedId(id);
+    });
   }, []);
   const openShared = useCallback(async (path: string) => {
+    if (!(await requestLeave())) return;
     await flushPendingSaves().catch(() => {});
     setSharedPath(path);
     setShowCenter(true);
@@ -243,6 +252,8 @@ export default function App() {
   }, [selectedId]);
 
   const createEntry = async (rich = false) => {
+    // Un fichier partagé ouvert avec un brouillon non envoyé : la question d'abord.
+    if (!(await requestLeave())) return;
     const created = await api.createEntry({
       title: 'Sans titre',
       entry_date: todayISO(),
@@ -251,7 +262,8 @@ export default function App() {
     });
     setSearch('');
     setFreshEntry(true);
-    selectEntry(created.id);
+    setSharedPath(null);
+    setSelectedId(created.id);
     setEntry({ ...created, attachments: [] });
     reload();
   };
@@ -260,6 +272,7 @@ export default function App() {
   // archivées, elles restent dans les archives du journal pour être restaurées.
   const journalEntries = (state?.entries ?? []).filter((e) => e.kind !== 'procedure' || e.archived);
   const createProcedure = async () => {
+    if (!(await requestLeave())) return;
     const created = await api.createEntry({
       title: 'Sans titre',
       entry_date: todayISO(),
@@ -270,7 +283,8 @@ export default function App() {
     setSearch('');
     setFreshEntry(true);
     setShowCenter(true);
-    selectEntry(created.id);
+    setSharedPath(null);
+    setSelectedId(created.id);
     setEntry({ ...created, attachments: [] });
     reload();
   };
@@ -593,6 +607,7 @@ export default function App() {
           <div className="settings-content">
             <GoogleDrive onRestored={reload} onOpen={openDriveEntry} onDocuments={() => { setShowSettings(false); setShowDocuments(true); }} />
             <AiSettings />
+            {!isPwa && <SharedSettings />}
             {/* Largeurs au pixel près : les poignées entre les colonnes font le
                 geste courant, ce réglage fin n'a pas besoin de l'en-tête. */}
             <section className="display-settings" aria-label="Affichage">

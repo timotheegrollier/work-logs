@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
  */
 
 // Ce que `xdg-open` pourrait exécuter ou installer au lieu d'afficher.
-const REFUSED = new Set([
+export const REFUSED = new Set([
   'desktop', 'sh', 'bash', 'zsh', 'csh', 'fish', 'run', 'bin', 'appimage', 'exe', 'msi', 'bat', 'cmd', 'com',
   'jar', 'py', 'pyc', 'pl', 'rb', 'php', 'js', 'mjs', 'cjs', 'deb', 'rpm', 'flatpak', 'flatpakref', 'snap',
   'apk', 'command', 'x86_64', 'elf', 'so', 'ko',

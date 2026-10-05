@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
 import { createGoogleClient, readDefaultClient } from './google.mjs';
 import { installGoogleView } from './google-view.mjs';
-import { launchDetached, prepareOpenCopy } from './open-file.mjs';
+import { launchDetached, prepareOpenCopy, REFUSED } from './open-file.mjs';
 import { checkForUpdate, hasPackageKit, hasPkexec, installedVersionCommand, installKind, installedMatches, isAuthorizationFailure, isNewer, logUpdateEvent, packageManager, parseManagerProgress, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, privilegedInstallCommand, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
@@ -519,6 +519,25 @@ if (!app.requestSingleInstanceLock()) {
           return { status: await backend.shared.configure(folder) };
         } catch (error) {
           return { error: error.message };
+        }
+      });
+      // « Ouvrir avec… » d'un fichier du partage : le vrai fichier (c'est la référence),
+      // jamais une copie. Mêmes types refusés que pour les pièces jointes.
+      ipcMain.handle('worklogs:shared-open-with', async (event, request) => {
+        if (event.sender !== window.webContents) return 'Demande refusée.';
+        try {
+          const target = await backend.shared.openTarget(String(request?.path ?? ''));
+          const extension = path.extname(target).slice(1).toLowerCase();
+          if (REFUSED.has(extension)) {
+            return `Par sécurité, WorkLogs n’ouvre pas les fichiers .${extension} : ouvre-le depuis le gestionnaire de fichiers si tu es sûr de lui.`;
+          }
+          const failure = await launchDetached(target, {
+            command: process.env.WORKLOGS_OPEN_COMMAND || 'xdg-open',
+            fallback: (file) => shell.openPath(file),
+          });
+          return failure ? `Aucune application ne sait ouvrir ce fichier (${failure}).` : '';
+        } catch (error) {
+          return error.message;
         }
       });
       ipcMain.handle('worklogs:shared-forget-root', async (event) => {

@@ -30,6 +30,9 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   const [listings, setListings] = useState<Map<string, SharedListing>>(() => new Map());
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  /** Choix du sous-dossier du projet filtré : chaque dossier de l'arbre propose « Relier ici ». */
+  const [linking, setLinking] = useState(false);
+  useEffect(() => { setLinking(false); }, [projectId]);
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
 
@@ -101,6 +104,32 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
     }
   };
 
+  const link = async (dir: string) => {
+    setBusy(true);
+    setError('');
+    try {
+      setStatus(await api.linkSharedFolder(projectId, dir));
+      setLinking(false);
+      setExpanded(new Set());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const unlink = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      setStatus(await api.unlinkSharedFolder(projectId));
+      setExpanded(new Set());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const toggleDir = (dir: string) => {
     setExpanded((current) => {
       const next = new Set(current);
@@ -123,14 +152,21 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
         {listing.entries.map((entry) => (entry.type === 'dir'
           ? (
             <li key={entry.path}>
-              <button
-                className="shared-dir"
-                aria-expanded={expanded.has(entry.path)}
-                aria-label={`Dossier ${entry.name}`}
-                onClick={() => toggleDir(entry.path)}
-              >
-                <span aria-hidden="true">{expanded.has(entry.path) ? '▾' : '▸'}</span> {entry.name}
-              </button>
+              <div className="shared-dir-row">
+                <button
+                  className="shared-dir"
+                  aria-expanded={expanded.has(entry.path)}
+                  aria-label={`Dossier ${entry.name}`}
+                  onClick={() => toggleDir(entry.path)}
+                >
+                  <span aria-hidden="true">{expanded.has(entry.path) ? '▾' : '▸'}</span> {entry.name}
+                </button>
+                {linking && project && (
+                  <button className="ghost shared-link-here" disabled={busy} aria-label={`Relier ${project.name} au dossier ${entry.path}`} onClick={() => void link(entry.path)}>
+                    Relier ici
+                  </button>
+                )}
+              </div>
               {expanded.has(entry.path) && depth < 12 && renderDir(entry.path, depth + 1)}
             </li>
           )
@@ -169,6 +205,24 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
             <p className="shared-root" title={status.root}>
               {status.label}{root && <> · {project?.name ?? 'projet'} : <strong>{root}</strong></>}
             </p>
+            {project && (
+              <div className="shared-project-link">
+                {root ? (
+                  <button className="ghost" disabled={busy} aria-label={`Délier ${project.name} de son dossier`} onClick={() => void unlink()}>
+                    Délier {project.name} de son dossier
+                  </button>
+                ) : linking ? (
+                  <>
+                    <span>Choisis le dossier de {project.name} dans l’arbre.</span>
+                    <button className="ghost" onClick={() => setLinking(false)}>Annuler</button>
+                  </>
+                ) : (
+                  <button className="ghost" disabled={busy || reach !== 'ok'} onClick={() => setLinking(true)}>
+                    Relier {project.name} à un dossier…
+                  </button>
+                )}
+              </div>
+            )}
             {REACH_HELP[reach] && <p className="notice">{REACH_HELP[reach]}</p>}
             {error && <p className="error" role="alert">{error}</p>}
             {renderDir(root, 0)}

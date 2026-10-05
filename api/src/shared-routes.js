@@ -70,6 +70,12 @@ export function registerSharedRoutes(app, { shared }) {
     return shared.resolve(text(body.path), text(body.choice), text(body.theirs) || null);
   }));
   router.get('/versions', handle((req) => shared.versions(text(req.query.path))));
+  router.post('/versions/:id/restore', handle((req) => shared.restoreVersion(text(req.query.path), req.params.id)));
+  // Prendre la main (première frappe), la renouveler (chaque minute), la rendre.
+  router.post('/lock', handle((req) => shared.acquireLock(text(req.query.path), { takeOver: (req.body || {}).take_over === true })));
+  router.delete('/lock', handle((req) => shared.releaseLock(text(req.query.path))));
+  router.put('/projects/:id/folder', handle((req) => shared.linkProject(req.params.id, text((req.body || {}).dir))));
+  router.delete('/projects/:id/folder', handle((req) => shared.unlinkProject(req.params.id)));
   router.put('/settings', handle((req) => shared.setDisplayName((req.body || {}).display_name)));
 
   app.use('/api/shared', router);

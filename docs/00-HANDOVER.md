@@ -31,6 +31,43 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-10-05 (2) — dossier partagé TSE, lot 2 : verrou, projets, historique — v0.43.0
+
+Demandé par Timo : « vas-y pour le lot 2, commit, pousse et bump : je teste sur la prod ».
+Décision : §25 (paragraphe « Lot 2 »).
+
+- **Verrou WorkLogs** (`acquireLock`/`releaseLock`/`expireLocks` dans `shared-service.js`,
+  opérations `renewLock`/`unlinkIfMarked` du worker) : pris à la première frappe, renouvelé
+  chaque minute, rendu à la fermeture, après 10 min sans frappe, par le bail serveur (3 min),
+  au démarrage et à l'arrêt. Verrou WorkLogs d'un autre poste « oublié » après 3 min
+  d'observation sans renouvellement → « Prendre la main ». LibreOffice ouvert sur cet
+  ordinateur bloque aussi ; `describeLock` montre le verrou d'un autre avant le nôtre.
+- **Question de sortie** (`web/src/shared-leave.ts`) : Envoyer · Garder le brouillon ici ·
+  Annuler, posée par Fermer, une entrée, un autre fichier, une création.
+- **« Ouvrir avec… »** sur le vrai fichier (IPC `worklogs:shared-open-with`, `openTarget`),
+  `REFUSED` exporté de `open-file.mjs`.
+- **Sous-dossier par projet** (routes `/api/shared/projects/:id/folder`), **historique** et
+  restauration en brouillon (`/api/shared/versions/:id/restore`), **nom affiché** dans
+  Paramètres › Dossier partagé (`SharedSettings.tsx`).
+- Fusion de `master` (Dependabot : Electron 44.4.5, vitest 5.0.2, multer 2.4.0…) avant le lot.
+- **Tests** : `./scripts/check.sh` vert — **211 API** (+11), **384 front** (+9), 41 desktop
+  unitaires, 25 scripts, 8 relais, **47 navigateur** (+2), **12 desktop e2e** (+1) : 728 en tout.
+  Deux parcours Google du desktop (« outils dans le canevas… dimensions », « masquer le document
+  rend le clavier ») ont chacun échoué une fois dans `check.sh` lancé sur la vraie session (focus
+  et tailles du bureau Cinnamon pendant que la machine sert) ; seuls, ensemble ou dans la suite
+  desktop complète, ils passent à chaque fois (3 × 12/12). À surveiller avec les deux courses du
+  point 0.
+
+### À vérifier par Timo (en plus de la liste du lot 1)
+
+1. Taper dans un fichier : un `.~lock.<nom>#` apparaît-il sur le TSE ? Un collègue qui ouvre
+   ce fichier dans **LibreOffice** voit-il « en cours d'utilisation par <ton nom> » ?
+2. Le même fichier ouvert dans **Word** par un collègue : WorkLogs refuse-t-il la main avec
+   son nom ? (Word, lui, ne verra pas ton verrou : c'est attendu.)
+3. « Ouvrir avec… » sur un `.docx` du partage : LibreOffice l'ouvre-t-il **en écriture** sur le
+   partage, et WorkLogs affiche-t-il ensuite « Ouvert par … dans LibreOffice » ?
+4. Fermer WorkLogs pendant qu'on a la main : le `.~lock` disparaît-il du TSE ?
+
 ## Lot du 2026-10-05 — dossier partagé TSE, lot 1 : socle + texte (branche `claude/worklogs-file-coedition-bcae02`)
 
 Plan validé par Timo : le dossier du TSE (monté en SMB) devient la référence ; les fichiers

@@ -221,6 +221,30 @@ test('dossier partagé : choisi par le dialogue natif, envoyé, retrouvé au red
   expect(Object.keys(JSON.parse(exported)).some((key) => key.startsWith('shared'))).toBe(false);
 });
 
+test('dossier partagé : « Ouvrir avec… » donne le vrai fichier, refusé pour un .sh ou avec un brouillon', async () => {
+  type SharedBridge = { worklogsDesktop: { shared: { openWith: (relative: string) => Promise<string> } } };
+  const share = path.join(directory, 'partage');
+  fs.mkdirSync(share);
+  fs.writeFileSync(path.join(share, 'filtration.docx'), 'docx');
+  fs.writeFileSync(path.join(share, 'notes.md'), 'v1');
+  fs.writeFileSync(path.join(share, 'script.sh'), 'echo');
+  await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  await page.getByRole('button', { name: 'Choisir le dossier…' }).click();
+  await page.getByRole('button', { name: /^Ouvrir filtration\.docx/ }).click();
+  const editor = page.getByRole('region', { name: 'Fichier partagé' });
+  await editor.getByRole('button', { name: 'Ouvrir avec…' }).click();
+  await expect(editor.getByText(/Ouvert dans l’application du système/)).toBeVisible({ timeout: 4000 });
+  expect(fs.readFileSync(path.join(directory, 'ouvert.txt'), 'utf8')).toBe(path.join(fs.realpathSync(share), 'filtration.docx'));
+  expect(await page.evaluate(() => (window as unknown as SharedBridge).worklogsDesktop.shared.openWith('script.sh'))).toMatch(/Par sécurité/);
+  expect(await page.evaluate(() => (window as unknown as SharedBridge).worklogsDesktop.shared.openWith('../worklogs.db'))).toMatch(/Chemin invalide/);
+
+  await page.getByRole('button', { name: /^Ouvrir notes\.md/ }).click();
+  await editor.getByLabel('Contenu de notes.md').fill('v2');
+  await expect(editor.getByText('Brouillon sur cet ordinateur')).toBeVisible();
+  await expect(editor.getByRole('button', { name: 'Ouvrir avec…' })).toBeDisabled();
+  expect(await page.evaluate(() => (window as unknown as SharedBridge).worklogsDesktop.shared.openWith('notes.md'))).toMatch(/brouillon/);
+});
+
 test('impression PDF et refus de fermeture si l’enregistrement échoue', async () => {
   const bytes = await application!.evaluate(async ({ BrowserWindow }) => {
     const pdf = await BrowserWindow.getAllWindows()[0].webContents.printToPDF({ printBackground: true });

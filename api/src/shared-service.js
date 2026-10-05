@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { nowISO, uid } from './db.js';
 import { createSharedIo, SharedIoError, transferTimeout } from './shared-io.js';
-import { describeLock, isTechnicalName, libreOfficeLockName, lockAppLabel, ownerFileName } from './shared-locks.js';
+import { describeLock, formatWorkLogsLock, isTechnicalName, libreOfficeLockName, lockAppLabel, lockBlocks, ownerFileName } from './shared-locks.js';
 
 /**
  * Dossier partagé (le dossier du TSE monté en SMB) : la **référence** des
@@ -27,6 +27,10 @@ const KEEP_VERSIONS = 30;
 const KEEP_DAYS = 90;
 const MAX_STORE = 1024 ** 3;
 const MOUNT_CHECK_MS = 15_000;
+/** Notre verrou est renouvelé chaque minute par l'éditeur ; sans nouvelles depuis 3 min, il est rendu. */
+const LEASE_MS = 3 * 60 * 1000;
+/** Le verrou WorkLogs d'un autre poste est jugé oublié après 3 min d'observation sans renouvellement. */
+const STALE_WATCH_MS = 3 * 60 * 1000;
 const KEPT_STATES = new Set(['conflict', 'archived', 'pending']);
 
 /** Types `statfs` des montages réseau : CIFS, SMB2/3, SMB1, FUSE (GVFS). */
@@ -280,13 +284,106 @@ export function createSharedService({
   }
 
   // ------------------------------------------------------------ verrous lus
+  const observed = new Map();
+  /**
+   * Verrou WorkLogs d'un autre poste : renouvelé chaque minute tant qu'on y écrit.
+   * Si sa date n'a pas bougé depuis 3 min **d'observation**, il est oublié (plantage,
+   * coupure). Mesuré avec notre seule horloge : un décalage d'heure avec le TSE ne
+   * fausse rien.
+   */
+  function observe(lockPath, lock, libre) {
+    if (!lock || lock.app !== 'worklogs' || lock.self || !libre) return lock;
+    const seen = observed.get(lockPath);
+    if (!seen || seen.mtimeMs !== libre.mtimeMs) {
+      observed.set(lockPath, { mtimeMs: libre.mtimeMs, since: clock() });
+      return lock;
+    }
+    return clock() - seen.since >= STALE_WATCH_MS ? { ...lock, stale: true } : lock;
+  }
+  const lockPathOf = (abs) => path.join(path.dirname(abs), libreOfficeLockName(path.basename(abs)));
+
   async function lockFor(abs) {
     const name = path.basename(abs);
     const dir = path.dirname(abs);
-    const [owner, libre] = await io.call('readMany', [[path.join(dir, ownerFileName(name)), path.join(dir, libreOfficeLockName(name))], 4096]);
-    return describeLock({ name, owner, libre, instance, user, host, now: clock() });
+    const [owner, libre] = await io.call('readMany', [[path.join(dir, ownerFileName(name)), lockPathOf(abs)], 4096]);
+    return observe(lockPathOf(abs), describeLock({ name, owner, libre, instance, user, host, now: clock() }), libre);
   }
   const lockNote = (lock) => `Ouvert par ${lock.by} dans ${lockAppLabel(lock.app)}`;
+
+  // ------------------------------------------------------------ notre verrou
+  const lockMarker = (nonce) => `worklogs:${instance}:${nonce}`;
+  const lockBytes = (nonce) => Buffer.from(formatWorkLogsLock({
+    displayName: displayName(), user, host, instance, nonce, date: new Date(clock()),
+  }), 'utf8');
+
+  /**
+   * Prend (ou renouvelle) la main sur un fichier : un `.~lock.<nom>#` au format
+   * LibreOffice, que LibreOffice et les autres WorkLogs respectent. Word et Excel
+   * l'ignorent — leur propre fichier `~$`, lui, n'est jamais touché.
+   */
+  async function acquireLock(rel, { takeOver = false } = {}) {
+    relativeParts(rel);
+    try {
+      const located = await locate(rel);
+      const lockPath = lockPathOf(located.abs);
+      const row = getRow(rel);
+      if (row?.lock_nonce) {
+        const renewed = await io.call('renewLock', [lockPath, lockBytes(row.lock_nonce), lockMarker(row.lock_nonce)]);
+        if (renewed.result === 'renewed') {
+          save(rel, { lock_renewed_at: new Date(clock()).toISOString() });
+          return payload(rel, { lock: await lockFor(located.abs) });
+        }
+        // Perdu (repris par quelqu'un) : on repart de zéro, sans rien écraser.
+        save(rel, { lock_nonce: null, lock_renewed_at: null });
+      }
+      const current = await lockFor(located.abs);
+      const ours = current?.app === 'worklogs' && current.self;
+      if (current && !ours && !takeOver) {
+        // Un verrou oublié se reprend, mais seulement sur demande explicite.
+        throw new SharedError(409, current.stale ? 'SHARED_LOCK_STALE' : 'SHARED_LOCKED',
+          current.stale ? `${lockNote(current)} — probablement oublié.` : `${lockNote(current)}.`, { lock: current });
+      }
+      // Un verrou LibreOffice/WorkLogs repris est remplacé ; nos restes d'un plantage aussi.
+      if (current && takeOver && (current.app === 'libreoffice' || current.app === 'worklogs')) await io.call('unlink', [lockPath]);
+      await io.call('unlinkIfMarked', [lockPath, `worklogs:${instance}:`]);
+      const nonce = crypto.randomBytes(6).toString('hex');
+      const created = await io.call('createExclusive', [lockPath, lockBytes(nonce)]);
+      if (!created.created) {
+        const other = await lockFor(located.abs);
+        throw new SharedError(409, 'SHARED_LOCKED', other ? `${lockNote(other)}.` : 'Quelqu’un vient d’ouvrir ce fichier.', { lock: other });
+      }
+      save(rel, { lock_nonce: nonce, lock_renewed_at: new Date(clock()).toISOString() });
+      return payload(rel, { lock: await lockFor(located.abs) });
+    } catch (error) {
+      throw toSharedError(error);
+    }
+  }
+
+  /** Rend la main : retire notre verrou, jamais celui d'un autre. Hors ligne, il vieillira seul. */
+  async function releaseLock(rel) {
+    const row = getRow(rel);
+    if (!row?.lock_nonce) return payload(rel);
+    const nonce = row.lock_nonce;
+    save(rel, { lock_nonce: null, lock_renewed_at: null });
+    try {
+      const located = await locate(rel, { mayNotExist: true });
+      await io.call('unlinkIfMarked', [lockPathOf(located.abs), lockMarker(nonce)]);
+    } catch {
+      // Partage injoignable : notre verrou restera, les autres le verront vieillir.
+    }
+    return payload(rel);
+  }
+
+  /** Bail : sans renouvellement depuis 3 min (onglet fermé, plantage), la main est rendue. */
+  async function expireLocks() {
+    const limit = clock() - LEASE_MS;
+    for (const row of db.prepare('SELECT rel_path, lock_renewed_at FROM shared_files WHERE lock_nonce IS NOT NULL').all()) {
+      if (!row.lock_renewed_at || Date.parse(row.lock_renewed_at) < limit) await releaseLock(row.rel_path);
+    }
+  }
+  async function releaseAll() {
+    for (const row of db.prepare('SELECT rel_path FROM shared_files WHERE lock_nonce IS NOT NULL').all()) await releaseLock(row.rel_path);
+  }
 
   // ------------------------------------------------------------ vues
   function payload(rel, extra = {}) {
@@ -314,6 +411,8 @@ export function createSharedService({
         ? { hash: row.theirs_hash, deleted: Boolean(row.theirs_deleted), size: row.theirs_deleted ? null : row.seen_size, mtime: row.theirs_deleted ? null : isoOf(row.seen_mtime_ms), author: null }
         : null,
       send: { hash: row.send_hash, requested: Boolean(row.send_requested) },
+      /** Cette installation tient la main sur le fichier (notre `.~lock#`). */
+      held: Boolean(row.lock_nonce),
       lock: null,
       source: 'share',
       ...extra,
@@ -392,8 +491,9 @@ export function createSharedService({
       if (isOffline(error)) return mark(rel, 'offline', offlineNote);
       throw toSharedError(error);
     }
-    // LibreOffice et WorkLogs annoncent leur verrou : on attend notre tour.
-    if (lock && !lock.self && !lock.stale && (lock.app === 'libreoffice' || lock.app === 'worklogs')) {
+    // LibreOffice et les autres WorkLogs annoncent leur verrou : on attend notre tour.
+    // LibreOffice ouvert sur cet ordinateur (« Ouvrir avec… ») compte aussi.
+    if (lockBlocks(lock) && (lock.app === 'libreoffice' || lock.app === 'worklogs')) {
       return mark(rel, 'pending', lockNote(lock), { lock });
     }
     if (located.missing) {
@@ -527,7 +627,12 @@ export function createSharedService({
 
   // ------------------------------------------------------------ démarrage
   collectGarbage();
-  const timer = retryMs > 0 ? setInterval(() => { void retryPending(); }, retryMs) : null;
+  // Verrous restés d'une session précédente (fermeture brutale) : rendus d'emblée.
+  void releaseAll().catch(() => {});
+  const timer = retryMs > 0 ? setInterval(() => {
+    void retryPending();
+    void expireLocks().catch(() => {});
+  }, retryMs) : null;
   timer?.unref();
 
   return {
@@ -626,7 +731,8 @@ export function createSharedService({
         for (const { entry, owner, libre } of wanted) {
           const ownerBytes = owner ? contents[index++] : null;
           const libreBytes = libre ? contents[index++] : null;
-          locks.set(entry.name, describeLock({ name: entry.name, owner: ownerBytes, libre: libreBytes, instance, user, host, now: clock() }));
+          const lockPath = path.join(located.abs, libreOfficeLockName(entry.name));
+          locks.set(entry.name, observe(lockPath, describeLock({ name: entry.name, owner: ownerBytes, libre: libreBytes, instance, user, host, now: clock() }), libreBytes));
         }
         const rows = new Map(db.prepare('SELECT * FROM shared_files').all()
           .filter((row) => parentOf(row.rel_path) === dir).map((row) => [row.rel_path, row]));
@@ -808,9 +914,79 @@ export function createSharedService({
     },
 
     retryPending,
+    acquireLock,
+    releaseLock,
+    expireLocks,
+
+    /** Relier un projet à un sous-dossier du partage : le filtre de projet n'affiche que lui. */
+    async linkProject(projectId, dir) {
+      if (!db.prepare('SELECT 1 FROM projects WHERE id=?').get(projectId)) {
+        throw new SharedError(404, 'SHARED_NO_PROJECT', 'Projet introuvable.');
+      }
+      relativeParts(dir);
+      try {
+        const located = await locate(dir);
+        const stat = await io.call('stat', [located.abs]);
+        if (!stat.isDir) throw new SharedError(400, 'SHARED_NOT_DIR', 'Ce n’est pas un dossier.');
+      } catch (error) {
+        throw toSharedError(error);
+      }
+      db.prepare(`INSERT INTO shared_project_folders (project_id, rel_dir, updated_at) VALUES (?,?,?)
+        ON CONFLICT(project_id) DO UPDATE SET rel_dir=excluded.rel_dir, updated_at=excluded.updated_at`).run(projectId, dir, nowISO());
+      return this.status();
+    },
+
+    unlinkProject(projectId) {
+      db.prepare('DELETE FROM shared_project_folders WHERE project_id=?').run(projectId);
+      return this.status();
+    },
+
+    /** Une version de l'historique redevient le brouillon — sans partir sur le partage. */
+    restoreVersion(rel, id) {
+      relativeParts(rel);
+      const version = db.prepare('SELECT * FROM shared_versions WHERE id=? AND rel_path=?').get(id, rel);
+      if (!version || !hasBlob(version.hash)) throw new SharedError(404, 'SHARED_NO_VERSION', 'Version introuvable sur cet ordinateur.');
+      const row = getRow(rel);
+      if (row?.state === 'conflict') throw new SharedError(409, 'SHARED_CONFLICT_OPEN', 'Choisis d’abord comment régler le conflit.');
+      save(rel, {
+        // Modèle vide : l'éditeur part tel quel des octets de cette version.
+        draft_json: 'null',
+        draft_updated_at: new Date(clock()).toISOString(),
+        template_hash: version.hash,
+        base_hash: row?.draft_json ? row.base_hash : row?.seen_hash || row?.base_hash || version.hash,
+        state: !row?.state || row.state === 'draft' ? 'draft' : row.state,
+      });
+      addVersion(rel, version.hash, version.size, 'restored', 'archived');
+      return payload(rel);
+    },
+
+    /**
+     * « Ouvrir avec… » : le **vrai** fichier du partage (c'est la référence). Refusé
+     * tant qu'un brouillon n'est pas envoyé — l'application ouvrirait l'ancienne
+     * version. Notre verrou est rendu d'abord : l'application posera le sien.
+     */
+    async openTarget(rel) {
+      relativeParts(rel);
+      const row = getRow(rel);
+      if (row?.draft_json && !row.send_requested) {
+        throw new SharedError(409, 'SHARED_DRAFT_OPEN', 'Envoie ou abandonne d’abord ton brouillon : l’autre application ouvrirait la version du partage.');
+      }
+      let located;
+      try {
+        located = await locate(rel);
+        const stat = await io.call('stat', [located.abs]);
+        if (!stat.isFile) throw new SharedError(400, 'SHARED_NOT_FILE', 'Ce n’est pas un fichier.');
+      } catch (error) {
+        throw toSharedError(error);
+      }
+      await releaseLock(rel);
+      return located.abs;
+    },
 
     async stop() {
       if (timer) clearInterval(timer);
+      // On rend la main avant de partir ; un partage figé ne retient pas la fermeture.
+      await Promise.race([releaseAll().catch(() => {}), new Promise((resolve) => setTimeout(resolve, 2000).unref())]);
       await io.close();
     },
   };

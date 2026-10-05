@@ -200,6 +200,20 @@ colonne Procédures est affichée.
   5 secondes, et quand tu reviens sur la fenêtre).
 - Pastilles de l'arbre : 🔒 ouvert par quelqu'un, ✎ brouillon ici, ⇡ envoi en attente,
   ⚠ conflit à régler, ↻ modifié sur le partage depuis ta dernière lecture.
+- **Tu as la main** dès ta première frappe : WorkLogs pose un verrou à ton nom (réglable
+  dans Paramètres › Dossier partagé) que LibreOffice et les autres WorkLogs voient. Il est
+  rendu quand tu fermes le fichier, ou après 10 minutes sans frappe. Un verrou resté d'un
+  collègue sans signe de vie depuis plusieurs minutes est signalé « probablement oublié » :
+  **Prendre la main** le reprend (avec confirmation).
+- Quitter un fichier dont le brouillon n'est pas envoyé (Fermer, une entrée, un autre
+  fichier) demande : **Envoyer sur le partage**, **Garder le brouillon ici** ou **Annuler**.
+- **Ouvrir avec…** (application desktop) ouvre le vrai fichier du partage dans LibreOffice
+  ou l'application du système — utile pour les `.docx` et `.xlsx` en attendant leurs
+  éditeurs. Envoie ou abandonne d'abord ton brouillon.
+- Avec un projet filtré, **Relier … à un dossier…** associe le projet à un sous-dossier du
+  partage : la section n'affiche plus que lui. **Délier** rend tout le partage.
+- **Historique sur cet ordinateur** (sous l'éditeur) liste les versions lues, envoyées ou
+  mises de côté ; **Restaurer** en fait ton brouillon, à envoyer comme d'habitude.
 
 Limite à connaître : Word et Excel **ne voient pas** que tu modifies un fichier dans
 WorkLogs (ils ignorent les verrous des autres applications). Rien n'est perdu pour autant :

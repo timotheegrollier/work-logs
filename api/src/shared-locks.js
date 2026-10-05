@@ -123,10 +123,12 @@ const DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Décrit les verrous trouvés pour un fichier. `owner` = fichier `~$` (octets et
- * date), `libre` = `.~lock#`. Renvoie le plus parlant, ou `null`.
- * `self` = posé depuis cet ordinateur ; `stale` = probablement abandonné.
+ * date), `libre` = `.~lock#`. Le verrou **d'un autre** passe avant le nôtre : notre
+ * `.~lock` ne doit pas masquer le `~$` de Word. `self` = posé depuis cet ordinateur
+ * (pour WorkLogs : par cette installation) ; `stale` = probablement abandonné.
  */
 export function describeLock({ name, owner = null, libre = null, instance = '', user = '', host = '', now = Date.now() }) {
+  let libreLock = null;
   if (libre) {
     const parsed = parseLibreOfficeLock(libre.bytes);
     if (parsed) {
@@ -134,7 +136,7 @@ export function describeLock({ name, owner = null, libre = null, instance = '', 
       const old = libre.mtimeMs ? now - libre.mtimeMs > DAY : false;
       if (parsed.url.startsWith('worklogs:')) {
         const [, lockInstance = '', nonce = ''] = parsed.url.split(':');
-        return {
+        libreLock = {
           app: 'worklogs',
           by: parsed.name.replace(/ \(WorkLogs\)$/, '') || parsed.user || 'quelqu’un',
           since,
@@ -142,16 +144,18 @@ export function describeLock({ name, owner = null, libre = null, instance = '', 
           nonce,
           stale: old,
         };
+      } else {
+        libreLock = {
+          app: 'libreoffice',
+          by: parsed.name || parsed.user || 'quelqu’un',
+          since,
+          self: Boolean(user) && parsed.user === user && parsed.host === host,
+          stale: old,
+        };
       }
-      return {
-        app: 'libreoffice',
-        by: parsed.name || parsed.user || 'quelqu’un',
-        since,
-        self: Boolean(user) && parsed.user === user && parsed.host === host,
-        stale: old,
-      };
     }
   }
+  if (libreLock && !(libreLock.app === 'worklogs' && libreLock.self)) return libreLock;
   if (owner) {
     return {
       app: officeApp(name),
@@ -161,8 +165,11 @@ export function describeLock({ name, owner = null, libre = null, instance = '', 
       stale: false,
     };
   }
-  return null;
+  return libreLock;
 }
+
+/** Ce verrou donne-t-il la main à quelqu'un d'autre ? Seul le nôtre (WorkLogs, cette installation) ne bloque pas. */
+export const lockBlocks = (lock) => Boolean(lock && !lock.stale && !(lock.app === 'worklogs' && lock.self));
 
 const APP_LABELS = { word: 'Word', excel: 'Excel', powerpoint: 'PowerPoint', office: 'Office', libreoffice: 'LibreOffice', worklogs: 'WorkLogs' };
 export const lockAppLabel = (app) => APP_LABELS[app] || 'une autre application';
