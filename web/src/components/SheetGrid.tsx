@@ -137,6 +137,11 @@ export function SheetGrid({
       // Taper sur une cellule la remplace, comme dans un tableur.
       event.preventDefault();
       startEdit(key);
+    } else if ((key === 'Dead' || key === 'Process' || event.nativeEvent.isComposing) && !readOnly) {
+      // Touche morte (« ^ » puis « e » sur un clavier français) ou méthode de saisie :
+      // on vide la cellule et on passe la main à la barre **sans** bloquer la touche,
+      // pour que le caractère composé y arrive au lieu de se perdre sur la cellule.
+      startEdit('');
     }
   };
 

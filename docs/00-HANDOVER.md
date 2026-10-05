@@ -54,9 +54,14 @@ se modifient **des deux côtés, chacun son tour, sans perte**, dans WorkLogs. D
   (vu seulement dans Chromium) ; une requête de plus au démarrage rendait instable
   « supprimer un projet garde ses entrées » (le test clique avant le chargement) — la section
   ne lit plus rien tant que la colonne Procédures est masquée.
-- **Tests** : `./scripts/check.sh` vert — **200 tests API** (+36), **368 front** (+28),
+- **Vu dans le navigateur intégré** (faux partage, CSV Windows-1252) : saisie, `Ctrl+S`, lecture
+  seule, conflit et « garder les deux » conformes ; fichier relu sur disque (Windows-1252, CRLF,
+  une seule ligne changée). Corrigés : une **touche morte** (« ^ » puis « e » sur un clavier
+  français) ou une méthode de saisie n'ouvrait pas la barre et le caractère se perdait ; un nom
+  de fichier long élargissait la colonne et poussait les pastilles hors champ.
+- **Tests** : `./scripts/check.sh` vert — **200 tests API** (+36), **375 front** (+35),
   **41 desktop unitaires** (+1), 25 scripts, 8 relais, **45 navigateur** (+3) et **11 desktop
-  e2e** (+1) : 698 en tout. Corrigé au passage : une course préexistante de
+  e2e** (+1) : 705 en tout. Corrigé au passage : une course préexistante de
   `GoogleDrive.test.tsx` (« un conflit Drive… », ~1 échec sur 7, mesuré aussi sur la version
   d'origine) attend maintenant l'état final au lieu de le lire à l'instant de l'erreur.
 
