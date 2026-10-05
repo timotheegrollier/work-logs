@@ -943,3 +943,64 @@ Word (« Ouvrir avec… »). Rendu simplifié (polices et couleurs du thème non
 **À vérifier sur le TSE** : ouvrir dans Word un document modifié par WorkLogs — aucune
 réparation proposée, mise en forme, numérotation, en-tête et images intacts ; puis le faire
 réenregistrer par un collègue et le rouvrir dans WorkLogs.
+
+## 27. Classeurs Excel du partage : cellule par cellule — 2026-10-05
+
+**Le besoin.** Modifier dans WorkLogs les `.xlsx` que les collègues ouvrent dans Excel sur le
+TSE, sans toucher à ce qu'Excel seul sait faire : formules, graphiques, mises en forme
+conditionnelles, validations, tableaux, tableaux croisés.
+
+**Le choix : seules les cellules tapées sont réécrites** (`web/src/xlsx.ts`, sur `zip.ts` et
+`xml-scan.ts` du §26 ; `ooxml.ts` porte ce que Word et Excel partagent : relations, propriétés).
+- Dans la feuille, la balise `<c>` d'une cellule modifiée est remplacée ; référence `r`, style
+  `s` et attributs d'origine gardés. Une cellule nouvelle prend le style de sa ligne ou de sa
+  colonne et se place dans l'ordre ; une ligne nouvelle aussi. `dimension` et `spans` élargis.
+- **Texte** : ajouté à la **fin** de `sharedStrings.xml` (compteurs `count`/`uniqueCount` à
+  jour) ; une chaîne existante n'est **jamais** modifiée — d'autres cellules la partagent ; une
+  chaîne identique sans mise en forme est réutilisée. Sans chaînes partagées : texte en ligne.
+- **Saisie lue comme Excel en français**, sans deviner contre l'utilisateur
+  (`xlsx-format.ts`) : `1 234,5`, `12,5 %`, `12,50 €` sont des nombres ; `'` force le texte ;
+  une cellule au format texte garde le texte ; zéros de tête (`0123`) et numéros de plus de
+  15 chiffres restent du texte ; une date (`05/10/2026`, `5/10`) n'est reconnue que dans une
+  cellule **déjà** au format date (on ne crée pas de style) ; `VRAI`/`FAUX`.
+- **Affichage à la française** des formats courants : nombres, milliers, pourcentages,
+  monnaie (`[$€-40C]`), sections négatives, dates et heures (système 1900 et son faux
+  29 février 1900, système 1904), erreurs (`#NOM?`, `#VALEUR!`…). Format inconnu → Standard :
+  l'affichage peut différer d'Excel, jamais la valeur.
+- **Formules** (`xlsx-formula.ts`) : Excel les enregistre en anglais et les affiche en
+  français. La barre les montre en français ; on accepte les deux écritures (`=SOMME(A1;A3)`
+  ou `=SUM(A1,A3)`), traduites pour ~100 fonctions courantes, `_xlfn.` ajouté aux fonctions
+  récentes (`RECHERCHEX`…). **La syntaxe est vérifiée avant l'écriture** (grammaire d'Excel :
+  opérateurs, appels, plages, feuilles, constantes) : une formule mal formée dans le fichier
+  ferait proposer une « réparation » à Excel. Fautive → listée sous la grille, envoi refusé.
+- **Recalcul** : WorkLogs ne calcule rien. `fullCalcOnLoad="1"` dans `<calcPr>` fait tout
+  recalculer à Excel à l'ouverture. Mais LibreOffice, par défaut, **ne recalcule pas** un
+  `.xlsx` au chargement (vérifié, 24.2 : il gardait l'ancien total) : les formules qui lisent,
+  de proche en proche, une cellule modifiée — même feuille, autres feuilles, noms définis,
+  formules recopiées décalées — **perdent leur valeur d'avant** (`<v>` retiré) ; Excel et
+  LibreOffice les calculent alors, et WorkLogs affiche la formule plutôt qu'un chiffre périmé.
+  Prudent : ce qui ne se lit pas dans le texte (`INDIRECT`, `DECALER`, tableaux structurés)
+  compte comme dépendant ; une formule liée à un **autre classeur** garde sa valeur (elle ne
+  se recalcule pas sans lui).
+- **Chaîne de calcul** (`calcChain.xml`) : retirée — avec sa relation et son type de contenu —
+  dès qu'une formule est ajoutée, remplacée ou effacée. Excel la reconstruit ; la garder
+  fausse lui fait proposer une réparation.
+- **Lecture seule motivée**, cellule par cellule : cellules fusionnées (sauf la première),
+  en-têtes et totaux de tableaux, tableaux croisés, formule recopiée « maîtresse » (les
+  autres en dépendent), formules matricielles, valeurs riches (image dans la cellule), cellules
+  verrouillées d'une feuille protégée. Classeur entier : macros (`.xlsm`), mot de passe de
+  modification ; OOXML strict refusé à l'ouverture.
+- Une feuille à la fois, choisie dans une liste « Feuille » (masquées signalées) : **pas
+  d'onglets** (règle du produit). Pas d'insertion de lignes ou colonnes au milieu : on ajoute
+  en fin, en tapant dans la ligne ou la colonne libre.
+- Brouillon = les saisies, cellule par cellule (`{feuille: {B3: '250'}}`) ; revenir à la
+  valeur d'origine efface la modification. Rien de modifié → les octets d'origine.
+- Garde-fou final : chaque XML produit est relu par `DOMParser` ; invalide → rien ne part.
+
+**Limites assumées (v1).** Insérer/supprimer des lignes ou colonnes au milieu, mettre en
+forme, créer une feuille, un graphique, un tableau : dans Excel (« Ouvrir avec… »). Les
+retours à la ligne dans une cellule (Alt+Entrée) ne se tapent pas dans la barre.
+
+**À vérifier sur le TSE** : ouvrir dans Excel un classeur modifié par WorkLogs — aucune
+réparation proposée, totaux recalculés, graphiques et mises en forme intacts ; le faire
+réenregistrer par un collègue et le rouvrir dans WorkLogs.

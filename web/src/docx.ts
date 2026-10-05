@@ -1,6 +1,7 @@
 import { getSchema, type JSONContent } from '@tiptap/core';
 import { readZip, readZipText, writeZip, ZipError, type ZipArchive } from './zip';
-import { attrNS, elements, escapeAttr, escapeText, findChild, scanXml, XmlScanError, type XmlElement, type XmlText } from './xml-scan';
+import { attrNS, elements, escapeAttr, escapeText, findChild, scanXml, XmlScanError, type XmlElement } from './xml-scan';
+import { coreAuthor, isWellFormed, packageParts, patchCoreProperties, relationships, resolveTarget, textOf } from './ooxml';
 import { docxExtensions, type DocxNumbering } from './docx-extensions';
 import { FormatError } from './file-formats';
 
@@ -17,8 +18,6 @@ import { FormatError } from './file-formats';
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const W_STRICT = 'http://purl.oclc.org/ooxml/wordprocessingml/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-const OFFICE_DOCUMENT = /\/officeDocument$/;
-const CORE_PROPERTIES = /\/(?:metadata\/)?core-properties$/;
 
 export interface DocxStyle {
   id: string;
@@ -109,34 +108,6 @@ function plainText(el: XmlElement): string {
   };
   walk(el);
   return out.replace(/\s+/g, ' ').trim();
-}
-
-const textOf = (el: XmlElement) => el.children.filter((child): child is XmlText => child.kind === 'text').map((child) => child.value).join('');
-
-function partRelsPath(part: string) {
-  const slash = part.lastIndexOf('/');
-  return `${part.slice(0, slash + 1)}_rels/${part.slice(slash + 1)}.rels`;
-}
-
-function resolveTarget(base: string, target: string) {
-  if (target.startsWith('/')) return target.slice(1);
-  const parts = base.split('/').slice(0, -1);
-  for (const piece of target.split('/')) {
-    if (piece === '..') parts.pop();
-    else if (piece && piece !== '.') parts.push(piece);
-  }
-  return parts.join('/');
-}
-
-async function relationships(archive: ZipArchive, part: string) {
-  const xml = await readZipText(archive, part === '' ? '_rels/.rels' : partRelsPath(part));
-  const out: { id: string; type: string; target: string; external: boolean }[] = [];
-  if (!xml) return out;
-  for (const rel of elements(scanXml(xml))) {
-    if (rel.local !== 'Relationship') continue;
-    out.push({ id: rel.attrs.Id ?? '', type: rel.attrs.Type ?? '', target: rel.attrs.Target ?? '', external: rel.attrs.TargetMode === 'External' });
-  }
-  return out;
 }
 
 function readStyles(xml: string | null): { styles: DocxStyle[]; byId: Map<string, DocxStyle>; defaultId: string | null } {
@@ -430,11 +401,7 @@ function wrapError(error: unknown): never {
 export async function readDocxDocument(bytes: Uint8Array): Promise<DocxDocument> {
   try {
     const archive = readZip(bytes);
-    const packageRels = await relationships(archive, '');
-    const mainRel = packageRels.find((rel) => OFFICE_DOCUMENT.test(rel.type));
-    const mainPart = mainRel ? resolveTarget('', mainRel.target) : 'word/document.xml';
-    const coreRel = packageRels.find((rel) => CORE_PROPERTIES.test(rel.type));
-    const corePart = coreRel ? resolveTarget('', coreRel.target) : archive.byName.has('docProps/core.xml') ? 'docProps/core.xml' : null;
+    const { mainPart, corePart } = await packageParts(archive, 'word/document.xml');
     const xml = await readZipText(archive, mainPart);
     if (xml === null) throw new FormatError('Ce fichier n’est pas un document Word (.docx) : contenu principal absent.');
     const root = scanXml(xml);
@@ -491,13 +458,7 @@ export async function readDocxDocument(bytes: Uint8Array): Promise<DocxDocument>
     };
     doc.content?.forEach(remember);
 
-    const coreXml = corePart ? await readZipText(archive, corePart) : null;
-    let author: string | null = null;
-    if (coreXml) {
-      const core = scanXml(coreXml);
-      const lastBy = elements(core).find((el) => el.local === 'lastModifiedBy');
-      author = lastBy ? textOf(lastBy).trim() || null : null;
-    }
+    const author = await coreAuthor(archive, corePart);
     return { archive, mainPart, corePart, xml, body, w, sources, baselines, finalSectPr, doc, styles, numbering, readOnly, author };
   } catch (error) {
     wrapError(error);
@@ -702,33 +663,6 @@ function tableXml(node: JSONContent, source: SourceTable, ctx: ExportContext): s
   return out + xml.slice(cursor, source.el.end);
 }
 
-const pad = (n: number) => String(n).padStart(2, '0');
-const w3cdtf = (date: Date) =>
-  `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}Z`;
-
-/** Propriétés du document : dernier auteur, date, numéro de révision — seulement leur texte. */
-export function patchCoreProperties(xml: string, author: string, now: Date): string {
-  const root = scanXml(xml);
-  const edits: { start: number; end: number; text: string }[] = [];
-  const replaceText = (local: string, value: (current: string) => string) => {
-    const el = elements(root).find((child) => child.local === local);
-    if (!el) return false;
-    const current = textOf(el);
-    if (el.selfClosing) edits.push({ start: el.start, end: el.end, text: `<${el.name}>${escapeText(value(current))}</${el.name}>` });
-    else edits.push({ start: el.openEnd, end: el.closeStart, text: escapeText(value(current)) });
-    return true;
-  };
-  if (!replaceText('lastModifiedBy', () => author)) {
-    const prefix = Object.entries(root.attrs).find(([, uri]) => uri === 'http://schemas.openxmlformats.org/package/2006/metadata/core-properties')?.[0];
-    if (prefix?.startsWith('xmlns:')) edits.push({ start: root.closeStart, end: root.closeStart, text: `<${prefix.slice(6)}:lastModifiedBy>${escapeText(author)}</${prefix.slice(6)}:lastModifiedBy>` });
-  }
-  replaceText('modified', () => w3cdtf(now));
-  replaceText('revision', (current) => String((Number.parseInt(current, 10) || 0) + 1));
-  let out = xml;
-  for (const edit of edits.sort((a, b) => b.start - a.start)) out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
-  return out;
-}
-
 /** Vérifie la structure d'un brouillon avant envoi (tableaux, notamment), sans écrire. */
 export function docxProblems(doc: DocxDocument, edited: JSONContent): string[] {
   const problems: string[] = [];
@@ -759,22 +693,11 @@ export async function writeDocx(bytes: Uint8Array, edited: JSONContent, { author
   const xml = doc.body.selfClosing
     ? doc.xml.slice(0, doc.body.start) + `<${doc.body.name}>${body}</${doc.body.name}>` + doc.xml.slice(doc.body.end)
     : doc.xml.slice(0, doc.body.openEnd) + body + doc.xml.slice(doc.body.closeStart);
-  // Garde-fou : un XML que le navigateur refuse ne part jamais sur le partage.
-  const check = new DOMParser().parseFromString(xml, 'application/xml');
-  if (check.getElementsByTagName('parsererror').length) throw new FormatError('WorkLogs a produit un document Word invalide : rien n’est envoyé. Signale-le.');
+  if (!isWellFormed(xml)) throw new FormatError('WorkLogs a produit un document Word invalide : rien n’est envoyé. Signale-le.');
   const edits = new Map<string, Uint8Array>([[doc.mainPart, new TextEncoder().encode(xml)]]);
   if (doc.corePart) {
     const core = await readZipText(doc.archive, doc.corePart);
     if (core) edits.set(doc.corePart, new TextEncoder().encode(patchCoreProperties(core, author, now)));
   }
   return writeZip(doc.archive, edits);
-}
-
-/** Dernier auteur enregistré dans le fichier (Word l'écrit à chaque enregistrement). */
-export async function docxAuthor(bytes: Uint8Array): Promise<string | null> {
-  try {
-    return (await readDocxDocument(bytes)).author;
-  } catch {
-    return null;
-  }
 }

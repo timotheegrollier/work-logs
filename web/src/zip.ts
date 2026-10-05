@@ -154,12 +154,12 @@ export function crc32(bytes: Uint8Array): number {
 }
 
 /**
- * Réécrit l'archive avec quelques entrées remplacées. L'ordre des entrées, leurs
- * noms, dates, champs supplémentaires et attributs sont gardés ; une entrée
- * remplacée garde sa méthode (stockée ou compressée). Aucune modification : les
- * octets d'origine.
+ * Réécrit l'archive avec quelques entrées remplacées (`null` : retirée). L'ordre
+ * des entrées, leurs noms, dates, champs supplémentaires et attributs sont
+ * gardés ; une entrée remplacée garde sa méthode (stockée ou compressée). Aucune
+ * modification : les octets d'origine.
  */
-export async function writeZip(archive: ZipArchive, edits: Map<string, Uint8Array>): Promise<Uint8Array> {
+export async function writeZip(archive: ZipArchive, edits: Map<string, Uint8Array | null>): Promise<Uint8Array> {
   if (!edits.size) return archive.bytes;
   for (const name of edits.keys()) if (!archive.byName.has(name)) throw new ZipError(`Entrée absente de l’archive : ${name}.`);
   const source = archive.bytes;
@@ -168,7 +168,8 @@ export async function writeZip(archive: ZipArchive, edits: Map<string, Uint8Arra
   const replaced = new Map<ZipEntry, { crc: number; compressed: number; size: number }>();
   let position = 0;
   // Ordre physique d'origine des enregistrements locaux.
-  for (const entry of [...archive.entries].sort((a, b) => a.localOffset - b.localOffset)) {
+  const kept = archive.entries.filter((entry) => edits.get(entry.name) !== null);
+  for (const entry of [...kept].sort((a, b) => a.localOffset - b.localOffset)) {
     offsets.set(entry, position);
     const edit = edits.get(entry.name);
     if (!edit) {
@@ -190,7 +191,7 @@ export async function writeZip(archive: ZipArchive, edits: Map<string, Uint8Arra
     replaced.set(entry, { crc, compressed: body.length, size: edit.length });
   }
   const directoryOffset = position;
-  for (const entry of archive.entries) {
+  for (const entry of kept) {
     const record = entry.central.slice();
     const recordView = view(record);
     recordView.setUint32(42, offsets.get(entry)!, true);
@@ -206,6 +207,8 @@ export async function writeZip(archive: ZipArchive, edits: Map<string, Uint8Arra
   }
   const eocd = archive.eocd.slice();
   const eocdView = view(eocd);
+  eocdView.setUint16(8, kept.length, true);
+  eocdView.setUint16(10, kept.length, true);
   eocdView.setUint32(12, position - directoryOffset, true);
   eocdView.setUint32(16, directoryOffset, true);
   parts.push(eocd);

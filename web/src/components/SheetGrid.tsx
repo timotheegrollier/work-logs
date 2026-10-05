@@ -24,6 +24,12 @@ export interface SheetGridProps {
   rowCount: number;
   colCount: number;
   getCell(row: number, col: number): string;
+  /** Ce que montre la barre (formule, nombre sans format) ; par défaut, ce qu'affiche la cellule. */
+  getInput?(row: number, col: number): string;
+  /** Pourquoi cette cellule ne se modifie pas (fusionnée, protégée…), ou `null`. */
+  cellReadOnly?(row: number, col: number): string | null;
+  /** Classe d'affichage d'une cellule (nombres alignés à droite…). */
+  cellClass?(row: number, col: number): string;
   readOnly: boolean;
   /** Une écriture (frappe, collage, effacement) ; peut dépasser la taille actuelle. */
   onSetCells(edits: CellEdit[]): void;
@@ -47,7 +53,7 @@ const OVERSCAN = 20;
  * fichiers de plusieurs dizaines de milliers de lignes.
  */
 export function SheetGrid({
-  label, rowCount, colCount, getCell, readOnly, onSetCells, onBeginEdit,
+  label, rowCount, colCount, getCell, getInput, cellReadOnly, cellClass, readOnly, onSetCells, onBeginEdit,
   onInsertRow, onDeleteRow, onInsertColumn, onDeleteColumn, onUndo, onRedo,
 }: SheetGridProps) {
   const [active, setActive] = useState({ row: 0, col: 0 });
@@ -61,6 +67,9 @@ export function SheetGrid({
   const row = Math.max(0, Math.min(active.row, rowCount - 1));
   const col = Math.max(0, Math.min(active.col, colCount - 1));
   const value = rowCount > 0 ? getCell(row, col) : '';
+  const input = rowCount > 0 && getInput ? getInput(row, col) : value;
+  const locked = rowCount > 0 && cellReadOnly ? cellReadOnly(row, col) : null;
+  const blocked = readOnly || Boolean(locked);
   const reference = rowCount > 0 ? `${columnName(col)}${row + 1}` : '—';
 
   useEffect(() => {
@@ -91,9 +100,9 @@ export function SheetGrid({
   };
 
   const startEdit = (initial?: string) => {
-    if (readOnly || rowCount === 0) return;
+    if (blocked || rowCount === 0) return;
     onBeginEdit();
-    editingFrom.current = value;
+    editingFrom.current = input;
     if (initial !== undefined) onSetCells([{ row, col, value: initial }]);
     // Focus **tout de suite** : une frappe rapide (« 14,2 ») doit continuer dans
     // la barre, pas relancer une édition sur la cellule à chaque touche.
@@ -123,7 +132,7 @@ export function SheetGrid({
     } else if (key === 'Enter' || key === 'F2') {
       event.preventDefault();
       startEdit();
-    } else if ((key === 'Delete' || key === 'Backspace') && !readOnly && value !== '') {
+    } else if ((key === 'Delete' || key === 'Backspace') && !blocked && input !== '') {
       event.preventDefault();
       onBeginEdit();
       onSetCells([{ row, col, value: '' }]);
@@ -137,7 +146,7 @@ export function SheetGrid({
       // Taper sur une cellule la remplace, comme dans un tableur.
       event.preventDefault();
       startEdit(key);
-    } else if ((key === 'Dead' || key === 'Process' || event.nativeEvent.isComposing) && !readOnly) {
+    } else if ((key === 'Dead' || key === 'Process' || event.nativeEvent.isComposing) && !blocked) {
       // Touche morte (« ^ » puis « e » sur un clavier français) ou méthode de saisie :
       // on vide la cellule et on passe la main à la barre **sans** bloquer la touche,
       // pour que le caractère composé y arrive au lieu de se perdre sur la cellule.
@@ -156,7 +165,7 @@ export function SheetGrid({
       moveTo(row, col + (event.shiftKey ? -1 : 1));
     } else if (event.key === 'Escape') {
       event.preventDefault();
-      if (editingFrom.current !== null && editingFrom.current !== value) onSetCells([{ row, col, value: editingFrom.current }]);
+      if (editingFrom.current !== null && editingFrom.current !== input) onSetCells([{ row, col, value: editingFrom.current }]);
       editingFrom.current = null;
       setFocusRequest((n) => n + 1);
     }
@@ -173,7 +182,10 @@ export function SheetGrid({
     event.preventDefault();
     const text = event.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n').replace(/\n$/, '');
     const edits: CellEdit[] = [];
-    text.split('\n').forEach((line, dr) => line.split('\t').forEach((cell, dc) => edits.push({ row: row + dr, col: col + dc, value: cell })));
+    text.split('\n').forEach((line, dr) => line.split('\t').forEach((cell, dc) => {
+      // Une cellule fusionnée ou protégée garde sa valeur : le reste du bloc se colle.
+      if (!cellReadOnly?.(row + dr, col + dc)) edits.push({ row: row + dr, col: col + dc, value: cell });
+    }));
     if (!edits.length) return;
     onBeginEdit();
     onSetCells(edits);
@@ -191,11 +203,12 @@ export function SheetGrid({
           ref={barRef}
           className="sheet-input"
           aria-label="Contenu de la cellule"
-          value={value}
-          readOnly={readOnly || rowCount === 0}
+          value={input}
+          readOnly={blocked || rowCount === 0}
+          title={locked ?? undefined}
           onFocus={() => {
-            if (editingFrom.current === null && !readOnly) {
-              editingFrom.current = value;
+            if (editingFrom.current === null && !blocked) {
+              editingFrom.current = input;
               onBeginEdit();
             }
           }}
@@ -204,7 +217,8 @@ export function SheetGrid({
           onKeyDown={onBarKey}
         />
       </div>
-      {!readOnly && (
+      {locked && !readOnly && <p className="sheet-locked no-print" role="status">{reference} : {locked}</p>}
+      {!readOnly && (onInsertRow || onUndo) && (
         <div className="sheet-actions no-print">
           {onInsertRow && <button className="ghost" aria-label={rowCount ? `Ajouter une ligne après la ligne ${row + 1}` : 'Ajouter une ligne'} onClick={() => { onBeginEdit(); onInsertRow(rowCount ? row : -1); setActive({ row: rowCount ? row + 1 : 0, col }); setFocusRequest((n) => n + 1); }}>＋ Ligne</button>}
           {onDeleteRow && rowCount > 0 && <button className="ghost" aria-label={`Supprimer la ligne ${row + 1}`} onClick={() => { onBeginEdit(); onDeleteRow(row); }}>− Ligne</button>}
@@ -244,6 +258,7 @@ export function SheetGrid({
                 {columns.map((c) => {
                   const cell = getCell(r, c);
                   const current = r === row && c === col;
+                  const lockedCell = cellReadOnly ? Boolean(cellReadOnly(r, c)) : false;
                   return (
                     <td
                       key={c}
@@ -252,7 +267,8 @@ export function SheetGrid({
                       tabIndex={current ? 0 : -1}
                       aria-selected={current}
                       aria-label={`${columnName(c)}${r + 1} : ${cell || 'vide'}`}
-                      className={current ? 'is-active' : ''}
+                      aria-readonly={lockedCell || undefined}
+                      className={[current ? 'is-active' : '', lockedCell ? 'is-locked' : '', cellClass?.(r, c) ?? ''].filter(Boolean).join(' ') || undefined}
                       onClick={() => setActive({ row: r, col: c })}
                       onDoubleClick={() => { setActive({ row: r, col: c }); startEdit(); }}
                     >

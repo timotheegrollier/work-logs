@@ -2576,6 +2576,11 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .sheet-grid td:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
 .sheet-grid table[aria-readonly='true'] td { cursor: default; }
 .sheet-grid .empty { padding: 12px; }
+/* Classeurs : cellules fusionnées, protégées, en-têtes de tableau… gardées telles quelles. */
+.sheet-grid td.is-locked { color: var(--muted); background: var(--surface-2); cursor: default; }
+.sheet-grid td.is-numeric { text-align: right; }
+.sheet-locked { margin: 0; font-size: 12.5px; color: var(--muted); }
+.sheet-problems { margin: 0; padding: 8px 12px 8px 28px; border: 1px solid var(--danger); border-radius: 8px; background: var(--danger-soft); font-size: 12.5px; }
 @media (max-width: 680px) {
   .shared-encoding { margin-left: 0; }
   .sheet-grid { max-height: 60vh; }

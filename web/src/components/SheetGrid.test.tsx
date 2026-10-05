@@ -89,4 +89,37 @@ describe('grille', () => {
     expect(cell('A1 : a')).toBeInTheDocument();
     expect(grid()).toHaveAttribute('aria-readonly', 'true');
   });
+
+  it('classeur : la barre montre la saisie (formule), une cellule protégée dit pourquoi et ne se modifie pas', () => {
+    function Workbook() {
+      const [values, setValues] = useState<Record<string, string>>({ '0:0': '=SOMME(B1:B2)', '0:1': '12' });
+      return (
+        <SheetGrid
+          label="Tableau test"
+          rowCount={2}
+          colCount={2}
+          getCell={(row, col) => (row === 0 && col === 0 ? '24' : values[`${row}:${col}`] ?? '')}
+          getInput={(row, col) => values[`${row}:${col}`] ?? ''}
+          cellReadOnly={(row, col) => (row === 1 && col === 1 ? 'Cellule fusionnée avec B1 : seule B1 se modifie.' : null)}
+          readOnly={false}
+          onBeginEdit={() => {}}
+          onSetCells={(edits) => setValues((current) => ({ ...current, ...Object.fromEntries(edits.map((edit) => [`${edit.row}:${edit.col}`, edit.value])) }))}
+        />
+      );
+    }
+    render(<Workbook />);
+    fireEvent.click(cell('A1 : 24'));
+    expect(bar()).toHaveValue('=SOMME(B1:B2)');
+    fireEvent.click(cell('B2 : vide'));
+    expect(cell('B2 : vide')).toHaveAttribute('aria-readonly', 'true');
+    expect(screen.getByText('B2 : Cellule fusionnée avec B1 : seule B1 se modifie.')).toHaveAttribute('role', 'status');
+    fireEvent.keyDown(cell('B2 : vide'), { key: 'x' });
+    expect(bar()).toHaveAttribute('readonly');
+    expect(cell('B2 : vide')).toBeInTheDocument();
+    // Coller un bloc par-dessus : la cellule fusionnée garde sa valeur, le reste se colle.
+    fireEvent.click(cell('A2 : vide'));
+    fireEvent.paste(grid(), { clipboardData: { getData: () => 'a\tb' } });
+    expect(cell('A2 : a')).toBeInTheDocument();
+    expect(cell('B2 : vide')).toBeInTheDocument();
+  });
 });

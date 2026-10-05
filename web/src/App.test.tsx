@@ -2215,6 +2215,74 @@ describe('dossier partagé', () => {
     expect(within(editorRegion).getByRole('textbox', { name: 'Contenu du document Word' })).toHaveAttribute('contenteditable', 'false');
   });
 
+  test('un classeur Excel s’ouvre dans la grille ; une cellule modifiée, seule sa balise change', async () => {
+    const { excelWorkbook } = await import('./test/xlsx-fixture');
+    const { readZip, readZipText } = await import('./zip');
+    const original = excelWorkbook();
+    await write('Budget atelier.xlsx', original);
+    await clientApi.setSharedDisplayName('T. Grollier');
+    render(<App />);
+    const editorRegion = await openFromTree('Budget atelier.xlsx');
+    const grid = await within(editorRegion).findByRole('grid', { name: 'Feuille Suivi' });
+    expect(within(grid).getByRole('gridcell', { name: 'B2 : 1 234,50 €' })).toHaveClass('is-numeric');
+    expect(within(grid).getByRole('gridcell', { name: 'C2 : 05/10/2026' })).toBeInTheDocument();
+    const bar = within(editorRegion).getByLabelText('Contenu de la cellule');
+
+    // La barre montre la formule, en français.
+    fireEvent.click(within(grid).getByRole('gridcell', { name: 'B4 : 1 334,50 €' }));
+    expect(bar).toHaveValue('=SOMME(B2:B3)');
+    // Fusionnée : la raison, pas de saisie.
+    fireEvent.click(within(grid).getByRole('gridcell', { name: 'B5 : vide' }));
+    expect(within(editorRegion).getByText(/B5 : Cellule fusionnée avec A5/)).toBeInTheDocument();
+    expect(bar).toHaveAttribute('readonly');
+
+    const target = within(grid).getByRole('gridcell', { name: 'B3 : 100,00 €' });
+    fireEvent.click(target);
+    fireEvent.keyDown(target, { key: '2' });
+    fireEvent.change(bar, { target: { value: '250' } });
+    fireEvent.keyDown(bar, { key: 'Enter' });
+    expect(within(grid).getByRole('gridcell', { name: 'B3 : 250,00 €' })).toBeInTheDocument();
+    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Enregistrer sur le partage' }));
+    await waitFor(() => expect(within(sharedEditor()).getByText('Enregistré sur le partage.')).toBeInTheDocument());
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    const sent = new Uint8Array(fs.readFileSync(path.join(share, 'Budget atelier.xlsx')));
+    const sheet = (await readZipText(readZip(sent), 'xl/worksheets/sheet1.xml'))!;
+    expect(sheet).toContain('<c r="B3" s="2"><v>250</v></c>');
+    expect(sheet).toContain('<c r="B2" s="2"><v>1234.5</v></c>');
+    expect(await readZipText(readZip(sent), 'xl/sharedStrings.xml')).toBe(await readZipText(readZip(original), 'xl/sharedStrings.xml'));
+    expect(await readZipText(readZip(sent), 'docProps/core.xml')).toContain('<cp:lastModifiedBy>T. Grollier</cp:lastModifiedBy>');
+    // Relu depuis le partage : la formule qui lit B3 attend son recalcul, WorkLogs la montre.
+    await waitFor(() => expect(within(sharedEditor()).getByRole('gridcell', { name: 'B4 : =SOMME(B2:B3)' })).toBeInTheDocument());
+  });
+
+  test('classeur : feuille masquée et protégée, formule fautive signalée avant l’envoi', async () => {
+    const { excelWorkbook } = await import('./test/xlsx-fixture');
+    const original = excelWorkbook();
+    await write('Budget.xlsx', original);
+    render(<App />);
+    const editorRegion = await openFromTree('Budget.xlsx');
+    await within(editorRegion).findByRole('grid', { name: 'Feuille Suivi' });
+    const sheets = within(editorRegion).getByLabelText('Feuille');
+    expect([...(sheets as HTMLSelectElement).options].map((option) => option.text)).toEqual(['Suivi', 'Paramètres (masquée)', 'Résumé']);
+    fireEvent.change(sheets, { target: { value: '1' } });
+    const grid = await within(editorRegion).findByRole('grid', { name: 'Feuille Paramètres' });
+    fireEvent.click(within(grid).getByRole('gridcell', { name: 'A1 : Taux' }));
+    expect(within(editorRegion).getByText(/A1 : Feuille protégée dans Excel/)).toBeInTheDocument();
+
+    fireEvent.change(sheets, { target: { value: '0' } });
+    const suivi = await within(editorRegion).findByRole('grid', { name: 'Feuille Suivi' });
+    fireEvent.click(within(suivi).getByRole('gridcell', { name: 'B3 : 100,00 €' }));
+    fireEvent.change(within(editorRegion).getByLabelText('Contenu de la cellule'), { target: { value: '=SOMME(B2' } });
+    const problems = await within(editorRegion).findByRole('alert', { name: 'À corriger avant l’envoi' });
+    expect(problems).toHaveTextContent(/Suivi!B3 : formule incomprise \(parenthèse/);
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Enregistrer sur le partage' }));
+    await waitFor(() => expect(within(sharedEditor()).getAllByText(/formule incomprise/).length).toBeGreaterThan(1));
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    expect(Buffer.from(fs.readFileSync(path.join(share, 'Budget.xlsx'))).equals(Buffer.from(original))).toBe(true);
+  });
+
   test('choisir une entrée referme le fichier partagé', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Compte rendu' }] });
     await write('notes.md', 'v1\n');

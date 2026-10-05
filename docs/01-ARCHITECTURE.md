@@ -168,7 +168,9 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 
 Formats du dossier partagé, côté front (le serveur ne voit que des octets) : `text-codec.ts`,
 `text-file.ts`, `csv-file.ts`, `zip.ts` (archive, réécriture fidèle), `xml-scan.ts` (XML à
-positions), `docx.ts` + `docx-extensions.ts` (Word, §26).
+positions), `ooxml.ts` (relations, propriétés : commun à Word et Excel), `docx.ts` +
+`docx-extensions.ts` (Word, §26), `xlsx.ts` + `xlsx-format.ts` (formats à la française,
+saisie) + `xlsx-formula.ts` (syntaxe, traduction, dépendances) (Excel, §27).
 
 Les routes `/api/shared/*` ne répondent qu'à cet ordinateur (`localOnly`) et ne fixent jamais
 le chemin du partage (dialogue natif desktop ou `WORKLOGS_SHARED_ROOT`). Elles passent par

@@ -7,7 +7,8 @@ import { requestLeave, setLeaveGuard } from '../shared-leave';
 import { TextFileEditor } from './TextFileEditor';
 import { CsvFileEditor } from './CsvFileEditor';
 import { DocxFileEditor } from './DocxFileEditor';
-import { docxAuthor } from '../docx';
+import { XlsxFileEditor } from './XlsxFileEditor';
+import { officeAuthor } from '../ooxml';
 
 type LocalSave = 'saved' | 'dirty' | 'saving' | 'error';
 const POLL_MS = 5000;
@@ -138,13 +139,13 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
     return () => { alive = false; };
   }, []);
 
-  // Conflit sur un document Word : son dernier auteur dit qui a enregistré entre-temps.
-  const theirsHash = file?.state === 'conflict' && file.ext === 'docx' ? file.theirs?.hash ?? null : null;
+  // Conflit sur un document Word ou un classeur Excel : son dernier auteur dit qui a enregistré entre-temps.
+  const theirsHash = file?.state === 'conflict' && ['docx', 'xlsx', 'xlsm'].includes(file.ext.toLowerCase()) ? file.theirs?.hash ?? null : null;
   useEffect(() => {
     setTheirsAuthor(null);
     if (!theirsHash) return;
     let alive = true;
-    api.sharedContent(theirsHash).then(docxAuthor).then((name) => { if (alive) setTheirsAuthor(name); }).catch(() => {});
+    api.sharedContent(theirsHash).then(officeAuthor).then((name) => { if (alive) setTheirsAuthor(name); }).catch(() => {});
     return () => { alive = false; };
   }, [theirsHash]);
 
@@ -416,7 +417,8 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
 
   const name = file?.name ?? basename(path);
   const kind = file ? editorKind(file.ext) : null;
-  const tooBig = Boolean(loaded && kind !== 'docx' && loaded.bytes.length > MAX_EDITABLE_TEXT);
+  // Les formats zip (Word, Excel) ont leurs propres bornes, à la lecture de l'archive.
+  const tooBig = Boolean(loaded && kind !== 'docx' && kind !== 'xlsx' && loaded.bytes.length > MAX_EDITABLE_TEXT);
   const blocked = (lockBlocks(file?.lock) || (lockForgotten(file?.lock) && !held)) && !override;
   const readOnly = sending ? 'Envoi en cours…'
     : file?.state === 'conflict' ? 'Règle d’abord le conflit.'
@@ -516,13 +518,15 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
       ) : !kind ? (
         <div className="notice">
           <p>
-            WorkLogs ne modifie pas encore les fichiers .{file?.ext || '?'} : les classeurs Excel arrivent dans le prochain lot.
+            WorkLogs ne modifie pas les fichiers .{file?.ext || '?'}.
             {canOpenWith && ' « Ouvrir avec… » les ouvre dans LibreOffice, sur le vrai fichier du partage.'}
           </p>
           <a className="ghost" href={downloadUrl} download={name}>Télécharger cette version</a>
         </div>
       ) : kind === 'docx' ? (
         <DocxFileEditor key={loaded.version} name={name} bytes={loaded.bytes} initialDraft={loaded.draft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} author={author} />
+      ) : kind === 'xlsx' ? (
+        <XlsxFileEditor key={loaded.version} name={name} bytes={loaded.bytes} initialDraft={loaded.draft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} author={author} />
       ) : kind === 'csv' ? (
         <CsvFileEditor key={loaded.version} name={name} bytes={loaded.bytes} initialDraft={loaded.draft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} />
       ) : (

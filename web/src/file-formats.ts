@@ -25,19 +25,21 @@ export interface FileEditorProps {
   readOnly: string | null;
   onEdit(): void;
   handleRef: RefObject<FileEditorHandle | null>;
-  /** Nom inscrit comme dernier auteur (propriétés d'un document Word). */
+  /** Nom inscrit comme dernier auteur (propriétés d'un document Word ou d'un classeur Excel). */
   author?: string;
 }
 
 export class FormatError extends Error {}
 
-export type EditorKind = 'text' | 'markdown' | 'csv' | 'docx';
+export type EditorKind = 'text' | 'markdown' | 'csv' | 'docx' | 'xlsx';
 
 const KINDS: Record<string, EditorKind> = {
   txt: 'text', text: 'text', log: 'text',
   md: 'markdown', markdown: 'markdown',
   csv: 'csv', tsv: 'csv',
   docx: 'docx',
+  // Un classeur à macros s'affiche, en lecture seule (`xlsx.ts`).
+  xlsx: 'xlsx', xlsm: 'xlsx',
 };
 
 /** Éditeur maison pour cette extension, ou `null` (ouvrir avec une autre application). */

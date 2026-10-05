@@ -33,6 +33,28 @@ describe('zip', () => {
     expect(Array.from(await readZipEntry(again, b1))).toEqual([1, 2, 3]);
   });
 
+  it('retire une entrée : répertoire et compteurs à jour, archive relisible par unzip', async () => {
+    const bytes = buildZip([
+      { name: 'a.xml', data: '<a/>' },
+      { name: 'calc.xml', data: '<calc/>' },
+      { name: 'c.xml', data: '<c/>' },
+    ]);
+    const out = await writeZip(readZip(bytes), new Map<string, Uint8Array | null>([['calc.xml', null], ['c.xml', text('<c>2</c>')]]));
+    const again = readZip(out);
+    expect(again.entries.map((entry) => entry.name)).toEqual(['a.xml', 'c.xml']);
+    const eocd = new DataView(again.eocd.buffer, again.eocd.byteOffset);
+    expect([eocd.getUint16(8, true), eocd.getUint16(10, true)]).toEqual([2, 2]);
+    expect(await readZipText(again, 'c.xml')).toBe('<c>2</c>');
+    // L'outil de référence relit l'archive sans avertissement.
+    const { execFileSync } = await import('node:child_process');
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const file = join(mkdtempSync(join(tmpdir(), 'zip-')), 'out.zip');
+    writeFileSync(file, out);
+    expect(execFileSync('unzip', ['-tq', file], { encoding: 'utf8' })).toMatch(/No errors detected/);
+  });
+
   it('refuse ancien format Office, archive chiffrée, zip64 et entrées en double', () => {
     expect(() => readZip(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]))).toThrow(/ancien format/);
     const encrypted = buildZip([{ name: 'a', data: 'x' }]);

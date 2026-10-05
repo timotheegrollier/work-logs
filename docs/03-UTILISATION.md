@@ -181,9 +181,9 @@ monté… ». Le choix est retenu sur cet ordinateur seulement ; la section ne l
 lorsque la colonne Procédures est affichée.
 
 - Cliquer un fichier l'ouvre **au centre**, comme une entrée. `.txt`, `.md`, `.csv`,
-  `.tsv` et **`.docx`** se modifient directement (grille pour les CSV : flèches, Entrée, Tab,
-  F2, copier-coller depuis un tableur, ＋/− ligne et colonne). Les classeurs Excel arrivent
-  au prochain lot.
+  `.tsv`, **`.docx`** et **`.xlsx`** se modifient directement (grille pour les CSV et les
+  classeurs : flèches, Entrée, Tab, F2, copier-coller depuis un tableur ; ＋/− ligne et
+  colonne pour les CSV).
 - **Documents Word** : texte, gras/italique/souligné/barré, style de paragraphe (Normal,
   Titre 1, Titre 2…), alignement, niveau de liste (Tab / Maj+Tab), texte des liens et des
   cellules de tableau. Images, champs, table des matières, zones de texte… s'affichent en
@@ -191,6 +191,21 @@ lorsque la colonne Procédures est affichée.
   Seuls les paragraphes que tu as touchés sont réécrits ; le reste du fichier (styles,
   en-têtes, numérotation, images) ne change pas d'un octet. Un document en suivi des
   modifications s'ouvre en lecture seule.
+- **Classeurs Excel** : une feuille à la fois, choisie dans la liste **Feuille** (les
+  feuilles masquées y sont signalées). Les valeurs s'affichent comme dans Excel
+  (`1 234,50 €`, `05/10/2026`, `12,5 %`) ; la barre « Contenu de la cellule » montre la
+  valeur brute ou la formule. Tape comme dans Excel en français : `12,5`, `12,5 %`, une date
+  dans une cellule de date, `'0123` pour garder un texte, `=SOMME(B2:B10)` ou
+  `=SI(A1>0;"oui";"non")` pour une formule. Une formule mal écrite est signalée sous la
+  grille et l'envoi attend qu'elle soit corrigée. Pour ajouter une ligne ou une colonne,
+  tape dans la ligne ou la colonne libre en bas ou à droite.
+  Seules les cellules que tu as tapées sont réécrites ; graphiques, mises en forme,
+  validations et tableaux ne changent pas. WorkLogs ne calcule pas : les formules qui
+  dépendent de tes cellules affichent leur formule jusqu'à l'ouverture dans Excel ou
+  LibreOffice, qui les recalculent. Restent en lecture seule, avec leur raison quand tu
+  cliques dessus : cellules fusionnées, en-têtes et totaux de tableaux, tableaux croisés,
+  cellules verrouillées d'une feuille protégée, formules recopiées sur plusieurs cellules ;
+  et tout un classeur à macros (`.xlsm`) ou protégé par un mot de passe de modification.
 - Tes modifications s'enregistrent **seules sur cet ordinateur** (« Brouillon sur cet
   ordinateur »). Elles ne partent sur le partage qu'avec **Enregistrer sur le partage**
   ou `Ctrl+S`. Le fichier garde son encodage (Windows-1252 pour un CSV d'Excel), son
@@ -219,8 +234,8 @@ lorsque la colonne Procédures est affichée.
 - Quitter un fichier dont le brouillon n'est pas envoyé (Fermer, une entrée, un autre
   fichier) demande : **Envoyer sur le partage**, **Garder le brouillon ici** ou **Annuler**.
 - **Ouvrir avec…** (application desktop) ouvre le vrai fichier du partage dans LibreOffice
-  ou l'application du système — utile pour les `.docx` et `.xlsx` en attendant leurs
-  éditeurs. Envoie ou abandonne d'abord ton brouillon.
+  ou l'application du système — pour ce que WorkLogs ne modifie pas (en-têtes Word, mise en
+  forme Excel, autres formats). Envoie ou abandonne d'abord ton brouillon.
 - Avec un projet filtré, **Relier … à un dossier…** associe le projet à un sous-dossier du
   partage : la section n'affiche plus que lui. **Délier** rend tout le partage.
 - **Historique sur cet ordinateur** (sous l'éditeur) liste les versions lues, envoyées ou

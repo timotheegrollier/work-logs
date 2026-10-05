@@ -31,6 +31,44 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-10-05 (5) — dossier partagé, lot 4 : classeurs Excel (.xlsx) — v0.45.0
+
+Décision : §27. Éditeur `XlsxFileEditor.tsx` (une feuille à la fois, liste « Feuille ») sur la
+grille des CSV (`SheetGrid` : barre de saisie distincte de l'affichage, cellules en lecture
+seule motivées, nombres à droite). Cœur `xlsx.ts` (lecture, écriture cellule par cellule,
+formules à recalculer), `xlsx-format.ts` (formats d'Excel à la française, saisie),
+`xlsx-formula.ts` (grammaire, traduction français ↔ anglais, dépendances). `ooxml.ts` reprend
+de `docx.ts` ce que Word et Excel partagent ; `zip.ts` sait retirer une entrée
+(`calcChain.xml`). Fixture Excel construite pour les tests : `web/src/test/xlsx-fixture.ts`.
+- **Trouvé en route** : LibreOffice 24.2 **ne recalcule pas** un `.xlsx` à l'ouverture (réglage
+  par défaut) et ignore `fullCalcOnLoad` : après une modification, il montrait l'ancien total.
+  D'où le retrait de la valeur des seules formules qui lisent une cellule modifiée (même
+  feuille, autres feuilles, noms définis, formules recopiées) : vérifié par conversion
+  LibreOffice, tous les totaux justes, y compris `Résumé!A1 = SUM(Suivi!B2:B3)*(1+Taux)`.
+- **Tests** : 212 API, **437 front** (+31 : `xlsx.test.ts`, `xlsx-format.test.ts`,
+  `xlsx-formula.test.ts`, suppression d'entrée dans `zip.test.ts`, cellule protégée dans
+  `SheetGrid.test.tsx`, 2 gestes dans `App.test.tsx`), 44 desktop, 25 scripts, 8 relais,
+  **49 navigateur** (+1 : nombre et formule au clavier puis Ctrl+S), 13 desktop : 788 en tout.
+  Pendant `./scripts/check.sh`, le parcours desktop « masquer le document rend le clavier »
+  (Google, sans rapport avec ce lot) a échoué une fois sur l'écran réel — focus de fenêtre ;
+  relancé : 3/3 seul, puis 13/13 pour toute la suite desktop.
+- **Vu dans un vrai navigateur** (Chromium, 1440 et 412 px) : classeur de test ouvert, montants
+  `1 234,50 €`, dates, pourcentages, booléens et erreurs à la française, en-tête de tableau et
+  formule recopiée grisés, raison affichée sur une cellule fusionnée, formule fautive listée
+  sous la grille ; parcours Playwright : `87,5` puis `=SOMME(B2:B3;10)` au clavier, Ctrl+S,
+  fichier écrit cellule par cellule. Excel : sur le TSE.
+
+### À vérifier par Timo (classeurs Excel)
+
+1. Ouvrir un vrai classeur `.xlsx` de l'équipe : valeurs, dates et montants s'affichent-ils
+   comme dans Excel ? Quelles cellules sont en lecture seule, et la raison est-elle juste ?
+2. Modifier un nombre, un texte, une date, une formule (`=SOMME(…)`) ; envoyer ; ouvrir
+   **dans Excel sur le TSE** : aucune réparation proposée ? Totaux recalculés ? Graphiques,
+   mises en forme conditionnelles, validations, tableaux intacts ?
+3. Même fichier ouvert par « Ouvrir avec… » dans LibreOffice : totaux justes ?
+4. Le faire modifier et réenregistrer par un collègue dans Excel, puis le rouvrir dans WorkLogs.
+5. M'envoyer (sans données de l'entreprise) un `.xlsx` qui pose problème, s'il y en a.
+
 ## Lot du 2026-10-05 (4) — dossier partagé, lot 3 : documents Word (.docx) — v0.44.0
 
 Décision : §26. Éditeur `DocxFileEditor.tsx` ; cœur `docx.ts` (lecture → document Tiptap +

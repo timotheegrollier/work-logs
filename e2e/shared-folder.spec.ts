@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { wordDocx } from '../web/src/test/docx-fixture';
+import { excelWorkbook } from '../web/src/test/xlsx-fixture';
 import { readZip, readZipText } from '../web/src/zip';
 
 /**
@@ -140,4 +141,32 @@ test('document Word : taper dans un paragraphe puis Ctrl+S ne réécrit que lui,
   const start = before.indexOf('<w:p><w:r><w:t xml:space="preserve">Voir </w:t>');
   expect(after.slice(after.indexOf('<w:p><w:r><w:t xml:space="preserve">Voir </w:t>'))).toBe(before.slice(start));
   expect(await readZipText(sent, 'word/styles.xml')).toBe(await readZipText(readZip(original), 'word/styles.xml'));
+});
+
+test('classeur Excel : nombre et formule en français au clavier, Ctrl+S ne réécrit que ces cellules', async ({ page }) => {
+  const original = excelWorkbook();
+  put('budget.xlsx', Buffer.from(original));
+  const editor = await openShared(page, 'budget.xlsx');
+  await expect(editor.getByRole('grid', { name: 'Feuille Suivi' })).toBeVisible();
+
+  await editor.getByRole('gridcell', { name: 'B3 : 100,00 €' }).click();
+  await page.keyboard.type('87,5');
+  await page.keyboard.press('Enter');
+  await expect(editor.getByRole('gridcell', { name: 'B3 : 87,50 €' })).toBeVisible();
+  await page.keyboard.type('=SOMME(B2:B3;10)');
+  await page.keyboard.press('Enter');
+  await expect(editor.getByRole('gridcell', { name: 'B4 : =SOMME(B2:B3;10)' })).toBeVisible();
+  await expect(editor.getByText('Brouillon sur cet ordinateur')).toBeVisible();
+  expect(Buffer.from(fs.readFileSync(path.join(share, 'budget.xlsx'))).equals(Buffer.from(original))).toBe(true);
+
+  await page.keyboard.press('Control+s');
+  await expect(editor.getByText('Enregistré sur le partage.')).toBeVisible();
+  const sent = readZip(new Uint8Array(fs.readFileSync(path.join(share, 'budget.xlsx'))));
+  const before = (await readZipText(readZip(original), 'xl/worksheets/sheet1.xml'))!;
+  expect(await readZipText(sent, 'xl/worksheets/sheet1.xml')).toBe(before
+    .replace('<c r="B3" s="2"><v>100</v></c>', '<c r="B3" s="2"><v>87.5</v></c>')
+    .replace('<c r="B4" s="2"><f>SUM(B2:B3)</f><v>1334.5</v></c>', '<c r="B4" s="2"><f>SUM(B2:B3,10)</f></c>')
+    .replace('<f t="shared" si="0"/><v>200</v>', '<f t="shared" si="0"/>'));
+  expect(sent.byName.has('xl/calcChain.xml')).toBe(false);
+  expect(await readZipText(sent, 'xl/styles.xml')).toBe(await readZipText(readZip(original), 'xl/styles.xml'));
 });
