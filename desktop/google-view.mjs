@@ -217,6 +217,10 @@ export function installGoogleView(window) {
     } catch { /* Les dimensions périmées ne doivent pas fermer le document. */ }
   });
   ipcMain.on(`${channel}:hide`, (event, token) => { if (trusted(event) && active?.token === token) hide(); });
+  // Un champ WorkLogs vient de prendre le focus DOM : l'utilisateur a tranché, on lui
+  // rend le clavier même si une vue Google invisible le retenait encore. `focusin` ne
+  // traverse pas la frontière du document Google, donc jamais de vol à l'envers.
+  ipcMain.on(`${channel}:focus-field`, event => { if (trusted(event)) takeBackKeyboard(); });
   ipcMain.handle(`${channel}:close`, async (event, documentId) => {
     if (!trusted(event) || closing) return false;
     const record = views.get(documentId);

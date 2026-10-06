@@ -20,6 +20,9 @@ Aucune dépendance ajoutée. Ce bilan remplace les limites de la section suivant
   est affiché ; c’est Google qui prépare le document complet.
 - Fermer la fenêtre, changer de document ou demander la copie locale respectent
   l’avertissement « modifications en cours » de Google avant de quitter.
+- **Clavier : avec une vue Google masquée, taper dans un champ WorkLogs produit
+  maintenant effet** — le renderer déclare qu’un champ demande la main (lot
+  `fix/focus-clavier-vue-google`).
 - Un document Google affiché est une application complète qui continue de tourner :
   ouvrir le suivant libère le précédent, sauf s’il est encore en train d’enregistrer.
 
@@ -51,6 +54,7 @@ l’isolation, les dimensions suivies au pixel, l’impression et le refus de qu
 | Documents ouverts dans la session | Une seule vue Google vivante : ouvrir le document suivant libère le précédent. Une vue que Google déclare en cours d’enregistrement survit, sans dialogue, et finira son envoi |
 | Hors ligne | L’éditeur Google ne fonctionne pas ; la copie locale, si |
 | Fusion automatique | Corrections indépendantes seulement ; longueurs de document différentes = conflit |
+| Clavier avec la vue Google masquée | Bug connu : la vue Google conservée en mémoire (masquée ou réduite) conserve le focus système, donc taper dans un champ WorkLogs ne produit rien. Résolu par `fix/focus-clavier-vue-google` (déclaration du clavier au focus du renderer). Testée en e2e desktop. |
 
 ## Connexion Google dans la vue intégrée
 

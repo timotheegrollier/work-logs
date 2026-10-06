@@ -387,3 +387,33 @@ test('Google intégré : masquer le document rend le clavier aux champs WorkLogs
   await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit('focus'));
   await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
 });
+
+// Le cas le plus courant : le document Google masqué tient le clavier, on clique dans
+// un champ de saisie WorkLogs (recherche, nouvelle tâche…) : le renderer le déclare et
+// le clavier revient aux champs. Simule claimKeyboard() → IPC focus-field.
+test('Google intégré : claimKeyboard() depuis un champ rend le clavier aux champs', async () => {
+  await application!.evaluate(({ session }) => session.fromPartition('persist:google-docs').protocol.handle('https', () => new Response(
+    '<div contenteditable="true" role="textbox">Document natif</div>', { headers: { 'content-type': 'text/html' } },
+  )));
+  const keyboard = () => application!.evaluate(({ BrowserWindow, webContents }) => {
+    const google = webContents.getAllWebContents().find(w => w.getURL().includes('/document/d/'));
+    return { worklogs: BrowserWindow.getAllWindows()[0].webContents.isFocused(), google: Boolean(google?.isFocused()) };
+  });
+  const focusGoogle = () => application!.evaluate(({ webContents }) => {
+    webContents.getAllWebContents().find(w => w.getURL().includes('/document/d/'))!.focus();
+  });
+  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.open({ documentId: 'focus-doc', tabId: '', token: 'focus', bounds: { x: 300, y: 300, width: 600, height: 300 } }));
+  await expect.poll(() => application!.context().pages().some(p => p.url().includes('/document/d/focus-doc/'))).toBe(true);
+
+  await focusGoogle();
+  await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
+
+  // Le renderer déclare le clavier : un clic dans un champ éditable WorkLogs.
+  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.claimKeyboard?.());
+  await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
+
+  // Retour de la fenêtre : le clavier est déjà attribué aux champs WorkLogs, le renderer
+  // a tranché — `restoreFocus` ne doit pas le reprendre au document Google.
+  await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit('focus'));
+  await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
+});
