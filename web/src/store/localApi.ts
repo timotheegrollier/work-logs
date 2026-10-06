@@ -980,6 +980,7 @@ export const localApi: Api = {
   pushShared: async () => fail(SHARED_DESKTOP_ONLY),
   mergeShared: async () => fail(SHARED_DESKTOP_ONLY),
   searchShared: async () => fail(SHARED_DESKTOP_ONLY),
+  createShared: async () => fail(SHARED_DESKTOP_ONLY),
   resolveShared: async () => fail(SHARED_DESKTOP_ONLY),
   sharedVersions: async () => fail(SHARED_DESKTOP_ONLY),
   restoreSharedVersion: async () => fail(SHARED_DESKTOP_ONLY),

@@ -424,6 +424,15 @@ export const remoteApi = {
   /** « Fusionner » un conflit : les octets réunis partent avec leur version pour base. */
   mergeShared: (path: string, theirs: string | null, bytes: Uint8Array) =>
     sendShared(`/api/shared/merge?path=${enc(path)}${theirs ? `&theirs=${enc(theirs)}` : ''}`, bytes),
+  /** Fichier neuf (octets du modèle) : créé sans jamais écraser un fichier du même nom. */
+  async createShared(path: string, bytes: Uint8Array) {
+    const res = await fetch('/api/shared/create?path=' + enc(path), {
+      method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: new Uint8Array(bytes),
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
+    return payload as SharedFile;
+  },
   searchShared: (query: string, dir = '') =>
     req<SharedSearch>(`/api/shared/search?q=${enc(query)}${dir ? `&dir=${enc(dir)}` : ''}`),
   pushShared: (path: string, base: string | null, bytes: Uint8Array) =>

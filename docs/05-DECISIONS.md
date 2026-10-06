@@ -942,9 +942,21 @@ qu'un dossier **déjà monté**, pas une adresse `smb://`.
   du montage, `smb-share:domain=…,server=…,share=…,user=…`) : « Se reconnecter » et le
   formulaire « Changer de dossier… » les reprennent — l'adresse par défaut est la dernière
   utilisée, pas une adresse de l'entreprise écrite dans le code.
-- Restent du lot 5 tel que prévu, **à préciser avec Timo** : procédures ↔ partage (ranger
-  une procédure en `.docx` dans le dossier du projet, IA par le pont Markdown §23, contrôle de
-  conventions avant envoi — lesquelles ?).
+- **Créer un fichier dans le partage** (demandé par Timo le 2026-10-06, à la place de « ranger
+  une procédure » ; **aucune convention à contrôler**) : « ＋ Nouveau fichier… » — Word,
+  Excel, Markdown, texte, CSV — dans la racine ou un dossier déplié. Les modèles sont faits
+  dans le front (`web/src/new-files.ts`, zip neuf `createZip`) : minimaux mais complets
+  (types de contenu, relations, styles Normal / Titre 1-3 en identifiants français de Word,
+  feuille « Feuil1 », chaînes partagées), le document est titré de son nom. Texte et CSV en
+  UTF-8 **avec BOM** (Bloc-notes et Excel du TSE lisent les accents), Markdown sans.
+  `POST /create` crée **exclusivement** (`O_EXCL`) : un nom déjà pris est refusé, rien n'est
+  écrasé ; noms refusés par Windows (`< > : " / \ | ? *`, `CON`, point final…) refusés avant.
+  Le fichier existe aussitôt sur le partage (vide), puis s'édite comme les autres. Vérifiés :
+  relus et réécrits par nos éditeurs, ouverts par LibreOffice (titre en `h1`, formule calculée).
+  **Trouvé en route** : écrire plusieurs lignes neuves dans une feuille vide (`<sheetData/>`,
+  comme l'écrit Excel) produisait deux remplacements au même endroit — le garde-fou XML
+  refusait l'envoi ; les lignes ajoutées en fin forment désormais un seul bloc.
+- Restent de l'idée « procédures ↔ partage » : IA par le pont Markdown §23 — à redemander.
 
 **Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :
 `libsmbclient`, dépendance native), ou si l'équipe veut écrire à plusieurs en même temps

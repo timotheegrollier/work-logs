@@ -165,6 +165,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | POST | `/api/shared/resolve` | `{path, choice: mine\|theirs\|both, theirs}` |
 | GET · PUT | `/api/shared/versions?path=` · `/api/shared/settings` | historique local · nom affiché |
 | POST | `/api/shared/merge?path=&theirs=` (octets) | « Fusionner » un conflit : la version réunie part avec la leur pour base (envoi gardé) |
+| POST | `/api/shared/create?path=` (octets) | fichier neuf (modèle fait par le front), création exclusive : `409 SHARED_EXISTS` si le nom est pris |
 | GET | `/api/shared/search?q=&dir=` | noms (sans casse ni accents, tous les mots), borné : 100 résultats, 3 000 dossiers, 8 s ; hors ligne : listes gardées |
 | POST | `/api/shared/versions/:id/restore?path=` | la version devient le brouillon (rien n'est envoyé) |
 | POST · DELETE | `/api/shared/lock?path=` | prendre/renouveler la main (`{take_over}`) · la rendre ; `409 SHARED_LOCKED` / `SHARED_LOCK_STALE` + `{lock}` |
@@ -175,7 +176,8 @@ Formats du dossier partagé, côté front (le serveur ne voit que des octets) : 
 positions), `ooxml.ts` (relations, propriétés : commun à Word et Excel), `docx.ts` +
 `docx-extensions.ts` (Word, §26), `xlsx.ts` + `xlsx-format.ts` (formats à la française,
 saisie) + `xlsx-formula.ts` (syntaxe, traduction, dépendances) (Excel, §27), `shared-merge.ts`
-(fusion à trois voies : à la ligne pour le texte et les CSV, à la cellule pour Excel).
+(fusion à trois voies : à la ligne pour le texte et les CSV, à la cellule pour Excel),
+`new-files.ts` (modèles des fichiers neufs : Word, Excel, Markdown, texte, CSV).
 
 Les routes `/api/shared/*` ne répondent qu'à cet ordinateur (`localOnly`) et ne fixent jamais
 le chemin du partage (dialogue natif desktop ou `WORKLOGS_SHARED_ROOT`). Elles passent par

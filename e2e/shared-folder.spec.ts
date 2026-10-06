@@ -200,3 +200,31 @@ test('chercher dans le partage : taper un mot, ouvrir le fichier trouvé au fond
   await results.getByRole('button', { name: 'Ouvrir Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE/Procédure sauvegarde.md' }).click();
   await expect(page.getByRole('region', { name: 'Fichier partagé' }).getByLabel('Contenu de Procédure sauvegarde.md')).toHaveValue('# Sauvegarde\n');
 });
+
+test('nouveau classeur Excel dans un dossier : créé, rempli au clavier, enregistré par Ctrl+S', async ({ page }) => {
+  fs.mkdirSync(path.join(share, '00. PROCEDURE'));
+  put('00. PROCEDURE/lisez-moi.md', '# x\n');
+  await page.goto('/');
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  if (await page.locator('#workspace-procedures').isHidden()) await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  await page.getByRole('button', { name: 'Dossier 00. PROCEDURE' }).click();
+  await expect(page.getByRole('button', { name: /^Ouvrir lisez-moi\.md/ })).toBeVisible();
+  await page.getByRole('button', { name: '＋ Nouveau fichier…' }).click();
+  const form = page.getByRole('form', { name: 'Nouveau fichier' });
+  await form.getByLabel('Type de fichier').selectOption('xlsx');
+  await form.getByLabel('Nom du fichier').fill('Inventaire');
+  await form.getByRole('button', { name: 'Créer' }).click();
+
+  const editor = page.getByRole('region', { name: 'Fichier partagé' });
+  await expect(editor.getByRole('grid', { name: 'Feuille Feuil1' })).toBeVisible();
+  await editor.getByRole('gridcell', { name: 'A1 : vide' }).click();
+  await page.keyboard.type('Imprimante');
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('3');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Control+s');
+  await expect(editor.getByText('Enregistré sur le partage.')).toBeVisible();
+  const sent = readZip(new Uint8Array(fs.readFileSync(path.join(share, '00. PROCEDURE', 'Inventaire.xlsx'))));
+  expect(await readZipText(sent, 'xl/worksheets/sheet1.xml')).toContain('<sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v>3</v></c></row></sheetData>');
+  expect(await readZipText(sent, 'xl/sharedStrings.xml')).toContain('<si><t>Imprimante</t></si>');
+});

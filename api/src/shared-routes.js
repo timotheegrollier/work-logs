@@ -68,6 +68,8 @@ export function registerSharedRoutes(app, { shared }) {
   // « Fusionner » : les octets réunis par le front, envoyés avec leur version pour base.
   router.post('/merge', raw, handle((req) => shared.merge(text(req.query.path), text(req.query.theirs) || null, bytesOf(req.body))));
   router.get('/search', handle((req) => shared.search(text(req.query.q), text(req.query.dir))));
+  // Fichier neuf (octets du modèle, faits par le front) : créé sans jamais écraser.
+  router.post('/create', raw, handle((req) => shared.create(text(req.query.path), bytesOf(req.body))));
   router.post('/resolve', handle((req) => {
     const body = req.body || {};
     return shared.resolve(text(body.path), text(body.choice), text(body.theirs) || null);

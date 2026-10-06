@@ -257,6 +257,11 @@ lorsque la colonne Procédures est affichée.
   son nom, au fond de l'arborescence (sans casse ni accents : `procedure` trouve
   « 00. PROCEDURE »). Un fichier s'ouvre ; un dossier se déplie dans l'arbre. Les dossiers
   fermés à ton compte sont passés (et comptés).
+- **＋ Nouveau fichier…** crée un document Word, un classeur Excel, une note Markdown, un
+  texte ou un CSV dans le dossier choisi (la racine, ou un dossier que tu as déplié). Il est
+  créé tout de suite sur le partage et s'ouvre au centre ; un nom déjà pris est refusé, rien
+  n'est écrasé. Le document Word commence par son nom en Titre 1, le classeur a une feuille
+  « Feuil1 ».
 - **Hors ligne**, l'arbre reste celui que tu as vu en dernier (« Hors ligne — liste vue à
   10h42 ») : les fichiers gardés sur cet ordinateur s'ouvrent, les autres sont grisés. La
   recherche cherche alors dans ces listes.

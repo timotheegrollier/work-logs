@@ -128,6 +128,29 @@ describe('dossier partagé', () => {
     }
   });
 
+  test('créer un fichier : dans le dossier choisi, jamais par-dessus un fichier existant', async () => {
+    fs.mkdirSync(path.join(share, '00. PROCEDURE'));
+    const create = async (rel, contents) => {
+      const res = await fetch(`${api.base}/api/shared/create?path=${q(rel)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: Buffer.from(contents),
+      });
+      return { status: res.status, body: await res.json() };
+    };
+    const made = await create('00. PROCEDURE/Procédure sauvegarde.md', '# Procédure sauvegarde\n\n');
+    assert.equal(made.status, 200);
+    assert.equal(read('00. PROCEDURE/Procédure sauvegarde.md'), '# Procédure sauvegarde\n\n');
+    assert.equal(made.body.base_hash, sha256('# Procédure sauvegarde\n\n'), 'lu comme à l’ouverture : version de base');
+    // Le même nom : refusé, l'existant intact.
+    const again = await create('00. PROCEDURE/Procédure sauvegarde.md', 'autre');
+    assert.equal(again.status, 409);
+    assert.equal(again.body.code, 'SHARED_EXISTS');
+    assert.equal(read('00. PROCEDURE/Procédure sauvegarde.md'), '# Procédure sauvegarde\n\n');
+    assert.equal((await create('00. PROCEDURE/Rapport?.md', 'x')).body.code, 'SHARED_BAD_NAME');
+    assert.equal((await create('00. PROCEDURE/~$brouillon.docx', 'x')).body.code, 'SHARED_BAD_NAME');
+    assert.equal((await create('Absent/notes.md', 'x')).status, 404);
+    assert.equal((await create('../dehors.md', 'x')).status, 400);
+  });
+
   test('refuse les chemins qui sortent du partage', async () => {
     fs.symlinkSync(os.tmpdir(), path.join(share, 'dehors'));
     for (const bad of ['../x', '/etc/passwd', 'a//b', 'a\\b']) {

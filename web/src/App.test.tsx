@@ -2233,6 +2233,50 @@ describe('dossier partagé', () => {
     expect(await screen.findByRole('button', { name: /^Ouvrir notes\.md/ })).toBeInTheDocument();
   });
 
+  test('nouveau fichier : créé dans le dossier déplié, ouvert au centre ; un nom pris n’écrase rien', async () => {
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, '00. PROCEDURE'));
+    await write('00. PROCEDURE/existant.md', 'à garder\n');
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Dossier 00. PROCEDURE' }));
+    await screen.findByRole('button', { name: /^Ouvrir existant\.md/ });
+
+    fireEvent.click(screen.getByRole('button', { name: '＋ Nouveau fichier…' }));
+    const form = screen.getByRole('form', { name: 'Nouveau fichier' });
+    expect(within(form).getByLabelText('Dossier du nouveau fichier')).toHaveValue('00. PROCEDURE');
+    fireEvent.change(within(form).getByLabelText('Type de fichier'), { target: { value: 'md' } });
+    fireEvent.change(within(form).getByLabelText('Nom du fichier'), { target: { value: 'Procédure sauvegarde' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Créer' }));
+    const editorRegion = await screen.findByRole('region', { name: 'Fichier partagé' });
+    expect(await within(editorRegion).findByLabelText('Contenu de Procédure sauvegarde.md')).toHaveValue('# Procédure sauvegarde\n\n');
+    expect(await read('00. PROCEDURE/Procédure sauvegarde.md')).toBe('# Procédure sauvegarde\n\n');
+    expect(screen.getByRole('button', { name: /^Ouvrir Procédure sauvegarde\.md/ })).toBeInTheDocument();
+
+    // Un nom déjà pris : refusé, l'existant intact.
+    fireEvent.click(screen.getByRole('button', { name: '＋ Nouveau fichier…' }));
+    const again = screen.getByRole('form', { name: 'Nouveau fichier' });
+    fireEvent.change(within(again).getByLabelText('Type de fichier'), { target: { value: 'md' } });
+    fireEvent.change(within(again).getByLabelText('Nom du fichier'), { target: { value: 'existant' } });
+    fireEvent.click(within(again).getByRole('button', { name: 'Créer' }));
+    expect(await screen.findByText('« existant.md » existe déjà dans ce dossier : rien n’a été écrasé. Choisis un autre nom.')).toBeInTheDocument();
+    expect(await read('00. PROCEDURE/existant.md')).toBe('à garder\n');
+  });
+
+  test('nouveau document Word à la racine : il s’ouvre dans l’éditeur Word, titré de son nom', async () => {
+    await write('notes.md', 'x');
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: '＋ Nouveau fichier…' }));
+    const form = screen.getByRole('form', { name: 'Nouveau fichier' });
+    expect(within(form).getByLabelText('Type de fichier')).toHaveValue('docx');
+    fireEvent.change(within(form).getByLabelText('Nom du fichier'), { target: { value: 'Compte rendu' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Créer' }));
+    const editorRegion = await screen.findByRole('region', { name: 'Fichier partagé' });
+    const content = await within(editorRegion).findByRole('textbox', { name: 'Contenu du document Word' });
+    expect(content.querySelector('h1')).toHaveTextContent('Compte rendu');
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    expect(fs.existsSync(path.join(share, 'Compte rendu.docx'))).toBe(true);
+  });
+
   test('l’historique restaure une ancienne version en brouillon, puis l’envoi la remet sur le partage', async () => {
     await write('notes.md', 'version 1\n');
     render(<App />);

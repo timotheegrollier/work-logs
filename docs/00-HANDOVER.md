@@ -41,6 +41,24 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-10-06 (2) — créer des fichiers dans le partage — v0.47.0
+
+Demande de Timo : pas de conventions à contrôler, mais **créer des fichiers** (docx, xlsx, md…)
+dans le dossier. « ＋ Nouveau fichier… » dans la section : type, nom, dossier (racine ou dossier
+déplié). Modèles `web/src/new-files.ts` (zip neuf `createZip`), route `POST /api/shared/create`
+(création exclusive, noms Windows vérifiés). Décision : §25, « Lot 5 ».
+- **Trouvé en route** : plusieurs lignes neuves dans une feuille vide (`<sheetData/>`) →
+  XML invalide, bloqué par le garde-fou ; corrigé (un seul bloc), test de régression.
+- **Vérifié** : modèles relus et réécrits par nos éditeurs ; LibreOffice ouvre le `.docx`
+  (titre en `h1`) et le `.xlsx` (valeurs, formule calculée) ; parcours Playwright : nouveau
+  classeur dans un dossier, rempli au clavier, Ctrl+S. **À vérifier sur le TSE** : ouvrir dans
+  Word et Excel un fichier créé par WorkLogs — aucune réparation proposée ?
+- **Tests** : 219 API (+1 : création), **460 front** (+7 : `new-files.test.ts`, feuille vide
+  dans `xlsx.test.ts`, 2 gestes dans `App.test.tsx`), 48 desktop, 29 scripts, 8 relais,
+  **52 navigateur** (+1 : nouveau classeur, Ctrl+S), 15 desktop : **831**. Le test « démarrage
+  d'un worker » fait trois essais à 30 ms (l'ancien code échoue aux trois) : un seul essai à
+  20 ms a échoué une fois sous forte charge (charge système 10, autre session en parallèle).
+
 ## Lot du 2026-10-06 — dossier partagé, lot 5 : fusionner, chercher, l'arbre hors ligne — v0.46.0
 
 Décision : §25, « Lot 5 ». Front : `shared-merge.ts` (fusion à trois voies : à la ligne pour le

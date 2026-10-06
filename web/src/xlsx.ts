@@ -722,6 +722,7 @@ function patchSheet(sheet: XlsxSheet, changes: Change[], strings: StringTable, s
     byRow.set(change.row, [...(byRow.get(change.row) ?? []), change]);
   }
   const existingRows = [...sheet.rows.values()].sort((a, b) => a.index - b.index);
+  const appended: string[] = [];
   for (const [rowIndex, rowChanges] of [...byRow.entries()].sort((a, b) => a[0] - b[0])) {
     rowChanges.sort((a, b) => a.col - b.col);
     const row = sheet.rows.get(rowIndex);
@@ -731,8 +732,9 @@ function patchSheet(sheet: XlsxSheet, changes: Change[], strings: StringTable, s
       const text = `<${p}row r="${rowIndex + 1}">${cells}</${p}row>`;
       const next = existingRows.find((candidate) => candidate.index > rowIndex);
       if (next) splices.push({ start: next.el.start, end: next.el.start, text });
-      else if (sheetData.selfClosing) splices.push({ start: sheetData.start, end: sheetData.end, text: `<${sheetData.name}>${text}</${sheetData.name}>` });
-      else splices.push({ start: sheetData.closeStart, end: sheetData.closeStart, text });
+      // Après la dernière ligne : réunies en un seul bloc (une feuille vide, `<sheetData/>`,
+      // n'a qu'une balise à remplacer — deux remplacements du même endroit la casseraient).
+      else appended.push(text);
       continue;
     }
     const sourceCells = elements(row.el).filter((child) => child.ns === S && child.local === 'c');
@@ -754,7 +756,11 @@ function patchSheet(sheet: XlsxSheet, changes: Change[], strings: StringTable, s
       splices.push({ start: at, end: at, text: cellXml(sheet, change, strings) });
     }
   }
-  // Dimension de la feuille : élargie aux nouvelles cellules.
+  if (appended.length) {
+    if (sheetData.selfClosing) splices.push({ start: sheetData.start, end: sheetData.end, text: `<${sheetData.name}>${appended.join('')}</${sheetData.name}>` });
+    else splices.push({ start: sheetData.closeStart, end: sheetData.closeStart, text: appended.join('') });
+  }
+    // Dimension de la feuille : élargie aux nouvelles cellules.
   const dimension = findChild(sheet.root, S, 'dimension');
   const range = dimension ? parseRange(dimension.attrs.ref ?? '') : null;
   const filled = changes.filter((change) => change.value.kind !== 'empty');

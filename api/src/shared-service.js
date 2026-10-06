@@ -135,6 +135,16 @@ export function relativeParts(rel, { allowRoot = false } = {}) {
 const parentOf = (rel) => (rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '');
 const joinRel = (dir, name) => (dir ? `${dir}/${name}` : name);
 
+/** Ce que Windows (le TSE) refuserait dans un nom de fichier, ou `null`. */
+export function windowsNameProblem(name) {
+  if (!name || !name.trim()) return 'Donne un nom au fichier.';
+  if (/[<>:"/\\|?*\x00-\x1f]/.test(name)) return 'Caractère refusé par Windows dans ce nom (< > : " / \\ | ? *).';
+  if (/[. ]$/.test(name)) return 'Un nom de fichier ne peut pas finir par un point ou une espace sous Windows.';
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(name)) return 'Nom réservé par Windows.';
+  if (name.length > 200) return 'Nom trop long (200 caractères au plus).';
+  return null;
+}
+
 const FILE_COLUMNS = ['base_hash', 'seen_hash', 'seen_size', 'seen_mtime_ms', 'template_hash', 'draft_json',
   'draft_updated_at', 'send_hash', 'send_requested', 'send_started_at', 'state', 'note', 'theirs_hash',
   'theirs_deleted', 'lock_nonce', 'lock_renewed_at'];
@@ -976,6 +986,40 @@ export function createSharedService({
         });
         return attempt(rel);
       });
+    },
+
+    /**
+     * Fichier neuf dans un dossier du partage (Word, Excel, note…, octets du modèle
+     * faits par le front). Création exclusive : un fichier du même nom n'est jamais
+     * écrasé. Il est ensuite lu comme à l'ouverture (version de base).
+     */
+    async create(rel, input) {
+      const parts = relativeParts(rel);
+      const name = parts[parts.length - 1];
+      const problem = windowsNameProblem(name);
+      if (problem) throw new SharedError(400, 'SHARED_BAD_NAME', problem);
+      if (isTechnicalName(name)) throw new SharedError(400, 'SHARED_BAD_NAME', 'Ce nom est celui d’un fichier technique : choisis-en un autre.');
+      const bytes = Buffer.isBuffer(input) ? input : Buffer.from(input ?? []);
+      if (bytes.length > MAX_FILE) throw new SharedError(413, 'SHARED_TOO_BIG', 'Fichier trop volumineux (100 Mo au plus).');
+      const dir = parentOf(rel);
+      let parent;
+      try {
+        parent = await locate(dir, { allowRoot: true });
+      } catch (error) {
+        if (error?.code === 'ENOENT') throw new SharedError(404, 'SHARED_NOT_FOUND', 'Dossier introuvable sur le dossier partagé.');
+        throw toSharedError(error);
+      }
+      let created;
+      try {
+        created = await io.call('createExclusive', [path.join(parent.abs, name), bytes], { timeoutMs: transferTimeout(bytes.length) });
+      } catch (error) {
+        if (error?.code === 'EACCES' || error?.code === 'EPERM') {
+          throw new SharedError(403, 'SHARED_DENIED', 'Le compte avec lequel le partage est monté n’a pas le droit de créer un fichier dans ce dossier.');
+        }
+        throw toSharedError(error);
+      }
+      if (!created.created) throw new SharedError(409, 'SHARED_EXISTS', `« ${name} » existe déjà dans ce dossier : rien n’a été écrasé. Choisis un autre nom.`);
+      return this.file(rel);
     },
 
     /**

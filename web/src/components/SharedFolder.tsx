@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, type Project, type SharedEntry, type SharedListing, type SharedSearch, type SharedStatus } from '../lib';
 import { badgesFor, REACH_HELP, REACH_LABELS, sinceLabel } from '../shared-session';
 import { editorKind } from '../file-formats';
+import { fileNameProblem, NEW_FILE_TYPES, newFileBytes, withExtension, type NewFileType } from '../new-files';
 
 const OPEN_KEY = 'worklogs-shared-open';
 const POLL_MS = 30_000;
@@ -48,6 +49,9 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState<SharedSearch | null>(null);
   const [searching, setSearching] = useState(false);
+  /** « Nouveau fichier » : type, nom, dossier (la racine ou un dossier déplié de l'arbre). */
+  const [creating, setCreating] = useState<{ ext: NewFileType['ext']; name: string; dir: string } | null>(null);
+  const [lastOpened, setLastOpened] = useState('');
   useEffect(() => { setLinking(false); }, [projectId]);
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
@@ -185,6 +189,32 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
     }
   };
 
+  /** Crée le fichier sur le partage (jamais par-dessus un autre), puis l'ouvre au centre. */
+  const createFile = async () => {
+    if (!creating) return;
+    const problem = fileNameProblem(creating.name);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    const name = withExtension(creating.name, creating.ext);
+    const rel = creating.dir ? `${creating.dir}/${name}` : name;
+    setBusy(true);
+    setError('');
+    try {
+      const bytes = await newFileBytes(creating.ext, { title: name.slice(0, name.length - creating.ext.length - 1), author: status?.displayName ?? '' });
+      await api.createShared(rel, bytes);
+      setCreating(null);
+      if (creating.dir) setExpanded((current) => new Set([...current, creating.dir]));
+      await loadDir(creating.dir);
+      onOpen(rel);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   /** Un dossier trouvé : l'arbre s'ouvre jusqu'à lui. */
   const reveal = (dir: string) => {
     const start = searchRoot ? searchRoot.split('/').length : 0;
@@ -201,6 +231,7 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
       if (next.has(dir)) next.delete(dir);
       else {
         next.add(dir);
+        setLastOpened(dir);
         void loadDir(dir);
       }
       return next;
@@ -361,6 +392,41 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
             )}
             {connecting && !showConnect && <p className="notice" role="status">Connexion à {connecting}… saisis ton mot de passe dans la fenêtre « Authentification requise » si elle s’ouvre (parfois derrière WorkLogs).</p>}
             {error && <p className="error" role="alert">{error}</p>}
+            {creating ? (
+              <form className="shared-new" aria-label="Nouveau fichier" onSubmit={(event) => { event.preventDefault(); void createFile(); }}>
+                <label>
+                  Type
+                  <select aria-label="Type de fichier" value={creating.ext} onChange={(event) => setCreating({ ...creating, ext: event.target.value as NewFileType['ext'] })}>
+                    {NEW_FILE_TYPES.map((type) => <option key={type.ext} value={type.ext}>{type.label}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Nom
+                  <input aria-label="Nom du fichier" placeholder="Procédure sauvegarde" value={creating.name} autoFocus onChange={(event) => setCreating({ ...creating, name: event.target.value })} />
+                </label>
+                <label>
+                  Dans
+                  <select aria-label="Dossier du nouveau fichier" value={creating.dir} onChange={(event) => setCreating({ ...creating, dir: event.target.value })}>
+                    <option value={root}>{root ? root.split('/').pop() : status.label}</option>
+                    {[...expanded].filter((dir) => dir !== root && (!root || dir.startsWith(root + '/'))).sort().map((dir) => (
+                      <option key={dir} value={dir}>{root ? dir.slice(root.length + 1) : dir}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="shared-project-link">
+                  <button className="task-primary" type="submit" disabled={busy || !creating.name.trim()}>Créer</button>
+                  <button className="ghost" type="button" onClick={() => { setCreating(null); setError(''); }}>Annuler</button>
+                </div>
+              </form>
+            ) : reach === 'ok' && (
+              <button
+                className="ghost shared-change"
+                disabled={busy}
+                onClick={() => setCreating({ ext: 'docx', name: '', dir: lastOpened && expanded.has(lastOpened) && (!root || lastOpened.startsWith(root + '/')) ? lastOpened : root })}
+              >
+                ＋ Nouveau fichier…
+              </button>
+            )}
             <input
               className="shared-search"
               type="search"

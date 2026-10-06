@@ -178,6 +178,7 @@ export function miniWorkbook(sheetData: string): Uint8Array {
     { name: '_rels/.rels', data: `<Relationships xmlns="${PKG}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
     { name: 'xl/workbook.xml', data: `<workbook xmlns="${MAIN}" xmlns:r="${REL}"><sheets><sheet name="Feuil1" sheetId="1" r:id="rId1"/></sheets></workbook>` },
     { name: 'xl/_rels/workbook.xml.rels', data: `<Relationships xmlns="${PKG}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>` },
-    { name: 'xl/worksheets/sheet1.xml', data: `<worksheet xmlns="${MAIN}"><sheetData>${sheetData}</sheetData></worksheet>` },
+    // Feuille vide : `<sheetData/>`, comme l'écrit Excel.
+    { name: 'xl/worksheets/sheet1.xml', data: `<worksheet xmlns="${MAIN}">${sheetData ? `<sheetData>${sheetData}</sheetData>` : '<sheetData/>'}</worksheet>` },
   ]);
 }
