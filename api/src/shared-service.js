@@ -43,6 +43,11 @@ export function mountName(type, root) {
 
 const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
+/** Comparaison de noms sans casse ni accents (« procedure » trouve « Procédure »). */
+const fold = (text) => String(text ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+const SEARCH = { results: 100, dirs: 3000, depth: 12 };
+/** Dossiers dont la dernière liste est gardée pour l'arbre hors ligne. */
+const MAX_REMEMBERED_DIRS = 2000;
 const isoOf = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : null);
 
 export class SharedError extends Error {
@@ -149,6 +154,7 @@ export function createSharedService({
   instance = '',
   user = os.userInfo().username,
   host = os.hostname(),
+  searchMs = 8000,
 }) {
   fs.mkdirSync(blobDir, { recursive: true });
 
@@ -433,6 +439,50 @@ export function createSharedService({
     }
     : null);
 
+  // ------------------------------------------------- arbre gardé (hors ligne)
+  /** Dernière liste vue d'un dossier : l'arbre reste parcourable quand le partage ne répond plus. */
+  function rememberDir(dir, entries) {
+    const json = JSON.stringify(entries.map(({ name, type, size, mtime, ext }) => ({ name, type, size, mtime, ext })));
+    const now = new Date(clock()).toISOString();
+    db.prepare(`INSERT INTO shared_dirs (rel_dir, entries_json, listed_at) VALUES (?,?,?)
+      ON CONFLICT(rel_dir) DO UPDATE SET entries_json=excluded.entries_json, listed_at=excluded.listed_at`).run(dir, json, now);
+    const count = db.prepare('SELECT COUNT(*) n FROM shared_dirs').get().n;
+    if (count > MAX_REMEMBERED_DIRS) {
+      db.prepare('DELETE FROM shared_dirs WHERE rel_dir IN (SELECT rel_dir FROM shared_dirs ORDER BY listed_at LIMIT ?)').run(count - MAX_REMEMBERED_DIRS);
+    }
+  }
+  function rememberedDir(dir) {
+    const row = db.prepare('SELECT entries_json, listed_at FROM shared_dirs WHERE rel_dir=?').get(dir);
+    if (!row) return null;
+    try {
+      return { entries: JSON.parse(row.entries_json), listedAt: row.listed_at };
+    } catch {
+      return null;
+    }
+  }
+  const forgetDirs = () => db.prepare('DELETE FROM shared_dirs').run();
+
+  /** Hors ligne : la dernière liste vue, avec ce qui est gardé ici ; un fichier sans copie locale est signalé. */
+  function offlineEntries(dir) {
+    const kept = cachedEntries(dir);
+    const remembered = rememberedDir(dir);
+    if (!remembered) return { entries: kept, listedAt: null };
+    const rows = new Map(db.prepare('SELECT * FROM shared_files').all()
+      .filter((row) => parentOf(row.rel_path) === dir).map((row) => [row.rel_path, row]));
+    const byPath = new Map(kept.map((entry) => [entry.path, entry]));
+    const entries = remembered.entries.map((entry) => {
+      const rel = joinRel(dir, entry.name);
+      if (entry.type === 'file' && byPath.has(rel)) return byPath.get(rel);
+      const row = rows.get(rel);
+      return {
+        ...entry, path: rel, lock: null, local: entry.type === 'file' ? localState(row ?? null, null) : null,
+        cached: false, ...(entry.type === 'file' ? { unavailable: true } : {}),
+      };
+    });
+    for (const entry of kept) if (!entries.some((candidate) => candidate.path === entry.path)) entries.push(entry);
+    return { entries, listedAt: remembered.listedAt };
+  }
+
   function cachedEntries(dir) {
     return db.prepare('SELECT * FROM shared_files').all()
       .filter((row) => parentOf(row.rel_path) === dir && hasBlob(row.seen_hash || row.base_hash))
@@ -692,6 +742,7 @@ export function createSharedService({
       setSetting('shared.fs_type', type);
       setSetting('shared.address', address);
       setSetting('shared.account', address ? account : null);
+      forgetDirs();
       mount = { at: -Infinity, root: null, reach: 'unconfigured', real: null, type: null };
       return this.status();
     },
@@ -699,6 +750,7 @@ export function createSharedService({
     async forget() {
       if (!configurable) throw new SharedError(403, 'SHARED_NOT_CONFIGURABLE', 'Le dossier partagé est fixé par la configuration.');
       for (const key of ['shared.root', 'shared.fs_root', 'shared.fs_type', 'shared.address', 'shared.account']) setSetting(key, null);
+      forgetDirs();
       mount = { at: -Infinity, root: null, reach: 'unconfigured', real: null, type: null };
       return this.status();
     },
@@ -717,7 +769,8 @@ export function createSharedService({
         if (isOffline(error)) {
           relativeParts(dir, { allowRoot: true });
           const { reach: current = 'offline' } = error.extra ?? {};
-          return { status: 503, body: { error: toSharedError(error).message, code: 'SHARED_OFFLINE', reach: current, dir, entries: cachedEntries(dir), truncated: false } };
+          const { entries, listedAt } = offlineEntries(dir);
+          return { status: 503, body: { error: toSharedError(error).message, code: 'SHARED_OFFLINE', reach: current, dir, entries, listed_at: listedAt, truncated: false } };
         }
         throw toSharedError(error);
       }
@@ -748,7 +801,7 @@ export function createSharedService({
         }
         const rows = new Map(db.prepare('SELECT * FROM shared_files').all()
           .filter((row) => parentOf(row.rel_path) === dir).map((row) => [row.rel_path, row]));
-        return {
+        const listing = {
           dir,
           reach: 'ok',
           truncated: visible.length > MAX_LIST || total > MAX_SCAN,
@@ -766,6 +819,8 @@ export function createSharedService({
             };
           }),
         };
+        rememberDir(dir, listing.entries);
+        return listing;
       } catch (error) {
         // Dossier qu'on voit mais qu'on ne peut pas ouvrir : c'est le compte du montage
         // (souvent l'accès invité d'un partage Windows), pas le fichier, qui est en cause.
@@ -874,6 +929,104 @@ export function createSharedService({
         });
         return attempt(rel);
       });
+    },
+
+    /**
+     * « Fusionner » : tes modifications et les leurs réunies (par le front, qui
+     * connaît les formats). Les octets fusionnés deviennent ta version et partent
+     * avec **leur** version pour base : l'envoi reste gardé, une troisième version
+     * arrivée entre-temps serait encore détectée.
+     */
+    merge(rel, theirs, input) {
+      relativeParts(rel);
+      const bytes = Buffer.isBuffer(input) ? input : Buffer.from(input ?? []);
+      if (!bytes.length) throw new SharedError(400, 'SHARED_EMPTY', 'Rien à envoyer.');
+      if (bytes.length > MAX_FILE) throw new SharedError(413, 'SHARED_TOO_BIG', 'Fichier trop volumineux (100 Mo au plus).');
+      return exclusive(rel, async () => {
+        const row = getRow(rel);
+        if (row?.state !== 'conflict') throw new SharedError(409, 'SHARED_NO_CONFLICT', 'Aucun conflit à régler sur ce fichier.');
+        if (row.theirs_deleted || !row.theirs_hash) throw new SharedError(409, 'SHARED_NO_MERGE', 'Le fichier a été supprimé du partage : rien à fusionner.');
+        if ((theirs || null) !== row.theirs_hash) throw new SharedError(409, 'SHARED_STALE', 'Le fichier a encore changé : rouvre-le avant de fusionner.');
+        const hash = sha256(bytes);
+        storeBlob(hash, bytes);
+        addVersion(rel, hash, bytes.length, 'merged', 'pending');
+        const now = new Date(clock()).toISOString();
+        save(rel, {
+          // L'éditeur repart des octets fusionnés (modèle vide), comme après « Restaurer ».
+          draft_json: 'null', draft_updated_at: now, template_hash: hash,
+          base_hash: row.theirs_hash, send_hash: hash, send_requested: 1, send_started_at: now,
+          state: 'pending', note: '', theirs_hash: null, theirs_deleted: 0,
+        });
+        return attempt(rel);
+      });
+    },
+
+    /**
+     * Fichiers et dossiers dont le nom contient tous les mots cherchés, de `dir`
+     * vers le bas. Borné (temps, dossiers, profondeur) : un partage d'entreprise
+     * est grand et lent. Les dossiers fermés au compte du montage sont passés.
+     * Hors ligne : dans les dernières listes vues.
+     */
+    async search(query, dir = '') {
+      relativeParts(dir, { allowRoot: true });
+      const words = fold(query).split(/\s+/).filter(Boolean);
+      const empty = { query, dir, results: [], partial: false, offline: false, denied: 0 };
+      if (!words.length || words.join('').length < 2) return empty;
+      const matches = (name) => {
+        const folded = fold(name);
+        return words.every((word) => folded.includes(word));
+      };
+      const results = [];
+      const seen = new Set();
+      const add = (rel, name, isDir) => {
+        if (results.length < SEARCH.results && !seen.has(rel) && matches(name)) {
+          seen.add(rel);
+          results.push({ name, path: rel, type: isDir ? 'dir' : 'file', dir: parentOf(rel), ext: isDir ? '' : path.extname(name).slice(1).toLowerCase() });
+        }
+      };
+      const fromMemory = () => {
+        for (const row of db.prepare('SELECT rel_dir, entries_json FROM shared_dirs').all()) {
+          if (dir && row.rel_dir !== dir && !row.rel_dir.startsWith(dir + '/')) continue;
+          let entries = [];
+          try { entries = JSON.parse(row.entries_json); } catch {}
+          for (const entry of entries) add(joinRel(row.rel_dir, entry.name), entry.name, entry.type === 'dir');
+        }
+        results.sort((a, b) => collator.compare(a.path, b.path));
+        return { ...empty, results, partial: true, offline: true };
+      };
+      let start;
+      try {
+        start = await locate(dir, { allowRoot: true });
+      } catch (error) {
+        if (isOffline(error)) return fromMemory();
+        throw toSharedError(error);
+      }
+      const queue = [{ rel: dir, abs: start.abs, depth: 0 }];
+      const started = Date.now();
+      let visited = 0;
+      let denied = 0;
+      while (queue.length && results.length < SEARCH.results && visited < SEARCH.dirs && Date.now() - started < searchMs) {
+        const { rel, abs, depth } = queue.shift();
+        visited++;
+        let entries;
+        try {
+          ({ entries } = await io.call('names', [abs, MAX_SCAN], { timeoutMs: 15_000 }));
+        } catch (error) {
+          if (error?.code === 'EACCES' || error?.code === 'EPERM') { denied++; continue; }
+          if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') continue;
+          // Le partage tombe en cours de route : ce qui est trouvé, complété par les listes gardées.
+          if (isOffline(error)) return fromMemory();
+          throw toSharedError(error);
+        }
+        entries.sort((a, b) => collator.compare(a.name, b.name));
+        for (const entry of entries) {
+          if (entry.isSymlink || !(entry.isDir || entry.isFile) || isTechnicalName(entry.name)) continue;
+          const child = joinRel(rel, entry.name);
+          add(child, entry.name, entry.isDir);
+          if (entry.isDir && depth < SEARCH.depth) queue.push({ rel: child, abs: path.join(abs, entry.name), depth: depth + 1 });
+        }
+      }
+      return { ...empty, results, partial: queue.length > 0, denied };
     },
 
     resolve(rel, choice, theirs) {

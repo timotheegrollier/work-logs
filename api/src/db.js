@@ -244,6 +244,11 @@ CREATE TABLE IF NOT EXISTS shared_versions (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_shared_versions_path ON shared_versions(rel_path, created_at);
+CREATE TABLE IF NOT EXISTS shared_dirs (
+  rel_dir TEXT PRIMARY KEY,
+  entries_json TEXT NOT NULL,
+  listed_at TEXT NOT NULL
+);
 `;
 
 export function openDb(dbPath, { withSeed = true } = {}) {

@@ -111,6 +111,19 @@ describe('entrées/sorties bornées', () => {
     }
   });
 
+  test('le démarrage d’un worker ne compte pas dans le délai : une machine chargée ne fait pas « injoignable »', async () => {
+    // Un worker met ~70 ms à démarrer, bien plus sous charge : avec un délai de 20 ms,
+    // compter son démarrage ferait croire le partage injoignable.
+    const io = createSharedIo({ timeoutMs: 20 });
+    try {
+      const stat = await io.call('stat', [os.tmpdir()]);
+      assert.equal(stat.isDir, true);
+      assert.equal(io.state().breaker, 'closed');
+    } finally {
+      await io.close();
+    }
+  });
+
   test('au-delà de deux workers figés, l’état passe à « bloqué »', async () => {
     const io = createSharedIo({ timeoutMs: 100, maxStuck: 2 });
     try {

@@ -913,6 +913,30 @@ qu'un dossier **déjà monté**, pas une adresse `smb://`.
     monté » au lieu de « n'existe pas » à la connexion ; sous le dossier lui-même dans l'arbre
     (`SHARED_DENIED`), au lieu d'un « Lecture… » sans fin, avec « Se connecter avec mon compte… ».
 
+**Lot 5 (2026-10-06) — fusionner, chercher, l'arbre hors ligne.**
+- **Fusionner** (`web/src/shared-merge.ts`) : fusion à trois voies — départ, ma version, la
+  leur — à la **ligne** pour le texte et les CSV (fins de ligne et encodage gardés), à la
+  **cellule** pour les classeurs (mes saisies posées sur leur fichier par `writeXlsx`, si
+  leurs cellules n'ont pas bougé). Proposée seulement quand rien ne se touche ; deux lignes
+  voisines modifiées chacune de son côté ne se touchent pas (une ligne de CSV = un
+  enregistrement), deux insertions au même endroit si (l'ordre serait arbitraire). Le calcul
+  est fait **dans le front** (il connaît les formats) ; le serveur (`POST /merge`) range les
+  octets réunis comme « Fusion » dans l'historique et les **envoie avec leur version pour
+  base** : l'écriture reste gardée, une troisième version arrivée entre-temps serait détectée.
+  Pas de fusion des `.docx` : la structure d'un document ne se fusionne pas proprement à la
+  ligne, il faudrait un éditeur de différences — on garde les trois choix.
+- **Chercher** (`GET /search`) : noms seulement (pas le contenu : il faudrait lire chaque
+  fichier par le réseau), sans casse ni accents, tous les mots. Parcours **borné** (100
+  résultats, 3 000 dossiers, profondeur 12, 8 s) avec une opération du worker qui ne lit que
+  noms et types (`names`), sans `stat` par fichier : sur GVFS chaque `stat` est un aller-retour
+  réseau. Dossiers fermés au compte du montage passés et comptés.
+- **Arbre hors ligne** : chaque liste vue est gardée (`shared_dirs`, 2 000 dossiers au plus,
+  table de la machine, jamais exportée, oubliée quand on change de partage). Hors ligne, un
+  dossier affiche sa dernière liste ; un fichier sans copie locale y est grisé.
+- Restent du lot 5 tel que prévu, **à préciser avec Timo** : procédures ↔ partage (ranger
+  une procédure en `.docx` dans le dossier du projet, IA par le pont Markdown §23, contrôle de
+  conventions avant envoi — lesquelles ?).
+
 **Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :
 `libsmbclient`, dépendance native), ou si l'équipe veut écrire à plusieurs en même temps
 (suite bureautique en ligne : Google, Microsoft 365, OnlyOffice/Collabora).

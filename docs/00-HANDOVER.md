@@ -31,6 +31,38 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-10-06 — dossier partagé, lot 5 : fusionner, chercher, l'arbre hors ligne — v0.46.0
+
+Décision : §25, « Lot 5 ». Front : `shared-merge.ts` (fusion à trois voies : à la ligne pour le
+texte et les CSV, à la cellule pour Excel), bouton « Fusionner » dans le bandeau de conflit,
+champ « Chercher dans le partage », arbre hors ligne. API : `POST /api/shared/merge`,
+`GET /api/shared/search`, table de la machine `shared_dirs` (dernières listes vues).
+- **Trouvé en route** :
+  - `shared-io` comptait le **démarrage d'un worker** dans le délai d'un appel : sous charge,
+    une sonde pouvait déclarer le partage « Injoignable » à tort (test du disjoncteur rouge
+    deux fois sur une machine chargée). Le délai part maintenant quand le worker tourne
+    (démarrage borné à part, 10 s). Test : délai de 20 ms sur un worker neuf → réussi
+    (l'ancien code répondait `SHARED_OFFLINE`).
+  - Parcours desktop sur l'écran réel : une touche de Timo est arrivée dans le champ testé
+    (« Timoe »). `check.sh` lance désormais Electron dans Xvfb avec metacity quand ils sont là.
+  - Un parcours web réutilisait `consignes.md`, où un parcours précédent garde exprès un
+    brouillon : la fusion refusait, à raison. Nom propre au parcours.
+- **Tests** : 217 API (+4 : fusion, recherche, arbre hors ligne, démarrage d'un worker), **449
+  front** (+11 : `shared-merge.test.ts`, 4 gestes dans `App.test.tsx`), 47 desktop, 25 scripts,
+  8 relais, **51 navigateur** (+2 : « Fusionner », chercher puis ouvrir), 14 desktop : **811**.
+- **Vu dans un vrai navigateur** : résultats de recherche (nom, puis chemin coupé par le
+  début), bandeau de conflit avec « Fusionner » et ce qui sera réuni.
+
+### À vérifier par Timo (lot 5)
+
+1. Chercher `procedure` dans le partage : le dossier « 00. PROCEDURE » sort-il, et vite ?
+2. Un CSV ou un classeur modifié en même temps par un collègue sur d'autres lignes/cellules :
+   « Fusionner » propose-t-il de réunir, et le fichier réuni s'ouvre-t-il bien dans Excel ?
+3. VPN coupé : l'arbre reste-t-il parcourable (« Hors ligne — liste vue … ») ?
+4. **Procédures ↔ partage** (fin du lot 5 prévu) : quelles conventions contrôler avant envoi
+   (nom du fichier, sections obligatoires…) ? Une procédure WorkLogs doit-elle devenir un
+   `.docx` dans `00. PROCEDURE` ?
+
 ## Lot du 2026-10-05 (5) — dossier partagé, lot 4 : classeurs Excel (.xlsx) — v0.45.0
 
 Décision : §27. Éditeur `XlsxFileEditor.tsx` (une feuille à la fois, liste « Feuille ») sur la

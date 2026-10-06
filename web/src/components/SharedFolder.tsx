@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError, type Project, type SharedEntry, type SharedListing, type SharedStatus } from '../lib';
-import { badgesFor, REACH_HELP, REACH_LABELS } from '../shared-session';
+import { api, ApiError, type Project, type SharedEntry, type SharedListing, type SharedSearch, type SharedStatus } from '../lib';
+import { badgesFor, REACH_HELP, REACH_LABELS, sinceLabel } from '../shared-session';
 import { editorKind } from '../file-formats';
 
 const OPEN_KEY = 'worklogs-shared-open';
@@ -9,6 +9,8 @@ const POLL_MS = 30_000;
 /** Un dossier de l'arbre : son contenu, ou pourquoi on ne peut pas l'ouvrir (accès refusé…). */
 type DirState = SharedListing | { failure: string; denied: boolean };
 const failed = (state: DirState | undefined): state is { failure: string; denied: boolean } => Boolean(state && 'failure' in state);
+
+const SEARCH_DELAY_MS = 350;
 
 const readOpen = () => {
   try { return localStorage.getItem(OPEN_KEY) !== '0'; } catch { return true; }
@@ -42,6 +44,10 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   const [account, setAccount] = useState('');
   const [showConnect, setShowConnect] = useState(false);
   const [connecting, setConnecting] = useState('');
+  /** Recherche par nom dans le partage (ou le dossier du projet) : remplace l'arbre tant qu'elle est tapée. */
+  const [query, setQuery] = useState('');
+  const [search, setSearch] = useState<SharedSearch | null>(null);
+  const [searching, setSearching] = useState(false);
   useEffect(() => { setLinking(false); }, [projectId]);
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
@@ -96,6 +102,22 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
       window.removeEventListener('focus', poll);
     };
   }, [open, usable, refreshAll]);
+
+  const searchRoot = projectId && status?.projects?.[projectId] ? status.projects[projectId] : '';
+  useEffect(() => {
+    const words = query.trim();
+    setSearch(null);
+    if (words.replace(/\s+/g, '').length < 2) { setSearching(false); return; }
+    setSearching(true);
+    let alive = true;
+    const timer = setTimeout(() => {
+      api.searchShared(words, searchRoot).then(
+        (found) => { if (alive) { setSearch(found); setSearching(false); } },
+        (e: Error) => { if (alive) { setError(e.message); setSearching(false); } },
+      );
+    }, SEARCH_DELAY_MS);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [query, searchRoot]);
 
   if (!status?.available) return null;
 
@@ -163,6 +185,16 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
     }
   };
 
+  /** Un dossier trouvé : l'arbre s'ouvre jusqu'à lui. */
+  const reveal = (dir: string) => {
+    const start = searchRoot ? searchRoot.split('/').length : 0;
+    const parts = dir.split('/');
+    const chain = parts.map((_part, index) => parts.slice(0, index + 1).join('/')).slice(start);
+    setQuery('');
+    setExpanded((current) => new Set([...current, ...chain]));
+    for (const each of chain) void loadDir(each);
+  };
+
   const toggleDir = (dir: string) => {
     setExpanded((current) => {
       const next = new Set(current);
@@ -228,8 +260,11 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
         </p>
       );
     }
-    if (!listing.entries.length) return <p className="empty">{listing.offline ? 'Rien de gardé sur cet ordinateur ici.' : 'Dossier vide.'}</p>;
+    const seen = listing.offline && listing.listed_at ? <p className="empty shared-seen">Hors ligne — liste vue {sinceLabel(listing.listed_at)}.</p> : null;
+    if (!listing.entries.length) return <>{seen}<p className="empty">{listing.offline ? 'Rien de gardé sur cet ordinateur ici.' : 'Dossier vide.'}</p></>;
     return (
+      <>
+      {seen}
       <ul className="shared-tree" aria-label={dir ? `Contenu de ${dir}` : 'Contenu du dossier partagé'}>
         {listing.entries.map((entry) => (entry.type === 'dir'
           ? (
@@ -255,6 +290,7 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
           : <FileRow key={entry.path} entry={entry} selected={entry.path === selectedPath} onOpen={onOpen} />))}
         {listing.truncated && <li className="empty">Dossier trop grand : seuls les 2 000 premiers éléments sont listés.</li>}
       </ul>
+      </>
     );
   };
 
@@ -317,7 +353,49 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
             )}
             {connecting && !showConnect && <p className="notice" role="status">Connexion à {connecting}… saisis ton mot de passe dans la fenêtre « Authentification requise » si elle s’ouvre (parfois derrière WorkLogs).</p>}
             {error && <p className="error" role="alert">{error}</p>}
-            {renderDir(root, 0)}
+            <input
+              className="shared-search"
+              type="search"
+              aria-label="Chercher dans le partage"
+              placeholder={root ? `Chercher dans ${root.split('/').pop()}…` : 'Chercher un fichier ou un dossier…'}
+              value={query}
+              spellCheck={false}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            {query.trim().replace(/\s+/g, '').length >= 2 ? (
+              <div className="shared-search-results" role="region" aria-label="Résultats de la recherche">
+                {searching || !search ? <p className="empty">Recherche…</p> : (
+                  <>
+                    <p className="empty">
+                      {search.results.length ? `${search.results.length}${search.results.length >= 100 ? '+' : ''} résultat${search.results.length > 1 ? 's' : ''}` : 'Aucun nom ne correspond'}
+                      {search.offline ? ', dans les listes gardées sur cet ordinateur (hors ligne)' : search.partial ? ' — recherche arrêtée avant la fin : précise les mots' : ''}
+                      {search.denied ? ` · ${search.denied} dossier${search.denied > 1 ? 's' : ''} fermé${search.denied > 1 ? 's' : ''} à ton compte` : ''}.
+                    </p>
+                    <ul className="shared-tree">
+                      {search.results.map((result) => (
+                        <li key={result.path}>
+                          {result.type === 'dir' ? (
+                            <button className="shared-dir shared-search-hit" aria-label={`Afficher le dossier ${result.path}`} onClick={() => reveal(result.path)}>
+                              <span className="shared-file-name"><span aria-hidden="true">▸</span> {result.name}</span>
+                              <span className="shared-search-where">{result.dir || status.label}</span>
+                            </button>
+                          ) : (
+                            <button
+                              className={'shared-file shared-search-hit' + (result.path === selectedPath ? ' is-selected' : '') + (editorKind(result.ext) ? '' : ' is-foreign')}
+                              aria-label={`Ouvrir ${result.path}`}
+                              onClick={() => onOpen(result.path)}
+                            >
+                              <span className="shared-file-name">{result.name}</span>
+                              <span className="shared-search-where">{result.dir || status.label}</span>
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            ) : renderDir(root, 0)}
             {status.configurable && !showConnect && (
               <button
                 className="ghost shared-change"
@@ -354,9 +432,11 @@ function FileRow({ entry, selected, onOpen }: { entry: SharedEntry; selected: bo
   return (
     <li>
       <button
-        className={'shared-file' + (selected ? ' is-selected' : '') + (editable ? '' : ' is-foreign')}
+        className={'shared-file' + (selected ? ' is-selected' : '') + (editable && !entry.unavailable ? '' : ' is-foreign')}
         aria-current={selected ? 'true' : undefined}
-        aria-label={`Ouvrir ${entry.name}${badges.length ? ` — ${badges.map((badge) => badge.label).join(', ')}` : ''}`}
+        aria-label={`Ouvrir ${entry.name}${badges.length ? ` — ${badges.map((badge) => badge.label).join(', ')}` : ''}${entry.unavailable ? ' — pas gardé sur cet ordinateur, attends le retour du partage' : ''}`}
+        title={entry.unavailable ? 'Hors ligne : ce fichier n’est pas gardé sur cet ordinateur.' : undefined}
+        disabled={entry.unavailable}
         onClick={() => onOpen(entry.path)}
       >
         <span className="shared-file-name">{entry.name}</span>

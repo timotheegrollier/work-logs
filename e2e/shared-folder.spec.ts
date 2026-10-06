@@ -170,3 +170,33 @@ test('classeur Excel : nombre et formule en français au clavier, Ctrl+S ne ré�
   expect(sent.byName.has('xl/calcChain.xml')).toBe(false);
   expect(await readZipText(sent, 'xl/styles.xml')).toBe(await readZipText(readZip(original), 'xl/styles.xml'));
 });
+
+test('conflit sur des lignes différentes : « Fusionner » réunit les deux versions sur le partage', async ({ page }) => {
+  // Un fichier à lui : un autre parcours garde exprès un brouillon sur consignes.md.
+  put('entretien.md', '# Consignes\n\nLaver le filtre.\n\nContrôler le pH.\n');
+  const editor = await openShared(page, 'entretien.md');
+  await editor.getByLabel('Contenu de entretien.md').fill('# Consignes\n\nLaver le filtre.\n\nContrôler le pH chaque matin.\n');
+  await expect(editor.getByText('Brouillon sur cet ordinateur')).toBeVisible();
+  put('entretien.md', '# Consignes\n\nLaver le filtre le lundi.\n\nContrôler le pH.\n');
+
+  await page.keyboard.press('Control+s');
+  const alert = editor.getByRole('alert');
+  await expect(alert).toContainText('Vos modifications ne se touchent pas');
+  await alert.getByRole('button', { name: 'Fusionner' }).click();
+  await expect(editor.getByText(/Fusionné et enregistré sur le partage/)).toBeVisible();
+  expect(get('entretien.md')).toBe('# Consignes\n\nLaver le filtre le lundi.\n\nContrôler le pH chaque matin.\n');
+  await expect(editor.getByLabel('Contenu de entretien.md')).toHaveValue('# Consignes\n\nLaver le filtre le lundi.\n\nContrôler le pH chaque matin.\n');
+});
+
+test('chercher dans le partage : taper un mot, ouvrir le fichier trouvé au fond de l’arborescence', async ({ page }) => {
+  fs.mkdirSync(path.join(share, 'Global', 'MURGAT INGENIERIE', '13. SI', '00. PROCEDURE'), { recursive: true });
+  put('Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE/Procédure sauvegarde.md', '# Sauvegarde\n');
+  put('notes.md', 'x');
+  await page.goto('/');
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  if (await page.locator('#workspace-procedures').isHidden()) await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  await page.getByLabel('Chercher dans le partage').fill('sauvegarde');
+  const results = page.getByRole('region', { name: 'Résultats de la recherche' });
+  await results.getByRole('button', { name: 'Ouvrir Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE/Procédure sauvegarde.md' }).click();
+  await expect(page.getByRole('region', { name: 'Fichier partagé' }).getByLabel('Contenu de Procédure sauvegarde.md')).toHaveValue('# Sauvegarde\n');
+});

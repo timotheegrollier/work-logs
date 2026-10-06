@@ -65,6 +65,9 @@ export function registerSharedRoutes(app, { shared }) {
   router.put('/draft', handle((req) => shared.saveDraft(text(req.query.path), req.body || {})));
   router.post('/draft/discard', raw, handle((req) => shared.discardDraft(text(req.query.path), bytesOf(req.body))));
   router.post('/push', raw, handle((req) => shared.push(text(req.query.path), text(req.query.base) || null, bytesOf(req.body))));
+  // « Fusionner » : les octets réunis par le front, envoyés avec leur version pour base.
+  router.post('/merge', raw, handle((req) => shared.merge(text(req.query.path), text(req.query.theirs) || null, bytesOf(req.body))));
+  router.get('/search', handle((req) => shared.search(text(req.query.q), text(req.query.dir))));
   router.post('/resolve', handle((req) => {
     const body = req.body || {};
     return shared.resolve(text(body.path), text(body.choice), text(body.theirs) || null);

@@ -197,6 +197,88 @@ describe('dossier partagé', () => {
     assert.ok(versions.some((v) => v.origin === 'theirs' && v.hash === sent.body.theirs.hash), 'leur version reste dans l’historique');
   });
 
+  test('conflit : « fusionner » envoie la version réunie, avec la leur pour base', async () => {
+    write('relevés.csv', 'a;b\n1;x\n2;y\n');
+    const file = (await open('relevés.csv')).body;
+    await draft('relevés.csv', { rows: [2] }, file);
+    write('relevés.csv', 'a;b\n1;X\n2;y\n');
+    const sent = await push('relevés.csv', 'a;b\n1;x\n2;Y\n', file.base_hash);
+    assert.equal(sent.status, 409);
+    const theirs = sent.body.theirs.hash;
+    const merge = async (bytes, base) => {
+      const res = await fetch(`${api.base}/api/shared/merge?path=${q('relevés.csv')}&theirs=${base}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: Buffer.from(bytes),
+      });
+      return { status: res.status, body: await res.json() };
+    };
+    assert.equal((await merge('a;b\n1;X\n2;Y\n', file.base_hash)).body.code, 'SHARED_STALE');
+    const merged = await merge('a;b\n1;X\n2;Y\n', theirs);
+    assert.equal(merged.status, 200);
+    assert.equal(merged.body.state, 'written');
+    assert.equal(read('relevés.csv'), 'a;b\n1;X\n2;Y\n');
+    assert.equal(merged.body.file.state, '');
+    assert.equal(merged.body.file.base_hash, sha256('a;b\n1;X\n2;Y\n'));
+    const versions = (await api.get(`/api/shared/versions?path=${q('relevés.csv')}`)).body.versions;
+    assert.deepEqual(versions.slice(0, 2).map((v) => v.origin), ['merged', 'theirs']);
+    assert.equal((await merge('autre', theirs)).body.code, 'SHARED_NO_CONFLICT');
+  });
+
+  test('chercher dans le partage : noms sans casse ni accents, tous les mots, de proche en proche', async () => {
+    write('Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE/Procédure filtration.docx', 'docx');
+    write('Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE/~$océdure filtration.docx', 'verrou');
+    write('Global/Pisciculture/procedures.md', '# x');
+    write('notes.md', 'y');
+    const search = async (query, dir = '') => (await api.get(`/api/shared/search?q=${q(query)}${dir ? `&dir=${q(dir)}` : ''}`)).body;
+    const found = await search('procedure');
+    assert.deepEqual(found.results.map((r) => [r.path, r.type]), [
+      ['Global/Pisciculture/procedures.md', 'file'],
+      ['Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE', 'dir'],
+      ['Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE/Procédure filtration.docx', 'file'],
+    ]);
+    assert.equal(found.partial, false);
+    assert.deepEqual((await search('FILTRATION docx')).results.map((r) => r.name), ['Procédure filtration.docx']);
+    assert.deepEqual((await search('procedure', 'Global/Pisciculture')).results.map((r) => r.name), ['procedures.md']);
+    assert.deepEqual((await search('p')).results, [], 'un caractère ne suffit pas');
+    if (process.getuid?.() !== 0) {
+      fs.chmodSync(path.join(share, 'Global', 'MURGAT INGENIERIE'), 0o000);
+      try {
+        const partial = await search('procedure');
+        assert.deepEqual(partial.results.map((r) => r.name), ['procedures.md']);
+        assert.equal(partial.denied, 1, 'dossier fermé au compte : passé, compté');
+      } finally {
+        fs.chmodSync(path.join(share, 'Global', 'MURGAT INGENIERIE'), 0o755);
+      }
+    }
+  });
+
+  test('hors ligne : l’arbre reste parcourable (dernières listes vues), la recherche aussi', async () => {
+    write('Global/Procédure filtration.docx', 'docx');
+    write('Global/relevés.csv', 'a;b\n');
+    await api.get('/api/shared/list');
+    await api.get(`/api/shared/list?dir=${q('Global')}`);
+    await open('Global/relevés.csv');
+    const away = share + '-ailleurs';
+    fs.renameSync(share, away);
+    try {
+      const top = await api.get('/api/shared/list');
+      assert.equal(top.status, 503);
+      assert.deepEqual(top.body.entries.map((entry) => [entry.name, entry.type]), [['Global', 'dir']]);
+      assert.ok(top.body.listed_at, 'la liste dit quand elle a été vue');
+      const inner = await api.get(`/api/shared/list?dir=${q('Global')}`);
+      assert.deepEqual(inner.body.entries.map((entry) => [entry.name, Boolean(entry.cached), Boolean(entry.unavailable)]), [
+        ['Procédure filtration.docx', false, true], ['relevés.csv', true, false],
+      ]);
+      const found = (await api.get('/api/shared/search?q=filtration')).body;
+      assert.equal(found.offline, true);
+      assert.deepEqual(found.results.map((r) => r.path), ['Global/Procédure filtration.docx']);
+    } finally {
+      fs.renameSync(away, share);
+    }
+    // Listes gardées sur cet ordinateur seulement : jamais exportées.
+    assert.deepEqual(api.db.prepare('SELECT rel_dir FROM shared_dirs ORDER BY rel_dir').all().map((row) => row.rel_dir), ['', 'Global']);
+    assert.equal(JSON.stringify(buildBackup(api.db)).includes('shared_dirs'), false);
+  });
+
   test('conflit : « prendre la leur » garde ma version de côté', async () => {
     write('notes.md', 'v1');
     const file = (await open('notes.md')).body;
