@@ -2330,9 +2330,17 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
     padding: 8px 14px;
     font-size: 14px;
   }
-  /* Bandeau projets : compact, pastilles en défilement horizontal. */
+  /* Bandeau projets : pastilles toute largeur sur leur rangée, gestion dessous.
+     Sur 412 px, partager la rangée avec « Gérer les projets » écrasait le choix
+     dès 2-3 projets (`.projects` enveloppe déjà, il suffit d'élargir `.chips`). */
   .project-strip {
     padding: 8px 12px;
+  }
+  .project-strip .chips {
+    flex: 1 1 100%;
+  }
+  .project-strip .chip {
+    min-height: 44px;
   }
   .project-strip .manage summary {
     padding: 8px 12px;
@@ -2422,3 +2430,280 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .documents-list li select { grid-column: 1; }
   .documents-list li .documents-name { grid-column: 1 / -1; }
 }
+
+/* --- Dossier partagé (§25) : le dossier du TSE, dans la colonne Procédures --- */
+.shared-folder { margin-top: 0; }
+.shared-folder summary { flex-wrap: wrap; }
+.shared-reach {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.shared-reach.is-ok { color: var(--ok); }
+.shared-reach.is-offline,
+.shared-reach.is-unmounted,
+.shared-reach.is-blocked { color: var(--danger); background: var(--danger-soft); }
+.shared-folder .count.is-conflict { color: var(--danger); background: var(--danger-soft); }
+.shared-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 8px; min-width: 0; }
+.shared-folder { min-width: 0; }
+.shared-body > p { margin: 0; }
+.shared-root { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.shared-root strong { color: var(--text); font-weight: 600; }
+.shared-change { justify-self: start; font-size: 12px; padding: 4px 9px; }
+.shared-tree { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-width: 0; }
+.shared-tree > li { min-width: 0; }
+.shared-tree .shared-tree { padding-left: 14px; border-left: 1px solid var(--line); margin-left: 7px; }
+.shared-tree .empty { padding: 4px 6px; }
+.shared-dir,
+.shared-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+.shared-dir { font-weight: 600; }
+.shared-dir:hover,
+.shared-file:hover { background: var(--surface-2); }
+.shared-file.is-selected { background: var(--accent-soft); color: var(--accent); }
+.shared-file.is-foreign .shared-file-name { color: var(--muted); }
+.shared-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shared-badge { flex: none; font-size: 12px; line-height: 1; }
+
+/* L'éditeur d'un fichier partagé : même gabarit qu'une entrée. */
+.shared-title { flex: 1; min-width: 0; }
+.shared-title h1 { margin: 2px 0 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.shared-meta { font-size: 12px; color: var(--muted); }
+.shared-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 13px;
+}
+.shared-banner p { margin: 0; flex: 1 1 260px; }
+.shared-banner.is-conflict,
+.shared-banner.is-deleted { border-color: var(--danger); background: var(--danger-soft); }
+.shared-banner.is-readonly,
+.shared-banner.is-offline { border-color: var(--line); background: var(--surface-2); }
+.shared-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.shared-notice { margin: 0; font-size: 13px; color: var(--ok); }
+.link-button { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; font: inherit; cursor: pointer; }
+.shared-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.shared-encoding { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12.5px; color: var(--muted); }
+.shared-encoding select { font-size: 12.5px; padding: 3px 6px; }
+.shared-text,
+.shared-sheet { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
+.shared-text .source { width: 100%; }
+
+/* Grille des fichiers tabulaires : la barre de saisie au-dessus, comme un tableur. */
+.sheet-grid-wrap { display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
+.sheet-bar { display: flex; gap: 6px; align-items: center; }
+.sheet-ref {
+  flex: none;
+  min-width: 56px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  font: 12.5px/1.4 ui-monospace, 'SF Mono', Menlo, monospace;
+  text-align: center;
+}
+.sheet-input { flex: 1; min-width: 0; font-size: 13.5px; padding: 5px 8px; }
+.sheet-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.sheet-actions .ghost { font-size: 12px; padding: 3px 9px; }
+.sheet-grid {
+  flex: 1;
+  min-height: 320px;
+  max-height: 70vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.sheet-grid table { border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.sheet-grid th,
+.sheet-grid td {
+  height: 30px;
+  max-width: 280px;
+  padding: 0 8px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sheet-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+  min-width: 90px;
+}
+.sheet-grid tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 500;
+  text-align: right;
+  min-width: 44px;
+}
+.sheet-grid .sheet-corner { left: 0; z-index: 3; min-width: 44px; }
+.sheet-grid th.is-active { color: var(--accent); }
+.sheet-grid td { cursor: cell; }
+.sheet-grid td.is-active { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-soft); }
+.sheet-grid td:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sheet-grid table[aria-readonly='true'] td { cursor: default; }
+.sheet-grid .empty { padding: 12px; }
+/* Classeurs : cellules fusionnées, protégées, en-têtes de tableau… gardées telles quelles. */
+.sheet-grid td.is-locked { color: var(--muted); background: var(--surface-2); cursor: default; }
+.sheet-grid td.is-numeric { text-align: right; }
+.sheet-locked { margin: 0; font-size: 12.5px; color: var(--muted); }
+.sheet-problems { margin: 0; padding: 8px 12px 8px 28px; border: 1px solid var(--danger); border-radius: 8px; background: var(--danger-soft); font-size: 12.5px; }
+@media (max-width: 680px) {
+  .shared-encoding { margin-left: 0; }
+  .sheet-grid { max-height: 60vh; }
+}
+
+/* Lot 2 du dossier partagé : verrou, liaison projet, historique, question de sortie. */
+.shared-held {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ok);
+  padding: 2px 9px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+}
+.shared-dir-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.shared-dir-row .shared-dir { flex: 1; }
+.shared-link-here { flex: none; font-size: 11.5px; padding: 2px 8px; }
+.shared-project-link { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.shared-project-link .ghost { font-size: 12px; padding: 4px 9px; white-space: normal; text-align: left; }
+.shared-versions { margin-top: 4px; }
+.shared-version-list { list-style: none; margin: 0; padding: 8px; display: grid; gap: 6px; font-size: 12.5px; }
+.shared-version-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.shared-version-list li > span { min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
+.shared-version-list strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.shared-version-list .ghost { flex: none; font-size: 12px; padding: 3px 9px; }
+.shared-leave-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.45);
+}
+.shared-leave {
+  width: min(460px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.shared-leave h2 { margin: 0; font-size: 17px; }
+.shared-leave p { margin: 0; color: var(--muted); font-size: 14px; }
+.shared-name { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.shared-name label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); flex: 1 1 220px; }
+.shared-connect { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; }
+.shared-connect label { display: grid; gap: 4px; flex: 1 1 180px; min-width: 0; font-size: 12.5px; color: var(--muted); }
+.shared-connect input { width: 100%; min-width: 0; font: 13px/1.4 ui-monospace, 'SF Mono', Menlo, monospace; }
+.shared-dir-error { margin: 4px 0; font-size: 12.5px; }
+
+/* Documents Word du dossier partagé (lot 3) : une page, une barre d'outils sobre. */
+.docx-editor { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.docx-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.docx-toolbar select { font-size: 13px; padding: 4px 6px; max-width: 200px; }
+.docx-group { display: inline-flex; gap: 2px; }
+.docx-group button {
+  min-width: 30px;
+  min-height: 30px;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+}
+.docx-group button:hover:not(:disabled) { border-color: var(--line); background: var(--surface); }
+.docx-group button.is-on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.docx-hint { margin: 0; font-size: 12px; color: var(--muted); }
+.docx-content { max-width: none; }
+.docx-page {
+  min-height: 60vh;
+  padding: 28px 36px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  outline: none;
+}
+.docx-page:focus-visible { border-color: var(--accent); }
+.docx-page .docx-paragraph { margin: 0 0 0.6em; white-space: pre-wrap; min-height: 1.4em; }
+.docx-page .docx-paragraph.is-list {
+  position: relative;
+  padding-left: calc(1.8em + var(--docx-ilvl, 0) * 1.6em);
+}
+.docx-page .docx-paragraph.is-list::before {
+  content: attr(data-marker);
+  position: absolute;
+  left: calc(var(--docx-ilvl, 0) * 1.6em);
+  width: 1.6em;
+  color: var(--muted);
+}
+.docx-page .docx-link { color: var(--accent); text-decoration: underline; cursor: text; }
+.docx-page .docx-atom {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 0.6em;
+  padding: 8px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 13px;
+  user-select: none;
+}
+.docx-page .docx-atom.ProseMirror-selectednode { border-color: var(--accent); }
+.docx-atom-label { font-weight: 600; font-size: 12px; }
+.docx-atom-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docx-page table { border-collapse: collapse; margin: 0 0 0.8em; width: 100%; table-layout: fixed; }
+.docx-page td, .docx-page th { border: 1px solid var(--line); padding: 4px 8px; vertical-align: top; }
+.docx-page td .docx-paragraph { margin: 0; }
+@media print { .docx-page { border: 0; padding: 0; } .docx-atom { border-style: solid; } }

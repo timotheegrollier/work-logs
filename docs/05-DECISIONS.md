@@ -516,6 +516,25 @@ silencieuse est abandonnée avec : un modèle enregistré est gardé tel quel (i
 marcher pour une ancienne clé), et le select des Paramètres ne propose que les trois
 modèles validés en réel, avec bouton de diagnostic.
 
+**Révisé le 2026-09-24 (soir) : une chaîne de secours plutôt qu'un secours unique.**
+« Modèle surchargé » à chaque fonction IA d'une procédure. Mesures réelles (clé gratuite,
+trois passages) : les trois modèles du select (`3.5-flash-lite`, `3.5-flash`,
+`3.1-flash-lite`) répondaient 503 « high demand » en ~0,5 s ou traînaient 20–60 s ;
+`3-flash-preview` et `2.5-flash` répondaient 3/3 en ~3 s. Google sert les clés gratuites
+en dernier : aucun modèle n'est sûr seul. Donc, sur l'endpoint Gemini : le modèle choisi,
+puis `GEMINI_FALLBACK_MODELS` (du plus fiable au moins fiable), **chaque modèle une fois**,
+tranche de ⅔ du délai par modèle, budget total 1,5 × le délai ; on passe au suivant sur
+5xx, délai, 404 (modèle absent pour la clé), 429 (quota compté par modèle) ou réponse
+vide ; on s'arrête net sur clé refusée ou hors ligne. Le secours qui a répondu passe en
+tête 10 minutes (mémoire vive), pour que seul le premier appel paie un modèle qui traîne.
+Budget des sous-tâches : 300 → 1 024 jetons (les modèles à raisonnement décomptent leur
+réflexion ; à 300, la réponse revenait tronquée). Vérifié en réel : 18/18 réponses avec
+`3.5-flash-lite` saturé, 4–7 s d'ordinaire. **Défaut → `gemini-3-flash-preview`** (demande
+explicite, 0.41.1), en tête du select avec `2.5-flash` ; libellés honnêtes pour les autres.
+L'ancien défaut **exact** (`3.5-flash-lite`), enregistré avec la clé par les Paramètres, est
+relu comme le nouveau : sans ça, le changement ne toucherait personne. Tout autre choix
+enregistré reste intact (pas de migration silencieuse d'un choix réel).
+
 ## 16. L'en-tête mobile se réorganise, sans hamburger — 2026-09-18
 
 **Le besoin.** Sur un Pixel 9a (412 px), la barre entassait logo, version, recherche,
@@ -730,7 +749,285 @@ gros boutons pointillés.
 Le rendu dépend donc des polices du système ; à rouvrir si l'on accepte un fichier de police.
 
 
-## 25. PWA sur Cloudflare Worker, mise à jour automatique — 2026-09-26
+## 25. Dossier partagé : chacun son tour, sans perte — 2026-10-05
+
+**Le besoin.** Les procédures et documents de l'équipe vivent dans un dossier du **TSE**
+(serveur Windows), modifiés par les collègues dans Word et Excel, parfois LibreOffice ou
+WorkLogs. Timo veut les modifier **des deux côtés**, dans WorkLogs, **chacun son tour** :
+voir qui a le fichier, ne jamais écraser une version qu'il n'a pas vue, choisir en cas de
+conflit, continuer hors ligne. Le poste Linux **monte le partage en SMB** (bureau ou VPN).
+Un premier plan (export `.md` par presse-papier, pas de co-édition) a été écarté.
+
+**Le choix.**
+- **Le fichier du partage est la référence**, pas une copie importée. WorkLogs le lit par le
+  montage, garde sur cet ordinateur chaque version **lue, envoyée ou mise de côté**
+  (`<données>/shared-blobs`, adressées par empreinte SHA-256).
+- **Brouillon d'abord, envoi explicite.** Le brouillon (le modèle de l'éditeur, en JSON)
+  s'enregistre seul toutes les 600 ms, **sur cet ordinateur seulement** (§5 tient pour le
+  local). Il ne part sur le partage que sur « Enregistrer sur le partage » ou `Ctrl+S` :
+  les collègues ne voient jamais une version à moitié écrite.
+- **Écriture gardée, sur place.** Le serveur ouvre le fichier en lecture-écriture, le relit
+  par le même descripteur, compare son empreinte à la base du brouillon : différente → pas
+  d'écriture, **conflit**. Sinon il tronque, écrit, `fsync`, puis relit pour vérifier. Sur
+  place plutôt que fichier temporaire + renommage : on garde ACL NTFS, propriétaire et
+  identité du fichier ; un renommage hériterait des droits du dossier. Une écriture
+  interrompue n'est reprise que si le partage contient un **début** de nos octets.
+- **Conflit : trois choix**, jamais automatique : garder ma version (la leur reste dans
+  l'historique), prendre la leur (la mienne reste dans l'historique), garder les deux
+  (`Nom (copie T. Grollier 2026-10-05 10h47).ext`, création exclusive à côté).
+- **Les verrous informent ; seul Windows bloque.** WorkLogs lit le fichier propriétaire
+  `~$…` de Word/Excel (nom de l'utilisateur Office) et le `.~lock.<nom>#` de LibreOffice ;
+  le fichier s'ouvre alors en lecture seule (« Ouvert par Jean Dupont dans Word depuis
+  10h42 »), avec « Écrire un brouillon quand même ». **Word et Excel ignorent les verrous
+  des autres** : leur seul verrou est un fichier ouvert côté Windows, que le client CIFS
+  Linux ne sait pas poser. Rien n'est perdu pour autant : l'envoi échoue tant que Windows
+  tient le fichier (« envoi en attente », réessayé toutes les 30 s), et toute version
+  enregistrée entre-temps est détectée par l'empreinte. Une fenêtre de quelques
+  millisecondes reste entre la relecture et l'écriture ; la relecture après écriture la
+  voit le plus souvent. La sonde d'écriture n'a lieu **qu'à l'envoi** : ouvrir en écriture
+  pendant le sondage pourrait faire croire à Word que le fichier est pris.
+- **Sondage, pas `inotify`** : il ne voit pas les modifications faites depuis le TSE. Le
+  fichier ouvert est relu toutes les 5 s (fenêtre visible) et au retour du focus ; sans
+  brouillon, la version du collègue s'affiche seule ; avec brouillon, un bandeau prévient.
+  Empreinte recalculée seulement si taille ou date changent.
+- **E/S bornées.** Un montage SMB figé bloquerait un appel `fs` des minutes. Tous les accès
+  au partage passent par un `worker_threads` (`api/src/shared-io.js`) qui fait des appels
+  synchrones sous délai (4 s, plus 1 s par Mo). Dépassement ou erreur réseau → disjoncteur
+  ouvert, tout échoue aussitôt ; seule une sonde (toutes les 10 s) le referme ; un worker
+  resté bloqué est abandonné (deux au plus, puis état « bloqué »). Le worker est `unref`
+  **après** l'ajout de ses écouteurs (sinon il retient le processus) et lancé avec
+  `execArgv: []` (il n'hérite pas de `--input-type=module`, qui casserait son code).
+- **Un point de montage vide n'est pas le partage** : le type `statfs` relevé au choix du
+  dossier (CIFS, SMB2/3, FUSE pour GVFS) est comparé à chaque contrôle. Différent → « non
+  monté », rien n'est écrit dans le dossier local vide.
+- **Le chemin ne se règle jamais par HTTP** : seulement par le dialogue natif du desktop
+  (IPC `worklogs:shared-choose-root`) ou `WORKLOGS_SHARED_ROOT` (dev, recettes). Un
+  renderer compromis ne peut pas le pointer sur `/`. La racine et le dossier personnel sont
+  refusés.
+- **Routes réservées à cet ordinateur** (`localOnly` : adresse et `Host` de bouclage,
+  refus de `Sec-Fetch-Site: cross-site`). `api/src/server.js` écoute sur toutes les
+  interfaces en mode dev : §10 supposait l'inverse ; la garde ne dépend pas de l'écoute.
+- **Données de cette machine, sans clé étrangère** : `local_settings`,
+  `shared_project_folders`, `shared_files`, `shared_versions`. `restoreBackup` vide et
+  réinsère projets et entrées à chaque synchro (§20) : une cascade effacerait les liens,
+  une restriction ferait échouer la synchro. Nettoyage explicite à la suppression d'un
+  projet ; jamais exportées ni synchronisées ; une écriture partagée ne déclenche pas la
+  synchro Drive.
+- **Rétention** : les 30 dernières versions par fichier, 90 jours au plus, 1 Go au total —
+  jamais la base, un brouillon, une version de conflit ou mise de côté.
+- **Les formats se traitent dans le front** (le serveur n'a pas de `DOMParser`) et **ne
+  réécrivent que ce qui a changé**. Lot 1 : `.txt`/`.md` (encodage et fins de ligne
+  d'origine) et `.csv`/`.tsv` (séparateur `;` d'Excel français, Windows-1252, CRLF,
+  guillemets ; chaque ligne garde son texte brut, une ligne intacte ressort à l'identique).
+  `.docx` puis `.xlsx` suivent, par patch ciblé du XML d'origine (§26, §27 à venir).
+
+**Amendements.** §1 : une section repliable dans la colonne Procédures, pas un onglet ni un
+mode ; un fichier s'ouvre au centre comme une entrée. §4 : le partage a sa route
+(`/api/shared/list`, sondée), hors de `/api/state` qui reste la base. §5 : deux états
+(brouillon local enregistré seul ; partage sur geste). §10 : inchangé (WorkLogs reste local,
+le partage passe par SMB) ; garde `localOnly`. §15 : « Ouvrir avec… » ouvrira le **vrai**
+fichier du partage (lot 2) — la règle de la copie en lecture seule vaut pour `uploads/`.
+§18 : la section vit avec les procédures. §20 : ces données restent sur la machine.
+La section ne lit le partage que **colonne Procédures affichée** : pas de requête ni de
+sondage sinon (une requête de plus au démarrage avait suffi à rendre instable un test qui
+cliquait avant le chargement des projets).
+
+**Hors périmètre, assumé.** Temps réel ; collègues seulement dans un navigateur (il
+faudrait exposer WorkLogs, donc une authentification — décision à part) ; la PWA (un
+navigateur n'atteint pas un partage SMB).
+
+**À vérifier sur le vrai TSE** (règle « preuve avant annonce ») : `errno` quand Word tient le
+fichier (attendu `EBUSY` en CIFS ; GVFS ?), règle des noms `~$` et décalages 54/55 sur la
+version d'Office du TSE, LibreOffice qui affiche le verrou WorkLogs (lot 2), droits NTFS
+inchangés après envoi, durée de blocage d'un `stat` VPN coupé, type `statfs` réel, chemin
+rendu par le sélecteur pour un partage GVFS, dialecte SMB. Liste complète :
+`00-HANDOVER.md`.
+
+**Lot 2 (2026-10-05) — notre verrou, les projets, l'historique.**
+- **La première frappe prend la main** : un `.~lock.<nom>#` au format LibreOffice
+  (`Timothée Grollier (WorkLogs),timo,pc-timo,05.10.2026 10:47,worklogs:<instance>:<nonce>;`),
+  que LibreOffice et les autres WorkLogs respectent. Refusée (fichier ouvert ailleurs) :
+  l'éditeur passe en lecture seule, ce qui a été tapé reste en brouillon. Renouvelé chaque
+  minute tant qu'on écrit ; rendu à la fermeture du fichier, après **10 min sans frappe**,
+  et par le serveur sans nouvelles depuis **3 min** (onglet tué, veille). Les restes d'une
+  session précédente sont rendus au démarrage, et à l'arrêt du desktop (2 s au plus).
+  On ne retire **jamais** un verrou qui ne porte plus notre marque ; le `~$` de Word n'est
+  jamais touché, même en reprise.
+- **Verrou oublié** : celui d'un autre WorkLogs est renouvelé chaque minute ; s'il ne bouge
+  pas pendant **3 min d'observation** (notre horloge seule : un décalage avec le TSE ne
+  fausse rien), il est signalé « probablement oublié » et se reprend sur un clic confirmé.
+  LibreOffice : 24 h. **LibreOffice ouvert sur cet ordinateur bloque aussi** (« Ouvrir
+  avec… » puis taper dans WorkLogs écraserait l'un ou l'autre) ; seul notre propre verrou
+  WorkLogs laisse la main.
+- **Quitter un brouillon non envoyé** (Fermer, une entrée, un autre fichier, une création)
+  demande : Envoyer sur le partage · Garder le brouillon ici · Annuler. Envoi en conflit ou
+  en échec : on reste sur le fichier. Fermer la fenêtre ne demande rien (§ plus haut).
+- **« Ouvrir avec… »** (desktop) ouvre **le vrai fichier** du partage, par la même route
+  détachée que les pièces jointes et la même liste de types refusés. Refusé tant qu'un
+  brouillon n'est pas envoyé ; notre verrou est rendu d'abord, l'application pose le sien.
+  C'est aussi la voie des `.docx`/`.xlsx` en attendant leurs éditeurs.
+- **Un sous-dossier par projet** (`shared_project_folders`) : le filtre de projet n'affiche
+  que lui ; « Délier » rend tout le partage.
+- **Historique** : « Restaurer » fait d'une version gardée le **brouillon** (modèle vide,
+  octets de la version) — rien ne part avant l'envoi, qui garde sa protection habituelle.
+- Nom affiché dans les verrous : Paramètres › Dossier partagé.
+
+**v0.43.1 (2026-10-05) — se connecter par l'adresse, et GVFS.** Timo n'arrivait pas à ouvrir
+le partage : rien n'était monté sur son Mint, et le sélecteur de dossiers ne sait choisir
+qu'un dossier **déjà monté**, pas une adresse `smb://`.
+- **Se connecter par l'adresse** (`desktop/shared-mount.mjs`, IPC `worklogs:shared-connect`) :
+  `\\serveur\partage`, `//…` ou `smb://…` (+ sous-dossier). Déjà monté par GVFS → utilisé ;
+  sinon `gio mount` (réussit si le trousseau a le mot de passe) ; sinon la fenêtre de
+  connexion du gestionnaire de fichiers (`xdg-open smb://…`) et WorkLogs attend le montage
+  (2 min). **Aucun identifiant ne passe par WorkLogs.** L'adresse est retenue
+  (`shared.address`) : « Se reconnecter » quand le partage n'est plus monté (redémarrage).
+  GVFS plutôt que CIFS : pas de `sudo`, pas de `/etc/fstab`, mêmes identifiants que Nemo.
+- **GVFS refuse les lectures positionnées** (`ESPIPE`, mesuré sur un montage GVFS/FUSE de
+  la machine de Timo) : le worker lit désormais **séquentiellement** partout, écrit
+  séquentiellement sur un descripteur neuf, et n'utilise l'écriture positionnée (même
+  descripteur que la relecture) qu'avec un repli `O_TRUNC` séquentiel si le montage la
+  refuse. Test `api/test/shared-gvfs.test.js` sur une archive montée par GVFS (ignoré là où
+  GVFS ne tourne pas). L'écriture sur un vrai partage SMB par GVFS reste à vérifier.
+- Un `ENOENT` relance aussitôt le contrôle de montage : un partage démonté s'affiche
+  « Non monté » avec « Se reconnecter », sans attendre le cache de 15 s.
+- **v0.45.0 (2026-10-06) — la fenêtre du mot de passe ne s'ouvrait pas.** Sur le Mint de
+  Timo (`\\172.16.1.20\D`), « Connexion à … » restait 2 min sans rien afficher, puis
+  échouait. Cause mesurée : `xdg-open` passe, sous Cinnamon et GNOME, par `gio open`, qui
+  refuse une adresse non montée (« L’emplacement indiqué n’est pas monté », code 2) **sans
+  ouvrir de fenêtre** ; et WorkLogs ignorait cet échec. On lance désormais le **gestionnaire
+  de fichiers lui-même** sur l'adresse (`nemo smb://…` ; Nautilus, Caja, Thunar ailleurs —
+  celui du bureau d'abord), ce qui affiche sa fenêtre « Authentification requise » (vérifié
+  sur la machine). Fenêtre impossible à ouvrir → erreur **aussitôt**, avec le chemin manuel.
+- **v0.45.1 (2026-10-06) — le compte du partage.** `\\SRVMURGAT\Global\…` restait fermé :
+  mesuré, les montages GVFS de Timo voyaient **exactement** ce que voit l'accès invité
+  (`smbclient -N` : `D` listable, `Global` refusé). Le trousseau rejouait `TimotheeG`
+  domaine `WORKGROUP` (« Se souvenir pour toujours »), compte que le serveur ne reconnaît
+  pas ou qui n'a pas de droits réseau sur `Global` : aucune fenêtre ne redemandait.
+  - Champ **« Compte »** facultatif (`SRVMURGAT\TonNom`) : il entre dans l'adresse donnée à
+    GVFS (`smb://SRVMURGAT;TonNom@serveur/partage`), qui ne demande alors **que le mot de
+    passe de ce compte** et ne rejoue pas un autre compte retenu (vérifié avec `gio`). Retenu
+    (`shared.account`) pour « Se reconnecter ». Toujours aucun mot de passe dans WorkLogs.
+  - Seul un montage **de ce compte** convient (`user=` du nom de montage GVFS) : un montage
+    invité du même partage n'est plus réutilisé.
+  - Refus d'accès dit comme tel : « Accès refusé … pour le compte avec lequel le partage est
+    monté » au lieu de « n'existe pas » à la connexion ; sous le dossier lui-même dans l'arbre
+    (`SHARED_DENIED`), au lieu d'un « Lecture… » sans fin, avec « Se connecter avec mon compte… ».
+
+**Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :
+`libsmbclient`, dépendance native), ou si l'équipe veut écrire à plusieurs en même temps
+(suite bureautique en ligne : Google, Microsoft 365, OnlyOffice/Collabora).
+
+## 26. Documents Word du partage : réécrire au plus juste — 2026-10-05
+
+**Le besoin.** Modifier dans WorkLogs les `.docx` que les collègues ouvrent dans Word sur le
+TSE, sans abîmer leur mise en forme. Un éditeur qui reconvertirait tout le document (Word →
+éditeur → Word) perdrait en route styles fins, en-têtes, champs, images ancrées : chaque envoi
+dégraderait le fichier de l'équipe.
+
+**Le choix : on ne réécrit que ce qui a changé.**
+- `web/src/xml-scan.ts` lit le XML **en gardant les positions** de chaque élément ;
+  `web/src/zip.ts` lit l'archive et la réécrit en **recopiant telles quelles** les entrées non
+  touchées. Aucune dépendance : `DecompressionStream`/`CompressionStream`, CRC maison.
+- `web/src/docx.ts` : chaque paragraphe garde sa **tranche XML d'origine**. Inchangé → recopié
+  octet pour octet. Modifié → reconstruit sur son `<w:pPr>` (seuls `pStyle`, `jc` et le niveau
+  `ilvl` sont retouchés) et sur les `<w:rPr>` de ses runs ; gras/italique/souligné/barré
+  insérés **dans l'ordre du schéma** (`rStyle, rFonts, b, bCs, i, iCs…` — Word répare un
+  document dont l'ordre est faux). Signets autour du paragraphe gardés ; un paragraphe né d'un
+  Entrée hérite des propriétés de son voisin, sans `w14:paraId` ni signet en double. Les
+  marqueurs du correcteur (`proofErr`) tombent quand le paragraphe est réécrit.
+- **Objets conservés** (nœud `docxAtom`, non éditable, recopié tel quel) : tout paragraphe qui
+  contient autre chose que du texte et des liens (image, champ, commentaire, note, modification
+  suivie, saut de page, contrôle de contenu, équation), la table des matières, les tableaux à
+  fusion verticale. Supprimer un objet le retire ; le coller ailleurs est refusé (identités en
+  double = document à réparer).
+- **Tableaux** simples : texte des cellules modifiable, structure (lignes, colonnes, fusions)
+  intouchable — un changement de structure est refusé à l'envoi avec une explication. Seules
+  les cellules modifiées sont réécrites.
+- **Liens existants** : leur texte se modifie, leur balise d'origine et leur cible restent.
+  Pas de création de lien (il faudrait ajouter des relations) : à faire dans Word.
+- Propriétés du document (`docProps/core.xml`) : seul le texte de `lastModifiedBy` (nom des
+  verrous), `modified` et `revision` change. En cas de conflit, ce `lastModifiedBy` du fichier
+  du collègue dit **qui** a enregistré entre-temps.
+- **Lecture seule motivée** : suivi des modifications actif (WorkLogs écrirait des changements
+  non suivis dans un document que l'équipe suit), document protégé, OOXML strict.
+- Garde-fou final : le `document.xml` produit est relu par `DOMParser` ; invalide → rien ne part.
+- Schéma Tiptap **dédié** (`docx-extensions.ts`) plutôt que celui des entrées : couleurs,
+  polices ou fusions de l'éditeur riche ne se ramènent pas à Word. Les listes sont des
+  attributs de paragraphe (`numId`/`ilvl`), numéros et puces recalculés pour l'affichage.
+- `setEditable(…, false)` : basculer en lecture seule (pendant l'envoi) n'est pas une
+  modification — sans ce `false`, Tiptap en émettait une, recréait un brouillon juste après
+  l'envoi et effaçait « Enregistré sur le partage » (vu par un parcours Playwright instable).
+
+**Limites assumées (v1).** En-têtes et pieds de page, texte des notes, zones de texte, images
+(insertion), création de tableaux et de liens, modification de structure de tableau : dans
+Word (« Ouvrir avec… »). Rendu simplifié (polices et couleurs du thème non affichées).
+
+**À vérifier sur le TSE** : ouvrir dans Word un document modifié par WorkLogs — aucune
+réparation proposée, mise en forme, numérotation, en-tête et images intacts ; puis le faire
+réenregistrer par un collègue et le rouvrir dans WorkLogs.
+
+## 27. Classeurs Excel du partage : cellule par cellule — 2026-10-05
+
+**Le besoin.** Modifier dans WorkLogs les `.xlsx` que les collègues ouvrent dans Excel sur le
+TSE, sans toucher à ce qu'Excel seul sait faire : formules, graphiques, mises en forme
+conditionnelles, validations, tableaux, tableaux croisés.
+
+**Le choix : seules les cellules tapées sont réécrites** (`web/src/xlsx.ts`, sur `zip.ts` et
+`xml-scan.ts` du §26 ; `ooxml.ts` porte ce que Word et Excel partagent : relations, propriétés).
+- Dans la feuille, la balise `<c>` d'une cellule modifiée est remplacée ; référence `r`, style
+  `s` et attributs d'origine gardés. Une cellule nouvelle prend le style de sa ligne ou de sa
+  colonne et se place dans l'ordre ; une ligne nouvelle aussi. `dimension` et `spans` élargis.
+- **Texte** : ajouté à la **fin** de `sharedStrings.xml` (compteurs `count`/`uniqueCount` à
+  jour) ; une chaîne existante n'est **jamais** modifiée — d'autres cellules la partagent ; une
+  chaîne identique sans mise en forme est réutilisée. Sans chaînes partagées : texte en ligne.
+- **Saisie lue comme Excel en français**, sans deviner contre l'utilisateur
+  (`xlsx-format.ts`) : `1 234,5`, `12,5 %`, `12,50 €` sont des nombres ; `'` force le texte ;
+  une cellule au format texte garde le texte ; zéros de tête (`0123`) et numéros de plus de
+  15 chiffres restent du texte ; une date (`05/10/2026`, `5/10`) n'est reconnue que dans une
+  cellule **déjà** au format date (on ne crée pas de style) ; `VRAI`/`FAUX`.
+- **Affichage à la française** des formats courants : nombres, milliers, pourcentages,
+  monnaie (`[$€-40C]`), sections négatives, dates et heures (système 1900 et son faux
+  29 février 1900, système 1904), erreurs (`#NOM?`, `#VALEUR!`…). Format inconnu → Standard :
+  l'affichage peut différer d'Excel, jamais la valeur.
+- **Formules** (`xlsx-formula.ts`) : Excel les enregistre en anglais et les affiche en
+  français. La barre les montre en français ; on accepte les deux écritures (`=SOMME(A1;A3)`
+  ou `=SUM(A1,A3)`), traduites pour ~100 fonctions courantes, `_xlfn.` ajouté aux fonctions
+  récentes (`RECHERCHEX`…). **La syntaxe est vérifiée avant l'écriture** (grammaire d'Excel :
+  opérateurs, appels, plages, feuilles, constantes) : une formule mal formée dans le fichier
+  ferait proposer une « réparation » à Excel. Fautive → listée sous la grille, envoi refusé.
+- **Recalcul** : WorkLogs ne calcule rien. `fullCalcOnLoad="1"` dans `<calcPr>` fait tout
+  recalculer à Excel à l'ouverture. Mais LibreOffice, par défaut, **ne recalcule pas** un
+  `.xlsx` au chargement (vérifié, 24.2 : il gardait l'ancien total) : les formules qui lisent,
+  de proche en proche, une cellule modifiée — même feuille, autres feuilles, noms définis,
+  formules recopiées décalées — **perdent leur valeur d'avant** (`<v>` retiré) ; Excel et
+  LibreOffice les calculent alors, et WorkLogs affiche la formule plutôt qu'un chiffre périmé.
+  Prudent : ce qui ne se lit pas dans le texte (`INDIRECT`, `DECALER`, tableaux structurés)
+  compte comme dépendant ; une formule liée à un **autre classeur** garde sa valeur (elle ne
+  se recalcule pas sans lui).
+- **Chaîne de calcul** (`calcChain.xml`) : retirée — avec sa relation et son type de contenu —
+  dès qu'une formule est ajoutée, remplacée ou effacée. Excel la reconstruit ; la garder
+  fausse lui fait proposer une réparation.
+- **Lecture seule motivée**, cellule par cellule : cellules fusionnées (sauf la première),
+  en-têtes et totaux de tableaux, tableaux croisés, formule recopiée « maîtresse » (les
+  autres en dépendent), formules matricielles, valeurs riches (image dans la cellule), cellules
+  verrouillées d'une feuille protégée. Classeur entier : macros (`.xlsm`), mot de passe de
+  modification ; OOXML strict refusé à l'ouverture.
+- Une feuille à la fois, choisie dans une liste « Feuille » (masquées signalées) : **pas
+  d'onglets** (règle du produit). Pas d'insertion de lignes ou colonnes au milieu : on ajoute
+  en fin, en tapant dans la ligne ou la colonne libre.
+- Brouillon = les saisies, cellule par cellule (`{feuille: {B3: '250'}}`) ; revenir à la
+  valeur d'origine efface la modification. Rien de modifié → les octets d'origine.
+- Garde-fou final : chaque XML produit est relu par `DOMParser` ; invalide → rien ne part.
+
+**Limites assumées (v1).** Insérer/supprimer des lignes ou colonnes au milieu, mettre en
+forme, créer une feuille, un graphique, un tableau : dans Excel (« Ouvrir avec… »). Les
+retours à la ligne dans une cellule (Alt+Entrée) ne se tapent pas dans la barre.
+
+**À vérifier sur le TSE** : ouvrir dans Excel un classeur modifié par WorkLogs — aucune
+réparation proposée, totaux recalculés, graphiques et mises en forme intacts ; le faire
+réenregistrer par un collègue et le rouvrir dans WorkLogs.
+
+## 28. PWA sur Cloudflare Worker, mise à jour automatique — 2026-10-06
 
 **Le constat.** La PWA (relais de jetons + front) vit sur un Cloudflare Worker unique
 (`worklogs-google`, option B) : elle n’est plus hébergée sur gh-pages. Le problème :

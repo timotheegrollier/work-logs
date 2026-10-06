@@ -156,7 +156,9 @@ test('un conflit Drive affiche l’erreur et conserve le contenu local éditable
   fireEvent.click(screen.getByRole('button', { name: 'Enregistrer sur Drive' }));
   expect(await screen.findByText(/Le document a changé/)).toBeVisible();
   expect(screen.getByRole('textbox', { name: 'Contenu du document' })).toHaveTextContent('Original');
-  expect(screen.getByRole('textbox', { name: 'Contenu du document' })).toHaveAttribute('contenteditable', 'true');
+  // L'éditeur redevient modifiable un rendu après l'affichage de l'erreur : on attend
+  // l'état final au lieu de le lire à l'instant exact (échouait ~1 fois sur 7).
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Contenu du document' })).toHaveAttribute('contenteditable', 'true'));
 });
 
 test('recharger Google exige le choix explicite de remplacer le brouillon', async () => {

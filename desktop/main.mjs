@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mjs';
 import { createGoogleClient, readDefaultClient } from './google.mjs';
 import { installGoogleView } from './google-view.mjs';
-import { launchDetached, prepareOpenCopy } from './open-file.mjs';
+import { launchDetached, prepareOpenCopy, REFUSED } from './open-file.mjs';
+import { connectShare, findFileManager } from './shared-mount.mjs';
 import { checkForUpdate, hasPackageKit, hasPkexec, installedVersionCommand, installKind, installedMatches, isAuthorizationFailure, isNewer, logUpdateEvent, packageManager, parseManagerProgress, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, privilegedInstallCommand, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
@@ -496,6 +497,77 @@ if (!app.requestSingleInstanceLock()) {
           return failure ? `Aucune application ne sait ouvrir ce fichier (${failure}).` : '';
         } catch (error) {
           return error.message;
+        }
+      });
+      // Dossier partagé : seul ce dialogue natif peut en fixer le chemin (§25).
+      ipcMain.handle('worklogs:shared-choose-root', async (event) => {
+        if (event.sender !== window.webContents) return { error: 'Demande refusée.' };
+        // WORKLOGS_CHOOSE_FOLDER : les parcours de test répondent à la place du dialogue.
+        let folder = process.env.WORKLOGS_CHOOSE_FOLDER || '';
+        if (!folder) {
+          const choice = await dialog.showOpenDialog(window, {
+            title: 'Choisir le dossier partagé', properties: ['openDirectory'],
+            buttonLabel: 'Choisir ce dossier',
+          });
+          if (!window.isDestroyed()) {
+            window.focus();
+            window.webContents.focus();
+          }
+          if (choice.canceled || !choice.filePaths[0]) return { canceled: true };
+          folder = choice.filePaths[0];
+        }
+        try {
+          return { status: await backend.shared.configure(folder) };
+        } catch (error) {
+          return { error: error.message };
+        }
+      });
+      // « Ouvrir avec… » d'un fichier du partage : le vrai fichier (c'est la référence),
+      // jamais une copie. Mêmes types refusés que pour les pièces jointes.
+      ipcMain.handle('worklogs:shared-open-with', async (event, request) => {
+        if (event.sender !== window.webContents) return 'Demande refusée.';
+        try {
+          const target = await backend.shared.openTarget(String(request?.path ?? ''));
+          const extension = path.extname(target).slice(1).toLowerCase();
+          if (REFUSED.has(extension)) {
+            return `Par sécurité, WorkLogs n’ouvre pas les fichiers .${extension} : ouvre-le depuis le gestionnaire de fichiers si tu es sûr de lui.`;
+          }
+          const failure = await launchDetached(target, {
+            command: process.env.WORKLOGS_OPEN_COMMAND || 'xdg-open',
+            fallback: (file) => shell.openPath(file),
+          });
+          return failure ? `Aucune application ne sait ouvrir ce fichier (${failure}).` : '';
+        } catch (error) {
+          return error.message;
+        }
+      });
+      // Se connecter au partage par son adresse (\\serveur\partage) : monté par GVFS,
+      // comme dans Nemo. Le mot de passe, s'il en faut un, se saisit dans la fenêtre
+      // du gestionnaire de fichiers — jamais dans WorkLogs.
+      ipcMain.handle('worklogs:shared-connect', async (event, request) => {
+        if (event.sender !== window.webContents) return { error: 'Demande refusée.' };
+        try {
+          const share = await connectShare(String(request?.address ?? ''), {
+            account: request?.account ? String(request.account) : null,
+            // Le gestionnaire de fichiers lui-même (Nemo…), qui affiche sa fenêtre
+            // « Authentification requise » ; `xdg-open` échoue en silence (voir shared-mount.mjs).
+            openLocation: async (uri) => {
+              const manager = process.env.WORKLOGS_FILE_MANAGER || findFileManager();
+              if (!manager) return 'aucun gestionnaire de fichiers Nemo, Fichiers, Caja ou Thunar';
+              return launchDetached(uri, { command: manager });
+            },
+          });
+          return { status: await backend.shared.configure(share.path, { address: share.label, account: share.account?.label ?? null }) };
+        } catch (error) {
+          return { error: error.message };
+        }
+      });
+      ipcMain.handle('worklogs:shared-forget-root', async (event) => {
+        if (event.sender !== window.webContents) return { error: 'Demande refusée.' };
+        try {
+          return { status: await backend.shared.forget() };
+        } catch (error) {
+          return { error: error.message };
         }
       });
       ipcMain.handle('worklogs:check-updates-now', async (event) => {

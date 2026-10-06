@@ -5,7 +5,7 @@
  * `Authorization: Bearer <clé>`) : il parle aussi bien à OpenAI qu'à la clé
  * gratuite d'AI Studio via l'endpoint OpenAI-compatible de Gemini
  * (`https://generativelanguage.googleapis.com/v1beta/openai`, modèle
- * `gemini-3.5-flash-lite` par défaut). Aucune dépendance, `fetch` natif.
+ * `gemini-3-flash-preview` par défaut, chaîne de secours sur les autres modèles gratuits). Aucune dépendance, `fetch` natif.
  */
 
 export interface AiSettings {
@@ -17,13 +17,27 @@ export interface AiSettings {
 }
 
 export const DEFAULT_AI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai';
-export const DEFAULT_AI_MODEL = 'gemini-3.5-flash-lite';
+export const DEFAULT_AI_MODEL = 'gemini-3-flash-preview';
 /**
- * Modèle de secours sur l'endpoint Gemini : « OK » en direct le 2026-09-24
- * (~3 s). `gemini-2.5-flash-lite` (secours de la 0.37.1) est exclu : Google le
- * refuse en 404 aux nouvelles clés (« no longer available to new users »).
+ * Défaut jusqu'à la 0.41.0, saturé chez Google depuis (503 ou 20–60 s sans réponse).
+ * Les Paramètres l'enregistrent avec la clé : sans cette relecture, le nouveau défaut
+ * ne toucherait personne. Seule cette valeur exacte est migrée ; un autre choix reste.
  */
-export const FALLBACK_AI_MODEL = 'gemini-3.1-flash-lite';
+const PREVIOUS_DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+/**
+ * Chaîne de secours sur l'endpoint Gemini, du plus fiable au moins fiable d'après
+ * des appels réels le 2026-09-24 (trois passages, clé gratuite) : `3-flash-preview`
+ * et `2.5-flash` 3/3 en ~3 s ; `3.5-flash` lent (15–25 s) ; `3.6-flash` 2/3 ;
+ * `3.5-flash-lite`, `3.1-flash-lite`, `flash-latest` et `3.7/3.8-flash` en 503
+ * « high demand » presque à chaque fois. Les modèles gratuits servent les clés
+ * gratuites en dernier : aucun n'est sûr seul, plusieurs le sont ensemble. Un
+ * modèle refusé à une clé (404 : `2.5-flash-lite` pour les nouvelles clés) est
+ * simplement sauté.
+ */
+export const GEMINI_FALLBACK_MODELS = [
+  'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-3.5-flash', 'gemini-3.6-flash',
+  'gemini-2.5-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite',
+];
 
 export interface AiModelOption {
   id: string;
@@ -31,21 +45,29 @@ export interface AiModelOption {
 }
 
 /**
- * Modèles proposés dans le select des Paramètres : chacun a répondu « OK » à
- * un appel réel le 2026-09-24 (clé de l'appareil, consigne « Réponds uniquement
- * avec : OK »). `gemini-2.5-flash-lite` en est exclu : Google le refuse en 404
+ * Modèles proposés dans le select des Paramètres, du plus fiable au moins fiable
+ * d'après les mesures du 2026-09-24 (voir `GEMINI_FALLBACK_MODELS`) ; la chaîne de
+ * secours couvre les autres quand celui choisi est saturé. `gemini-2.5-flash-lite` en est exclu : Google le refuse en 404
  * (« no longer available to new users »). Le bouton « Tester » de l'écran ne
  * sert plus qu'au diagnostic de connexion.
  */
 export const AI_MODELS: AiModelOption[] = [
-  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — rapide et économique (défaut)' },
-  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — le plus capable' },
-  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — stable et léger' },
+  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (preview) — le plus fiable en gratuit (défaut)' },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — fiable, parfois indisponible aux nouvelles clés' },
+  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — le plus capable, souvent lent' },
+  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — souvent saturé en gratuit' },
+  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — souvent saturé en gratuit' },
 ];
 
 /** Valeur du select quand le modèle enregistré n'est dans aucune option. */
 export const AI_CUSTOM_MODEL = 'personnalise';
 const AI_TIMEOUT_MS = 30_000;
+/**
+ * Les modèles qui « raisonnent » (2.5-flash, 3.x-flash) décomptent leur réflexion
+ * de ce budget : à 300 jetons, les sous-tâches revenaient tronquées. Le nettoyage
+ * garde de toute façon huit lignes au plus.
+ */
+const SUGGEST_MAX_TOKENS = 1024;
 const MAX_SUGGESTIONS = 8;
 
 const LS_ENDPOINT = 'worklogs-ai-endpoint';
@@ -68,7 +90,8 @@ export function readAiSettings(): AiSettings {
     import.meta.env.MODE === 'test' ? '' : import.meta.env[name] || '';
   return {
     endpoint: stored(LS_ENDPOINT).trim() || envDefault('VITE_DEFAULT_AI_ENDPOINT') || DEFAULT_AI_ENDPOINT,
-    model: stored(LS_MODEL).trim() || envDefault('VITE_DEFAULT_AI_MODEL') || DEFAULT_AI_MODEL,
+    model: [stored(LS_MODEL).trim()].map((model) => (model === PREVIOUS_DEFAULT_MODEL ? '' : model))[0]
+      || envDefault('VITE_DEFAULT_AI_MODEL') || DEFAULT_AI_MODEL,
     key: stored(LS_KEY).trim() || envDefault('VITE_DEFAULT_AI_KEY'),
     profile: stored(LS_PROFILE).trim(),
   };
@@ -251,8 +274,23 @@ export function taskSuggestContext(
 
 export class AiError extends Error {}
 
-/** Le modèle est saturé ou trop lent : un autre modèle a sa chance. */
-class AiOverloaded extends AiError {}
+/**
+ * Le dernier secours qui a répondu passe en tête pendant dix minutes : seul le
+ * premier appel attend que le modèle choisi, s'il traîne, épuise sa tranche. Passé
+ * ce délai, le modèle choisi retrouve sa chance. En mémoire seulement.
+ */
+const PREFERRED_MS = 10 * 60_000;
+let preferred: { chosen: string; model: string; until: number } | null = null;
+
+/** Pour les tests : oublie le secours mémorisé. */
+export function resetAiFallbackMemory(): void {
+  preferred = null;
+}
+
+/** Échec propre à ce modèle (saturé, trop lent, absent pour cette clé, réponse vide) : un autre a sa chance. */
+class AiTryNext extends AiError {
+  constructor(message: string, readonly overloaded = false) { super(message); }
+}
 
 const OVERLOADED_MESSAGE = 'Modèle IA surchargé chez le fournisseur : réessaie dans quelques minutes, ou choisis un autre modèle dans ⚙ Paramètres.';
 
@@ -290,16 +328,36 @@ async function postChatCompletions(
   const key = settings.key.trim();
   if (!key) throw new AiError(`Colle ta clé IA dans ⚙ Paramètres pour activer ${feature}.`);
   const model = settings.model.trim();
-  const canFallBack = /^https:\/\/generativelanguage\.googleapis\.com\//.test(settings.endpoint.trim()) && model !== FALLBACK_AI_MODEL;
-  if (!canFallBack) return postOnce(settings, model, key, system, user, maxTokens, timeoutMs);
-  try {
-    // La moitié du délai : un modèle sain répond bien avant, et il reste de quoi
-    // laisser le secours finir sans faire attendre une minute.
-    return await postOnce(settings, model, key, system, user, maxTokens, Math.round(timeoutMs / 2));
-  } catch (e) {
-    if (!(e instanceof AiOverloaded)) throw e;
-    return postOnce(settings, FALLBACK_AI_MODEL, key, system, user, maxTokens, timeoutMs);
+  // Un autre fournisseur n'a pas ces modèles : un seul essai, le sien.
+  if (!/^https:\/\/generativelanguage\.googleapis\.com\//.test(settings.endpoint.trim())) {
+    return postOnce(settings, model, key, system, user, maxTokens, timeoutMs);
   }
+  // Chaque modèle au plus une fois, dans un budget total borné : pas une boucle.
+  // Un 503 répond en ~0,5 s, un essai raté coûte donc peu ; seul un modèle qui
+  // traîne consomme sa tranche (deux tiers du délai), puis on passe au suivant.
+  const remembered = preferred && preferred.chosen === model && preferred.until > Date.now() ? preferred.model : null;
+  const candidates = [...(remembered ? [remembered] : []), model, ...GEMINI_FALLBACK_MODELS]
+    .filter((candidate, index, all) => all.indexOf(candidate) === index);
+  const deadline = Date.now() + timeoutMs * 1.5;
+  const slice = Math.round((timeoutMs * 2) / 3);
+  let last: AiTryNext | null = null;
+  let allOverloaded = true;
+  for (const candidate of candidates) {
+    const remaining = deadline - Date.now();
+    if (remaining < Math.min(2000, slice / 2)) break;
+    try {
+      const content = await postOnce(settings, candidate, key, system, user, maxTokens, Math.min(remaining, slice));
+      preferred = candidate === model ? null : { chosen: model, model: candidate, until: Date.now() + PREFERRED_MS };
+      return content;
+    } catch (e) {
+      // Clé refusée ou pas de réseau : insister sur un autre modèle n'y changera rien.
+      if (!(e instanceof AiTryNext)) throw e;
+      last = e;
+      allOverloaded &&= e.overloaded;
+    }
+  }
+  if (!last || allOverloaded) throw new AiError(OVERLOADED_MESSAGE);
+  throw new AiError(last.message);
 }
 
 async function postOnce(
@@ -331,30 +389,32 @@ async function postOnce(
     });
   } catch {
     // Délai dépassé ≠ hors ligne : le message « injoignable » accusait à tort la connexion.
-    if (controller.signal.aborted) throw new AiOverloaded(OVERLOADED_MESSAGE);
+    if (controller.signal.aborted) throw new AiTryNext(OVERLOADED_MESSAGE, true);
     throw new AiError('IA injoignable : hors ligne ou endpoint incorrect.');
   } finally {
     clearTimeout(timer);
   }
   if (res.status === 503 || res.status === 502 || res.status === 504 || res.status === 500) {
-    throw new AiOverloaded(OVERLOADED_MESSAGE);
+    throw new AiTryNext(OVERLOADED_MESSAGE, true);
   }
   if (res.status === 401 || res.status === 403) {
     throw new AiError('Clé IA refusée : vérifie-la dans ⚙ Paramètres (une clé AI Studio suffit).');
   }
   if (res.status === 429) {
-    throw new AiError('Limite du service IA atteinte : réessaie dans une minute.');
+    // Le quota gratuit est compté par modèle : un autre peut encore répondre.
+    throw new AiTryNext('Limite du service IA atteinte : réessaie dans une minute.');
   }
   if (!res.ok) {
     const detail = await providerDetail(res);
-    throw new AiError(
+    // 404 : modèle absent pour cette clé ; le suivant a sa chance.
+    throw new (res.status === 404 ? AiTryNext : AiError)(
       detail
         ? `Service IA indisponible (${res.status}) : ${detail} — vérifie le modèle et l’endpoint dans ⚙ Paramètres.`
         : `Service IA indisponible (${res.status}) : réessaie plus tard.`
     );
   }
   const content = await res.json().catch(() => null).then((body) => body?.choices?.[0]?.message?.content);
-  if (typeof content !== 'string' || !content.trim()) throw new AiError('Réponse IA illisible : réessaie.');
+  if (typeof content !== 'string' || !content.trim()) throw new AiTryNext('Réponse IA illisible : réessaie.');
   return content;
 }
 
@@ -390,7 +450,7 @@ export async function suggestSubtasks(
   // les écrans aient à le renseigner.
   const prompt = buildSuggestPrompt(title, { ...options.context, profile: settings.profile });
   return cleanSuggestionLines(
-    await postChatCompletions(settings, 'les suggestions', prompt.system, prompt.user, 300, options.timeoutMs ?? AI_TIMEOUT_MS)
+    await postChatCompletions(settings, 'les suggestions', prompt.system, prompt.user, SUGGEST_MAX_TOKENS, options.timeoutMs ?? AI_TIMEOUT_MS)
   );
 }
 

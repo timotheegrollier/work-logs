@@ -168,6 +168,88 @@ figurent **pas** dans le journal (seulement dans ses archives une fois archivée
 pour pouvoir les restaurer). Comme les autres panneaux, la sidebar est toujours
 dépliée quand elle est affichée, se masque par son bouton et l'état est retenu.
 
+## Dossier partagé (le dossier du TSE)
+
+Sous les procédures, la section **Dossier partagé** montre le dossier de l'équipe, celui du
+TSE. Sur le desktop, tape son **adresse comme sous Windows** — `\\serveur\partage` (ou
+`smb://serveur/partage`, éventuellement suivie d'un sous-dossier) — puis **Se connecter** :
+WorkLogs le monte comme le gestionnaire de fichiers (Nemo). S'il faut un mot de passe, c'est
+la fenêtre « Authentification requise » de Nemo qui le demande (choisis « Se souvenir pour
+toujours ») ; elle peut s'ouvrir derrière WorkLogs. WorkLogs ne voit jamais tes
+identifiants. Si un dossier affiche **« Accès refusé »**, le partage est monté avec un compte
+qui n'y a pas droit (souvent l'accès invité) : renseigne **Compte** avec celui du TSE
+(`SRVMURGAT\TonNom`, même orthographe, accents compris) et reconnecte-toi ; l'adresse peut
+viser directement un sous-dossier (`\\SRVMURGAT\Global\MURGAT INGENIERIE\13. SI\00. PROCEDURE`). Après un redémarrage, le partage n'est plus monté : **Se reconnecter** le
+remonte d'un clic. Un dossier déjà monté se choisit aussi par « ou choisir un dossier déjà
+monté… ». Le choix est retenu sur cet ordinateur seulement ; la section ne lit le partage que
+lorsque la colonne Procédures est affichée.
+
+- Cliquer un fichier l'ouvre **au centre**, comme une entrée. `.txt`, `.md`, `.csv`,
+  `.tsv`, **`.docx`** et **`.xlsx`** se modifient directement (grille pour les CSV et les
+  classeurs : flèches, Entrée, Tab, F2, copier-coller depuis un tableur ; ＋/− ligne et
+  colonne pour les CSV).
+- **Documents Word** : texte, gras/italique/souligné/barré, style de paragraphe (Normal,
+  Titre 1, Titre 2…), alignement, niveau de liste (Tab / Maj+Tab), texte des liens et des
+  cellules de tableau. Images, champs, table des matières, zones de texte… s'affichent en
+  « objet conservé » : ils repartent tels quels, modifiables dans Word (« Ouvrir avec… »).
+  Seuls les paragraphes que tu as touchés sont réécrits ; le reste du fichier (styles,
+  en-têtes, numérotation, images) ne change pas d'un octet. Un document en suivi des
+  modifications s'ouvre en lecture seule.
+- **Classeurs Excel** : une feuille à la fois, choisie dans la liste **Feuille** (les
+  feuilles masquées y sont signalées). Les valeurs s'affichent comme dans Excel
+  (`1 234,50 €`, `05/10/2026`, `12,5 %`) ; la barre « Contenu de la cellule » montre la
+  valeur brute ou la formule. Tape comme dans Excel en français : `12,5`, `12,5 %`, une date
+  dans une cellule de date, `'0123` pour garder un texte, `=SOMME(B2:B10)` ou
+  `=SI(A1>0;"oui";"non")` pour une formule. Une formule mal écrite est signalée sous la
+  grille et l'envoi attend qu'elle soit corrigée. Pour ajouter une ligne ou une colonne,
+  tape dans la ligne ou la colonne libre en bas ou à droite.
+  Seules les cellules que tu as tapées sont réécrites ; graphiques, mises en forme,
+  validations et tableaux ne changent pas. WorkLogs ne calcule pas : les formules qui
+  dépendent de tes cellules affichent leur formule jusqu'à l'ouverture dans Excel ou
+  LibreOffice, qui les recalculent. Restent en lecture seule, avec leur raison quand tu
+  cliques dessus : cellules fusionnées, en-têtes et totaux de tableaux, tableaux croisés,
+  cellules verrouillées d'une feuille protégée, formules recopiées sur plusieurs cellules ;
+  et tout un classeur à macros (`.xlsm`) ou protégé par un mot de passe de modification.
+- Tes modifications s'enregistrent **seules sur cet ordinateur** (« Brouillon sur cet
+  ordinateur »). Elles ne partent sur le partage qu'avec **Enregistrer sur le partage**
+  ou `Ctrl+S`. Le fichier garde son encodage (Windows-1252 pour un CSV d'Excel), son
+  séparateur et ses fins de ligne ; une ligne que tu n'as pas touchée ne change pas d'un
+  octet.
+- **Chacun son tour.** Un fichier ouvert dans Word, Excel ou LibreOffice par un collègue
+  s'affiche « Lecture seule — Ouvert par Jean Dupont dans Word depuis 10h42 ». Tu peux
+  quand même préparer un brouillon ; l'envoi attend que le fichier soit libre et part tout
+  seul ensuite (ou **Réessayer maintenant**).
+- **Rien n'est écrasé.** Si quelqu'un a enregistré le fichier pendant que tu le modifiais,
+  WorkLogs ne l'écrase pas et te demande : **Garder ma version**, **Prendre la leur** ou
+  **Garder les deux** (ta version est alors enregistrée à côté, sous
+  « Nom (copie Ton Nom date heure) »). Les versions écartées restent sur cet ordinateur.
+- **Hors ligne** (VPN coupé), les fichiers déjà ouverts restent modifiables ; l'envoi part
+  au retour du partage. Un partage démonté est signalé « Non monté » : WorkLogs n'écrit
+  jamais dans le dossier vide qui reste à sa place.
+- Sans modification de ta part, la version d'un collègue s'affiche d'elle-même (toutes les
+  5 secondes, et quand tu reviens sur la fenêtre).
+- Pastilles de l'arbre : 🔒 ouvert par quelqu'un, ✎ brouillon ici, ⇡ envoi en attente,
+  ⚠ conflit à régler, ↻ modifié sur le partage depuis ta dernière lecture.
+- **Tu as la main** dès ta première frappe : WorkLogs pose un verrou à ton nom (réglable
+  dans Paramètres › Dossier partagé) que LibreOffice et les autres WorkLogs voient. Il est
+  rendu quand tu fermes le fichier, ou après 10 minutes sans frappe. Un verrou resté d'un
+  collègue sans signe de vie depuis plusieurs minutes est signalé « probablement oublié » :
+  **Prendre la main** le reprend (avec confirmation).
+- Quitter un fichier dont le brouillon n'est pas envoyé (Fermer, une entrée, un autre
+  fichier) demande : **Envoyer sur le partage**, **Garder le brouillon ici** ou **Annuler**.
+- **Ouvrir avec…** (application desktop) ouvre le vrai fichier du partage dans LibreOffice
+  ou l'application du système — pour ce que WorkLogs ne modifie pas (en-têtes Word, mise en
+  forme Excel, autres formats). Envoie ou abandonne d'abord ton brouillon.
+- Avec un projet filtré, **Relier … à un dossier…** associe le projet à un sous-dossier du
+  partage : la section n'affiche plus que lui. **Délier** rend tout le partage.
+- **Historique sur cet ordinateur** (sous l'éditeur) liste les versions lues, envoyées ou
+  mises de côté ; **Restaurer** en fait ton brouillon, à envoyer comme d'habitude.
+
+Limite à connaître : Word et Excel **ne voient pas** que tu modifies un fichier dans
+WorkLogs (ils ignorent les verrous des autres applications). Rien n'est perdu pour autant :
+si un collègue enregistre avant toi, ton envoi te demande quoi faire. La PWA (téléphone)
+n'a pas accès au dossier partagé.
+
 ## Retrouver
 
 La recherche en haut cherche dans les **titres et le corps** des entrées, et dans les titres des
@@ -247,6 +329,7 @@ La sauvegarde atterrit dans `~/WorkLogs-backups/worklogs-AAAAMMJJ-HHMMSS/`.
 
 ## Ce que l'app ne fait pas — et c'est voulu
 
-Pas de compte ni de partage, pas de synchronisation avec un agenda externe, pas d'application
-mobile, pas de rappel sonore, pas de recherche plein texte avancée. Chaque ajout de ce genre
+Pas de compte, pas d'écriture à plusieurs en même temps (le dossier partagé, c'est chacun son
+tour), pas de synchronisation avec un agenda externe, pas d'application mobile, pas de rappel
+sonore, pas de recherche plein texte avancée. Chaque ajout de ce genre
 ramènerait un onglet ; le raisonnement est dans `05-DECISIONS.md`.

@@ -115,6 +115,7 @@ export function AccountMenu({
               <div>
                 <strong>Non connecté</strong>
                 <small>Facultatif : sauvegarde et synchronisation avec Google Drive.</small>
+                {sync?.state === 'error' && <small className="sync-line is-error">{sync.error || 'Connexion en échec'}</small>}
               </div>
             </div>
           )}

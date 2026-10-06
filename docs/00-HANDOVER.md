@@ -31,6 +31,235 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
+## Lot du 2026-10-05 (5) — dossier partagé, lot 4 : classeurs Excel (.xlsx) — v0.45.0
+
+Décision : §27. Éditeur `XlsxFileEditor.tsx` (une feuille à la fois, liste « Feuille ») sur la
+grille des CSV (`SheetGrid` : barre de saisie distincte de l'affichage, cellules en lecture
+seule motivées, nombres à droite). Cœur `xlsx.ts` (lecture, écriture cellule par cellule,
+formules à recalculer), `xlsx-format.ts` (formats d'Excel à la française, saisie),
+`xlsx-formula.ts` (grammaire, traduction français ↔ anglais, dépendances). `ooxml.ts` reprend
+de `docx.ts` ce que Word et Excel partagent ; `zip.ts` sait retirer une entrée
+(`calcChain.xml`). Fixture Excel construite pour les tests : `web/src/test/xlsx-fixture.ts`.
+- **Trouvé en route** : LibreOffice 24.2 **ne recalcule pas** un `.xlsx` à l'ouverture (réglage
+  par défaut) et ignore `fullCalcOnLoad` : après une modification, il montrait l'ancien total.
+  D'où le retrait de la valeur des seules formules qui lisent une cellule modifiée (même
+  feuille, autres feuilles, noms définis, formules recopiées) : vérifié par conversion
+  LibreOffice, tous les totaux justes, y compris `Résumé!A1 = SUM(Suivi!B2:B3)*(1+Taux)`.
+- **Tests** : 212 API, **437 front** (+31 : `xlsx.test.ts`, `xlsx-format.test.ts`,
+  `xlsx-formula.test.ts`, suppression d'entrée dans `zip.test.ts`, cellule protégée dans
+  `SheetGrid.test.tsx`, 2 gestes dans `App.test.tsx`), 44 desktop, 25 scripts, 8 relais,
+  **49 navigateur** (+1 : nombre et formule au clavier puis Ctrl+S), 13 desktop : 788 en tout ;
+  avec le correctif de connexion ci-dessous, 45 desktop unitaires et 14 parcours desktop : **790**.
+  Pendant `./scripts/check.sh`, le parcours desktop « masquer le document rend le clavier »
+  (Google, sans rapport avec ce lot) a échoué une fois sur l'écran réel — focus de fenêtre ;
+  relancé : 3/3 seul, puis 13/13 pour toute la suite desktop.
+- **Vu dans un vrai navigateur** (Chromium, 1440 et 412 px) : classeur de test ouvert, montants
+  `1 234,50 €`, dates, pourcentages, booléens et erreurs à la française, en-tête de tableau et
+  formule recopiée grisés, raison affichée sur une cellule fusionnée, formule fautive listée
+  sous la grille ; parcours Playwright : `87,5` puis `=SOMME(B2:B3;10)` au clavier, Ctrl+S,
+  fichier écrit cellule par cellule. Excel : sur le TSE.
+
+**v0.45.1 — le compte du partage.** `\\SRVMURGAT\Global\MURGAT INGENIERIE\13. SI\00. PROCEDURE`
+refusé : les montages GVFS de Timo voient ce que voit l'invité (`D` lisible, `Global` refusé),
+le trousseau rejouant `TimotheeG`/`WORKGROUP`. Champ « Compte » (dans l'adresse GVFS, jamais
+de mot de passe), refus d'accès dit comme tel (connexion et arbre). §25. **À faire par Timo** :
+« Changer de dossier… », adresse ci-dessus, Compte = son identifiant du TSE avec le domaine
+`SRVMURGAT` (orthographe exacte), mot de passe dans la fenêtre.
+Tests : 1 API, 2 desktop unitaires, 1 front, parcours desktop étendu (compte + reconnexion) :
+**794**. `WORKLOGS_E2E_PORT` : une autre session occupait le port 8412 des parcours web.
+
+**Correctif du même lot — se connecter au partage (v0.45.0).** « Connexion à
+\\172.16.1.20\D… » restait sans fenêtre puis échouait : `xdg-open` (via `gio open`) refuse
+une adresse SMB non montée sans rien afficher. WorkLogs lance maintenant Nemo directement
+sur l'adresse : sa fenêtre « Authentification requise » s'ouvre (vue sur la machine de Timo,
+avec le vrai code de WorkLogs). Tests : 1 unitaire (`shared-mount.test.mjs`), 1 parcours
+desktop (mot de passe à saisir : faux `gio` qui échoue, faux Nemo qui monte). Le serveur
+expose les partages `D`, `Global`, `Pisciculture`… (liste anonyme `smbclient -L`).
+
+### À vérifier par Timo (classeurs Excel)
+
+1. Ouvrir un vrai classeur `.xlsx` de l'équipe : valeurs, dates et montants s'affichent-ils
+   comme dans Excel ? Quelles cellules sont en lecture seule, et la raison est-elle juste ?
+2. Modifier un nombre, un texte, une date, une formule (`=SOMME(…)`) ; envoyer ; ouvrir
+   **dans Excel sur le TSE** : aucune réparation proposée ? Totaux recalculés ? Graphiques,
+   mises en forme conditionnelles, validations, tableaux intacts ?
+3. Même fichier ouvert par « Ouvrir avec… » dans LibreOffice : totaux justes ?
+4. Le faire modifier et réenregistrer par un collègue dans Excel, puis le rouvrir dans WorkLogs.
+5. M'envoyer (sans données de l'entreprise) un `.xlsx` qui pose problème, s'il y en a.
+
+## Lot du 2026-10-05 (4) — dossier partagé, lot 3 : documents Word (.docx) — v0.44.0
+
+Décision : §26. Éditeur `DocxFileEditor.tsx` ; cœur `docx.ts` (lecture → document Tiptap +
+tranches d'origine ; écriture au plus juste), `docx-extensions.ts` (schéma dédié, numéros de
+liste, refus de coller un objet conservé), `zip.ts` (extrait de `docx-preview.ts`, qui s'en
+sert désormais, + écrivain), `xml-scan.ts`. Fixture Word construite pour les tests :
+`web/src/test/docx-fixture.ts` ; la fixture LibreOffice réelle (`procedure.docx`) fait
+l'aller-retour à l'identique.
+- **Trouvé en route** : `setEditable()` de Tiptap émettait une modification ; l'éditeur
+  recréait un brouillon juste après chaque envoi (parcours Playwright instable, 1 fois sur 2).
+- **Tests** : `./scripts/check.sh` vert — 212 API, **406 front** (+22 : `docx.test.ts`,
+  `zip.test.ts`, 2 gestes dans `App.test.tsx`), 44 desktop, 25 scripts, 8 relais,
+  **48 navigateur** (+1 : taper dans un `.docx` puis Ctrl+S), 13 desktop : 756 en tout.
+- **Vu dans le navigateur intégré** : document de test type Word ouvert (titre, italique et gras
+  d'origine, lien, liste 1./a), image et table des matières conservées, tableau), phrase
+  ajoutée + nouveau paragraphe, Ctrl+S ; le fichier écrit garde `w14:paraId`, espacements et
+  `rPr` d'origine, et **LibreOffice l'ouvre** (conversion texte : tout y est). Word : sur le TSE.
+
+### À vérifier par Timo (documents Word)
+
+1. Ouvrir une vraie procédure `.docx` de l'équipe : le texte, les titres, les listes et les
+   tableaux s'affichent-ils correctement ? Quels objets apparaissent « conservés » ?
+2. Modifier une phrase, un titre, une cellule ; envoyer ; ouvrir le fichier **dans Word sur le
+   TSE** : aucune réparation proposée ? Mise en forme, numérotation, en-tête, images intacts ?
+3. Le faire modifier et réenregistrer par un collègue dans Word, puis le rouvrir dans WorkLogs.
+4. M'envoyer (sans données de l'entreprise) un `.docx` qui pose problème, s'il y en a.
+
+## Lot du 2026-10-05 (3) — se connecter au partage par son adresse, lecture GVFS — v0.43.1
+
+Retour de Timo : « je n'arrive pas à ouvrir le dossier partagé par le TSE dans l'app desktop
+(Linux Mint) ». Constaté sur sa machine : **aucun partage monté** (ni GVFS, ni CIFS), aucun
+dossier enregistré dans WorkLogs — le sélecteur ne choisit qu'un dossier déjà monté.
+- **Se connecter** par `\\serveur\partage` (GVFS, comme Nemo ; mot de passe dans la
+  fenêtre de Nemo, jamais dans WorkLogs), **Se reconnecter** après redémarrage. Décision : §25.
+- **Bug trouvé en route** : sur un montage GVFS, la lecture positionnée échoue (`ESPIPE`) —
+  WorkLogs n'aurait lu aucun fichier d'un partage ouvert par Nemo. Lecture et écriture
+  séquentielles, repli automatique ; prouvé sur une archive montée par GVFS (le test échoue
+  avec l'ancien worker).
+- Tests : `desktop/test/shared-mount.test.mjs` (3), `api/test/shared-gvfs.test.js` (1), parcours
+  desktop « se connecter par l'adresse, puis se reconnecter ».
+
+**À faire par Timo** : dans WorkLogs (colonne Procédures → Dossier partagé), taper l'adresse
+du partage telle qu'utilisée sous Windows, Se connecter, saisir le mot de passe dans la
+fenêtre qui s'ouvre si elle s'ouvre. Me dire si le montage réussit et si l'**envoi** d'un
+fichier fonctionne (l'écriture par GVFS sur un vrai SMB n'a pas pu être essayée ici).
+
+## Lot du 2026-10-05 (2) — dossier partagé TSE, lot 2 : verrou, projets, historique — v0.43.0
+
+Demandé par Timo : « vas-y pour le lot 2, commit, pousse et bump : je teste sur la prod ».
+Décision : §25 (paragraphe « Lot 2 »).
+
+- **Verrou WorkLogs** (`acquireLock`/`releaseLock`/`expireLocks` dans `shared-service.js`,
+  opérations `renewLock`/`unlinkIfMarked` du worker) : pris à la première frappe, renouvelé
+  chaque minute, rendu à la fermeture, après 10 min sans frappe, par le bail serveur (3 min),
+  au démarrage et à l'arrêt. Verrou WorkLogs d'un autre poste « oublié » après 3 min
+  d'observation sans renouvellement → « Prendre la main ». LibreOffice ouvert sur cet
+  ordinateur bloque aussi ; `describeLock` montre le verrou d'un autre avant le nôtre.
+- **Question de sortie** (`web/src/shared-leave.ts`) : Envoyer · Garder le brouillon ici ·
+  Annuler, posée par Fermer, une entrée, un autre fichier, une création.
+- **« Ouvrir avec… »** sur le vrai fichier (IPC `worklogs:shared-open-with`, `openTarget`),
+  `REFUSED` exporté de `open-file.mjs`.
+- **Sous-dossier par projet** (routes `/api/shared/projects/:id/folder`), **historique** et
+  restauration en brouillon (`/api/shared/versions/:id/restore`), **nom affiché** dans
+  Paramètres › Dossier partagé (`SharedSettings.tsx`).
+- Fusion de `master` (Dependabot : Electron 44.4.5, vitest 5.0.2, multer 2.4.0…) avant le lot.
+- **Tests** : `./scripts/check.sh` vert — **211 API** (+11), **384 front** (+9), 41 desktop
+  unitaires, 25 scripts, 8 relais, **47 navigateur** (+2), **12 desktop e2e** (+1) : 728 en tout.
+  Deux parcours Google du desktop (« outils dans le canevas… dimensions », « masquer le document
+  rend le clavier ») ont chacun échoué une fois dans `check.sh` lancé sur la vraie session (focus
+  et tailles du bureau Cinnamon pendant que la machine sert) ; seuls, ensemble ou dans la suite
+  desktop complète, ils passent à chaque fois (3 × 12/12). À surveiller avec les deux courses du
+  point 0.
+
+### À vérifier par Timo (en plus de la liste du lot 1)
+
+1. Taper dans un fichier : un `.~lock.<nom>#` apparaît-il sur le TSE ? Un collègue qui ouvre
+   ce fichier dans **LibreOffice** voit-il « en cours d'utilisation par <ton nom> » ?
+2. Le même fichier ouvert dans **Word** par un collègue : WorkLogs refuse-t-il la main avec
+   son nom ? (Word, lui, ne verra pas ton verrou : c'est attendu.)
+3. « Ouvrir avec… » sur un `.docx` du partage : LibreOffice l'ouvre-t-il **en écriture** sur le
+   partage, et WorkLogs affiche-t-il ensuite « Ouvert par … dans LibreOffice » ?
+4. Fermer WorkLogs pendant qu'on a la main : le `.~lock` disparaît-il du TSE ?
+
+## Lot du 2026-10-05 — dossier partagé TSE, lot 1 : socle + texte (branche `claude/worklogs-file-coedition-bcae02`)
+
+Plan validé par Timo : le dossier du TSE (monté en SMB) devient la référence ; les fichiers
+se modifient **des deux côtés, chacun son tour, sans perte**, dans WorkLogs. Décision : §25.
+
+- **Serveur** : `api/src/shared-io.js` (worker borné, disjoncteur), `shared-locks.js` (`~$` de
+  Word/Excel, `.~lock#` de LibreOffice/WorkLogs), `shared-service.js` (chemins sûrs, magasin de
+  versions, brouillons, envoi gardé sur place, conflits, réessais, rétention),
+  `shared-routes.js` (`/api/shared/*`, garde `localOnly`). Tables locales sans clé étrangère.
+- **Desktop** : IPC `worklogs:shared-choose-root` / `forget-root` (dialogue natif ; parcours de
+  test : `WORKLOGS_CHOOSE_FOLDER`). Web/dev et e2e : `WORKLOGS_SHARED_ROOT`.
+- **Front** : section « Dossier partagé » sous les procédures (`SharedFolder.tsx`, ne lit le
+  partage que colonne affichée), `SharedFileEditor.tsx` au centre (brouillon local, « Enregistrer
+  sur le partage »/`Ctrl+S`, bandeaux lecture seule/attente/hors ligne/conflit et trois choix),
+  `TextFileEditor.tsx` (.txt/.md), `CsvFileEditor.tsx` + `SheetGrid.tsx` (.csv/.tsv),
+  `text-codec.ts`, `text-file.ts`, `csv-file.ts`, `shared-session.ts`.
+- **Trouvés en route** : un worker `unref()` avant ses écouteurs retient le processus ; un worker
+  `eval` hérite de `--input-type=module` (d'où `execArgv: []`) ; `fetch` de Node ignore l'en-tête
+  `Host` et ne sait pas lire le `Blob` de jsdom (envoi des octets en `Uint8Array`) ; la grille
+  doit donner le focus à sa barre **tout de suite**, sinon une frappe rapide perd des caractères
+  (vu seulement dans Chromium) ; une requête de plus au démarrage rendait instable
+  « supprimer un projet garde ses entrées » (le test clique avant le chargement) — la section
+  ne lit plus rien tant que la colonne Procédures est masquée.
+- **Vu dans le navigateur intégré** (faux partage, CSV Windows-1252) : saisie, `Ctrl+S`, lecture
+  seule, conflit et « garder les deux » conformes ; fichier relu sur disque (Windows-1252, CRLF,
+  une seule ligne changée). Corrigés : une **touche morte** (« ^ » puis « e » sur un clavier
+  français) ou une méthode de saisie n'ouvrait pas la barre et le caractère se perdait ; un nom
+  de fichier long élargissait la colonne et poussait les pastilles hors champ.
+- **Tests** : `./scripts/check.sh` vert — **200 tests API** (+36), **375 front** (+35),
+  **41 desktop unitaires** (+1), 25 scripts, 8 relais, **45 navigateur** (+3) et **11 desktop
+  e2e** (+1) : 705 en tout. Corrigé au passage : une course préexistante de
+  `GoogleDrive.test.tsx` (« un conflit Drive… », ~1 échec sur 7, mesuré aussi sur la version
+  d'origine) attend maintenant l'état final au lieu de le lire à l'instant de l'erreur.
+
+### À vérifier par Timo sur le vrai TSE (rien de cela ne se voit depuis un conteneur)
+
+1. Monter le partage (Fichiers → Autres emplacements, ou CIFS) ; noter le chemin et si c'est
+   GVFS (`/run/user/…/gvfs/…`) ou CIFS. Choisir ce dossier dans WorkLogs (Procédures →
+   Dossier partagé → Choisir le dossier…).
+2. Un collègue ouvre un `.csv` dans Excel : WorkLogs affiche-t-il son nom ? L'envoi passe-t-il
+   en attente, puis part-il quand Excel est fermé ? Noter le message exact.
+3. Même chose avec un `.docx` ouvert dans Word (seul l'affichage du nom compte en lot 1).
+4. Un collègue enregistre un `.md` ou `.csv` pendant ton brouillon : conflit, puis essayer les
+   trois choix.
+5. Après un envoi, onglet Sécurité du fichier sur le TSE : droits inchangés ?
+6. Couper le VPN : l'interface reste-t-elle réactive ? Combien de temps avant « Injoignable » ?
+   L'envoi part-il au retour ?
+7. Ouvrir dans Excel français un CSV modifié par WorkLogs : accents et colonnes corrects ?
+8. Envoyer à Timo (sans données de l'entreprise) des fichiers `~$` réels de Word et d'Excel,
+   et les fixtures du lot 0 (`word-tse.docx`, `excel-tse.xlsx`…) pour les lots .docx/.xlsx.
+
+### Lots suivants (plan validé)
+
+2. Verrou WorkLogs (pris à la première frappe, rendu après 10 min), dialogue de sortie avec
+   brouillon, « Ouvrir avec… » sur le vrai fichier, sous-dossier du partage par projet, versions
+   et restauration.
+3. `.docx` par patch ciblé (zip, analyseur XML à positions, schéma Tiptap dédié).
+4. `.xlsx` cellule par cellule.
+5. À reconfirmer : fusion `.csv/.md`, recherche, arbre hors ligne, procédures ↔ partage.
+
+## Lot du 2026-09-24 (4) — échec de connexion Google visible, URI de redirection affichée
+
+- Reste du lot « secret exigé » (2026-09-22, rendu caduc par le relais : le relais détient
+  le secret, la PWA n'en a plus besoin) : l'échec du retour Google restait invisible quand
+  on partait du menu du compte (l'erreur de synchro ne s'affichait que connecté).
+- `AccountMenu` affiche désormais l'erreur de synchro aussi déconnecté ; le formulaire
+  client personnel montre l'URI de redirection exacte à autoriser (`webRedirectUri()`).
+  Aucune dépendance ajoutée.
+- Tests : front (2 — erreur visible déconnecté, URI exacte).
+
+## Lot du 2026-09-26 (2) — lier une entrée à une tâche existante
+
+- L'éditeur ne savait que *créer* une tâche liée ; le sens inverse existait côté carte
+  (« Lier des documents »). Nouveau geste miroir dans l'entrée : **Lier une tâche
+  existante** (recherche + sélection multiple, mêmes classes `document-linker`), via
+  `POST /api/tasks/:id/documents/:entryId` (déjà idempotent) et `localApi`
+  existant — aucune route ajoutée. `linkedTasks` porte désormais l'`id` pour exclure
+  les déjà-liées. Aucune dépendance ajoutée.
+- Tests : front (1, `App.test.tsx` — lie sans créer, la liée sort du lieur).
+
+## Lot du 2026-09-26 — bandeau projets mobile : pastilles toute largeur
+
+- Sur 412 px (Pixel 9a), le choix du projet partageait sa rangée avec « Gérer les
+  projets » et devenait trop étroit dès 2-3 projets. Les pastilles occupent désormais
+  toute leur rangée (`.project-strip .chips { flex: 1 1 100% }`, le conteneur
+  enveloppait déjà), la gestion passe dessous, pastilles à 44 px de haut.
+  Desktop inchangé. Aucune dépendance ajoutée.
+- Tests : e2e (1, `e2e/project-strip.spec.ts` — largeur ≥ 90 % du bandeau, gestion
+  dessous, 44 px, création + filtre + pas de défilement horizontal).
+
 ## Lot du 2026-09-24 — en-tête allégé, journal en fil, ergonomie desktop et mobile
 
 - Demande : retirer **Exporter** de l'en-tête une fois connecté à Google (la synchro auto suffit)
@@ -130,6 +359,15 @@
   seul, sans repasser par le sélecteur — un seul « Continuer », et Google réémet un
   `refresh_token` qui rend la session à nouveau silencieuse. Première connexion (compte
   inconnu) et changement de compte inchangés.
+
+## Correctif du 2026-09-24 (4) — IA des procédures toujours « surchargée »
+
+- Chaîne de secours Gemini (`GEMINI_FALLBACK_MODELS`, `ai-suggest.ts`) au lieu d'un
+  secours unique lui aussi saturé ; mémoire de 10 min du secours qui a répondu ;
+  sous-tâches à 1 024 jetons. Mesures et règles : `05-DECISIONS.md` §17.
+- Défaut `gemini-3-flash-preview` (le plus fiable en gratuit), `2.5-flash` ajouté au select ;
+  l'ancien défaut exact enregistré est relu comme le nouveau.
+- Tests : chaîne (saturé/lent/404/429/vide), budget borné, arrêt net, mémoire, migration.
 
 ## Lot du 2026-09-24 (3) — aperçu des .docx, « Ouvrir avec… » réparé
 

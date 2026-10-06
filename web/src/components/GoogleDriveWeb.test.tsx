@@ -45,6 +45,13 @@ describe('panneau Drive de la PWA', () => {
     expect(await screen.findByRole('button', { name: 'Se connecter avec Google' })).toBeInTheDocument();
   });
 
+  test('le formulaire affiche l’URI de redirection exacte à autoriser', async () => {
+    render(<GoogleDriveWeb onOpen={() => {}} />);
+    expect(screen.getByText(/URI de redirection à autoriser/)).toBeVisible();
+    const code = screen.getByText((_, element) => element?.tagName === 'CODE');
+    expect(code).toHaveTextContent(`${window.location.origin}/`);
+  });
+
   test('client intégré : bouton unique, client personnel replié', async () => {
     vi.stubEnv('VITE_GOOGLE_CLIENT_ID', CLIENT);
     try {

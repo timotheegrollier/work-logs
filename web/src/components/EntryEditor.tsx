@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project, type RichDocument, type Status } from '../lib';
+import { api, COLUMNS, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project, type RichDocument, type Status } from '../lib';
 import { parseChecklist, proofreadEntry, readAiSettings, suggestProcedure, suggestSubtasks } from '../ai-suggest';
 import { renderMarkdown, toggleChecklistItem } from '../markdown';
 import { markdownToRich, richToMarkdown } from '../rich-markdown';
@@ -35,6 +35,7 @@ export function EntryEditor({
   entry,
   projects,
   linkedTasks = [],
+  tasks = [],
   onChanged,
   onDeleted,
   onTaskCreated,
@@ -45,7 +46,9 @@ export function EntryEditor({
   onSelectTab?: (id: string) => void;
   entry: Entry;
   projects: Project[];
-  linkedTasks?: { title: string; status: Status }[];
+  linkedTasks?: { id: string; title: string; status: Status }[];
+  /** Toutes les tâches, pour lier l'entrée à des existantes (miroir du lieur de la carte). */
+  tasks?: { id: string; title: string; status: Status }[];
   onChanged: () => void;
   onDeleted: () => void;
   onTaskCreated?: () => void;
@@ -85,6 +88,12 @@ export function EntryEditor({
   const [taskDueDate, setTaskDueDate] = useState('');
   const [taskCreating, setTaskCreating] = useState(false);
   const [taskMessage, setTaskMessage] = useState('');
+  // Lier à des tâches existantes : même geste que le lieur de documents de la
+  // carte (recherche + sélection multiple), dans l'autre sens.
+  const [linkingTasks, setLinkingTasks] = useState(false);
+  const [taskFilter, setTaskFilter] = useState('');
+  const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
+  const [linkingBusy, setLinkingBusy] = useState(false);
   useEffect(() => {
     setArchived(entry.archived ?? 0);
   }, [entry.id, entry.archived]);
@@ -395,6 +404,39 @@ export function EntryEditor({
       setTaskCreating(false);
     }
   };
+  const linkedTaskIds = new Set(linkedTasks.map((task) => task.id));
+  const availableTasks = tasks.filter((task) => !linkedTaskIds.has(task.id));
+  const taskQuery = taskFilter.trim().toLowerCase();
+  const visibleTasks = taskQuery
+    ? availableTasks.filter((task) => task.title.toLowerCase().includes(taskQuery))
+    : availableTasks;
+  const statusLabel = (status: Status) => COLUMNS.find((column) => column.id === status)?.label ?? status;
+  const startTaskLinking = () => {
+    setTaskFilter('');
+    setSelectedTasks([]);
+    setLinkingTasks(true);
+  };
+  const toggleTaskSelected = (id: string) => {
+    setSelectedTasks((prev) => (prev.includes(id) ? prev.filter((candidate) => candidate !== id) : [...prev, id]));
+  };
+  const linkSelectedTasks = async () => {
+    if (selectedTasks.length === 0 || linkingBusy) return;
+    setLinkingBusy(true);
+    setError('');
+    try {
+      await autosave.flush();
+      await Promise.all(selectedTasks.map((id) => api.linkTaskDocument(id, entry.id)));
+      setLinkingTasks(false);
+      setSelectedTasks([]);
+      setTaskFilter('');
+      setTaskMessage(selectedTasks.length > 1 ? `${selectedTasks.length} tâches liées à cette entrée.` : 'Tâche liée à cette entrée.');
+      onTaskCreated?.();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLinkingBusy(false);
+    }
+  };
 
   const googleUrl = googleSync ? `https://docs.google.com/document/d/${encodeURIComponent(googleSync.document_id)}/edit${googleSync.tab_id ? `?tab=${encodeURIComponent(googleSync.tab_id)}` : ''}` : '';
   const openIntegratedGoogle = async () => {
@@ -522,6 +564,65 @@ export function EntryEditor({
           </div>
         </form>}
         {taskMessage && <p className="task-message" role="status">{taskMessage}</p>}
+        {!linkingTasks ? (
+          <button className="ghost" type="button" disabled={syncing} onClick={startTaskLinking}><span aria-hidden="true">＋ </span>Lier une tâche existante</button>
+        ) : (
+          <div className="document-linker" aria-label={`Lier « ${draft.title} » à des tâches existantes`}>
+            <div className="document-linker-head">
+              <strong>Lier à des tâches existantes</strong>
+              <span className="document-linker-count">
+                {selectedTasks.length > 0 ? `${selectedTasks.length} sélectionnée${selectedTasks.length > 1 ? 's' : ''}` : `${availableTasks.length} disponible${availableTasks.length > 1 ? 's' : ''}`}
+              </span>
+            </div>
+            {availableTasks.length > 0 && (
+              <input
+                type="search"
+                aria-label="Rechercher une tâche à lier à cette entrée"
+                placeholder="Rechercher…"
+                value={taskFilter}
+                onChange={(event) => setTaskFilter(event.target.value)}
+              />
+            )}
+            {availableTasks.length === 0 ? (
+              <p className="empty">Toutes les tâches sont déjà liées.</p>
+            ) : visibleTasks.length === 0 ? (
+              <p className="empty">Aucune tâche ne correspond à « {taskFilter.trim()} ».</p>
+            ) : (
+              <ul className="document-picker">
+                {visibleTasks.map((task) => {
+                  const checked = selectedTasks.includes(task.id);
+                  return (
+                    <li key={task.id}>
+                      <label className={'picker-row' + (checked ? ' is-checked' : '')}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          aria-label={`Lier ${task.title} à cette entrée`}
+                          onChange={() => toggleTaskSelected(task.id)}
+                        />
+                        <span className="picker-title">{task.title}</span>
+                        <span className="picker-source">{statusLabel(task.status)}</span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <div className="card-actions">
+              <button
+                className="ghost primary"
+                type="button"
+                disabled={selectedTasks.length === 0 || linkingBusy}
+                onClick={() => void linkSelectedTasks()}
+              >
+                {linkingBusy ? 'Liaison…' : selectedTasks.length > 0 ? `Relier la sélection (${selectedTasks.length})` : 'Relier la sélection'}
+              </button>
+              <button className="ghost" type="button" disabled={linkingBusy} onClick={() => setLinkingTasks(false)}>
+                Annuler
+              </button>
+            </div>
+          </div>
+        )}
         {!draft.content_json && !isProcedure && (
           <button
             className="ghost"

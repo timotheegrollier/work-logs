@@ -31,10 +31,10 @@ au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + V
 
 - **Aucune fonctionnalité sans test.** Route API → test dans `api/test/`. Geste utilisateur →
   test dans `web/src/App.test.tsx`, ou dans `e2e/` si ça dépend d'un vrai navigateur.
-- **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 99 tests API, 92 tests front,
-  32 tests desktop (serveur/OAuth/mise à jour/vue Google), 16 tests des scripts de release,
-  build, 24 parcours navigateur et 10 parcours de l'application desktop — **273 tests**,
-  et finit par `CHECK OK`.
+- **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 213 tests API, 438 tests front,
+  47 tests desktop (serveur/OAuth/mise à jour/vue Google/dossier partagé), 25 tests des scripts
+  de release, 8 tests du relais, build, 49 parcours navigateur et 14 parcours de l'application
+  desktop — **794 tests**, et finit par `CHECK OK`.
 - **Rien de nouveau sans accord** : ni dépendance, ni onglet, ni mode. La valeur de cette
   application est qu'elle tient sur un écran.
 
@@ -46,7 +46,8 @@ npm run desktop      # l'application Electron
 npm test             # API + front (~20 s)
 npm run test:e2e     # build + Playwright (web)
 npm run test:desktop # parcours Electron (xvfb-run si pas d'affichage)
-./scripts/check.sh   # tout, 273 tests
+./scripts/check.sh   # tout, 794 tests
+WORKLOGS_E2E_PORT=8432 ./scripts/check.sh  # si une autre copie de travail occupe le port 8412
 ./scripts/backup.sh  # sauvegarde base + fichiers joints
 ```
 
@@ -54,6 +55,7 @@ npm run test:desktop # parcours Electron (xvfb-run si pas d'affichage)
 
 - Base : `api/data/worklogs.db` — **jamais** commitée, jamais touchée par les tests.
 - Tables : `projects`, `entries`, `tasks`, `attachments`. Schéma dans `docs/01-ARCHITECTURE.md`.
+  Dossier partagé du TSE (§25) : tables **de la machine**, sans clé étrangère, jamais synchronisées.
 - Lecture : tout l'écran vient de `GET /api/state`. Le front la rejoue après chaque mutation.
 - Les éléments interactifs portent un `aria-label` parlant : c'est l'accessibilité **et** la
   prise des tests.

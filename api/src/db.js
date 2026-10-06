@@ -195,6 +195,57 @@ function seed(db) {
   ti.run('tk_3', 'Prendre en main WorkLogs', 'doing', null, 0, 0, 'normal', 'pr_pro', t, t);
 }
 
+/**
+ * Dossier partagé (2026-10-05) : données propres à **cet ordinateur** — chemin du
+ * partage, brouillons, versions locales. Jamais exportées ni synchronisées, et
+ * **sans clé étrangère** : `restoreBackup` vide puis réinsère projets et entrées
+ * à chaque passage de la synchro Drive ; une cascade effacerait ces lignes, une
+ * restriction ferait échouer la synchro. Voir `docs/05-DECISIONS.md` §25.
+ */
+const LOCAL_SCHEMA = `
+CREATE TABLE IF NOT EXISTS local_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS shared_project_folders (
+  project_id TEXT PRIMARY KEY,
+  rel_dir TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS shared_files (
+  rel_path TEXT PRIMARY KEY,
+  base_hash TEXT,
+  seen_hash TEXT,
+  seen_size INTEGER,
+  seen_mtime_ms INTEGER,
+  template_hash TEXT,
+  draft_json TEXT,
+  draft_updated_at TEXT,
+  send_hash TEXT,
+  send_requested INTEGER NOT NULL DEFAULT 0,
+  send_started_at TEXT,
+  state TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  theirs_hash TEXT,
+  theirs_deleted INTEGER NOT NULL DEFAULT 0,
+  lock_nonce TEXT,
+  lock_renewed_at TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS shared_versions (
+  id TEXT PRIMARY KEY,
+  rel_path TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  origin TEXT NOT NULL,
+  state TEXT NOT NULL,
+  author TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shared_versions_path ON shared_versions(rel_path, created_at);
+`;
+
 export function openDb(dbPath, { withSeed = true } = {}) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
@@ -257,6 +308,7 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   // Google (`drive_file_id`) pour survivre à une restauration. Chaîne vide =
   // local seul, sans rien casser pour les lignes existantes.
   if (!columns(db, 'attachments').includes('drive_file_id')) db.exec("ALTER TABLE attachments ADD COLUMN drive_file_id TEXT NOT NULL DEFAULT ''");
+  db.exec(LOCAL_SCHEMA);
   db.exec('PRAGMA foreign_keys = ON;');
   if (withSeed) seed(db);
   return db;

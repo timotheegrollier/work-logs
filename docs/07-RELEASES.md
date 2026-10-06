@@ -245,6 +245,34 @@ conteneur `ubuntu:24.04` (la base de Mint 22.x) à chaque release.
 - **Icônes** : `desktop/icon.svg` est la source ; PNG 16→512 px générés en local
   (ImageMagick + RSVG) et committés — la CI n'a besoin d'aucun outil graphique.
   `desktop/icon.png` (512) reste pour l'icône de fenêtre (`main.mjs` + stage + asar).
+
+## 9. PWA Cloudflare : redéploiement manuel à chaque release (vécu le 2026-09-27)
+
+Le téléphone ouvre `https://worklogs-google.cocodexcocoder.workers.dev/` (PWA à `/`,
+relais à `/token`, option B). GitHub Pages reste déployé par la CI en transition, mais ce
+n'est plus lui que le téléphone consulte : **le Worker ne se redéploie pas tout seul**
+(`wrangler login` interactif, pas de token en CI). Sans redéploiement, le téléphone reste
+sur l'ancienne version — vécu : Cloudflare en 0.37.0 alors que GitHub servait déjà 0.41.x,
+zéro changement visible malgré CI verte.
+
+Après chaque release qui touche `web/` (ou le relais), depuis la racine puis `oauth-proxy/` :
+
+```bash
+VITE_PWA=1 VITE_GOOGLE_TOKEN_PROXY=https://worklogs-google.cocodexcocoder.workers.dev npm --prefix web run build
+# (+ VITE_GOOGLE_CLIENT_ID=…apps.googleusercontent.com : repris de la PWA publiée, public par nature)
+npx wrangler login   # une fois ; impossible en CI, à faire sur un poste connecté
+npx wrangler deploy --config oauth-proxy/wrangler.toml  # → https://worklogs-google.cocodexcocoder.workers.dev
+```
+
+> **Piège vécu le 2026-09-29.** Un `wrangler.jsonc` à la racine (`name: worklogs`,
+> assets `web/`) prenait le pas : `npm run deploy` a poussé les sources brutes sur un
+> autre Worker → page blanche. La seule config qui fait foi est
+> `oauth-proxy/wrangler.toml` ; les scripts `deploy`/`preview` imposent `--config`.
+> Ne jamais recréer de `wrangler.jsonc` racine (ni `wrangler init` à la racine).
+
+Vérifier : `sw.js` doit annoncer la version (`curl -s …/sw.js | grep VERSION`) et `/token`
+`{"ok":true,"configured":true}`. Puis rouvrir la PWA sur le téléphone (le service worker
+se met à jour à la réouverture). Détail : `08-GOOGLE-DOCS.md` « Relais de jetons ».
 - **Dépendances** : zéro ajout npm sans accord explicite (Electron 44.3.0 et
   electron-builder 26.15.3 approuvés). Les bumps dependabot se mergent après CI verte ;
   fermer avec un commentaire motivé si incompatibilité réelle (cf. Express 5).

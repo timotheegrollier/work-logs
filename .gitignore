@@ -9,6 +9,8 @@ api/data/uploads/*
 .env
 
 .e2e-data/
+.e2e-share/
+api/data/shared-blobs/
 test-results/
 playwright-report/
 web/.vitest/
@@ -20,3 +22,6 @@ release/
 # Relais Google (Cloudflare Worker) : état local de wrangler, secrets de dev.
 .wrangler/
 .dev.vars*
+
+!.dev.vars.example
+!.env.example

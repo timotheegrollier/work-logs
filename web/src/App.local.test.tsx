@@ -123,3 +123,15 @@ describe('PWA locale (mêmes écrans, backend IndexedDB/mémoire)', () => {
     }
   });
 });
+
+describe('dossier partagé dans la PWA', () => {
+  test('absent : un navigateur n’atteint pas un partage SMB, même avec un chemin retenu', async () => {
+    localStorage.setItem('worklogs-shared-path', 'notes.md');
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+    expect(screen.queryByText('Dossier partagé')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Fichier partagé' })).not.toBeInTheDocument();
+    expect(await localApi.sharedStatus()).toEqual({ available: false });
+    await expect(localApi.sharedList('')).rejects.toThrow('application desktop');
+  });
+});

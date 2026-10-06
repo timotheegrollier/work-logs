@@ -49,7 +49,7 @@ s'enregistre qu'en production sur http(s) — jamais sur `worklogs://` ni en dev
 Les données locales (IndexedDB) et la connexion directe à Google (client OAuth
 « Web », lots suivants) n'ont besoin d'aucun serveur.
 
-## Base — 6 tables (branche documents riches)
+## Base — 6 tables synchronisées + 4 tables de la machine
 
 ```sql
 projects(id, name, color, created_at)
@@ -99,6 +99,24 @@ leurs identifiants ne servent jamais d’indices d’écriture. Les attributs so
 par `rich-document.js` et conservés par `web/src/google-content.ts`. Un verrou par
 document sérialise les envois ; `requiredRevisionId` protège chaque batch Google.
 
+### Tables de cette machine (dossier partagé, §25)
+
+```sql
+local_settings(key PRIMARY KEY, value, updated_at)      -- shared.root, shared.fs_type…
+shared_project_folders(project_id PRIMARY KEY, rel_dir, updated_at)
+shared_files(rel_path PRIMARY KEY, base_hash, seen_hash, seen_size, seen_mtime_ms,
+             template_hash, draft_json, draft_updated_at, send_hash, send_requested,
+             send_started_at, state, note, theirs_hash, theirs_deleted,
+             lock_nonce, lock_renewed_at, updated_at)
+shared_versions(id PRIMARY KEY, rel_path, hash, size, origin, state, author, created_at)
+```
+
+**Aucune clé étrangère** : `restoreBackup` vide et réinsère projets et entrées à chaque synchro.
+Jamais exportées ni synchronisées. `base_hash` = version que le brouillon remplacera ;
+`seen_hash` = dernière version vue sur le partage ; `template_hash` = octets dont part le
+brouillon ; `send_hash` = octets dont l'envoi est demandé. Les octets vivent dans
+`<données>/shared-blobs/aa/<sha256>`.
+
 ### Migration V1 → V2
 `migrate()` dans `db.js` s'exécute à l'ouverture si les tables V1 sont détectées, **sans perte** :
 `docs` → entrées · `events` → entrées à leur date · descriptions de tâches → entrées
@@ -136,6 +154,27 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET | `/api/files/:stored/preview` | afficher dans l’app : mêmes octets, `inline` + type enregistré |
 | DELETE | `/api/attachments/:id` | supprimer la ligne et le fichier disque |
 | GET | `/api/export` | toute la base en JSON : tâches, associations, liens Google et métadonnées de pièces jointes |
+| GET | `/api/shared/status` | dossier partagé : `available`, racine, montage, `reach` (`ok`, `offline`, `unmounted`, `blocked`, `unconfigured`), envois en attente, conflits |
+| GET | `/api/shared/list?dir=` | un niveau du partage : fichiers, dossiers, verrous lus, état local ; hors ligne `503` + fichiers gardés ici |
+| GET | `/api/shared/file?path=` · `/api/shared/content?hash=` | métadonnées et brouillon · octets d'une version du magasin local |
+| PUT | `/api/shared/draft?path=` | brouillon local (modèle JSON) ; ne touche jamais le partage |
+| POST | `/api/shared/draft/discard?path=` | abandonne le brouillon, ses octets restent dans l'historique |
+| POST | `/api/shared/push?path=&base=` | envoi gardé des octets : `200 written` · `202 pending/offline/interrupted` · `409 SHARED_CONFLICT` |
+| POST | `/api/shared/resolve` | `{path, choice: mine\|theirs\|both, theirs}` |
+| GET · PUT | `/api/shared/versions?path=` · `/api/shared/settings` | historique local · nom affiché |
+| POST | `/api/shared/versions/:id/restore?path=` | la version devient le brouillon (rien n'est envoyé) |
+| POST · DELETE | `/api/shared/lock?path=` | prendre/renouveler la main (`{take_over}`) · la rendre ; `409 SHARED_LOCKED` / `SHARED_LOCK_STALE` + `{lock}` |
+| PUT · DELETE | `/api/shared/projects/:id/folder` | relier un projet à un sous-dossier (`{dir}`) · le délier |
+
+Formats du dossier partagé, côté front (le serveur ne voit que des octets) : `text-codec.ts`,
+`text-file.ts`, `csv-file.ts`, `zip.ts` (archive, réécriture fidèle), `xml-scan.ts` (XML à
+positions), `ooxml.ts` (relations, propriétés : commun à Word et Excel), `docx.ts` +
+`docx-extensions.ts` (Word, §26), `xlsx.ts` + `xlsx-format.ts` (formats à la française,
+saisie) + `xlsx-formula.ts` (syntaxe, traduction, dépendances) (Excel, §27).
+
+Les routes `/api/shared/*` ne répondent qu'à cet ordinateur (`localOnly`) et ne fixent jamais
+le chemin du partage (dialogue natif desktop ou `WORKLOGS_SHARED_ROOT`). Elles passent par
+`shared-service.js` (garde, versions, réessais) et `shared-io.js` (worker borné, disjoncteur).
 
 Conventions : erreurs `{"error": "…"}` en français, `400` pour une validation, `404` pour un
 identifiant inconnu, `201` à la création. Un champ absent d'un `PUT` **n'est pas écrasé** ;
