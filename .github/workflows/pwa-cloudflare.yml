@@ -28,8 +28,10 @@ on:
 permissions:
   contents: read
 
+# Concurrency propre : ce workflow ne pousse pas sur gh-pages, il ne doit pas
+# annuler le déploiement gh-pages (« PWA »), qui partage le sien.
 concurrency:
-  group: gh-pages
+  group: pwa-cloudflare
   cancel-in-progress: false
 
 jobs:
@@ -53,4 +55,7 @@ jobs:
       - name: Déployer le Worker Cloudflare (PWA + relais de jetons)
         run: |
           npx wrangler --version
+          # wrangler lit `oauth-proxy/wrangler.toml` ([assets] = ../web/dist) : le
+          # deploy part de ce dossier, comme la recette manuelle.
+          cd oauth-proxy
           npx wrangler deploy

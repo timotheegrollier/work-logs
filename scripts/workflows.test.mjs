@@ -19,7 +19,9 @@ describe('workflow PWA Cloudflare (option B — PWA + relais sur le même Worker
       assert.ok(wf.on.push.paths.some(p => p === 'web/**'), 'déclenche sur web/**');
       assert.ok(wf.on.push.paths.some(p => p === 'oauth-proxy/**'), 'déclenche sur oauth-proxy/**');
       assert.equal(wf.jobs['deploy-cloudflare']['runs-on'], 'ubuntu-24.04');
-      assert.equal(wf.concurrency?.group, 'gh-pages');
+      // Pas le groupe « gh-pages » : ce workflow ne pousse pas sur gh-pages et
+      // ne doit pas annuler le déploiement gh-pages (« PWA »).
+      assert.equal(wf.concurrency?.group, 'pwa-cloudflare');
     }
   });
 
@@ -35,5 +37,15 @@ describe('workflow PWA Cloudflare (option B — PWA + relais sur le même Worker
       !content.match(/CLOUDFLARE_ACCOUNT_ID:\s*['"][0-9]{1,20}/),
       'pas d\'ID en dur',
     );
+  });
+
+  test('le deploy part de oauth-proxy/ (wrangler lit le wrangler.toml du relais)', () => {
+    const content = readFileSync('./.github/workflows/pwa-cloudflare.yml', 'utf8');
+    // Sans `cd oauth-proxy`, wrangler verrait un dossier sans wrangler.toml et
+    // lancerait un setup interactif (« wrangler init ») qui échoue en CI.
+    assert.ok(content.includes('cd oauth-proxy'), 'deploy depuis oauth-proxy/');
+    assert.ok(content.includes('npx wrangler deploy'), 'wrangler deploy présent');
+    // La concurrency ne doit pas annuler le déploiement gh-pages (« PWA »).
+    assert.ok(!content.includes('group: gh-pages'), 'pas de groupe gh-pages partagé');
   });
 });
