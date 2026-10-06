@@ -40,6 +40,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
+      # Sans VITE_PWA, le build serait la version web qui appelle `/api` : page vide
+      # sur le téléphone. La PWA utilise le backend local IndexedDB.
+      VITE_PWA: '1'
       VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_WEB_CLIENT_ID }}
       VITE_GOOGLE_TOKEN_PROXY: ${{ vars.GOOGLE_TOKEN_PROXY_URL }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -54,8 +57,13 @@ jobs:
       - run: npm --prefix web ci && npm --prefix web run build
       - name: Déployer le Worker Cloudflare (PWA + relais de jetons)
         run: |
-          npx wrangler --version
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo '::error::Secrets CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID absents (docs/07-RELEASES.md §9)'
+            exit 1
+          fi
+          # Même version que le lockfile racine, sans installer Electron pour autant.
+          WRANGLER=$(node -p "require('./package-lock.json').packages['node_modules/wrangler'].version")
           # wrangler lit `oauth-proxy/wrangler.toml` ([assets] = ../web/dist) : le
           # deploy part de ce dossier, comme la recette manuelle.
           cd oauth-proxy
-          npx wrangler deploy
+          npx --yes "wrangler@$WRANGLER" deploy

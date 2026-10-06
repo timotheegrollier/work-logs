@@ -246,16 +246,22 @@ conteneur `ubuntu:24.04` (la base de Mint 22.x) à chaque release.
   (ImageMagick + RSVG) et committés — la CI n'a besoin d'aucun outil graphique.
   `desktop/icon.png` (512) reste pour l'icône de fenêtre (`main.mjs` + stage + asar).
 
-## 9. PWA Cloudflare : redéploiement manuel à chaque release (vécu le 2026-09-27)
+## 9. PWA Cloudflare : déployée par la CI, recette manuelle en secours (vécu le 2026-09-27)
 
 Le téléphone ouvre `https://worklogs-google.cocodexcocoder.workers.dev/` (PWA à `/`,
 relais à `/token`, option B). GitHub Pages reste déployé par la CI en transition, mais ce
-n'est plus lui que le téléphone consulte : **le Worker ne se redéploie pas tout seul**
-(`wrangler login` interactif, pas de token en CI). Sans redéploiement, le téléphone reste
-sur l'ancienne version — vécu : Cloudflare en 0.37.0 alors que GitHub servait déjà 0.41.x,
-zéro changement visible malgré CI verte.
+n'est plus lui que le téléphone consulte. Vécu : Cloudflare en 0.37.0 alors que GitHub
+servait déjà 0.41.x, zéro changement visible malgré CI verte — le Worker n'était déployé
+qu'à la main.
 
-Après chaque release qui touche `web/` (ou le relais), depuis la racine puis `oauth-proxy/` :
+Depuis le 2026-10-06, le workflow **« PWA Cloudflare »** (`pwa-cloudflare.yml`) construit
+la PWA (`VITE_PWA=1`) et lance `wrangler deploy` depuis `oauth-proxy/` à chaque push sur
+master qui touche `web/`, `oauth-proxy/` ou la version. Il exige deux secrets GitHub :
+`CLOUDFLARE_API_TOKEN` (jeton « Edit Cloudflare Workers ») et `CLOUDFLARE_ACCOUNT_ID`.
+Sans eux il échoue en le disant. Le secret Google du relais reste stocké côté Worker
+(`wrangler secret put`) : le deploy le conserve.
+
+Recette manuelle (secours, ou si le workflow est rouge), depuis la racine :
 
 ```bash
 VITE_PWA=1 VITE_GOOGLE_TOKEN_PROXY=https://worklogs-google.cocodexcocoder.workers.dev npm --prefix web run build
