@@ -31,10 +31,10 @@ au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + V
 
 - **Aucune fonctionnalité sans test.** Route API → test dans `api/test/`. Geste utilisateur →
   test dans `web/src/App.test.tsx`, ou dans `e2e/` si ça dépend d'un vrai navigateur.
-- **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 217 tests API, 449 tests front,
-  47 tests desktop (serveur/OAuth/mise à jour/vue Google/dossier partagé), 25 tests des scripts
-  de release, 8 tests du relais, build, 51 parcours navigateur et 14 parcours de l'application
-  desktop — **811 tests**, et finit par `CHECK OK`.
+- **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 217 tests API, 452 tests front,
+  47 tests desktop (serveur/OAuth/mise à jour/vue Google/dossier partagé), 28 tests des scripts
+  de release, 8 tests du relais, build, 51 parcours navigateur et 15 parcours de l'application
+  desktop — **818 tests**, et finit par `CHECK OK`.
 - **Rien de nouveau sans accord** : ni dépendance, ni onglet, ni mode. La valeur de cette
   application est qu'elle tient sur un écran.
 
@@ -46,7 +46,7 @@ npm run desktop      # l'application Electron
 npm test             # API + front (~20 s)
 npm run test:e2e     # build + Playwright (web)
 npm run test:desktop # parcours Electron (xvfb-run si pas d'affichage)
-./scripts/check.sh   # tout, 811 tests (Electron dans Xvfb + metacity s'ils sont là)
+./scripts/check.sh   # tout, 818 tests (Electron dans Xvfb + metacity s'ils sont là)
 WORKLOGS_E2E_PORT=8432 ./scripts/check.sh  # si une autre copie de travail occupe le port 8412
 ./scripts/backup.sh  # sauvegarde base + fichiers joints
 ```
