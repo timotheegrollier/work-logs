@@ -1,7 +1,11 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-06 · Version : v0.45.2.
-> **Lot courant :** clavier rendu aux champs WorkLogs avec la vue Google masquée
+> **Mise à jour :** 2026-10-06 · Version : v0.45.2 (lot ci-dessous non publié).
+> **Lot courant :** procédures en **Lire / Écrire** comme les entrées, et **blocs de code**
+> d'un geste — branche `feat/procedures-lecture-blocs-de-code`. Détail : « Lot du
+> 2026-10-06 — procédures en lecture, blocs de code » ci-dessous ; décision §29.
+>
+> **Lot précédent :** clavier rendu aux champs WorkLogs avec la vue Google masquée
 > (le renderer déclare qu'un champ demande le clavier via `focusin` → IPC
 > `focus-field`) **+ réintégration du workflow `pwa-cloudflare.yml`** qui met à
 > jour la PWA Cloudflare automatiquement à chaque push master.
@@ -40,6 +44,47 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-10-06 — procédures en lecture, blocs de code
+
+Demande de Timo : « pouvoir ajouter des blocs de code dans mes entrées/procédures ; les
+procédures doivent aussi avoir le mode édition et lecture comme les entrées normales ».
+Décision : §29.
+- **Constaté avant de coder** (copie jetable de l'app, Chromium) : trois commandes collées
+  dans une procédure puis `{ }` donnaient **trois blocs** (le collage fait un paragraphe par
+  ligne) ; une entrée Markdown n'avait aucun bouton ; une procédure riche restait toujours
+  en saisie, et « Modifier » dans la colonne n'y changeait rien de visible.
+- **Procédures riches locales : Lire / Écrire.** Titre cliqué → Lire (même éditeur Tiptap
+  non modifiable : ni barre, ni compteur, `aria-readonly`, liens cliquables) ; « Modifier »
+  ou procédure neuve → Écrire. Documents Google et documents riches du journal inchangés
+  (`hasModes`, `EntryEditor.tsx` ; `readOnly`, `RichEditor.tsx`).
+- **`{ }` riche sur plusieurs lignes → un seul bloc** (`rich-code.ts`), une annulation.
+- **`{ }` en mode Écrire d'une entrée Markdown** (`insertCodeFence`, `markdown.ts`) :
+  clôtures autour des lignes entières, plus longues qu'un ```` ``` ```` déjà présent, curseur
+  rendu au textarea. Le symbole seul : en toutes lettres, « Supprimer » passait à la ligne.
+- **Tests** : `markdown.test.ts` (+4), `rich-code.test.ts` (3, nouveau), `App.test.tsx` (+2 :
+  bouton Markdown ; procédure en lecture, Écrire, Modifier, document riche sans modes ;
+  assertions ajoutées à « crée une procédure riche » et « procédure liée à Google »),
+  `e2e/procedures.spec.ts` (+1 : lignes collées en un bloc, Lire, réouverture, Modifier).
+  Un test adapté : « procédure riche modifiée avant d'appliquer » passe en Écrire avant la
+  barre d'outils (la procédure s'ouvre désormais en lecture). Les nouveaux tests échouent
+  si l'on retire la fonctionnalité (vérifié par mutation).
+- **Vu dans un vrai navigateur** (Chromium, 1440 et 412 px) : bloc unique, mode Lire sans
+  cadre de saisie, lien ouvert d'un clic en Lire et pas en Écrire, page sans débordement.
+- **Recette** : `./scripts/check.sh` vert (`CHECK OK`), en conditions CI (Xvfb, sans
+  `DISPLAY`/`XDG_CURRENT_DESKTOP`/`DESKTOP_SESSION`/`GDMSESSION`) : 213 API, **450 front**,
+  47 desktop unitaires, 28 scripts, 8 relais, **50 navigateur**, 14 parcours desktop
+  (+1 ignoré : « fenêtre maximisée », pas de gestionnaire de fenêtres sous Xvfb).
+  Même recette sur `master` avant le lot : 441 front, 49 navigateur, le reste identique.
+
+### À vérifier par Timo
+
+1. Dans l'application desktop : ouvrir une procédure depuis la colonne (lecture), puis
+   **Modifier** ; coller un script, le sélectionner, `{ }` ; Lire, et copier une commande.
+2. Les documents riches du journal (« Nouveau document ») doivent-ils aussi s'ouvrir en
+   lecture ? Pas fait, faute de demande (§29, « Rouvrir si »).
+3. Un bouton « Copier » sur les blocs de code en lecture serait-il utile ? Écarté pour
+   l'instant (non demandé).
 
 ## Lot du 2026-10-05 (5) — dossier partagé, lot 4 : classeurs Excel (.xlsx) — v0.45.0
 

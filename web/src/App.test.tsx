@@ -362,6 +362,35 @@ describe('écrire une entrée', () => {
     for (const box of within(writePreview).getAllByRole('checkbox')) expect(box).toBeDisabled();
   });
 
+  test('« Bloc de code » entoure de ``` les lignes sélectionnées, puis en insère un vide au curseur', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Note', content_md: 'Relancer :\nsudo systemctl restart app\nPuis vérifier.' }] });
+    render(<App />);
+
+    // En lecture, rien à entourer : le bouton n'apparaît qu'en écriture.
+    await screen.findByRole('article', { name: 'Aperçu' });
+    expect(within(editor()).queryByRole('button', { name: 'Bloc de code' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    const source = screen.getByLabelText('Contenu en Markdown') as HTMLTextAreaElement;
+    const start = source.value.indexOf('restart');
+    source.setSelectionRange(start, start + 3);
+    await user.click(within(editor()).getByRole('button', { name: 'Bloc de code' }));
+
+    expect(source).toHaveValue('Relancer :\n```\nsudo systemctl restart app\n```\nPuis vérifier.');
+    // La ligne entière est entourée et reste sélectionnée ; le textarea garde la main.
+    expect(source).toHaveFocus();
+    expect(source.value.slice(source.selectionStart, source.selectionEnd)).toBe('sudo systemctl restart app');
+    const preview = within(editor()).getByRole('article', { name: 'Aperçu' });
+    expect(within(preview).getByText('sudo systemctl restart app').closest('pre')).not.toBeNull();
+
+    // Sans sélection : un bloc vide au curseur, où la frappe entre directement.
+    source.setSelectionRange(source.value.length, source.value.length);
+    await user.click(within(editor()).getByRole('button', { name: 'Bloc de code' }));
+    await user.keyboard('journalctl -u app');
+    await waitFor(() => expect(row(api.db, 'SELECT content_md AS v FROM entries WHERE id=?', 'en_1').v)
+      .toBe('Relancer :\n```\nsudo systemctl restart app\n```\nPuis vérifier.\n```\njournalctl -u app\n```'));
+  });
+
   test('change la date et le projet d’une entrée', async () => {
     const user = userEvent.setup();
     seedData(api.db, {
@@ -771,6 +800,8 @@ describe('écrire une entrée', () => {
     await user.click(screen.getByRole('button', { name: '✨ Suggérer une procédure' }));
     const proposal = await screen.findByRole('region', { name: 'Procédure proposée' });
     // Le document change après la demande (Rechercher et remplacer) : appliquer l'écraserait.
+    // La procédure s'ouvre en lecture : Écrire donne la barre d'outils.
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
     await user.click(screen.getByRole('button', { name: 'Rechercher et remplacer' }));
     const search = screen.getByRole('search', { name: 'Rechercher dans le document' });
     await user.type(within(search).getByLabelText('Rechercher'), 'gardé');
@@ -793,6 +824,9 @@ describe('écrire une entrée', () => {
     expect(documentContent()).toHaveTextContent('Google');
     expect(screen.queryByRole('button', { name: '✨ Suggérer une procédure' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '✨ Mettre en page' })).not.toBeInTheDocument();
+    // Ni Lire ni Écrire : un document Google garde son propre parcours d'édition.
+    expect(screen.queryByRole('button', { name: 'Lire' })).not.toBeInTheDocument();
+    expect(documentContent()).toHaveAttribute('contenteditable', 'true');
   });
 
   test('crée une tâche liée depuis un document Google', async () => {
@@ -1644,6 +1678,9 @@ describe('panneau Procédures', () => {
     await user.click(within(panel).getByRole('button', { name: 'Nouvelle procédure' }));
     expect(await screen.findByLabelText('Titre de l’entrée')).toHaveValue('Sans titre');
     expect(document.querySelector('.columns')).not.toHaveClass('hide-center');
+    // Une procédure neuve s'ouvre en écriture, comme une entrée neuve.
+    expect(screen.getByRole('button', { name: 'Écrire' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('toolbar', { name: 'Mise en forme du document' })).toBeInTheDocument();
     await waitFor(() => expect(row(api.db, "SELECT kind, project_id FROM entries WHERE title='Sans titre'")).toEqual(
       expect.objectContaining({ kind: 'procedure', project_id: 'pr_villa' })));
   });
@@ -1685,6 +1722,50 @@ describe('panneau Procédures', () => {
     await user.click(screen.getByRole('button', { name: 'Lire' }));
     await user.click(within(panel).getByRole('button', { name: 'Modifier la procédure Dallage corrigé' }));
     expect(screen.getByRole('button', { name: 'Écrire' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('une procédure riche s’ouvre en lecture ; Écrire et Modifier rendent la barre d’outils', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [
+      { id: 'en_note', title: 'Journal' },
+      { id: 'en_proc', title: 'Redémarrer', kind: 'procedure' },
+      { id: 'en_doc', title: 'Document riche' },
+    ] });
+    const rich = JSON.stringify({ type: 'doc', content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'Lancer :' }] },
+      { type: 'codeBlock', content: [{ type: 'text', text: 'sudo systemctl restart app' }] },
+    ] });
+    api.db.prepare('UPDATE entries SET content_json=? WHERE id IN (?, ?)').run(rich, 'en_proc', 'en_doc');
+    render(<App />);
+    const panel = await openPanel(user);
+    await user.click(await within(panel).findByText('Redémarrer'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Redémarrer'));
+
+    // Lire : le document tel quel, bloc de code compris, sans barre d'outils ni saisie.
+    const content = screen.getByRole('textbox', { name: 'Contenu du document' });
+    expect(screen.getByRole('button', { name: 'Lire' })).toHaveAttribute('aria-pressed', 'true');
+    expect(content).toHaveAttribute('contenteditable', 'false');
+    expect(content).toHaveAttribute('aria-readonly', 'true');
+    expect(content.querySelector('pre code')).toHaveTextContent('sudo systemctl restart app');
+    expect(screen.queryByRole('toolbar', { name: 'Mise en forme du document' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    expect(screen.getByRole('toolbar', { name: 'Mise en forme du document' })).toBeInTheDocument();
+    expect(content).toHaveAttribute('contenteditable', 'true');
+    expect(content).toHaveAttribute('aria-readonly', 'false');
+
+    // Modifier, depuis la colonne, repasse en écriture la procédure ouverte en lecture.
+    await user.click(screen.getByRole('button', { name: 'Lire' }));
+    expect(content).toHaveAttribute('contenteditable', 'false');
+    await user.click(within(panel).getByRole('button', { name: 'Modifier la procédure Redémarrer' }));
+    expect(screen.getByRole('button', { name: 'Écrire' })).toHaveAttribute('aria-pressed', 'true');
+    expect(content).toHaveAttribute('contenteditable', 'true');
+
+    // Un document riche du journal garde son éditeur toujours ouvert, sans modes.
+    await user.click(within(screen.getByRole('region', { name: 'Journal' })).getByText('Document riche'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Document riche'));
+    expect(screen.queryByRole('button', { name: 'Lire' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Contenu du document' })).toHaveAttribute('contenteditable', 'true');
   });
 
   test('supprime une pièce jointe depuis la colonne Procédures, après confirmation', async () => {

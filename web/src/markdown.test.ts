@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { renderMarkdown, toggleChecklistItem } from './markdown';
+import { insertCodeFence, renderMarkdown, toggleChecklistItem } from './markdown';
 
 describe('rendu Markdown', () => {
   test('produit les titres et le gras', () => {
@@ -71,6 +71,39 @@ describe('rendu Markdown', () => {
     const html = renderMarkdown('- [x] fait', { interactiveCheckboxes: true });
     expect(html).toContain('checked');
     expect(html).not.toMatch(/disabled/i);
+  });
+});
+
+describe('insertCodeFence', () => {
+  test('sans sélection : un bloc vide au curseur, le curseur sur sa ligne vide', () => {
+    expect(insertCodeFence('', 0, 0)).toEqual({ text: '```\n\n```', start: 4, end: 4 });
+    const source = 'Relancer :';
+    expect(insertCodeFence(source, source.length, source.length)).toEqual({ text: 'Relancer :\n```\n\n```', start: 15, end: 15 });
+    // Au milieu d'un texte, les clôtures prennent leurs propres lignes.
+    expect(insertCodeFence('Avant\nAprès', 6, 6).text).toBe('Avant\n```\n\n```\nAprès');
+  });
+
+  test('entoure toutes les lignes touchées par la sélection, et sélectionne le code', () => {
+    const source = 'Avant\nsudo systemctl stop app\n\nsudo systemctl start app\nAprès';
+    // De « systemctl » (ligne 2) à « start » (ligne 4) : les lignes entières partent.
+    const fenced = insertCodeFence(source, source.indexOf('systemctl'), source.indexOf('start') + 2);
+    expect(fenced.text).toBe('Avant\n```\nsudo systemctl stop app\n\nsudo systemctl start app\n```\nAprès');
+    expect(fenced.text.slice(fenced.start, fenced.end)).toBe('sudo systemctl stop app\n\nsudo systemctl start app');
+    expect(renderMarkdown(fenced.text)).toContain('<pre><code>sudo systemctl stop app\n\nsudo systemctl start app\n</code></pre>');
+    // Sélection partie d'une première ligne vide : elle reste dans le bloc.
+    expect(insertCodeFence('\nls', 0, 3).text).toBe('```\n\nls\n```');
+  });
+
+  test('une sélection qui finit en début de ligne n’emporte pas cette ligne', () => {
+    const source = 'ls -la\nTexte';
+    expect(insertCodeFence(source, 0, 7).text).toBe('```\nls -la\n```\nTexte');
+  });
+
+  test('une clôture plus longue que les ``` déjà présents dans le code', () => {
+    const source = 'Exemple :\n```\necho 1\n```';
+    const fenced = insertCodeFence(source, 0, source.length);
+    expect(fenced.text).toBe('````\nExemple :\n```\necho 1\n```\n````');
+    expect(renderMarkdown(fenced.text)).toContain('<pre><code>Exemple :\n```\necho 1\n```\n</code></pre>');
   });
 });
 

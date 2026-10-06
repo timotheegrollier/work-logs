@@ -69,6 +69,10 @@ Les poignées disparaissent lorsque les panneaux sont empilés ou masqués.
    à droite passe de « Modifications en cours… » à « Enregistré ». `Ctrl+S` force l'envoi.
 4. **Lire** repasse en pleine largeur pour relire sans le code Markdown.
 
+**Un bloc de code** (commande, script, extrait de configuration) : en mode **Écrire**, sélectionner
+les lignes puis cliquer **`{ }`** à côté de Écrire/Lire — elles sont entourées de ` ``` `. Sans
+sélection, le bouton insère un bloc vide au curseur : il n'y a plus qu'à coller ou taper le code.
+
 Une entrée porte une **date** (modifiable : utile pour rattraper un compte rendu de la veille)
 et un **projet** (facultatif).
 
@@ -92,7 +96,7 @@ que **Supprimer** ne retire que la copie locale (jamais le fichier Google).
 | `- [ ] à faire` · `- [x] fait` | une case à cocher |
 | `> texte` | une citation, pour isoler une décision |
 | `` `commande` `` | du code dans la phrase |
-| ` ```bash ` … ` ``` ` | un bloc de code |
+| ` ```bash ` … ` ``` ` | un bloc de code (ou le bouton `{ }` en mode Écrire) |
 | `[texte](https://…)` | un lien |
 | `![légende](https://…)` | une image |
 | `---` | un trait de séparation |
@@ -162,11 +166,21 @@ pièces jointes. Une procédure est un document comme un autre (même éditeur,
 mêmes fichiers, mêmes sauvegardes), simplement aiguillé ici par son type.
 **Nouvelle procédure** en crée une déjà rattachée au projet filtré ; chaque ligne
 a son **＋ Fichier** pour joindre sans ouvrir l'éditeur ; cliquer son titre
-l'ouvre au centre, cliquer un fichier le télécharge. Sans filtre, toutes les
+l'ouvre au centre **en lecture**, **Modifier** l'ouvre **en écriture** ; cliquer un
+fichier le télécharge. Sans filtre, toutes les
 procédures s'y retrouvent, pastille projet à l'appui. Les procédures ne
 figurent **pas** dans le journal (seulement dans ses archives une fois archivées,
 pour pouvoir les restaurer). Comme les autres panneaux, la sidebar est toujours
 dépliée quand elle est affichée, se masque par son bouton et l'état est retenu.
+
+Comme une entrée, une procédure a ses modes **Écrire** / **Lire**. Lire montre le
+document seul, sans barre d'outils ni risque de le modifier en le suivant (les liens
+s'ouvrent d'un clic) ; Écrire rend la barre de mise en forme. Une procédure neuve
+s'ouvre en écriture ; une procédure liée à Google Docs garde son éditeur Google.
+
+**Bloc de code** dans une procédure : cliquer **`{ }`** dans la barre puis coller ou
+taper la commande, ou taper ` ``` ` puis Entrée en début de ligne. Des lignes déjà
+collées : les sélectionner puis **`{ }`** — elles forment un seul bloc.
 
 ## Dossier partagé (le dossier du TSE)
 

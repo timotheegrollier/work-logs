@@ -75,6 +75,51 @@ test('sidebar Procédures : repliée, persistée, et envoi direct de fichier', a
   await page.getByRole('group', { name: 'Filtrer par projet' }).getByRole('button', { name: 'Tout' }).click();
 });
 
+test('procédure : lignes collées en un seul bloc de code, relue en lecture, rouverte par Modifier', async ({ page }) => {
+  await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  await page.getByRole('button', { name: 'Nouvelle procédure' }).click();
+  const title = page.getByLabel('Titre de l’entrée');
+  await expect(title).toHaveValue('Sans titre');
+  await title.fill('Relancer le service');
+  const content = page.getByRole('textbox', { name: 'Contenu du document' });
+  await content.click();
+  await page.keyboard.type('Sur le serveur :');
+  await page.keyboard.press('Enter');
+  // Collées depuis un terminal, trois commandes donnent trois paragraphes.
+  await content.evaluate((element) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', 'sudo systemctl stop app\nsudo systemctl start app\nsystemctl status app');
+    element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+  await expect(content.locator('p')).toHaveCount(4);
+  // Sélectionnées au clavier puis « Bloc de code » : un seul bloc, pas un par ligne.
+  await page.keyboard.press('Shift+Home');
+  await page.keyboard.press('Shift+ArrowUp');
+  await page.keyboard.press('Shift+ArrowUp');
+  await page.getByRole('button', { name: 'Bloc de code', exact: true }).click();
+  await expect(content.locator('pre')).toHaveCount(1);
+  await expect(content.locator('pre code')).toHaveText('sudo systemctl stop app\nsudo systemctl start app\nsystemctl status app');
+  await expect(content.locator('p').first()).toHaveText('Sur le serveur :');
+  await content.press('Control+s');
+  await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
+
+  // Lire : le même document, sans barre d'outils ni saisie.
+  await page.getByRole('button', { name: 'Lire', exact: true }).click();
+  await expect(content).toHaveAttribute('contenteditable', 'false');
+  await expect(page.getByRole('toolbar', { name: 'Mise en forme du document' })).toBeHidden();
+
+  // Rouverte depuis la colonne : en lecture ; Modifier rend l'écriture.
+  await page.reload();
+  await panel(page).getByText('Relancer le service').click();
+  await expect(title).toHaveValue('Relancer le service');
+  await expect(page.getByRole('button', { name: 'Lire', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(content).toHaveAttribute('contenteditable', 'false');
+  await expect(content.locator('pre code')).toHaveText('sudo systemctl stop app\nsudo systemctl start app\nsystemctl status app');
+  await panel(page).getByRole('button', { name: 'Modifier la procédure Relancer le service' }).click();
+  await expect(content).toHaveAttribute('contenteditable', 'true');
+  await expect(page.getByRole('toolbar', { name: 'Mise en forme du document' })).toBeVisible();
+});
+
 test('IA dans une procédure : étapes proposées, relues puis appliquées au document riche', async ({ page }) => {
   // Service IA simulé dans le navigateur : rien ne sort, la clé reste locale.
   let prompt = '';

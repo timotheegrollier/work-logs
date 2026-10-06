@@ -202,11 +202,12 @@ une tâche, une entrée ou une association inconnue renvoie `404` avec un messag
 |---|---|
 | `App.tsx` | état global (`state`, recherche, projet, entrée ouverte, thème), en-tête, 3 colonnes |
 | `lib.ts` | types, client API, helpers purs (`dayLabel`, `isOverdue`, `plainText`, `groupByDay`) |
-| `markdown.ts` | `marked` (GFM, `breaks`) puis `DOMPurify` — le rendu part en `dangerouslySetInnerHTML` |
+| `markdown.ts` | `marked` (GFM, `breaks`) puis `DOMPurify` — le rendu part en `dangerouslySetInnerHTML` ; clôtures du bouton « Bloc de code » |
+| `rich-code.ts` | « Bloc de code » de l'éditeur riche : plusieurs lignes sélectionnées → un seul bloc |
 | `components/EntryList.tsx` | journal groupé par jour, extrait sur une ligne |
 | `components/ProcedureList.tsx` | procédures du projet (entrées `kind='procedure'`) + pièces jointes rassemblées |
-| `components/EntryEditor.tsx` | titre, date, projet, Écrire/Lire, enregistrement auto, pièces jointes |
-| `components/RichEditor.tsx` | éditeur Tiptap et barre de mise en forme |
+| `components/EntryEditor.tsx` | titre, date, projet, Écrire/Lire (entrées Markdown et procédures locales), enregistrement auto, pièces jointes |
+| `components/RichEditor.tsx` | éditeur Tiptap et barre de mise en forme ; `readOnly` = mode Lire d'une procédure |
 | `components/GoogleDrive.tsx` | dialogue Drive dédié, configuration et documents autorisés |
 | `components/TaskBoard.tsx` | ajout rapide, 3 colonnes, glisser-déposer HTML5, édition en place, associations de documents |
 | `components/ProjectBar.tsx` | pastilles de filtre + panneau de gestion repliable |
