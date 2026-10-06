@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type Project, type SharedEntry, type SharedListing, type SharedStatus } from '../lib';
+import { api, ApiError, type Project, type SharedEntry, type SharedListing, type SharedStatus } from '../lib';
 import { badgesFor, REACH_HELP, REACH_LABELS } from '../shared-session';
 import { editorKind } from '../file-formats';
 
 const OPEN_KEY = 'worklogs-shared-open';
 const POLL_MS = 30_000;
+
+/** Un dossier de l'arbre : son contenu, ou pourquoi on ne peut pas l'ouvrir (accès refusé…). */
+type DirState = SharedListing | { failure: string; denied: boolean };
+const failed = (state: DirState | undefined): state is { failure: string; denied: boolean } => Boolean(state && 'failure' in state);
 
 const readOpen = () => {
   try { return localStorage.getItem(OPEN_KEY) !== '0'; } catch { return true; }
@@ -27,13 +31,15 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   const [status, setStatus] = useState<SharedStatus | null>(null);
   const [open, setOpen] = useState(readOpen);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  const [listings, setListings] = useState<Map<string, SharedListing>>(() => new Map());
+  const [listings, setListings] = useState<Map<string, DirState>>(() => new Map());
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   /** Choix du sous-dossier du projet filtré : chaque dossier de l'arbre propose « Relier ici ». */
   const [linking, setLinking] = useState(false);
   /** Adresse du partage à monter (\\serveur\partage) ; formulaire visible sans dossier, ou sur demande. */
   const [address, setAddress] = useState('');
+  /** Compte Windows du partage (`SRVMURGAT\TonNom`), facultatif : le mot de passe se saisit dans la fenêtre du système. */
+  const [account, setAccount] = useState('');
   const [showConnect, setShowConnect] = useState(false);
   const [connecting, setConnecting] = useState('');
   useEffect(() => { setLinking(false); }, [projectId]);
@@ -60,7 +66,8 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
       // Partage parti (démonté, réseau) : l'état affiché suit, avec « Se reconnecter ».
       if (listing.offline) void refreshStatus();
     } catch (e) {
-      setError((e as Error).message);
+      // L'erreur reste sous ce dossier (sinon il afficherait « Lecture… » sans fin).
+      setListings((current) => new Map(current).set(dir, { failure: (e as Error).message, denied: e instanceof ApiError && e.code === 'SHARED_DENIED' }));
     }
   }, [refreshStatus]);
 
@@ -100,14 +107,14 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   };
 
   /** Monte le partage comme Nemo ; un mot de passe se saisit dans la fenêtre du gestionnaire de fichiers. */
-  const connect = async (target: string) => {
+  const connect = async (target: string, who = '') => {
     const bridge = window.worklogsDesktop?.shared;
     if (!bridge?.connect) return;
     setBusy(true);
     setError('');
     setConnecting(target);
     try {
-      const result = await bridge.connect(target);
+      const result = await bridge.connect(target, who.trim() || undefined);
       if (result.error) setError(result.error);
       if (result.status) applyStatus(result.status);
     } finally {
@@ -172,7 +179,7 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   const canConnect = Boolean(status.configurable && window.worklogsDesktop?.shared?.connect);
   const connectForm = canConnect && (
     <>
-      <form className="shared-connect" onSubmit={(event) => { event.preventDefault(); void connect(address); }}>
+      <form className="shared-connect" onSubmit={(event) => { event.preventDefault(); void connect(address, account); }}>
         <label>
           Adresse du partage
           <input
@@ -181,6 +188,17 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
             value={address}
             spellCheck={false}
             onChange={(event) => setAddress(event.target.value)}
+          />
+        </label>
+        <label>
+          Compte (facultatif)
+          <input
+            aria-label="Compte du partage"
+            placeholder="SRVMURGAT\TonNom"
+            value={account}
+            spellCheck={false}
+            autoComplete="username"
+            onChange={(event) => setAccount(event.target.value)}
           />
         </label>
         <button className="task-primary" type="submit" disabled={busy || !address.trim()}>Se connecter</button>
@@ -196,6 +214,20 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   const renderDir = (dir: string, depth: number) => {
     const listing = listings.get(dir);
     if (!listing) return <p className="empty">Lecture…</p>;
+    if (failed(listing)) {
+      return (
+        <p className="error shared-dir-error" role="alert">
+          {listing.failure}
+          {listing.denied && canConnect && (
+            <> Sur un partage Windows, c’est souvent l’accès invité ou un autre compte que celui du TSE.{' '}
+              <button className="link-button" onClick={() => { setAddress(status?.address ?? ''); setAccount(status?.account ?? ''); setShowConnect(true); }}>
+                Se connecter avec mon compte…
+              </button>
+            </>
+          )}
+        </p>
+      );
+    }
     if (!listing.entries.length) return <p className="empty">{listing.offline ? 'Rien de gardé sur cet ordinateur ici.' : 'Dossier vide.'}</p>;
     return (
       <ul className="shared-tree" aria-label={dir ? `Contenu de ${dir}` : 'Contenu du dossier partagé'}>
@@ -279,7 +311,7 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
             )}
             {REACH_HELP[reach] && <p className="notice">{REACH_HELP[reach]}</p>}
             {reach === 'unmounted' && status.address && canConnect && (
-              <button className="task-primary" disabled={busy} onClick={() => void connect(status.address!)}>
+              <button className="task-primary" disabled={busy} onClick={() => void connect(status.address!, status.account ?? '')}>
                 Se reconnecter à {status.address}
               </button>
             )}
@@ -287,7 +319,16 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
             {error && <p className="error" role="alert">{error}</p>}
             {renderDir(root, 0)}
             {status.configurable && !showConnect && (
-              <button className="ghost shared-change" disabled={busy} onClick={() => (canConnect ? setShowConnect(true) : void choose())}>
+              <button
+                className="ghost shared-change"
+                disabled={busy}
+                onClick={() => {
+                  if (!canConnect) return void choose();
+                  setAddress(status.address ?? '');
+                  setAccount(status.account ?? '');
+                  setShowConnect(true);
+                }}
+              >
                 Changer de dossier…
               </button>
             )}

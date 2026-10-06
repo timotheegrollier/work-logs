@@ -13,28 +13,54 @@ import { execFileSync, spawn } from 'node:child_process';
  */
 
 /**
- * `\\TSE01\Commun\Procédures`, `//tse01/commun`, `smb://tse01/commun/x` ou
- * `tse01/commun` → `{ uri: 'smb://tse01/commun', host, share, subpath }`.
+ * Compte Windows sous lequel monter le partage : `SRVMURGAT\TimotheeG`,
+ * `SRVMURGAT;TimotheeG` ou `TimotheeG`. Jamais de mot de passe : il se saisit dans
+ * la fenêtre du gestionnaire de fichiers.
  */
-export function parseShareAddress(input) {
+export function parseAccount(input) {
+  const value = String(input ?? '').trim();
+  if (!value) return null;
+  const match = /^(?:([^\\;/@:]+)[\\;])?([^\\;/@:]+)$/.exec(value);
+  if (!match || /[\x00-\x1f]/.test(value)) throw new Error('Compte invalide : écris-le comme sur le TSE, par exemple SRVMURGAT\\TonNom.');
+  const domain = match[1]?.trim() || null;
+  const user = match[2].trim();
+  return { domain, user, label: domain ? `${domain}\\${user}` : user };
+}
+
+/**
+ * `\\TSE01\Commun\Procédures`, `//tse01/commun`, `smb://tse01/commun/x` ou
+ * `tse01/commun` → `{ uri: 'smb://tse01/commun', host, share, subpath }`. Avec un
+ * compte, l'adresse le porte (`smb://DOMAINE;compte@tse01/commun`) : GVFS ne
+ * demande alors que son mot de passe, et ne rejoue pas un autre compte retenu.
+ */
+export function parseShareAddress(input, accountInput = null) {
   let value = String(input ?? '').trim();
   if (!value) throw new Error('Indique l’adresse du partage, par exemple \\\\serveur\\partage.');
   value = value.replace(/\\/g, '/');
   value = value.replace(/^smb:\/*/i, '').replace(/^\/+/, '');
-  // Identifiants éventuels dans l'adresse (`domaine;utilisateur@hôte`) : on les écarte.
+  // Compte écrit dans l'adresse (`domaine;utilisateur@hôte`) : gardé, un mot de passe écarté.
+  let account = parseAccount(accountInput);
   const at = value.indexOf('@');
-  if (at !== -1 && at < value.indexOf('/')) value = value.slice(at + 1);
+  if (at !== -1 && at < value.indexOf('/')) {
+    const userinfo = value.slice(0, at).split(':')[0];
+    if (!account) {
+      try { account = parseAccount(decodeURIComponent(userinfo)); } catch { account = null; }
+    }
+    value = value.slice(at + 1);
+  }
   const parts = value.split('/').filter(Boolean);
   if (parts.length < 2) throw new Error('Adresse incomplète : il faut le serveur et le partage, par exemple \\\\serveur\\partage.');
   const [host, share, ...rest] = parts;
   if (!/^[\w.-]+$/.test(host)) throw new Error(`Nom de serveur invalide : « ${host} ».`);
   if (/[\x00-\x1f]/.test(value)) throw new Error('Adresse invalide.');
+  const userinfo = account ? `${account.domain ? `${encodeURIComponent(account.domain)};` : ''}${encodeURIComponent(account.user)}@` : '';
   return {
-    uri: `smb://${host}/${encodeURIComponent(share)}`,
+    uri: `smb://${userinfo}${host}/${encodeURIComponent(share)}`,
     host,
     share,
     subpath: rest.join('/'),
     label: `\\\\${host}\\${share}${rest.length ? '\\' + rest.join('\\') : ''}`,
+    account,
   };
 }
 
@@ -54,19 +80,38 @@ function mountFields(name) {
 
 export const defaultGvfsDir = () => process.env.WORKLOGS_GVFS_DIR || `/run/user/${os.userInfo().uid}/gvfs`;
 
-/** Le partage est-il déjà monté par GVFS ? Chemin du montage, ou `null`. */
-export function findShareMount({ host, share }, gvfsDir = defaultGvfsDir()) {
+/**
+ * Le partage est-il déjà monté par GVFS ? Chemin du montage, ou `null`. Avec un
+ * compte, seul un montage **de ce compte** convient : un montage invité ou d'un
+ * autre compte n'a pas les mêmes droits.
+ */
+export function findShareMount({ host, share, account = null }, gvfsDir = defaultGvfsDir()) {
   let names = [];
   try { names = fs.readdirSync(gvfsDir); } catch { return null; }
-  const wantedHost = host.toLowerCase();
-  const wantedShare = share.toLowerCase();
+  const same = (a, b) => String(a ?? '').normalize('NFC').toLowerCase() === String(b ?? '').normalize('NFC').toLowerCase();
   for (const name of names) {
     const fields = mountFields(name);
-    if (fields && fields.server?.toLowerCase() === wantedHost && fields.share?.toLowerCase() === wantedShare) {
-      return path.join(gvfsDir, name);
-    }
+    if (!fields || !same(fields.server, host) || !same(fields.share, share)) continue;
+    if (account && (!same(fields.user, account.user) || (account.domain && fields.domain && !same(fields.domain, account.domain)))) continue;
+    return path.join(gvfsDir, name);
   }
   return null;
+}
+
+/** Message d'un dossier qu'on ne peut pas lister : refus d'accès (compte) ou absence. */
+function accessProblem(dir, subpath, target) {
+  try {
+    const handle = fs.opendirSync(dir);
+    try { handle.readSync(); } finally { handle.closeSync(); }
+    return null;
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return `Le dossier « ${subpath} » n’existe pas sur ${target.label.split('\\').slice(0, 4).join('\\')}.`;
+    if (error.code === 'EACCES' || error.code === 'EPERM') {
+      const who = target.account ? `le compte ${target.account.label}` : 'le compte avec lequel le partage est monté (souvent l’accès invité)';
+      return `Accès refusé à ${target.label} pour ${who}. Indique dans « Compte » celui que tu utilises sur le TSE (par exemple SRVMURGAT\\TonNom), puis « Se connecter ».`;
+    }
+    return `${target.label} illisible : ${error.message}`;
+  }
 }
 
 /** `gio mount <uri>`, sans terminal : réussit si le trousseau connaît déjà le mot de passe. */
@@ -132,6 +177,7 @@ export function findFileManager({ defaultHandler = defaultFolderHandler(), exist
  * apparaisse (le temps de saisir le mot de passe). Renvoie le dossier à utiliser.
  */
 export async function connectShare(address, {
+  account = null,
   gvfsDir = defaultGvfsDir(),
   mount = gioMount,
   openLocation,
@@ -139,11 +185,12 @@ export async function connectShare(address, {
   pollMs = 1000,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 } = {}) {
-  const target = parseShareAddress(address);
+  const target = parseShareAddress(address, account);
+  // Le dossier visé doit se lister : un montage sans droits (invité) est dit tel quel.
   const withSubpath = (root) => {
-    if (!target.subpath) return root;
-    const full = path.join(root, ...target.subpath.split('/'));
-    if (!fs.existsSync(full)) throw new Error(`Le dossier « ${target.subpath} » n’existe pas sur ${target.label.split('\\').slice(0, 4).join('\\')}.`);
+    const full = target.subpath ? path.join(root, ...target.subpath.split('/')) : root;
+    const problem = accessProblem(full, target.subpath, target);
+    if (problem) throw new Error(problem);
     return full;
   };
   let found = findShareMount(target, gvfsDir);

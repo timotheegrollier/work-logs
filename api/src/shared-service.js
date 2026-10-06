@@ -654,6 +654,8 @@ export function createSharedService({
         root: current,
         /** Adresse du partage (`\\serveur\partage`) quand il a été monté par WorkLogs : « Se reconnecter ». */
         address: setting('shared.address'),
+        /** Compte Windows du montage (`SRVMURGAT\\TonNom`), s'il a été indiqué : repris par « Se reconnecter ». */
+        account: setting('shared.account'),
         label: current ? path.basename(current) : '',
         mount: current && state.type !== null && state.type !== undefined ? mountName(state.type, current) : null,
         reach: state.reach,
@@ -668,7 +670,7 @@ export function createSharedService({
     },
 
     /** Choisi par le dialogue natif (IPC) — jamais par une route HTTP. */
-    async configure(dir, { address = null } = {}) {
+    async configure(dir, { address = null, account = null } = {}) {
       if (!configurable) throw new SharedError(403, 'SHARED_NOT_CONFIGURABLE', 'Le dossier partagé est fixé par la configuration.');
       if (typeof dir !== 'string' || !path.isAbsolute(dir)) throw new SharedError(400, 'SHARED_BAD_PATH', 'Chemin absolu attendu.');
       let real;
@@ -689,13 +691,14 @@ export function createSharedService({
       setSetting('shared.fs_root', real);
       setSetting('shared.fs_type', type);
       setSetting('shared.address', address);
+      setSetting('shared.account', address ? account : null);
       mount = { at: -Infinity, root: null, reach: 'unconfigured', real: null, type: null };
       return this.status();
     },
 
     async forget() {
       if (!configurable) throw new SharedError(403, 'SHARED_NOT_CONFIGURABLE', 'Le dossier partagé est fixé par la configuration.');
-      for (const key of ['shared.root', 'shared.fs_root', 'shared.fs_type', 'shared.address']) setSetting(key, null);
+      for (const key of ['shared.root', 'shared.fs_root', 'shared.fs_type', 'shared.address', 'shared.account']) setSetting(key, null);
       mount = { at: -Infinity, root: null, reach: 'unconfigured', real: null, type: null };
       return this.status();
     },
@@ -764,6 +767,11 @@ export function createSharedService({
           }),
         };
       } catch (error) {
+        // Dossier qu'on voit mais qu'on ne peut pas ouvrir : c'est le compte du montage
+        // (souvent l'accès invité d'un partage Windows), pas le fichier, qui est en cause.
+        if (error?.code === 'EACCES' || error?.code === 'EPERM') {
+          throw new SharedError(403, 'SHARED_DENIED', 'Accès refusé à ce dossier : le compte avec lequel le partage est monté n’y a pas droit.');
+        }
         throw toSharedError(error);
       }
     },

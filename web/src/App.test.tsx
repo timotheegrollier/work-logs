@@ -2283,6 +2283,24 @@ describe('dossier partagé', () => {
     expect(Buffer.from(fs.readFileSync(path.join(share, 'Budget.xlsx'))).equals(Buffer.from(original))).toBe(true);
   });
 
+  test('dossier fermé au compte du montage : « accès refusé » sous ce dossier, pas « Lecture… » sans fin', async () => {
+    if (process.getuid?.() === 0) return; // root lit partout : test sans objet.
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, 'Global', 'MURGAT INGENIERIE'), { recursive: true });
+    await write('notes.md', 'y');
+    fs.chmodSync(path.join(share, 'Global'), 0o000);
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Dossier Global' }));
+      expect(await screen.findByText(/Accès refusé à ce dossier : le compte avec lequel le partage est monté n’y a pas droit/)).toHaveAttribute('role', 'alert');
+      expect(screen.queryByText('Lecture…')).not.toBeInTheDocument();
+      // Le reste de l'arbre reste utilisable.
+      expect(screen.getByRole('button', { name: /^Ouvrir notes\.md/ })).toBeInTheDocument();
+    } finally {
+      fs.chmodSync(path.join(share, 'Global'), 0o755);
+    }
+  });
+
   test('choisir une entrée referme le fichier partagé', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Compte rendu' }] });
     await write('notes.md', 'v1\n');

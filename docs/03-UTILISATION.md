@@ -176,7 +176,10 @@ TSE. Sur le desktop, tape son **adresse comme sous Windows** — `\\serveur\part
 WorkLogs le monte comme le gestionnaire de fichiers (Nemo). S'il faut un mot de passe, c'est
 la fenêtre « Authentification requise » de Nemo qui le demande (choisis « Se souvenir pour
 toujours ») ; elle peut s'ouvrir derrière WorkLogs. WorkLogs ne voit jamais tes
-identifiants. Après un redémarrage, le partage n'est plus monté : **Se reconnecter** le
+identifiants. Si un dossier affiche **« Accès refusé »**, le partage est monté avec un compte
+qui n'y a pas droit (souvent l'accès invité) : renseigne **Compte** avec celui du TSE
+(`SRVMURGAT\TonNom`, même orthographe, accents compris) et reconnecte-toi ; l'adresse peut
+viser directement un sous-dossier (`\\SRVMURGAT\Global\MURGAT INGENIERIE\13. SI\00. PROCEDURE`). Après un redémarrage, le partage n'est plus monté : **Se reconnecter** le
 remonte d'un clic. Un dossier déjà monté se choisit aussi par « ou choisir un dossier déjà
 monté… ». Le choix est retenu sur cet ordinateur seulement ; la section ne lit le partage que
 lorsque la colonne Procédures est affichée.

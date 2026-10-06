@@ -548,6 +548,7 @@ if (!app.requestSingleInstanceLock()) {
         if (event.sender !== window.webContents) return { error: 'Demande refusée.' };
         try {
           const share = await connectShare(String(request?.address ?? ''), {
+            account: request?.account ? String(request.account) : null,
             // Le gestionnaire de fichiers lui-même (Nemo…), qui affiche sa fenêtre
             // « Authentification requise » ; `xdg-open` échoue en silence (voir shared-mount.mjs).
             openLocation: async (uri) => {
@@ -556,7 +557,7 @@ if (!app.requestSingleInstanceLock()) {
               return launchDetached(uri, { command: manager });
             },
           });
-          return { status: await backend.shared.configure(share.path, { address: share.label }) };
+          return { status: await backend.shared.configure(share.path, { address: share.label, account: share.account?.label ?? null }) };
         } catch (error) {
           return { error: error.message };
         }

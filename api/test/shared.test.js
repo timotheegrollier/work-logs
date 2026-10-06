@@ -110,6 +110,22 @@ describe('dossier partagé', () => {
     assert.deepEqual(inner.body.entries.map((entry) => entry.path), ['Procédures/filtration.docx']);
   });
 
+  test('dossier visible mais fermé (droits du compte) : « accès refusé » dit pour ce dossier', async () => {
+    if (process.getuid?.() === 0) return; // root lit partout : test sans objet.
+    write('Global/MURGAT INGENIERIE/notes.md', 'x');
+    fs.chmodSync(path.join(share, 'Global'), 0o000);
+    try {
+      const top = await api.get('/api/shared/list');
+      assert.deepEqual(top.body.entries.map((entry) => entry.name), ['Global']);
+      const denied = await api.get(`/api/shared/list?dir=${q('Global')}`);
+      assert.equal(denied.status, 403);
+      assert.equal(denied.body.code, 'SHARED_DENIED');
+      assert.match(denied.body.error, /Accès refusé à ce dossier : le compte avec lequel le partage est monté n’y a pas droit/);
+    } finally {
+      fs.chmodSync(path.join(share, 'Global'), 0o755);
+    }
+  });
+
   test('refuse les chemins qui sortent du partage', async () => {
     fs.symlinkSync(os.tmpdir(), path.join(share, 'dehors'));
     for (const bad of ['../x', '/etc/passwd', 'a//b', 'a\\b']) {

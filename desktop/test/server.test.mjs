@@ -55,7 +55,7 @@ test('dossier partagé desktop : réglable par le dialogue seulement, conservé,
     const headers = { 'x-worklogs-token': server.token };
     const status = async () => (await fetch(server.origin + '/api/shared/status', { headers })).json();
     assert.deepEqual({ ...(await status()), since: null }, {
-      available: true, configurable: true, root: null, address: null, label: '', mount: null, reach: 'unconfigured', since: null,
+      available: true, configurable: true, root: null, address: null, account: null, label: '', mount: null, reach: 'unconfigured', since: null,
       displayName: (await status()).displayName, projects: {}, pending: 0, conflicts: 0,
     });
     // Trop large, ou pas un dossier : refusé avant d'être retenu.

@@ -59,6 +59,15 @@ de `docx.ts` ce que Word et Excel partagent ; `zip.ts` sait retirer une entrée
   sous la grille ; parcours Playwright : `87,5` puis `=SOMME(B2:B3;10)` au clavier, Ctrl+S,
   fichier écrit cellule par cellule. Excel : sur le TSE.
 
+**v0.45.1 — le compte du partage.** `\\SRVMURGAT\Global\MURGAT INGENIERIE\13. SI\00. PROCEDURE`
+refusé : les montages GVFS de Timo voient ce que voit l'invité (`D` lisible, `Global` refusé),
+le trousseau rejouant `TimotheeG`/`WORKGROUP`. Champ « Compte » (dans l'adresse GVFS, jamais
+de mot de passe), refus d'accès dit comme tel (connexion et arbre). §25. **À faire par Timo** :
+« Changer de dossier… », adresse ci-dessus, Compte = son identifiant du TSE avec le domaine
+`SRVMURGAT` (orthographe exacte), mot de passe dans la fenêtre.
+Tests : 1 API, 2 desktop unitaires, 1 front, parcours desktop étendu (compte + reconnexion) :
+**794**. `WORKLOGS_E2E_PORT` : une autre session occupait le port 8412 des parcours web.
+
 **Correctif du même lot — se connecter au partage (v0.45.0).** « Connexion à
 \\172.16.1.20\D… » restait sans fenêtre puis échouait : `xdg-open` (via `gio open`) refuse
 une adresse SMB non montée sans rien afficher. WorkLogs lance maintenant Nemo directement

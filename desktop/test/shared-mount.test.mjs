@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { connectShare, findFileManager, findShareMount, parseShareAddress } from '../shared-mount.mjs';
+import { connectShare, findFileManager, findShareMount, parseAccount, parseShareAddress } from '../shared-mount.mjs';
 
 test('adresse du partage : UNC Windows, smb://, //, sous-dossier ; refus des adresses incomplètes', () => {
-  assert.deepEqual(parseShareAddress('\\\\TSE01\\Commun'), { uri: 'smb://TSE01/Commun', host: 'TSE01', share: 'Commun', subpath: '', label: '\\\\TSE01\\Commun' });
+  assert.deepEqual(parseShareAddress('\\\\TSE01\\Commun'), { uri: 'smb://TSE01/Commun', host: 'TSE01', share: 'Commun', subpath: '', label: '\\\\TSE01\\Commun', account: null });
   assert.equal(parseShareAddress('smb://tse01/commun/Procédures/Piscine').subpath, 'Procédures/Piscine');
   assert.equal(parseShareAddress('//tse01.local/Équipe').uri, 'smb://tse01.local/%C3%89quipe');
-  assert.equal(parseShareAddress('smb://ENTREPRISE;timo@tse01/commun').host, 'tse01', 'les identifiants de l’adresse sont écartés');
+  assert.equal(parseShareAddress('smb://ENTREPRISE;timo@tse01/commun').host, 'tse01');
   assert.equal(parseShareAddress('  tse01/commun  ').label, '\\\\tse01\\commun');
   for (const bad of ['', '\\\\tse01', 'smb://', 'tse 01/commun']) assert.throws(() => parseShareAddress(bad), /Indique|incomplète|invalide/, bad);
 });
@@ -89,4 +89,47 @@ test('gestionnaire de fichiers pour la connexion : celui du bureau, sinon le pre
   // Gestionnaire du bureau inconnu (Dolphin passe par KIO, pas GVFS) : le premier qui sait faire.
   assert.equal(findFileManager({ defaultHandler: 'org.kde.dolphin.desktop', exists: only('thunar') }), 'thunar');
   assert.equal(findFileManager({ defaultHandler: '', exists: only() }), null);
+});
+
+test('compte du partage : dans l’adresse donnée à GVFS, jamais de mot de passe ; seul un montage de ce compte convient', () => {
+  assert.deepEqual(parseAccount('SRVMURGAT\\TimothéeG'), { domain: 'SRVMURGAT', user: 'TimothéeG', label: 'SRVMURGAT\\TimothéeG' });
+  assert.deepEqual(parseAccount('TimotheeG'), { domain: null, user: 'TimotheeG', label: 'TimotheeG' });
+  assert.equal(parseAccount('  '), null);
+  for (const bad of ['a/b', 'x@y', 'a:b']) assert.throws(() => parseAccount(bad), /Compte invalide/, bad);
+
+  const target = parseShareAddress('\\\\SRVMURGAT\\Global\\MURGAT INGENIERIE\\13. SI\\00. PROCEDURE', 'SRVMURGAT\\TimothéeG');
+  assert.equal(target.uri, 'smb://SRVMURGAT;Timoth%C3%A9eG@SRVMURGAT/Global');
+  assert.equal(target.subpath, 'MURGAT INGENIERIE/13. SI/00. PROCEDURE');
+  assert.equal(target.label, '\\\\SRVMURGAT\\Global\\MURGAT INGENIERIE\\13. SI\\00. PROCEDURE');
+  // Compte écrit dans l'adresse : gardé ; un mot de passe qui s'y trouverait : écarté.
+  assert.equal(parseShareAddress('smb://SRVMURGAT;TimotheeG:secret@srvmurgat/global').uri, 'smb://SRVMURGAT;TimotheeG@srvmurgat/global');
+
+  const gvfs = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-gvfs-dir-'));
+  try {
+    const guest = path.join(gvfs, 'smb-share:server=srvmurgat,share=global');
+    fs.mkdirSync(guest);
+    assert.equal(findShareMount({ host: 'SRVMURGAT', share: 'Global' }, gvfs), guest);
+    assert.equal(findShareMount({ host: 'SRVMURGAT', share: 'Global', account: target.account }, gvfs), null, 'le montage invité ne vaut pas celui du compte');
+    const mine = path.join(gvfs, 'smb-share:domain=SRVMURGAT,server=srvmurgat,share=global,user=Timoth%C3%A9eG');
+    fs.mkdirSync(mine);
+    assert.equal(findShareMount({ host: 'SRVMURGAT', share: 'Global', account: target.account }, gvfs), mine);
+  } finally {
+    fs.rmSync(gvfs, { recursive: true, force: true });
+  }
+});
+
+test('connexion : un dossier fermé au compte du montage est dit « accès refusé », pas « n’existe pas »', async (t) => {
+  if (process.getuid?.() === 0) return t.skip('root lit partout');
+  const gvfs = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-gvfs-dir-'));
+  const mountDir = path.join(gvfs, 'smb-share:server=srvmurgat,share=global');
+  try {
+    fs.mkdirSync(path.join(mountDir, 'MURGAT INGENIERIE', '13. SI', '00. PROCEDURE'), { recursive: true });
+    fs.chmodSync(path.join(mountDir, 'MURGAT INGENIERIE'), 0o000);
+    await assert.rejects(connectShare('\\\\SRVMURGAT\\Global\\MURGAT INGENIERIE\\13. SI\\00. PROCEDURE', { gvfsDir: gvfs }),
+      /Accès refusé à \\\\SRVMURGAT\\Global\\MURGAT INGENIERIE\\13\. SI\\00\. PROCEDURE pour le compte avec lequel le partage est monté \(souvent l’accès invité\)\. Indique dans « Compte »/);
+    await assert.rejects(connectShare('\\\\SRVMURGAT\\Global\\Absent', { gvfsDir: gvfs }), /« Absent » n’existe pas/);
+  } finally {
+    fs.chmodSync(path.join(mountDir, 'MURGAT INGENIERIE'), 0o755);
+    fs.rmSync(gvfs, { recursive: true, force: true });
+  }
 });

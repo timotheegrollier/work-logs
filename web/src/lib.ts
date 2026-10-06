@@ -175,6 +175,8 @@ export interface SharedStatus {
   root?: string | null;
   /** Adresse du partage quand WorkLogs l'a monté lui-même : permet « Se reconnecter ». */
   address?: string | null;
+  /** Compte Windows indiqué à la connexion (`SRVMURGAT\TonNom`), repris par « Se reconnecter ». */
+  account?: string | null;
   label?: string;
   mount?: string | null;
   reach?: SharedReach;

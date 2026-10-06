@@ -49,9 +49,9 @@ function fakeGio(): string {
   return script;
 }
 
-/** Faux Nemo : reçoit l'adresse et, comme après la saisie du mot de passe, monte \\tse02\D. */
+/** Faux Nemo : reçoit l'adresse et, comme après la saisie du mot de passe de TSE02\Timo, monte \\tse02\D. */
 function fakeFileManager(): string {
-  const share = path.join(directory, 'gvfs', 'smb-share:server=tse02,share=d');
+  const share = path.join(directory, 'gvfs', 'smb-share:domain=TSE02,server=tse02,share=d,user=Timo');
   const script = path.join(directory, 'nemo.sh');
   fs.writeFileSync(script, `#!/bin/sh\nprintf '%s' "$1" > "${path.join(directory, 'nemo.txt')}"\n(sleep 1; mkdir -p "${share}"; printf 'a;b\\n' > "${share}/relevés.csv") &\n`, { mode: 0o755 });
   return script;
@@ -288,12 +288,25 @@ test('dossier partagé : se connecter par l’adresse \\\\serveur\\partage, puis
 test('dossier partagé : mot de passe à saisir, la fenêtre du gestionnaire de fichiers s’ouvre sur l’adresse', async () => {
   await page.getByRole('button', { name: 'Procédures', exact: true }).click();
   await page.getByLabel('Adresse du partage').fill('\\\\TSE02\\D');
+  // Le compte du TSE (jamais son mot de passe) : GVFS ne rejoue pas un autre compte retenu.
+  await page.getByLabel('Compte du partage').fill('TSE02\\Timo');
   await page.getByRole('button', { name: 'Se connecter' }).click();
   await expect(page.getByText(/Authentification requise/)).toBeVisible();
   // `gio` a échoué sans terminal : c'est le gestionnaire de fichiers qui reçoit l'adresse (pas xdg-open).
-  await expect.poll(() => fs.existsSync(path.join(directory, 'nemo.txt')) && fs.readFileSync(path.join(directory, 'nemo.txt'), 'utf8')).toBe('smb://TSE02/D');
+  const received = path.join(directory, 'nemo.txt');
+  await expect.poll(() => fs.existsSync(received) && fs.readFileSync(received, 'utf8')).toBe('smb://TSE02;Timo@TSE02/D');
   await expect(page.getByRole('button', { name: /^Ouvrir relevés\.csv/ })).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText('Joignable')).toBeVisible();
+
+  // Démonté : « Se reconnecter » reprend le même compte.
+  fs.rmSync(path.join(directory, 'gvfs', 'smb-share:domain=TSE02,server=tse02,share=d,user=Timo'), { recursive: true, force: true });
+  fs.rmSync(received);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  const reconnect = page.getByRole('button', { name: 'Se reconnecter à \\\\TSE02\\D' });
+  await expect(reconnect).toBeVisible({ timeout: 15_000 });
+  await reconnect.click();
+  await expect.poll(() => fs.existsSync(received) && fs.readFileSync(received, 'utf8')).toBe('smb://TSE02;Timo@TSE02/D');
+  await expect(page.getByText('Joignable')).toBeVisible({ timeout: 10_000 });
 });
 
 test('impression PDF et refus de fermeture si l’enregistrement échoue', async () => {

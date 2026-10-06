@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 8412; // distinct de 8410/8411 pour ne jamais toucher aux données réelles
+// Distinct de 8410/8411 pour ne jamais toucher aux données réelles. `WORKLOGS_E2E_PORT` :
+// deux copies de travail (worktrees) peuvent lancer leurs parcours en même temps.
+const PORT = Number(process.env.WORKLOGS_E2E_PORT) || 8412;
 
 export default defineConfig({
   testDir: './e2e',

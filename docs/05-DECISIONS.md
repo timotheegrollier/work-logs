@@ -898,6 +898,20 @@ qu'un dossier **déjà monté**, pas une adresse `smb://`.
   de fichiers lui-même** sur l'adresse (`nemo smb://…` ; Nautilus, Caja, Thunar ailleurs —
   celui du bureau d'abord), ce qui affiche sa fenêtre « Authentification requise » (vérifié
   sur la machine). Fenêtre impossible à ouvrir → erreur **aussitôt**, avec le chemin manuel.
+- **v0.45.1 (2026-10-06) — le compte du partage.** `\\SRVMURGAT\Global\…` restait fermé :
+  mesuré, les montages GVFS de Timo voyaient **exactement** ce que voit l'accès invité
+  (`smbclient -N` : `D` listable, `Global` refusé). Le trousseau rejouait `TimotheeG`
+  domaine `WORKGROUP` (« Se souvenir pour toujours »), compte que le serveur ne reconnaît
+  pas ou qui n'a pas de droits réseau sur `Global` : aucune fenêtre ne redemandait.
+  - Champ **« Compte »** facultatif (`SRVMURGAT\TonNom`) : il entre dans l'adresse donnée à
+    GVFS (`smb://SRVMURGAT;TonNom@serveur/partage`), qui ne demande alors **que le mot de
+    passe de ce compte** et ne rejoue pas un autre compte retenu (vérifié avec `gio`). Retenu
+    (`shared.account`) pour « Se reconnecter ». Toujours aucun mot de passe dans WorkLogs.
+  - Seul un montage **de ce compte** convient (`user=` du nom de montage GVFS) : un montage
+    invité du même partage n'est plus réutilisé.
+  - Refus d'accès dit comme tel : « Accès refusé … pour le compte avec lequel le partage est
+    monté » au lieu de « n'existe pas » à la connexion ; sous le dossier lui-même dans l'arbre
+    (`SHARED_DENIED`), au lieu d'un « Lecture… » sans fin, avec « Se connecter avec mon compte… ».
 
 **Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :
 `libsmbclient`, dépendance native), ou si l'équipe veut écrire à plusieurs en même temps
