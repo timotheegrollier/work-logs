@@ -890,6 +890,14 @@ qu'un dossier **déjà monté**, pas une adresse `smb://`.
   GVFS ne tourne pas). L'écriture sur un vrai partage SMB par GVFS reste à vérifier.
 - Un `ENOENT` relance aussitôt le contrôle de montage : un partage démonté s'affiche
   « Non monté » avec « Se reconnecter », sans attendre le cache de 15 s.
+- **v0.45.0 (2026-10-06) — la fenêtre du mot de passe ne s'ouvrait pas.** Sur le Mint de
+  Timo (`\\172.16.1.20\D`), « Connexion à … » restait 2 min sans rien afficher, puis
+  échouait. Cause mesurée : `xdg-open` passe, sous Cinnamon et GNOME, par `gio open`, qui
+  refuse une adresse non montée (« L’emplacement indiqué n’est pas monté », code 2) **sans
+  ouvrir de fenêtre** ; et WorkLogs ignorait cet échec. On lance désormais le **gestionnaire
+  de fichiers lui-même** sur l'adresse (`nemo smb://…` ; Nautilus, Caja, Thunar ailleurs —
+  celui du bureau d'abord), ce qui affiche sa fenêtre « Authentification requise » (vérifié
+  sur la machine). Fenêtre impossible à ouvrir → erreur **aussitôt**, avec le chemin manuel.
 
 **Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :
 `libsmbclient`, dépendance native), ou si l'équipe veut écrire à plusieurs en même temps

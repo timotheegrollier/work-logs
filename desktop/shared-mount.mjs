@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
 /**
  * Monter le dossier du TSE comme le fait Nemo (« Se connecter à un serveur ») :
@@ -88,6 +88,45 @@ export function gioMount(uri, { command = process.env.WORKLOGS_GIO_COMMAND || 'g
 }
 
 /**
+ * Gestionnaires de fichiers qui montent un `smb://` par GVFS **et** demandent le mot
+ * de passe dans leur propre fenêtre. Pas `xdg-open` : sous Cinnamon (et GNOME), il
+ * passe par `gio open`, qui refuse une adresse non montée (« L’emplacement indiqué
+ * n’est pas monté ») sans rien afficher — constaté sur Linux Mint le 2026-10-06.
+ */
+const FILE_MANAGERS = [
+  { desktop: /^nemo/i, command: 'nemo' },
+  { desktop: /nautilus/i, command: 'nautilus' },
+  { desktop: /^caja/i, command: 'caja' },
+  { desktop: /^thunar/i, command: 'thunar' },
+];
+
+function installed(command, searchPath = process.env.PATH || '') {
+  return searchPath.split(path.delimiter).filter(Boolean).some((dir) => {
+    try {
+      fs.accessSync(path.join(dir, command), fs.constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function defaultFolderHandler() {
+  try {
+    return execFileSync('xdg-mime', ['query', 'default', 'inode/directory'], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+}
+
+/** Le gestionnaire de fichiers à qui confier la connexion : celui du bureau d'abord, sinon le premier installé. */
+export function findFileManager({ defaultHandler = defaultFolderHandler(), exists = installed } = {}) {
+  const preferred = FILE_MANAGERS.find((manager) => manager.desktop.test(defaultHandler));
+  if (preferred && exists(preferred.command)) return preferred.command;
+  return FILE_MANAGERS.find((manager) => exists(manager.command))?.command ?? null;
+}
+
+/**
  * Trouve, ou monte, le partage. Ordre : déjà monté → `gio mount` (trousseau) →
  * fenêtre de connexion du gestionnaire de fichiers, puis on attend que le montage
  * apparaisse (le temps de saisir le mot de passe). Renvoie le dossier à utiliser.
@@ -114,7 +153,11 @@ export async function connectShare(address, {
   if (found) return { ...target, path: withSubpath(found), how: 'gio' };
   if (!openLocation) throw new Error(`Impossible de monter ${target.label} : ${mounted.message || 'refusé'}.`);
   // Mot de passe à saisir : la fenêtre de connexion du gestionnaire de fichiers.
-  await openLocation(target.uri);
+  // Si elle ne peut pas s'ouvrir, on le dit tout de suite au lieu d'attendre pour rien.
+  const failure = await openLocation(target.uri);
+  if (failure) {
+    throw new Error(`La fenêtre de connexion ne s’est pas ouverte (${failure}). Monte ${target.label} dans le gestionnaire de fichiers (Autres emplacements → Connexion à un serveur), puis « ou choisir un dossier déjà monté… ».`);
+  }
   for (let waited = 0; waited < waitMs; waited += pollMs) {
     await sleep(pollMs);
     found = findShareMount(target, gvfsDir);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { connectShare, findShareMount, parseShareAddress } from '../shared-mount.mjs';
+import { connectShare, findFileManager, findShareMount, parseShareAddress } from '../shared-mount.mjs';
 
 test('adresse du partage : UNC Windows, smb://, //, sous-dossier ; refus des adresses incomplètes', () => {
   assert.deepEqual(parseShareAddress('\\\\TSE01\\Commun'), { uri: 'smb://TSE01/Commun', host: 'TSE01', share: 'Commun', subpath: '', label: '\\\\TSE01\\Commun' });
@@ -56,7 +56,7 @@ test('connexion : déjà monté, puis `gio mount` (trousseau), puis fenêtre du 
     const viaWindow = await connectShare('\\\\tse01\\commun', {
       gvfsDir: gvfs,
       mount: async () => ({ ok: false, message: 'Password required' }),
-      openLocation: async (uri) => { opened = uri; setTimeout(() => fs.mkdirSync(mountDir), 30); },
+      openLocation: async (uri) => { opened = uri; setTimeout(() => fs.mkdirSync(mountDir), 30); return ''; },
       pollMs: 10,
       waitMs: 2000,
     });
@@ -66,9 +66,27 @@ test('connexion : déjà monté, puis `gio mount` (trousseau), puis fenêtre du 
     // 4. Jamais monté : message clair.
     fs.rmSync(mountDir, { recursive: true });
     await assert.rejects(connectShare('\\\\tse01\\commun', {
-      gvfsDir: gvfs, mount: async () => ({ ok: false, message: 'refusé' }), openLocation: async () => {}, pollMs: 5, waitMs: 20,
+      gvfsDir: gvfs, mount: async () => ({ ok: false, message: 'refusé' }), openLocation: async () => '', pollMs: 5, waitMs: 20,
     }), /n’est toujours pas monté/);
+
+    // 5. La fenêtre de connexion ne s'ouvre pas : on le dit aussitôt, sans attendre deux minutes.
+    const started = Date.now();
+    await assert.rejects(connectShare('\\\\tse01\\commun', {
+      gvfsDir: gvfs, mount: async () => ({ ok: false, message: 'Password required' }),
+      openLocation: async () => 'nemo a échoué, code 1', pollMs: 5, waitMs: 60_000,
+    }), /fenêtre de connexion ne s’est pas ouverte \(nemo a échoué, code 1\)/);
+    assert.ok(Date.now() - started < 1000);
   } finally {
     fs.rmSync(gvfs, { recursive: true, force: true });
   }
+});
+
+test('gestionnaire de fichiers pour la connexion : celui du bureau, sinon le premier installé, jamais xdg-open', () => {
+  const only = (...commands) => (command) => commands.includes(command);
+  assert.equal(findFileManager({ defaultHandler: 'nemo.desktop', exists: only('nemo', 'nautilus') }), 'nemo');
+  assert.equal(findFileManager({ defaultHandler: 'org.gnome.Nautilus.desktop', exists: only('nemo', 'nautilus') }), 'nautilus');
+  assert.equal(findFileManager({ defaultHandler: 'caja-folder-handler.desktop', exists: only('caja') }), 'caja');
+  // Gestionnaire du bureau inconnu (Dolphin passe par KIO, pas GVFS) : le premier qui sait faire.
+  assert.equal(findFileManager({ defaultHandler: 'org.kde.dolphin.desktop', exists: only('thunar') }), 'thunar');
+  assert.equal(findFileManager({ defaultHandler: '', exists: only() }), null);
 });

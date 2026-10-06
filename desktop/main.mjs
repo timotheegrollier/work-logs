@@ -7,7 +7,7 @@ import { startDesktopServer } from './server.mjs';
 import { createGoogleClient, readDefaultClient } from './google.mjs';
 import { installGoogleView } from './google-view.mjs';
 import { launchDetached, prepareOpenCopy, REFUSED } from './open-file.mjs';
-import { connectShare } from './shared-mount.mjs';
+import { connectShare, findFileManager } from './shared-mount.mjs';
 import { checkForUpdate, hasPackageKit, hasPkexec, installedVersionCommand, installKind, installedMatches, isAuthorizationFailure, isNewer, logUpdateEvent, packageManager, parseManagerProgress, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, privilegedInstallCommand, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
@@ -548,10 +548,13 @@ if (!app.requestSingleInstanceLock()) {
         if (event.sender !== window.webContents) return { error: 'Demande refusée.' };
         try {
           const share = await connectShare(String(request?.address ?? ''), {
-            openLocation: (uri) => launchDetached(uri, {
-              command: process.env.WORKLOGS_OPEN_COMMAND || 'xdg-open',
-              fallback: (location) => shell.openExternal(location),
-            }),
+            // Le gestionnaire de fichiers lui-même (Nemo…), qui affiche sa fenêtre
+            // « Authentification requise » ; `xdg-open` échoue en silence (voir shared-mount.mjs).
+            openLocation: async (uri) => {
+              const manager = process.env.WORKLOGS_FILE_MANAGER || findFileManager();
+              if (!manager) return 'aucun gestionnaire de fichiers Nemo, Fichiers, Caja ou Thunar';
+              return launchDetached(uri, { command: manager });
+            },
           });
           return { status: await backend.shared.configure(share.path, { address: share.label }) };
         } catch (error) {

@@ -187,8 +187,8 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
       </form>
       {connecting && (
         <p className="notice" role="status">
-          Connexion à {connecting}… Si une fenêtre te demande ton mot de passe, saisis-le là (coche « mémoriser ») :
-          WorkLogs attend que le partage soit monté.
+          Connexion à {connecting}… Si la fenêtre « Authentification requise » s’ouvre (parfois derrière WorkLogs),
+          saisis-y ton mot de passe et choisis « Se souvenir pour toujours » : WorkLogs attend que le partage soit monté.
         </p>
       )}
     </>
@@ -283,7 +283,7 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
                 Se reconnecter à {status.address}
               </button>
             )}
-            {connecting && !showConnect && <p className="notice" role="status">Connexion à {connecting}… valide ton mot de passe dans la fenêtre du gestionnaire de fichiers si elle s’ouvre.</p>}
+            {connecting && !showConnect && <p className="notice" role="status">Connexion à {connecting}… saisis ton mot de passe dans la fenêtre « Authentification requise » si elle s’ouvre (parfois derrière WorkLogs).</p>}
             {error && <p className="error" role="alert">{error}</p>}
             {renderDir(root, 0)}
             {status.configurable && !showConnect && (

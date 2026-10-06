@@ -174,7 +174,8 @@ Sous les procédures, la section **Dossier partagé** montre le dossier de l'éq
 TSE. Sur le desktop, tape son **adresse comme sous Windows** — `\\serveur\partage` (ou
 `smb://serveur/partage`, éventuellement suivie d'un sous-dossier) — puis **Se connecter** :
 WorkLogs le monte comme le gestionnaire de fichiers (Nemo). S'il faut un mot de passe, c'est
-la fenêtre de Nemo qui le demande (coche « mémoriser ») ; WorkLogs ne voit jamais tes
+la fenêtre « Authentification requise » de Nemo qui le demande (choisis « Se souvenir pour
+toujours ») ; elle peut s'ouvrir derrière WorkLogs. WorkLogs ne voit jamais tes
 identifiants. Après un redémarrage, le partage n'est plus monté : **Se reconnecter** le
 remonte d'un clic. Un dossier déjà monté se choisit aussi par « ou choisir un dossier déjà
 monté… ». Le choix est retenu sur cet ordinateur seulement ; la section ne lit le partage que

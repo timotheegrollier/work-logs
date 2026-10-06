@@ -48,7 +48,8 @@ de `docx.ts` ce que Word et Excel partagent ; `zip.ts` sait retirer une entrée
 - **Tests** : 212 API, **437 front** (+31 : `xlsx.test.ts`, `xlsx-format.test.ts`,
   `xlsx-formula.test.ts`, suppression d'entrée dans `zip.test.ts`, cellule protégée dans
   `SheetGrid.test.tsx`, 2 gestes dans `App.test.tsx`), 44 desktop, 25 scripts, 8 relais,
-  **49 navigateur** (+1 : nombre et formule au clavier puis Ctrl+S), 13 desktop : 788 en tout.
+  **49 navigateur** (+1 : nombre et formule au clavier puis Ctrl+S), 13 desktop : 788 en tout ;
+  avec le correctif de connexion ci-dessous, 45 desktop unitaires et 14 parcours desktop : **790**.
   Pendant `./scripts/check.sh`, le parcours desktop « masquer le document rend le clavier »
   (Google, sans rapport avec ce lot) a échoué une fois sur l'écran réel — focus de fenêtre ;
   relancé : 3/3 seul, puis 13/13 pour toute la suite desktop.
@@ -57,6 +58,14 @@ de `docx.ts` ce que Word et Excel partagent ; `zip.ts` sait retirer une entrée
   formule recopiée grisés, raison affichée sur une cellule fusionnée, formule fautive listée
   sous la grille ; parcours Playwright : `87,5` puis `=SOMME(B2:B3;10)` au clavier, Ctrl+S,
   fichier écrit cellule par cellule. Excel : sur le TSE.
+
+**Correctif du même lot — se connecter au partage (v0.45.0).** « Connexion à
+\\172.16.1.20\D… » restait sans fenêtre puis échouait : `xdg-open` (via `gio open`) refuse
+une adresse SMB non montée sans rien afficher. WorkLogs lance maintenant Nemo directement
+sur l'adresse : sa fenêtre « Authentification requise » s'ouvre (vue sur la machine de Timo,
+avec le vrai code de WorkLogs). Tests : 1 unitaire (`shared-mount.test.mjs`), 1 parcours
+desktop (mot de passe à saisir : faux `gio` qui échoue, faux Nemo qui monte). Le serveur
+expose les partages `D`, `Global`, `Pisciculture`… (liste anonyme `smbclient -L`).
 
 ### À vérifier par Timo (classeurs Excel)
 

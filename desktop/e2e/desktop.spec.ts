@@ -38,11 +38,22 @@ function fakeOpener(): string {
   return script;
 }
 
-/** Faux `gio mount` : crée le montage GVFS de \\tse01\commun, avec un fichier, comme Nemo. */
+/**
+ * Faux `gio mount` : crée le montage GVFS de \\tse01\commun, avec un fichier, comme Nemo.
+ * \\tse02 n'a pas de mot de passe dans le trousseau : sans terminal, `gio` échoue (code 2).
+ */
 function fakeGio(): string {
   const share = path.join(directory, 'gvfs', 'smb-share:server=tse01,share=commun');
   const script = path.join(directory, 'gio.sh');
-  fs.writeFileSync(script, `#!/bin/sh\n[ "$1" = mount ] || exit 1\nmkdir -p "${share}"\n[ -f "${share}/consignes.md" ] || printf '# Consignes\\n' > "${share}/consignes.md"\n`, { mode: 0o755 });
+  fs.writeFileSync(script, `#!/bin/sh\n[ "$1" = mount ] || exit 1\ncase "$2" in *[Tt][Ss][Ee]02*) echo 'Authentification requise' >&2; exit 2;; esac\nmkdir -p "${share}"\n[ -f "${share}/consignes.md" ] || printf '# Consignes\\n' > "${share}/consignes.md"\n`, { mode: 0o755 });
+  return script;
+}
+
+/** Faux Nemo : reçoit l'adresse et, comme après la saisie du mot de passe, monte \\tse02\D. */
+function fakeFileManager(): string {
+  const share = path.join(directory, 'gvfs', 'smb-share:server=tse02,share=d');
+  const script = path.join(directory, 'nemo.sh');
+  fs.writeFileSync(script, `#!/bin/sh\nprintf '%s' "$1" > "${path.join(directory, 'nemo.txt')}"\n(sleep 1; mkdir -p "${share}"; printf 'a;b\\n' > "${share}/relevés.csv") &\n`, { mode: 0o755 });
   return script;
 }
 
@@ -60,7 +71,7 @@ async function launch(expectedTitle: string | null = 'Comment ça marche') {
       // Répond à la place du dialogue « Choisir le dossier partagé ».
       WORKLOGS_CHOOSE_FOLDER: path.join(directory, 'partage'),
       // Montage GVFS joué par un faux `gio` : il « monte » \\tse01\commun dans ce dossier.
-      WORKLOGS_GVFS_DIR: path.join(directory, 'gvfs'), WORKLOGS_GIO_COMMAND: fakeGio() },
+      WORKLOGS_GVFS_DIR: path.join(directory, 'gvfs'), WORKLOGS_GIO_COMMAND: fakeGio(), WORKLOGS_FILE_MANAGER: fakeFileManager() },
   });
   page = await application.firstWindow();
   if (expectedTitle !== null) await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(expectedTitle);
@@ -272,6 +283,17 @@ test('dossier partagé : se connecter par l’adresse \\\\serveur\\partage, puis
   await reconnect.click();
   await expect(page.getByText('Joignable')).toBeVisible();
   expect(fs.existsSync(path.join(mounted, 'consignes.md'))).toBe(true);
+});
+
+test('dossier partagé : mot de passe à saisir, la fenêtre du gestionnaire de fichiers s’ouvre sur l’adresse', async () => {
+  await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  await page.getByLabel('Adresse du partage').fill('\\\\TSE02\\D');
+  await page.getByRole('button', { name: 'Se connecter' }).click();
+  await expect(page.getByText(/Authentification requise/)).toBeVisible();
+  // `gio` a échoué sans terminal : c'est le gestionnaire de fichiers qui reçoit l'adresse (pas xdg-open).
+  await expect.poll(() => fs.existsSync(path.join(directory, 'nemo.txt')) && fs.readFileSync(path.join(directory, 'nemo.txt'), 'utf8')).toBe('smb://TSE02/D');
+  await expect(page.getByRole('button', { name: /^Ouvrir relevés\.csv/ })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText('Joignable')).toBeVisible();
 });
 
 test('impression PDF et refus de fermeture si l’enregistrement échoue', async () => {
