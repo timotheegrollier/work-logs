@@ -179,7 +179,10 @@ toujours ») ; elle peut s'ouvrir derrière WorkLogs. WorkLogs ne voit jamais te
 identifiants. Si un dossier affiche **« Accès refusé »**, le partage est monté avec un compte
 qui n'y a pas droit (souvent l'accès invité) : renseigne **Compte** avec celui du TSE
 (`SRVMURGAT\TonNom`, même orthographe, accents compris) et reconnecte-toi ; l'adresse peut
-viser directement un sous-dossier (`\\SRVMURGAT\Global\MURGAT INGENIERIE\13. SI\00. PROCEDURE`). Après un redémarrage, le partage n'est plus monté : **Se reconnecter** le
+viser directement un sous-dossier (`\\SRVMURGAT\Global\MURGAT INGENIERIE\13. SI\00. PROCEDURE`) :
+la section l'ouvre alors comme racine, sans descendre dans l'arborescence. L'adresse et le
+compte restent remplis pour la fois suivante (« Changer de dossier… », « Se reconnecter »),
+même quand le dossier a été choisi par « ou choisir un dossier déjà monté… ». Après un redémarrage, le partage n'est plus monté : **Se reconnecter** le
 remonte d'un clic. Un dossier déjà monté se choisit aussi par « ou choisir un dossier déjà
 monté… ». Le choix est retenu sur cet ordinateur seulement ; la section ne lit le partage que
 lorsque la colonne Procédures est affichée.

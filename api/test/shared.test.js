@@ -8,6 +8,8 @@ import http from 'node:http';
 import { startApi, make, officeOwnerFile } from './helpers.js';
 import { createSharedIo } from '../src/shared-io.js';
 import { buildBackup, restoreBackup } from '../src/backup.js';
+import { openDb } from '../src/db.js';
+import { createSharedService } from '../src/shared-service.js';
 import { formatWorkLogsLock } from '../src/shared-locks.js';
 
 const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -494,5 +496,36 @@ describe('dossier partagé', () => {
     assert.equal(versions[0].hash, sha256('version 34'));
     const blobs = fs.readdirSync(path.join(api.dir, 'shared-blobs')).flatMap((dir) => fs.readdirSync(path.join(api.dir, 'shared-blobs', dir)));
     assert.equal(blobs.length, 30, 'les octets des versions effacées partent aussi');
+  });
+});
+
+describe('dossier partagé : changer de racine', () => {
+  test('les dossiers reliés aux projets suivent la nouvelle racine, ou tombent s’ils sont en dehors', async () => {
+    const top = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-racine-'));
+    const data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-racine-data-'));
+    const db = openDb(path.join(data, 'w.db'), { withSeed: false });
+    const shared = createSharedService({ db, blobDir: path.join(data, 'blobs'), configurable: true });
+    try {
+      fs.mkdirSync(path.join(top, 'Global', 'MURGAT INGENIERIE', '13. SI', '00. PROCEDURE', '2. TSE'), { recursive: true });
+      fs.mkdirSync(path.join(top, 'Pisciculture'));
+      const now = new Date().toISOString();
+      for (const [id, name] of [['pr_a', 'work-logs'], ['pr_b', 'TSE'], ['pr_c', 'Bassins']]) {
+        db.prepare('INSERT INTO projects (id, name, color, created_at) VALUES (?,?,?,?)').run(id, name, '#4f7cff', now);
+      }
+      await shared.configure(top);
+      await shared.linkProject('pr_a', 'Global');
+      await shared.linkProject('pr_b', 'Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE/2. TSE');
+      await shared.linkProject('pr_c', 'Pisciculture');
+
+      // La racine descend dans « 00. PROCEDURE » (vécu : « Fichier introuvable » sous work-logs).
+      const status = await shared.configure(path.join(top, 'Global', 'MURGAT INGENIERIE', '13. SI', '00. PROCEDURE'));
+      assert.deepEqual(status.projects, { pr_b: '2. TSE' });
+      // Un dossier absent se dit « dossier », pas « fichier ».
+      await assert.rejects(shared.list('Global'), { status: 404, message: 'Dossier introuvable sur le dossier partagé.' });
+    } finally {
+      await shared.stop();
+      fs.rmSync(top, { recursive: true, force: true });
+      fs.rmSync(data, { recursive: true, force: true });
+    }
   });
 });

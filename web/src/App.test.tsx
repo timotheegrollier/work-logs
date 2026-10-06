@@ -2218,6 +2218,21 @@ describe('dossier partagé', () => {
     expect(await screen.findByRole('button', { name: /^Ouvrir autre\.md/ })).toBeInTheDocument();
   });
 
+  test('projet relié à un dossier absent du partage : on le dit, « Délier » rend tout le partage', async () => {
+    seedData(api.db, { projects: [{ id: 'pr_w', name: 'work-logs' }] });
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, 'Global'));
+    await write('notes.md', 'x');
+    await clientApi.linkSharedFolder('pr_w', 'Global');
+    // Le dossier disparaît du partage (ou la racine a changé) : le lien ne mène plus nulle part.
+    fs.rmdirSync(path.join(share, 'Global'));
+    render(<App />);
+    fireEvent.click(await within(filters()).findByRole('button', { name: /work-logs/ }));
+    expect(await screen.findByText('Le dossier relié à work-logs (« Global ») n’est pas dans ce partage. « Délier work-logs de son dossier » affiche tout le partage.')).toHaveAttribute('role', 'alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Délier work-logs de son dossier' }));
+    expect(await screen.findByRole('button', { name: /^Ouvrir notes\.md/ })).toBeInTheDocument();
+  });
+
   test('l’historique restaure une ancienne version en brouillon, puis l’envoi la remet sur le partage', async () => {
     await write('notes.md', 'version 1\n');
     render(<App />);

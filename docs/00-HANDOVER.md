@@ -63,6 +63,13 @@ champ « Chercher dans le partage », arbre hors ligne. API : `POST /api/shared/
 - **Vu dans un vrai navigateur** : résultats de recherche (nom, puis chemin coupé par le
   début), bandeau de conflit avec « Fusionner » et ce qui sera réuni.
 
+- **Correctif avant publication** (signalé par Timo) : « Fichier introuvable » en sélectionnant
+  le projet work-logs, relié à `Global` sous l'ancienne racine `D` alors que la racine est
+  devenue `00. PROCEDURE`. Les liens suivent désormais la racine (ou tombent), le message dit
+  le dossier en cause ; l'adresse et le compte sont déduits d'un dossier GVFS choisi au
+  dialogue et préremplis. Sur son poste, le lien `Global` reste à délier une fois (« Délier
+  work-logs de son dossier ») : il date d'avant le correctif.
+
 ### À vérifier par Timo (lot 5)
 
 1. Chercher `procedure` dans le partage : le dossier « 00. PROCEDURE » sort-il, et vite ?

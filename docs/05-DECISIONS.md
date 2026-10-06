@@ -933,6 +933,15 @@ qu'un dossier **déjà monté**, pas une adresse `smb://`.
 - **Arbre hors ligne** : chaque liste vue est gardée (`shared_dirs`, 2 000 dossiers au plus,
   table de la machine, jamais exportée, oubliée quand on change de partage). Hors ligne, un
   dossier affiche sa dernière liste ; un fichier sans copie locale y est grisé.
+- **Changer de racine** (vécu le 2026-10-06 : racine passée de `\\172.16.1.20\D` à
+  `…\13. SI\00. PROCEDURE`, le projet work-logs restait relié à `Global` → « Fichier
+  introuvable ») : les dossiers reliés aux projets sont traduits vers la nouvelle racine quand
+  ils sont dedans, sinon le lien tombe. Un dossier absent se dit « Dossier introuvable » ; un
+  projet relié à un dossier absent le dit, avec « Délier ».
+- **Un dossier choisi dans un montage GVFS garde son adresse et son compte** (déduits du nom
+  du montage, `smb-share:domain=…,server=…,share=…,user=…`) : « Se reconnecter » et le
+  formulaire « Changer de dossier… » les reprennent — l'adresse par défaut est la dernière
+  utilisée, pas une adresse de l'entreprise écrite dans le code.
 - Restent du lot 5 tel que prévu, **à préciser avec Timo** : procédures ↔ partage (ranger
   une procédure en `.docx` dans le dossier du projet, IA par le pont Markdown §23, contrôle de
   conventions avant envoi — lesquelles ?).

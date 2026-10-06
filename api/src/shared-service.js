@@ -737,6 +737,22 @@ export function createSharedService({
       if (real === path.parse(real).root || real === os.homedir()) {
         throw new SharedError(400, 'SHARED_TOO_WIDE', 'Choisis le dossier partagé lui-même, pas la racine ni ton dossier personnel.');
       }
+      // Les dossiers reliés aux projets sont relatifs à l'ancienne racine : on les
+      // traduit vers la nouvelle quand ils sont dedans, sinon le lien tombe (il ne
+      // mènerait nulle part — « Global » n'existe pas sous « 00. PROCEDURE »).
+      const previous = setting('shared.root');
+      if (previous && previous !== real) {
+        for (const link of db.prepare('SELECT project_id, rel_dir FROM shared_project_folders').all()) {
+          const target = path.join(previous, ...link.rel_dir.split('/'));
+          const inside = target.startsWith(real + path.sep);
+          if (inside) {
+            db.prepare('UPDATE shared_project_folders SET rel_dir=?, updated_at=? WHERE project_id=?')
+              .run(path.relative(real, target).split(path.sep).join('/'), nowISO(), link.project_id);
+          } else {
+            db.prepare('DELETE FROM shared_project_folders WHERE project_id=?').run(link.project_id);
+          }
+        }
+      }
       setSetting('shared.root', real);
       setSetting('shared.fs_root', real);
       setSetting('shared.fs_type', type);
@@ -772,6 +788,7 @@ export function createSharedService({
           const { entries, listedAt } = offlineEntries(dir);
           return { status: 503, body: { error: toSharedError(error).message, code: 'SHARED_OFFLINE', reach: current, dir, entries, listed_at: listedAt, truncated: false } };
         }
+        if (error?.code === 'ENOENT') throw new SharedError(404, 'SHARED_NOT_FOUND', 'Dossier introuvable sur le dossier partagé.');
         throw toSharedError(error);
       }
       try {

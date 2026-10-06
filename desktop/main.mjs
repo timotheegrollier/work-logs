@@ -7,7 +7,7 @@ import { startDesktopServer } from './server.mjs';
 import { createGoogleClient, readDefaultClient } from './google.mjs';
 import { installGoogleView } from './google-view.mjs';
 import { launchDetached, prepareOpenCopy, REFUSED } from './open-file.mjs';
-import { connectShare, findFileManager } from './shared-mount.mjs';
+import { addressFromPath, connectShare, findFileManager } from './shared-mount.mjs';
 import { checkForUpdate, hasPackageKit, hasPkexec, installedVersionCommand, installKind, installedMatches, isAuthorizationFailure, isNewer, logUpdateEvent, packageManager, parseManagerProgress, pkconProbeOutcome, pkconRefreshArgs, pkconUpdatesArgs, privilegedInstallCommand, releaseAgeMinutes, repoHint, shouldOfferUpdate, startPoll } from './update.mjs';
 // electron-updater est CommonJS : contournement ESM documenté
 // (electron-builder#7976) — destructurer après import par défaut.
@@ -517,7 +517,8 @@ if (!app.requestSingleInstanceLock()) {
           folder = choice.filePaths[0];
         }
         try {
-          return { status: await backend.shared.configure(folder) };
+          // Un dossier d'un montage GVFS garde son adresse (et son compte) : « Se reconnecter ».
+          return { status: await backend.shared.configure(folder, addressFromPath(folder) ?? {}) };
         } catch (error) {
           return { error: error.message };
         }

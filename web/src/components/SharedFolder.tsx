@@ -247,6 +247,14 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
     const listing = listings.get(dir);
     if (!listing) return <p className="empty">Lecture…</p>;
     if (failed(listing)) {
+      // Le dossier relié au projet n'est pas (ou plus) dans ce partage : le dire, « Délier » est juste au-dessus.
+      if (dir && dir === root && project && !listing.denied) {
+        return (
+          <p className="error shared-dir-error" role="alert">
+            Le dossier relié à {project.name} (« {root} ») n’est pas dans ce partage. « Délier {project.name} de son dossier » affiche tout le partage.
+          </p>
+        );
+      }
       return (
         <p className="error shared-dir-error" role="alert">
           {listing.failure}

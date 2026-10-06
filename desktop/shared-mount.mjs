@@ -98,6 +98,21 @@ export function findShareMount({ host, share, account = null }, gvfsDir = defaul
   return null;
 }
 
+/**
+ * Dossier choisi dans un montage GVFS (dialogue « Choisir le dossier ») → son
+ * adresse et son compte (`\\172.16.1.20\d\Global\…`, `SRVMURGAT\TimothéeG`) :
+ * « Se reconnecter » et le formulaire de connexion les reprennent. `null` ailleurs.
+ */
+export function addressFromPath(dir, gvfsDir = defaultGvfsDir()) {
+  const relative = path.relative(gvfsDir, dir);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null;
+  const [mountDir, ...rest] = relative.split(path.sep);
+  const fields = mountFields(mountDir);
+  if (!fields?.server || !fields.share) return null;
+  const account = fields.user ? (fields.domain ? `${fields.domain}\\${fields.user}` : fields.user) : null;
+  return { address: `\\\\${fields.server}\\${fields.share}${rest.length ? '\\' + rest.join('\\') : ''}`, account };
+}
+
 /** Message d'un dossier qu'on ne peut pas lister : refus d'accès (compte) ou absence. */
 function accessProblem(dir, subpath, target) {
   try {
