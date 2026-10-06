@@ -44,8 +44,13 @@ describe('workflow PWA Cloudflare (option B — PWA + relais sur le même Worker
     // Sans `cd oauth-proxy`, wrangler verrait un dossier sans wrangler.toml et
     // lancerait un setup interactif (« wrangler init ») qui échoue en CI.
     assert.ok(content.includes('cd oauth-proxy'), 'deploy depuis oauth-proxy/');
-    assert.ok(content.includes('npx wrangler deploy'), 'wrangler deploy présent');
+    assert.ok(/npx --yes "wrangler@\$WRANGLER" deploy/.test(content), 'wrangler épinglé sur le lockfile');
     // La concurrency ne doit pas annuler le déploiement gh-pages (« PWA »).
     assert.ok(!content.includes('group: gh-pages'), 'pas de groupe gh-pages partagé');
+  });
+
+  test('le build est celui de la PWA (VITE_PWA), pas la version web /api', () => {
+    const content = readFileSync('./.github/workflows/pwa-cloudflare.yml', 'utf8');
+    assert.match(content, /VITE_PWA: '1'/);
   });
 });
