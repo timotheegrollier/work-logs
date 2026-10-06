@@ -631,6 +631,35 @@ contenu privé n’a été ajouté au dépôt. La connexion desktop existante a 
 **Validation :** voir le bilan à jour dans `08-GOOGLE-DOCS.md` et lancer
 `./scripts/check.sh` avant tout nouveau lot.
 
+## PWA Cloudflare — mise à jour automatique
+
+La PWA (avec le relais de jetons) vit sur un Cloudflare Worker (`worklogs-google`, option
+B) : elle n’est plus sur gh-pages. Le flux de mise à jour est le suivant, et ne dépend
+d’aucune action manuelle de Timo après la première configuration :
+
+1. Pousser un commit sur `master` (`web/**`, `scripts/emit-sw.mjs`, `oauth-proxy/**`,
+   `package.json`, `.github/workflows/pwa-cloudflare.yml`).
+2. `.github/workflows/pwa-cloudflare.yml` se déclenche : il reconstruit la PWA
+   (`npm --prefix web run build` avec `VITE_PWA=1` et `VITE_GOOGLE_TOKEN_PROXY`,
+   `VITE_GOOGLE_CLIENT_ID`) et redéploie le Worker (`npx wrangler deploy`) avec le
+   nouveau `web/dist/` en assets.
+3. `https://worklogs-google.cocodexcocoder.workers.dev/` est instantanément à jour
+   (cache de Cloudflare sur `sw.js` et `index.html`, cf. `web/public/sw.js` — la PWA
+   vérifie elle-même la disponibilité d’une version fraîche au chargement).
+
+Configuration requise (à faire une fois, hors git) :
+
+- Cloudflare : `npx wrangler login`, déploiement initial manuel décrit dans
+  `docs/08-GOOGLE-DOCS.md « Relais de jetons »`.
+- GitHub → Settings → Secrets and variables → Actions → **secrets** :
+  `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+- GitHub → Settings → Secrets and variables → Actions → **variables** :
+  `GOOGLE_TOKEN_PROXY_URL` = `https://worklogs-google.cocodexcocoder.workers.dev`
+  (optionnel si déjà défini dans le Worker).
+
+La variable de dépôt `GOOGLE_WEB_CLIENT_ID` (ou son équivalent secret) est lue par le
+build pour injecter l’ID du client « Web » dans la PWA (public par nature).
+
 ## Ce qui reste à faire
 
 0. **Deux courses encore non élucidées dans les recettes e2e** — sorties le 15/09, aucune

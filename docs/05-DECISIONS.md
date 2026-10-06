@@ -729,3 +729,39 @@ gros boutons pointillés.
 **Pas de police embarquée** : ce serait une dépendance (règle « zéro nouvelle dépendance »).
 Le rendu dépend donc des polices du système ; à rouvrir si l'on accepte un fichier de police.
 
+
+## 25. PWA sur Cloudflare Worker, mise à jour automatique — 2026-09-26
+
+**Le constat.** La PWA (relais de jetons + front) vit sur un Cloudflare Worker unique
+(`worklogs-google`, option B) : elle n’est plus hébergée sur gh-pages. Le problème :
+avec un Worker, une mise à jour de l’application (bump de version, correctif web) ne
+remet pas à jour la PWA en ligne automatiquement — il faudrait relancer
+`npx wrangler deploy` à la main, et le flux « jeton » d’une heure redeviendrait la règle.
+
+**Le choix.** Un workflow dédié `.github/workflows/pwa-cloudflare.yml` reconstruit la
+PWA et redéploie le Worker dès qu’un commit arrive sur `master` (`web/**`,
+`scripts/emit-sw.mjs`, `oauth-proxy/**`, `package.json`). Il déploie le Worker avec les
+assets `web/dist/` (`[assets]` dans `wrangler.toml`) : `/` sert la PWA, `/token` le
+relais. La variable de dépôt `GOOGLE_TOKEN_PROXY_URL` indique à la PWA l’adresse du
+Worker (déjà injectée au build).
+
+**Configuration hors git (une fois).** Secrets GitHub `CLOUDFLARE_API_TOKEN` +
+`CLOUDFLARE_ACCOUNT_ID` ; variable `GOOGLE_TOKEN_PROXY_URL` ; `GOOGLE_WEB_CLIENT_ID`.
+Déploiement initial du Worker fait à la main (`npx wrangler login` + `deploy`) avec le
+secret du client Web `GOOGLE_CLIENT_SECRET` (`npx wrangler secret put`), décrit dans
+`docs/08-GOOGLE-DOCS.md « Relais de jetons »`. `wrangler` n’est pas une dépendance
+(`npx`).
+
+**Pourquoi Cloudflare Workers.** Gratuit (100 000 requêtes/jour), pas de mise en veille,
+secret chiffré côté fournisseur. Le Worker sert tout — front et relais — sur une seule
+URL, ce qui évite les problèmes CORS et simplifie la configuration OAuth (un seul
+redirect_uri). Limites : le Worker est un singleton (pas de versionning multi-URL, mais
+le flux de mise à jour automatique compense), et le cache Workers doit être invalidé
+si `sw.js` ou `index.html` changent — la PWA vérifie elle-même la disponibilité d’une
+version fraîche au chargement.
+
+**Pourquoi pas gh-pages uniquement.** `pwa.yml` (déjà présent) publie bien la PWA à la
+racine de gh-pages à chaque push master — mais l’option B (Worker) est préférée pour le
+relais de jetons et l’URL unique. Les deux workflows coexistent (concurrency `gh-pages`)
+et ne doivent jamais s’exécuter en parallèle ; le futur choix (A vs B) est à revisiter si
+un des deux cesse de couvrir un besoin.

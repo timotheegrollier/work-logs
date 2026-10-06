@@ -289,6 +289,9 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET   # secret du client « Application
 ```
 
 `wrangler` n'est pas une dépendance du projet : `npx` le télécharge le temps de la commande.
+Le déploiement en production est **automatisé** par `.github/workflows/pwa-cloudflare.yml` :
+il reconstruit la PWA et redéploie le Worker à chaque changement sur master
+(`web/**`, `scripts/emit-sw.mjs`, `oauth-proxy/**`, `package.json`).
 Le sous-domaine `workers.dev` se change dans le dashboard (Workers & Pages → Change) :
 il s'applique à tout le compte, penser à mettre à jour `ORIGINS`/`REDIRECTS`
 (`worker.mjs`), la console Google Cloud et la variable ci-dessous.
