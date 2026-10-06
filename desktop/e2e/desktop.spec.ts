@@ -307,6 +307,10 @@ test('dossier partagé : mot de passe à saisir, la fenêtre du gestionnaire de 
   await reconnect.click();
   await expect.poll(() => fs.existsSync(received) && fs.readFileSync(received, 'utf8')).toBe('smb://TSE02;Timo@TSE02/D');
   await expect(page.getByText('Joignable')).toBeVisible({ timeout: 10_000 });
+  // Changer de dossier : l'adresse et le compte du partage sont déjà remplis.
+  await page.getByRole('button', { name: 'Changer de dossier…' }).click();
+  await expect(page.getByLabel('Adresse du partage')).toHaveValue('\\\\TSE02\\D');
+  await expect(page.getByLabel('Compte du partage')).toHaveValue('TSE02\\Timo');
 });
 
 test('impression PDF et refus de fermeture si l’enregistrement échoue', async () => {

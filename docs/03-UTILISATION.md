@@ -193,7 +193,10 @@ toujours ») ; elle peut s'ouvrir derrière WorkLogs. WorkLogs ne voit jamais te
 identifiants. Si un dossier affiche **« Accès refusé »**, le partage est monté avec un compte
 qui n'y a pas droit (souvent l'accès invité) : renseigne **Compte** avec celui du TSE
 (`SRVMURGAT\TonNom`, même orthographe, accents compris) et reconnecte-toi ; l'adresse peut
-viser directement un sous-dossier (`\\SRVMURGAT\Global\MURGAT INGENIERIE\13. SI\00. PROCEDURE`). Après un redémarrage, le partage n'est plus monté : **Se reconnecter** le
+viser directement un sous-dossier (`\\SRVMURGAT\Global\MURGAT INGENIERIE\13. SI\00. PROCEDURE`) :
+la section l'ouvre alors comme racine, sans descendre dans l'arborescence. L'adresse et le
+compte restent remplis pour la fois suivante (« Changer de dossier… », « Se reconnecter »),
+même quand le dossier a été choisi par « ou choisir un dossier déjà monté… ». Après un redémarrage, le partage n'est plus monté : **Se reconnecter** le
 remonte d'un clic. Un dossier déjà monté se choisit aussi par « ou choisir un dossier déjà
 monté… ». Le choix est retenu sur cet ordinateur seulement ; la section ne lit le partage que
 lorsque la colonne Procédures est affichée.
@@ -258,6 +261,24 @@ lorsque la colonne Procédures est affichée.
   partage : la section n'affiche plus que lui. **Délier** rend tout le partage.
 - **Historique sur cet ordinateur** (sous l'éditeur) liste les versions lues, envoyées ou
   mises de côté ; **Restaurer** en fait ton brouillon, à envoyer comme d'habitude.
+- **Fusionner.** Si un collègue a enregistré pendant que tu modifiais un fichier texte, un
+  CSV ou un classeur Excel, et que vos modifications ne se touchent pas (des lignes, ou des
+  cellules, différentes), le conflit propose **Fusionner** : les deux sont gardées et la
+  version réunie part sur le partage. Sinon WorkLogs dit ce que vous avez modifié tous les
+  deux (« la ligne 12 », « la cellule Suivi!B3 ») et les trois choix habituels restent.
+  Pas de fusion automatique pour un document Word.
+- **Chercher** : le champ « Chercher dans le partage » trouve un fichier ou un dossier par
+  son nom, au fond de l'arborescence (sans casse ni accents : `procedure` trouve
+  « 00. PROCEDURE »). Un fichier s'ouvre ; un dossier se déplie dans l'arbre. Les dossiers
+  fermés à ton compte sont passés (et comptés).
+- **＋ Nouveau fichier…** crée un document Word, un classeur Excel, une note Markdown, un
+  texte ou un CSV dans le dossier choisi (la racine, ou un dossier que tu as déplié). Il est
+  créé tout de suite sur le partage et s'ouvre au centre ; un nom déjà pris est refusé, rien
+  n'est écrasé. Le document Word commence par son nom en Titre 1, le classeur a une feuille
+  « Feuil1 ».
+- **Hors ligne**, l'arbre reste celui que tu as vu en dernier (« Hors ligne — liste vue à
+  10h42 ») : les fichiers gardés sur cet ordinateur s'ouvrent, les autres sont grisés. La
+  recherche cherche alors dans ces listes.
 
 Limite à connaître : Word et Excel **ne voient pas** que tu modifies un fichier dans
 WorkLogs (ils ignorent les verrous des autres applications). Rien n'est perdu pour autant :

@@ -109,6 +109,8 @@ shared_files(rel_path PRIMARY KEY, base_hash, seen_hash, seen_size, seen_mtime_m
              send_started_at, state, note, theirs_hash, theirs_deleted,
              lock_nonce, lock_renewed_at, updated_at)
 shared_versions(id PRIMARY KEY, rel_path, hash, size, origin, state, author, created_at)
+                                                         -- origin : base|mine|theirs|restored|merged
+shared_dirs(rel_dir PRIMARY KEY, entries_json, listed_at) -- dernière liste vue (arbre hors ligne)
 ```
 
 **Aucune clé étrangère** : `restoreBackup` vide et réinsère projets et entrées à chaque synchro.
@@ -162,6 +164,9 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | POST | `/api/shared/push?path=&base=` | envoi gardé des octets : `200 written` · `202 pending/offline/interrupted` · `409 SHARED_CONFLICT` |
 | POST | `/api/shared/resolve` | `{path, choice: mine\|theirs\|both, theirs}` |
 | GET · PUT | `/api/shared/versions?path=` · `/api/shared/settings` | historique local · nom affiché |
+| POST | `/api/shared/merge?path=&theirs=` (octets) | « Fusionner » un conflit : la version réunie part avec la leur pour base (envoi gardé) |
+| POST | `/api/shared/create?path=` (octets) | fichier neuf (modèle fait par le front), création exclusive : `409 SHARED_EXISTS` si le nom est pris |
+| GET | `/api/shared/search?q=&dir=` | noms (sans casse ni accents, tous les mots), borné : 100 résultats, 3 000 dossiers, 8 s ; hors ligne : listes gardées |
 | POST | `/api/shared/versions/:id/restore?path=` | la version devient le brouillon (rien n'est envoyé) |
 | POST · DELETE | `/api/shared/lock?path=` | prendre/renouveler la main (`{take_over}`) · la rendre ; `409 SHARED_LOCKED` / `SHARED_LOCK_STALE` + `{lock}` |
 | PUT · DELETE | `/api/shared/projects/:id/folder` | relier un projet à un sous-dossier (`{dir}`) · le délier |
@@ -170,7 +175,9 @@ Formats du dossier partagé, côté front (le serveur ne voit que des octets) : 
 `text-file.ts`, `csv-file.ts`, `zip.ts` (archive, réécriture fidèle), `xml-scan.ts` (XML à
 positions), `ooxml.ts` (relations, propriétés : commun à Word et Excel), `docx.ts` +
 `docx-extensions.ts` (Word, §26), `xlsx.ts` + `xlsx-format.ts` (formats à la française,
-saisie) + `xlsx-formula.ts` (syntaxe, traduction, dépendances) (Excel, §27).
+saisie) + `xlsx-formula.ts` (syntaxe, traduction, dépendances) (Excel, §27), `shared-merge.ts`
+(fusion à trois voies : à la ligne pour le texte et les CSV, à la cellule pour Excel),
+`new-files.ts` (modèles des fichiers neufs : Word, Excel, Markdown, texte, CSV).
 
 Les routes `/api/shared/*` ne répondent qu'à cet ordinateur (`localOnly`) et ne fixent jamais
 le chemin du partage (dialogue natif desktop ou `WORKLOGS_SHARED_ROOT`). Elles passent par

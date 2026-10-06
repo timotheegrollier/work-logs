@@ -169,6 +169,12 @@ describe('classeurs Excel (.xlsx) : écriture cellule par cellule', () => {
     await wellFormed(out);
   });
 
+  it('feuille vide (<sheetData/>) : plusieurs lignes nouvelles d’un coup, en un seul bloc', async () => {
+    const out = await write(miniWorkbook(''), { Feuil1: { A1: 'a', A2: 'b', C3: '3' } });
+    expect(await part(out, 'xl/worksheets/sheet1.xml')).toContain('<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>b</t></is></c></row><row r="3"><c r="C3"><v>3</v></c></row></sheetData>');
+    await wellFormed(out);
+  });
+
   it('sans <calcPr> : ajouté à sa place dans le classeur', async () => {
     const out = await write(excelWorkbook({ calcPr: false, calcChain: false }), { Suivi: { B3: '1' } });
     expect(await part(out, 'xl/workbook.xml')).toContain('</definedNames><calcPr fullCalcOnLoad="1"/><extLst>');

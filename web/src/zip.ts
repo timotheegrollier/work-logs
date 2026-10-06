@@ -218,3 +218,70 @@ export async function writeZip(archive: ZipArchive, edits: Map<string, Uint8Arra
   for (const part of parts) { out.set(part, offset); offset += part.length; }
   return out;
 }
+
+/** Date et heure au format MS-DOS des en-têtes zip (heure locale, à 2 s près). */
+function dosDateTime(date: Date) {
+  const time = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const day = ((Math.max(1980, date.getFullYear()) - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  return { time, day };
+}
+
+/**
+ * Archive neuve (un .docx ou un .xlsx vierges) : entrées compressées, noms en
+ * UTF-8, dans l'ordre donné — `[Content_Types].xml` d'abord, comme Office.
+ */
+export async function createZip(files: { name: string; data: Uint8Array }[], now = new Date()): Promise<Uint8Array> {
+  const encoder = new TextEncoder();
+  const { time, day } = dosDateTime(now);
+  const parts: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
+  let offset = 0;
+  for (const file of files) {
+    const name = encoder.encode(file.name);
+    const body = await deflate(file.data);
+    const crc = crc32(file.data);
+    const local = new Uint8Array(30 + name.length);
+    const lv = view(local);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0x800, true);
+    lv.setUint16(8, 8, true);
+    lv.setUint16(10, time, true);
+    lv.setUint16(12, day, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, body.length, true);
+    lv.setUint32(22, file.data.length, true);
+    lv.setUint16(26, name.length, true);
+    local.set(name, 30);
+    const central = new Uint8Array(46 + name.length);
+    const cv = view(central);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x800, true);
+    cv.setUint16(10, 8, true);
+    cv.setUint16(12, time, true);
+    cv.setUint16(14, day, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, body.length, true);
+    cv.setUint32(24, file.data.length, true);
+    cv.setUint16(28, name.length, true);
+    cv.setUint32(42, offset, true);
+    central.set(name, 46);
+    parts.push(local, body);
+    centrals.push(central);
+    offset += local.length + body.length;
+  }
+  const directorySize = centrals.reduce((sum, central) => sum + central.length, 0);
+  const eocd = new Uint8Array(22);
+  const ev = view(eocd);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, files.length, true);
+  ev.setUint16(10, files.length, true);
+  ev.setUint32(12, directorySize, true);
+  ev.setUint32(16, offset, true);
+  const out = new Uint8Array(offset + directorySize + eocd.length);
+  let at = 0;
+  for (const part of [...parts, ...centrals, eocd]) { out.set(part, at); at += part.length; }
+  return out;
+}

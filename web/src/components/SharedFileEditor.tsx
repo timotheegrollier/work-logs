@@ -9,6 +9,8 @@ import { CsvFileEditor } from './CsvFileEditor';
 import { DocxFileEditor } from './DocxFileEditor';
 import { XlsxFileEditor } from './XlsxFileEditor';
 import { officeAuthor } from '../ooxml';
+import { mergeText, mergeXlsx, type MergeOutcome } from '../shared-merge';
+import type { XlsxDraft } from '../xlsx';
 
 type LocalSave = 'saved' | 'dirty' | 'saving' | 'error';
 const POLL_MS = 5000;
@@ -32,7 +34,7 @@ const stamp = (iso: string) => {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)} ${pad(date.getHours())}h${pad(date.getMinutes())}`;
 };
 const ORIGINS: Record<SharedVersion['origin'], string> = {
-  base: 'Lue sur le partage', mine: 'Ta version', theirs: 'Leur version', restored: 'Restaurée',
+  base: 'Lue sur le partage', mine: 'Ta version', theirs: 'Leur version', restored: 'Restaurée', merged: 'Fusion',
 };
 const STATES: Record<string, string> = {
   written: 'envoyée', archived: 'mise de côté', conflict: 'conflit', pending: 'en attente', read: '',
@@ -67,6 +69,8 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
   const [author, setAuthor] = useState('');
   /** Qui a enregistré la version du collègue (propriétés du document Word). */
   const [theirsAuthor, setTheirsAuthor] = useState<string | null>(null);
+  /** Conflit : peut-on réunir les deux versions (et quoi), ou pourquoi pas. */
+  const [mergePlan, setMergePlan] = useState<MergeOutcome | null>(null);
   const handleRef = useRef<FileEditorHandle | null>(null);
   const fileRef = useRef(file);
   fileRef.current = file;
@@ -148,6 +152,34 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
     api.sharedContent(theirsHash).then(officeAuthor).then((name) => { if (alive) setTheirsAuthor(name); }).catch(() => {});
     return () => { alive = false; };
   }, [theirsHash]);
+
+  // Conflit : on prépare la fusion (texte, CSV à la ligne ; classeur à la cellule) pour la proposer.
+  const mergeTheirs = file?.state === 'conflict' && !file.theirs?.deleted ? file.theirs?.hash ?? null : null;
+  const mergeKind = file ? editorKind(file.ext) : null;
+  const mergeBase = file?.draft?.template_hash ?? file?.base_hash ?? null;
+  const mergeMine = file?.send.hash ?? null;
+  // Le modèle est recréé à chaque sondage : sa date suffit à savoir s'il a changé.
+  const mergeDraftAt = file?.draft?.updated_at ?? null;
+  useEffect(() => {
+    setMergePlan(null);
+    if (!mergeTheirs || !mergeKind || !mergeBase) return;
+    if (mergeKind === 'docx') {
+      setMergePlan({ ok: false, reason: 'Pas de fusion automatique pour un document Word : choisis une version, ou garde les deux.' });
+      return;
+    }
+    let alive = true;
+    const plan = async (): Promise<MergeOutcome> => {
+      if (mergeKind === 'xlsx') {
+        const [base, theirs] = await Promise.all([api.sharedContent(mergeBase), api.sharedContent(mergeTheirs)]);
+        return mergeXlsx(base, theirs, (fileRef.current?.draft?.model ?? null) as XlsxDraft | null, author);
+      }
+      if (!mergeMine) return { ok: false, reason: 'Fusion impossible : ta version est introuvable sur cet ordinateur.' };
+      const [base, mine, theirs] = await Promise.all([api.sharedContent(mergeBase), api.sharedContent(mergeMine), api.sharedContent(mergeTheirs)]);
+      return mergeText(base, mine, theirs);
+    };
+    plan().then((result) => { if (alive) setMergePlan(result); }, () => { if (alive) setMergePlan(null); });
+    return () => { alive = false; };
+  }, [mergeTheirs, mergeKind, mergeBase, mergeMine, mergeDraftAt, author]);
 
   // ------------------------------------------------------------ notre verrou
   /** Prendre la main. Refusée : on affiche qui la tient, le texte tapé reste en brouillon. */
@@ -345,6 +377,27 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
     }
   };
 
+  /** « Fusionner » : la version réunie part sur le partage, avec la leur pour base. */
+  const merge = async () => {
+    if (!mergePlan?.ok) return;
+    sendingRef.current = true;
+    setSending(true);
+    setError('');
+    setNotice('');
+    try {
+      await autosave.flush();
+      const result = await api.mergeShared(path, fileRef.current?.theirs?.hash ?? null, mergePlan.bytes);
+      changedRef.current();
+      // Les octets fusionnés deviennent le point de départ de l'éditeur, qu'ils soient partis ou en attente.
+      await load(result.state === 'written' ? `Fusionné et enregistré sur le partage — ${mergePlan.summary}` : '');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
+  };
+
   const discard = async () => {
     if (!confirm('Abandonner tes modifications de ce fichier ? Elles restent dans l’historique de cet ordinateur.')) return;
     setError('');
@@ -489,9 +542,17 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
           {banner.kind === 'pending' && (
             <button className="ghost" disabled={sending} onClick={() => void sendToShare()}>Réessayer maintenant</button>
           )}
+          {banner.kind === 'conflict' && mergePlan && (
+            <p className="shared-merge-note">
+              {mergePlan.ok ? `Vos modifications ne se touchent pas : « Fusionner » garde les deux (${mergePlan.summary.replace(/\.$/, '')}).` : mergePlan.reason}
+            </p>
+          )}
           {banner.kind === 'conflict' && (
             <div className="shared-choices">
-              <button className="task-primary" disabled={sending} onClick={() => void resolve('mine')}>
+              {mergePlan?.ok && (
+                <button className="task-primary" disabled={sending} onClick={() => void merge()}>Fusionner</button>
+              )}
+              <button className={mergePlan?.ok ? 'ghost' : 'task-primary'} disabled={sending} onClick={() => void resolve('mine')}>
                 {deletedConflict ? 'Le remettre avec ma version' : 'Garder ma version'}
               </button>
               <button className="ghost" disabled={sending} onClick={() => void resolve('theirs')}>

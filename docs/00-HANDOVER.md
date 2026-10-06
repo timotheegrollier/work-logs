@@ -1,9 +1,12 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-06 · Version : v0.45.2 (lot ci-dessous non publié).
+> **Mise à jour :** 2026-10-06 · Version : v0.47.0 (lot courant non publié).
 > **Lot courant :** procédures en **Lire / Écrire** comme les entrées, et **blocs de code**
 > d'un geste — branche `feat/procedures-lecture-blocs-de-code`. Détail : « Lot du
-> 2026-10-06 — procédures en lecture, blocs de code » ci-dessous ; décision §29.
+> 2026-10-06 (3) — procédures en lecture, blocs de code » ci-dessous ; décision §29.
+>
+> **Lots précédents (v0.46.0, v0.47.0) :** dossier partagé — fusionner, chercher, arbre
+> hors ligne, puis créer des fichiers : sections « Lot du 2026-10-06 » et « (2) » ci-dessous.
 >
 > **Lot précédent :** clavier rendu aux champs WorkLogs avec la vue Google masquée
 > (le renderer déclare qu'un champ demande le clavier via `focusin` → IPC
@@ -45,7 +48,7 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
-## Lot du 2026-10-06 — procédures en lecture, blocs de code
+## Lot du 2026-10-06 (3) — procédures en lecture, blocs de code
 
 Demande de Timo : « pouvoir ajouter des blocs de code dans mes entrées/procédures ; les
 procédures doivent aussi avoir le mode édition et lecture comme les entrées normales ».
@@ -76,6 +79,8 @@ Décision : §29.
   47 desktop unitaires, 28 scripts, 8 relais, **50 navigateur**, 14 parcours desktop
   (+1 ignoré : « fenêtre maximisée », pas de gestionnaire de fenêtres sous Xvfb).
   Même recette sur `master` avant le lot : 441 front, 49 navigateur, le reste identique.
+  **Après fusion de `master` (v0.47.0)** : `CHECK OK`, 219 API, **469 front**, 48 desktop,
+  29 scripts, 8 relais, **53 navigateur**, 15 parcours desktop (Xvfb + metacity) : **841**.
 
 ### À vérifier par Timo
 
@@ -85,6 +90,63 @@ Décision : §29.
    lecture ? Pas fait, faute de demande (§29, « Rouvrir si »).
 3. Un bouton « Copier » sur les blocs de code en lecture serait-il utile ? Écarté pour
    l'instant (non demandé).
+
+## Lot du 2026-10-06 (2) — créer des fichiers dans le partage — v0.47.0
+
+Demande de Timo : pas de conventions à contrôler, mais **créer des fichiers** (docx, xlsx, md…)
+dans le dossier. « ＋ Nouveau fichier… » dans la section : type, nom, dossier (racine ou dossier
+déplié). Modèles `web/src/new-files.ts` (zip neuf `createZip`), route `POST /api/shared/create`
+(création exclusive, noms Windows vérifiés). Décision : §25, « Lot 5 ».
+- **Trouvé en route** : plusieurs lignes neuves dans une feuille vide (`<sheetData/>`) →
+  XML invalide, bloqué par le garde-fou ; corrigé (un seul bloc), test de régression.
+- **Vérifié** : modèles relus et réécrits par nos éditeurs ; LibreOffice ouvre le `.docx`
+  (titre en `h1`) et le `.xlsx` (valeurs, formule calculée) ; parcours Playwright : nouveau
+  classeur dans un dossier, rempli au clavier, Ctrl+S. **À vérifier sur le TSE** : ouvrir dans
+  Word et Excel un fichier créé par WorkLogs — aucune réparation proposée ?
+- **Tests** : 219 API (+1 : création), **460 front** (+7 : `new-files.test.ts`, feuille vide
+  dans `xlsx.test.ts`, 2 gestes dans `App.test.tsx`), 48 desktop, 29 scripts, 8 relais,
+  **52 navigateur** (+1 : nouveau classeur, Ctrl+S), 15 desktop : **831**. Le test « démarrage
+  d'un worker » fait trois essais à 30 ms (l'ancien code échoue aux trois) : un seul essai à
+  20 ms a échoué une fois sous forte charge (charge système 10, autre session en parallèle).
+
+## Lot du 2026-10-06 — dossier partagé, lot 5 : fusionner, chercher, l'arbre hors ligne — v0.46.0
+
+Décision : §25, « Lot 5 ». Front : `shared-merge.ts` (fusion à trois voies : à la ligne pour le
+texte et les CSV, à la cellule pour Excel), bouton « Fusionner » dans le bandeau de conflit,
+champ « Chercher dans le partage », arbre hors ligne. API : `POST /api/shared/merge`,
+`GET /api/shared/search`, table de la machine `shared_dirs` (dernières listes vues).
+- **Trouvé en route** :
+  - `shared-io` comptait le **démarrage d'un worker** dans le délai d'un appel : sous charge,
+    une sonde pouvait déclarer le partage « Injoignable » à tort (test du disjoncteur rouge
+    deux fois sur une machine chargée). Le délai part maintenant quand le worker tourne
+    (démarrage borné à part, 10 s). Test : délai de 20 ms sur un worker neuf → réussi
+    (l'ancien code répondait `SHARED_OFFLINE`).
+  - Parcours desktop sur l'écran réel : une touche de Timo est arrivée dans le champ testé
+    (« Timoe »). `check.sh` lance désormais Electron dans Xvfb avec metacity quand ils sont là.
+  - Un parcours web réutilisait `consignes.md`, où un parcours précédent garde exprès un
+    brouillon : la fusion refusait, à raison. Nom propre au parcours.
+- **Tests** : 217 API (+4 : fusion, recherche, arbre hors ligne, démarrage d'un worker), **449
+  front** (+11 : `shared-merge.test.ts`, 4 gestes dans `App.test.tsx`), 47 desktop, 25 scripts,
+  8 relais, **51 navigateur** (+2 : « Fusionner », chercher puis ouvrir), 14 desktop : **811**.
+- **Vu dans un vrai navigateur** : résultats de recherche (nom, puis chemin coupé par le
+  début), bandeau de conflit avec « Fusionner » et ce qui sera réuni.
+
+- **Correctif avant publication** (signalé par Timo) : « Fichier introuvable » en sélectionnant
+  le projet work-logs, relié à `Global` sous l'ancienne racine `D` alors que la racine est
+  devenue `00. PROCEDURE`. Les liens suivent désormais la racine (ou tombent), le message dit
+  le dossier en cause ; l'adresse et le compte sont déduits d'un dossier GVFS choisi au
+  dialogue et préremplis. Sur son poste, le lien `Global` reste à délier une fois (« Délier
+  work-logs de son dossier ») : il date d'avant le correctif.
+
+### À vérifier par Timo (lot 5)
+
+1. Chercher `procedure` dans le partage : le dossier « 00. PROCEDURE » sort-il, et vite ?
+2. Un CSV ou un classeur modifié en même temps par un collègue sur d'autres lignes/cellules :
+   « Fusionner » propose-t-il de réunir, et le fichier réuni s'ouvre-t-il bien dans Excel ?
+3. VPN coupé : l'arbre reste-t-il parcourable (« Hors ligne — liste vue … ») ?
+4. **Procédures ↔ partage** (fin du lot 5 prévu) : quelles conventions contrôler avant envoi
+   (nom du fichier, sections obligatoires…) ? Une procédure WorkLogs doit-elle devenir un
+   `.docx` dans `00. PROCEDURE` ?
 
 ## Lot du 2026-10-05 (5) — dossier partagé, lot 4 : classeurs Excel (.xlsx) — v0.45.0
 

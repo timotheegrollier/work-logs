@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { connectShare, findFileManager, findShareMount, parseAccount, parseShareAddress } from '../shared-mount.mjs';
+import { addressFromPath, connectShare, findFileManager, findShareMount, parseAccount, parseShareAddress } from '../shared-mount.mjs';
 
 test('adresse du partage : UNC Windows, smb://, //, sous-dossier ; refus des adresses incomplètes', () => {
   assert.deepEqual(parseShareAddress('\\\\TSE01\\Commun'), { uri: 'smb://TSE01/Commun', host: 'TSE01', share: 'Commun', subpath: '', label: '\\\\TSE01\\Commun', account: null });
@@ -132,4 +132,15 @@ test('connexion : un dossier fermé au compte du montage est dit « accès refus
     fs.chmodSync(path.join(mountDir, 'MURGAT INGENIERIE'), 0o755);
     fs.rmSync(gvfs, { recursive: true, force: true });
   }
+});
+
+test('dossier choisi dans un montage GVFS : son adresse et son compte sont retrouvés (« Se reconnecter »)', () => {
+  const gvfs = '/run/user/1000/gvfs';
+  assert.deepEqual(addressFromPath(`${gvfs}/smb-share:domain=SRVMURGAT,server=172.16.1.20,share=d,user=Timoth%C3%A9eG/Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE`, gvfs), {
+    address: '\\\\172.16.1.20\\d\\Global\\MURGAT INGENIERIE\\13. SI\\00. PROCEDURE',
+    account: 'SRVMURGAT\\TimothéeG',
+  });
+  assert.deepEqual(addressFromPath(`${gvfs}/smb-share:server=tse01,share=commun`, gvfs), { address: '\\\\tse01\\commun', account: null });
+  assert.equal(addressFromPath('/home/timo/Documents', gvfs), null);
+  assert.equal(addressFromPath(`${gvfs}/sftp:host=x/dossier`, gvfs), null);
 });

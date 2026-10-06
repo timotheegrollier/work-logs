@@ -8,6 +8,8 @@ import http from 'node:http';
 import { startApi, make, officeOwnerFile } from './helpers.js';
 import { createSharedIo } from '../src/shared-io.js';
 import { buildBackup, restoreBackup } from '../src/backup.js';
+import { openDb } from '../src/db.js';
+import { createSharedService } from '../src/shared-service.js';
 import { formatWorkLogsLock } from '../src/shared-locks.js';
 
 const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -126,6 +128,29 @@ describe('dossier partagé', () => {
     }
   });
 
+  test('créer un fichier : dans le dossier choisi, jamais par-dessus un fichier existant', async () => {
+    fs.mkdirSync(path.join(share, '00. PROCEDURE'));
+    const create = async (rel, contents) => {
+      const res = await fetch(`${api.base}/api/shared/create?path=${q(rel)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: Buffer.from(contents),
+      });
+      return { status: res.status, body: await res.json() };
+    };
+    const made = await create('00. PROCEDURE/Procédure sauvegarde.md', '# Procédure sauvegarde\n\n');
+    assert.equal(made.status, 200);
+    assert.equal(read('00. PROCEDURE/Procédure sauvegarde.md'), '# Procédure sauvegarde\n\n');
+    assert.equal(made.body.base_hash, sha256('# Procédure sauvegarde\n\n'), 'lu comme à l’ouverture : version de base');
+    // Le même nom : refusé, l'existant intact.
+    const again = await create('00. PROCEDURE/Procédure sauvegarde.md', 'autre');
+    assert.equal(again.status, 409);
+    assert.equal(again.body.code, 'SHARED_EXISTS');
+    assert.equal(read('00. PROCEDURE/Procédure sauvegarde.md'), '# Procédure sauvegarde\n\n');
+    assert.equal((await create('00. PROCEDURE/Rapport?.md', 'x')).body.code, 'SHARED_BAD_NAME');
+    assert.equal((await create('00. PROCEDURE/~$brouillon.docx', 'x')).body.code, 'SHARED_BAD_NAME');
+    assert.equal((await create('Absent/notes.md', 'x')).status, 404);
+    assert.equal((await create('../dehors.md', 'x')).status, 400);
+  });
+
   test('refuse les chemins qui sortent du partage', async () => {
     fs.symlinkSync(os.tmpdir(), path.join(share, 'dehors'));
     for (const bad of ['../x', '/etc/passwd', 'a//b', 'a\\b']) {
@@ -195,6 +220,88 @@ describe('dossier partagé', () => {
     assert.equal(read('relevés.csv'), 'a;b\nmoi;1\n');
     const versions = (await api.get(`/api/shared/versions?path=${q('relevés.csv')}`)).body.versions;
     assert.ok(versions.some((v) => v.origin === 'theirs' && v.hash === sent.body.theirs.hash), 'leur version reste dans l’historique');
+  });
+
+  test('conflit : « fusionner » envoie la version réunie, avec la leur pour base', async () => {
+    write('relevés.csv', 'a;b\n1;x\n2;y\n');
+    const file = (await open('relevés.csv')).body;
+    await draft('relevés.csv', { rows: [2] }, file);
+    write('relevés.csv', 'a;b\n1;X\n2;y\n');
+    const sent = await push('relevés.csv', 'a;b\n1;x\n2;Y\n', file.base_hash);
+    assert.equal(sent.status, 409);
+    const theirs = sent.body.theirs.hash;
+    const merge = async (bytes, base) => {
+      const res = await fetch(`${api.base}/api/shared/merge?path=${q('relevés.csv')}&theirs=${base}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: Buffer.from(bytes),
+      });
+      return { status: res.status, body: await res.json() };
+    };
+    assert.equal((await merge('a;b\n1;X\n2;Y\n', file.base_hash)).body.code, 'SHARED_STALE');
+    const merged = await merge('a;b\n1;X\n2;Y\n', theirs);
+    assert.equal(merged.status, 200);
+    assert.equal(merged.body.state, 'written');
+    assert.equal(read('relevés.csv'), 'a;b\n1;X\n2;Y\n');
+    assert.equal(merged.body.file.state, '');
+    assert.equal(merged.body.file.base_hash, sha256('a;b\n1;X\n2;Y\n'));
+    const versions = (await api.get(`/api/shared/versions?path=${q('relevés.csv')}`)).body.versions;
+    assert.deepEqual(versions.slice(0, 2).map((v) => v.origin), ['merged', 'theirs']);
+    assert.equal((await merge('autre', theirs)).body.code, 'SHARED_NO_CONFLICT');
+  });
+
+  test('chercher dans le partage : noms sans casse ni accents, tous les mots, de proche en proche', async () => {
+    write('Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE/Procédure filtration.docx', 'docx');
+    write('Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE/~$océdure filtration.docx', 'verrou');
+    write('Global/Pisciculture/procedures.md', '# x');
+    write('notes.md', 'y');
+    const search = async (query, dir = '') => (await api.get(`/api/shared/search?q=${q(query)}${dir ? `&dir=${q(dir)}` : ''}`)).body;
+    const found = await search('procedure');
+    assert.deepEqual(found.results.map((r) => [r.path, r.type]), [
+      ['Global/Pisciculture/procedures.md', 'file'],
+      ['Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE', 'dir'],
+      ['Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE/Procédure filtration.docx', 'file'],
+    ]);
+    assert.equal(found.partial, false);
+    assert.deepEqual((await search('FILTRATION docx')).results.map((r) => r.name), ['Procédure filtration.docx']);
+    assert.deepEqual((await search('procedure', 'Global/Pisciculture')).results.map((r) => r.name), ['procedures.md']);
+    assert.deepEqual((await search('p')).results, [], 'un caractère ne suffit pas');
+    if (process.getuid?.() !== 0) {
+      fs.chmodSync(path.join(share, 'Global', 'MURGAT INGENIERIE'), 0o000);
+      try {
+        const partial = await search('procedure');
+        assert.deepEqual(partial.results.map((r) => r.name), ['procedures.md']);
+        assert.equal(partial.denied, 1, 'dossier fermé au compte : passé, compté');
+      } finally {
+        fs.chmodSync(path.join(share, 'Global', 'MURGAT INGENIERIE'), 0o755);
+      }
+    }
+  });
+
+  test('hors ligne : l’arbre reste parcourable (dernières listes vues), la recherche aussi', async () => {
+    write('Global/Procédure filtration.docx', 'docx');
+    write('Global/relevés.csv', 'a;b\n');
+    await api.get('/api/shared/list');
+    await api.get(`/api/shared/list?dir=${q('Global')}`);
+    await open('Global/relevés.csv');
+    const away = share + '-ailleurs';
+    fs.renameSync(share, away);
+    try {
+      const top = await api.get('/api/shared/list');
+      assert.equal(top.status, 503);
+      assert.deepEqual(top.body.entries.map((entry) => [entry.name, entry.type]), [['Global', 'dir']]);
+      assert.ok(top.body.listed_at, 'la liste dit quand elle a été vue');
+      const inner = await api.get(`/api/shared/list?dir=${q('Global')}`);
+      assert.deepEqual(inner.body.entries.map((entry) => [entry.name, Boolean(entry.cached), Boolean(entry.unavailable)]), [
+        ['Procédure filtration.docx', false, true], ['relevés.csv', true, false],
+      ]);
+      const found = (await api.get('/api/shared/search?q=filtration')).body;
+      assert.equal(found.offline, true);
+      assert.deepEqual(found.results.map((r) => r.path), ['Global/Procédure filtration.docx']);
+    } finally {
+      fs.renameSync(away, share);
+    }
+    // Listes gardées sur cet ordinateur seulement : jamais exportées.
+    assert.deepEqual(api.db.prepare('SELECT rel_dir FROM shared_dirs ORDER BY rel_dir').all().map((row) => row.rel_dir), ['', 'Global']);
+    assert.equal(JSON.stringify(buildBackup(api.db)).includes('shared_dirs'), false);
   });
 
   test('conflit : « prendre la leur » garde ma version de côté', async () => {
@@ -412,5 +519,36 @@ describe('dossier partagé', () => {
     assert.equal(versions[0].hash, sha256('version 34'));
     const blobs = fs.readdirSync(path.join(api.dir, 'shared-blobs')).flatMap((dir) => fs.readdirSync(path.join(api.dir, 'shared-blobs', dir)));
     assert.equal(blobs.length, 30, 'les octets des versions effacées partent aussi');
+  });
+});
+
+describe('dossier partagé : changer de racine', () => {
+  test('les dossiers reliés aux projets suivent la nouvelle racine, ou tombent s’ils sont en dehors', async () => {
+    const top = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-racine-'));
+    const data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-racine-data-'));
+    const db = openDb(path.join(data, 'w.db'), { withSeed: false });
+    const shared = createSharedService({ db, blobDir: path.join(data, 'blobs'), configurable: true });
+    try {
+      fs.mkdirSync(path.join(top, 'Global', 'MURGAT INGENIERIE', '13. SI', '00. PROCEDURE', '2. TSE'), { recursive: true });
+      fs.mkdirSync(path.join(top, 'Pisciculture'));
+      const now = new Date().toISOString();
+      for (const [id, name] of [['pr_a', 'work-logs'], ['pr_b', 'TSE'], ['pr_c', 'Bassins']]) {
+        db.prepare('INSERT INTO projects (id, name, color, created_at) VALUES (?,?,?,?)').run(id, name, '#4f7cff', now);
+      }
+      await shared.configure(top);
+      await shared.linkProject('pr_a', 'Global');
+      await shared.linkProject('pr_b', 'Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE/2. TSE');
+      await shared.linkProject('pr_c', 'Pisciculture');
+
+      // La racine descend dans « 00. PROCEDURE » (vécu : « Fichier introuvable » sous work-logs).
+      const status = await shared.configure(path.join(top, 'Global', 'MURGAT INGENIERIE', '13. SI', '00. PROCEDURE'));
+      assert.deepEqual(status.projects, { pr_b: '2. TSE' });
+      // Un dossier absent se dit « dossier », pas « fichier ».
+      await assert.rejects(shared.list('Global'), { status: 404, message: 'Dossier introuvable sur le dossier partagé.' });
+    } finally {
+      await shared.stop();
+      fs.rmSync(top, { recursive: true, force: true });
+      fs.rmSync(data, { recursive: true, force: true });
+    }
   });
 });

@@ -189,6 +189,14 @@ const ops = {
   statfs: (file) => ({ type: Number(fs.statfsSync(file).type) }),
   stat: (file) => describe(fs.statSync(file)),
   realpath: (file) => fs.realpathSync(file),
+  // Noms et types seulement, sans stat par entrée (la recherche parcourt de nombreux dossiers).
+  names(dir, max) {
+    const all = fs.readdirSync(dir, { withFileTypes: true });
+    return {
+      entries: all.slice(0, max).map((entry) => ({ name: entry.name, isDir: entry.isDirectory(), isFile: entry.isFile(), isSymlink: entry.isSymbolicLink() })),
+      total: all.length,
+    };
+  },
   readdir(dir, max) {
     const names = fs.readdirSync(dir);
     const entries = [];
@@ -306,6 +314,9 @@ export class SharedIoError extends Error {
 const offlineError = () => new SharedIoError('SHARED_OFFLINE', 'Le dossier partagé ne répond pas.');
 const blockedError = () => new SharedIoError('SHARED_BLOCKED', 'Le dossier partagé ne répond plus : WorkLogs attend qu’il se libère.');
 
+/** Temps laissé à un worker pour démarrer, en plus du délai de l'appel. */
+const BOOT_MS = 10_000;
+
 export function createSharedIo({ timeoutMs = 4000, maxStuck = 2 } = {}) {
   let worker = null;
   let nextId = 1;
@@ -338,6 +349,7 @@ export function createSharedIo({ timeoutMs = 4000, maxStuck = 2 } = {}) {
       }
       pump();
     });
+    current.once('online', () => { current.online = true; });
     current.on('error', (error) => {
       if (current !== worker) return;
       worker = null;
@@ -388,14 +400,27 @@ export function createSharedIo({ timeoutMs = 4000, maxStuck = 2 } = {}) {
       worker = spawn();
     }
     inFlight = call;
-    call.timer = setTimeout(() => {
+    const expire = () => {
       if (inFlight !== call) return;
       inFlight = null;
       call.reject(offlineError());
       abandon();
       pump();
-    }, call.timeoutMs);
-    worker.postMessage({ id: call.id, op: call.op, args: call.args });
+    };
+    const target = worker;
+    if (target.online) call.timer = setTimeout(expire, call.timeoutMs);
+    else {
+      // Démarrage d'un worker (première fois, ou après un abandon) : ce temps-là ne dit rien
+      // du partage — sur une machine chargée il dépasse à lui seul un délai court. Le délai
+      // de l'appel part quand le worker tourne ; un worker qui ne démarre pas est borné à part.
+      call.timer = setTimeout(expire, call.timeoutMs + BOOT_MS);
+      target.once('online', () => {
+        if (inFlight !== call) return;
+        clearTimeout(call.timer);
+        call.timer = setTimeout(expire, call.timeoutMs);
+      });
+    }
+    target.postMessage({ id: call.id, op: call.op, args: call.args });
   }
 
   return {

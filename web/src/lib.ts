@@ -208,14 +208,18 @@ export interface SharedEntry {
   lock: SharedLock | null;
   local: { state: SharedLocalState; draft: boolean; modified: boolean } | null;
   cached?: boolean;
+  /** Hors ligne : vu sur le partage, mais pas gardé sur cet ordinateur. */
+  unavailable?: boolean;
 }
 export interface SharedListing {
   dir: string;
   reach: SharedReach;
   entries: SharedEntry[];
   truncated: boolean;
-  /** Partage injoignable : seuls les fichiers gardés sur cet ordinateur sont listés. */
+  /** Partage injoignable : la dernière liste vue, et ce qui est gardé sur cet ordinateur. */
   offline?: boolean;
+  /** Hors ligne : quand cette liste a été vue sur le partage. */
+  listed_at?: string | null;
   error?: string;
 }
 export interface SharedFile {
@@ -240,6 +244,24 @@ export interface SharedFile {
   deleted?: boolean;
   reach?: SharedReach;
 }
+export interface SharedSearchResult {
+  name: string;
+  path: string;
+  type: 'dir' | 'file';
+  dir: string;
+  ext: string;
+}
+export interface SharedSearch {
+  query: string;
+  dir: string;
+  results: SharedSearchResult[];
+  /** Arrêtée avant la fin (temps, nombre de dossiers) : affiner les mots. */
+  partial: boolean;
+  /** Hors ligne : cherché dans les dernières listes vues. */
+  offline: boolean;
+  /** Dossiers fermés au compte du montage, passés. */
+  denied: number;
+}
 export interface SharedSendResult {
   state: 'written' | 'pending' | 'offline' | 'interrupted' | 'conflict' | 'theirs' | 'copied' | SharedLocalState;
   hash?: string;
@@ -258,7 +280,7 @@ export interface SharedVersion {
   id: string;
   hash: string;
   size: number;
-  origin: 'base' | 'mine' | 'theirs' | 'restored';
+  origin: 'base' | 'mine' | 'theirs' | 'restored' | 'merged';
   state: string;
   author: string;
   created_at: string;
@@ -399,6 +421,20 @@ export const remoteApi = {
     if (!res.ok) throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
     return payload as SharedFile;
   },
+  /** « Fusionner » un conflit : les octets réunis partent avec leur version pour base. */
+  mergeShared: (path: string, theirs: string | null, bytes: Uint8Array) =>
+    sendShared(`/api/shared/merge?path=${enc(path)}${theirs ? `&theirs=${enc(theirs)}` : ''}`, bytes),
+  /** Fichier neuf (octets du modèle) : créé sans jamais écraser un fichier du même nom. */
+  async createShared(path: string, bytes: Uint8Array) {
+    const res = await fetch('/api/shared/create?path=' + enc(path), {
+      method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: new Uint8Array(bytes),
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
+    return payload as SharedFile;
+  },
+  searchShared: (query: string, dir = '') =>
+    req<SharedSearch>(`/api/shared/search?q=${enc(query)}${dir ? `&dir=${enc(dir)}` : ''}`),
   pushShared: (path: string, base: string | null, bytes: Uint8Array) =>
     sendShared('/api/shared/push?path=' + enc(path) + (base ? '&base=' + enc(base) : ''), bytes),
   async resolveShared(path: string, choice: 'mine' | 'theirs' | 'both', theirs: string | null) {
