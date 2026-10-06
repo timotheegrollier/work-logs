@@ -1,3 +1,6 @@
+# Clavier : si une vue Google masquée retient le focus système, cliquer dans un champ
+# WorkLogs lui redonne la main (via le message `focus-field` de `web:google-view`).
+
 # Relais de jetons Google de la PWA (Cloudflare Worker, offre gratuite).
 # Option B : ce même Worker sert le front statique `web/dist/` (PWA à `/`,
 # relais à `/token`). Construire le front avant de déployer, depuis la racine :

@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('worklogsDesktop', {
     open: (request) => ipcRenderer.invoke('worklogs:google-view:open', request),
     bounds: (request) => ipcRenderer.send('worklogs:google-view:bounds', request),
     hide: (token) => ipcRenderer.send('worklogs:google-view:hide', token),
+    claimKeyboard: () => ipcRenderer.send('worklogs:google-view:focus-field'),
     close: (documentId) => ipcRenderer.invoke('worklogs:google-view:close', documentId),
     reload: (token) => ipcRenderer.invoke('worklogs:google-view:reload', token),
     print: () => ipcRenderer.invoke('worklogs:google-view:print'),
