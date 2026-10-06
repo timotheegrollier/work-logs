@@ -1,7 +1,17 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-09-21 · Version : v0.30.0.
-> **Lot courant :** sidebar Procédures séparée des entrées (4e zone repliable
+> **Mise à jour :** 2026-10-06 · Version : v0.45.2.
+> **Lot courant :** clavier rendu aux champs WorkLogs avec la vue Google masquée
+> (le renderer déclare qu'un champ demande le clavier via `focusin` → IPC
+> `focus-field`) **+ réintégration du workflow `pwa-cloudflare.yml`** qui met à
+> jour la PWA Cloudflare automatiquement à chaque push master.
+> **Validation :** `./scripts/check.sh` vert (merge sur master à 0.45.1 : 15 desktop
+> e2e dont 2 clavier, 41 navigateur, 0 échec).
+> **PWA Cloudflare :** le workflow est vert en build mais **échoue au deploy** tant que
+> les secrets GitHub `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID` ne sont pas
+> créées (config hors git, voir `docs/08-GOOGLE-DOCS.md` « Relais de jetons »).
+>
+> **Lot précédent :** sidebar Procédures séparée des entrées (4e zone repliable
 > à droite, persistée, desktop comme PWA) avec envoi direct de fichiers par
 > procédure ; les procédures restent des entrées (`kind`), la grille couvre
 > toutes les combinaisons de panneaux.
@@ -929,6 +939,12 @@ Configuration requise (à faire une fois, hors git) :
 
 La variable de dépôt `GOOGLE_WEB_CLIENT_ID` (ou son équivalent secret) est lue par le
 build pour injecter l’ID du client « Web » dans la PWA (public par nature).
+
+**État au 2026-10-06.** Le workflow est sur `master` et son build est vert ; le **deploy
+échoue** avec `CLOUDFLARE_API_TOKEN` vide (erreurs « non-interactive… set a
+CLOUDFLARE_API_TOKEN »). Les deux secrets Cloudflare ci-dessus **ne sont pas encore
+créés** : les créer dans GitHub déverrouille le déploiement automatique. Le workflow
+« PWA » (gh-pages) ne doit plus être annulé par celui-ci (concurrency `pwa-cloudflare`).
 
 ## Ce qui reste à faire
 
