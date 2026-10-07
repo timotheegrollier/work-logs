@@ -33,6 +33,32 @@ export function renderMarkdown(source: string, options: { interactiveCheckboxes?
 }
 
 /**
+ * Bouton « Bloc de code » du mode Écrire : entoure de clôtures les lignes
+ * touchées par la sélection, ou insère un bloc vide au curseur. Chaque clôture
+ * tient sur sa propre ligne et dépasse tout ``` déjà présent dans le code, qui
+ * sinon fermerait le bloc. Renvoie le texte et la sélection à rétablir : le
+ * code entouré, ou la ligne vide du nouveau bloc.
+ */
+export function insertCodeFence(source: string, start: number, end: number): { text: string; start: number; end: number } {
+  if (end > start) {
+    if (start > 0) start = source.lastIndexOf('\n', start - 1) + 1;
+    // Une sélection qui s'arrête en début de ligne n'emporte pas cette ligne.
+    if (source[end - 1] === '\n') end -= 1;
+    const lineEnd = source.indexOf('\n', end);
+    end = lineEnd === -1 ? source.length : lineEnd;
+  }
+  const code = source.slice(start, end);
+  const longest = Math.max(0, ...(code.match(/^ {0,3}`{3,}/gm) ?? []).map((run) => run.trim().length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  const before = source.slice(0, start);
+  const after = source.slice(end);
+  const open = (before && !before.endsWith('\n') ? '\n' : '') + fence + '\n';
+  const close = '\n' + fence + (after && !after.startsWith('\n') ? '\n' : '');
+  const codeStart = before.length + open.length;
+  return { text: before + open + code + close + after, start: codeStart, end: codeStart + code.length };
+}
+
+/**
  * Inverse le statut de la Nième case à cocher Markdown (`- [ ]` ↔ `- [x]`).
  * L'index suit l'ordre d'apparition des cases dans le texte, comme celui
  * des `<input type="checkbox">` dans le HTML rendu. Index inconnu ou texte

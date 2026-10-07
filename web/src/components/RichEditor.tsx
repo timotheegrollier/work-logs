@@ -3,11 +3,16 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { api, type RichDocument } from '../lib';
 import { replaceMatches, searchKey, setSearch } from '../rich-search';
 import { richExtensions } from '../rich-extensions';
+import { toggleCodeBlock } from '../rich-code';
 // @ts-expect-error — rich-document.js est du JavaScript pur partagé avec l'API.
 import { normalizeDocument } from '../../../api/src/rich-document.js';
 
-export function RichEditor({ content, entryId, onChange, googleLinked = false, disabled = false }: {
-  disabled?: boolean; googleLinked?: boolean; content: RichDocument; entryId: string; onChange: (document: RichDocument) => void;
+/**
+ * Éditeur des documents riches. `readOnly` : le mode Lire d'une procédure —
+ * le même rendu, sans barre d'outils ni saisie (liens cliquables).
+ */
+export function RichEditor({ content, entryId, onChange, googleLinked = false, disabled = false, readOnly = false }: {
+  disabled?: boolean; googleLinked?: boolean; readOnly?: boolean; content: RichDocument; entryId: string; onChange: (document: RichDocument) => void;
 }) {
   const change = useRef(onChange);
   change.current = onChange;
@@ -25,11 +30,15 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false, d
   const editor = useEditor({
     extensions: richExtensions({ googleLinked, onBlocked: () => setError('Cet élément est conservé dans Google. Pour le modifier ou le supprimer, utilise « Ouvrir dans Google Docs ».') }),
     content,
+    editable: !disabled && !readOnly,
     shouldRerenderOnTransaction: true,
-    editorProps: { attributes: { class: 'prose rich-content', role: 'textbox', 'aria-label': 'Contenu du document', 'aria-multiline': 'true', spellcheck: 'true' } },
+    // Réappliqués à chaque rendu par `useEditor` : `aria-readonly` suit le mode.
+    editorProps: { attributes: { class: 'prose rich-content', role: 'textbox', 'aria-label': 'Contenu du document', 'aria-multiline': 'true', 'aria-readonly': String(readOnly), spellcheck: 'true' } },
     onUpdate: ({ editor: current }) => change.current(normalizeDocument(current.getJSON())),
   });
-  useEffect(() => { editor?.setEditable(!disabled, false); }, [editor, disabled]);
+  useEffect(() => { editor?.setEditable(!disabled && !readOnly, false); }, [editor, disabled, readOnly]);
+  // Passer en lecture referme ce qui ne sert qu'à écrire.
+  useEffect(() => { if (readOnly) { setSearchOpen(false); setLinkOpen(false); } }, [readOnly]);
   useEffect(() => {
     if (editor) setSearch(editor, { query: searchOpen ? query : '', caseSensitive, active: 0 });
   }, [editor, searchOpen, query, caseSensitive]);
@@ -73,13 +82,14 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false, d
   const sizes = Array.from(new Set([...[8, 10, 11, 12, 14, 16, 18, 24, 32, 48, 72].map(size => `${size}pt`), ...(textStyle.fontSize ? [textStyle.fontSize as string] : [])]));
   const text = editor.getText();
 
-  return <div className="rich-document" onKeyDown={event => {
+  return <div className={'rich-document' + (readOnly ? ' is-reading' : '')} onKeyDown={event => {
+    if (readOnly) return;
     if ((event.ctrlKey || event.metaKey) && ['f', 'h'].includes(event.key.toLowerCase())) {
       event.preventDefault(); event.stopPropagation(); setSearchOpen(true); searchInput.current?.focus();
     }
     if (event.key === 'Escape') { setSearchOpen(false); setLinkOpen(false); editor.commands.focus(); }
   }}>
-    <fieldset className="rich-controls" disabled={disabled}>
+    {!readOnly && <fieldset className="rich-controls" disabled={disabled}>
     <div className="rich-toolbar no-print" role="toolbar" aria-label="Mise en forme du document">
       <div className="rich-tools" role="group" aria-label="Historique et navigation">
         {action('Annuler', () => { editor.chain().focus().undo().run(); }, false, !editor.can().undo(), '↶')}
@@ -128,7 +138,7 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false, d
       <div className="rich-tools" role="group" aria-label="Insérer">
         {action('Lien', () => { setHref(editor.getAttributes('link').href || ''); setLinkOpen(!linkOpen); }, editor.isActive('link'), false, '🔗')}
         {action('Citation', () => { editor.chain().focus().toggleBlockquote().run(); }, editor.isActive('blockquote'), false, '❝')}
-        {action('Bloc de code', () => { editor.chain().focus().toggleCodeBlock().run(); }, editor.isActive('codeBlock'), false, '{ }')}
+        {action('Bloc de code', () => { toggleCodeBlock(editor); }, editor.isActive('codeBlock'), false, '{ }')}
         {action('Séparateur', () => { editor.chain().focus().setHorizontalRule().run(); }, false, false, '—')}
         {action('Tableau', () => { editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); }, false, false, '▦')}
         <label className="ghost file-button">{uploading ? 'Envoi…' : 'Image'}<input type="file" aria-label="Insérer une image" accept="image/png,image/jpeg,image/webp,image/gif" disabled={uploading}
@@ -192,8 +202,8 @@ export function RichEditor({ content, entryId, onChange, googleLinked = false, d
         }}>{heading.title}</button>)}
     </nav>}
     {error && <p className="error no-print" role="alert">{error}</p>}
-    </fieldset>
+    </fieldset>}
     <EditorContent editor={editor} />
-    <p className="rich-count no-print">{text.trim().split(/\s+/).filter(Boolean).length} mot(s) · {Array.from(text).length} caractère(s) · sauvegarde locale automatique</p>
+    {!readOnly && <p className="rich-count no-print">{text.trim().split(/\s+/).filter(Boolean).length} mot(s) · {Array.from(text).length} caractère(s) · sauvegarde locale automatique</p>}
   </div>;
 }

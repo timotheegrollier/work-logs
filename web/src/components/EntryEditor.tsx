@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { api, COLUMNS, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project, type RichDocument, type Status } from '../lib';
 import { parseChecklist, proofreadEntry, readAiSettings, suggestProcedure, suggestSubtasks } from '../ai-suggest';
-import { renderMarkdown, toggleChecklistItem } from '../markdown';
+import { insertCodeFence, renderMarkdown, toggleChecklistItem } from '../markdown';
 import { markdownToRich, richToMarkdown } from '../rich-markdown';
 import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-download';
 import { Autosave } from '../autosave';
@@ -141,6 +142,19 @@ export function EntryEditor({
     const index = Array.from(e.currentTarget.querySelectorAll('input[type="checkbox"]')).indexOf(target as HTMLInputElement);
     if (index < 0) return;
     update({ content_md: toggleChecklistItem(draftRef.current.content_md, index) });
+  };
+
+  // « Bloc de code » en mode Écrire : clôtures ``` autour des lignes
+  // sélectionnées, ou bloc vide au curseur. La sélection n'est rendue au
+  // textarea qu'une fois le texte affiché (sinon le curseur part en fin).
+  const sourceRef = useRef<HTMLTextAreaElement>(null);
+  const insertCodeBlock = () => {
+    const source = sourceRef.current;
+    if (!source) return;
+    const next = insertCodeFence(draftRef.current.content_md, source.selectionStart, source.selectionEnd);
+    flushSync(() => update({ content_md: next.text }));
+    source.focus();
+    source.setSelectionRange(next.start, next.end);
   };
 
   const persist = async () => {
@@ -330,6 +344,9 @@ export function EntryEditor({
   // Markdown et, pour une procédure, suggestion des étapes. Une procédure riche
   // passe par le Markdown (`rich-markdown.ts`) ; un document Google reste exclu.
   const isProcedure = entry.kind === 'procedure';
+  // Écrire / Lire : les entrées Markdown, et les procédures riches locales ; un
+  // document Google garde son propre parcours d'édition.
+  const hasModes = !draft.content_json || (isProcedure && !googleSync);
   const aiAvailable = !draft.content_json || (isProcedure && !googleSync);
   const aiText = useMemo(() => (draft.content_json ? richToMarkdown(draft.content_json) : draft.content_md), [draft.content_json, draft.content_md]);
   const [aiBusy, setAiBusy] = useState<AiMode | null>(null);
@@ -519,7 +536,7 @@ export function EntryEditor({
           ))}
         </select>
 
-        {!draft.content_json && <div className="modes" role="group" aria-label="Mode d’affichage">
+        {hasModes && <div className="modes" role="group" aria-label="Mode d’affichage">
           <button
             className={writing ? 'is-on' : ''}
             aria-pressed={writing}
@@ -535,6 +552,19 @@ export function EntryEditor({
             Lire
           </button>
         </div>}
+        {/* Même symbole que dans la barre de l'éditeur riche. */}
+        {!draft.content_json && writing && (
+          <button
+            className="ghost"
+            type="button"
+            aria-label="Bloc de code"
+            title="Bloc de code : entoure de ``` les lignes sélectionnées, ou en insère un vide au curseur"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={insertCodeBlock}
+          >
+            {'{ }'}
+          </button>
+        )}
 
         <span className="grow" />
         <button className="ghost" onClick={() => nativeGoogle ? void window.worklogsDesktop?.googleDocs?.print() : window.print()}>
@@ -710,9 +740,10 @@ export function EntryEditor({
         </p>
       )}
       {Boolean(googleSync?.preserved_elements) && <p className="google-preservation no-print">{integratedGoogle ? <>Cette copie locale conserve les éléments Google. <button className="ghost" disabled={syncing} onClick={() => void openIntegratedGoogle()}>Modifier les menus déroulants, pastilles et suggestions dans WorkLogs</button></> : <>Les éléments Google signalés restent conservés à l’envoi. Pour modifier un menu déroulant, une image ou une suggestion, <a href={googleUrl} target="_blank" rel="noopener noreferrer">ouvre cet onglet dans Google Docs</a>.</>}</p>}
-      {draft.content_json ? <RichEditor key={richVersion} disabled={syncing} googleLinked={Boolean(googleSync)} entryId={entry.id} content={draft.content_json} onChange={(content_json) => update({ content_json })} /> : <div className={'sheet' + (writing ? ' is-split' : '')}>
+      {draft.content_json ? <RichEditor key={richVersion} disabled={syncing} readOnly={hasModes && !writing} googleLinked={Boolean(googleSync)} entryId={entry.id} content={draft.content_json} onChange={(content_json) => update({ content_json })} /> : <div className={'sheet' + (writing ? ' is-split' : '')}>
         {writing && (
           <textarea
+            ref={sourceRef}
             className="source no-print"
             aria-label="Contenu en Markdown"
             placeholder={'## Ce que j’ai fait\n\n- …\n\n> Décision : …'}

@@ -1107,3 +1107,41 @@ racine de gh-pages à chaque push master — mais l’option B (Worker) est pré
 relais de jetons et l’URL unique. Les deux workflows coexistent (concurrency `gh-pages`)
 et ne doivent jamais s’exécuter en parallèle ; le futur choix (A vs B) est à revisiter si
 un des deux cesse de couvrir un besoin.
+
+## 29. Procédures en lecture par défaut, blocs de code d'un geste — 2026-10-06
+
+**La demande.** « Pouvoir ajouter des blocs de code dans mes entrées/procédures ; les
+procédures doivent aussi avoir le mode édition et lecture comme les entrées normales. »
+Demande explicite d'un **mode** : la règle « rien de nouveau sans accord » est satisfaite,
+et ce n'en est pas un nouveau — ce sont les deux modes que les entrées ont déjà.
+
+**Ce qui manquait vraiment.** Le bloc de code existait (```` ``` ```` en Markdown, `{ }` dans
+la barre riche), mais : une entrée Markdown n'offrait aucun bouton (il fallait connaître la
+syntaxe) ; dans une procédure, coller trois commandes puis cliquer `{ }` donnait **trois
+blocs**, un par paragraphe — le collage fait un paragraphe par ligne et Tiptap convertit
+chaque paragraphe séparément. Et une procédure riche restait toujours en saisie, barre
+d'outils comprise : « Modifier » dans la colonne n'y changeait rien de visible.
+
+**Les choix.**
+- **Lire / Écrire pour les procédures riches locales**, avec les règles des entrées : ouverte
+  par son titre → Lire ; « Modifier » ou procédure neuve → Écrire. Lire, c'est **le même
+  éditeur Tiptap non modifiable** (`readOnly` : ni barre, ni compteur, `aria-readonly`), pas
+  un second rendu HTML qui pourrait diverger de ce qu'on écrit (images dimensionnées,
+  tableaux, éléments Google). Les liens s'y ouvrent d'un clic.
+- **Pas pour les documents Google** : ils gardent leur parcours (éditeur Google intégré,
+  synchronisation) ; ni pour les documents riches du journal, que personne n'a demandés
+  (le parcours desktop « reprise d'un document » s'y appuie).
+- **`{ }` sur plusieurs lignes → un seul bloc** (`rich-code.ts`), une ligne par paragraphe,
+  sauts de ligne manuels gardés, en une seule annulation ; ailleurs (une ligne, déjà du
+  code, listes, tableaux) la bascule de Tiptap, inchangée.
+- **`{ }` en mode Écrire des entrées Markdown** (`insertCodeFence`) : clôtures sur leurs
+  propres lignes autour des lignes entières touchées, plus longues que tout ```` ``` ```` déjà
+  présent, curseur rendu au textarea. Le symbole plutôt que « Bloc de code » en toutes
+  lettres : même face que dans la barre riche, et la ligne Écrire/Lire ne déborde pas.
+
+**Écartés.** Coloration syntaxique (dépendance `lowlight`/`highlight.js`, à demander) ;
+bouton « Copier » sur les blocs en lecture (non demandé — à proposer) ; Tab qui indente
+dans un bloc (`enableTabIndentation` existe, mais Tab ne sortirait plus de l'éditeur).
+
+**Rouvrir si** les documents riches du journal doivent aussi s'ouvrir en lecture : il
+suffit d'élargir `hasModes` dans `EntryEditor.tsx` (et d'adapter le parcours desktop).
