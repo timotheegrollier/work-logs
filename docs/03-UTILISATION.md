@@ -276,6 +276,13 @@ lorsque la colonne Procédures est affichée.
   créé tout de suite sur le partage et s'ouvre au centre ; un nom déjà pris est refusé, rien
   n'est écrasé. Le document Word commence par son nom en Titre 1, le classeur a une feuille
   « Feuil1 ».
+- **Supprimer** : la ✕ de l'arbre, ou **Supprimer du partage** dans l'éditeur, retire le
+  fichier du partage aussitôt, pour toute l'équipe (avec confirmation). Rien n'est
+  supprimé sans avoir été vu : si un collègue a enregistré le fichier depuis ta dernière
+  lecture, WorkLogs refuse et te fait rouvrir le fichier ; avec un brouillon non envoyé,
+  un envoi en attente, un conflit ou un fichier ouvert par un collègue, il le dit et ne
+  supprime rien. Seuls les fichiers se suppriment, jamais les dossiers. L'historique
+  gardé sur cet ordinateur reste.
 - **Hors ligne**, l'arbre reste celui que tu as vu en dernier (« Hors ligne — liste vue à
   10h42 ») : les fichiers gardés sur cet ordinateur s'ouvrent, les autres sont grisés. La
   recherche cherche alors dans ces listes.

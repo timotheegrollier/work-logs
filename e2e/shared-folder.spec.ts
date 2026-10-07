@@ -201,6 +201,20 @@ test('chercher dans le partage : taper un mot, ouvrir le fichier trouvé au fond
   await expect(page.getByRole('region', { name: 'Fichier partagé' }).getByLabel('Contenu de Procédure sauvegarde.md')).toHaveValue('# Sauvegarde\n');
 });
 
+test('supprimer un fichier du partage : confirmation, fichier parti, arbre à jour', async ({ page }) => {
+  put('à-garder.md', '# Gardé\n');
+  put('à-jeter.md', '# Jeté\n');
+  await page.goto('/');
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  if (await page.locator('#workspace-procedures').isHidden()) await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Ouvrir à-jeter\.md/ })).toBeVisible();
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: 'Supprimer à-jeter.md du partage' }).click();
+  await expect(page.getByRole('button', { name: /^Ouvrir à-jeter\.md/ })).toBeHidden();
+  expect(fs.existsSync(path.join(share, 'à-jeter.md'))).toBe(false);
+  expect(fs.existsSync(path.join(share, 'à-garder.md'))).toBe(true);
+});
+
 test('nouveau classeur Excel dans un dossier : créé, rempli au clavier, enregistré par Ctrl+S', async ({ page }) => {
   fs.mkdirSync(path.join(share, '00. PROCEDURE'));
   put('00. PROCEDURE/lisez-moi.md', '# x\n');

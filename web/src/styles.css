@@ -2093,6 +2093,8 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   inset: 50% auto auto 50%;
   z-index: 1000;
   transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
   width: min(680px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   margin: 0;
@@ -2114,7 +2116,7 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   border-bottom: 1px solid var(--line);
 }
 .settings-dialog-heading h2 { margin: 0; font-size: 16px; }
-.settings-content { max-height: calc(100vh - 100px); overflow: auto; padding: 12px 14px; }
+.settings-content { flex: 1 1 auto; min-height: 0; max-height: calc(100vh - 100px); overflow: auto; padding: 12px 14px; }
 .settings-content .drive-panel { border: 0; background: none; margin: 0; }
 .settings-content .drive-panel > .drive-open { width: 100%; text-align: left; }
 /* Réglages IA : même grille simple que les formulaires Drive. */
@@ -2130,9 +2132,23 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .ai-settings label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
 .ai-settings input { width: 100%; }
 .ai-settings textarea { width: 100%; min-height: 64px; resize: vertical; }
-/* Numéro de version : redondant avec la pastille de l'en-tête en desktop,
-   il n'apparaît que sur mobile où la pastille est masquée. */
+/* Numéro de version : redondant avec la pastille de l'en-tête en desktop
+   large, il apparaît dès que la pastille est masquée (≤ 1180 px) : mobile,
+   tablette et PWA étroite gardent le numéro accessible dans les paramètres. */
 .settings-version { display: none; }
+@media (max-width: 1180px) {
+  .settings-version {
+    display: block;
+    flex: none;
+    margin: 0;
+    padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+}
 .drive-toggle { align-items: center; padding: 12px; font-size: 13px; font-weight: 600; }
 .drive-content { gap: 10px; padding: 0 12px 12px; }
 .drive-content button { text-align: left; padding: 7px 8px; }
@@ -2224,17 +2240,8 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .head .logo .version {
     display: none;
   }
-  /* Version dans les paramètres : seule source du numéro sur mobile. */
-  .settings-version {
-    display: block;
-    margin: 0;
-    padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
-    border-top: 1px solid var(--line);
-    color: var(--muted);
-    font-size: 12px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
+  /* Version dans les paramètres : voir la règle ≤ 1180 px (la pastille de
+     l'en-tête est masquée dès 1180 px, pas seulement sur mobile). */
   .head input.search {
     grid-area: search;
     width: 100%;
@@ -2483,6 +2490,10 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .shared-file.is-foreign .shared-file-name { color: var(--muted); }
 .shared-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shared-badge { flex: none; font-size: 12px; line-height: 1; }
+.shared-file-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.shared-file-row .shared-file { flex: 1; min-width: 0; }
+.shared-file-delete { flex: none; font-size: 12px; padding: 4px 7px; color: var(--muted); }
+.shared-file-delete:hover { color: var(--danger); }
 
 /* L'éditeur d'un fichier partagé : même gabarit qu'une entrée. */
 /* Sur téléphone, le titre prend toute la ligne : « Tu as la main » et l'état passent dessous

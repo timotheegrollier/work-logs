@@ -402,6 +402,9 @@ export function sharedClient(base: string, auth: () => Record<string, string> = 
       throw failure(res, payload);
     },
     unlockShared: (path: string) => sendJson<SharedFile>('DELETE', '/api/shared/lock?path=' + enc(path)),
+    /** Supprime un fichier du partage, sans jamais écraser une version non vue. */
+    deleteShared: (path: string) =>
+      sendJson<{ state: string; deleted: boolean; file: null }>('DELETE', '/api/shared/file?path=' + enc(path)),
     linkSharedFolder: (projectId: string, dir: string) =>
       sendJson<SharedStatus>('PUT', `/api/shared/projects/${enc(projectId)}/folder`, { dir }),
     unlinkSharedFolder: (projectId: string) => sendJson<SharedStatus>('DELETE', `/api/shared/projects/${enc(projectId)}/folder`),

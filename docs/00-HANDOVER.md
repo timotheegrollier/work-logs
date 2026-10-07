@@ -1,7 +1,12 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-06 · Version : v0.47.0 (lot courant non publié).
-> **Lot courant :** procédures en **Lire / Écrire** comme les entrées, et **blocs de code**
+> **Mise à jour :** 2026-10-07 · Version : v0.47.0 (lot courant non publié).
+> **Lot courant :** supprimer un fichier du dossier partagé, depuis l'arbre (✕) ou
+> l'éditeur (« Supprimer du partage ») — suppression gardée sur la dernière version
+> vue, avec confirmation. Détail : « Lot du 2026-10-07 — supprimer les fichiers du
+> partage » ci-dessous ; décision §25.
+>
+> **Lot précédent :** procédures en **Lire / Écrire** comme les entrées, et **blocs de code**
 > d'un geste — branche `feat/procedures-lecture-blocs-de-code`. Détail : « Lot du
 > 2026-10-06 (3) — procédures en lecture, blocs de code » ci-dessous ; décision §29.
 >
@@ -47,6 +52,40 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-10-07 — supprimer les fichiers du partage
+
+Demande de Timo : « pouvoir supprimer les fichiers procédures du serveur distant ».
+Décision : §25 (« Supprimer un fichier du partage »).
+- **Serveur** : `DELETE /api/shared/file?path=` (`shared-routes.js`, réservé à cet
+  ordinateur comme les autres routes du partage) + `remove()` dans
+  `shared-service.js` + `deleteGuarded` dans le worker (`shared-io.js`). La suppression
+  est gardée sur la dernière version vue : fichier changé depuis → `409 SHARED_STALE`
+  sans rien supprimer (la version du collègue est gardée, rouvrir puis supprimer
+  marche) ; brouillon, envoi en attente ou conflit → `409` avec le message qui dit
+  quoi régler d'abord ; fichier ouvert ailleurs → `409` avec son nom ; dossiers
+  refusés (`400`). La ligne locale est oubliée, l'historique reste.
+- **Front** : `api.deleteShared` (`lib.ts`, repli PWA explicite dans `localApi.ts`) ;
+  ✕ `Supprimer <nom> du partage` dans l'arbre (`SharedFolder.tsx`, rechargé après)
+  et « Supprimer du partage » dans l'éditeur (`SharedFileEditor.tsx`, referme le
+  fichier), tous deux avec `confirm`. Styles : `.shared-file-row`, `.shared-file-delete`.
+- **Tests** : `api/test/shared-delete.test.js` (7 : suppression ouverte ou non,
+  introuvable, chemin/dossier, brouillon, verrou, version changée), `App.test.tsx`
+  (+4 gestes : éditeur, arbre, annulation, brouillon refusé), `e2e/shared-folder.spec.ts`
+  (+1 : suppression depuis l'arbre, fichier parti, arbre à jour).
+- **Docs** : `01-ARCHITECTURE.md` (route), `03-UTILISATION.md` (geste + garanties),
+  `05-DECISIONS.md` §25.
+- **Validation** : `./scripts/check.sh` vert (`CHECK OK`) : 226 API, **473 front**,
+  54 navigateur (dont la suppression), 15 parcours desktop.
+
+### À vérifier par Timo
+
+1. Dans l'application desktop, dossier partagé : ✕ sur un fichier de procédure —
+   confirmation, fichier parti du TSE pour les collègues, arbre à jour ?
+2. Même chose depuis l'éditeur ouvert (« Supprimer du partage ») : l'éditeur se
+   referme-t-il, sans laisser de brouillon derrière ?
+3. Un fichier modifié par un collègue juste avant : la suppression est-elle refusée
+   (« a changé sur le partage »), et rouvrir puis supprimer marche-t-il ?
 
 ## Lot du 2026-10-06 (3) — procédures en lecture, blocs de code
 

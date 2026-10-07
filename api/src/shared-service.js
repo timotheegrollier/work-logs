@@ -1029,6 +1029,104 @@ export function createSharedService({
     },
 
     /**
+     * Supprime un fichier du partage, sans jamais écraser une version qu'on n'a
+     * pas vue : si le fichier a changé depuis la dernière lecture, rien n'est
+     * supprimé (`SHARED_STALE`). Un brouillon, un envoi en attente ou un conflit
+     * se règle d'abord ; un fichier ouvert ailleurs ne se supprime pas. Seuls
+     * les fichiers se suppriment, jamais les dossiers. L'historique local reste.
+     */
+    async remove(rel) {
+      relativeParts(rel);
+      return exclusive(rel, async () => {
+        const row = getRow(rel);
+        if (row?.state === 'conflict') throw new SharedError(409, 'SHARED_CONFLICT_OPEN', 'Choisis d’abord comment régler le conflit.');
+        if (row?.draft_json) throw new SharedError(409, 'SHARED_DRAFT_OPEN', 'Envoie ou abandonne d’abord ton brouillon avant de supprimer ce fichier.');
+        if (row?.send_requested || ['pending', 'offline', 'interrupted'].includes(row?.state ?? '')) {
+          throw new SharedError(409, 'SHARED_PENDING', 'Un envoi est en attente pour ce fichier : attends qu’il parte avant de le supprimer.');
+        }
+        let located;
+        try {
+          located = await locate(rel, { mayNotExist: true });
+        } catch (error) {
+          throw toSharedError(error);
+        }
+        const forgetLock = async (nonce) => {
+          if (!nonce || !located) return;
+          try { await io.call('unlinkIfMarked', [lockPathOf(located.abs), lockMarker(nonce)]); } catch {}
+        };
+        if (located.missing) {
+          if (!row) throw new SharedError(404, 'SHARED_NOT_FOUND', 'Fichier introuvable sur le dossier partagé.');
+          await forgetLock(row.lock_nonce);
+          db.prepare('DELETE FROM shared_files WHERE rel_path=?').run(rel);
+          return { status: 200, body: { state: 'deleted', deleted: true, file: null } };
+        }
+        let stat;
+        try {
+          stat = await io.call('stat', [located.abs]);
+        } catch (error) {
+          throw toSharedError(error);
+        }
+        if (!stat.isFile) throw new SharedError(400, 'SHARED_NOT_FILE', 'Ce n’est pas un fichier : seuls les fichiers se suppriment.');
+        let lock = null;
+        try {
+          lock = await lockFor(located.abs);
+        } catch (error) {
+          throw toSharedError(error);
+        }
+        if (lock && lockBlocks(lock)) {
+          throw new SharedError(409, lock.stale ? 'SHARED_LOCK_STALE' : 'SHARED_LOCKED',
+            `${lockNote(lock)}.`, { lock });
+        }
+        let expected = row?.seen_hash || row?.base_hash || null;
+        if (!expected || !hasBlob(expected)) {
+          try {
+            const read = await io.call('readFile', [located.abs, MAX_FILE], { timeoutMs: transferTimeout(stat.size) });
+            const bytes = Buffer.from(read.bytes);
+            storeBlob(read.hash, bytes);
+            addVersion(rel, read.hash, read.size, 'base', 'read');
+            const current = getRow(rel);
+            save(rel, { seen_hash: read.hash, seen_size: read.size, seen_mtime_ms: read.mtimeMs, base_hash: current?.base_hash || read.hash });
+            expected = read.hash;
+          } catch (error) {
+            throw toSharedError(error);
+          }
+        }
+        let result;
+        try {
+          result = await io.call('deleteGuarded', [located.abs, expected]);
+        } catch (error) {
+          throw toSharedError(error);
+        }
+        if (result.result === 'missing') {
+          const fresh = getRow(rel);
+          await forgetLock(fresh?.lock_nonce);
+          db.prepare('DELETE FROM shared_files WHERE rel_path=?').run(rel);
+          return { status: 200, body: { state: 'deleted', deleted: true, file: null } };
+        }
+        if (result.result === 'denied') {
+          throw new SharedError(403, 'SHARED_DENIED', 'WorkLogs n’a pas le droit de supprimer ce fichier sur le dossier partagé.');
+        }
+        if (result.result === 'busy') {
+          throw new SharedError(409, 'SHARED_BUSY', 'Ce fichier est ouvert sous Windows (Word ou Excel ?) : ferme-le avant de le supprimer.');
+        }
+        if (result.result === 'notfile') throw new SharedError(400, 'SHARED_NOT_FILE', 'Ce n’est pas un fichier : seuls les fichiers se suppriment.');
+        if (result.result === 'changed') {
+          const theirs = Buffer.from(result.theirs);
+          storeBlob(result.hash, theirs);
+          addVersion(rel, result.hash, theirs.length, 'theirs', 'read');
+          save(rel, { seen_hash: result.hash, seen_size: result.size, seen_mtime_ms: result.mtimeMs });
+          throw new SharedError(409, 'SHARED_STALE', 'Le fichier a changé sur le partage : rouvre-le avant de le supprimer.', { hash: result.hash });
+        }
+        if (result.result !== 'deleted') throw new SharedError(500, 'SHARED_ERROR', 'Réponse inattendue du dossier partagé.');
+        const fresh = getRow(rel);
+        await forgetLock(fresh?.lock_nonce);
+        db.prepare('DELETE FROM shared_files WHERE rel_path=?').run(rel);
+        prune(rel);
+        return { status: 200, body: { state: 'deleted', deleted: true, file: null } };
+      });
+    },
+
+    /**
      * Fichiers et dossiers dont le nom contient tous les mots cherchés, de `dir`
      * vers le bas. Borné (temps, dossiers, profondeur) : un partage d'entreprise
      * est grand et lent. Les dossiers fermés au compte du montage sont passés.

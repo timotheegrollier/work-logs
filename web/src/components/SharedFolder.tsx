@@ -22,7 +22,7 @@ const readOpen = () => {
  * sur cet ordinateur, en arbre. Un fichier s'ouvre au centre comme une entrée.
  * Absente de la PWA (un navigateur n'atteint pas un partage SMB). Voir §25.
  */
-export function SharedFolder({ active, projectId, projects, selectedPath, revision, onOpen }: {
+export function SharedFolder({ active, projectId, projects, selectedPath, revision, onOpen, onDeleted }: {
   /** Colonne Procédures affichée : sinon, ni requête ni sondage. */
   active: boolean;
   projectId: string;
@@ -30,6 +30,7 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   selectedPath: string | null;
   revision: number;
   onOpen: (path: string) => void;
+  onDeleted: (path: string) => void;
 }) {
   const [status, setStatus] = useState<SharedStatus | null>(null);
   const [open, setOpen] = useState(readOpen);
@@ -225,6 +226,24 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
     for (const each of chain) void loadDir(each);
   };
 
+  /** Supprime un fichier du partage, après confirmation : immédiat pour toute l'équipe. */
+  const removeFile = async (entry: SharedEntry) => {
+    if (entry.unavailable) return;
+    if (!confirm(`Supprimer « ${entry.name} » du dossier partagé ? Cette action est immédiate pour toute l’équipe.`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.deleteShared(entry.path);
+      const parent = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
+      await loadDir(parent);
+      onDeleted(entry.path);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const toggleDir = (dir: string) => {
     setExpanded((current) => {
       const next = new Set(current);
@@ -326,7 +345,7 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
               {expanded.has(entry.path) && depth < 12 && renderDir(entry.path, depth + 1)}
             </li>
           )
-          : <FileRow key={entry.path} entry={entry} selected={entry.path === selectedPath} onOpen={onOpen} />))}
+          : <FileRow key={entry.path} entry={entry} selected={entry.path === selectedPath} disabled={busy} onOpen={onOpen} onDelete={(target) => void removeFile(target)} />))}
         {listing.truncated && <li className="empty">Dossier trop grand : seuls les 2 000 premiers éléments sont listés.</li>}
       </ul>
       </>
@@ -502,11 +521,11 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   );
 }
 
-function FileRow({ entry, selected, onOpen }: { entry: SharedEntry; selected: boolean; onOpen: (path: string) => void }) {
+function FileRow({ entry, selected, disabled, onOpen, onDelete }: { entry: SharedEntry; selected: boolean; disabled: boolean; onOpen: (path: string) => void; onDelete: (entry: SharedEntry) => void }) {
   const badges = badgesFor(entry);
   const editable = Boolean(editorKind(entry.ext));
   return (
-    <li>
+    <li className="shared-file-row">
       <button
         className={'shared-file' + (selected ? ' is-selected' : '') + (editable && !entry.unavailable ? '' : ' is-foreign')}
         aria-current={selected ? 'true' : undefined}
@@ -517,6 +536,15 @@ function FileRow({ entry, selected, onOpen }: { entry: SharedEntry; selected: bo
       >
         <span className="shared-file-name">{entry.name}</span>
         {badges.map((badge) => <span key={badge.icon} className="shared-badge" title={badge.label} aria-hidden="true">{badge.icon}</span>)}
+      </button>
+      <button
+        className="ghost shared-file-delete"
+        disabled={disabled || entry.unavailable}
+        aria-label={`Supprimer ${entry.name} du partage`}
+        title="Supprimer ce fichier du dossier partagé"
+        onClick={() => onDelete(entry)}
+      >
+        ✕
       </button>
     </li>
   );

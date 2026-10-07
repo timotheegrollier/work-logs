@@ -1008,6 +1008,7 @@ export const localApi: Api = {
   restoreSharedVersion: async (path, id) => relay().restoreSharedVersion(path, id),
   lockShared: async (path, takeOver) => relay().lockShared(path, takeOver),
   unlockShared: async (path) => relay().unlockShared(path),
+  deleteShared: async (path) => relay().deleteShared(path),
   linkSharedFolder: async (projectId, dir) => relay().linkSharedFolder(projectId, dir),
   unlinkSharedFolder: async (projectId) => relay().unlinkSharedFolder(projectId),
   setSharedDisplayName: async (displayName) => relay().setSharedDisplayName(displayName),

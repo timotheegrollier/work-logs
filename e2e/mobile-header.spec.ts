@@ -85,6 +85,41 @@ test('paramètres mobiles : la version s’y lit et les trois blocs sont des car
   ).toBe(true);
 });
 
+test('paramètres : la version reste lisible sur tablette et avec un contenu long', async ({ page }) => {
+  // La pastille de l'en-tête est masquée dès 1180 px : entre 601 et 1180 px
+  // (tablette, PWA étroite), le dialogue est la seule source du numéro.
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.goto('/');
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.locator('.head .logo .version')).toBeHidden();
+  await page.getByRole('button', { name: 'Compte et paramètres' }).click();
+  await page.getByRole('menuitem', { name: 'Paramètres' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Paramètres' });
+  await expect(dialog.getByText(/WorkLogs \d+\.\d+\.\d+/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Fermer' }).click();
+
+  // Contenu très long (Drive déplié, IA, affichage…) : le pied de version
+  // reste ancré dans le dialogue au lieu d'être poussé hors champ.
+  await page.setViewportSize({ width: 412, height: 860 });
+  await page.getByRole('button', { name: 'Compte et paramètres' }).click();
+  await page.getByRole('menuitem', { name: 'Paramètres' }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.evaluate((el) => {
+    const filler = document.createElement('div');
+    filler.style.height = '2000px';
+    el.querySelector('.settings-content')?.appendChild(filler);
+  });
+  await expect(dialog.getByText(/WorkLogs \d+\.\d+\.\d+/)).toBeVisible();
+  const inside = await page.evaluate(() => {
+    const dlg = document.querySelector('.settings-dialog') as HTMLElement;
+    const ver = dlg.querySelector('.settings-version') as HTMLElement;
+    const r = dlg.getBoundingClientRect();
+    const v = ver.getBoundingClientRect();
+    return v.bottom <= r.bottom + 1 && v.top >= r.top - 1;
+  });
+  expect(inside).toBe(true);
+});
+
 test('bandeau projets : global, sans débordement, utilisable journal replié', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
