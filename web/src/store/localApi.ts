@@ -986,6 +986,7 @@ export const localApi: Api = {
   restoreSharedVersion: async () => fail(SHARED_DESKTOP_ONLY),
   lockShared: async () => fail(SHARED_DESKTOP_ONLY),
   unlockShared: async () => fail(SHARED_DESKTOP_ONLY),
+  deleteShared: async () => fail(SHARED_DESKTOP_ONLY),
   linkSharedFolder: async () => fail(SHARED_DESKTOP_ONLY),
   unlinkSharedFolder: async () => fail(SHARED_DESKTOP_ONLY),
   setSharedDisplayName: async () => fail(SHARED_DESKTOP_ONLY),

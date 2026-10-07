@@ -166,6 +166,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET · PUT | `/api/shared/versions?path=` · `/api/shared/settings` | historique local · nom affiché |
 | POST | `/api/shared/merge?path=&theirs=` (octets) | « Fusionner » un conflit : la version réunie part avec la leur pour base (envoi gardé) |
 | POST | `/api/shared/create?path=` (octets) | fichier neuf (modèle fait par le front), création exclusive : `409 SHARED_EXISTS` si le nom est pris |
+| DELETE | `/api/shared/file?path=` | supprime un fichier du partage, gardé sur la dernière version vue : `409 SHARED_STALE` s'il a changé, refusé avec un brouillon, un envoi en attente ou un verrou d'un autre |
 | GET | `/api/shared/search?q=&dir=` | noms (sans casse ni accents, tous les mots), borné : 100 résultats, 3 000 dossiers, 8 s ; hors ligne : listes gardées |
 | POST | `/api/shared/versions/:id/restore?path=` | la version devient le brouillon (rien n'est envoyé) |
 | POST · DELETE | `/api/shared/lock?path=` | prendre/renouveler la main (`{take_over}`) · la rendre ; `409 SHARED_LOCKED` / `SHARED_LOCK_STALE` + `{lock}` |

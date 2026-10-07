@@ -70,6 +70,8 @@ export function registerSharedRoutes(app, { shared }) {
   router.get('/search', handle((req) => shared.search(text(req.query.q), text(req.query.dir))));
   // Fichier neuf (octets du modèle, faits par le front) : créé sans jamais écraser.
   router.post('/create', raw, handle((req) => shared.create(text(req.query.path), bytesOf(req.body))));
+  // Suppression gardée d'un fichier : rien ne part si le partage a changé depuis la lecture.
+  router.delete('/file', handle((req) => shared.remove(text(req.query.path))));
   router.post('/resolve', handle((req) => {
     const body = req.body || {};
     return shared.resolve(text(body.path), text(body.choice), text(body.theirs) || null);

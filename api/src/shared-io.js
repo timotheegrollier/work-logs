@@ -283,6 +283,42 @@ const ops = {
       throw error;
     }
   },
+  /**
+   * Suppression gardee : ne retire le fichier que s'il est encore celui qu'on a
+   * vu (base, empreinte SHA-256). Sinon rien n'est supprime et la version
+   * trouvee est rendue, pour refuser sans ecraser le travail d'un collegue.
+   */
+  deleteGuarded(file, base) {
+    let stat;
+    try {
+      stat = fs.statSync(file);
+    } catch (error) {
+      if (error.code === 'ENOENT') return { result: 'missing' };
+      throw error;
+    }
+    if (!stat.isFile()) return { result: 'notfile' };
+    let current;
+    try {
+      current = readPath(file);
+    } catch (error) {
+      if (error.code === 'ENOENT') return { result: 'missing' };
+      if (error.code === 'EISDIR') return { result: 'notfile' };
+      throw error;
+    }
+    const hash = sha256(current);
+    if (base && hash !== base) {
+      return { result: 'changed', theirs: current, hash, size: current.length, mtimeMs: Math.round(stat.mtimeMs) };
+    }
+    try {
+      fs.unlinkSync(file);
+    } catch (error) {
+      if (error.code === 'ENOENT') return { result: 'missing' };
+      if (error.code === 'EACCES' || error.code === 'EPERM') return { result: 'denied', code: error.code };
+      if (error.code === 'EBUSY' || error.code === 'ETXTBSY') return { result: 'busy', code: error.code };
+      throw error;
+    }
+    return { result: 'deleted', hash, size: current.length };
+  },
   // Pour les tests : un appel qui bloque comme un montage SMB figé.
   sleep(ms) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);

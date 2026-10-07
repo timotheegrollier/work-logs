@@ -2519,6 +2519,53 @@ describe('dossier partagé', () => {
     }
   });
 
+  test('supprime un fichier du partage depuis l’éditeur, après confirmation', async () => {
+    await write('notes.md', 'v1\n');
+    render(<App />);
+    const editorRegion = await openFromTree('notes.md');
+    await within(editorRegion).findByLabelText('Contenu de notes.md');
+    fireEvent.click(within(editorRegion).getByRole('button', { name: 'Supprimer du partage' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Fichier partagé' })).not.toBeInTheDocument());
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    expect(fs.existsSync(path.join(share, 'notes.md'))).toBe(false);
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Ouvrir notes\.md/ })).not.toBeInTheDocument());
+  });
+
+  test('supprime un fichier du partage depuis l’arbre, sans l’ouvrir', async () => {
+    await write('à-garder.md', 'gardé\n');
+    await write('à-jeter.md', 'jeté\n');
+    render(<App />);
+    expect(await screen.findByRole('button', { name: /^Ouvrir à-jeter\.md/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer à-jeter.md du partage' }));
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    await waitFor(() => expect(fs.existsSync(path.join(share, 'à-jeter.md'))).toBe(false));
+    expect(fs.existsSync(path.join(share, 'à-garder.md'))).toBe(true);
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Ouvrir à-jeter\.md/ })).not.toBeInTheDocument());
+  });
+
+  test('annule la suppression depuis l’arbre : rien ne part', async () => {
+    await write('notes.md', 'v1\n');
+    render(<App />);
+    expect(await screen.findByRole('button', { name: /^Ouvrir notes\.md/ })).toBeInTheDocument();
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer notes.md du partage' }));
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    expect(fs.existsSync(path.join(share, 'notes.md'))).toBe(true);
+    expect(screen.getByRole('button', { name: /^Ouvrir notes\.md/ })).toBeInTheDocument();
+  });
+
+  test('suppression refusée avec un brouillon : le fichier reste, l’erreur se lit', async () => {
+    await write('notes.md', 'v1\n');
+    render(<App />);
+    const editorRegion = await openFromTree('notes.md');
+    fireEvent.change(await within(editorRegion).findByLabelText('Contenu de notes.md'), { target: { value: 'v1\nmoi\n' } });
+    await waitFor(() => expect(within(editorRegion).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    fireEvent.click(within(editorRegion).getByRole('button', { name: 'Supprimer du partage' }));
+    expect(await within(editorRegion).findByText(/Envoie ou abandonne d’abord ton brouillon/)).toBeInTheDocument();
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    expect(fs.existsSync(path.join(share, 'notes.md'))).toBe(true);
+  });
+
   test('choisir une entrée referme le fichier partagé', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Compte rendu' }] });
     await write('notes.md', 'v1\n');

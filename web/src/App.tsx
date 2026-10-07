@@ -589,6 +589,10 @@ export default function App() {
               selectedPath={sharedPath}
               revision={sharedRevision}
               onOpen={(path) => void openShared(path)}
+              onDeleted={(path) => {
+                if (sharedPath === path) setSharedPath(null);
+                bumpShared();
+              }}
             />
           )}
         </aside>
@@ -675,8 +679,9 @@ export default function App() {
               </div>
             </section>
           </div>
-          {/* La pastille de version de l'en-tête est masquée sur mobile :
-              le numéro reste accessible ici. */}
+          {/* La pastille de version de l'en-tête est masquée dès 1180 px
+              (mobile, tablette, PWA étroite) : le numéro reste accessible
+              ici, en pied fixe du dialogue. */}
           <p className="settings-version">WorkLogs {__WORKLOGS_VERSION__}</p>
         </dialog>
       ), document.body)}

@@ -951,11 +951,21 @@ qu'un dossier **déjà monté**, pas une adresse `smb://`.
   UTF-8 **avec BOM** (Bloc-notes et Excel du TSE lisent les accents), Markdown sans.
   `POST /create` crée **exclusivement** (`O_EXCL`) : un nom déjà pris est refusé, rien n'est
   écrasé ; noms refusés par Windows (`< > : " / \ | ? *`, `CON`, point final…) refusés avant.
-  Le fichier existe aussitôt sur le partage (vide), puis s'édite comme les autres. Vérifiés :
-  relus et réécrits par nos éditeurs, ouverts par LibreOffice (titre en `h1`, formule calculée).
-  **Trouvé en route** : écrire plusieurs lignes neuves dans une feuille vide (`<sheetData/>`,
-  comme l'écrit Excel) produisait deux remplacements au même endroit — le garde-fou XML
-  refusait l'envoi ; les lignes ajoutées en fin forment désormais un seul bloc.
+   Le fichier existe aussitôt sur le partage (vide), puis s'édite comme les autres. Vérifiés :
+   relus et réécrits par nos éditeurs, ouverts par LibreOffice (titre en `h1`, formule calculée).
+   **Trouvé en route** : écrire plusieurs lignes neuves dans une feuille vide (`<sheetData/>`,
+   comme l'écrit Excel) produisait deux remplacements au même endroit — le garde-fou XML
+   refusait l'envoi ; les lignes ajoutées en fin forment désormais un seul bloc.
+- **Supprimer un fichier du partage** (demandé par Timo le 2026-10-07) : `DELETE
+  /api/shared/file` + `deleteGuarded` dans le worker (même délai borné que les autres
+  opérations). La suppression est **gardée sur la dernière version vue** : si le fichier
+  a changé depuis, rien n'est supprimé (`409 SHARED_STALE`, la version du collègue est
+  gardée et rouvrir puis supprimer marche) ; un brouillon, un envoi en attente ou un
+  conflit se règle d'abord, un fichier ouvert ailleurs (Word, Excel, LibreOffice, un
+  autre WorkLogs) ne se supprime pas. Seuls les fichiers, jamais les dossiers ; la ligne
+  locale est oubliée, **l'historique reste** (restaurable en brouillon, qui repartirait
+  comme une recréation gardée). UI : ✕ dans l'arbre et « Supprimer du partage » dans
+  l'éditeur, avec confirmation ; l'éditeur se referme, l'arbre se recharge.
 - Restent de l'idée « procédures ↔ partage » : IA par le pont Markdown §23 — à redemander.
 
 **Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :

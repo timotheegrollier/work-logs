@@ -459,6 +459,9 @@ export const remoteApi = {
     throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
   },
   unlockShared: (path: string) => send<SharedFile>('DELETE', '/api/shared/lock?path=' + enc(path)),
+  /** Supprime un fichier du partage, sans jamais écraser une version non vue. */
+  deleteShared: (path: string) =>
+    send<{ state: string; deleted: boolean; file: null }>('DELETE', '/api/shared/file?path=' + enc(path)),
   linkSharedFolder: (projectId: string, dir: string) =>
     send<SharedStatus>('PUT', `/api/shared/projects/${enc(projectId)}/folder`, { dir }),
   unlinkSharedFolder: (projectId: string) => send<SharedStatus>('DELETE', `/api/shared/projects/${enc(projectId)}/folder`),

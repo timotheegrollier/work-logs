@@ -412,6 +412,26 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
     }
   };
 
+  /** Supprime le fichier du partage, après confirmation : immédiat pour toute l'équipe. */
+  const remove = async () => {
+    if (!confirm(`Supprimer « ${name} » du dossier partagé ? Cette action est immédiate pour toute l’équipe.`)) return;
+    setError('');
+    setNotice('');
+    sendingRef.current = true;
+    setSending(true);
+    try {
+      await autosave.flush().catch(() => {});
+      await api.deleteShared(path);
+      changedRef.current();
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
+  };
+
   const takeOver = async () => {
     const lock = fileRef.current?.lock;
     if (!lock || !confirm(`Reprendre la main sur « ${basename(path)} » ? ${lock.by} semble l’avoir laissé ouvert sans y toucher.`)) return;
@@ -527,6 +547,7 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
         )}
         <span className="grow" />
         {file?.size !== null && file?.size !== undefined && <span className="shared-meta">{formatSize(file.size)}</span>}
+        <button className="ghost danger" disabled={sending || !loaded} title="Supprimer ce fichier du dossier partagé" onClick={() => void remove()}>Supprimer du partage</button>
         <button className="ghost" onClick={() => void requestLeave().then((ok) => { if (ok) onClose(); })}>Fermer</button>
       </div>
 
