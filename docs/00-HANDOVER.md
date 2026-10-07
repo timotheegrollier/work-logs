@@ -108,7 +108,7 @@ son compte `SRVMURGAT\TimothéeG`.
   d'une adresse, relais d'une autre (CORS appliqué) : réglage, ouverture, modification, envoi —
   aucun blocage CORS, fichier écrit. Titre d'un fichier qui se coupait en trois sur téléphone :
   corrigé (l'en-tête passe à la ligne).
-- **Tests** : 223 API (+4 relais), 471 front (+2 PWA par un vrai relais, + maîtrise), 48 desktop,
+- **Tests** : 223 API (+4 relais), 471 front (+2 dans `App.local.test.tsx` : la PWA par un vrai relais, l'adresse du relais), 48 desktop,
   29 scripts, 8 relais Google, 53 navigateur, 15 desktop : **847**. Sous une charge système de 13
   (autre session en parallèle), 5 tests front ont dépassé leurs délais ; tous verts isolément puis
   en campagne complète une fois la machine calme.
