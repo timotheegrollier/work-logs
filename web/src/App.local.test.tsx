@@ -134,4 +134,56 @@ describe('dossier partagé dans la PWA', () => {
     expect(await localApi.sharedStatus()).toEqual({ available: false });
     await expect(localApi.sharedList('')).rejects.toThrow('application desktop');
   });
+
+  test('par le relais du bureau : réglé dans Paramètres, le dossier s’ouvre, un fichier s’édite et s’envoie', async () => {
+    const [fs, os, path] = await Promise.all([import('node:fs'), import('node:os'), import('node:path')]);
+    // @ts-expect-error — relay.js est du JavaScript pur de l'API, chargé par Node.
+    const { startRelay, newToken } = await import('../../api/src/relay.js');
+    const share = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-relais-'));
+    const data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-relais-data-'));
+    fs.mkdirSync(path.join(share, '2. TSE'));
+    fs.writeFileSync(path.join(share, '2. TSE', 'Redémarrage.md'), '# Redémarrage\n');
+    const token = newToken();
+    const relay = startRelay({ root: share, token, origins: [], dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)' });
+    await new Promise((resolve) => relay.server.once('listening', resolve));
+    try {
+      localStorage.setItem('worklogs-show-procedures', '1');
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByRole('region', { name: 'Journal' });
+      expect(screen.queryByText('Dossier partagé')).not.toBeInTheDocument();
+
+      await user.click(await screen.findByRole('button', { name: 'Compte et paramètres' }));
+      await user.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
+      const settings = within(await screen.findByRole('region', { name: 'Dossier partagé du TSE' }));
+      await user.type(settings.getByLabelText('Adresse du relais'), `http://127.0.0.1:${relay.server.address().port}`);
+      await user.type(settings.getByLabelText('Code d’accès du relais'), token);
+      await user.click(settings.getByRole('button', { name: 'Enregistrer' }));
+      expect(await settings.findByText(/^Relié au dossier partagé/)).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Fermer' }));
+
+      await user.click(await screen.findByRole('button', { name: 'Dossier 2. TSE' }));
+      await user.click(await screen.findByRole('button', { name: /^Ouvrir Redémarrage\.md/ }));
+      const shared = await screen.findByRole('region', { name: 'Fichier partagé' });
+      const area = await within(shared).findByLabelText('Contenu de Redémarrage.md');
+      expect(area).toHaveValue('# Redémarrage\n');
+      await user.type(area, 'Redémarrer le service.{Enter}');
+      await user.click(within(shared).getByRole('button', { name: 'Enregistrer sur le partage' }));
+      await waitFor(() => expect(fs.readFileSync(path.join(share, '2. TSE', 'Redémarrage.md'), 'utf8')).toBe('# Redémarrage\nRedémarrer le service.\n'));
+      expect(await within(shared).findByText('Enregistré sur le partage.')).toBeInTheDocument();
+    } finally {
+      await relay.stop();
+      fs.rmSync(share, { recursive: true, force: true });
+      fs.rmSync(data, { recursive: true, force: true });
+    }
+  });
+
+  test('adresse du relais : HTTPS exigé, complétée si on l’oublie', async () => {
+    const { normalizeRelayUrl } = await import('./relay-settings');
+    expect(normalizeRelayUrl('relais.tailnet.ts.net/')).toBe('https://relais.tailnet.ts.net');
+    expect(normalizeRelayUrl('https://relais.tailnet.ts.net:8443')).toBe('https://relais.tailnet.ts.net:8443');
+    expect(() => normalizeRelayUrl('http://172.16.1.203')).toThrow('HTTPS');
+    expect(normalizeRelayUrl('http://127.0.0.1:8420')).toBe('http://127.0.0.1:8420');
+    expect(() => normalizeRelayUrl('  ')).toThrow('adresse du relais');
+  });
 });

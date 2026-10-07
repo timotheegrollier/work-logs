@@ -177,6 +177,8 @@ export interface SharedStatus {
   address?: string | null;
   /** Compte Windows indiqué à la connexion (`SRVMURGAT\TonNom`), repris par « Se reconnecter ». */
   account?: string | null;
+  /** PWA : le relais ne répond pas (message), la section le montre au lieu de disparaître. */
+  relayError?: string;
   label?: string;
   mount?: string | null;
   reach?: SharedReach;
@@ -320,17 +322,93 @@ const enc = encodeURIComponent;
  * Envoi d'octets au dossier partagé. 202 (en attente) et 409 (conflit) ne sont pas
  * des erreurs : ce sont des issues normales, que l'éditeur affiche.
  */
-async function sendShared(url: string, bytes?: Uint8Array): Promise<SharedSendResult> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream' },
-    // Les octets eux-mêmes, pas un Blob : partout lisibles tels quels (navigateur, Electron, tests).
-    body: bytes ? new Uint8Array(bytes) : undefined,
+
+/**
+ * Client du dossier partagé. `base` vide : le serveur de cet ordinateur (desktop,
+ * dev). Sur la PWA : le **relais** de l'équipe (`api/src/relay.js`, joint par
+ * Tailscale), avec son code d'accès dans `auth`. Mêmes routes, mêmes réponses.
+ */
+export function sharedClient(base: string, auth: () => Record<string, string> = () => ({})) {
+  const call = (path: string, init: RequestInit = {}) =>
+    fetch(base + path, { ...init, headers: { ...auth(), ...((init.headers as Record<string, string> | undefined) ?? {}) } });
+  const failure = (res: Response, payload: { error?: string; code?: string } | null) =>
+    new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
+  const json = async <T>(path: string, init?: RequestInit): Promise<T> => {
+    const res = await call(path, init);
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw failure(res, payload);
+    return payload as T;
+  };
+  const sendJson = <T>(method: string, path: string, body?: unknown) =>
+    json<T>(path, { method, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
+  // Les octets eux-mêmes, pas un Blob : partout lisibles tels quels (navigateur, Electron, tests).
+  const octets = (bytes?: Uint8Array): RequestInit => ({
+    method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: bytes ? new Uint8Array(bytes) : undefined,
   });
-  const payload = await res.json().catch(() => null);
-  if (res.ok || res.status === 409 && payload?.code === 'SHARED_CONFLICT') return payload as SharedSendResult;
-  throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
+  /** Envoi : un conflit (409) est une réponse, pas une erreur. */
+  const send = async (path: string, bytes?: Uint8Array): Promise<SharedSendResult> => {
+    const res = await call(path, octets(bytes));
+    const payload = await res.json().catch(() => null);
+    if (res.ok || res.status === 409 && payload?.code === 'SHARED_CONFLICT') return payload as SharedSendResult;
+    throw failure(res, payload);
+  };
+  return {
+    sharedStatus: () => json<SharedStatus>('/api/shared/status'),
+    /** Partage injoignable : la liste des fichiers gardés sur cet ordinateur, sans erreur. */
+    async sharedList(dir = '') {
+      const res = await call('/api/shared/list' + (dir ? '?dir=' + enc(dir) : ''));
+      const payload = await res.json().catch(() => null);
+      if (res.ok) return payload as SharedListing;
+      if (res.status === 503 && payload?.entries) return { ...payload, offline: true } as SharedListing;
+      throw failure(res, payload);
+    },
+    sharedFile: (path: string) => json<SharedFile>('/api/shared/file?path=' + enc(path)),
+    async sharedContent(hash: string) {
+      const res = await call('/api/shared/content?hash=' + enc(hash));
+      if (!res.ok) throw new ApiError((await res.json().catch(() => null))?.error || 'version introuvable');
+      return new Uint8Array(await res.arrayBuffer());
+    },
+    saveSharedDraft: (path: string, body: { model: unknown; template_hash: string; base_hash: string | null }) =>
+      sendJson<SharedFile>('PUT', '/api/shared/draft?path=' + enc(path), body),
+    discardSharedDraft: (path: string, bytes?: Uint8Array) => json<SharedFile>('/api/shared/draft/discard?path=' + enc(path), octets(bytes)),
+    /** « Fusionner » un conflit : les octets réunis partent avec leur version pour base. */
+    mergeShared: (path: string, theirs: string | null, bytes: Uint8Array) =>
+      send(`/api/shared/merge?path=${enc(path)}${theirs ? `&theirs=${enc(theirs)}` : ''}`, bytes),
+    /** Fichier neuf (octets du modèle) : créé sans jamais écraser un fichier du même nom. */
+    createShared: (path: string, bytes: Uint8Array) => json<SharedFile>('/api/shared/create?path=' + enc(path), octets(bytes)),
+    searchShared: (query: string, dir = '') =>
+      json<SharedSearch>(`/api/shared/search?q=${enc(query)}${dir ? `&dir=${enc(dir)}` : ''}`),
+    pushShared: (path: string, base: string | null, bytes: Uint8Array) =>
+      send('/api/shared/push?path=' + enc(path) + (base ? '&base=' + enc(base) : ''), bytes),
+    async resolveShared(path: string, choice: 'mine' | 'theirs' | 'both', theirs: string | null) {
+      const res = await call('/api/shared/resolve', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, choice, theirs }),
+      });
+      const payload = await res.json().catch(() => null);
+      if (res.ok || res.status === 409 && payload?.code === 'SHARED_CONFLICT') return payload as SharedSendResult;
+      throw failure(res, payload);
+    },
+    sharedVersions: (path: string) => json<{ path: string; versions: SharedVersion[] }>('/api/shared/versions?path=' + enc(path)),
+    restoreSharedVersion: (path: string, id: string) =>
+      sendJson<SharedFile>('POST', `/api/shared/versions/${enc(id)}/restore?path=${enc(path)}`),
+    /** Prendre (ou renouveler) la main. Refusée : qui la tient, sans lever d'erreur. */
+    async lockShared(path: string, takeOver = false): Promise<SharedLockResult> {
+      const res = await call('/api/shared/lock?path=' + enc(path), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ take_over: takeOver }),
+      });
+      const payload = await res.json().catch(() => null);
+      if (res.ok) return { ok: true, file: payload as SharedFile };
+      if (res.status === 409) return { ok: false, code: payload?.code ?? '', error: payload?.error ?? '', lock: payload?.lock ?? null };
+      throw failure(res, payload);
+    },
+    unlockShared: (path: string) => sendJson<SharedFile>('DELETE', '/api/shared/lock?path=' + enc(path)),
+    linkSharedFolder: (projectId: string, dir: string) =>
+      sendJson<SharedStatus>('PUT', `/api/shared/projects/${enc(projectId)}/folder`, { dir }),
+    unlinkSharedFolder: (projectId: string) => sendJson<SharedStatus>('DELETE', `/api/shared/projects/${enc(projectId)}/folder`),
+    setSharedDisplayName: (displayName: string) => sendJson<SharedStatus>('PUT', '/api/shared/settings', { display_name: displayName }),
+  };
 }
+export type SharedClient = ReturnType<typeof sharedClient>;
 
 export const remoteApi = {
   googleStatus: () => req<GoogleStatus>('/api/google/status'),
@@ -396,73 +474,7 @@ export const remoteApi = {
     send<Project>('PUT', `/api/projects/${id}`, body),
   deleteProject: (id: string) => send<{ ok: true }>('DELETE', `/api/projects/${id}`),
 
-  sharedStatus: () => req<SharedStatus>('/api/shared/status'),
-  /** Partage injoignable : la liste des fichiers gardés sur cet ordinateur, sans erreur. */
-  async sharedList(dir = '') {
-    const res = await fetch('/api/shared/list' + (dir ? '?dir=' + enc(dir) : ''));
-    const payload = await res.json().catch(() => null);
-    if (res.ok) return payload as SharedListing;
-    if (res.status === 503 && payload?.entries) return { ...payload, offline: true } as SharedListing;
-    throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
-  },
-  sharedFile: (path: string) => req<SharedFile>('/api/shared/file?path=' + enc(path)),
-  async sharedContent(hash: string) {
-    const res = await fetch('/api/shared/content?hash=' + enc(hash));
-    if (!res.ok) throw new ApiError((await res.json().catch(() => null))?.error || 'version introuvable');
-    return new Uint8Array(await res.arrayBuffer());
-  },
-  saveSharedDraft: (path: string, body: { model: unknown; template_hash: string; base_hash: string | null }) =>
-    send<SharedFile>('PUT', '/api/shared/draft?path=' + enc(path), body),
-  async discardSharedDraft(path: string, bytes?: Uint8Array) {
-    const res = await fetch('/api/shared/draft/discard?path=' + enc(path), {
-      method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: bytes ? new Uint8Array(bytes) : undefined,
-    });
-    const payload = await res.json().catch(() => null);
-    if (!res.ok) throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
-    return payload as SharedFile;
-  },
-  /** « Fusionner » un conflit : les octets réunis partent avec leur version pour base. */
-  mergeShared: (path: string, theirs: string | null, bytes: Uint8Array) =>
-    sendShared(`/api/shared/merge?path=${enc(path)}${theirs ? `&theirs=${enc(theirs)}` : ''}`, bytes),
-  /** Fichier neuf (octets du modèle) : créé sans jamais écraser un fichier du même nom. */
-  async createShared(path: string, bytes: Uint8Array) {
-    const res = await fetch('/api/shared/create?path=' + enc(path), {
-      method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: new Uint8Array(bytes),
-    });
-    const payload = await res.json().catch(() => null);
-    if (!res.ok) throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
-    return payload as SharedFile;
-  },
-  searchShared: (query: string, dir = '') =>
-    req<SharedSearch>(`/api/shared/search?q=${enc(query)}${dir ? `&dir=${enc(dir)}` : ''}`),
-  pushShared: (path: string, base: string | null, bytes: Uint8Array) =>
-    sendShared('/api/shared/push?path=' + enc(path) + (base ? '&base=' + enc(base) : ''), bytes),
-  async resolveShared(path: string, choice: 'mine' | 'theirs' | 'both', theirs: string | null) {
-    const res = await fetch('/api/shared/resolve', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, choice, theirs }),
-    });
-    const payload = await res.json().catch(() => null);
-    if (res.ok || res.status === 409 && payload?.code === 'SHARED_CONFLICT') return payload as SharedSendResult;
-    throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
-  },
-  sharedVersions: (path: string) => req<{ path: string; versions: SharedVersion[] }>('/api/shared/versions?path=' + enc(path)),
-  restoreSharedVersion: (path: string, id: string) =>
-    send<SharedFile>('POST', `/api/shared/versions/${enc(id)}/restore?path=${enc(path)}`),
-  /** Prendre (ou renouveler) la main. Refusée : qui la tient, sans lever d'erreur. */
-  async lockShared(path: string, takeOver = false): Promise<SharedLockResult> {
-    const res = await fetch('/api/shared/lock?path=' + enc(path), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ take_over: takeOver }),
-    });
-    const payload = await res.json().catch(() => null);
-    if (res.ok) return { ok: true, file: payload as SharedFile };
-    if (res.status === 409) return { ok: false, code: payload?.code ?? '', error: payload?.error ?? '', lock: payload?.lock ?? null };
-    throw new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
-  },
-  unlockShared: (path: string) => send<SharedFile>('DELETE', '/api/shared/lock?path=' + enc(path)),
-  linkSharedFolder: (projectId: string, dir: string) =>
-    send<SharedStatus>('PUT', `/api/shared/projects/${enc(projectId)}/folder`, { dir }),
-  unlinkSharedFolder: (projectId: string) => send<SharedStatus>('DELETE', `/api/shared/projects/${enc(projectId)}/folder`),
-  setSharedDisplayName: (displayName: string) => send<SharedStatus>('PUT', '/api/shared/settings', { display_name: displayName }),
+  ...sharedClient(''),
 
   deleteAttachment: (id: string) => send<{ ok: true; driveTrashed?: boolean }>('DELETE', `/api/attachments/${id}`),
   fileUrl: (stored: string) => `/api/files/${stored}`,

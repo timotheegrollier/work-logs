@@ -179,6 +179,10 @@ saisie) + `xlsx-formula.ts` (syntaxe, traduction, dépendances) (Excel, §27), `
 (fusion à trois voies : à la ligne pour le texte et les CSV, à la cellule pour Excel),
 `new-files.ts` (modèles des fichiers neufs : Word, Excel, Markdown, texte, CSV).
 
+Sur la PWA, les mêmes routes sont servies par le **relais** (`api/src/relay.js`, VM du bureau,
+Tailscale, code d'accès, CORS limité à la PWA — §29, `docs/09-RELAIS.md`) ; le front y passe
+par `sharedClient(base, auth)`, réglé dans Paramètres (`web/src/relay-settings.ts`).
+
 Les routes `/api/shared/*` ne répondent qu'à cet ordinateur (`localOnly`) et ne fixent jamais
 le chemin du partage (dialogue natif desktop ou `WORKLOGS_SHARED_ROOT`). Elles passent par
 `shared-service.js` (garde, versions, réessais) et `shared-io.js` (worker borné, disjoncteur).

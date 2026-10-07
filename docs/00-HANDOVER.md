@@ -91,6 +91,31 @@ Décision : §29.
 3. Un bouton « Copier » sur les blocs de code en lecture serait-il utile ? Écarté pour
    l'instant (non demandé).
 
+## Lot du 2026-10-07 — le dossier partagé sur la PWA, par un relais — v0.48.0
+
+Demande de Timo : les procédures du TSE sur la PWA du téléphone (lire, modifier, créer). Choix
+de Timo (§29) : un relais sur **sa VM 172.16.1.203**, joint par **Tailscale** (le téléphone
+`pixel-9a` y est déjà ; la VM pas encore), montage CIFS du seul dossier `00. PROCEDURE` avec
+son compte `SRVMURGAT\TimothéeG`.
+- `api/src/relay.js` : mêmes routes et même `shared-service` que le desktop ; code d'accès
+  (`Bearer`, temps constant), CORS limité à la PWA, préliminaire « réseau privé » ; écoute en
+  local, exposé par `tailscale serve`. Fichiers de déploiement : `relay/` ; mode d'emploi :
+  `docs/09-RELAIS.md`.
+- PWA : `sharedClient(base, auth)` (`web/src/lib.ts`), le desktop en est le cas `base = ''` ;
+  Paramètres › « Dossier partagé du TSE » (adresse + code, vérifiés à l'enregistrement) ;
+  relais injoignable → la section le dit.
+- **Vu dans un vrai navigateur** (Chromium, Pixel 7) : PWA construite (`VITE_PWA=1`) servie
+  d'une adresse, relais d'une autre (CORS appliqué) : réglage, ouverture, modification, envoi —
+  aucun blocage CORS, fichier écrit. Titre d'un fichier qui se coupait en trois sur téléphone :
+  corrigé (l'en-tête passe à la ligne).
+- **Tests** : 223 API (+4 relais), 471 front (+2 PWA par un vrai relais, + maîtrise), 48 desktop,
+  29 scripts, 8 relais Google, 53 navigateur, 15 desktop : **847**. Sous une charge système de 13
+  (autre session en parallèle), 5 tests front ont dépassé leurs délais ; tous verts isolément puis
+  en campagne complète une fois la machine calme.
+- **Reste à faire, avec Timo** : installer sur la VM (il ajoute la clé SSH de ce poste à un
+  compte de la VM ; il saisit lui-même le mot de passe du partage dans `smb.cred` ; il ouvre
+  l'adresse de `tailscale up`), puis régler le téléphone.
+
 ## Lot du 2026-10-06 (2) — créer des fichiers dans le partage — v0.47.0
 
 Demande de Timo : pas de conventions à contrôler, mais **créer des fichiers** (docx, xlsx, md…)

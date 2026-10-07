@@ -40,9 +40,13 @@ const handle = (task) => async (req, res) => {
   }
 };
 
-export function registerSharedRoutes(app, { shared }) {
+/**
+ * `guard` : qui a le droit d'appeler. Par défaut, cet ordinateur seulement ; le
+ * relais (`relay.js`) passe le sien (code d'accès), sa propre porte d'entrée.
+ */
+export function registerSharedRoutes(app, { shared, guard = localOnly }) {
   const router = express.Router();
-  router.use(localOnly);
+  router.use(guard);
 
   if (!shared) {
     router.get('/status', (_req, res) => res.json({ available: false }));

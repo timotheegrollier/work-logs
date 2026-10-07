@@ -384,7 +384,9 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
                 )}
               </div>
             )}
-            {REACH_HELP[reach] && <p className="notice">{REACH_HELP[reach]}</p>}
+            {status.relayError ? (
+              <p className="notice">Le relais du dossier partagé ne répond pas ({status.relayError}). Tailscale est-il allumé sur ce téléphone ?</p>
+            ) : REACH_HELP[reach] && <p className="notice">{REACH_HELP[reach]}</p>}
             {reach === 'unmounted' && status.address && canConnect && (
               <button className="task-primary" disabled={busy} onClick={() => void connect(status.address!, status.account ?? '')}>
                 Se reconnecter à {status.address}

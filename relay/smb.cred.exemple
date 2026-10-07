@@ -1,0 +1,4 @@
+# /etc/worklogs-relais/smb.cred — root:root, 0600. Rempli par Timo sur la VM, jamais copié ailleurs.
+username=TimothéeG
+domain=SRVMURGAT
+password=…

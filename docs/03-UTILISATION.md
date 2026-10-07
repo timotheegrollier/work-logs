@@ -282,8 +282,12 @@ lorsque la colonne Procédures est affichée.
 
 Limite à connaître : Word et Excel **ne voient pas** que tu modifies un fichier dans
 WorkLogs (ils ignorent les verrous des autres applications). Rien n'est perdu pour autant :
-si un collègue enregistre avant toi, ton envoi te demande quoi faire. La PWA (téléphone)
-n'a pas accès au dossier partagé.
+si un collègue enregistre avant toi, ton envoi te demande quoi faire.
+
+**Sur le téléphone (PWA)**, le dossier des procédures passe par le **relais du bureau** (la VM,
+jointe par Tailscale) : Paramètres › Dossier partagé du TSE, adresse et code d'accès du relais
+(installation : `docs/09-RELAIS.md`). Ensuite tout est pareil : lire, modifier, créer,
+envoyer, conflits. Tailscale doit être allumé sur le téléphone.
 
 ## Retrouver
 

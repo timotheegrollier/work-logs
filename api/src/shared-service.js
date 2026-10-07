@@ -165,6 +165,11 @@ export function createSharedService({
   user = os.userInfo().username,
   host = os.hostname(),
   searchMs = 8000,
+  /**
+   * `false` sur le relais : les projets vivent sur le téléphone (la PWA), pas dans
+   * cette base. Un dossier se relie alors à n'importe quel identifiant de projet.
+   */
+  projectsKnown = true,
 }) {
   fs.mkdirSync(blobDir, { recursive: true });
 
@@ -721,8 +726,9 @@ export function createSharedService({
         reach: state.reach,
         since: io.state().since,
         displayName: displayName(),
-        projects: Object.fromEntries(db.prepare(
-          'SELECT f.project_id, f.rel_dir FROM shared_project_folders f JOIN projects p ON p.id = f.project_id',
+        projects: Object.fromEntries(db.prepare(projectsKnown
+          ? 'SELECT f.project_id, f.rel_dir FROM shared_project_folders f JOIN projects p ON p.id = f.project_id'
+          : 'SELECT project_id, rel_dir FROM shared_project_folders',
         ).all().map((row) => [row.project_id, row.rel_dir])),
         pending: count('send_requested=1'),
         conflicts: count("state='conflict'"),
@@ -1151,7 +1157,7 @@ export function createSharedService({
 
     /** Relier un projet à un sous-dossier du partage : le filtre de projet n'affiche que lui. */
     async linkProject(projectId, dir) {
-      if (!db.prepare('SELECT 1 FROM projects WHERE id=?').get(projectId)) {
+      if (projectsKnown ? !db.prepare('SELECT 1 FROM projects WHERE id=?').get(projectId) : !/^[\w-]{1,64}$/.test(String(projectId))) {
         throw new SharedError(404, 'SHARED_NO_PROJECT', 'Projet introuvable.');
       }
       relativeParts(dir);

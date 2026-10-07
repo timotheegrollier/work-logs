@@ -1,5 +1,6 @@
 import {
   ApiError,
+  sharedClient,
   type Api,
   type AppState,
   type Attachment,
@@ -23,6 +24,7 @@ import { buildGoogleUpdate, documentBody, documentTabs, selectDocumentTab } from
 import { buildPreservingUpdate, importGoogleDocument } from '../../../api/src/google-preserve.js';
 // @ts-expect-error — idem : réconciliation locale/distance, sans `node:sqlite`.
 import { mergeGoogleChanges } from '../../../api/src/google-merge.js';
+import { readRelay } from '../relay-settings';
 import { beginWebLogin, builtinWebClientId, clearWebClient, disconnectWeb, downloadDriveBinary, webGoogleRequest, webGoogleStatus } from './google-web';
 
 /** Projet et présence locale de chaque document Drive (ses onglets partagent le projet). */
@@ -82,7 +84,14 @@ const kindOf = (value: unknown, fallback: 'note' | 'procedure' | null = 'note'):
   if (cleaned === '') return fallback;
   return cleaned === 'note' || cleaned === 'procedure' ? cleaned : null;
 };
-const SHARED_DESKTOP_ONLY = 'Dossier partagé : disponible dans l’application desktop.';
+const SHARED_DESKTOP_ONLY = 'Dossier partagé : règle le relais dans Paramètres (ou utilise l’application desktop).';
+
+/** Le relais du dossier partagé réglé sur ce téléphone, ou `null`. */
+function relayClient() {
+  const settings = readRelay();
+  return settings ? sharedClient(settings.url, () => ({ Authorization: `Bearer ${settings.token}` })) : null;
+}
+const relay = () => relayClient() ?? fail(SHARED_DESKTOP_ONLY);
 const fail = (message: string): never => {
   throw new ApiError(message);
 };
@@ -969,26 +978,39 @@ export const localApi: Api = {
     return { ok: true };
   },
 
-  // Dossier partagé : un navigateur n'atteint pas un partage SMB. La section
-  // n'apparaît pas ; tout autre appel est une erreur explicite.
-  sharedStatus: async () => ({ available: false }),
-  sharedList: async () => fail(SHARED_DESKTOP_ONLY),
-  sharedFile: async () => fail(SHARED_DESKTOP_ONLY),
-  sharedContent: async () => fail(SHARED_DESKTOP_ONLY),
-  saveSharedDraft: async () => fail(SHARED_DESKTOP_ONLY),
-  discardSharedDraft: async () => fail(SHARED_DESKTOP_ONLY),
-  pushShared: async () => fail(SHARED_DESKTOP_ONLY),
-  mergeShared: async () => fail(SHARED_DESKTOP_ONLY),
-  searchShared: async () => fail(SHARED_DESKTOP_ONLY),
-  createShared: async () => fail(SHARED_DESKTOP_ONLY),
-  resolveShared: async () => fail(SHARED_DESKTOP_ONLY),
-  sharedVersions: async () => fail(SHARED_DESKTOP_ONLY),
-  restoreSharedVersion: async () => fail(SHARED_DESKTOP_ONLY),
-  lockShared: async () => fail(SHARED_DESKTOP_ONLY),
-  unlockShared: async () => fail(SHARED_DESKTOP_ONLY),
-  linkSharedFolder: async () => fail(SHARED_DESKTOP_ONLY),
-  unlinkSharedFolder: async () => fail(SHARED_DESKTOP_ONLY),
-  setSharedDisplayName: async () => fail(SHARED_DESKTOP_ONLY),
+  // Dossier partagé : un navigateur n'atteint pas un partage SMB. La PWA passe par
+  // le relais de l'équipe (VM du bureau, Tailscale) s'il est réglé dans Paramètres ;
+  // sinon la section n'apparaît pas et tout autre appel est une erreur explicite.
+  sharedStatus: async () => {
+    const client = relayClient();
+    if (!client) return { available: false };
+    try {
+      return await client.sharedStatus();
+    } catch (error) {
+      // Relais injoignable (Tailscale éteint, VM arrêtée) : la section le dit au lieu de disparaître.
+      return {
+        available: true, configurable: false, root: readRelay()?.url ?? '', label: 'Relais du dossier partagé',
+        reach: 'offline' as const, relayError: (error as Error).message,
+      };
+    }
+  },
+  sharedList: async (dir) => relay().sharedList(dir),
+  sharedFile: async (path) => relay().sharedFile(path),
+  sharedContent: async (hash) => relay().sharedContent(hash),
+  saveSharedDraft: async (path, body) => relay().saveSharedDraft(path, body),
+  discardSharedDraft: async (path, bytes) => relay().discardSharedDraft(path, bytes),
+  pushShared: async (path, base, bytes) => relay().pushShared(path, base, bytes),
+  mergeShared: async (path, theirs, bytes) => relay().mergeShared(path, theirs, bytes),
+  searchShared: async (query, dir) => relay().searchShared(query, dir),
+  createShared: async (path, bytes) => relay().createShared(path, bytes),
+  resolveShared: async (path, choice, theirs) => relay().resolveShared(path, choice, theirs),
+  sharedVersions: async (path) => relay().sharedVersions(path),
+  restoreSharedVersion: async (path, id) => relay().restoreSharedVersion(path, id),
+  lockShared: async (path, takeOver) => relay().lockShared(path, takeOver),
+  unlockShared: async (path) => relay().unlockShared(path),
+  linkSharedFolder: async (projectId, dir) => relay().linkSharedFolder(projectId, dir),
+  unlinkSharedFolder: async (projectId) => relay().unlinkSharedFolder(projectId),
+  setSharedDisplayName: async (displayName) => relay().setSharedDisplayName(displayName),
   deleteAttachment: async (id) => {
     const { attachments } = await tables();
     const row = (await attachments.get(id)) ?? fail('pièce jointe introuvable');

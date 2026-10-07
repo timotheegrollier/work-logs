@@ -1,0 +1,28 @@
+# Relais du dossier partagé pour la PWA (docs/09-RELAIS.md). Écoute en local
+# (127.0.0.1:8420) ; seul `tailscale serve` l'expose, en HTTPS, au réseau Tailscale.
+[Unit]
+Description=WorkLogs — relais du dossier partagé du TSE (PWA)
+After=network-online.target remote-fs.target
+Wants=network-online.target
+# Le dossier des procédures du TSE, monté seul (CIFS) : le relais ne voit rien d’autre.
+RequiresMountsFor=/mnt/tse-procedures
+
+[Service]
+Type=simple
+User=worklogs-relais
+Group=worklogs-relais
+EnvironmentFile=/etc/worklogs-relais/env
+WorkingDirectory=/opt/worklogs-relais/api
+ExecStart=/usr/bin/node src/relay.js
+Restart=on-failure
+RestartSec=5
+# Durcissement : le relais n'écrit que ses données et le partage monté.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/worklogs-relais /mnt/tse-procedures
+StateDirectory=worklogs-relais
+
+[Install]
+WantedBy=multi-user.target

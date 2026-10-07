@@ -18,6 +18,8 @@ import { ColumnResizer } from './components/ColumnResizer';
 import { SharedFolder } from './components/SharedFolder';
 import { SharedFileEditor } from './components/SharedFileEditor';
 import { SharedSettings } from './components/SharedSettings';
+import { RelaySettings } from './components/RelaySettings';
+import { readRelay } from './relay-settings';
 import { hasLeaveGuard, requestLeave } from './shared-leave';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
 
@@ -36,7 +38,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(readSelected);
   // Fichier du dossier partagé ouvert au centre, à la place de l'entrée (§25).
   // Desktop et dev seulement : la PWA n'atteint pas un partage SMB.
-  const [sharedPath, setSharedPath] = useState<string | null>(() => (isPwa ? null : readSharedPath()));
+  // PWA : le dossier partagé passe par le relais du bureau, s'il est réglé.
+  const [sharedPath, setSharedPath] = useState<string | null>(() => (isPwa && !readRelay() ? null : readSharedPath()));
   const [sharedRevision, setSharedRevision] = useState(0);
   const bumpShared = useCallback(() => setSharedRevision((n) => n + 1), []);
   const [entry, setEntry] = useState<Entry | null>(null);
@@ -581,16 +584,15 @@ export default function App() {
               void reload();
             }}
           />
-          {!isPwa && (
-            <SharedFolder
-              active={showProcedures}
-              projectId={projectId}
-              projects={state?.projects ?? []}
-              selectedPath={sharedPath}
-              revision={sharedRevision}
-              onOpen={(path) => void openShared(path)}
-            />
-          )}
+          {/* PWA : absente tant que le relais n'est pas réglé (le statut dit « indisponible »). */}
+          <SharedFolder
+            active={showProcedures}
+            projectId={projectId}
+            projects={state?.projects ?? []}
+            selectedPath={sharedPath}
+            revision={sharedRevision}
+            onOpen={(path) => void openShared(path)}
+          />
         </aside>
       </div>
       {showSettings && createPortal((
@@ -614,7 +616,8 @@ export default function App() {
           <div className="settings-content">
             <GoogleDrive onRestored={reload} onOpen={openDriveEntry} onDocuments={() => { setShowSettings(false); setShowDocuments(true); }} />
             <AiSettings />
-            {!isPwa && <SharedSettings />}
+            {isPwa && <RelaySettings onChange={() => setSharedRevision((n) => n + 1)} />}
+            <SharedSettings key={`nom-${sharedRevision}`} />
             {/* Largeurs au pixel près : les poignées entre les colonnes font le
                 geste courant, ce réglage fin n'a pas besoin de l'en-tête. */}
             <section className="display-settings" aria-label="Affichage">

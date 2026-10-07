@@ -1145,3 +1145,36 @@ dans un bloc (`enableTabIndentation` existe, mais Tab ne sortirait plus de l'éd
 
 **Rouvrir si** les documents riches du journal doivent aussi s'ouvrir en lecture : il
 suffit d'élargir `hasModes` dans `EntryEditor.tsx` (et d'adapter le parcours desktop).
+
+## 29. Dossier partagé sur la PWA : un relais sur la VM du bureau, joint par Tailscale — 2026-10-07
+
+**Le besoin.** Timo veut les procédures du TSE (`\\SRVMURGAT\…\00. PROCEDURE`) sur la PWA du
+téléphone : lire, modifier, créer, comme sur le desktop. Un navigateur ne parle pas SMB et le
+serveur est sur le réseau du bureau : il faut un relais.
+
+**Le choix (Timo, 2026-10-07).** Un petit serveur sur **sa VM `172.16.1.203`** (`api/src/relay.js`),
+joint par **Tailscale** (le téléphone `pixel-9a` est déjà dans son réseau), compte
+`SRVMURGAT\TimothéeG` pour le montage. Écartés : le PC Linux comme passerelle (doit rester
+allumé), une copie dans Google Drive (fichiers de l'entreprise hors de l'entreprise), le Wi-Fi
+du bureau seul (certificat de l'AC interne à installer sur le téléphone), un service sur le
+serveur Windows (le plus lourd).
+- **Même code** : le relais crée un `shared-service` (verrous, envoi gardé, conflits, versions,
+  création exclusive) et enregistre les mêmes routes ; la PWA utilise les mêmes composants, via
+  `sharedClient(base, auth)` (`web/src/lib.ts`), dont le desktop est le cas `base = ''`.
+- **Porte d'entrée** : un code d'accès aléatoire (32 octets, `Authorization: Bearer`, comparé en
+  temps constant) au lieu de `localOnly` ; CORS limité à l'origine de la PWA, préliminaire
+  « réseau privé » (`Access-Control-Allow-Private-Network`) accepté. Le relais écoute en local ;
+  seul `tailscale serve` l'expose, en HTTPS avec un certificat `*.ts.net` valide, et **seulement
+  au réseau Tailscale** : rien sur Internet.
+- **Montage du seul dossier des procédures** (CIFS, sous-chemin du partage `D`) : la VM ne voit
+  rien d'autre du serveur. Mot de passe dans `/etc/worklogs-relais/smb.cred` (root, 0600), saisi
+  par Timo sur la VM — il ne passe pas par WorkLogs.
+- **Projets** : ils vivent sur le téléphone, pas dans la base du relais : un dossier s'y relie à
+  n'importe quel identifiant de projet (`projectsKnown: false`).
+- Relais injoignable (Tailscale éteint, VM arrêtée) : la section reste, « Injoignable », et dit
+  quoi vérifier, au lieu de disparaître.
+- Le code d'accès reste sur le téléphone (stockage de la PWA), jamais synchronisé.
+
+**Limites assumées.** Hors réseau, rien (pas de copie hors ligne sur le téléphone : les
+brouillons vivent sur le relais) ; un seul compte Windows pour tout ce qui passe par le relais
+(les verrous portent « Timothée Grollier (mobile) »). Installation et dépannage : `09-RELAIS.md`.
