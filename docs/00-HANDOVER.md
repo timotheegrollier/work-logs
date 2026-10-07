@@ -112,9 +112,10 @@ son compte `SRVMURGAT\TimothéeG`.
   29 scripts, 8 relais Google, 53 navigateur, 15 desktop : **847**. Sous une charge système de 13
   (autre session en parallèle), 5 tests front ont dépassé leurs délais ; tous verts isolément puis
   en campagne complète une fois la machine calme.
-- **Reste à faire, avec Timo** : installer sur la VM (il ajoute la clé SSH de ce poste à un
-  compte de la VM ; il saisit lui-même le mot de passe du partage dans `smb.cred` ; il ouvre
-  l'adresse de `tailscale up`), puis régler le téléphone.
+- **Installé sur la VM le 2026-10-07** (clé SSH de ce poste sur le compte root ; mot de passe du
+  partage saisi par Timo ; VM ajoutée à Tailscale par Timo) : relais
+  `https://worklogs-relais.tail614cd0.ts.net:8443`, vérifié depuis le réseau Tailscale (détail :
+  `docs/09-RELAIS.md` « Installation réelle »). Reste : régler le téléphone et l'essayer.
 
 ## Lot du 2026-10-06 (2) — créer des fichiers dans le partage — v0.47.0
 
