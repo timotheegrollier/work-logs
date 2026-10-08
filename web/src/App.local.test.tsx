@@ -35,22 +35,33 @@ describe('PWA locale (mêmes écrans, backend IndexedDB/mémoire)', () => {
     expect((await localApi.state()).stats.entries).toBe(1);
   });
 
+  // Écran complet, éditeur riche et vraie sauvegarde différée (600 ms). Sous charge,
+  // mesuré le 2026-10-08 : `getByRole` sur tout l'écran ≈ 1 s, la frappe touche par
+  // touche ≈ 2 s. Requêtes limitées à leur région, textes collés (Entrée reste frappée :
+  // c'est le geste) ; amorçage, création et sauvegarde ont 10 s, le test 30 s.
   test('créer une entrée et une tâche depuis l’interface, sans serveur', async () => {
+    const stockage = { timeout: 10_000 };
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByRole('region', { name: 'Journal' });
+    const list = within(await screen.findByRole('region', { name: 'Journal' }, stockage));
 
-    await user.click(screen.getByRole('button', { name: /Nouvelle entrée/ }));
-    expect(await screen.findByLabelText('Titre de l’entrée')).toHaveValue('Sans titre');
-    await user.clear(screen.getByLabelText('Titre de l’entrée'));
-    await user.type(screen.getByLabelText('Titre de l’entrée'), 'Marché fermier');
-    await waitFor(() => expect(screen.getByText('Enregistré')).toBeInTheDocument());
-    expect(await within(journal()).findByText('Marché fermier')).toBeInTheDocument();
+    await user.click(list.getByRole('button', { name: /Nouvelle entrée/ }));
+    // L'éditeur montre d'abord l'entrée d'amorçage : attendre que la nouvelle le remplace.
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Sans titre'), stockage);
+    const entry = within(editor());
+    const title = entry.getByLabelText('Titre de l’entrée');
+    await user.clear(title);
+    await user.paste('Marché fermier');
+    await waitFor(() => expect(entry.getByText('Enregistré')).toBeInTheDocument(), stockage);
+    expect(await list.findByText('Marché fermier', undefined, stockage)).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText('Nouvelle tâche'), 'Acheter des plants{Enter}');
-    expect(await within(board()).findByText('Acheter des plants')).toBeInTheDocument();
+    const tasks = within(board());
+    await user.click(tasks.getByLabelText('Nouvelle tâche'));
+    await user.paste('Acheter des plants');
+    await user.keyboard('{Enter}');
+    expect(await tasks.findByText('Acheter des plants', undefined, stockage)).toBeInTheDocument();
     expect((await localApi.state()).stats.entries).toBe(2);
-  });
+  }, 30_000);
 
   test('Exporter télécharge le JSON local', async () => {
     const user = userEvent.setup();
