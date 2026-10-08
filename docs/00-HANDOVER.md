@@ -1,7 +1,7 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-08 · Version : v0.49.1 (lots courants non publiés).
-> **Lots courants :**
+> **Mise à jour :** 2026-10-08 · Version : v0.50.0 — trois lots, intégrés ensemble.
+> **Lots de la v0.50.0 :**
 > - **IA dans les procédures du dossier partagé** (« ✨ Suggérer une procédure », « ✨ Mettre
 >   en page » sur les `.docx`, `.md`, `.txt`) et procédures suggérées **concises**, partout.
 >   Détail : « Lot du 2026-10-08 — IA dans les procédures du partage » ci-dessous ; décision §30.
@@ -10,6 +10,14 @@
 >   liée à sa source. Détail : « Lot du 2026-10-08 (2) » ci-dessous ; décision §31.
 > - **Relais** : nom affiché de la racine (`WORKLOGS_RELAY_LABEL`), installation réelle sur la
 >   VM consignée dans `09-RELAIS.md` (commit `3ce24b3`, resté hors de la 0.49.x).
+>
+> **Recette de l'intégration** (branche `integration/v0.50.0` : les trois lots fusionnés sur
+> v0.49.1) : 230 API, 504 front, 48 desktop, 29 scripts, 8 relais, 57 navigateur, 15 desktop —
+> **891**, étape par étape. `check.sh` d'un seul tenant est resté rouge deux fois sur **un** test,
+> « par le relais du bureau » (`App.local.test.tsx`) : délai de 5 s dépassé sous une charge de
+> 15 à 20 (autres copies de travail en campagne). Vert seul, et toute la suite front à deux
+> workers (504/504) ; déjà vu sur la base avant les lots ; une session travaille à le stabiliser.
+> CI GitHub de chaque lot : verte, 4 jobs sur 4.
 >
 > **Correctif du 2026-10-08 (v0.49.1) :** « Nouvelle entrée » et « Nouveau document » réaffichent
 > la colonne Écriture si elle était repliée, comme ouvrir une entrée depuis le journal ou
