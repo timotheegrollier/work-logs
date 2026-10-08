@@ -1397,7 +1397,8 @@ describe('organiser les tâches', () => {
     await user.click(screen.getByRole('button', { name: 'Enregistrer' }));
 
     await waitFor(() => expect(row(api.db, 'SELECT priority FROM tasks WHERE id=?', 'tk_1').priority).toBe('high'));
-    expect(await within(board()).findByText('Haute')).toBeInTheDocument();
+    // La pastille de la carte : la vue rapide « ▲ Haute » porte le même mot.
+    expect(await within(board()).findByText('Haute', { selector: '.card .priority' })).toBeInTheDocument();
     expect(within(board()).queryByText('Normale')).not.toBeInTheDocument();
   });
 
@@ -1408,6 +1409,150 @@ describe('organiser les tâches', () => {
 
     expect(await within(board()).findByText('hier')).toHaveClass('is-late');
     expect(await screen.findByText(/en retard/)).toHaveTextContent('1');
+  });
+
+  describe('vues rapides', () => {
+    const hier = () => new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    const views = () => within(board()).getByRole('group', { name: 'Filtrer les tâches' });
+    const titles = () => within(board()).getAllByRole('button', { name: /^Tâche / }).map((button) => button.textContent);
+
+    test('comptent les tâches à surveiller et les montrent d’un clic', async () => {
+      const user = userEvent.setup();
+      const today = new Date().toISOString().slice(0, 10);
+      seedData(api.db, {
+        tasks: [
+          { id: 'tk_late', title: 'Tâche en retard', due_date: hier() },
+          { id: 'tk_today', title: 'Tâche du jour', due_date: today },
+          { id: 'tk_doing', title: 'Tâche en cours', status: 'doing' },
+          { id: 'tk_pin', title: 'Tâche épinglée', pinned: 1 },
+          { id: 'tk_high', title: 'Tâche urgente' },
+          { id: 'tk_plain', title: 'Tâche ordinaire' },
+          // Terminée : ni en retard, ni épinglée, ni prioritaire.
+          { id: 'tk_done', title: 'Tâche finie', status: 'done', due_date: hier(), pinned: 1 },
+        ],
+      });
+      api.db.prepare("UPDATE tasks SET priority='high' WHERE id IN ('tk_high','tk_done')").run();
+      render(<App />);
+
+      await within(board()).findByText('Tâche ordinaire');
+      for (const name of ['En retard 1', 'Aujourd\'hui 1', 'En cours 1', 'Épinglées 1', 'Haute 1']) {
+        expect(within(views()).getByRole('button', { name })).toHaveAttribute('aria-pressed', 'false');
+      }
+      expect(within(views()).getByRole('button', { name: 'Toutes' })).toHaveAttribute('aria-pressed', 'true');
+
+      await user.click(within(views()).getByRole('button', { name: 'En retard 1' }));
+      expect(within(views()).getByRole('button', { name: 'En retard 1' })).toHaveAttribute('aria-pressed', 'true');
+      expect(titles()).toEqual(['Tâche en retard']);
+      // Seules les colonnes où la vue trouve quelque chose restent.
+      expect(within(board()).getAllByRole('heading').map((heading) => heading.textContent)).toEqual(['À faire 1']);
+
+      await user.click(within(views()).getByRole('button', { name: 'En cours 1' }));
+      expect(titles()).toEqual(['Tâche en cours']);
+      await user.click(within(views()).getByRole('button', { name: 'Épinglées 1' }));
+      expect(titles()).toEqual(['Tâche épinglée']);
+      await user.click(within(views()).getByRole('button', { name: 'Haute 1' }));
+      expect(titles()).toEqual(['Tâche urgente']);
+      await user.click(within(views()).getByRole('button', { name: "Aujourd'hui 1" }));
+      expect(titles()).toEqual(['Tâche du jour']);
+
+      // Recliquer la vue active la lève, comme une pastille de projet.
+      await user.click(within(views()).getByRole('button', { name: "Aujourd'hui 1" }));
+      expect(titles()).toHaveLength(7);
+      await user.click(within(views()).getByRole('button', { name: 'En cours 1' }));
+      await user.click(within(views()).getByRole('button', { name: 'Toutes' }));
+      expect(titles()).toHaveLength(7);
+    });
+
+    test('rien à surveiller : pas de pastilles', async () => {
+      seedData(api.db, { tasks: [{ id: 'tk_1', title: 'Tâche calme' }] });
+      render(<App />);
+
+      await within(board()).findByText('Tâche calme');
+      expect(within(board()).queryByRole('group', { name: 'Filtrer les tâches' })).not.toBeInTheDocument();
+    });
+
+    test('une vue vidée le dit et garde sa pastille pour en sortir', async () => {
+      const user = userEvent.setup();
+      seedData(api.db, {
+        tasks: [
+          { id: 'tk_late', title: 'Tâche en retard', due_date: hier() },
+          { id: 'tk_plain', title: 'Tâche ordinaire' },
+        ],
+      });
+      render(<App />);
+
+      await user.click(await within(board()).findByRole('button', { name: 'En retard 1' }));
+      await user.click(within(board()).getByLabelText('Terminer Tâche en retard'));
+
+      expect(await within(board()).findByText('Rien en retard.')).toBeInTheDocument();
+      expect(within(views()).getByRole('button', { name: 'En retard 0' })).toHaveAttribute('aria-pressed', 'true');
+      await user.click(within(views()).getByRole('button', { name: 'Toutes' }));
+      expect(await within(board()).findByText('Tâche ordinaire')).toBeInTheDocument();
+      // Plus rien à surveiller : les pastilles s'effacent.
+      expect(within(board()).queryByRole('group', { name: 'Filtrer les tâches' })).not.toBeInTheDocument();
+    });
+
+    test('ajouter une tâche lève la vue pour la montrer', async () => {
+      const user = userEvent.setup();
+      seedData(api.db, { tasks: [{ id: 'tk_doing', title: 'Tâche en cours', status: 'doing' }] });
+      render(<App />);
+
+      await user.click(await within(board()).findByRole('button', { name: 'En cours 1' }));
+      await user.type(screen.getByLabelText('Nouvelle tâche'), 'Tâche neuve{Enter}');
+
+      expect(await within(board()).findByText('Tâche neuve')).toBeInTheDocument();
+      expect(within(views()).getByRole('button', { name: 'Toutes' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    test('déposer sur une carte d’une vue la place dans la colonne entière', async () => {
+      seedData(api.db, {
+        tasks: [
+          { id: 'tk_a', title: 'Tâche ordinaire' },
+          { id: 'tk_b', title: 'Tâche en retard', due_date: hier() },
+          { id: 'tk_c', title: 'Tâche en cours en retard', status: 'doing', due_date: hier() },
+        ],
+      });
+      render(<App />);
+
+      fireEvent.click(await within(board()).findByRole('button', { name: 'En retard 2' }));
+      const dataTransfer = { data: {} as Record<string, string>, setData(k: string, v: string) { this.data[k] = v; }, getData(k: string) { return this.data[k]; } };
+      fireEvent.dragStart(within(board()).getByText('Tâche en cours en retard').closest('.card')!, { dataTransfer });
+      fireEvent.drop(within(board()).getByText('Tâche en retard').closest('.card')!, { dataTransfer });
+
+      // « Tâche ordinaire » est cachée par la vue mais garde sa place devant.
+      const todo = () => (api.db.prepare("SELECT id FROM tasks WHERE status='todo' ORDER BY position").all() as { id: string }[]).map((task) => task.id);
+      await waitFor(() => expect(todo()).toEqual(['tk_a', 'tk_c', 'tk_b']));
+    });
+
+    test('les compteurs de l’en-tête ouvrent les tâches, et lèvent le projet s’il en cache', async () => {
+      const user = userEvent.setup();
+      seedData(api.db, {
+        projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Bravo' }],
+        tasks: [
+          { id: 'tk_doing', title: 'Tâche en cours', status: 'doing', project_id: 'pr_a' },
+          { id: 'tk_late', title: 'Tâche en retard', due_date: hier(), project_id: 'pr_b' },
+        ],
+      });
+      localStorage.setItem('worklogs-project', 'pr_a');
+      localStorage.setItem('worklogs-show-right', '0');
+      render(<App />);
+      const header = await screen.findByRole('banner');
+      const alpha = () => within(filters()).getByRole('button', { name: /Alpha/ });
+
+      // La tâche en cours est dans Alpha : le projet reste filtré.
+      await user.click(await within(header).findByRole('button', { name: '1 en cours' }));
+      expect(within(header).getByRole('button', { name: 'Tâches' })).toHaveAttribute('aria-pressed', 'true');
+      expect(within(views()).getByRole('button', { name: 'En cours 1' })).toHaveAttribute('aria-pressed', 'true');
+      expect(alpha()).toHaveAttribute('aria-pressed', 'true');
+      expect(titles()).toEqual(['Tâche en cours']);
+
+      // La tâche en retard est dans Bravo : le filtre Alpha la cacherait, il est levé.
+      await user.click(within(header).getByRole('button', { name: '1 en retard' }));
+      await waitFor(() => expect(within(filters()).getByRole('button', { name: 'Tout' })).toHaveAttribute('aria-pressed', 'true'));
+      expect(await within(board()).findByText('Tâche en retard')).toBeInTheDocument();
+      expect(within(views()).getByRole('button', { name: 'En retard 1' })).toHaveAttribute('aria-pressed', 'true');
+      expect(titles()).toEqual(['Tâche en retard']);
+    });
   });
 
   test('supprime une tâche', async () => {

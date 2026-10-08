@@ -139,6 +139,16 @@ rendu approximatif.
 - **Priorité** : chaque carte affiche sa pastille — Basse, Normale ou Haute (▲ rouge). Elle ne réordonne pas la colonne : l'ordre reste celui du glisser-déposer.
 - **★** met la tâche en avant (liseré coloré à gauche), indépendamment de sa priorité.
 - Une échéance dépassée s'affiche en rouge, et le compteur « en retard » apparaît en haut.
+- **Vues rapides** : sous « Nouvelle tâche… », des pastilles comptent ce qui réclame
+  l'attention — **En retard**, **Aujourd'hui** (échéance du jour), **En cours**, **Épinglées**,
+  **▲ Haute** (priorité haute). Une tâche terminée n'entre dans aucune vue. Un clic n'affiche
+  que ces tâches, dans leurs colonnes ; recliquer ou **Toutes** rend la colonne entière.
+  Une pastille à zéro ne s'affiche pas. La vue se combine avec le projet et la recherche ;
+  ajouter une tâche la lève, pour voir la nouvelle arriver. Elle n'est pas retenue au
+  redémarrage.
+- Sur grand écran, « N en cours » et « N en retard » de l'en-tête sont cliquables : ils
+  ouvrent le panneau Tâches sur la vue correspondante. Ces compteurs portent sur toute la
+  base ; si le projet filtré ou la recherche en cachent une partie, ils sont levés.
 - **Créer une tâche liée** depuis l’entrée ouverte préremplit son titre et permet d’ajouter une échéance. La tâche apparaît directement dans le panneau de droite avec cette entrée comme contexte.
 - **Relier un document** ouvre la liste des entrées disponibles. Choisir une entrée locale ou un onglet Google puis cliquer sur **Relier** ; chaque document lié reste visible sur la carte avec son origine.
 - Cliquer sur le titre d'un document lié l'ouvre au centre. Le bouton ✕ retire seulement l'association, sans supprimer le document. Une même entrée peut fournir le contexte de plusieurs tâches.

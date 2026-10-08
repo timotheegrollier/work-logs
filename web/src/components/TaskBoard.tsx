@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { COLUMNS, PRIORITIES, api, dayLabel, isOverdue, priorityLabel, subtasksMd, type Entry, type EntrySummary, type Priority, type Project, type Status, type Task } from '../lib';
+import { COLUMNS, PRIORITIES, TASK_VIEWS, api, dayLabel, isOverdue, priorityLabel, subtasksMd, todayISO, type Entry, type EntrySummary, type Priority, type Project, type Status, type Task, type TaskView } from '../lib';
 import { draftProcedure, MAX_SOURCE_DOCUMENTS, readAiSettings, suggestSubtasks, taskSuggestContext, type DraftedProcedure, type SuggestContext } from '../ai-suggest';
 import { richToMarkdown } from '../rich-markdown';
 import { ProcedureDraft } from './ProcedureDraft';
@@ -11,6 +11,8 @@ export function TaskBoard({
   entries,
   projectId,
   projects,
+  view,
+  onView,
   onOpenDocument,
   onProcedureCreated,
   onChanged,
@@ -19,6 +21,8 @@ export function TaskBoard({
   entries: EntrySummary[];
   projectId: string;
   projects: Project[];
+  view: TaskView | null;
+  onView: (view: TaskView | null) => void;
   onOpenDocument: (entryId: string) => void;
   /** Procédure tirée d'une tâche par l'IA, créée : l'app l'ouvre. */
   onProcedureCreated: (procedure: Entry) => void;
@@ -27,11 +31,18 @@ export function TaskBoard({
   const [title, setTitle] = useState('');
   const [over, setOver] = useState<Status | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const today = todayISO();
+  const active = TASK_VIEWS.find((candidate) => candidate.id === view);
+  const counts = new Map(TASK_VIEWS.map((candidate) => [candidate.id, tasks.filter((task) => candidate.match(task, today)).length]));
+  // Une vue vide n'apprend rien : elle s'efface, sauf celle qu'on regarde.
+  const views = TASK_VIEWS.filter((candidate) => counts.get(candidate.id)! > 0 || candidate.id === view);
 
   const add = async () => {
     if (!title.trim()) return;
     await api.createTask({ title: title.trim(), project_id: projectId || null });
     setTitle('');
+    // Une tâche neuve n'entre dans aucune vue : on lève le filtre pour la voir arriver.
+    onView(null);
     onChanged();
   };
 
@@ -60,8 +71,33 @@ export function TaskBoard({
         </button>
       </div>
 
+      {views.length > 0 && (
+        <div className="chips task-views" role="group" aria-label="Filtrer les tâches">
+          <button type="button" className={'chip' + (active ? '' : ' is-on')} aria-pressed={!active} onClick={() => onView(null)}>
+            Toutes
+          </button>
+          {views.map((candidate) => (
+            <button
+              key={candidate.id}
+              type="button"
+              className={'chip task-view is-' + candidate.id + (candidate.id === view ? ' is-on' : '')}
+              aria-pressed={candidate.id === view}
+              title={candidate.hint}
+              onClick={() => onView(candidate.id === view ? null : candidate.id)}
+            >
+              {candidate.icon && <span aria-hidden="true">{candidate.icon}</span>}
+              {candidate.label} <span className="count">{counts.get(candidate.id)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {active && counts.get(active.id) === 0 && <p className="empty">{active.empty}</p>}
+
       {COLUMNS.map((column) => {
         const inColumn = tasks.filter((t) => t.status === column.id);
+        const shown = active ? inColumn.filter((task) => active.match(task, today)) : inColumn;
+        // Une vue ne garde que les colonnes où elle trouve quelque chose.
+        if (active && shown.length === 0) return null;
         return (
           <div
             key={column.id}
@@ -74,10 +110,10 @@ export function TaskBoard({
             onDrop={(e) => drop(e, column.id, inColumn.length)}
           >
             <h2>
-              {column.label} <span className="count">{inColumn.length}</span>
+              {column.label} <span className="count">{shown.length}</span>
             </h2>
             <ul>
-              {inColumn.map((task, index) => (
+              {shown.map((task) => (
                 <li key={task.id}>
                   <TaskCard
                     task={task}
@@ -89,7 +125,8 @@ export function TaskBoard({
                     onOpenDocument={onOpenDocument}
                     onProcedureCreated={onProcedureCreated}
                     onChanged={onChanged}
-                    onDrop={(e) => drop(e, column.id, index)}
+                    // Position dans la colonne entière : une vue cache des voisines.
+                    onDrop={(e) => drop(e, column.id, inColumn.indexOf(task))}
                   />
                 </li>
               ))}
