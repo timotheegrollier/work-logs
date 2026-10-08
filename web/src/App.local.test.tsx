@@ -247,6 +247,37 @@ describe('dossier partagé dans la PWA', () => {
     }
   }, 30_000);
 
+  // Le relais exige un en-tête `Authorization` qu'une `<iframe>` n'envoie pas : sur la PWA,
+  // pas de visionneuse PDF (elle afficherait un refus), l'explication et le téléchargement (§34).
+  test('par le relais, un PDF du partage garde son téléchargement, sans visionneuse', async () => {
+    const relais = { timeout: 10_000 };
+    const [fs, os, path] = await Promise.all([import('node:fs'), import('node:os'), import('node:path')]);
+    // @ts-expect-error — relay.js est du JavaScript pur de l'API, chargé par Node.
+    const { startRelay, newToken } = await import('../../api/src/relay.js');
+    const share = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-pdf-'));
+    const data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-pdf-data-'));
+    fs.writeFileSync(path.join(share, 'plan.pdf'), '%PDF-1.4\n%%EOF\n');
+    const token = newToken();
+    const relay = startRelay({ root: share, token, origins: [], dataDir: data, host: '127.0.0.1', port: 0 });
+    await new Promise((resolve) => relay.server.once('listening', resolve));
+    try {
+      localStorage.setItem('worklogs-show-procedures', '1');
+      localStorage.setItem('worklogs-relais', JSON.stringify({ url: `http://127.0.0.1:${relay.server.address().port}`, token }));
+      const user = userEvent.setup();
+      render(<App />);
+      const tree = within(await screen.findByRole('list', { name: 'Contenu du dossier partagé' }, relais));
+      await user.click(tree.getByRole('button', { name: /^Ouvrir plan\.pdf/ }));
+      const shared = within(await screen.findByRole('region', { name: 'Fichier partagé' }, relais));
+      expect(await shared.findByText(/ne modifie pas les fichiers \.pdf/, undefined, relais)).toBeInTheDocument();
+      expect(shared.getByRole('link', { name: 'Télécharger cette version' })).toBeInTheDocument();
+      expect(shared.queryByTitle('Aperçu de plan.pdf')).not.toBeInTheDocument();
+    } finally {
+      await relay.stop();
+      fs.rmSync(share, { recursive: true, force: true });
+      fs.rmSync(data, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test('adresse du relais : HTTPS exigé, complétée si on l’oublie', async () => {
     const { normalizeRelayUrl } = await import('./relay-settings');
     expect(normalizeRelayUrl('relais.tailnet.ts.net/')).toBe('https://relais.tailnet.ts.net');
