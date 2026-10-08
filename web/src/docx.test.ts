@@ -138,6 +138,24 @@ describe('documents Word : écriture au plus juste', () => {
     expect(after).toContain('<w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">Arrêter la pompe</w:t></w:r>');
   });
 
+  it('liste : numPr posé à sa place en y entrant, retiré en sortant ; paragraphe neuf sur le modèle donné (basedOn)', async () => {
+    const bytes = wordDocx();
+    const doc = await readDocxDocument(bytes);
+    const edited = clone(doc.doc);
+    Object.assign(block(edited, 'b1').attrs!, { numId: '1', ilvl: 0 });
+    Object.assign(block(edited, 'b3').attrs!, { numId: null, ilvl: null });
+    // Après le titre, deux paragraphes neufs proposés par l'IA : l'un sur le modèle d'un élément de liste, l'autre sur aucun.
+    edited.content!.splice(1, 0,
+      { type: 'docxParagraph', attrs: { styleId: 'Paragraphedeliste', numId: '1', ilvl: 1, basedOn: 'b4' }, content: [{ type: 'text', text: 'Purger' }] },
+      { type: 'docxParagraph', attrs: { basedOn: '' }, content: [{ type: 'text', text: 'Sans modèle' }] });
+    const after = await mainXml(await write(bytes, edited));
+    expect(after).toContain('<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:spacing w:before="60"/><w:ind w:left="0"/></w:pPr>');
+    expect(after).toContain('<w:p><w:pPr><w:pStyle w:val="Paragraphedeliste"/></w:pPr><w:r><w:t xml:space="preserve">Arrêter la pompe</w:t></w:r></w:p>');
+    expect(after).toContain('<w:p><w:pPr><w:pStyle w:val="Paragraphedeliste"/><w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">Purger</w:t></w:r></w:p>');
+    // Sans `basedOn`, il aurait hérité du titre qui le précède (son espacement).
+    expect(after).toContain('<w:p><w:r><w:t xml:space="preserve">Sans modèle</w:t></w:r></w:p>');
+  });
+
   it('texte d’un lien modifié : la balise et la cible d’origine restent', async () => {
     const bytes = wordDocx();
     const doc = await readDocxDocument(bytes);

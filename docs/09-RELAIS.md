@@ -45,12 +45,26 @@ Fichiers prêts dans `relay/` : `worklogs-relais.service`, `env.exemple`, `fstab
    `sudo tailscale serve --bg --https=8443 http://127.0.0.1:8420`. Il faut « HTTPS Certificates »
    activé dans la console Tailscale (DNS). Le port 8443 évite Caddy, qui tient déjà le 443 de la VM.
 
+## Installation réelle (2026-10-07)
+
+VM `timo-claude` (Debian 13, Node 22.23 dans `/usr/local/bin`), nom Tailscale
+`worklogs-relais` → **`https://worklogs-relais.tail614cd0.ts.net:8443`** (`tailscale serve`,
+réseau Tailscale seul ; Caddy garde le 443 de la VM, en Docker). Montage CIFS de
+`00. PROCEDURE` avec `SRVMURGAT\TimothéeG` sur `/mnt/tse-procedures` (automontage systemd),
+racine affichée « 00. PROCEDURE » (`WORKLOGS_RELAY_LABEL`). Vérifié depuis le réseau
+Tailscale : `/health` sans code ; 401 sans code ou avec un faux ; préliminaire CORS accepté
+pour la PWA seule (403 ailleurs) ; avec le code : 17 dossiers listés, un `.docx` de 14 254
+octets relu à l'identique, recherche « procedure » → 6 résultats.
+
 ## Régler le téléphone
 
 1. Tailscale allumé sur le téléphone (le même réseau que la VM).
 2. WorkLogs (PWA) › Paramètres › **Dossier partagé du TSE** : adresse
    `https://<vm>.<tailnet>.ts.net:8443`, code d'accès (le contenu de `/etc/worklogs-relais/code`).
-   « Enregistrer » vérifie aussitôt que le relais répond.
+   Pour ne pas le recopier à la main : sur la VM, en root, `qrencode -t ansiutf8 < /etc/worklogs-relais/code`,
+   le scanner avec l'appareil photo du téléphone, copier le texte, le coller dans le champ.
+   « Enregistrer » vérifie aussitôt que le relais répond. Si Chrome demande l'accès au réseau
+   local, l'accepter (adresse Tailscale privée).
 3. La section « Dossier partagé » apparaît dans la colonne Procédures.
 
 Le code reste sur ce téléphone (stockage de la PWA), jamais synchronisé par Drive. Changer de

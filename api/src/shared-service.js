@@ -181,6 +181,8 @@ export function createSharedService({
    * cette base. Un dossier se relie alors à n'importe quel identifiant de projet.
    */
   projectsKnown = true,
+  /** Nom affiché de la racine, quand celui du point de montage ne dit rien (`/mnt/tse-procedures`). */
+  rootLabel = null,
 }) {
   fs.mkdirSync(blobDir, { recursive: true });
 
@@ -926,7 +928,7 @@ export function createSharedService({
         address: setting('shared.address'),
         /** Compte Windows du montage (`SRVMURGAT\\TonNom`), s'il a été indiqué : repris par « Se reconnecter ». */
         account: setting('shared.account'),
-        label: current ? path.basename(current) : '',
+        label: current ? rootLabel || path.basename(current) : '',
         mount: current && state.type !== null && state.type !== undefined ? mountName(state.type, current) : null,
         reach: state.reach,
         since: io.state().since,

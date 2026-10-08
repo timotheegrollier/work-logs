@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { seedData, useRealApi } from './test/server';
-import { flushPendingSaves } from './autosave';
+import { flushPendingSaves, hasPendingSaves } from './autosave';
 import { api as clientApi } from './lib';
 
 let api: Awaited<ReturnType<typeof useRealApi>>;
@@ -31,6 +31,22 @@ function seedGoogleLink(db: typeof api.db, entryId: string, documentId: string) 
   db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(rich, entryId);
   db.prepare(`INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json,document_title,tab_title,tab_order,tab_depth)
     VALUES (?,?,?,?,?,?,?,?,?)`).run(entryId, documentId, 'tab-0', 'r1', rich, 'Document Google', 'Onglet', 0, 0);
+}
+
+// Le fetch détourné vers l'API locale ne voit que le relatif : l'URL absolue
+// du service IA reste mockable sans toucher au backend réel.
+const aiBodies: unknown[] = [];
+function mockAiSuggest(content: string) {
+  aiBodies.length = 0;
+  const diverted = globalThis.fetch;
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('chat/completions')) {
+      if (init?.body) aiBodies.push(JSON.parse(init.body as string));
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as Response;
+    }
+    return diverted(input, init);
+  }));
 }
 
 /** Les largeurs au pixel près vivent dans Paramètres › Affichage. */
@@ -430,6 +446,32 @@ describe('écrire une entrée', () => {
     await waitFor(() => expect(row(api.db, 'SELECT title FROM entries WHERE id=?', 'en_a').title).toBe('A modifié'));
   });
 
+  test('un titre vidé garde l’ancien et ne bloque plus la fermeture une fois l’entrée quittée', async () => {
+    // 0.49.1 : le brouillon sans titre échouait, restait en attente après le changement
+    // d'entrée et la fermeture le rejouait sans fin — sur une entrée introuvable au
+    // journal, qui y portait toujours son ancien titre.
+    const user = userEvent.setup();
+    seedData(api.db, {
+      entries: [
+        { id: 'en_a', title: 'A', date: '2026-06-02' },
+        { id: 'en_b', title: 'B', date: '2026-06-01' },
+      ],
+    });
+    render(<App />);
+
+    await user.clear(await screen.findByLabelText('Titre de l’entrée'));
+    expect(screen.getByLabelText('Titre de l’entrée')).toHaveAttribute('placeholder', 'A');
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Écrit sans titre' } });
+    await user.click(within(journal()).getByText('B'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('B'));
+
+    await flushPendingSaves();
+    expect(hasPendingSaves()).toBe(false);
+    expect(row(api.db, 'SELECT title, content_md FROM entries WHERE id=?', 'en_a'))
+      .toMatchObject({ title: 'A', content_md: 'Écrit sans titre' });
+  });
+
   test('crée une tâche liée depuis l’entrée ouverte et affiche son document sur la carte', async () => {
     const user = userEvent.setup();
     seedData(api.db, { entries: [{ id: 'en_context', title: 'Contexte de réunion' }] });
@@ -489,22 +531,6 @@ describe('écrire une entrée', () => {
     // La carte affiche le document lié, comme dans l'autre sens.
     expect(await within(board()).findByRole('button', { name: 'Ouvrir Préparer le dossier' })).toBeInTheDocument();
   });
-
-  // Le fetch détourné vers l'API locale ne voit que le relatif : l'URL absolue
-  // du service IA reste mockable sans toucher au backend réel.
-  const aiBodies: unknown[] = [];
-  function mockAiSuggest(content: string) {
-    aiBodies.length = 0;
-    const diverted = globalThis.fetch;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('chat/completions')) {
-        if (init?.body) aiBodies.push(JSON.parse(init.body as string));
-        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as Response;
-      }
-      return diverted(input, init);
-    }));
-  }
 
   test('suggère des sous-tâches dans le créateur d’entrée liée', async () => {
     const user = userEvent.setup();
@@ -827,6 +853,187 @@ describe('écrire une entrée', () => {
     // Ni Lire ni Écrire : un document Google garde son propre parcours d'édition.
     expect(screen.queryByRole('button', { name: 'Lire' })).not.toBeInTheDocument();
     expect(documentContent()).toHaveAttribute('contenteditable', 'true');
+  });
+
+  test('une entrée devient une procédure : rédigée par l’IA, relue, créée à part puis ouverte', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('```markdown\n# Relancer la pompe\n\nRemettre la pompe en route après une coupure.\n\n## Étapes\n\n1. Couper le disjoncteur\n2. Purger le circuit\n```');
+    seedData(api.db, {
+      projects: [{ id: 'pr_ferme', name: 'Ferme' }],
+      entries: [{ id: 'en_panne', title: 'Panne du matin', project_id: 'pr_ferme', content_md: 'Coupé le disjoncteur, purgé, relancé.\n- [x] Prévenir Paul' }],
+      tasks: [{ id: 'tk_pompe', title: 'Réparer la pompe', project_id: 'pr_ferme' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_pompe', 'en_panne', new Date().toISOString());
+    await api.upload('schéma.pdf', '%PDF', { entry_id: 'en_panne' });
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Créer une procédure' }));
+    const draft = await screen.findByRole('form', { name: 'Procédure rédigée' });
+    expect(within(draft).getByText('Purger le circuit')).toBeInTheDocument();
+    // Le « # » de tête devient le titre, sans doublon dans le corps.
+    expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Relancer la pompe');
+    expect(within(draft).queryByRole('heading', { name: 'Relancer la pompe' })).not.toBeInTheDocument();
+    const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+    expect(sent).toContain('Entrée du journal : Panne du matin');
+    expect(sent).toContain('Projet : Ferme');
+    expect(sent).toContain('Pièces jointes : schéma.pdf');
+    expect(sent).toContain('Tâches liées : Réparer la pompe');
+    expect(sent).toContain('Contenu :\nCoupé le disjoncteur, purgé, relancé.\n- [x] Prévenir Paul');
+    // Rien n'est créé avant de valider.
+    expect(row(api.db, "SELECT COUNT(*) n FROM entries WHERE kind='procedure'").n).toBe(0);
+
+    await user.clear(within(draft).getByLabelText('Titre de la procédure'));
+    await user.type(within(draft).getByLabelText('Titre de la procédure'), 'Relancer la pompe du bassin 3');
+    await user.click(within(draft).getByRole('button', { name: 'Créer la procédure' }));
+
+    // Ouverte au centre, en lecture, avec ses étapes.
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Relancer la pompe du bassin 3'));
+    expect(screen.getByRole('button', { name: 'Lire' })).toHaveAttribute('aria-pressed', 'true');
+    expect(documentContent()).toHaveAttribute('aria-readonly', 'true');
+    expect(documentContent().querySelectorAll('ol > li')).toHaveLength(2);
+    const created = row(api.db, "SELECT * FROM entries WHERE kind='procedure'");
+    expect(created.project_id).toBe('pr_ferme');
+    expect(created.archived).toBe(0);
+    expect(created.content_json).toContain('Purger le circuit');
+    // La note ne change pas, et la procédure n'est liée à aucune tâche.
+    expect(row(api.db, "SELECT content_md FROM entries WHERE id='en_panne'").content_md).toBe('Coupé le disjoncteur, purgé, relancé.\n- [x] Prévenir Paul');
+    expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1);
+    // Elle rejoint la colonne Procédures, jamais le journal.
+    expect(within(journal()).queryByText('Relancer la pompe du bassin 3')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Procédures' }));
+    expect(await within(screen.getByRole('region', { name: 'Procédures du projet' })).findByText('Relancer la pompe du bassin 3')).toBeInTheDocument();
+  });
+
+  test('une tâche terminée devient une procédure : ses documents sont lus, la procédure n’est ni liée ni archivée', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('# Changer la cartouche\n\n## Étapes\n\n1. Couper l’arrivée d’eau\n2. Changer la cartouche');
+    seedData(api.db, {
+      projects: [{ id: 'pr_ferme', name: 'Ferme' }],
+      entries: [
+        { id: 'en_cr', title: 'Compte rendu filtre', project_id: 'pr_ferme', content_md: 'Cartouche changée, eau coupée 10 min.' },
+        { id: 'en_google', title: 'Consignes', project_id: 'pr_ferme' },
+      ],
+      tasks: [{ id: 'tk_filtre', title: 'Changer le filtre', status: 'done', project_id: 'pr_ferme' }],
+    });
+    seedGoogleLink(api.db, 'en_google', 'doc-consignes');
+    api.db.prepare('UPDATE entries SET content_md=?, content_json=? WHERE id=?')
+      .run('Texte Google à ne pas transmettre', richText('Texte Google à ne pas transmettre'), 'en_google');
+    for (const entryId of ['en_cr', 'en_google']) {
+      api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_filtre', entryId, new Date().toISOString());
+    }
+    render(<App />);
+
+    const card = (await within(board()).findByText('Changer le filtre')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: 'Créer une procédure avec l’IA' }));
+    const draft = await within(card).findByRole('form', { name: 'Procédure rédigée' });
+    expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Changer la cartouche');
+    const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+    expect(sent).toContain('Tâche : Changer le filtre\nStatut : Terminé\nProjet : Ferme');
+    expect(sent).toContain('Document lié « Compte rendu filtre »');
+    expect(sent).toContain('Cartouche changée, eau coupée 10 min.');
+    // Le document Google ne donne que son titre.
+    expect(sent).toMatch(/« Consignes » \(\d{4}-\d{2}-\d{2}\) : document Google, contenu non transmis\./);
+    expect(sent).not.toContain('Texte Google');
+
+    await user.click(within(draft).getByRole('button', { name: 'Créer la procédure' }));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Changer la cartouche'));
+    const created = row(api.db, "SELECT * FROM entries WHERE kind='procedure'");
+    expect(created.project_id).toBe('pr_ferme');
+    // Liée à une tâche terminée, elle aurait été archivée aussitôt (et masquée de sa colonne).
+    expect(created.archived).toBe(0);
+    expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries WHERE entry_id=?', created.id).n).toBe(0);
+    expect(within(card).queryByRole('form', { name: 'Procédure rédigée' })).not.toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Créer une procédure avec l’IA' })).toBeInTheDocument();
+  });
+
+  test('une recherche en cours ne masque pas la procédure créée', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('# Relancer la pompe\n\n1. Couper le disjoncteur');
+    seedData(api.db, { entries: [{ id: 'en_panne', title: 'Panne du matin', content_md: 'Disjoncteur coupé.' }, { id: 'en_autre', title: 'Autre note' }] });
+    render(<App />);
+
+    await user.type(await screen.findByLabelText('Rechercher'), 'Panne');
+    await waitFor(() => expect(within(journal()).queryByText('Autre note')).not.toBeInTheDocument());
+    await user.click(within(journal()).getByText('Panne du matin'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Panne du matin'));
+    await user.click(screen.getByRole('button', { name: '✨ Créer une procédure' }));
+    await user.click(within(await screen.findByRole('form', { name: 'Procédure rédigée' })).getByRole('button', { name: 'Créer la procédure' }));
+
+    // « Relancer la pompe » ne contient pas « Panne » : la recherche est effacée, la procédure reste ouverte.
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Relancer la pompe'));
+    expect(screen.getByLabelText('Rechercher')).toHaveValue('');
+    expect(await within(journal()).findByText('Autre note')).toBeInTheDocument();
+    expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Relancer la pompe');
+  });
+
+  test('procédure rédigée depuis un document riche : il part en Markdown ; rafraîchir la remplace, ignorer ne crée rien', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('# Première version\n\n1. Ancienne étape');
+    seedData(api.db, { entries: [{ id: 'en_doc', title: 'Document du jour' }] });
+    api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(richText('Vanne ouverte.', 'Bassin rempli.'), 'en_doc');
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Créer une procédure' }));
+    const draft = await screen.findByRole('form', { name: 'Procédure rédigée' });
+    expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Première version');
+    expect((aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content)
+      .toBe('Entrée du journal : Document du jour\nContenu :\nVanne ouverte.\n\nBassin rempli.');
+
+    // Réponse retenue : pendant la rédaction, ni créer ni ignorer (la réponse rouvrirait le panneau).
+    let answer = () => {};
+    const answered = new Promise<void>((resolve) => { answer = resolve; });
+    const diverted = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).includes('chat/completions')) return diverted(input, init);
+      await answered;
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '# Seconde version\n\n1. Nouvelle étape' } }] }) } as Response;
+    }));
+    await user.click(within(draft).getByRole('button', { name: 'Rafraîchir' }));
+    expect(within(draft).getByRole('button', { name: 'Rédaction…' })).toBeDisabled();
+    expect(within(draft).getByRole('button', { name: 'Ignorer' })).toBeDisabled();
+    expect(within(draft).getByRole('button', { name: 'Créer la procédure' })).toBeDisabled();
+    answer();
+    await waitFor(() => expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Seconde version'));
+    expect(within(draft).getByText('Nouvelle étape')).toBeInTheDocument();
+    expect(within(draft).queryByText('Ancienne étape')).not.toBeInTheDocument();
+
+    await user.click(within(draft).getByRole('button', { name: 'Ignorer' }));
+    expect(screen.queryByRole('form', { name: 'Procédure rédigée' })).not.toBeInTheDocument();
+    expect(row(api.db, "SELECT COUNT(*) n FROM entries WHERE kind='procedure'").n).toBe(0);
+    expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Document du jour');
+  });
+
+  test('pas de procédure tirée d’une procédure ni d’un document Google ; sans clé, rien ne part', async () => {
+    const user = userEvent.setup();
+    const calls: string[] = [];
+    const diverted = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(String(input));
+      return diverted(input, init);
+    }));
+    seedData(api.db, {
+      entries: [{ id: 'en_google', title: 'Consignes Google' }, { id: 'en_proc', title: 'Vidange', kind: 'procedure' }],
+      tasks: [{ id: 'tk_filtre', title: 'Changer le filtre' }],
+    });
+    seedGoogleLink(api.db, 'en_google', 'doc-consignes');
+    api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(richText('Couper l’eau.'), 'en_proc');
+    localStorage.setItem('worklogs-entry', 'en_google');
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Consignes Google'));
+    expect(screen.queryByRole('button', { name: '✨ Créer une procédure' })).not.toBeInTheDocument();
+    await openProcedure(user, 'Vidange');
+    expect(screen.queryByRole('button', { name: '✨ Créer une procédure' })).not.toBeInTheDocument();
+
+    // Sans clé, la carte renvoie aux Paramètres sans appeler personne.
+    const card = (await within(board()).findByText('Changer le filtre')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: 'Créer une procédure avec l’IA' }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent('⚙ Paramètres');
+    expect(calls.some((url) => url.includes('chat/completions'))).toBe(false);
   });
 
   test('crée une tâche liée depuis un document Google', async () => {
@@ -1190,7 +1397,8 @@ describe('organiser les tâches', () => {
     await user.click(screen.getByRole('button', { name: 'Enregistrer' }));
 
     await waitFor(() => expect(row(api.db, 'SELECT priority FROM tasks WHERE id=?', 'tk_1').priority).toBe('high'));
-    expect(await within(board()).findByText('Haute')).toBeInTheDocument();
+    // La pastille de la carte : la vue rapide « ▲ Haute » porte le même mot.
+    expect(await within(board()).findByText('Haute', { selector: '.card .priority' })).toBeInTheDocument();
     expect(within(board()).queryByText('Normale')).not.toBeInTheDocument();
   });
 
@@ -1201,6 +1409,150 @@ describe('organiser les tâches', () => {
 
     expect(await within(board()).findByText('hier')).toHaveClass('is-late');
     expect(await screen.findByText(/en retard/)).toHaveTextContent('1');
+  });
+
+  describe('vues rapides', () => {
+    const hier = () => new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    const views = () => within(board()).getByRole('group', { name: 'Filtrer les tâches' });
+    const titles = () => within(board()).getAllByRole('button', { name: /^Tâche / }).map((button) => button.textContent);
+
+    test('comptent les tâches à surveiller et les montrent d’un clic', async () => {
+      const user = userEvent.setup();
+      const today = new Date().toISOString().slice(0, 10);
+      seedData(api.db, {
+        tasks: [
+          { id: 'tk_late', title: 'Tâche en retard', due_date: hier() },
+          { id: 'tk_today', title: 'Tâche du jour', due_date: today },
+          { id: 'tk_doing', title: 'Tâche en cours', status: 'doing' },
+          { id: 'tk_pin', title: 'Tâche épinglée', pinned: 1 },
+          { id: 'tk_high', title: 'Tâche urgente' },
+          { id: 'tk_plain', title: 'Tâche ordinaire' },
+          // Terminée : ni en retard, ni épinglée, ni prioritaire.
+          { id: 'tk_done', title: 'Tâche finie', status: 'done', due_date: hier(), pinned: 1 },
+        ],
+      });
+      api.db.prepare("UPDATE tasks SET priority='high' WHERE id IN ('tk_high','tk_done')").run();
+      render(<App />);
+
+      await within(board()).findByText('Tâche ordinaire');
+      for (const name of ['En retard 1', 'Aujourd\'hui 1', 'En cours 1', 'Épinglées 1', 'Haute 1']) {
+        expect(within(views()).getByRole('button', { name })).toHaveAttribute('aria-pressed', 'false');
+      }
+      expect(within(views()).getByRole('button', { name: 'Toutes' })).toHaveAttribute('aria-pressed', 'true');
+
+      await user.click(within(views()).getByRole('button', { name: 'En retard 1' }));
+      expect(within(views()).getByRole('button', { name: 'En retard 1' })).toHaveAttribute('aria-pressed', 'true');
+      expect(titles()).toEqual(['Tâche en retard']);
+      // Seules les colonnes où la vue trouve quelque chose restent.
+      expect(within(board()).getAllByRole('heading').map((heading) => heading.textContent)).toEqual(['À faire 1']);
+
+      await user.click(within(views()).getByRole('button', { name: 'En cours 1' }));
+      expect(titles()).toEqual(['Tâche en cours']);
+      await user.click(within(views()).getByRole('button', { name: 'Épinglées 1' }));
+      expect(titles()).toEqual(['Tâche épinglée']);
+      await user.click(within(views()).getByRole('button', { name: 'Haute 1' }));
+      expect(titles()).toEqual(['Tâche urgente']);
+      await user.click(within(views()).getByRole('button', { name: "Aujourd'hui 1" }));
+      expect(titles()).toEqual(['Tâche du jour']);
+
+      // Recliquer la vue active la lève, comme une pastille de projet.
+      await user.click(within(views()).getByRole('button', { name: "Aujourd'hui 1" }));
+      expect(titles()).toHaveLength(7);
+      await user.click(within(views()).getByRole('button', { name: 'En cours 1' }));
+      await user.click(within(views()).getByRole('button', { name: 'Toutes' }));
+      expect(titles()).toHaveLength(7);
+    });
+
+    test('rien à surveiller : pas de pastilles', async () => {
+      seedData(api.db, { tasks: [{ id: 'tk_1', title: 'Tâche calme' }] });
+      render(<App />);
+
+      await within(board()).findByText('Tâche calme');
+      expect(within(board()).queryByRole('group', { name: 'Filtrer les tâches' })).not.toBeInTheDocument();
+    });
+
+    test('une vue vidée le dit et garde sa pastille pour en sortir', async () => {
+      const user = userEvent.setup();
+      seedData(api.db, {
+        tasks: [
+          { id: 'tk_late', title: 'Tâche en retard', due_date: hier() },
+          { id: 'tk_plain', title: 'Tâche ordinaire' },
+        ],
+      });
+      render(<App />);
+
+      await user.click(await within(board()).findByRole('button', { name: 'En retard 1' }));
+      await user.click(within(board()).getByLabelText('Terminer Tâche en retard'));
+
+      expect(await within(board()).findByText('Rien en retard.')).toBeInTheDocument();
+      expect(within(views()).getByRole('button', { name: 'En retard 0' })).toHaveAttribute('aria-pressed', 'true');
+      await user.click(within(views()).getByRole('button', { name: 'Toutes' }));
+      expect(await within(board()).findByText('Tâche ordinaire')).toBeInTheDocument();
+      // Plus rien à surveiller : les pastilles s'effacent.
+      expect(within(board()).queryByRole('group', { name: 'Filtrer les tâches' })).not.toBeInTheDocument();
+    });
+
+    test('ajouter une tâche lève la vue pour la montrer', async () => {
+      const user = userEvent.setup();
+      seedData(api.db, { tasks: [{ id: 'tk_doing', title: 'Tâche en cours', status: 'doing' }] });
+      render(<App />);
+
+      await user.click(await within(board()).findByRole('button', { name: 'En cours 1' }));
+      await user.type(screen.getByLabelText('Nouvelle tâche'), 'Tâche neuve{Enter}');
+
+      expect(await within(board()).findByText('Tâche neuve')).toBeInTheDocument();
+      expect(within(views()).getByRole('button', { name: 'Toutes' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    test('déposer sur une carte d’une vue la place dans la colonne entière', async () => {
+      seedData(api.db, {
+        tasks: [
+          { id: 'tk_a', title: 'Tâche ordinaire' },
+          { id: 'tk_b', title: 'Tâche en retard', due_date: hier() },
+          { id: 'tk_c', title: 'Tâche en cours en retard', status: 'doing', due_date: hier() },
+        ],
+      });
+      render(<App />);
+
+      fireEvent.click(await within(board()).findByRole('button', { name: 'En retard 2' }));
+      const dataTransfer = { data: {} as Record<string, string>, setData(k: string, v: string) { this.data[k] = v; }, getData(k: string) { return this.data[k]; } };
+      fireEvent.dragStart(within(board()).getByText('Tâche en cours en retard').closest('.card')!, { dataTransfer });
+      fireEvent.drop(within(board()).getByText('Tâche en retard').closest('.card')!, { dataTransfer });
+
+      // « Tâche ordinaire » est cachée par la vue mais garde sa place devant.
+      const todo = () => (api.db.prepare("SELECT id FROM tasks WHERE status='todo' ORDER BY position").all() as { id: string }[]).map((task) => task.id);
+      await waitFor(() => expect(todo()).toEqual(['tk_a', 'tk_c', 'tk_b']));
+    });
+
+    test('les compteurs de l’en-tête ouvrent les tâches, et lèvent le projet s’il en cache', async () => {
+      const user = userEvent.setup();
+      seedData(api.db, {
+        projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Bravo' }],
+        tasks: [
+          { id: 'tk_doing', title: 'Tâche en cours', status: 'doing', project_id: 'pr_a' },
+          { id: 'tk_late', title: 'Tâche en retard', due_date: hier(), project_id: 'pr_b' },
+        ],
+      });
+      localStorage.setItem('worklogs-project', 'pr_a');
+      localStorage.setItem('worklogs-show-right', '0');
+      render(<App />);
+      const header = await screen.findByRole('banner');
+      const alpha = () => within(filters()).getByRole('button', { name: /Alpha/ });
+
+      // La tâche en cours est dans Alpha : le projet reste filtré.
+      await user.click(await within(header).findByRole('button', { name: '1 en cours' }));
+      expect(within(header).getByRole('button', { name: 'Tâches' })).toHaveAttribute('aria-pressed', 'true');
+      expect(within(views()).getByRole('button', { name: 'En cours 1' })).toHaveAttribute('aria-pressed', 'true');
+      expect(alpha()).toHaveAttribute('aria-pressed', 'true');
+      expect(titles()).toEqual(['Tâche en cours']);
+
+      // La tâche en retard est dans Bravo : le filtre Alpha la cacherait, il est levé.
+      await user.click(within(header).getByRole('button', { name: '1 en retard' }));
+      await waitFor(() => expect(within(filters()).getByRole('button', { name: 'Tout' })).toHaveAttribute('aria-pressed', 'true'));
+      expect(await within(board()).findByText('Tâche en retard')).toBeInTheDocument();
+      expect(within(views()).getByRole('button', { name: 'En retard 1' })).toHaveAttribute('aria-pressed', 'true');
+      expect(titles()).toEqual(['Tâche en retard']);
+    });
   });
 
   test('supprime une tâche', async () => {
@@ -1984,6 +2336,20 @@ describe('panneaux repliables', () => {
     await waitFor(() => expect(columns()).not.toHaveClass('hide-center'));
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Document de la tâche'));
   });
+
+  test.each([
+    ['Nouvelle entrée', /Nouvelle entrée/],
+    ['Nouveau document', /Nouveau document/],
+  ])('« %s » réaffiche directement l’écriture', async (_label, name) => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-show-center', '0');
+    render(<App />);
+
+    await user.click(await within(journal()).findByRole('button', { name }));
+    await waitFor(() => expect(columns()).not.toHaveClass('hide-center'));
+    expect(screen.getByRole('button', { name: 'Écriture' })).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findByLabelText('Titre de l’entrée')).toHaveValue('Sans titre');
+  });
 });
 
 describe('dossier partagé', () => {
@@ -2431,6 +2797,128 @@ describe('dossier partagé', () => {
     expect(await within(editorRegion).findByText(/Le suivi des modifications est activé/)).toBeInTheDocument();
     expect(within(editorRegion).getByLabelText('Style du paragraphe')).toBeDisabled();
     expect(within(editorRegion).getByRole('textbox', { name: 'Contenu du document Word' })).toHaveAttribute('contenteditable', 'false');
+  });
+
+  const aiUserMessage = () => (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+
+  test('Markdown du partage : « Suggérer une procédure » lit titre et contenu, s’applique en brouillon, part au geste', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('```markdown\n# Imprimante du bureau\n\nAjouter l’imprimante du bureau.\n\n## Étapes\n\n1. Ouvrir les paramètres\n2. Saisir l’adresse 10.0.0.5\n```');
+    await write('Imprimante.md', '# Imprimante du bureau\r\n\r\nIP : 10.0.0.5\r\n');
+    render(<App />);
+    const editorRegion = await openFromTree('Imprimante.md');
+    const area = await within(editorRegion).findByLabelText('Contenu de Imprimante.md');
+
+    fireEvent.click(within(editorRegion).getByRole('button', { name: '✨ Suggérer une procédure' }));
+    const proposal = await within(sharedEditor()).findByRole('region', { name: 'Procédure proposée' });
+    // Le titre du fichier fait le titre de la procédure ; l'IA lit ce qui suit.
+    expect(aiUserMessage()).toBe('Procédure : Imprimante du bureau\nDéjà écrit :\nIP : 10.0.0.5');
+    expect(within(proposal).getAllByRole('heading', { name: 'Imprimante du bureau' })).toHaveLength(1);
+    expect(within(proposal).getByText('Saisir l’adresse 10.0.0.5')).toBeInTheDocument();
+    // Rien n'est écrit avant « Appliquer ».
+    expect(area).toHaveValue('# Imprimante du bureau\n\nIP : 10.0.0.5\n');
+
+    fireEvent.click(within(proposal).getByRole('button', { name: 'Appliquer la procédure' }));
+    const proposed = '# Imprimante du bureau\n\nAjouter l’imprimante du bureau.\n\n## Étapes\n\n1. Ouvrir les paramètres\n2. Saisir l’adresse 10.0.0.5\n';
+    expect(within(sharedEditor()).getByLabelText('Contenu de Imprimante.md')).toHaveValue(proposed);
+    expect(within(sharedEditor()).queryByRole('region', { name: 'Procédure proposée' })).not.toBeInTheDocument();
+    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    // Un brouillon, pas un envoi : les collègues ne voient rien avant le geste.
+    expect(await read('Imprimante.md')).toBe('# Imprimante du bureau\r\n\r\nIP : 10.0.0.5\r\n');
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Enregistrer sur le partage' }));
+    await waitFor(async () => expect(await read('Imprimante.md')).toBe(proposed.replace(/\n/g, '\r\n')));
+  });
+
+  test('document Word : « Mettre en page » — objet perdu refusé ; appliquée, seuls les paragraphes changés sont réécrits', async () => {
+    const { wordDocx } = await import('./test/docx-fixture');
+    const { readZip, readZipText } = await import('./zip');
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    await write('Procédure filtration.docx', wordDocx());
+    render(<App />);
+    const editorRegion = await openFromTree('Procédure filtration.docx');
+    const content = await within(editorRegion).findByRole('textbox', { name: 'Contenu du document Word' });
+
+    // L'IA a perdu le tableau : rien n'est proposé.
+    mockAiSuggest('# Filtration\n\nLaver le filtre chaque lundi.\n\n[[objet 1 : Image]]\n\n[[objet 3 : Table des matières]]');
+    fireEvent.click(within(editorRegion).getByRole('button', { name: '✨ Mettre en page' }));
+    expect(await within(sharedEditor()).findByRole('alert')).toHaveTextContent('La proposition a perdu un objet du document (tableau) : relance-la.');
+    // Le document part en Markdown, ses objets en marqueurs.
+    expect(aiUserMessage()).toContain('Procédure : Filtration\n\nTexte :\n# Filtration\n\n*Laver* **le filtre** chaque lundi.');
+    expect(aiUserMessage()).toContain('[[objet 2 : Tableau — Mesure | Valeur / pH | 7,2]]');
+    expect(within(sharedEditor()).queryByRole('region', { name: 'Mise en page proposée' })).not.toBeInTheDocument();
+
+    mockAiSuggest('# Filtration\n\nLaver le filtre chaque lundi.\n\nVoir [le guide](https://exemple.fr/guide).\n\n1. Arrêter la pompe\n2. Fermer la vanne\n\n[[objet 1 : Image]]\n\n[[objet 2 : Tableau]]\n\n[[objet 3 : Table des matières]]');
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: '✨ Mettre en page' }));
+    const proposal = await within(sharedEditor()).findByRole('region', { name: 'Mise en page proposée' });
+    expect(within(proposal).getByText(/Image — conservé tel quel/)).toBeInTheDocument();
+    fireEvent.click(within(proposal).getByRole('button', { name: 'Appliquer la mise en page' }));
+    await waitFor(() => expect(content).toHaveTextContent('Fermer la vanne'));
+    expect(content).not.toHaveTextContent('Vanne fermée');
+    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Enregistrer sur le partage' }));
+    await waitFor(() => expect(within(sharedEditor()).getByText('Enregistré sur le partage.')).toBeInTheDocument());
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    const sent = new Uint8Array(fs.readFileSync(path.join(share, 'Procédure filtration.docx')));
+    const after = (await readZipText(readZip(sent), 'word/document.xml'))!;
+    // Paragraphe gardé tel quel (le correcteur n'en part qu'à la réécriture), étape neuve dans la liste d'origine, image recopiée.
+    expect(after).toContain('<w:proofErr w:type="spellStart"/><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t>le filtre</w:t></w:r>');
+    expect(after).toContain('<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">Fermer la vanne</w:t></w:r>');
+    expect(after).toContain('<w:drawing>');
+    expect(after).not.toContain('Vanne fermée');
+  });
+
+  test('IA du partage : verrou d’un collègue, tableur sans IA, texte brut sans Markdown, fichier modifié avant d’appliquer', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('Prérequis\n- Accès admin\n\nÉtapes\n1. Redémarrer le service');
+    await write('planning.txt', 'lundi\n');
+    await write('relevés.csv', 'a;b\n1;2\n');
+    await write('Redémarrage.txt', 'service web\n');
+    render(<App />);
+
+    // Ouvert dans LibreOffice par une collègue : lecture seule, l'IA aussi. (Le sondage peut
+    // montrer le verrou avant que le contenu soit lu : on attend le contenu, et les boutons avec.)
+    await openFromTree('planning.txt');
+    await within(sharedEditor()).findByLabelText('Contenu de planning.txt');
+    await write('.~lock.planning.txt#', 'Hélène Martin,hmartin,TSE01,05.10.2026 09:00,file:///C:/x;');
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    expect(await within(sharedEditor()).findByText(/Lecture seule — Ouvert par Hélène Martin dans LibreOffice/)).toBeInTheDocument();
+    expect(within(sharedEditor()).getByRole('button', { name: '✨ Suggérer une procédure' })).toBeDisabled();
+    expect(within(sharedEditor()).getByRole('button', { name: '✨ Mettre en page' })).toBeDisabled();
+
+    // Un tableur n'a pas de procédure à rédiger.
+    await openFromTree('relevés.csv');
+    await within(sharedEditor()).findByRole('grid', { name: 'Tableau relevés.csv' });
+    expect(within(sharedEditor()).queryByRole('button', { name: '✨ Mettre en page' })).not.toBeInTheDocument();
+
+    await openFromTree('Redémarrage.txt');
+    const area = await within(sharedEditor()).findByLabelText('Contenu de Redémarrage.txt');
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: '✨ Suggérer une procédure' }));
+    const proposal = await within(sharedEditor()).findByRole('region', { name: 'Procédure proposée' });
+    expect((aiBodies.at(-1) as { messages: { content: string }[] }).messages[0].content).toMatch(/texte brut, sans syntaxe Markdown/);
+    expect(aiUserMessage()).toBe('Procédure : Redémarrage\nDéjà écrit :\nservice web');
+    // Un `.txt` se relit tel qu'il sera écrit, sans rendu Markdown.
+    expect(proposal.querySelector('pre')!.textContent).toBe('Prérequis\n- Accès admin\n\nÉtapes\n1. Redémarrer le service\n');
+    // Une frappe pendant la relecture : appliquer l'effacerait.
+    fireEvent.change(area, { target: { value: 'service web et base\n' } });
+    fireEvent.click(within(proposal).getByRole('button', { name: 'Appliquer la procédure' }));
+    expect(within(sharedEditor()).getByRole('alert')).toHaveTextContent('Le fichier a changé pendant la suggestion : relance-la');
+    expect(area).toHaveValue('service web et base\n');
+  });
+
+  test('IA du partage sans clé : le bouton l’explique, rien ne part', async () => {
+    const calls: string[] = [];
+    const diverted = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(String(input));
+      return diverted(input, init);
+    }));
+    await write('notes.md', 'Laver le filtre.\n');
+    render(<App />);
+    await openFromTree('notes.md');
+    fireEvent.click(await within(sharedEditor()).findByRole('button', { name: '✨ Mettre en page' }));
+    expect(await within(sharedEditor()).findByRole('alert')).toHaveTextContent('Colle ta clé IA dans ⚙ Paramètres pour activer la mise en page.');
+    expect(calls.some((url) => url.includes('chat/completions'))).toBe(false);
   });
 
   test('un classeur Excel s’ouvre dans la grille ; une cellule modifiée, seule sa balise change', async () => {

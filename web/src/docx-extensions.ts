@@ -34,6 +34,9 @@ export const DocxParagraph = Node.create({
       align: { default: null, rendered: false },
       numId: { default: null, rendered: false },
       ilvl: { default: null, rendered: false },
+      // Paragraphe neuf proposé par l'IA : propriétés reprises de ce paragraphe d'origine
+      // (même genre : titre, liste, corps), `''` pour aucune. `null` : celles du précédent.
+      basedOn: { default: null, rendered: false },
     };
   },
   addKeyboardShortcuts() {

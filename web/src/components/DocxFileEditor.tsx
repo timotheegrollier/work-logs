@@ -3,7 +3,8 @@ import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/r
 import type { JSONContent } from '@tiptap/core';
 import { docxProblems, normalizeDocx, readDocxDocument, writeDocx, type DocxDocument, type DocxDraft } from '../docx';
 import { docxExtensions } from '../docx-extensions';
-import type { FileEditorProps } from '../file-formats';
+import { docxFromAi, docxPreview, docxToAi } from '../docx-markdown';
+import { FormatError, type FileEditorHandle, type FileEditorProps } from '../file-formats';
 
 const ALIGNMENTS: { value: string | null; label: string; icon: string }[] = [
   { value: null, label: 'Aligner à gauche', icon: '⯇' },
@@ -75,11 +76,27 @@ function DocxEditorBody({ document, bytes, initialDraft, readOnly, onEdit, handl
     editor?.setEditable(!lockedReason, false);
   }, [editor, lockedReason]);
 
-  useImperativeHandle(handleRef, () => ({
+  useImperativeHandle(handleRef, (): FileEditorHandle => ({
     isDirty: () => Boolean(editor) && JSON.stringify(normalizeDocx(editor!.getJSON())) !== JSON.stringify(document.doc),
     draft: (): DocxDraft => ({ format: 'docx', v: 1, doc: editor!.getJSON() as JSONContent }),
     problems: () => (document.readOnly ? [document.readOnly] : editor ? docxProblems(document, editor.getJSON()) : []),
     serialize: () => writeDocx(bytes, editor!.getJSON(), { author: author || 'WorkLogs' }),
+    ai: {
+      format: 'word',
+      begin: (mode) => {
+        if (document.readOnly) throw new FormatError(document.readOnly);
+        const source = docxToAi(editor!.getJSON(), document, { procedure: mode === 'procedure' });
+        return {
+          text: source.markdown,
+          title: source.title,
+          prepare: (answer) => {
+            const doc = docxFromAi(answer, source);
+            // Une transaction de l'éditeur : comptée comme une frappe (brouillon, verrou), annulable par ↶.
+            return { preview: docxPreview(doc, document), previewFormat: 'markdown', warning: '', apply: () => { editor!.commands.setContent(doc); } };
+          },
+        };
+      },
+    },
   }), [editor, document, bytes, author]);
 
   const state = useEditorState({

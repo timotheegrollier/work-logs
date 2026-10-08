@@ -506,7 +506,12 @@ function patchParagraphProperties(pPr: string, w: string, from: ParagraphAttrs, 
     const jc = to.align ? ALIGN_TO_JC[to.align] : null;
     out = setChild(out, wrapper, PPR_ORDER, 'jc', jc ? `<${w}:jc ${w}:val="${jc}"/>` : null);
   }
-  if (to.numId && from.numId === to.numId && (from.ilvl ?? 0) !== (to.ilvl ?? 0) && out) {
+  if ((from.numId ?? null) !== (to.numId ?? null)) {
+    // Entré dans une liste, sorti, ou passé d'une liste à l'autre (proposition de l'IA).
+    const ilvl = Math.max(0, Math.min(8, to.ilvl ?? 0));
+    out = setChild(out, wrapper, PPR_ORDER, 'numPr', to.numId
+      ? `<${w}:numPr><${w}:ilvl ${w}:val="${ilvl}"/><${w}:numId ${w}:val="${escapeAttr(to.numId)}"/></${w}:numPr>` : null);
+  } else if (to.numId && (from.ilvl ?? 0) !== (to.ilvl ?? 0) && out) {
     const { children } = fragmentChildren(out);
     const numPr = children.find((child) => child.local === 'numPr');
     if (numPr) {
@@ -611,8 +616,11 @@ function paragraphXml(node: JSONContent, ctx: ExportContext): string {
     ctx.previous = source;
     return xml.slice(source.el.start, source.el.end);
   }
-  // Paragraphe neuf : il hérite des propriétés de celui d'où il vient (Entrée), comme dans Word.
-  const base = source ?? ctx.previous;
+  // Paragraphe neuf : il hérite des propriétés de celui d'où il vient (Entrée), comme dans Word ;
+  // proposé par l'IA, de celui qu'elle lui a donné pour modèle (`basedOn`), ou d'aucun (`''`).
+  const basedOn = node.attrs?.basedOn;
+  const model = typeof basedOn === 'string' && basedOn ? doc.sources.get(basedOn) : undefined;
+  const base = source ?? (typeof basedOn === 'string' ? (model?.kind === 'p' ? model : null) : ctx.previous);
   const pPr = patchParagraphProperties(base?.pPr ?? '', w, base?.attrs ?? NO_ATTRS, paragraphAttrs(node));
   let open = `<${w}:p>`;
   if (source && first) {

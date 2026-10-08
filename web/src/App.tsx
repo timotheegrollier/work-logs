@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './styles.css';
-import { api, emptyDocument, todayISO, type AppState, type Entry, type GoogleStatus, type GoogleSyncStatus } from './lib';
+import { api, emptyDocument, taskViewMatch, todayISO, type AppState, type Entry, type GoogleStatus, type GoogleSyncStatus, type TaskView } from './lib';
 import { startWebSync, subscribeWebSync } from './store/sync-web';
 import { EntryList } from './components/EntryList';
 import { ProcedureList } from './components/ProcedureList';
@@ -46,6 +46,9 @@ export default function App() {
   const [freshEntry, setFreshEntry] = useState(false);
   const [procedureEdit, setProcedureEdit] = useState({ id: '', sequence: 0 });
   const [showDocumentTasks, setShowDocumentTasks] = useState(false);
+  // Vue rapide de la colonne Tâches (en retard, en cours…) : un filtre d'affichage,
+  // pas un mode — non retenu au redémarrage, levé d'un clic sur « Toutes ».
+  const [taskView, setTaskView] = useState<TaskView | null>(null);
   const documentRef = useRef<string | undefined>(undefined);
   documentRef.current = entry?.google_sync?.document_id;
   const [theme, setTheme] = useState(readTheme);
@@ -272,6 +275,7 @@ export default function App() {
     });
     setSearch('');
     setFreshEntry(true);
+    setShowCenter(true);
     setSharedPath(null);
     setSelectedId(created.id);
     setEntry({ ...created, attachments: [] });
@@ -326,6 +330,20 @@ export default function App() {
 
   const stats = state?.stats;
 
+  // Les compteurs de l'en-tête portent sur toute la base. Si le projet filtré ou la
+  // recherche en cachent une partie, on les lève : le clic montre ce que le chiffre annonce.
+  const showTasks = (view: TaskView, total: number) => {
+    const today = todayISO();
+    const match = taskViewMatch(view);
+    if ((state?.tasks ?? []).filter((task) => match(task, today)).length < total) {
+      setProjectId('');
+      setSearch('');
+    }
+    setTaskView(view);
+    setShowRight(true);
+    if (isGoogleDocument) setShowDocumentTasks(true);
+  };
+
   const openDocument = useCallback((entryId: string) => {
     const summary = state?.entries.find((candidate) => candidate.id === entryId)
       ?? state?.tasks.flatMap((task) => task.documents ?? []).find((candidate) => candidate.id === entryId);
@@ -335,6 +353,20 @@ export default function App() {
     selectedRef.current = entryId;
     selectEntry(entryId);
   }, [projectId, state, selectEntry]);
+
+  // Procédure rédigée par l'IA depuis une entrée ou une tâche : ouverte au centre,
+  // en lecture. Elle naît dans le projet de sa source, donc dans le filtre ; une
+  // recherche en cours la masquerait : on l'efface, ce qui relit l'état (relire
+  // aussi avec l'ancienne recherche pourrait répondre d'abord et la refermer).
+  const openCreatedProcedure = useCallback((procedure: Entry) => {
+    setSearch('');
+    setFreshEntry(false);
+    setShowCenter(true);
+    selectedRef.current = procedure.id;
+    selectEntry(procedure.id);
+    if (query) setQuery('');
+    else void reload();
+  }, [query, reload, selectEntry]);
 
   // Ouverture d'un document Drive : même geste que depuis une carte de tâche,
   // mais en rechargeant l'état sans filtrer par projet.
@@ -383,10 +415,20 @@ export default function App() {
           <p className="stats">
             <b>{stats.entriesThisWeek}</b> entrée(s) cette semaine · <b>{stats.tasks.todo}</b> à
             faire
+            {stats.tasks.doing > 0 && (
+              <>
+                {' · '}
+                <button className="stat-link" type="button" title="Voir les tâches en cours" onClick={() => showTasks('doing', stats.tasks.doing)}>
+                  <b>{stats.tasks.doing}</b> en cours
+                </button>
+              </>
+            )}
             {stats.overdue > 0 && (
               <>
                 {' · '}
-                <b className="late">{stats.overdue}</b> en retard
+                <button className="stat-link" type="button" title="Voir les tâches en retard" onClick={() => showTasks('late', stats.overdue)}>
+                  <b className="late">{stats.overdue}</b> en retard
+                </button>
               </>
             )}
           </p>
@@ -520,6 +562,7 @@ export default function App() {
               editRequest={procedureEdit.id === entry.id ? procedureEdit.sequence : 0}
               onChanged={reload}
               onTaskCreated={reload}
+              onProcedureCreated={openCreatedProcedure}
               onDeleted={() => {
                 setSelectedId(null);
                 reload();
@@ -540,7 +583,10 @@ export default function App() {
             entries={state?.entries ?? []}
             projectId={projectId}
             projects={state?.projects ?? []}
+            view={taskView}
+            onView={setTaskView}
             onOpenDocument={openDocument}
+            onProcedureCreated={openCreatedProcedure}
             onChanged={reload}
           />
         </aside>
