@@ -2,13 +2,16 @@ import { describe, expect, test, vi, afterEach } from 'vitest';
 import {
   AiError,
   AI_MODELS,
+  buildDraftProcedurePrompt,
   buildProcedurePrompt,
   buildProofreadPrompt,
   buildSuggestPrompt,
   cleanProofreadMarkdown,
   cleanSuggestionLines,
+  draftProcedure,
   MAX_PROOFREAD_CHARS,
   parseChecklist,
+  parseDraftedProcedure,
   proofreadEntry,
   readAiSettings,
   recurringVocabulary,
@@ -392,6 +395,91 @@ describe('procédures', () => {
   test('réponse réduite au titre : illisible', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => aiResponse('# Vidange')));
     await expect(suggestProcedure(settings, 'Vidange')).rejects.toBeInstanceOf(AiError);
+  });
+});
+
+describe('procédure tirée d’une entrée ou d’une tâche', () => {
+  test('une entrée part entière, code compris ; la consigne veut un titre et généralise sans inventer', () => {
+    const prompt = buildDraftProcedurePrompt({
+      origin: 'entry',
+      title: ' Panne du matin ',
+      project: 'Ferme',
+      text: ' Coupé le disjoncteur.\n\n```\nsystemctl restart pompe\n``` ',
+      attachments: ['schéma.pdf', 'schéma.pdf'],
+      linkedTasks: ['Réparer la pompe'],
+    }, ' Pisciculteur ');
+    expect(prompt.user).toBe('Profil : Pisciculteur\nEntrée du journal : Panne du matin\nProjet : Ferme\nPièces jointes : schéma.pdf\nTâches liées : Réparer la pompe\nContenu :\nCoupé le disjoncteur.\n\n```\nsystemctl restart pompe\n```');
+    expect(prompt.truncated).toBe(false);
+    expect(prompt.system).toMatch(/une entrée de son journal/);
+    expect(prompt.system).toMatch(/en première ligne, « # » suivi d'un titre court/);
+    expect(prompt.system).toMatch(/« ## Étapes » en liste numérotée/);
+    expect(prompt.system).toMatch(/Généralise/);
+    expect(prompt.system).toMatch(/« à préciser »/);
+    expect(buildDraftProcedurePrompt({ origin: 'entry', title: 'Vidange' }).user).toBe('Entrée du journal : Vidange\nContenu : rien d’écrit, le titre seul.');
+  });
+
+  test('une tâche part avec ses documents ; un document Google ne donne que son titre', () => {
+    const prompt = buildDraftProcedurePrompt({
+      origin: 'task',
+      title: 'Réparer la pompe',
+      status: 'Terminé',
+      project: 'Ferme',
+      documents: [
+        { title: 'Panne du matin', date: '2026-10-08', text: 'Disjoncteur coupé.' },
+        { title: 'Consignes', date: '2026-10-07', text: 'Texte Google', google: true },
+        { title: 'Note vide', text: '  ' },
+      ],
+    });
+    expect(prompt.user).toBe('Tâche : Réparer la pompe\nStatut : Terminé\nProjet : Ferme\nDocument lié « Panne du matin » (2026-10-08) :\nDisjoncteur coupé.\nDocument lié « Consignes » (2026-10-07) : document Google, contenu non transmis.\nDocument lié « Note vide » : vide.');
+    expect(prompt.system).toMatch(/une tâche et les documents qui lui sont liés/);
+    expect(buildDraftProcedurePrompt({ origin: 'task', title: 'Seule' }).user).toBe('Tâche : Seule\nDocuments liés : aucun, le titre seul.');
+  });
+
+  test('une source trop longue est coupée en gardant ses lignes, et le dit', () => {
+    const long = 'ligne\n'.repeat(MAX_PROOFREAD_CHARS);
+    const entry = buildDraftProcedurePrompt({ origin: 'entry', title: 'T', text: long });
+    expect(entry.truncated).toBe(true);
+    expect(entry.user).toContain('Contenu :\nligne\nligne\n');
+    expect(entry.user.endsWith('\n[…]')).toBe(true);
+    expect(entry.user.length).toBeLessThan(MAX_PROOFREAD_CHARS + 100);
+    // Un plafond pour toute la tâche : le premier document l'épuise, le suivant ne part pas.
+    const task = buildDraftProcedurePrompt({ origin: 'task', title: 'T', documents: [{ title: 'A', text: long }, { title: 'B', text: 'court' }] });
+    expect(task.truncated).toBe(true);
+    expect(task.user).toContain('Document lié « B » : non transmis, la source est trop longue.');
+    expect(task.user).not.toContain('court');
+  });
+
+  test('le titre vient du « # » de tête, sinon de la source', () => {
+    expect(parseDraftedProcedure('```markdown\n# Relancer la **pompe** #\n\nObjectif.\n\n## Étapes\n\n1. Couper\n```', 'Panne'))
+      .toEqual({ title: 'Relancer la pompe', markdown: 'Objectif.\n\n## Étapes\n\n1. Couper' });
+    // Un « ## » n'est pas un titre : il reste dans le corps.
+    expect(parseDraftedProcedure('## Étapes\n\n1. Couper', ' Panne ')).toEqual({ title: 'Panne', markdown: '## Étapes\n\n1. Couper' });
+    expect(parseDraftedProcedure(`# ${'x'.repeat(200)}\n\n1. a`, 'T').title).toHaveLength(120);
+  });
+
+  test('un appel rend titre et corps ; la réponse réduite au titre est illisible', async () => {
+    const fetch = vi.fn(async () => aiResponse('# Relancer la pompe\n\n1. Couper le disjoncteur'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(draftProcedure({ ...settings, profile: 'Pisciculteur' }, { origin: 'entry', title: 'Panne', text: 'Coupé.' }))
+      .resolves.toEqual({ title: 'Relancer la pompe', markdown: '1. Couper le disjoncteur', truncated: false });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.messages[1].content).toBe('Profil : Pisciculteur\nEntrée du journal : Panne\nContenu :\nCoupé.');
+    expect(body.max_tokens).toBe(1500);
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse('# Relancer la pompe')));
+    await expect(draftProcedure(settings, { origin: 'entry', title: 'Panne', text: 'Coupé.' })).rejects.toThrow(/illisible/);
+  });
+
+  test('ni titre ni contenu, ou sans clé : aucun appel réseau', async () => {
+    const fetch = vi.fn(async () => aiResponse('# T\n\n1. a'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(draftProcedure(settings, { origin: 'entry', title: 'Sans titre', text: '  ' })).rejects.toThrow(/Rien à transformer/);
+    // Le contenu d'un document Google ne compte pas : il ne part jamais.
+    await expect(draftProcedure(settings, { origin: 'task', title: ' ', documents: [{ title: 'G', text: 'x', google: true }] })).rejects.toThrow(/Rien à transformer/);
+    await expect(draftProcedure({ ...settings, key: '' }, { origin: 'task', title: 'Réparer la pompe' })).rejects.toThrow('activer la création de procédure');
+    expect(fetch).not.toHaveBeenCalled();
+    // « Sans titre », mais déjà du texte : l'IA a de quoi travailler.
+    await expect(draftProcedure(settings, { origin: 'entry', title: 'Sans titre', text: 'Vider le bassin' })).resolves.toMatchObject({ title: 'T' });
   });
 });
 

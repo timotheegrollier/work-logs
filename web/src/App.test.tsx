@@ -829,6 +829,187 @@ describe('écrire une entrée', () => {
     expect(documentContent()).toHaveAttribute('contenteditable', 'true');
   });
 
+  test('une entrée devient une procédure : rédigée par l’IA, relue, créée à part puis ouverte', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('```markdown\n# Relancer la pompe\n\nRemettre la pompe en route après une coupure.\n\n## Étapes\n\n1. Couper le disjoncteur\n2. Purger le circuit\n```');
+    seedData(api.db, {
+      projects: [{ id: 'pr_ferme', name: 'Ferme' }],
+      entries: [{ id: 'en_panne', title: 'Panne du matin', project_id: 'pr_ferme', content_md: 'Coupé le disjoncteur, purgé, relancé.\n- [x] Prévenir Paul' }],
+      tasks: [{ id: 'tk_pompe', title: 'Réparer la pompe', project_id: 'pr_ferme' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_pompe', 'en_panne', new Date().toISOString());
+    await api.upload('schéma.pdf', '%PDF', { entry_id: 'en_panne' });
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Créer une procédure' }));
+    const draft = await screen.findByRole('form', { name: 'Procédure rédigée' });
+    expect(within(draft).getByText('Purger le circuit')).toBeInTheDocument();
+    // Le « # » de tête devient le titre, sans doublon dans le corps.
+    expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Relancer la pompe');
+    expect(within(draft).queryByRole('heading', { name: 'Relancer la pompe' })).not.toBeInTheDocument();
+    const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+    expect(sent).toContain('Entrée du journal : Panne du matin');
+    expect(sent).toContain('Projet : Ferme');
+    expect(sent).toContain('Pièces jointes : schéma.pdf');
+    expect(sent).toContain('Tâches liées : Réparer la pompe');
+    expect(sent).toContain('Contenu :\nCoupé le disjoncteur, purgé, relancé.\n- [x] Prévenir Paul');
+    // Rien n'est créé avant de valider.
+    expect(row(api.db, "SELECT COUNT(*) n FROM entries WHERE kind='procedure'").n).toBe(0);
+
+    await user.clear(within(draft).getByLabelText('Titre de la procédure'));
+    await user.type(within(draft).getByLabelText('Titre de la procédure'), 'Relancer la pompe du bassin 3');
+    await user.click(within(draft).getByRole('button', { name: 'Créer la procédure' }));
+
+    // Ouverte au centre, en lecture, avec ses étapes.
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Relancer la pompe du bassin 3'));
+    expect(screen.getByRole('button', { name: 'Lire' })).toHaveAttribute('aria-pressed', 'true');
+    expect(documentContent()).toHaveAttribute('aria-readonly', 'true');
+    expect(documentContent().querySelectorAll('ol > li')).toHaveLength(2);
+    const created = row(api.db, "SELECT * FROM entries WHERE kind='procedure'");
+    expect(created.project_id).toBe('pr_ferme');
+    expect(created.archived).toBe(0);
+    expect(created.content_json).toContain('Purger le circuit');
+    // La note ne change pas, et la procédure n'est liée à aucune tâche.
+    expect(row(api.db, "SELECT content_md FROM entries WHERE id='en_panne'").content_md).toBe('Coupé le disjoncteur, purgé, relancé.\n- [x] Prévenir Paul');
+    expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1);
+    // Elle rejoint la colonne Procédures, jamais le journal.
+    expect(within(journal()).queryByText('Relancer la pompe du bassin 3')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Procédures' }));
+    expect(await within(screen.getByRole('region', { name: 'Procédures du projet' })).findByText('Relancer la pompe du bassin 3')).toBeInTheDocument();
+  });
+
+  test('une tâche terminée devient une procédure : ses documents sont lus, la procédure n’est ni liée ni archivée', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('# Changer la cartouche\n\n## Étapes\n\n1. Couper l’arrivée d’eau\n2. Changer la cartouche');
+    seedData(api.db, {
+      projects: [{ id: 'pr_ferme', name: 'Ferme' }],
+      entries: [
+        { id: 'en_cr', title: 'Compte rendu filtre', project_id: 'pr_ferme', content_md: 'Cartouche changée, eau coupée 10 min.' },
+        { id: 'en_google', title: 'Consignes', project_id: 'pr_ferme' },
+      ],
+      tasks: [{ id: 'tk_filtre', title: 'Changer le filtre', status: 'done', project_id: 'pr_ferme' }],
+    });
+    seedGoogleLink(api.db, 'en_google', 'doc-consignes');
+    api.db.prepare('UPDATE entries SET content_md=?, content_json=? WHERE id=?')
+      .run('Texte Google à ne pas transmettre', richText('Texte Google à ne pas transmettre'), 'en_google');
+    for (const entryId of ['en_cr', 'en_google']) {
+      api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_filtre', entryId, new Date().toISOString());
+    }
+    render(<App />);
+
+    const card = (await within(board()).findByText('Changer le filtre')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: 'Créer une procédure avec l’IA' }));
+    const draft = await within(card).findByRole('form', { name: 'Procédure rédigée' });
+    expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Changer la cartouche');
+    const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+    expect(sent).toContain('Tâche : Changer le filtre\nStatut : Terminé\nProjet : Ferme');
+    expect(sent).toContain('Document lié « Compte rendu filtre »');
+    expect(sent).toContain('Cartouche changée, eau coupée 10 min.');
+    // Le document Google ne donne que son titre.
+    expect(sent).toMatch(/« Consignes » \(\d{4}-\d{2}-\d{2}\) : document Google, contenu non transmis\./);
+    expect(sent).not.toContain('Texte Google');
+
+    await user.click(within(draft).getByRole('button', { name: 'Créer la procédure' }));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Changer la cartouche'));
+    const created = row(api.db, "SELECT * FROM entries WHERE kind='procedure'");
+    expect(created.project_id).toBe('pr_ferme');
+    // Liée à une tâche terminée, elle aurait été archivée aussitôt (et masquée de sa colonne).
+    expect(created.archived).toBe(0);
+    expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries WHERE entry_id=?', created.id).n).toBe(0);
+    expect(within(card).queryByRole('form', { name: 'Procédure rédigée' })).not.toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Créer une procédure avec l’IA' })).toBeInTheDocument();
+  });
+
+  test('une recherche en cours ne masque pas la procédure créée', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('# Relancer la pompe\n\n1. Couper le disjoncteur');
+    seedData(api.db, { entries: [{ id: 'en_panne', title: 'Panne du matin', content_md: 'Disjoncteur coupé.' }, { id: 'en_autre', title: 'Autre note' }] });
+    render(<App />);
+
+    await user.type(await screen.findByLabelText('Rechercher'), 'Panne');
+    await waitFor(() => expect(within(journal()).queryByText('Autre note')).not.toBeInTheDocument());
+    await user.click(within(journal()).getByText('Panne du matin'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Panne du matin'));
+    await user.click(screen.getByRole('button', { name: '✨ Créer une procédure' }));
+    await user.click(within(await screen.findByRole('form', { name: 'Procédure rédigée' })).getByRole('button', { name: 'Créer la procédure' }));
+
+    // « Relancer la pompe » ne contient pas « Panne » : la recherche est effacée, la procédure reste ouverte.
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Relancer la pompe'));
+    expect(screen.getByLabelText('Rechercher')).toHaveValue('');
+    expect(await within(journal()).findByText('Autre note')).toBeInTheDocument();
+    expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Relancer la pompe');
+  });
+
+  test('procédure rédigée depuis un document riche : il part en Markdown ; rafraîchir la remplace, ignorer ne crée rien', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('# Première version\n\n1. Ancienne étape');
+    seedData(api.db, { entries: [{ id: 'en_doc', title: 'Document du jour' }] });
+    api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(richText('Vanne ouverte.', 'Bassin rempli.'), 'en_doc');
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Créer une procédure' }));
+    const draft = await screen.findByRole('form', { name: 'Procédure rédigée' });
+    expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Première version');
+    expect((aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content)
+      .toBe('Entrée du journal : Document du jour\nContenu :\nVanne ouverte.\n\nBassin rempli.');
+
+    // Réponse retenue : pendant la rédaction, ni créer ni ignorer (la réponse rouvrirait le panneau).
+    let answer = () => {};
+    const answered = new Promise<void>((resolve) => { answer = resolve; });
+    const diverted = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).includes('chat/completions')) return diverted(input, init);
+      await answered;
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '# Seconde version\n\n1. Nouvelle étape' } }] }) } as Response;
+    }));
+    await user.click(within(draft).getByRole('button', { name: 'Rafraîchir' }));
+    expect(within(draft).getByRole('button', { name: 'Rédaction…' })).toBeDisabled();
+    expect(within(draft).getByRole('button', { name: 'Ignorer' })).toBeDisabled();
+    expect(within(draft).getByRole('button', { name: 'Créer la procédure' })).toBeDisabled();
+    answer();
+    await waitFor(() => expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Seconde version'));
+    expect(within(draft).getByText('Nouvelle étape')).toBeInTheDocument();
+    expect(within(draft).queryByText('Ancienne étape')).not.toBeInTheDocument();
+
+    await user.click(within(draft).getByRole('button', { name: 'Ignorer' }));
+    expect(screen.queryByRole('form', { name: 'Procédure rédigée' })).not.toBeInTheDocument();
+    expect(row(api.db, "SELECT COUNT(*) n FROM entries WHERE kind='procedure'").n).toBe(0);
+    expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Document du jour');
+  });
+
+  test('pas de procédure tirée d’une procédure ni d’un document Google ; sans clé, rien ne part', async () => {
+    const user = userEvent.setup();
+    const calls: string[] = [];
+    const diverted = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(String(input));
+      return diverted(input, init);
+    }));
+    seedData(api.db, {
+      entries: [{ id: 'en_google', title: 'Consignes Google' }, { id: 'en_proc', title: 'Vidange', kind: 'procedure' }],
+      tasks: [{ id: 'tk_filtre', title: 'Changer le filtre' }],
+    });
+    seedGoogleLink(api.db, 'en_google', 'doc-consignes');
+    api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(richText('Couper l’eau.'), 'en_proc');
+    localStorage.setItem('worklogs-entry', 'en_google');
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Consignes Google'));
+    expect(screen.queryByRole('button', { name: '✨ Créer une procédure' })).not.toBeInTheDocument();
+    await openProcedure(user, 'Vidange');
+    expect(screen.queryByRole('button', { name: '✨ Créer une procédure' })).not.toBeInTheDocument();
+
+    // Sans clé, la carte renvoie aux Paramètres sans appeler personne.
+    const card = (await within(board()).findByText('Changer le filtre')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: 'Créer une procédure avec l’IA' }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent('⚙ Paramètres');
+    expect(calls.some((url) => url.includes('chat/completions'))).toBe(false);
+  });
+
   test('crée une tâche liée depuis un document Google', async () => {
     const user = userEvent.setup();
     seedData(api.db, { entries: [{ id: 'en_google_task', title: 'Contexte Google' }] });
