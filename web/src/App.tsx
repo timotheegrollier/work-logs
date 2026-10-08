@@ -648,6 +648,7 @@ export default function App() {
               if (sharedPath?.startsWith(from + '/')) setSharedPath(to + sharedPath.slice(from.length));
               bumpShared();
             }}
+            onProjectsChanged={reload}
           />
         </aside>
       </div>

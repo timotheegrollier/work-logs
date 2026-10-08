@@ -3,6 +3,7 @@ import { api, ApiError, type Project, type SharedDirSummary, type SharedEntry, t
 import { badgesFor, REACH_HELP, REACH_LABELS, sinceLabel } from '../shared-session';
 import { editorKind } from '../file-formats';
 import { fileNameProblem, NEW_FILE_TYPES, newFileBytes, withExtension, type NewFileType } from '../new-files';
+import { linkFor, localDir } from '../shared-links';
 
 const OPEN_KEY = 'worklogs-shared-open';
 const POLL_MS = 30_000;
@@ -29,7 +30,7 @@ const plural = (count: number, word: string) => `${count} ${word}${count > 1 ? '
  * sur cet ordinateur, en arbre. Un fichier s'ouvre au centre comme une entrée.
  * Absente de la PWA (un navigateur n'atteint pas un partage SMB). Voir §25.
  */
-export function SharedFolder({ active, projectId, projects, selectedPath, revision, onOpen, onDeleted, onRenamed }: {
+export function SharedFolder({ active, projectId, projects, selectedPath, revision, onOpen, onDeleted, onRenamed, onProjectsChanged }: {
   /** Colonne Procédures affichée : sinon, ni requête ni sondage. */
   active: boolean;
   projectId: string;
@@ -41,6 +42,8 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   onDeleted: (path: string) => void;
   /** Un dossier renommé : ce qui était dedans a changé de chemin. */
   onRenamed: (from: string, to: string) => void;
+  /** Le dossier relié est porté par le projet : après l'avoir changé, l'écran relit les projets. */
+  onProjectsChanged: () => void;
 }) {
   const [status, setStatus] = useState<SharedStatus | null>(null);
   const [open, setOpen] = useState(readOpen);
@@ -75,9 +78,13 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
 
-  const linked = status?.projects?.[projectId] ?? '';
-  const root = projectId && linked ? linked : '';
   const project = projects.find((candidate) => candidate.id === projectId);
+  // Le projet porte l'adresse du dossier relié (synchronisée par Drive) ; traduite ici vers
+  // un chemin sous la racine de cet appareil. `null` : pas relié, ou relié hors de ce partage.
+  const sharedDir = project?.shared_dir ?? null;
+  const linked = projectId ? localDir(status?.address, sharedDir) : null;
+  const linkedElsewhere = Boolean(projectId && sharedDir && linked === null);
+  const root = projectId && linked ? linked : '';
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -126,7 +133,31 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
     };
   }, [open, usable, refreshAll]);
 
-  const searchRoot = projectId && status?.projects?.[projectId] ? status.projects[projectId] : '';
+  const searchRoot = root;
+
+  // Liens d'avant (table de la machine, puis du relais) : repris une fois sur le projet, puis effacés.
+  const migrating = useRef(false);
+  useEffect(() => {
+    const legacy = Object.entries(status?.projects ?? {});
+    if (!status?.available || !legacy.length || migrating.current) return;
+    const owned = legacy.filter(([id]) => projects.some((candidate) => candidate.id === id));
+    if (!owned.length) return;
+    migrating.current = true;
+    void (async () => {
+      try {
+        for (const [id, dir] of owned) {
+          if (!projects.find((candidate) => candidate.id === id)?.shared_dir) await api.updateProject(id, { shared_dir: linkFor(status.address, dir) });
+          await api.unlinkSharedFolder(id);
+        }
+        onProjectsChanged();
+        await refreshStatus();
+      } catch {
+        // Réessayé au prochain affichage : rien n'est perdu, l'ancien lien reste en place.
+      } finally {
+        migrating.current = false;
+      }
+    })();
+  }, [status, projects, onProjectsChanged, refreshStatus]);
   useEffect(() => {
     const words = query.trim();
     setSearch(null);
@@ -186,7 +217,8 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
     setBusy(true);
     setError('');
     try {
-      setStatus(await api.linkSharedFolder(projectId, dir));
+      await api.updateProject(projectId, { shared_dir: linkFor(status?.address, dir) });
+      onProjectsChanged();
       setLinking(false);
       setExpanded(new Set());
     } catch (e) {
@@ -199,7 +231,8 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
     setBusy(true);
     setError('');
     try {
-      setStatus(await api.unlinkSharedFolder(projectId));
+      await api.updateProject(projectId, { shared_dir: null });
+      onProjectsChanged();
       setExpanded(new Set());
     } catch (e) {
       setError((e as Error).message);
@@ -567,7 +600,7 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
             </p>
             {project && (
               <div className="shared-project-link">
-                {root ? (
+                {sharedDir ? (
                   <button className="ghost" disabled={busy} aria-label={`Délier ${project.name} de son dossier`} onClick={() => void unlink()}>
                     Délier {project.name} de son dossier
                   </button>
@@ -582,6 +615,11 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
                   </button>
                 )}
               </div>
+            )}
+            {linkedElsewhere && project && (
+              <p className="notice">
+                {project.name} est relié à « {sharedDir} », qui n’est pas dans ce partage : tout le partage est affiché.
+              </p>
             )}
             {status.relayError ? (
               <p className="notice">Le relais du dossier partagé ne répond pas ({status.relayError}). Tailscale est-il allumé sur ce téléphone ?</p>

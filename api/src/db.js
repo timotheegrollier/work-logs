@@ -274,6 +274,10 @@ export function openDb(dbPath, { withSeed = true } = {}) {
     db.exec("ALTER TABLE projects ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''");
     db.exec("UPDATE projects SET updated_at=created_at WHERE updated_at=''");
   }
+  // Dossier du TSE relié au projet (2026-10-07) : son adresse complète
+  // (`\\serveur\partage\…`), synchronisée par Drive avec le projet — chaque appareil
+  // la traduit vers sa propre racine (desktop, relais de la PWA). §25, §29.
+  if (!columns(db, 'projects').includes('shared_dir')) db.exec('ALTER TABLE projects ADD COLUMN shared_dir TEXT');
   db.exec(`CREATE TABLE IF NOT EXISTS sync_tombstones (
     kind TEXT NOT NULL, id TEXT NOT NULL, deleted_at TEXT NOT NULL, PRIMARY KEY (kind, id))`);
   const googleSchema = `CREATE TABLE IF NOT EXISTS google_documents (

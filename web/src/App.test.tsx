@@ -2720,6 +2720,45 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     expect((await tree()).getByRole('button', { name: /^Ouvrir autre\.md/ })).toBeInTheDocument();
   });
 
+  test('le dossier relié est porté par le projet (synchronisé par Drive), pas par cet ordinateur', async () => {
+    seedData(api.db, { projects: [{ id: 'pr_p', name: 'Piscine' }] });
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, 'Piscine'));
+    await write('Piscine/consignes.md', '# Consignes');
+    render(<App />);
+    fireEvent.click(await within(filters()).findByRole('button', { name: /Piscine/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine à un dossier…' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine au dossier Piscine' }));
+    expect(await screen.findByRole('button', { name: /^Ouvrir consignes\.md/ })).toBeInTheDocument();
+    expect(api.db.prepare("SELECT shared_dir FROM projects WHERE id='pr_p'").get()).toEqual({ shared_dir: 'Piscine' });
+    expect(api.db.prepare('SELECT COUNT(*) n FROM shared_project_folders').get()).toEqual({ n: 0 });
+  });
+
+  test('lien d’avant (table de cet ordinateur) : repris une fois sur le projet', async () => {
+    seedData(api.db, { projects: [{ id: 'pr_p', name: 'Piscine' }] });
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, 'Piscine'));
+    api.db.prepare('INSERT INTO shared_project_folders (project_id, rel_dir, updated_at) VALUES (?,?,?)').run('pr_p', 'Piscine', new Date().toISOString());
+    render(<App />);
+    await waitFor(() => expect(api.db.prepare("SELECT shared_dir FROM projects WHERE id='pr_p'").get()).toEqual({ shared_dir: 'Piscine' }));
+    await waitFor(() => expect(api.db.prepare('SELECT COUNT(*) n FROM shared_project_folders').get()).toEqual({ n: 0 }));
+  });
+
+  test('dossier relié depuis un autre appareil (adresse, autre nom du serveur, autre casse) : le bon dossier ici', async () => {
+    seedData(api.db, { projects: [{ id: 'pr_t', name: 'TSE' }] });
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, '2. TSE'));
+    await write('2. TSE/Redémarrage.md', '# x');
+    await write('autre.md', 'y');
+    // Cet ordinateur monte « \\172.16.1.20\d\…\00. PROCEDURE » ; le téléphone a relié le projet par « SRVMURGAT » et « D ».
+    api.db.prepare("INSERT INTO local_settings (key, value, updated_at) VALUES ('shared.address', ?, ?)").run('\\\\172.16.1.20\\d\\Global\\00. PROCEDURE', new Date().toISOString());
+    api.db.prepare("UPDATE projects SET shared_dir=? WHERE id='pr_t'").run('\\\\SRVMURGAT\\D\\Global\\00. PROCEDURE\\2. TSE');
+    render(<App />);
+    fireEvent.click(await within(filters()).findByRole('button', { name: /TSE/ }));
+    expect(await screen.findByRole('button', { name: /^Ouvrir Redémarrage\.md/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Ouvrir autre\.md/ })).not.toBeInTheDocument();
+  });
+
   test('projet relié à un dossier absent du partage : on le dit, « Délier » rend tout le partage', async () => {
     seedData(api.db, { projects: [{ id: 'pr_w', name: 'work-logs' }] });
     const [fs, path] = await Promise.all([nodeFs(), nodePath()]);

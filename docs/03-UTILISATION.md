@@ -299,7 +299,9 @@ lorsque la colonne Procédures est affichée.
   ou l'application du système — pour ce que WorkLogs ne modifie pas (en-têtes Word, mise en
   forme Excel, autres formats). Envoie ou abandonne d'abord ton brouillon.
 - Avec un projet filtré, **Relier … à un dossier…** associe le projet à un sous-dossier du
-  partage : la section n'affiche plus que lui. **Délier** rend tout le partage.
+  partage : la section n'affiche plus que lui. **Délier** rend tout le partage. Le lien est
+  enregistré **sur le projet** et suit par Drive : relié sur le PC, il l'est aussi sur le
+  téléphone (et inversement).
 - **Historique sur cet ordinateur** (sous l'éditeur) liste les versions lues, envoyées ou
   mises de côté ; **Restaurer** en fait ton brouillon, à envoyer comme d'habitude.
 - **Fusionner.** Si un collègue a enregistré pendant que tu modifiais un fichier texte, un

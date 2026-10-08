@@ -34,8 +34,8 @@ export function restoreBackup(db, input, { tombstones = null } = {}) {
   db.exec('BEGIN');
   try {
     db.exec('DELETE FROM task_entries; DELETE FROM google_documents; DELETE FROM attachments; DELETE FROM tasks; DELETE FROM entries; DELETE FROM projects;');
-    const project = db.prepare('INSERT INTO projects (id,name,color,created_at,updated_at) VALUES (?,?,?,?,?)');
-    for (const value of data.projects) project.run(value.id, value.name, value.color, value.created_at, value.updated_at || value.created_at);
+    const project = db.prepare('INSERT INTO projects (id,name,color,created_at,updated_at,shared_dir) VALUES (?,?,?,?,?,?)');
+    for (const value of data.projects) project.run(value.id, value.name, value.color, value.created_at, value.updated_at || value.created_at, value.shared_dir ?? null);
     const entry = db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)');
     for (const value of data.entries) entry.run(value.id, value.title, value.content_md, value.content_json ? JSON.stringify(value.content_json) : null, value.entry_date, value.project_id, value.archived, value.kind, value.created_at, value.updated_at);
     const task = db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)');
