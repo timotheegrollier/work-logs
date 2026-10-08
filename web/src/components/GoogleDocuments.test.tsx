@@ -85,6 +85,11 @@ test('crée un Google Docs nommé et l’ouvre immédiatement', async () => {
   expect(create).toHaveBeenCalledWith('Document partagé');
 });
 
+// Composant seul, API simulée : 0,15 s au repos. Sous charge (un cœur partagé avec dix
+// boucles, 2026-10-08) : 0,5 à 1,2 s, 2,8 s s'il ouvre le worker, sans étape dominante.
+// Les réponses arrivent en microtâches : les `findBy` gardent leur seconde. Les 5 s du
+// constat, non reproduites par la seule charge processeur (échange plein ce jour-là),
+// justifient un délai explicite : 15 s.
 test('API désactivée : lien d’activation sans prétendre la liste vide, puis récupération et filtre', async () => {
   const help = 'https://console.cloud.google.com/apis/library/drive.googleapis.com?project=1234';
   const list = vi.spyOn(api, 'googleDocuments').mockRejectedValueOnce(new ApiError('API Drive désactivée', 'GOOGLE_API_DISABLED', help))
@@ -100,4 +105,4 @@ test('API désactivée : lien d’activation sans prétendre la liste vide, puis
   fireEvent.change(screen.getByLabelText('Filtrer les documents Drive'), { target: { value: 'absent' } });
   expect(screen.queryByText('Retrouvé')).not.toBeInTheDocument();
   expect(screen.getByText('Aucun document ne correspond.')).toBeVisible();
-});
+}, 15_000);
