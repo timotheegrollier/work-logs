@@ -33,6 +33,22 @@ function seedGoogleLink(db: typeof api.db, entryId: string, documentId: string) 
     VALUES (?,?,?,?,?,?,?,?,?)`).run(entryId, documentId, 'tab-0', 'r1', rich, 'Document Google', 'Onglet', 0, 0);
 }
 
+// Le fetch détourné vers l'API locale ne voit que le relatif : l'URL absolue
+// du service IA reste mockable sans toucher au backend réel.
+const aiBodies: unknown[] = [];
+function mockAiSuggest(content: string) {
+  aiBodies.length = 0;
+  const diverted = globalThis.fetch;
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('chat/completions')) {
+      if (init?.body) aiBodies.push(JSON.parse(init.body as string));
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as Response;
+    }
+    return diverted(input, init);
+  }));
+}
+
 /** Les largeurs au pixel près vivent dans Paramètres › Affichage. */
 async function openDisplaySettings() {
   fireEvent.click(await screen.findByRole('button', { name: 'Compte et paramètres' }));
@@ -489,22 +505,6 @@ describe('écrire une entrée', () => {
     // La carte affiche le document lié, comme dans l'autre sens.
     expect(await within(board()).findByRole('button', { name: 'Ouvrir Préparer le dossier' })).toBeInTheDocument();
   });
-
-  // Le fetch détourné vers l'API locale ne voit que le relatif : l'URL absolue
-  // du service IA reste mockable sans toucher au backend réel.
-  const aiBodies: unknown[] = [];
-  function mockAiSuggest(content: string) {
-    aiBodies.length = 0;
-    const diverted = globalThis.fetch;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('chat/completions')) {
-        if (init?.body) aiBodies.push(JSON.parse(init.body as string));
-        return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as Response;
-      }
-      return diverted(input, init);
-    }));
-  }
 
   test('suggère des sous-tâches dans le créateur d’entrée liée', async () => {
     const user = userEvent.setup();
@@ -2445,6 +2445,128 @@ describe('dossier partagé', () => {
     expect(await within(editorRegion).findByText(/Le suivi des modifications est activé/)).toBeInTheDocument();
     expect(within(editorRegion).getByLabelText('Style du paragraphe')).toBeDisabled();
     expect(within(editorRegion).getByRole('textbox', { name: 'Contenu du document Word' })).toHaveAttribute('contenteditable', 'false');
+  });
+
+  const aiUserMessage = () => (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+
+  test('Markdown du partage : « Suggérer une procédure » lit titre et contenu, s’applique en brouillon, part au geste', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('```markdown\n# Imprimante du bureau\n\nAjouter l’imprimante du bureau.\n\n## Étapes\n\n1. Ouvrir les paramètres\n2. Saisir l’adresse 10.0.0.5\n```');
+    await write('Imprimante.md', '# Imprimante du bureau\r\n\r\nIP : 10.0.0.5\r\n');
+    render(<App />);
+    const editorRegion = await openFromTree('Imprimante.md');
+    const area = await within(editorRegion).findByLabelText('Contenu de Imprimante.md');
+
+    fireEvent.click(within(editorRegion).getByRole('button', { name: '✨ Suggérer une procédure' }));
+    const proposal = await within(sharedEditor()).findByRole('region', { name: 'Procédure proposée' });
+    // Le titre du fichier fait le titre de la procédure ; l'IA lit ce qui suit.
+    expect(aiUserMessage()).toBe('Procédure : Imprimante du bureau\nDéjà écrit :\nIP : 10.0.0.5');
+    expect(within(proposal).getAllByRole('heading', { name: 'Imprimante du bureau' })).toHaveLength(1);
+    expect(within(proposal).getByText('Saisir l’adresse 10.0.0.5')).toBeInTheDocument();
+    // Rien n'est écrit avant « Appliquer ».
+    expect(area).toHaveValue('# Imprimante du bureau\n\nIP : 10.0.0.5\n');
+
+    fireEvent.click(within(proposal).getByRole('button', { name: 'Appliquer la procédure' }));
+    const proposed = '# Imprimante du bureau\n\nAjouter l’imprimante du bureau.\n\n## Étapes\n\n1. Ouvrir les paramètres\n2. Saisir l’adresse 10.0.0.5\n';
+    expect(within(sharedEditor()).getByLabelText('Contenu de Imprimante.md')).toHaveValue(proposed);
+    expect(within(sharedEditor()).queryByRole('region', { name: 'Procédure proposée' })).not.toBeInTheDocument();
+    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    // Un brouillon, pas un envoi : les collègues ne voient rien avant le geste.
+    expect(await read('Imprimante.md')).toBe('# Imprimante du bureau\r\n\r\nIP : 10.0.0.5\r\n');
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Enregistrer sur le partage' }));
+    await waitFor(async () => expect(await read('Imprimante.md')).toBe(proposed.replace(/\n/g, '\r\n')));
+  });
+
+  test('document Word : « Mettre en page » — objet perdu refusé ; appliquée, seuls les paragraphes changés sont réécrits', async () => {
+    const { wordDocx } = await import('./test/docx-fixture');
+    const { readZip, readZipText } = await import('./zip');
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    await write('Procédure filtration.docx', wordDocx());
+    render(<App />);
+    const editorRegion = await openFromTree('Procédure filtration.docx');
+    const content = await within(editorRegion).findByRole('textbox', { name: 'Contenu du document Word' });
+
+    // L'IA a perdu le tableau : rien n'est proposé.
+    mockAiSuggest('# Filtration\n\nLaver le filtre chaque lundi.\n\n[[objet 1 : Image]]\n\n[[objet 3 : Table des matières]]');
+    fireEvent.click(within(editorRegion).getByRole('button', { name: '✨ Mettre en page' }));
+    expect(await within(sharedEditor()).findByRole('alert')).toHaveTextContent('La proposition a perdu un objet du document (tableau) : relance-la.');
+    // Le document part en Markdown, ses objets en marqueurs.
+    expect(aiUserMessage()).toContain('Procédure : Filtration\n\nTexte :\n# Filtration\n\n*Laver* **le filtre** chaque lundi.');
+    expect(aiUserMessage()).toContain('[[objet 2 : Tableau — Mesure | Valeur / pH | 7,2]]');
+    expect(within(sharedEditor()).queryByRole('region', { name: 'Mise en page proposée' })).not.toBeInTheDocument();
+
+    mockAiSuggest('# Filtration\n\nLaver le filtre chaque lundi.\n\nVoir [le guide](https://exemple.fr/guide).\n\n1. Arrêter la pompe\n2. Fermer la vanne\n\n[[objet 1 : Image]]\n\n[[objet 2 : Tableau]]\n\n[[objet 3 : Table des matières]]');
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: '✨ Mettre en page' }));
+    const proposal = await within(sharedEditor()).findByRole('region', { name: 'Mise en page proposée' });
+    expect(within(proposal).getByText(/Image — conservé tel quel/)).toBeInTheDocument();
+    fireEvent.click(within(proposal).getByRole('button', { name: 'Appliquer la mise en page' }));
+    await waitFor(() => expect(content).toHaveTextContent('Fermer la vanne'));
+    expect(content).not.toHaveTextContent('Vanne fermée');
+    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Enregistrer sur le partage' }));
+    await waitFor(() => expect(within(sharedEditor()).getByText('Enregistré sur le partage.')).toBeInTheDocument());
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    const sent = new Uint8Array(fs.readFileSync(path.join(share, 'Procédure filtration.docx')));
+    const after = (await readZipText(readZip(sent), 'word/document.xml'))!;
+    // Paragraphe gardé tel quel (le correcteur n'en part qu'à la réécriture), étape neuve dans la liste d'origine, image recopiée.
+    expect(after).toContain('<w:proofErr w:type="spellStart"/><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t>le filtre</w:t></w:r>');
+    expect(after).toContain('<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">Fermer la vanne</w:t></w:r>');
+    expect(after).toContain('<w:drawing>');
+    expect(after).not.toContain('Vanne fermée');
+  });
+
+  test('IA du partage : verrou d’un collègue, tableur sans IA, texte brut sans Markdown, fichier modifié avant d’appliquer', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('Prérequis\n- Accès admin\n\nÉtapes\n1. Redémarrer le service');
+    await write('planning.txt', 'lundi\n');
+    await write('relevés.csv', 'a;b\n1;2\n');
+    await write('Redémarrage.txt', 'service web\n');
+    render(<App />);
+
+    // Ouvert dans LibreOffice par une collègue : lecture seule, l'IA aussi. (Le sondage peut
+    // montrer le verrou avant que le contenu soit lu : on attend le contenu, et les boutons avec.)
+    await openFromTree('planning.txt');
+    await within(sharedEditor()).findByLabelText('Contenu de planning.txt');
+    await write('.~lock.planning.txt#', 'Hélène Martin,hmartin,TSE01,05.10.2026 09:00,file:///C:/x;');
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    expect(await within(sharedEditor()).findByText(/Lecture seule — Ouvert par Hélène Martin dans LibreOffice/)).toBeInTheDocument();
+    expect(within(sharedEditor()).getByRole('button', { name: '✨ Suggérer une procédure' })).toBeDisabled();
+    expect(within(sharedEditor()).getByRole('button', { name: '✨ Mettre en page' })).toBeDisabled();
+
+    // Un tableur n'a pas de procédure à rédiger.
+    await openFromTree('relevés.csv');
+    await within(sharedEditor()).findByRole('grid', { name: 'Tableau relevés.csv' });
+    expect(within(sharedEditor()).queryByRole('button', { name: '✨ Mettre en page' })).not.toBeInTheDocument();
+
+    await openFromTree('Redémarrage.txt');
+    const area = await within(sharedEditor()).findByLabelText('Contenu de Redémarrage.txt');
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: '✨ Suggérer une procédure' }));
+    const proposal = await within(sharedEditor()).findByRole('region', { name: 'Procédure proposée' });
+    expect((aiBodies.at(-1) as { messages: { content: string }[] }).messages[0].content).toMatch(/texte brut, sans syntaxe Markdown/);
+    expect(aiUserMessage()).toBe('Procédure : Redémarrage\nDéjà écrit :\nservice web');
+    // Un `.txt` se relit tel qu'il sera écrit, sans rendu Markdown.
+    expect(proposal.querySelector('pre')!.textContent).toBe('Prérequis\n- Accès admin\n\nÉtapes\n1. Redémarrer le service\n');
+    // Une frappe pendant la relecture : appliquer l'effacerait.
+    fireEvent.change(area, { target: { value: 'service web et base\n' } });
+    fireEvent.click(within(proposal).getByRole('button', { name: 'Appliquer la procédure' }));
+    expect(within(sharedEditor()).getByRole('alert')).toHaveTextContent('Le fichier a changé pendant la suggestion : relance-la');
+    expect(area).toHaveValue('service web et base\n');
+  });
+
+  test('IA du partage sans clé : le bouton l’explique, rien ne part', async () => {
+    const calls: string[] = [];
+    const diverted = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(String(input));
+      return diverted(input, init);
+    }));
+    await write('notes.md', 'Laver le filtre.\n');
+    render(<App />);
+    await openFromTree('notes.md');
+    fireEvent.click(await within(sharedEditor()).findByRole('button', { name: '✨ Mettre en page' }));
+    expect(await within(sharedEditor()).findByRole('alert')).toHaveTextContent('Colle ta clé IA dans ⚙ Paramètres pour activer la mise en page.');
+    expect(calls.some((url) => url.includes('chat/completions'))).toBe(false);
   });
 
   test('un classeur Excel s’ouvre dans la grille ; une cellule modifiée, seule sa balise change', async () => {

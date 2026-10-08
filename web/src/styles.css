@@ -932,9 +932,14 @@ button:disabled {
 .task-creator-actions button { white-space: nowrap; }
 .task-message { margin: 0; color: var(--ok); font-size: 12px; }
 /* Mise en page IA : la version corrigée se relit ici avant d'écraser l'entrée. */
-.proofread-preview { display: grid; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
+/* Une colonne qui peut rétrécir, des boutons qui passent à la ligne : sur téléphone (412 px),
+   « Appliquer la procédure · Rafraîchir · Ignorer » d'une traite élargissait le cadre hors de l'écran. */
+.proofread-preview { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
+.proofread-preview .task-creator-actions { flex-wrap: wrap; }
 .proofread-preview strong { font-size: 13px; }
 .proofread-preview .prose { max-height: 50vh; overflow: auto; padding: 8px 12px; border-radius: 8px; background: var(--surface); }
+/* Proposition pour un `.txt` du partage : le texte brut, tel qu'il sera écrit. */
+.proofread-preview .shared-ai-text { margin: 0; white-space: pre-wrap; font: 13.5px/1.6 ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace; }
 @media (max-width: 680px) { .task-creator { grid-template-columns: 1fr; } .task-creator-actions { grid-column: 1; } }
 .modes {
   display: inline-flex;

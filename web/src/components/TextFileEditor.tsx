@@ -2,7 +2,7 @@ import { useImperativeHandle, useMemo, useState } from 'react';
 import { renderMarkdown } from '../markdown';
 import { parseTextFile, serializeTextFile, type TextDraft } from '../text-file';
 import { ENCODING_LABELS, encodingProblem, type TextEncodingName } from '../text-codec';
-import type { FileEditorProps } from '../file-formats';
+import type { FileEditorHandle, FileEditorProps } from '../file-formats';
 
 /**
  * `.txt` et `.md` du dossier partagé. Le texte s'édite avec des `\n` ; le fichier
@@ -15,7 +15,12 @@ export function TextFileEditor({ name, bytes, initialDraft, readOnly, onEdit, ha
   const [encoding, setEncoding] = useState<TextEncodingName>(() => (saved?.format === 'text' && saved.encoding in ENCODING_LABELS ? saved.encoding : parsed.encoding));
   const [reading, setReading] = useState(false);
 
-  useImperativeHandle(handleRef, () => ({
+  const change = (next: string) => {
+    setText(next);
+    onEdit();
+  };
+
+  useImperativeHandle(handleRef, (): FileEditorHandle => ({
     isDirty: () => text !== parsed.text || encoding !== parsed.encoding,
     draft: (): TextDraft => ({ format: 'text', text, encoding }),
     problems: () => {
@@ -23,12 +28,28 @@ export function TextFileEditor({ name, bytes, initialDraft, readOnly, onEdit, ha
       return problem ? [problem] : [];
     },
     serialize: async () => serializeTextFile(parsed, text, encoding),
-  }), [parsed, text, encoding]);
-
-  const change = (next: string) => {
-    setText(next);
-    onEdit();
-  };
+    ai: {
+      format: markdown ? 'markdown' : 'text',
+      begin: (mode) => {
+        // Suggestion dans un `.md` titré (`# Titre` en tête) : le titre reste, l'IA écrit la suite.
+        const heading = markdown && mode === 'procedure' ? /^\s*#[ \t]+([^\n]*\S)[ \t]*(?:\n|$)/.exec(text) : null;
+        const head = heading ? heading[0].trimEnd() : '';
+        return {
+          text: (heading ? text.slice(heading[0].length) : text).trim(),
+          title: heading ? heading[1].trim() : '',
+          prepare: (answer) => {
+            const next = (head ? `${head}\n\n${answer.trim()}` : answer.trim()) + (text.endsWith('\n') ? '\n' : '');
+            return {
+              preview: next,
+              previewFormat: markdown ? 'markdown' : 'text',
+              warning: encodingProblem(next, encoding) ?? '',
+              apply: () => change(next),
+            };
+          },
+        };
+      },
+    },
+  }), [parsed, text, encoding, markdown, onEdit]);
 
   return (
     <div className="shared-text">

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatSize, type SharedFile, type SharedSendResult, type SharedVersion } from '../lib';
 import { Autosave } from '../autosave';
-import { editorKind, MAX_EDITABLE_TEXT, type FileEditorHandle } from '../file-formats';
+import { proofreadEntry, readAiSettings, suggestProcedure } from '../ai-suggest';
+import { renderMarkdown } from '../markdown';
+import { editorKind, MAX_EDITABLE_TEXT, type FileAiMode, type FileAiProposal, type FileEditorHandle } from '../file-formats';
 import { bannerFor, idleExpired, lockBlocks, lockForgotten, lockMessage } from '../shared-session';
 import { requestLeave, setLeaveGuard } from '../shared-leave';
 import { TextFileEditor } from './TextFileEditor';
@@ -488,6 +490,60 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
     if (!heldRef.current && !overrideRef.current) void acquire();
   }, [autosave, acquire]);
 
+  // IA : un clic = un envoi du titre, du dossier et du contenu au service des Paramètres.
+  // La proposition se relit ici et s'applique comme une frappe : un brouillon, jamais un envoi.
+  const [aiBusy, setAiBusy] = useState<FileAiMode | null>(null);
+  const [aiProposal, setAiProposal] = useState<{ mode: FileAiMode; snapshot: string; version: number; proposal: FileAiProposal } | null>(null);
+  const aiProposalHtml = useMemo(
+    () => (aiProposal?.proposal.previewFormat === 'markdown' ? renderMarkdown(aiProposal.proposal.preview) : ''),
+    [aiProposal],
+  );
+  // Fichier rechargé (version du collègue, envoi) : la proposition portait sur l'ancien.
+  useEffect(() => { setAiProposal(null); }, [loaded?.version]);
+  const requestAi = async (mode: FileAiMode) => {
+    const handle = handleRef.current;
+    const version = loadedRef.current?.version;
+    if (aiBusy || !handle?.ai || version === undefined) return;
+    setAiBusy(mode);
+    setError('');
+    setNotice('');
+    try {
+      const snapshot = JSON.stringify(handle.draft());
+      const request = handle.ai.begin(mode);
+      // Le titre du document s'il en porte un, sinon le nom du fichier.
+      const title = request.title || (fileRef.current?.name ?? basename(path)).replace(/\.[^.]+$/, '');
+      const format = handle.ai.format;
+      let answer: string;
+      if (mode === 'layout') {
+        if (!request.text.trim()) throw new Error('Rien à mettre en page : le fichier est vide.');
+        answer = await proofreadEntry(readAiSettings(), title, request.text, { procedure: true, format });
+      } else {
+        answer = await suggestProcedure(readAiSettings(), title, { context: { text: request.text, folder: parentOf(path), format } });
+      }
+      if (loadedRef.current?.version !== version) throw new Error('Le fichier a été rechargé pendant la demande : relance-la.');
+      setAiProposal({ mode, snapshot, version, proposal: request.prepare(answer) });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setAiBusy(null);
+    }
+  };
+  const applyAi = () => {
+    if (!aiProposal) return;
+    const handle = handleRef.current;
+    // Le contenu a bougé pendant l'appel : appliquer effacerait ces frappes.
+    if (loadedRef.current?.version !== aiProposal.version || !handle || JSON.stringify(handle.draft()) !== aiProposal.snapshot) {
+      setAiProposal(null);
+      setError(aiProposal.mode === 'layout'
+        ? 'Le fichier a changé pendant la mise en page : relance-la pour ne rien perdre.'
+        : 'Le fichier a changé pendant la suggestion : relance-la pour ne rien perdre.');
+      return;
+    }
+    aiProposal.proposal.apply();
+    setAiProposal(null);
+    setNotice('Proposition appliquée en brouillon sur cet ordinateur : « Enregistrer sur le partage » l’enverra.');
+  };
+
   const name = file?.name ?? basename(path);
   const kind = file ? editorKind(file.ext) : null;
   // Les formats zip (Word, Excel) ont leurs propres bornes, à la lecture de l'archive.
@@ -509,6 +565,8 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
           : hasDraft ? 'Brouillon sur cet ordinateur'
             : 'À jour avec le partage';
   const canOpenWith = Boolean(window.worklogsDesktop?.shared);
+  // Les tableurs n'ont pas de procédure à rédiger.
+  const aiKind = kind === 'text' || kind === 'markdown' || kind === 'docx';
 
   const downloadUrl = useMemo(
     () => (loaded && !kind ? URL.createObjectURL(new Blob([loaded.bytes as BlobPart])) : ''),
@@ -594,6 +652,48 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
       )}
       {notice && <p className="shared-notice no-print" role="status">{notice}</p>}
       {error && <p className="error" role="alert">{error}</p>}
+
+      {aiKind && loaded && (
+        <div className="entry-task-action no-print">
+          <button
+            className="ghost"
+            type="button"
+            disabled={aiBusy !== null || Boolean(readOnly)}
+            title="Propose une procédure concise à partir du titre et de ce qui est déjà écrit (envoyés au service IA configuré en Paramètres, à relire avant application)"
+            onClick={() => void requestAi('procedure')}
+          >
+            {aiBusy === 'procedure' ? 'Suggestion…' : '✨ Suggérer une procédure'}
+          </button>
+          <button
+            className="ghost"
+            type="button"
+            disabled={aiBusy !== null || Boolean(readOnly)}
+            title="Corrige les fautes et met en page (envoie le titre et le contenu du fichier au service IA configuré en Paramètres, à relire avant application)"
+            onClick={() => void requestAi('layout')}
+          >
+            {aiBusy === 'layout' ? 'Mise en page…' : '✨ Mettre en page'}
+          </button>
+        </div>
+      )}
+      {aiProposal && (
+        <div className="proofread-preview no-print" role="region" aria-label={aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'}>
+          <strong>{aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'} — relis avant d’appliquer</strong>
+          {kind === 'docx' && <small>Images, tableaux et champs restent ceux du fichier ; un paragraphe au texte inchangé reste tel quel ; un paragraphe réécrit prend les styles du document, sans souligné ni couleurs.</small>}
+          {aiProposal.proposal.warning && <small className="error">{aiProposal.proposal.warning}</small>}
+          {aiProposal.proposal.previewFormat === 'markdown'
+            ? <article className="prose" dangerouslySetInnerHTML={{ __html: aiProposalHtml }} />
+            : <pre className="prose shared-ai-text">{aiProposal.proposal.preview}</pre>}
+          <div className="task-creator-actions">
+            <button className="task-primary" type="button" disabled={Boolean(readOnly)} onClick={applyAi}>
+              {aiProposal.mode === 'layout' ? 'Appliquer la mise en page' : 'Appliquer la procédure'}
+            </button>
+            <button className="ghost" type="button" disabled={aiBusy !== null} onClick={() => void requestAi(aiProposal.mode)}>
+              {aiBusy ? (aiBusy === 'layout' ? 'Mise en page…' : 'Suggestion…') : 'Rafraîchir'}
+            </button>
+            <button className="ghost" type="button" onClick={() => setAiProposal(null)}>Ignorer</button>
+          </div>
+        </div>
+      )}
 
       {!loaded ? (
         !error && <p className="empty">Ouverture…</p>
