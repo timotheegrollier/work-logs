@@ -1,6 +1,7 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-08 · Version : **v0.54.0**, qui publie deux lots :
+> **Mise à jour :** 2026-10-08 · Version : **v0.54.0** (publiée à 17:20 ; la 0.53.0 a été bumpée
+> sur `master` mais jamais taguée : son lot, les projets sur une rangée, est dedans). Elle publie :
 > - **procédure locale → TSE** — « ＋ Depuis une procédure… » dans la section Dossier
 >   partagé : une procédure hors partage part sur le serveur distant en `.docx` (ou `.md`,
 >   `.txt` au choix) dans le dossier sélectionné, copie par défaut, déplacement sur case à
@@ -10,7 +11,7 @@
 >   Installé sur la VM, et le retour arrière y a déjà servi (la v0.52.0, refusée). Détail :
 >   « Lot du 2026-10-08 (9) » ci-dessous ; décision §37 ; mode d'emploi `09-RELAIS.md`.
 >
-> **v0.53.0** — **projets sur une rangée, gestion
+> **Bumpé en 0.53.0, publié dans la v0.54.0** — **projets sur une rangée, gestion
 > par-dessus, mobile en une page** (branche `feat/mobile-ui-projets`, rebasée sur la v0.52.0).
 > Le bandeau projets tient sur **une rangée** quel que soit le nombre de projets (molette,
 > fondus, couleur du projet actif) ; **Gérer les projets** ouvre une fenêtre sous le bouton
@@ -131,8 +132,11 @@ Demande de Timo : « fais en sorte que le relais sur ma VM .203 soit mis à jour
   relais ne dit pas sa version sur `/health` est refusée (retour arrière, sans dégât) : c'est
   arrivé à la **v0.52.0**, publiée pendant ce lot — installée à 16:33, refusée au bout de 30 s,
   « v0.51.0 répond de nouveau », pas retentée au passage de 16:38. Le relais reste donc sur le
-  mélange v0.51.0 + `worklogs-file-coedition` jusqu'à la v0.54.0 (la v0.53.0, publiée
-  juste avant sans ce lot, est refusée de la même façon).
+  mélange v0.51.0 + `worklogs-file-coedition` jusqu'à la v0.54.0.
+- **La v0.54.0 s'est installée d'elle-même** : publiée à 17:20:30, installée par la VM à
+  17:23:41 (`npm ci` en 0,6 s) ; `/health` → `"version":"0.54.0"` en local et par Tailscale,
+  partage joignable (statut `ok`, 19 éléments à la racine), 401 sans code, script de la VM
+  remplacé par celui de la release, `DEPLOIEMENT.txt` réécrit.
 - **VM** : script et unités installés, `api/VERSION` = `0.51.0` pour le mélange déployé ce jour
   (v0.51.0 + travail de `worklogs-file-coedition`), minuteur actif, premier passage « À jour :
   v0.51.0. ». La prochaine release remplace ce mélange. Essais réels sur une copie du relais
@@ -173,7 +177,7 @@ choix) sur le TSE, dans le dossier partagé sélectionné ». Décision : §36.
    colonne, sans laisser de brouillon ?
 4. Un nom déjà pris sur le partage : refusé, l'existant intact ?
 
-## Lot du 2026-10-08 (7) — projets sur une rangée, gestion par-dessus, mobile en une page — v0.53.0
+## Lot du 2026-10-08 (7) — projets sur une rangée, gestion par-dessus, mobile en une page — v0.54.0 (bumpé en 0.53.0, jamais tagué)
 
 - Demande : « améliorer grandement le design et l'UI/UX mobile […] ; la liste des projets et
   Gérer les projets (aussi sur desktop) prennent trop de place quand il y a trop de projets ».

@@ -121,8 +121,12 @@ minuteur activé, premier passage « À jour : v0.51.0. ».
 minuteur à 16:33 — elle a démarré, mais son `/health` ne disait pas encore sa version (le lot
 de la mise à jour automatique n'y était pas) : refusée au bout de 30 s, retour arrière,
 « v0.51.0 répond de nouveau », et le passage de 16:38 ne l'a pas retentée. Deux redémarrages
-d'une seconde ; le relais a répondu tout du long. La v0.53.0 (publiée sans ce lot) le sera
-aussi ; la v0.54.0 est la première qu'il garde.
+d'une seconde ; le relais a répondu tout du long.
+
+**La v0.54.0, première gardée** : publiée à 17:20:30, installée d'elle-même à 17:23:41 —
+`/health` → `"version":"0.54.0"` (en local et par Tailscale), statut `ok`, 19 éléments à la
+racine du partage, 401 sans code ; le script de la VM est celui de la release,
+`DEPLOIEMENT.txt` réécrit, l'ancien code (mélange du matin) dans `api.precedent`.
 
 ## Régler le téléphone
 
