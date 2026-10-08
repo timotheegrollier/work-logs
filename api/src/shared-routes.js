@@ -1,5 +1,6 @@
 import express from 'express';
 import { SharedError, toSharedError } from './shared-service.js';
+import { inlineHeader } from './disposition.js';
 
 /**
  * Routes du dossier partagé (`/api/shared`). Elles exposent des fichiers
@@ -59,6 +60,24 @@ export function registerSharedRoutes(app, { shared }) {
     if (!bytes) return fail(res, new SharedError(404, 'SHARED_NO_CONTENT', 'Version introuvable sur cet ordinateur.'));
     res.setHeader('Content-Type', 'application/octet-stream');
     // Adressé par son empreinte : le contenu d'une URL ne change jamais.
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    res.send(bytes);
+  });
+  /**
+   * Mêmes octets, lisibles dans la visionneuse PDF intégrée (`inline`, sous le nom
+   * du fichier). **PDF seulement** : servi depuis l'origine de l'app, un fichier
+   * d'équipe quelconque pourrait être du HTML actif. `name` ne sert qu'à l'en-tête.
+   */
+  router.get('/preview', (req, res) => {
+    const bytes = shared.content(text(req.query.hash));
+    if (!bytes) return fail(res, new SharedError(404, 'SHARED_NO_CONTENT', 'Version introuvable sur cet ordinateur.'));
+    // La norme tolère quelques octets avant l'en-tête `%PDF-` : les lecteurs le cherchent dans le premier Ko.
+    if (!bytes.subarray(0, 1024).includes('%PDF-')) {
+      return fail(res, new SharedError(415, 'SHARED_NOT_PDF', 'Aperçu intégré réservé aux PDF.'));
+    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', inlineHeader(text(req.query.name).split(/[\\/]/).pop() || 'document.pdf'));
     res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
     res.send(bytes);
   });

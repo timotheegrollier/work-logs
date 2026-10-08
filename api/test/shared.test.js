@@ -175,6 +175,32 @@ describe('dossier partagé', () => {
     assert.deepEqual(versions.body.versions.map((v) => [v.origin, v.state]), [['base', 'read']]);
   });
 
+  test('aperçu : un PDF du partage se lit inline sous son nom ; rien d’autre n’est servi ainsi', async () => {
+    write('Notice pompe à chaleur.pdf', '%PDF-1.4\n% notice\n');
+    write('page.html', '<script>alert(1)</script>');
+    const pdf = (await open('Notice pompe à chaleur.pdf')).body;
+    const res = await fetch(`${api.base}/api/shared/preview?hash=${pdf.hash}&name=${q('Notice pompe à chaleur.pdf')}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'application/pdf');
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(res.headers.get('content-disposition'),
+      'inline; filename="Notice pompe _ chaleur.pdf"; filename*=UTF-8\'\'Notice%20pompe%20%C3%A0%20chaleur.pdf');
+    assert.equal(await res.text(), '%PDF-1.4\n% notice\n');
+    // Le nom ne sert qu'à l'en-tête : jamais de chemin, un repli s'il manque.
+    const traversal = await fetch(`${api.base}/api/shared/preview?hash=${pdf.hash}&name=${q('../../etc/passwd.pdf')}`);
+    assert.match(traversal.headers.get('content-disposition'), /^inline; filename="passwd\.pdf"/);
+    const unnamed = await fetch(`${api.base}/api/shared/preview?hash=${pdf.hash}`);
+    assert.match(unnamed.headers.get('content-disposition'), /^inline; filename="document\.pdf"/);
+
+    // Servi depuis l'origine de l'app, du HTML deviendrait actif : refusé, même nommé .pdf.
+    const html = (await open('page.html')).body;
+    const refused = await fetch(`${api.base}/api/shared/preview?hash=${html.hash}&name=page.pdf`);
+    assert.equal(refused.status, 415);
+    assert.equal((await refused.json()).code, 'SHARED_NOT_PDF');
+    const unknown = await fetch(`${api.base}/api/shared/preview?hash=${'0'.repeat(64)}`);
+    assert.equal(unknown.status, 404);
+  });
+
   test('un brouillon reste sur cet ordinateur ; l’envoi l’écrit et le consomme', async () => {
     write('notes.md', 'v1\n');
     const file = (await open('notes.md')).body;

@@ -1,9 +1,12 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-06 · Version : v0.47.0 (lot courant non publié).
-> **Lot courant :** procédures en **Lire / Écrire** comme les entrées, et **blocs de code**
-> d'un geste — branche `feat/procedures-lecture-blocs-de-code`. Détail : « Lot du
-> 2026-10-06 (3) — procédures en lecture, blocs de code » ci-dessous ; décision §29.
+> **Mise à jour :** 2026-10-07 · Version : v0.47.0 (lot courant non publié).
+> **Lot courant :** un **PDF du dossier partagé se lit sur place** (desktop), comme les PDF
+> joints — branche `claude/pdf-visualization-worklogs-desktop-c55e68`. Détail : « Lot du
+> 2026-10-07 — PDF du dossier partagé » ci-dessous ; décision §30.
+>
+> **Lot précédent (fusionné) :** procédures en **Lire / Écrire** comme les entrées, et
+> **blocs de code** d'un geste. Détail : « Lot du 2026-10-06 (3) » ci-dessous ; décision §29.
 >
 > **Lots précédents (v0.46.0, v0.47.0) :** dossier partagé — fusionner, chercher, arbre
 > hors ligne, puis créer des fichiers : sections « Lot du 2026-10-06 » et « (2) » ci-dessous.
@@ -47,6 +50,21 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-10-07 — PDF du dossier partagé
+
+Demande de Timo : « visualiser les PDF directement dans WorkLogs dans l'app desktop, comme
+dans la PWA sur mobile ». Décision : §30.
+- **Constaté avant de coder** : un PDF **joint à une entrée** s'affiche déjà en desktop
+  (bouton « 👁 Aperçu », visionneuse d'Electron), dans le paquet 0.47.0 installé comme en dev.
+  Le seul endroit où un PDF ne se lisait pas dans WorkLogs : le **dossier partagé** (« WorkLogs
+  ne modifie pas les fichiers .pdf », « Ouvrir avec… » seulement).
+- **Maintenant** : un PDF du partage s'ouvre au centre, dans la visionneuse intégrée, en
+  lecture seule ; « Ouvrir avec… » reste. Route `GET /api/shared/preview?hash=&name=` (PDF
+  seulement, vérifié sur les octets, `415` sinon), aucune CSP assouplie, aucune dépendance.
+- Tests : API (`shared.test.js`, en-têtes, nom, refus du non-PDF), front (`App.test.tsx`,
+  PDF au centre, faux PDF, autre format inchangé ; `file-preview.test.ts`), desktop e2e
+  (la visionneuse de Chromium prend le relais, aucun téléchargement).
 
 ## Lot du 2026-10-06 (3) — procédures en lecture, blocs de code
 

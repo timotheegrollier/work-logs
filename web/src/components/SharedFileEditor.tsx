@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatSize, type SharedFile, type SharedSendResult, type SharedVersion } from '../lib';
 import { Autosave } from '../autosave';
 import { editorKind, MAX_EDITABLE_TEXT, type FileEditorHandle } from '../file-formats';
+import { looksLikePdf } from '../file-preview';
 import { bannerFor, idleExpired, lockBlocks, lockForgotten, lockMessage } from '../shared-session';
 import { requestLeave, setLeaveGuard } from '../shared-leave';
 import { TextFileEditor } from './TextFileEditor';
@@ -490,9 +491,11 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
             : 'À jour avec le partage';
   const canOpenWith = Boolean(window.worklogsDesktop?.shared);
 
+  // Un PDF se lit sur place (lecture seule) : la visionneuse intégrée garde son bouton de téléchargement.
+  const pdf = Boolean(loaded && !kind && looksLikePdf(loaded.bytes));
   const downloadUrl = useMemo(
-    () => (loaded && !kind ? URL.createObjectURL(new Blob([loaded.bytes as BlobPart])) : ''),
-    [loaded, kind],
+    () => (loaded && !kind && !pdf ? URL.createObjectURL(new Blob([loaded.bytes as BlobPart])) : ''),
+    [loaded, kind, pdf],
   );
   useEffect(() => () => { if (downloadUrl) URL.revokeObjectURL(downloadUrl); }, [downloadUrl]);
 
@@ -576,6 +579,8 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
 
       {!loaded ? (
         !error && <p className="empty">Ouverture…</p>
+      ) : pdf ? (
+        <iframe className="shared-pdf" src={api.sharedPreviewUrl(loaded.template, name)} title={`Aperçu de ${name}`} />
       ) : !kind ? (
         <div className="notice">
           <p>

@@ -975,6 +975,7 @@ export const localApi: Api = {
   sharedList: async () => fail(SHARED_DESKTOP_ONLY),
   sharedFile: async () => fail(SHARED_DESKTOP_ONLY),
   sharedContent: async () => fail(SHARED_DESKTOP_ONLY),
+  sharedPreviewUrl: () => fail(SHARED_DESKTOP_ONLY),
   saveSharedDraft: async () => fail(SHARED_DESKTOP_ONLY),
   discardSharedDraft: async () => fail(SHARED_DESKTOP_ONLY),
   pushShared: async () => fail(SHARED_DESKTOP_ONLY),

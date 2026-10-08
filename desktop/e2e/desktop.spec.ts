@@ -266,6 +266,29 @@ test('dossier partagé : « Ouvrir avec… » donne le vrai fichier, refusé pou
   expect(await page.evaluate(() => (window as unknown as SharedBridge).worklogsDesktop.shared.openWith('notes.md'))).toMatch(/brouillon/);
 });
 
+test('dossier partagé : un PDF s’affiche dans la visionneuse intégrée, sans téléchargement', async () => {
+  const share = path.join(directory, 'partage');
+  fs.mkdirSync(share);
+  // Un vrai PDF, fabriqué par Chromium lui-même.
+  const pdf = await application!.evaluate(async ({ BrowserWindow }) =>
+    (await BrowserWindow.getAllWindows()[0].webContents.printToPDF({})).toString('base64'));
+  fs.writeFileSync(path.join(share, 'notice pompe.pdf'), Buffer.from(pdf, 'base64'));
+  await application!.evaluate(({ session }) => {
+    session.defaultSession.on('will-download', () => { (globalThis as unknown as { downloads: number }).downloads = 1; });
+  });
+  await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  await page.getByRole('button', { name: 'ou choisir un dossier déjà monté…' }).click();
+  await page.getByRole('button', { name: /^Ouvrir notice pompe\.pdf/ }).click();
+  const frame = page.getByRole('region', { name: 'Fichier partagé' }).getByTitle('Aperçu de notice pompe.pdf');
+  await expect(frame).toBeVisible();
+  expect((await frame.boundingBox())!.height).toBeGreaterThan(400);
+  // La visionneuse PDF de Chromium (extension intégrée) prend le relais dans le cadre.
+  await expect.poll(() => application!.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].webContents.mainFrame.framesInSubtree.map((f) => f.url)
+      .some((url) => url.startsWith('chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/')))).toBe(true);
+  expect(await application!.evaluate(() => (globalThis as unknown as { downloads?: number }).downloads ?? 0)).toBe(0);
+});
+
 test('dossier partagé : se connecter par l’adresse \\\\serveur\\partage, puis se reconnecter après démontage', async () => {
   const mounted = path.join(directory, 'gvfs', 'smb-share:server=tse01,share=commun');
   await page.getByRole('button', { name: 'Procédures', exact: true }).click();

@@ -2076,6 +2076,41 @@ describe('dossier partagé', () => {
     await waitFor(async () => expect(await read('notes.md')).toBe('# Consignes\r\n\r\nLaver le filtre.\r\nContrôler le pH.\r\n'));
   });
 
+  test('un PDF du partage se lit au centre, sous son nom, sans être modifiable', async () => {
+    await write('notice pompe.pdf', '%PDF-1.4\n% notice\n');
+    await write('archive.zip', 'PK\u0003\u0004');
+    render(<App />);
+    expect(await screen.findByText('Dossier partagé')).toBeInTheDocument();
+    // Grisé dans l'arbre = WorkLogs ne l'ouvre pas lui-même : plus le cas d'un PDF.
+    expect(await screen.findByRole('button', { name: /^Ouvrir notice pompe\.pdf/ })).not.toHaveClass('is-foreign');
+    expect(screen.getByRole('button', { name: /^Ouvrir archive\.zip/ })).toHaveClass('is-foreign');
+
+    const editorRegion = await openFromTree('notice pompe.pdf');
+    const frame = await within(editorRegion).findByTitle('Aperçu de notice pompe.pdf');
+    const src = frame.getAttribute('src') ?? '';
+    expect(src).toMatch(/^\/api\/shared\/preview\?hash=[0-9a-f]{64}&name=notice%20pompe\.pdf$/);
+    const served = await fetch(src);
+    expect(served.headers.get('content-type')).toBe('application/pdf');
+    expect(served.headers.get('content-disposition')).toMatch(/^inline; filename="notice pompe\.pdf"/);
+    expect(within(editorRegion).getByRole('button', { name: 'Enregistrer sur le partage' })).toBeDisabled();
+    expect(within(editorRegion).queryByText(/WorkLogs ne modifie pas/)).not.toBeInTheDocument();
+
+    // Un autre format garde l'explication et le téléchargement, sans visionneuse.
+    await openFromTree('archive.zip');
+    // Changer de fichier passe par la garde de sortie (asynchrone) : on relit la région à chaque essai.
+    await waitFor(() => expect(within(sharedEditor()).getByText(/WorkLogs ne modifie pas les fichiers \.zip/)).toBeInTheDocument());
+    expect(within(sharedEditor()).getByRole('link', { name: 'Télécharger cette version' })).toBeInTheDocument();
+    expect(within(sharedEditor()).queryByTitle(/^Aperçu de/)).not.toBeInTheDocument();
+  });
+
+  test('un faux PDF (octets d’un autre format) n’ouvre pas la visionneuse', async () => {
+    await write('rapport.pdf', '<html>pas un PDF</html>');
+    render(<App />);
+    const editorRegion = await openFromTree('rapport.pdf');
+    expect(await within(editorRegion).findByText(/WorkLogs ne modifie pas les fichiers \.pdf/)).toBeInTheDocument();
+    expect(within(editorRegion).queryByTitle('Aperçu de rapport.pdf')).not.toBeInTheDocument();
+  });
+
   test('ouvert dans Excel par un collègue : lecture seule avec son nom, brouillon possible sur demande', async () => {
     await write('relevés.csv', 'a;b\n1;2\n');
     await write('~$relevés.csv', excelOwner('Jean Dupont'));

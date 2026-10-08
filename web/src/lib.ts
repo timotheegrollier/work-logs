@@ -411,6 +411,8 @@ export const remoteApi = {
     if (!res.ok) throw new ApiError((await res.json().catch(() => null))?.error || 'version introuvable');
     return new Uint8Array(await res.arrayBuffer());
   },
+  /** PDF du partage, servi `inline` pour la visionneuse intégrée (PDF seulement). */
+  sharedPreviewUrl: (hash: string, name: string) => '/api/shared/preview?hash=' + enc(hash) + '&name=' + enc(name),
   saveSharedDraft: (path: string, body: { model: unknown; template_hash: string; base_hash: string | null }) =>
     send<SharedFile>('PUT', '/api/shared/draft?path=' + enc(path), body),
   async discardSharedDraft(path: string, bytes?: Uint8Array) {

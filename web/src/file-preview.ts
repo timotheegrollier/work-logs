@@ -33,6 +33,14 @@ export function previewKind(file: { filename: string; mime?: string }): PreviewK
   return 'other';
 }
 
+/**
+ * Ce sont bien les octets d'un PDF : l'en-tête `%PDF-` dans le premier Ko (la
+ * norme tolère quelques octets avant). Même contrôle que `/api/shared/preview`.
+ */
+export function looksLikePdf(bytes: Uint8Array): boolean {
+  return String.fromCharCode(...bytes.subarray(0, 1024)).includes('%PDF-');
+}
+
 /** Message affiché pour les formats qu'on ne peut pas rendre honnêtement. */
 export function previewNotice(kind: PreviewKind, filename: string): string {
   if (kind === 'sheet') {

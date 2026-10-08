@@ -1145,3 +1145,36 @@ dans un bloc (`enableTabIndentation` existe, mais Tab ne sortirait plus de l'éd
 
 **Rouvrir si** les documents riches du journal doivent aussi s'ouvrir en lecture : il
 suffit d'élargir `hasModes` dans `EntryEditor.tsx` (et d'adapter le parcours desktop).
+
+## 30. Un PDF du dossier partagé se lit sur place — 2026-10-07
+
+**La demande.** « Visualiser les PDF directement dans WorkLogs dans l'app desktop, comme dans
+la PWA sur mobile. »
+
+**Constaté avant de coder.** Les PDF **joints aux entrées** s'affichaient déjà en desktop
+(§15 : `<iframe>` sur `/api/files/:stored/preview`, visionneuse PDF intégrée d'Electron),
+vérifié dans le paquet 0.47.0 installé comme en dev. Le trou était le **dossier partagé**
+(§25), qui n'existe qu'en desktop : un PDF y affichait « WorkLogs ne modifie pas les fichiers
+.pdf » et ne proposait que « Ouvrir avec… » ou « Télécharger cette version ».
+
+**Les choix.**
+- **Lecture seule, dans la colonne centrale**, à la place de l'explication : la visionneuse
+  de Chromium (pages, zoom, recherche, impression, téléchargement). « Ouvrir avec… » reste
+  pour annoter ou signer dans une vraie application ; « Enregistrer sur le partage » reste
+  grisé (rien à envoyer).
+- **Une route serveur, pas une URL `blob:`.** Le front a déjà les octets, mais la CSP du
+  desktop n'autorise pas `blob:` (déjà le cas pour l'aperçu `.docx`, §15). Plutôt que de
+  l'assouplir, `GET /api/shared/preview?hash=&name=` sert la version du magasin local en
+  `inline`, sous son nom (le téléchargement depuis la visionneuse le garde) : même origine
+  que l'app, rien à changer à la CSP, et ça marche hors ligne comme le reste du partage.
+- **PDF seulement, vérifié sur les octets** (`%PDF-` dans le premier Ko) côté serveur
+  (`415 SHARED_NOT_PDF`) et côté front (`looksLikePdf`) : un fichier d'équipe servi depuis
+  notre origine pourrait être du HTML actif, quelle que soit son extension. `nosniff` en plus.
+  Un faux `.pdf` garde l'explication et le téléchargement.
+- `attachmentHeader` et `inlineHeader` passent de `app.js` à `api/src/disposition.js`, sans
+  changement, pour servir aux deux routes.
+- Dans l'arbre, un PDF n'est plus grisé (`is-foreign` = « WorkLogs ne l'ouvre pas lui-même »).
+
+**Écartés.** Images et texte du partage en lecture : personne ne les a demandés, et le texte
+s'ouvre déjà dans son éditeur. Annoter un PDF : demanderait une bibliothèque (accord requis).
+
