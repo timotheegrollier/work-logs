@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { COLUMNS, PRIORITIES, TASK_VIEWS, api, dayLabel, isOverdue, priorityLabel, subtasksMd, todayISO, type EntrySummary, type Priority, type Project, type Status, type Task, type TaskView } from '../lib';
-import { readAiSettings, suggestSubtasks, taskSuggestContext, type SuggestContext } from '../ai-suggest';
+import { COLUMNS, PRIORITIES, TASK_VIEWS, api, dayLabel, isOverdue, priorityLabel, subtasksMd, todayISO, type Entry, type EntrySummary, type Priority, type Project, type Status, type Task, type TaskView } from '../lib';
+import { draftProcedure, MAX_SOURCE_DOCUMENTS, readAiSettings, suggestSubtasks, taskSuggestContext, type DraftedProcedure, type SuggestContext } from '../ai-suggest';
+import { richToMarkdown } from '../rich-markdown';
+import { ProcedureDraft } from './ProcedureDraft';
 
 const DRAG_TYPE = 'text/plain';
 
@@ -12,6 +14,7 @@ export function TaskBoard({
   view,
   onView,
   onOpenDocument,
+  onProcedureCreated,
   onChanged,
 }: {
   tasks: Task[];
@@ -21,6 +24,8 @@ export function TaskBoard({
   view: TaskView | null;
   onView: (view: TaskView | null) => void;
   onOpenDocument: (entryId: string) => void;
+  /** Procédure tirée d'une tâche par l'IA, créée : l'app l'ouvre. */
+  onProcedureCreated: (procedure: Entry) => void;
   onChanged: () => void;
 }) {
   const [title, setTitle] = useState('');
@@ -118,6 +123,7 @@ export function TaskBoard({
                     onEdit={() => setEditing(task.id)}
                     onEditDone={() => setEditing(null)}
                     onOpenDocument={onOpenDocument}
+                    onProcedureCreated={onProcedureCreated}
                     onChanged={onChanged}
                     // Position dans la colonne entière : une vue cache des voisines.
                     onDrop={(e) => drop(e, column.id, inColumn.indexOf(task))}
@@ -141,6 +147,7 @@ function TaskCard({
   onEdit,
   onEditDone,
   onOpenDocument,
+  onProcedureCreated,
   onChanged,
   onDrop,
 }: {
@@ -151,6 +158,7 @@ function TaskCard({
   onEdit: () => void;
   onEditDone: () => void;
   onOpenDocument: (entryId: string) => void;
+  onProcedureCreated: (procedure: Entry) => void;
   onChanged: () => void;
   onDrop: (event: React.DragEvent) => void;
 }) {
@@ -260,6 +268,42 @@ function TaskCard({
     }
   };
 
+  // Procédure tirée de la tâche et de ses documents liés, par l'IA : relue dans
+  // la carte, créée à part et jamais liée — terminer la tâche archive ses
+  // documents, la procédure disparaîtrait de sa colonne (§31). Un document
+  // Google ne donne que son titre (§23).
+  const [drafting, setDrafting] = useState(false);
+  const [procedureDraft, setProcedureDraft] = useState<DraftedProcedure | null>(null);
+  const [draftError, setDraftError] = useState('');
+  const draftFromTask = async () => {
+    if (drafting) return;
+    setDrafting(true);
+    setDraftError('');
+    try {
+      const documents = await Promise.all(linkedDocuments.slice(0, MAX_SOURCE_DOCUMENTS).map(async (document) => {
+        if (isGoogleDocument(document)) return { title: document.title, date: document.entry_date, google: true };
+        // Un document supprimé entre-temps est simplement passé.
+        const full = await api.entry(document.id).catch(() => null);
+        return full && {
+          title: full.title,
+          date: full.entry_date,
+          text: full.content_json ? richToMarkdown(full.content_json) : full.content_md,
+        };
+      }));
+      setProcedureDraft(await draftProcedure(readAiSettings(), {
+        origin: 'task',
+        title: task.title,
+        status: COLUMNS.find((column) => column.id === task.status)?.label,
+        project: suggestContext.project,
+        documents: documents.filter((document) => document !== null),
+      }));
+    } catch (e) {
+      setDraftError((e as Error).message);
+    } finally {
+      setDrafting(false);
+    }
+  };
+
   const entryCreator = creatingEntry ? (
     <form
       className="task-creator"
@@ -323,6 +367,31 @@ function TaskCard({
       <span aria-hidden="true">＋ </span>Documents
     </button>
   );
+  const procedureButton = (
+    <button
+      className="card-link"
+      type="button"
+      aria-label="Créer une procédure avec l’IA"
+      disabled={drafting}
+      title="Rédige une procédure réutilisable à partir de cette tâche et de ses documents liés (envoyés au service IA configuré en Paramètres) ; à relire avant de la créer"
+      onClick={() => void draftFromTask()}
+    >
+      {drafting ? 'Rédaction…' : <><span aria-hidden="true">✨ </span>Procédure</>}
+    </button>
+  );
+  const procedureCreator = procedureDraft ? (
+    <ProcedureDraft
+      draft={procedureDraft}
+      projectId={task.project_id}
+      busy={drafting}
+      onRefresh={() => void draftFromTask()}
+      onCreated={(procedure) => {
+        setProcedureDraft(null);
+        onProcedureCreated(procedure);
+      }}
+      onClose={() => setProcedureDraft(null)}
+    />
+  ) : null;
 
   const documentControls = (
     <div className="card-documents">
@@ -575,7 +644,9 @@ function TaskCard({
       </div>
       {documentControls}
       {entryCreator}
-      {!linking && !creatingEntry && <div className="card-links">{linkButton}{entryButton}</div>}
+      {procedureCreator}
+      {draftError && <p className="error" role="alert">{draftError}</p>}
+      {!linking && !creatingEntry && !procedureDraft && <div className="card-links">{linkButton}{entryButton}{procedureButton}</div>}
     </div>
   );
 }

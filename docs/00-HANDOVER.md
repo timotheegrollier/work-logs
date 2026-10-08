@@ -1,10 +1,33 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-08 · Version : v0.49.0 (lot courant non publié).
+> **Mise à jour :** 2026-10-08 · Version : v0.50.0 (lot courant non publié).
 > **Lot courant :** **vues rapides des tâches** — pastilles En retard, Aujourd'hui, En cours,
 > Épinglées, ▲ Haute en tête de la colonne Tâches, et « N en cours » / « N en retard » de
 > l'en-tête cliquables. Branche `claude/task-status-visualization-922c08`. Détail : « Lot du
-> 2026-10-08 — vues rapides des tâches » ci-dessous ; décision §30.
+> 2026-10-08 (3) — vues rapides des tâches » ci-dessous ; décision §32.
+>
+> **Lots de la v0.50.0 :**
+> - **IA dans les procédures du dossier partagé** (« ✨ Suggérer une procédure », « ✨ Mettre
+>   en page » sur les `.docx`, `.md`, `.txt`) et procédures suggérées **concises**, partout.
+>   Détail : « Lot du 2026-10-08 — IA dans les procédures du partage » ci-dessous ; décision §30.
+> - **Procédure tirée d'une entrée ou d'une tâche par l'IA** — « ✨ Créer une procédure »
+>   dans une note, « ✨ Procédure » sur une carte ; relue sur place, puis créée à part, jamais
+>   liée à sa source. Détail : « Lot du 2026-10-08 (2) » ci-dessous ; décision §31.
+> - **Relais** : nom affiché de la racine (`WORKLOGS_RELAY_LABEL`), installation réelle sur la
+>   VM consignée dans `09-RELAIS.md` (commit `3ce24b3`, resté hors de la 0.49.x).
+>
+> **Recette de l'intégration** (branche `integration/v0.50.0` : les trois lots fusionnés sur
+> v0.49.1) : 230 API, 504 front, 48 desktop, 29 scripts, 8 relais, 57 navigateur, 15 desktop —
+> **891**, étape par étape. `check.sh` d'un seul tenant est resté rouge deux fois sur **un** test,
+> « par le relais du bureau » (`App.local.test.tsx`) : délai de 5 s dépassé sous une charge de
+> 15 à 20 (autres copies de travail en campagne). Vert seul, et toute la suite front à deux
+> workers (504/504) ; déjà vu sur la base avant les lots ; une session travaille à le stabiliser.
+> CI GitHub de chaque lot : verte, 4 jobs sur 4.
+>
+> **Correctif du 2026-10-08 (v0.49.1) :** « Nouvelle entrée » et « Nouveau document » réaffichent
+> la colonne Écriture si elle était repliée, comme ouvrir une entrée depuis le journal ou
+> une tâche (`createEntry` dans `App.tsx`). `check.sh` vert : 230 API, 477 front,
+> 48 desktop, 29 scripts, 8 relais, 55 navigateur, 15 desktop — **862**.
 >
 > **Lot précédent (v0.49.0) :** supprimer un fichier du dossier partagé, depuis l'arbre (✕) ou
 > l'éditeur (« Supprimer du partage ») — suppression gardée sur la dernière version
@@ -58,10 +81,10 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
-## Lot du 2026-10-08 — vues rapides des tâches
+## Lot du 2026-10-08 (3) — vues rapides des tâches
 
 Demande de Timo : « visualiser et accéder rapidement aux tâches marquées comme en cours /
-en retard, etc. » Décision : §30.
+en retard, etc. » Décision : §32.
 - **Constaté avant de coder** : la colonne empile À faire, En cours, Terminé — les tâches en
   cours sont sous toute la liste À faire, les retards dispersés dans deux colonnes, et le
   compteur « en retard » de l'en-tête (masqué sous 1 560 px) ne menait nulle part.
@@ -107,6 +130,128 @@ en retard, etc. » Décision : §30.
    écartée faute de demande — une ligne dans `TASK_VIEWS` si besoin.
 2. Le clic sur un compteur de l'en-tête qui **lève le filtre projet** quand il cache des
    tâches : est-ce le bon réflexe, ou préfères-tu garder le projet et ne voir que les siennes ?
+
+## Lot du 2026-10-08 (2) — procédure tirée d'une entrée ou d'une tâche, par l'IA
+
+Demande de Timo : « créer avec l'IA (Gemini) une procédure à partir d'une entrée/tâches ».
+Décision : §31.
+- **Note** (Markdown ou document riche du journal) : **✨ Créer une procédure** dans la rangée
+  d'actions (`EntryEditor.tsx`). Absent d'une procédure (elle a « Suggérer une procédure ») et
+  d'un document Google (§23 : son contenu ne part pas à l'IA).
+- **Carte de tâche** : **✨ Procédure** au pied (`TaskBoard.tsx`, nom accessible « Créer une
+  procédure avec l'IA »). Lit les 5 documents liés les plus récents (`api.entry`) ; un
+  document Google n'y donne que son titre, sans même être relu.
+- **IA** (`ai-suggest.ts`) : `buildDraftProcedurePrompt`, `parseDraftedProcedure`,
+  `draftProcedure` — même transport et même chaîne de secours Gemini que le reste, consigne
+  concise commune à toutes les procédures (§30, 10 étapes d'une ligne au plus). Le `# …` de
+  tête devient le titre proposé ; plafond commun de 12 000 caractères, coupe signalée.
+- **Relecture** (`ProcedureDraft.tsx`, formulaire « Procédure rédigée ») : titre modifiable,
+  aperçu, **Créer la procédure** / **Rafraîchir** / **Ignorer** (grisés pendant une rédaction,
+  sinon la réponse en vol rouvrait le panneau). Création par `api.createEntry`
+  (`kind: 'procedure'`, `markdownToRich`) : ni route ni dépendance, desktop comme PWA.
+- **Ouverture** (`openCreatedProcedure`, `App.tsx`) : au centre, en lecture. Une recherche en
+  cours est effacée et l'état relu **une seule fois** : relire aussi avec l'ancienne recherche
+  pouvait répondre d'abord et refermer la procédure (test dédié, vérifié par mutation).
+- **Jamais liée à sa source** : terminer une tâche archive ses documents liés, la procédure
+  aurait quitté sa colonne au moment même où on l'écrit (test : tâche terminée → procédure
+  `archived = 0`, aucun `task_entries`).
+- **Styles** : `.procedure-draft`. Vu en capture : dans une carte, `.column ul` (la liste des
+  cartes) ôtait puces et marges aux listes de l'aperçu — rétablies pour l'aperçu seul.
+- **Tests** : `ai-suggest.test.ts` (+6 : consigne entrée et tâche, Google non transmis, coupe
+  qui garde les lignes, titre, appel, garde-fous sans appel réseau), `App.test.tsx` (+5 : note →
+  procédure relue, titre corrigé, ouverte en lecture ; tâche terminée → ni liée ni archivée ;
+  document riche, Rafraîchir, Ignorer ; recherche effacée ; ni procédure ni document Google,
+  sans clé rien ne part), `e2e/procedures.spec.ts` (+1 : note écrite, procédure relue, créée,
+  rouverte après rechargement, note intacte). Sept garde-fous retirés un à un : chacun fait
+  échouer un test.
+- **Vu dans un vrai navigateur** (Chromium, 1440 et 412 px) : panneau dans l'éditeur et dans
+  une carte, actions qui passent à la ligne, aucun débordement horizontal.
+- **Recette** : `./scripts/check.sh` vert (`CHECK OK`) : 230 API, **488 front**, 48 desktop,
+  29 scripts, 8 relais, **56 navigateur**, 15 desktop — **874**. Un premier passage, sous forte
+  charge (≈ 20 sur 8 cœurs : d'autres copies de travail en campagne), avait vu 8 tests front du
+  partage et de la PWA dépasser leur délai ; relancés seuls, verts, puis tout vert au second
+  passage. Même effet sur `master` avant le lot (2 dépassements, verts relancés seuls).
+
+### À vérifier par Timo
+
+1. Avec ta clé Gemini, sur une vraie note de travail : la procédure proposée est-elle utile
+   (titre, étapes, « à préciser ») ? Les tests simulent la réponse du modèle.
+2. Sur une tâche terminée et ses notes : idem, et la procédure reste-t-elle dans la colonne
+   Procédures ensuite ?
+3. Faut-il une ligne « Tirée de … » dans la procédure (sans lien) ? Pas fait, non demandé.
+4. Constaté, non traité (antérieur au lot) : l'en-tête collant « À faire » de la colonne des
+   tâches n'a pas de fond ; une carte haute (créateur d'entrée liée, procédure rédigée) passe
+   dessous en défilant et les textes se chevauchent.
+5. Même réserve que le lot du partage ci-dessous (point 3) : avec la clé **gratuite**, ce qui
+   part à Gemini peut servir à Google — les notes du journal et des tâches sont concernées aussi.
+
+## Lot du 2026-10-08 — IA dans les procédures du partage, procédures concises
+
+Demande de Timo : « pouvoir utiliser les fonctions de mise en page et de suggestions dans les
+procédures, afin qu'il suggère automatiquement des procédures concises et basées sur le titre et
+le contenu de ce qui a déjà été écrit ». Décision : §30.
+- **Constaté avant de coder** (base desktop lue en lecture seule, structure seulement, aucun
+  texte affiché) : les procédures travaillées ces jours-ci sont des **`.docx` du partage**
+  (9 suivis, 20 dans l'arbre, contre 5 `.md` et 3 `.txt`), souvent avec captures, tableaux et
+  sommaire ; les 6 procédures du journal datent du 5/10. Les boutons IA n'existaient que pour
+  ces dernières (§23) ; §25 laissait l'IA du partage « à redemander ».
+- **Consigne concise** (`buildProcedurePrompt`, `ai-suggest.ts`, aussi pour les procédures du
+  journal) : objectif en une phrase, prérequis et vérification seulement s'ils sont réels,
+  étapes d'une ligne commençant par un verbe, **10 au plus** (15 avant), rien de générique,
+  existant gardé (commandes et valeurs à l'identique), « à préciser » plutôt qu'inventer.
+  Variantes par format (`AiTextFormat` : Markdown, texte brut, Word) et dossier en contexte.
+- **Partage** (`SharedFileEditor.tsx`) : rangée « ✨ Suggérer une procédure · ✨ Mettre en page »
+  pour `.docx`, `.md`, `.txt` ; proposition relue (« Procédure proposée » / « Mise en page
+  proposée »), **Appliquer** = une frappe (brouillon local, verrou), jamais un envoi ; refusée
+  si le fichier a changé ou a été rechargé pendant l'appel ; inactive en lecture seule. Contrat
+  `FileEditorHandle.ai` (`file-formats.ts`) tenu par `TextFileEditor` (titre `# …` d'un `.md`
+  gardé en tête) et `DocxFileEditor` (application par `setContent` : ↶ l'annule).
+- **Word ⇄ Markdown** (`docx-markdown.ts`, nouveau) : objets en marqueurs `[[objet N : …]]`,
+  réponse qui en perd un refusée ; texte gardé → paragraphe d'origine ; paragraphes neufs aux
+  styles du document, modèle `basedOn` ; numérotation écrite ou gras quand le document n'a pas
+  la liste ou le titre voulu. Écrivain (`docx.ts`) : `numPr` posé/retiré quand un paragraphe
+  entre dans une liste, en sort ou en change ; `basedOn` respecté (`docx-extensions.ts`).
+- **Trouvé en route** : sur téléphone (412 px), le cadre de relecture IA débordait de l'écran —
+  « Appliquer la procédure · Rafraîchir · Ignorer » ne passait pas à la ligne et élargissait la
+  grille (mesuré : 382 px dans une colonne de 326). Corrigé dans `styles.css`, pour le partage
+  comme pour les procédures du journal (même cadre).
+- **Tests** : `docx-markdown.test.ts` (10, nouveau : Markdown envoyé, titre gardé, texte
+  inchangé = XML d'origine à l'octet près, styles et listes du document, marqueurs en gras ou
+  échappés, numérotation continuée après une image, objet perdu refusé, liens et commandes,
+  modèle « Nouveau fichier » sans liste, aperçu), `docx.test.ts` (+1 : `numPr`, `basedOn`),
+  `ai-suggest.test.ts` (consigne concise réécrite, +1 : formats et dossier), `App.test.tsx`
+  (+4 : `.md` suggéré puis envoyé, `.docx` mis en page — objet perdu refusé, puis seuls les
+  paragraphes changés réécrits —, verrou/tableur/texte brut/frappe pendant la relecture, sans
+  clé), `e2e/shared-folder.spec.ts` (+1 : `.docx` suggéré depuis son titre, Ctrl+S, relu :
+  étapes 2 et 3 numérotées par-dessus l'image). Chaque garde-fou retiré fait échouer un test
+  (mutation : comparaison avant application, lecture seule, objet perdu, `basedOn`, `numPr`,
+  titre du `.md`, paragraphe gardé à l'identique).
+- **Vu dans un vrai navigateur** (Chromium, 1440 et 412 px) : boutons, proposition, document
+  appliqué en brouillon ; aucun débordement horizontal.
+- **Recette** (machine partagée avec deux autres sessions, charge 9 à 22) : **230 API, 491 front,
+  48 desktop, 29 scripts, 8 relais, build, 56 navigateur, 15 parcours desktop : 877**, tous verts —
+  mais pas d'un seul `check.sh` : la campagne complète s'arrête aux tests front sur un délai
+  dépassé (5 s) de « par le relais du bureau » (`App.local.test.tsx`), déjà en échec dans la
+  recette de référence **avant** ce lot (avec « choisir une entrée referme le fichier partagé »).
+  Verts : isolément, et toute la suite front à deux workers (491/491) ; les étapes suivantes de
+  `check.sh` lancées à la main (desktop, scripts, relais, build, Playwright, Electron sous Xvfb +
+  metacity). Rebasé sur v0.49.1 (correctif « Nouvelle entrée ») : typage, **493 front** (deux
+  workers) et **56 navigateur** verts — **879** avec le reste. **À relancer machine calme** pour le
+  `CHECK OK` d'un seul tenant.
+
+### À vérifier par Timo
+
+1. Sur un vrai `.docx` du TSE (une copie d'abord) : « ✨ Mettre en page », Appliquer, Enregistrer
+   sur le partage, puis **ouvrir dans Word** — aucune réparation proposée ? images, sommaire,
+   tableaux à leur place ? numérotation des étapes correcte ?
+2. « ✨ Suggérer une procédure » sur un document neuf (« ＋ Nouveau fichier… » › Word, titré de
+   son nom) : la proposition est-elle assez courte ? Les étapes y sont écrites « 1. », « 2. »
+   (le modèle WorkLogs n'a pas de liste Word) : faut-il de vraies listes numérotées (§30,
+   « Rouvrir si ») ?
+3. Ces procédures sont celles de l'entreprise : pour l'offre **gratuite** de l'API Gemini, les
+   conditions de Google prévoient qu'il puisse se servir des textes envoyés pour améliorer ses
+   produits (relecture humaine comprise) — à relire dans leurs conditions actuelles. À trancher :
+   clé payante, autre fournisseur, ou s'en tenir aux documents sans données sensibles.
 
 ## Lot du 2026-10-07 — supprimer les fichiers du partage
 
@@ -206,9 +351,10 @@ son compte `SRVMURGAT\TimothéeG`.
   29 scripts, 8 relais Google, 53 navigateur, 15 desktop : **847**. Sous une charge système de 13
   (autre session en parallèle), 5 tests front ont dépassé leurs délais ; tous verts isolément puis
   en campagne complète une fois la machine calme.
-- **Reste à faire, avec Timo** : installer sur la VM (il ajoute la clé SSH de ce poste à un
-  compte de la VM ; il saisit lui-même le mot de passe du partage dans `smb.cred` ; il ouvre
-  l'adresse de `tailscale up`), puis régler le téléphone.
+- **Installé sur la VM le 2026-10-07** (clé SSH de ce poste sur le compte root ; mot de passe du
+  partage saisi par Timo ; VM ajoutée à Tailscale par Timo) : relais
+  `https://worklogs-relais.tail614cd0.ts.net:8443`, vérifié depuis le réseau Tailscale (détail :
+  `docs/09-RELAIS.md` « Installation réelle »). Reste : régler le téléphone et l'essayer.
 
 ## Lot du 2026-10-06 (2) — créer des fichiers dans le partage — v0.47.0
 

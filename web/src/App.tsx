@@ -275,6 +275,7 @@ export default function App() {
     });
     setSearch('');
     setFreshEntry(true);
+    setShowCenter(true);
     setSharedPath(null);
     setSelectedId(created.id);
     setEntry({ ...created, attachments: [] });
@@ -352,6 +353,20 @@ export default function App() {
     selectedRef.current = entryId;
     selectEntry(entryId);
   }, [projectId, state, selectEntry]);
+
+  // Procédure rédigée par l'IA depuis une entrée ou une tâche : ouverte au centre,
+  // en lecture. Elle naît dans le projet de sa source, donc dans le filtre ; une
+  // recherche en cours la masquerait : on l'efface, ce qui relit l'état (relire
+  // aussi avec l'ancienne recherche pourrait répondre d'abord et la refermer).
+  const openCreatedProcedure = useCallback((procedure: Entry) => {
+    setSearch('');
+    setFreshEntry(false);
+    setShowCenter(true);
+    selectedRef.current = procedure.id;
+    selectEntry(procedure.id);
+    if (query) setQuery('');
+    else void reload();
+  }, [query, reload, selectEntry]);
 
   // Ouverture d'un document Drive : même geste que depuis une carte de tâche,
   // mais en rechargeant l'état sans filtrer par projet.
@@ -547,6 +562,7 @@ export default function App() {
               editRequest={procedureEdit.id === entry.id ? procedureEdit.sequence : 0}
               onChanged={reload}
               onTaskCreated={reload}
+              onProcedureCreated={openCreatedProcedure}
               onDeleted={() => {
                 setSelectedId(null);
                 reload();
@@ -570,6 +586,7 @@ export default function App() {
             view={taskView}
             onView={setTaskView}
             onOpenDocument={openDocument}
+            onProcedureCreated={openCreatedProcedure}
             onChanged={reload}
           />
         </aside>
