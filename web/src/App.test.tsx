@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { seedData, useRealApi } from './test/server';
-import { flushPendingSaves, hasPendingSaves } from './autosave';
+import { discardPendingSaves, flushPendingSaves, hasPendingSaves } from './autosave';
 import { api as clientApi } from './lib';
 
 let api: Awaited<ReturnType<typeof useRealApi>>;
@@ -13,10 +13,17 @@ beforeEach(async () => {
   localStorage.clear();
   vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
+// Un brouillon en échec fait lever `flushPendingSaves` : le test reste rouge avec ce
+// message, mais le reste est rangé et le brouillon oublié, sans quoi il se rejouerait
+// sur le serveur du test suivant (« entrée introuvable »).
 afterEach(async () => {
-  await flushPendingSaves();
-  vi.restoreAllMocks();
-  await api.close();
+  try {
+    await flushPendingSaves();
+  } finally {
+    discardPendingSaves();
+    vi.restoreAllMocks();
+    await api.close();
+  }
 });
 
 const journal = () => screen.getByRole('region', { name: 'Journal' });

@@ -11,6 +11,10 @@
 > vidé n'est plus envoyé — l'entrée garde l'ancien, en filigrane — et le dialogue d'échec à
 > la fermeture propose « Fermer sans enregistrer ». Décision §32.
 >
+> **Correctif du 2026-10-08 (5), tests seulement :** un test front fautif n'entraîne plus tous
+> les suivants de son fichier (« Found multiple elements… Journal », « entrée introuvable »).
+> Détail : « Correctif du 2026-10-08 (5) » ci-dessous.
+>
 > **Lots de la v0.50.0 :**
 > - **IA dans les procédures du dossier partagé** (« ✨ Suggérer une procédure », « ✨ Mettre
 >   en page » sur les `.docx`, `.md`, `.txt`) et procédures suggérées **concises**, partout.
@@ -85,6 +89,43 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Correctif du 2026-10-08 (5) — un test fautif n'entraîne plus les suivants
+
+Constat de Timo, sous charge : quand « créer une entrée… » (`App.local.test.tsx`) expire, le
+`afterEach` du fichier lève (`flushPendingSaves` : « Le titre de l'entrée est requis. ») et
+tous les tests suivants tombent avec des messages trompeurs — 8 échecs pour 1 cause.
+- **Mécanisme, lu dans vitest 5.0.2** (`callSuiteHook`) : les `afterEach` d'un niveau sont
+  joués en boucle sans `try` ; le premier qui lève saute les autres, et ceux des niveaux
+  parents. En ordre « stack », le `afterEach(cleanup)` de `setup.ts`, déclaré avant ceux du
+  fichier, passe en dernier : sauté, l'App reste montée (« Found multiple elements… Journal »).
+  Seconde cause, indépendante : le brouillon en échec reste dans la file d'`autosave.ts`, et
+  chaque `afterEach` suivant le rejoue sur la base du test en cours (« entrée introuvable »).
+- **Correctif** : `setup.ts` démonte par `onTestFinished` (joué après les `afterEach`, même
+  quand l'un lève) ; les `afterEach` d'`App.test.tsx` et `App.local.test.tsx` mettent
+  `discardPendingSaves()` (nouveau, `autosave.ts`), `vi.restoreAllMocks()` et `api.close()`
+  dans un `finally`. L'erreur n'est pas avalée : le test fautif reste rouge avec ses messages.
+- **Preuve** (harnais temporaires, non commités : un test fautif inséré après « créer une
+  entrée… », ces deux tests-là n'étant pas touchés) :
+  - titre vidé puis expiration, avec le refus du titre vide d'avant le correctif (3) remis
+    pour l'occasion — avant : **8 rouges sur 10**, signature du constat ; après : **1**, le
+    fautif, avec « Test timed out in 5000ms. » et « Le titre de l'entrée est requis. » ;
+  - sur le code actuel, base remplacée sous un brouillon : avant 8 rouges, après 1 ;
+  - même harnais dans `App.test.tsx` : avant, les 136 tests lancés à partir du fautif tombent
+    tous (55 s chacun en fin de course, campagne arrêtée) ; après, **1 rouge, 154 verts** ;
+  - ablations : sans `discardPendingSaves`, 8 rouges (« entrée introuvable ») ; avec l'ancien
+    `setup.ts`, 2 (le suivant hérite de l'écran) — les deux pièces servent ;
+  - le constat tel quel (vrai test, cœur 7 et 10 boucles, charge système 10 à 14), en
+    alternance : la cascade est apparue 1 fois sur 3 avant (9/9 rouges) ; après, le même
+    déclencheur 1 fois sur 3 n'a fait tomber que son test. Les autres échecs de ces passages,
+    avant comme après, sont des délais de 5 s dépassés, chacun pour son compte.
+- **Tests** : `src/test/setup.test.tsx` (+2 : un `afterEach` qui lève, l'écran suivant est
+  vide — rouge avec l'ancien `setup.ts`), `autosave.test.ts` (+1).
+- Le déclencheur d'origine (titre vide refusé) a disparu avec le correctif (3), pas le
+  mécanisme : tout échec de `flushPendingSaves` faisait tomber le reste du fichier.
+- **Recette** : `./scripts/check.sh` vert avant (898) et après (`CHECK OK`) : 230 API,
+  **514 front** (dont 1 « expected fail », le `test.fails` voulu de `setup.test.tsx`),
+  48 desktop, 29 scripts, 8 relais, 57 navigateur, 15 desktop — **901**. Aucune dépendance.
 
 ## Lot du 2026-10-08 (4) — vues rapides des tâches
 

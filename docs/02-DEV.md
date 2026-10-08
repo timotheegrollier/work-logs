@@ -46,6 +46,12 @@ npm run test:e2e      # build + playwright, 12 parcours navigateur
   au clavier.
 - **Attention aux requêtes trop larges.** Un titre de tâche peut contenir le mot d'un bouton :
   cibler avec `within(board())`, `within(filters())` ou `{ exact: true }`.
+- **Un `afterEach` qui lève saute les suivants.** vitest ne joue plus les `afterEach` restants
+  (ordre « stack » : ceux de `setup.ts` passent en dernier). Le démontage de l'écran passe donc
+  par `onTestFinished` (`web/src/test/setup.ts`), joué quoi qu'il arrive. Dans un `afterEach`,
+  mettre ce qui doit toujours être fait dans un `finally` (espions, serveur,
+  `discardPendingSaves()`) et laisser l'erreur remonter : le test fautif reste rouge avec son
+  vrai message, les suivants repartent d'un écran et d'une file de sauvegardes vides.
 
 ## Conventions
 - **Une fonctionnalité = un test.** `check.sh` vert avant et après.

@@ -5,6 +5,8 @@ export const hasPendingSaves = () => pending.size > 0;
 export const flushPendingSaves = async () => {
   await Promise.all([...pending].map((save) => save.flush()));
 };
+/** Tests : oublie les brouillons restés en échec, pour qu'ils ne se rejouent pas sur la base du test suivant. */
+export const discardPendingSaves = () => { pending.clear(); };
 
 /** Sérialise les écritures et conserve les dernières frappes pendant un envoi. */
 export class Autosave<T> {

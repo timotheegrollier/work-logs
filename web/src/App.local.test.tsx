@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { flushPendingSaves } from './autosave';
+import { discardPendingSaves, flushPendingSaves } from './autosave';
 
 // Backend local AVANT tout import d'écran : la sélection dans `lib.ts` se fait
 // à l'évaluation du module. Fichier séparé d'`App.test.tsx` (un worker = un
@@ -16,9 +16,16 @@ beforeEach(() => {
   localStorage.clear();
   vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
+// Un brouillon en échec fait lever `flushPendingSaves` : le test reste rouge avec ce
+// message, mais les espions sont rendus et le brouillon oublié, sans quoi il se
+// rejouerait sur la base du test suivant (« entrée introuvable »).
 afterEach(async () => {
-  await flushPendingSaves();
-  vi.restoreAllMocks();
+  try {
+    await flushPendingSaves();
+  } finally {
+    discardPendingSaves();
+    vi.restoreAllMocks();
+  }
 });
 
 const journal = () => screen.getByRole('region', { name: 'Journal' });
