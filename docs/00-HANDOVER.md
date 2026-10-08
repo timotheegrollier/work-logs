@@ -144,7 +144,8 @@ les procédures ». Décision : §25 (« Dossiers : créer, renommer, supprimer 
 3. Changer seulement la casse d'un dossier (`procedure` → `Procedure`) par GVFS : le nom
    change-t-il côté Windows ?
 4. Supprimer par le VPN un dossier de quelques fichiers : durée acceptable ?
-5. Relais : recopier `api/` sur la VM, redémarrer le service, puis essayer depuis le téléphone.
+5. Relais : **mis à jour le 2026-10-08** (v0.51.0 + travail en cours de `worklogs-file-coedition`,
+   détail dans `09-RELAIS.md`) — essayer depuis le téléphone.
 
 ## Lot du 2026-10-08 (4) — vues rapides des tâches
 

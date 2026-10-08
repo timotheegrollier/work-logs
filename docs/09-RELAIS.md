@@ -56,6 +56,17 @@ Tailscale : `/health` sans code ; 401 sans code ou avec un faux ; préliminaire 
 pour la PWA seule (403 ailleurs) ; avec le code : 17 dossiers listés, un `.docx` de 14 254
 octets relu à l'identique, recherche « procedure » → 6 résultats.
 
+**Mis à jour le 2026-10-08** (la PWA 0.51.0 répondait « Introuvable. » en créant un dossier : le
+relais datait d'avant la v0.49.0). Déployé, au choix de Timo : le code de la **v0.51.0**
+(`6b299df` : dossiers, suppression de fichier) **plus le travail non commité** de la copie
+`worklogs-file-coedition-bcae02` qui tournait déjà sur la VM (adresse du dossier portée par le
+projet, `shared-address.js`, colonne `projects.shared_dir`), fusionné à la main — **ce mélange
+n'est dans aucun commit** ; quand ce lot sera fusionné sur `master`, redéployer depuis `master`.
+Tests API sur ce code : 255/255. Seul `api/src` a changé (dépendances identiques). Ancien code :
+`/opt/worklogs-relais/api.bak-20261008-150339` ; composition et retour arrière :
+`/opt/worklogs-relais/DEPLOIEMENT.txt`. Vérifié sur la VM : routes des dossiers et de la
+suppression présentes, chemin hors du partage refusé, statut `ok`, préliminaire CORS 204.
+
 ## Régler le téléphone
 
 1. Tailscale allumé sur le téléphone (le même réseau que la VM).
