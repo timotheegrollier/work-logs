@@ -1188,3 +1188,21 @@ serveur Windows (le plus lourd).
 **Limites assumées.** Hors réseau, rien (pas de copie hors ligne sur le téléphone : les
 brouillons vivent sur le relais) ; un seul compte Windows pour tout ce qui passe par le relais
 (les verrous portent « Timothée Grollier (mobile) »). Installation et dépannage : `09-RELAIS.md`.
+
+## 30. Un titre vidé garde l'ancien ; la fermeture a toujours une sortie — 2026-10-08
+
+**Constat.** Fenêtre impossible à fermer : « l'entrée n'a pas pu être enregistrée », « le
+titre de l'entrée est requis », sans entrée sans titre au journal. Le titre avait été vidé
+puis l'entrée quittée : l'éditeur démonté laissait derrière lui un brouillon en échec, que
+la fermeture rejouait à chaque fois, et que « Revenir à l'entrée » ne permettait plus de
+corriger. L'entrée, elle, portait toujours son ancien titre. Tout ce qui avait été écrit
+après avoir vidé le titre n'était pas enregistré non plus.
+
+**Décision.**
+- Un titre vide n'est **pas envoyé** : l'entrée garde le dernier titre enregistré, montré en
+  filigrane du champ vidé, et le reste du brouillon s'enregistre normalement. Le serveur
+  refuse toujours un titre vide (`titre requis`).
+- Le dialogue d'échec à la fermeture propose **« Revenir à WorkLogs »** (par défaut) **et
+  « Fermer sans enregistrer »**, comme celui de l'enregistrement qui ne répond pas. Un
+  brouillon en échec peut appartenir à un éditeur déjà quitté (entrée supprimée, projet
+  supprimé…) : rien ne doit pouvoir retenir la fenêtre.

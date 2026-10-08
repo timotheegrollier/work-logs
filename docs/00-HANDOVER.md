@@ -1,6 +1,10 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-08 · Version : v0.49.0 (correctif non publié).
+> **Mise à jour :** 2026-10-08 · Version : v0.49.1 (correctif non publié).
+> **Correctif du 2026-10-08 (2) :** fenêtre desktop impossible à fermer (« titre requis »)
+> après avoir vidé le titre d'une entrée puis l'avoir quittée. Un titre vidé n'est plus
+> envoyé — l'entrée garde l'ancien, en filigrane — et le dialogue d'échec à la fermeture
+> propose « Fermer sans enregistrer ». Décision §30.
 > **Correctif du 2026-10-08 :** « Nouvelle entrée » et « Nouveau document » réaffichent
 > la colonne Écriture si elle était repliée, comme ouvrir une entrée depuis le journal ou
 > une tâche (`createEntry` dans `App.tsx`). `check.sh` vert : 230 API, 477 front,

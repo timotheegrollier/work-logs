@@ -363,13 +363,15 @@ async function fallbackNotify(found) {
 async function finishClose(error) {
   clearTimeout(closeTimer);
   if (error && window && !window.isDestroyed()) {
-    closePending = false;
-    ask(window, {
-      type: 'error', title: 'WorkLogs', buttons: ['Revenir à l’entrée'],
-      message: 'L’entrée n’a pas pu être enregistrée. La fenêtre reste ouverte.',
-      detail: String(error).slice(0, 1000),
+    // Toujours une sortie : le brouillon fautif peut appartenir à un éditeur déjà
+    // quitté, qu'aucun retour à l'écran ne permet de corriger.
+    const choice = ask(window, {
+      type: 'error', title: 'WorkLogs', buttons: ['Revenir à WorkLogs', 'Fermer sans enregistrer'],
+      defaultId: 0, cancelId: 0,
+      message: 'Une modification n’a pas pu être enregistrée.',
+      detail: `${String(error).slice(0, 1000)}\n\nFermer sans enregistrer abandonne cette modification.`,
     });
-    return;
+    if (choice !== 1) { closePending = false; return; }
   }
   // Une vue Google en défaut ne doit pas retenir la fenêtre : on ferme quand même.
   if (googleView && !await googleView.close().catch(() => true)) { closePending = false; return; }
