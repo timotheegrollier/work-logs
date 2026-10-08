@@ -44,6 +44,45 @@ Fichiers prêts dans `relay/` : `worklogs-relais.service`, `env.exemple`, `fstab
    (Timo ouvre l'adresse affichée pour ajouter la VM à son réseau), puis
    `sudo tailscale serve --bg --https=8443 http://127.0.0.1:8420`. Il faut « HTTPS Certificates »
    activé dans la console Tailscale (DNS). Le port 8443 évite Caddy, qui tient déjà le 443 de la VM.
+8. **Mise à jour automatique** (section suivante) : `relay/mise-a-jour.mjs` →
+   `/opt/worklogs-relais/mise-a-jour.mjs` (root, 0644) ; la version copiée à l'étape 1 dans
+   `/opt/worklogs-relais/api/VERSION` (`echo X.Y.Z | sudo tee …`) ; `worklogs-relais-maj.service`
+   et `worklogs-relais-maj.timer` → `/etc/systemd/system/`, puis
+   `sudo systemctl daemon-reload && sudo systemctl enable --now worklogs-relais-maj.timer`.
+   `ExecStart` passe par `/usr/bin/env node` : rien à changer si Node est dans `/usr/local/bin`.
+
+## Mise à jour automatique
+
+Le relais suit tout seul les **releases publiées** de WorkLogs, celles que la CI a validées :
+`worklogs-relais-maj.timer` lance `/opt/worklogs-relais/mise-a-jour.mjs` (copie de
+`relay/mise-a-jour.mjs`) toutes les 5 minutes, en root. Une release arrive donc sur le relais
+5 minutes au plus après sa publication. Décision : `05-DECISIONS.md` §37.
+
+À chaque passage, une requête à l'API GitHub (`releases/latest`) ; si la release est plus
+récente que `api/VERSION` :
+1. **préparer à côté** (`/opt/worklogs-relais/.maj-X.Y.Z/`) : archive du tag,
+   `npm ci --omit=dev --ignore-scripts`, le module du relais doit se charger. Un échec ici ne
+   touche à rien ; c'est retenté au passage suivant ;
+2. **basculer** : relais arrêté, base sauvegardée (`/var/lib/worklogs-relais-maj/base-avant-maj/`),
+   `api` → `api.precedent`, nouveau code en place avec son `VERSION`, relais relancé ;
+3. **vérifier** : `/health` doit répondre **avec la nouvelle version** dans les 30 s ;
+4. sinon **retour arrière** (code et base), et cette version est **écartée** : le relais n'est
+   plus coupé pour elle, la release suivante sera essayée normalement.
+
+Rien n'est tenté si le relais ne répond pas déjà (partage démonté, VM qui redémarre). Après
+une mise à jour réussie, le script de la release remplace celui de la VM et
+`/opt/worklogs-relais/DEPLOIEMENT.txt` est réécrit ; les unités systemd, elles, ne changent
+pas toutes seules.
+
+| Pour… | Sur la VM, en root |
+|---|---|
+| savoir quelle version tourne | `curl -s http://127.0.0.1:8420/health` → `"version"` (aussi par l'adresse Tailscale) |
+| voir les derniers passages | `journalctl -u worklogs-relais-maj -n 20` ; `systemctl list-timers worklogs-relais-maj.timer` |
+| savoir s'il y a du nouveau, sans rien faire | `node /opt/worklogs-relais/mise-a-jour.mjs --simuler` |
+| mettre à jour tout de suite | `systemctl start worklogs-relais-maj` |
+| réessayer une version écartée | `rm /var/lib/worklogs-relais-maj/etat.json && systemctl start worklogs-relais-maj` |
+| garder une version à la main | `systemctl disable --now worklogs-relais-maj.timer` (sinon elle est remplacée au passage suivant) |
+| revenir à la version d'avant | les commandes de `/opt/worklogs-relais/DEPLOIEMENT.txt` |
 
 ## Installation réelle (2026-10-07)
 
@@ -61,11 +100,29 @@ relais datait d'avant la v0.49.0). Déployé, au choix de Timo : le code de la *
 (`6b299df` : dossiers, suppression de fichier) **plus le travail non commité** de la copie
 `worklogs-file-coedition-bcae02` qui tournait déjà sur la VM (adresse du dossier portée par le
 projet, `shared-address.js`, colonne `projects.shared_dir`), fusionné à la main — **ce mélange
-n'est dans aucun commit** ; quand ce lot sera fusionné sur `master`, redéployer depuis `master`.
+n'est dans aucun commit** ; la prochaine release publiée le remplace (mise à jour automatique,
+ci-dessous) — avec ce travail seulement s'il est fusionné d'ici là.
 Tests API sur ce code : 255/255. Seul `api/src` a changé (dépendances identiques). Ancien code :
 `/opt/worklogs-relais/api.bak-20261008-150339` ; composition et retour arrière :
 `/opt/worklogs-relais/DEPLOIEMENT.txt`. Vérifié sur la VM : routes des dossiers et de la
 suppression présentes, chemin hors du partage refusé, statut `ok`, préliminaire CORS 204.
+
+**Mise à jour automatique installée le 2026-10-08** (§37). Essayée d'abord sur une **copie**
+du relais (port 8421, base et dossier à elle, retirée ensuite), avec le vrai script dans une
+unité aux mêmes protections que `worklogs-relais-maj.service` : une « v0.51.1 » (le code de
+cette branche) installée en 2 s, `npm ci` et `systemctl` depuis l'unité compris, `/health` →
+`"version":"0.51.1"`, base sauvegardée avec son propriétaire ; puis une « v0.51.3 » qui ne
+répond pas (l'archive GitHub de la v0.51.0, dont `/health` ne dit pas sa version) : retour
+arrière après 30 s, « v0.51.1 répond de nouveau », version écartée, et le passage suivant ne
+relance pas le relais. Sur le vrai relais : `api/VERSION` = `0.51.0` pour le mélange ci-dessus,
+minuteur activé, premier passage « À jour : v0.51.0. ».
+
+**Premier vrai passage, le même jour** : la v0.52.0, publiée à 16:31, a été installée par le
+minuteur à 16:33 — elle a démarré, mais son `/health` ne disait pas encore sa version (le lot
+de la mise à jour automatique n'y était pas) : refusée au bout de 30 s, retour arrière,
+« v0.51.0 répond de nouveau », et le passage de 16:38 ne l'a pas retentée. Deux redémarrages
+d'une seconde ; le relais a répondu tout du long. La v0.53.0 (publiée sans ce lot) le sera
+aussi ; la v0.54.0 est la première qu'il garde.
 
 ## Régler le téléphone
 
@@ -90,6 +147,7 @@ code : en générer un nouveau sur la VM, `sudo systemctl restart worklogs-relai
 | « Non monté » / « Injoignable » | `ls /mnt/tse-procedures` sur la VM ; mot de passe du compte changé → mettre à jour `smb.cred` |
 | Erreur CORS dans la console du téléphone | `WORKLOGS_RELAY_ORIGINS` = l'adresse exacte de la PWA |
 | « Accès refusé » sur un dossier | droits NTFS du compte de `smb.cred` sur ce dossier |
+| « Introuvable. » sur un geste récent (le relais n'a pas la route) | version de `/health` ≠ celle de la PWA ? `journalctl -u worklogs-relais-maj` : release écartée, relais injoignable au passage, GitHub qui refuse… |
 
-Journaux : `journalctl -u worklogs-relais -f`. Mise à jour du relais : recopier `api/`, puis
-`sudo systemctl restart worklogs-relais`.
+Journaux : `journalctl -u worklogs-relais -f`, et pour la mise à jour automatique
+`journalctl -u worklogs-relais-maj`.

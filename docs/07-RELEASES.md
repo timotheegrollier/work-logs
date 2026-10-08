@@ -54,6 +54,12 @@ Ne pas éditer `package.json` à la main : `npm version` met les deux fichiers d
 La note est générée, pas écrite à la main. Vérifier le rendu après publication ;
 retouche possible sans republier : `gh release edit vX.Y.Z --notes-file /tmp/notes.md`.
 
+**Le relais du dossier partagé suit tout seul** (VM 172.16.1.203, `05-DECISIONS.md` §37) : il
+installe la release publiée dans les 5 minutes. Vérifier depuis le réseau Tailscale :
+`curl -s https://worklogs-relais.tail614cd0.ts.net:8443/health` → `"version":"X.Y.Z"`. Une
+version qui n'y répond pas est retirée d'elle-même (retour arrière) ; la raison est dans
+`journalctl -u worklogs-relais-maj` sur la VM (`09-RELAIS.md`, « Mise à jour automatique »).
+
 ## 4. Fast path : pourquoi c'est sûr
 
 Notre processus ne tage **que** le HEAD de master **après** sa CI verte. `precheck`

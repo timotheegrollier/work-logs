@@ -186,7 +186,8 @@ positions), `ooxml.ts` (relations, propriétés : commun à Word et Excel), `doc
 objets en marqueurs, paragraphes gardés, styles du document — §30), `xlsx.ts` + `xlsx-format.ts` (formats à la française,
 saisie) + `xlsx-formula.ts` (syntaxe, traduction, dépendances) (Excel, §27), `shared-merge.ts`
 (fusion à trois voies : à la ligne pour le texte et les CSV, à la cellule pour Excel),
-`new-files.ts` (modèles des fichiers neufs : Word, Excel, Markdown, texte, CSV).
+`new-files.ts` (modèles des fichiers neufs : Word, Excel, Markdown, texte, CSV, et
+`procedureFileBytes` : une procédure locale envoyée vers le partage en docx/md/txt — §36).
 
 Sur la PWA, les mêmes routes sont servies par le **relais** (`api/src/relay.js`, VM du bureau,
 Tailscale, code d'accès, CORS limité à la PWA — §29, `docs/09-RELAIS.md`) ; le front y passe

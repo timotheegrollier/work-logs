@@ -1,0 +1,24 @@
+# Mise à jour automatique du relais sur la dernière release publiée (docs/09-RELAIS.md).
+# Lancé par worklogs-relais-maj.timer ; à la main : `systemctl start worklogs-relais-maj`,
+# puis `journalctl -u worklogs-relais-maj`. Le script : relay/mise-a-jour.mjs.
+[Unit]
+Description=WorkLogs — mise à jour du relais du dossier partagé
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# root : il arrête et relance worklogs-relais et remplace /opt/worklogs-relais/api.
+ExecStart=/usr/bin/env node /opt/worklogs-relais/mise-a-jour.mjs
+TimeoutStartSec=10min
+StateDirectory=worklogs-relais-maj
+CacheDirectory=worklogs-relais-maj
+Environment=HOME=/var/cache/worklogs-relais-maj
+Environment=npm_config_cache=/var/cache/worklogs-relais-maj/npm
+Environment=npm_config_update_notifier=false
+# Durcissement : il n'écrit que le code du relais, sa base (sauvegarde, retour arrière) et son état.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/worklogs-relais /var/lib/worklogs-relais

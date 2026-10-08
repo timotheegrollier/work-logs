@@ -21,6 +21,14 @@ export const NEW_FILE_TYPES: NewFileType[] = [
   { ext: 'csv', label: 'Tableau CSV (.csv)' },
 ];
 
+/** Formats proposés pour envoyer une procédure locale vers le partage : du texte, pas un classeur. */
+export type ProcedureExportExt = 'docx' | 'md' | 'txt';
+export const PROCEDURE_EXPORT_TYPES: { ext: ProcedureExportExt; label: string }[] = [
+  { ext: 'docx', label: 'Document Word (.docx)' },
+  { ext: 'md', label: 'Note Markdown (.md)' },
+  { ext: 'txt', label: 'Texte (.txt)' },
+];
+
 const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 
 /** Ce qui empêcherait Windows (le TSE) d'accepter ce nom de fichier (ou de dossier), ou `null`. */
@@ -82,6 +90,11 @@ const heading = (level: number, size: number, before: number) =>
   + `<w:rPr><w:b/><w:color w:val="1F3864"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr></w:style>`;
 
 async function newDocx(title: string, author: string, now: Date): Promise<Uint8Array> {
+  return docxZip(title, `<w:p><w:pPr><w:pStyle w:val="Titre1"/></w:pPr><w:r><w:t xml:space="preserve">${escapeText(title)}</w:t></w:r></w:p><w:p/>`, author, now);
+}
+
+/** Assemble un `.docx` minimal (mêmes parties que `newDocx`) autour d'un corps déjà formé. */
+function docxZip(title: string, body: string, author: string, now: Date): Promise<Uint8Array> {
   return createZip([
     {
       name: '[Content_Types].xml',
@@ -98,8 +111,7 @@ async function newDocx(title: string, author: string, now: Date): Promise<Uint8A
     {
       name: 'word/document.xml',
       data: xml(`<w:document xmlns:w="${W}" xmlns:r="${OFFICE_RELS}"><w:body>`
-        + `<w:p><w:pPr><w:pStyle w:val="Titre1"/></w:pPr><w:r><w:t xml:space="preserve">${escapeText(title)}</w:t></w:r></w:p>`
-        + '<w:p/>'
+        + body
         + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" w:right="1417" w:bottom="1417" w:left="1417" w:header="708" w:footer="708" w:gutter="0"/><w:cols w:space="708"/></w:sectPr>'
         + '</w:body></w:document>'),
     },
@@ -192,4 +204,92 @@ export async function newFileBytes(ext: NewFileType['ext'], { title, author, now
     case 'txt':
     case 'csv': return new Uint8Array(BOM);
   }
+}
+
+/** `[texte](cible)` → `texte`, `![légende](…)` → `légende` : lisible dans Word et le Bloc-notes. */
+function stripLinks(text: string): string {
+  return text.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+}
+
+/** `**gras**`, `` `code` ``, `~~barré~~` : le texte seul, pour un `.docx` et un `.txt` lisibles. */
+function stripInline(text: string): string {
+  return stripLinks(text).replace(/(\*\*|__)(.*?)\1/g, '$2').replace(/~~(.*?)~~/g, '$1').replace(/`([^`]*)`/g, '$1').replace(/(^|\s)[*_]([^*_]+)[*_](\s|$)/g, '$1$2$3');
+}
+
+const CHECKED = /^\s*[-*]\s+\[x\]\s+/i;
+const UNCHECKED = /^\s*[-*]\s+\[ \]\s+/;
+const BULLET = /^\s*[-*•]\s+/;
+const ORDERED = /^\s*\d+[.)]\s+/;
+const QUOTE = /^\s*>\s?/;
+const FENCE = /^\s*```/;
+const TABLE_SEPARATOR = /^\|?[\s:|-]+\|?$/;
+
+/** Un paragraphe Word : style éventuel (`Titre1`…), texte déjà nettoyé. */
+function docxPara(text: string, style: string | null): string {
+  if (!text) return '<w:p/>';
+  const open = style ? `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr><w:r><w:t xml:space="preserve">${escapeText(text)}</w:t></w:r></w:p>` : `<w:p><w:r><w:t xml:space="preserve">${escapeText(text)}</w:t></w:r></w:p>`;
+  return open;
+}
+
+/** Markdown d'une procédure → paragraphes Word : titres, puces, numéros écrits, code à plat. */
+function markdownToDocxBody(title: string, markdown: string): string {
+  const lines = markdown.split('\n');
+  // Le titre est déjà en `Titre1` : un premier `# …` ferait doublon.
+  let start = 0;
+  while (start < lines.length && !lines[start].trim()) start++;
+  if (start < lines.length && /^#\s+/.test(lines[start].trim())) start++;
+  const body = [docxPara(title, 'Titre1')];
+  let empty = false;
+  for (const raw of lines.slice(start)) {
+    const line = raw.replace(/\s+$/, '');
+    if (!line.trim()) {
+      if (!empty) body.push('<w:p/>');
+      empty = true;
+      continue;
+    }
+    empty = false;
+    if (FENCE.test(line)) continue;
+    const trimmed = line.trim();
+    const h3 = /^###\s+(.+)$/.exec(trimmed);
+    if (h3) { body.push(docxPara(stripInline(h3[1].trim()), 'Titre3')); continue; }
+    const h2 = /^##\s+(.+)$/.exec(trimmed);
+    if (h2) { body.push(docxPara(stripInline(h2[1].trim()), 'Titre2')); continue; }
+    const h1 = /^#\s+(.+)$/.exec(trimmed);
+    if (h1) { body.push(docxPara(stripInline(h1[1].trim()), 'Titre1')); continue; }
+    if (CHECKED.test(line)) { body.push(docxPara('☑ ' + stripInline(line.replace(CHECKED, '').trim()), null)); continue; }
+    if (UNCHECKED.test(line)) { body.push(docxPara('☐ ' + stripInline(line.replace(UNCHECKED, '').trim()), null)); continue; }
+    if (BULLET.test(line)) { body.push(docxPara('• ' + stripInline(line.replace(BULLET, '').trim()), null)); continue; }
+    if (ORDERED.test(line)) { body.push(docxPara(stripInline(trimmed), null)); continue; }
+    if (QUOTE.test(line)) { body.push(docxPara(stripInline(line.replace(QUOTE, '').trim()), null)); continue; }
+    if (trimmed.includes('|') && TABLE_SEPARATOR.test(trimmed.replace(/\|/g, '|'))) { continue; }
+    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+      body.push(docxPara(stripInline(trimmed.slice(1, -1).split('|').map((cell) => cell.trim()).join(' | ')), null));
+      continue;
+    }
+    if (/^---+$/.test(trimmed)) continue;
+    body.push(docxPara(stripInline(trimmed), null));
+  }
+  if (body.length === 1) body.push('<w:p/>');
+  return body.join('');
+}
+
+/**
+ * Les octets d'une procédure locale envoyée vers le partage, au format choisi
+ * (`title` : nom du fichier sans extension). Même modèle que les fichiers neufs :
+ * Word sans réparation, Markdown sans BOM, texte avec BOM pour les accents du TSE.
+ */
+export async function procedureFileBytes(ext: ProcedureExportExt, { title, markdown, author, now = new Date() }: { title: string; markdown: string; author: string; now?: Date }): Promise<Uint8Array> {
+  const clean = (markdown ?? '').replace(/\r\n/g, '\n');
+  if (ext === 'md') {
+    if (!clean.trim()) return encoder.encode(`# ${title}\n\n`);
+    // Un `# …` (niveau 1) en tête est déjà le titre : on le garde tel quel, sans doublon.
+    const firstLine = clean.split('\n').find((line) => line.trim())?.trim() ?? '';
+    if (/^#\s+/.test(firstLine)) return encoder.encode(clean.endsWith('\n') ? clean : clean + '\n');
+    return encoder.encode(`# ${title}\n\n${clean}${clean.endsWith('\n') ? '' : '\n'}`);
+  }
+  if (ext === 'txt') {
+    const text = clean.trim() ? `${title}\n\n${stripInline(clean.trim())}\n` : `${title}\n`;
+    return new Uint8Array([...BOM, ...encoder.encode(text)]);
+  }
+  return docxZip(title, markdownToDocxBody(title, clean), author, now);
 }

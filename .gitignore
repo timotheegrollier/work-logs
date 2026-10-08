@@ -11,6 +11,8 @@ api/data/uploads/*
 .e2e-data/
 .e2e-share/
 api/data/shared-blobs/
+# Écrit par la mise à jour automatique du relais (relay/mise-a-jour.mjs), sur la VM seulement.
+api/VERSION
 test-results/
 playwright-report/
 web/.vitest/

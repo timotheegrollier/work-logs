@@ -29,7 +29,19 @@ export function sameToken(given, expected) {
 /** Code d'accès neuf : 32 octets aléatoires, en base64url (43 caractères). */
 export const newToken = () => crypto.randomBytes(32).toString('base64url');
 
-export function createRelayApp({ shared, token, origins }) {
+/**
+ * Version de WorkLogs déployée, écrite à côté du code par la mise à jour automatique
+ * (`relay/mise-a-jour.mjs` → `api/VERSION`) ; null quand le relais tourne depuis les sources.
+ */
+export function relayVersion(file = fileURLToPath(new URL('../VERSION', import.meta.url))) {
+  try {
+    return fs.readFileSync(file, 'utf8').trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export function createRelayApp({ shared, token, origins, version = null }) {
   const allowed = new Set(origins);
   const app = express();
   app.disable('x-powered-by');
@@ -52,8 +64,8 @@ export function createRelayApp({ shared, token, origins }) {
     next();
   });
 
-  // Sans code : seulement de quoi vérifier que le relais tourne.
-  app.get('/health', (_req, res) => res.json({ ok: true, service: 'worklogs-relais' }));
+  // Sans code : seulement de quoi vérifier que le relais tourne, et quelle version.
+  app.get('/health', (_req, res) => res.json({ ok: true, service: 'worklogs-relais', ...(version ? { version } : {}) }));
 
   const guard = (req, res, next) => {
     const header = String(req.headers.authorization || '');
@@ -90,6 +102,7 @@ export function relayConfig(env = process.env) {
     label: env.WORKLOGS_RELAY_LABEL || '',
     // Adresse Windows de la racine ; à défaut, lue dans le montage CIFS (`/proc/self/mountinfo`).
     address: env.WORKLOGS_RELAY_ADDRESS || '',
+    version: relayVersion(),
   };
 }
 
@@ -112,7 +125,7 @@ export function startRelay(config) {
   // Nom des verrous : celui du réglage, sauf s'il a été changé depuis le téléphone (Paramètres).
   const chosen = db.prepare("SELECT value FROM local_settings WHERE key='shared.display_name'").get();
   if (config.displayName && !chosen) shared.setDisplayName(config.displayName);
-  const app = createRelayApp({ shared, token: config.token, origins: config.origins });
+  const app = createRelayApp({ shared, token: config.token, origins: config.origins, version: config.version });
   const server = app.listen(config.port, config.host);
   const stop = async () => {
     server.close();
@@ -129,7 +142,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     const config = relayConfig();
     const relay = startRelay(config);
     relay.server.on('listening', () => {
-      console.log(`[worklogs-relais] http://${config.host}:${config.port} → ${config.root}`);
+      console.log(`[worklogs-relais] ${config.version ? `v${config.version} ` : ''}http://${config.host}:${config.port} → ${config.root}`);
       console.log(`[worklogs-relais] origines : ${config.origins.join(', ')}`);
     });
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { void relay.stop().then(() => process.exit(0)); });

@@ -1,6 +1,16 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-08 · Version : **v0.53.0** — **projets sur une rangée, gestion
+> **Mise à jour :** 2026-10-08 · Version : **v0.54.0**, qui publie deux lots :
+> - **procédure locale → TSE** — « ＋ Depuis une procédure… » dans la section Dossier
+>   partagé : une procédure hors partage part sur le serveur distant en `.docx` (ou `.md`,
+>   `.txt` au choix) dans le dossier sélectionné, copie par défaut, déplacement sur case à
+>   cocher. Détail : « Lot du 2026-10-08 (8) » ci-dessous ; décision §36.
+> - **le relais de la VM se met à jour tout seul** à chaque release publiée — minuteur de
+>   5 min sur la VM, retour arrière automatique si la nouvelle version ne répond pas.
+>   Installé sur la VM, et le retour arrière y a déjà servi (la v0.52.0, refusée). Détail :
+>   « Lot du 2026-10-08 (9) » ci-dessous ; décision §37 ; mode d'emploi `09-RELAIS.md`.
+>
+> **v0.53.0** — **projets sur une rangée, gestion
 > par-dessus, mobile en une page** (branche `feat/mobile-ui-projets`, rebasée sur la v0.52.0).
 > Le bandeau projets tient sur **une rangée** quel que soit le nombre de projets (molette,
 > fondus, couleur du projet actif) ; **Gérer les projets** ouvre une fenêtre sous le bouton
@@ -21,7 +31,8 @@
 > - **Les dossiers reliés aux projets suivent les projets, par Drive** (`projects.shared_dir`,
 >   adresse complète traduite par chaque appareil) — « Lot du 2026-10-07 (2) » ; décision §29.
 >   **Après la mise à jour : tous les appareils** (une version plus ancienne qui réécrirait le
->   fichier Drive perdrait le champ), et **redéployer le relais depuis `master`** (`09-RELAIS.md`).
+>   fichier Drive perdrait le champ), et **redéployer le relais depuis `master`** (`09-RELAIS.md`) —
+>   fait tout seul par la VM à partir de la v0.54.0 (§37).
 > - **Tests front stables sous charge** : un test fautif n'entraîne plus les suivants (« Correctif
 >   du 2026-10-08 (6) ») ; les tests lents (relais, création d'entrée, multi-onglets, panneaux
 >   Drive et Google Docs, dossier partagé) ont des délais à la mesure de leur backend (`02-DEV.md`).
@@ -104,6 +115,63 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-10-08 (9) — le relais de la VM se met à jour tout seul — v0.54.0
+
+Demande de Timo : « fais en sorte que le relais sur ma VM .203 soit mis à jour automatiquement
+à chaque update ». Le jour même, la PWA 0.51.0 butait sur un relais d'avant la 0.49.0. Décision : §37.
+- `relay/mise-a-jour.mjs` (Node seul, aucune dépendance), lancé par `worklogs-relais-maj.timer`
+  toutes les 5 minutes : dernière release publiée sur GitHub ; si elle est plus récente que
+  `api/VERSION`, archive du tag, `npm ci`, chargement du module **à côté**, puis bascule (relais
+  arrêté, base sauvegardée, `api` → `api.precedent`) et preuve sur `/health` **avec la nouvelle
+  version** ; sinon retour arrière (code et base) et version écartée jusqu'à la suivante.
+- `api/src/relay.js` : `/health` dit la version déployée (`relayVersion()`, `api/VERSION`, ignoré
+  par git). Sans ce fichier (sources, tests) : rien ne change.
+- **Publié en v0.54.0**, première release que la VM installe d'elle-même. Une release dont le
+  relais ne dit pas sa version sur `/health` est refusée (retour arrière, sans dégât) : c'est
+  arrivé à la **v0.52.0**, publiée pendant ce lot — installée à 16:33, refusée au bout de 30 s,
+  « v0.51.0 répond de nouveau », pas retentée au passage de 16:38. Le relais reste donc sur le
+  mélange v0.51.0 + `worklogs-file-coedition` jusqu'à la v0.54.0 (la v0.53.0, publiée
+  juste avant sans ce lot, est refusée de la même façon).
+- **VM** : script et unités installés, `api/VERSION` = `0.51.0` pour le mélange déployé ce jour
+  (v0.51.0 + travail de `worklogs-file-coedition`), minuteur actif, premier passage « À jour :
+  v0.51.0. ». La prochaine release remplace ce mélange. Essais réels sur une copie du relais
+  (installation, retour arrière, version écartée) : `09-RELAIS.md`, « Installation réelle ».
+- **Tests** : `relay/mise-a-jour.test.mjs` (11 : à jour, simulation, installation complète,
+  retour arrière avec base migrée restaurée, `/health` d'une autre version, échec de préparation,
+  archive incomplète, relais déjà arrêté, vrai chargement du module, unités systemd), +1 API
+  (`/health` et sa version). Nouvelle étape de `check.sh` : « tests mise à jour du relais ».
+
+## Lot du 2026-10-08 (8) — procédure locale vers le partage (TSE) — v0.54.0
+
+Demande de Timo : « déplacer les procédures créées en dehors des dossiers, en docx (ou au
+choix) sur le TSE, dans le dossier partagé sélectionné ». Décision : §36.
+- **Front seul, aucune route, aucune dépendance** : « ＋ Depuis une procédure… » dans la
+  section Dossier partagé (à côté de « ＋ Nouveau fichier… ») — procédure, format
+  (Word `.docx` par défaut, `.md`, `.txt`), nom prérempli, « Dans » le dossier choisi
+  (racine ou dossier déplié, comme un fichier neuf), case « Supprimer la procédure locale
+  après l'envoi » (copie par défaut). `procedureFileBytes` (`new-files.ts`, même modèle que
+  les fichiers neufs) puis `POST /api/shared/create` (création exclusive : nom pris refusé,
+  rien d'écrasé) ; le fichier s'ouvre au centre. Seul le texte part, les pièces jointes
+  restent sur l'origine. PWA : même chemin par le relais.
+- **Tests** : `new-files.test.ts` (+4 : md sans doublon, txt BOM, docx bien formé et relu,
+  caractères échappés), `App.test.tsx` (+3 gestes : docx dans le dossier choisi, md nom pris
+  refusé, déplacer supprime l'originale). « md nom pris refusé » tombait sous charge (2 fois
+  sur 3 sur deux cœurs) : la première lecture du dossier, encore en route, effaçait le refus
+  juste affiché (`loadDir` vide l'erreur à chaque lecture réussie) ; le test attend l'arbre
+  d'abord, 3 sur 3 ensuite. Le défaut du produit (un refus effacé par le rafraîchissement de
+  30 s) reste, hors lot : il touche aussi « ＋ Nouveau fichier… ».
+- **Docs** : `03-UTILISATION.md` (geste), `05-DECISIONS.md` §36, `01-ARCHITECTURE.md`
+  (formats).
+
+### À vérifier par Timo
+
+1. Sur le TSE : envoyer une procédure locale en `.docx` dans `00. PROCEDURE` — les collègues
+   la voient-ils dans l'Explorateur ? S'ouvre-t-elle dans Word sans réparation ?
+2. Même envoi en `.md` / `.txt` : accents lisibles dans le Bloc-notes ?
+3. « Supprimer la procédure locale après l'envoi » : l'originale quitte-t-elle bien la
+   colonne, sans laisser de brouillon ?
+4. Un nom déjà pris sur le partage : refusé, l'existant intact ?
 
 ## Lot du 2026-10-08 (7) — projets sur une rangée, gestion par-dessus, mobile en une page — v0.53.0
 

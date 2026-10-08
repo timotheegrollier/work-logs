@@ -1500,3 +1500,74 @@ l'entrée défilent sur une rangée (seulement sans formulaire ni message ouvert
 **Rouvrir** si la recherche doit rester à portée sur mobile : la réponse serait une loupe dans
 le bandeau collé, pas un tiroir ni un hamburger (§16).
 
+## 36. Procédure locale vers le partage : copiée au format choisi, dans le dossier choisi — 2026-10-08
+
+**La demande.** « Déplacer les procédures créées en dehors des dossiers, en docx (ou au choix),
+sur le TSE, dans le dossier partagé sélectionné. » Les procédures de l'équipe vivent dans
+`00. PROCEDURE`, mais on les écrit d'abord hors du partage (colonne Procédures) ; il fallait
+les y mettre sans repasser par un copier-coller ni écraser un fichier du même nom.
+
+**Les choix.**
+- **« ＋ Depuis une procédure… » dans la section Dossier partagé**, à côté de « ＋ Nouveau
+  fichier… » : procédure (liste des locales non archivées), **format au choix** — Word
+  (`.docx`, défaut demandé), Markdown (`.md`), Texte (`.txt`) — nom (prérempli du titre) et
+  **« Dans » le dossier choisi** (la racine ou un dossier déplié, comme pour un fichier neuf).
+  Pas d'onglet ni de mode (§1) : le même formulaire que les fichiers neufs.
+- **Aucune route** : le front fabrique les octets (`procedureFileBytes`, `new-files.ts`, même
+  modèle que les fichiers neufs — Word sans réparation, Markdown sans BOM, texte avec BOM
+  pour les accents du TSE) puis appelle `POST /api/shared/create`, **création exclusive** :
+  un nom pris est refusé, rien n'est écrasé. Le fichier s'ouvre au centre comme un neuf.
+- **Word à partir du Markdown** (riche via `richToMarkdown`) : titre en `Titre1` (un `# …`
+  en tête ne fait pas doublon), `##`/`###` en `Titre2`/`Titre3`, puces en `•`, cases en
+  `☐`/`☑`, numéros écrits (`1.` — le modèle n'a pas de `numbering.xml`, §30), clôtures de
+  code et séparateurs de tableau sautés, balisage en ligne retiré (`**`, liens…). Relu par
+  `readDocxDocument` en test, comme les fichiers neufs.
+- **Copie par défaut ; « Supprimer la procédure locale après l'envoi » en fait un
+  déplacement.** La case est explicite et décochée : rien ne disparaît sans geste. Les
+  **pièces jointes restent** sur l'origine (le partage a son propre historique, §25) —
+  le formulaire le dit.
+- PWA : même chemin par le relais (`createShared` relayé), comme les fichiers neufs.
+
+**Ce que ça coûte.** Le Word perd la mise en forme riche (gras, tableaux, images : texte
+seul) — c'est un envoi, pas une synchronisation. Au-delà du texte (tableaux, images),
+repasser par « Ouvrir avec… » puis le partage.
+
+**Rouvrir si** les procédures doivent garder leurs pièces jointes à l'envoi (les téléverser
+dans le dossier à côté, avec le même nom) ou si le Word doit porter de vraies listes
+numérotées (ajouter un `numbering.xml` au modèle, §30).
+
+## 37. Le relais de la VM suit les releases tout seul — 2026-10-08
+
+**La demande.** « Fais en sorte que le relais sur ma VM .203 soit mis à jour automatiquement à
+chaque update. » Constat du jour même : la PWA 0.51.0 répondait « Introuvable. » en créant un
+dossier, parce que le relais datait d'avant la 0.49.0 — sa mise à jour était une copie à la
+main, oubliée.
+
+**Les choix.**
+- **La VM tire, GitHub ne pousse pas** : un minuteur systemd (`worklogs-relais-maj.timer`, 5 min)
+  interroge l'API GitHub ; le dépôt est public, aucune clé à garder. Écarté : un job de
+  `release.yml` qui se connecterait à la VM — il faudrait confier à GitHub une clé Tailscale et
+  un accès root à une machine du réseau du bureau.
+- **Les releases publiées, pas `master`** : c'est ce que la CI a validé, ça porte le numéro de
+  la PWA et du desktop, et ça se compare. Le relais peut avoir quelques minutes de retard sur une
+  PWA déployée depuis `master` avant la release ; plus des semaines.
+- **Préparer à côté, basculer ensuite** : archive du tag, `npm ci --ignore-scripts` et chargement
+  du module avant d'arrêter le relais ; la coupure dure une seconde.
+- **La preuve est `/health`** : le relais dit sa version (`api/VERSION`, écrit par la mise à jour,
+  `relayVersion()`), et la bascule ne compte que si c'est **la nouvelle** qui répond — un relais
+  lancé à la main qui garderait le port ne passe pas pour elle.
+- **Retour arrière automatique, code et base** (une version neuve peut migrer la base en
+  démarrant), puis la version est **écartée** jusqu'à la suivante : sinon le relais serait coupé
+  30 s toutes les 5 minutes. Un échec avant la bascule (réseau, npm) ne l'écarte pas : retenté.
+- **Rien n'est tenté si le relais ne répond pas déjà** (partage démonté, VM qui redémarre) : la
+  nouvelle version serait accusée à tort.
+- Le script se remplace par celui de la release après chaque succès ; les unités systemd non,
+  elles portent des chemins propres à la VM.
+
+**Écartés.** Suivre `master` (pas encore validé au moment du push, pas de numéro) ; un paquet
+`.deb` du relais (un artefact de plus à construire et publier pour une seule machine) ; garder
+plusieurs versions d'avance sur le disque (la VM est pleine à 94 %, les releases restent sur
+GitHub).
+
+**Rouvrir si** la PWA se met à dépendre de routes qui arrivent sur `master` longtemps avant la
+release : suivre alors les commits de `master` à CI verte.

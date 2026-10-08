@@ -2970,6 +2970,64 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     expect(fs.existsSync(path.join(share, 'Compte rendu.docx'))).toBe(true);
   });
 
+  test('depuis une procédure : la procédure locale part sur le TSE en docx, dans le dossier choisi', async () => {
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, '00. PROCEDURE'));
+    seedData(api.db, { entries: [{ id: 'en_proc', title: 'Sauvegarde chaudière', content_md: '## Objectif\n\nCouper le courant.\n\n- Filtre lavé\n', kind: 'procedure' }] });
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Modifier la procédure Sauvegarde chaudière' })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Dossier 00. PROCEDURE' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: '＋ Depuis une procédure…' }));
+    const form = screen.getByRole('form', { name: 'Depuis une procédure' });
+    expect(within(form).getByLabelText('Procédure à envoyer')).toHaveValue('en_proc');
+    expect(within(form).getByLabelText('Format du fichier')).toHaveValue('docx');
+    expect(within(form).getByLabelText('Nom du fichier envoyé')).toHaveValue('Sauvegarde chaudière');
+    expect(within(form).getByLabelText('Dossier de destination')).toHaveValue('00. PROCEDURE');
+    fireEvent.click(within(form).getByRole('button', { name: 'Envoyer vers le partage' }));
+
+    const editorRegion = await screen.findByRole('region', { name: 'Fichier partagé' });
+    const content = await within(editorRegion).findByRole('textbox', { name: 'Contenu du document Word' });
+    expect(content.querySelector('h1')).toHaveTextContent('Sauvegarde chaudière');
+    expect(content).toHaveTextContent('Couper le courant.');
+    expect(fs.existsSync(path.join(share, '00. PROCEDURE', 'Sauvegarde chaudière.docx'))).toBe(true);
+    // Copie par défaut : la procédure locale reste dans sa colonne.
+    expect(screen.getByRole('button', { name: 'Modifier la procédure Sauvegarde chaudière' })).toBeInTheDocument();
+  }, 15000);
+
+  test('depuis une procédure : format Markdown au choix, un nom pris n’écrase rien', async () => {
+    await write('existant.md', 'à garder\n');
+    seedData(api.db, { entries: [{ id: 'en_proc', title: 'Consignes', content_md: '# Consignes\n\nLaver le filtre.\n', kind: 'procedure' }] });
+    render(<App />);
+    // L'arbre d'abord : une lecture du dossier qui aboutit efface le message d'erreur, et la
+    // première, encore en route sous charge, effaçait le refus juste après son affichage.
+    await screen.findByRole('button', { name: /^Ouvrir existant\.md/ }, { timeout: 10000 });
+    fireEvent.click(await screen.findByRole('button', { name: '＋ Depuis une procédure…' }, { timeout: 10000 }));
+    const form = screen.getByRole('form', { name: 'Depuis une procédure' });
+    fireEvent.change(within(form).getByLabelText('Format du fichier'), { target: { value: 'md' } });
+    fireEvent.change(within(form).getByLabelText('Nom du fichier envoyé'), { target: { value: 'existant' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Envoyer vers le partage' }));
+    expect(await screen.findByText('« existant.md » existe déjà dans ce dossier : rien n’a été écrasé. Choisis un autre nom.', {}, { timeout: 10000 })).toBeInTheDocument();
+    expect(await read('existant.md')).toBe('à garder\n');
+  }, 30000);
+
+  test('depuis une procédure : déplacer supprime la procédure locale après l’envoi', async () => {
+    seedData(api.db, { entries: [{ id: 'en_proc', title: 'Consignes', content_md: '# Consignes\n\nLaver le filtre.\n', kind: 'procedure' }] });
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: '＋ Depuis une procédure…' }));
+    const form = screen.getByRole('form', { name: 'Depuis une procédure' });
+    fireEvent.change(within(form).getByLabelText('Format du fichier'), { target: { value: 'md' } });
+    fireEvent.change(within(form).getByLabelText('Nom du fichier envoyé'), { target: { value: 'Consignes envoyées' } });
+    fireEvent.click(within(form).getByLabelText('Supprimer la procédure locale après l’envoi'));
+    fireEvent.click(within(form).getByRole('button', { name: 'Envoyer vers le partage' }));
+    const editorRegion = await screen.findByRole('region', { name: 'Fichier partagé' });
+    expect(await within(editorRegion).findByLabelText('Contenu de Consignes envoyées.md')).toHaveValue('# Consignes\n\nLaver le filtre.\n');
+    expect(await read('Consignes envoyées.md')).toBe('# Consignes\n\nLaver le filtre.\n');
+    // Déplacement : l’originale a quitté la colonne des procédures.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Modifier la procédure Consignes' })).not.toBeInTheDocument(), { timeout: 5000 });
+    expect(row(api.db, 'SELECT id FROM entries WHERE id=?', 'en_proc')).toBeUndefined();
+  }, 15000);
+
   test('l’historique restaure une ancienne version en brouillon, puis l’envoi la remet sur le partage', async () => {
     await write('notes.md', 'version 1\n');
     render(<App />);

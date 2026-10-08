@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fileNameProblem, newFileBytes, withExtension } from './new-files';
+import { fileNameProblem, newFileBytes, procedureFileBytes, withExtension } from './new-files';
 import { readZip, readZipText } from './zip';
 import { readDocxDocument, writeDocx } from './docx';
 import { cellView, readXlsxWorkbook, writeXlsx } from './xlsx';
@@ -81,5 +81,51 @@ describe('fichiers neufs du dossier partagé', () => {
     const csv = parseCsvFile(await newFileBytes('csv', { title: 'Relevés', author: '' }), 'Relevés.csv');
     expect(csv.encoding).toBe('utf-8-bom');
     expect(csv.delimiter).toBe(';');
+  });
+});
+
+describe('procédure locale envoyée vers le partage', () => {
+  it('Markdown : le titre en tête, sans doublon quand le texte a déjà son `# …`', async () => {
+    const plain = new TextDecoder().decode(await procedureFileBytes('md', { title: 'Sauvegarde', markdown: '## Objectif\n\nCouper le courant.\n', author: '' }));
+    expect(plain).toBe('# Sauvegarde\n\n## Objectif\n\nCouper le courant.\n');
+    const headed = new TextDecoder().decode(await procedureFileBytes('md', { title: 'Sauvegarde', markdown: '# Sauvegarde\n\nCouper le courant.\n', author: '' }));
+    expect(headed).toBe('# Sauvegarde\n\nCouper le courant.\n');
+    expect(new TextDecoder().decode(await procedureFileBytes('md', { title: 'Vide', markdown: '', author: '' }))).toBe('# Vide\n\n');
+  });
+
+  it('Texte : titre puis contenu, UTF-8 avec BOM pour les accents du TSE', async () => {
+    const bytes = await procedureFileBytes('txt', { title: 'Sauvegarde', markdown: 'Couper le courant : **vérifié**.\n', author: '' });
+    const decoded = decodeText(bytes);
+    expect(decoded.encoding).toBe('utf-8-bom');
+    expect(decoded.text).toBe('Sauvegarde\n\nCouper le courant : vérifié.\n');
+  });
+
+  it('Word : titre en Titre 1, sections, puces et numéros lisibles, bien formé', async () => {
+    const markdown = '# Sauvegarde\n\n## Objectif\n\nCouper le courant.\n\n- Filtre lavé\n- [x] pH vérifié\n\n1. Arrêter le service\n2. Rincer\n\n```\nsystemctl stop\n```\n\n> Décision : le lundi.\n';
+    const bytes = await procedureFileBytes('docx', { title: 'Sauvegarde', markdown, author: 'T. Grollier', now });
+    const archive = await wellFormed(bytes);
+    expect(archive.entries[0].name).toBe('[Content_Types].xml');
+    const xmlDoc = (await readZipText(readZip(bytes), 'word/document.xml'))!;
+    expect(xmlDoc).toContain('<w:pStyle w:val="Titre1"/><');
+    expect(xmlDoc).toContain('Sauvegarde');
+    expect(xmlDoc).toContain('Objectif');
+    expect(xmlDoc).toContain('• Filtre lavé');
+    expect(xmlDoc).toContain('☑ pH vérifié');
+    expect(xmlDoc).toContain('1. Arrêter le service');
+    expect(xmlDoc).toContain('systemctl stop');
+    expect(xmlDoc).not.toContain('```');
+    // Le `# …` du texte ne fait pas doublon : un seul `Titre1`, celui du titre.
+    expect(xmlDoc.match(/Titre1/g)!.length).toBe(1);
+    expect(xmlDoc.match(/Sauvegarde/g)!.length).toBe(1);
+    const doc = await readDocxDocument(bytes);
+    expect(doc.readOnly).toBeNull();
+    expect(doc.doc.content?.[0]).toMatchObject({ type: 'docxParagraph', attrs: { styleId: 'Titre1', level: 1 } });
+  });
+
+  it('Word : caractères spéciaux échappés, vide réduit au titre', async () => {
+    const bytes = await procedureFileBytes('docx', { title: 'A & B <test>', markdown: '', author: '', now });
+    const xmlDoc = (await readZipText(readZip(bytes), 'word/document.xml'))!;
+    expect(xmlDoc).toContain('A &amp; B &lt;test&gt;');
+    await wellFormed(bytes);
   });
 });

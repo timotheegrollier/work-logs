@@ -1,0 +1,12 @@
+# Cherche une nouvelle release de WorkLogs pour le relais toutes les 5 minutes
+# (une requête à l'API GitHub, rien d'autre quand le relais est à jour).
+[Unit]
+Description=WorkLogs — mise à jour du relais, toutes les 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

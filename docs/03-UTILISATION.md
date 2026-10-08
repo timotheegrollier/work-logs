@@ -330,6 +330,14 @@ lorsque la colonne Procédures est affichée.
   créé tout de suite sur le partage et s'ouvre au centre ; un nom déjà pris est refusé, rien
   n'est écrasé. Le document Word commence par son nom en Titre 1, le classeur a une feuille
   « Feuil1 ».
+- **＋ Depuis une procédure…** envoie une procédure locale (celle hors du partage, de la
+  colonne Procédures) vers le TSE, dans le dossier choisi (la racine, ou un dossier déplié —
+  le même « Dans » que ci-dessus). **Format au choix** : Document Word (`.docx`, par défaut),
+  Note Markdown (`.md`) ou Texte (`.txt`) ; le Word reprend le titre en Titre 1, les sections,
+  les puces et les numéros écrits, lisible dans Word comme dans l'éditeur WorkLogs. Créé tout
+  de suite sur le partage, ouvert au centre ; un nom déjà pris est refusé, rien n'est écrasé.
+  Copie par défaut ; cocher **« Supprimer la procédure locale après l'envoi »** en fait un
+  déplacement. Seul le texte part — les pièces jointes restent sur la procédure d'origine.
 - **Supprimer** : la ✕ de l'arbre, ou **Supprimer du partage** dans l'éditeur, retire le
   fichier du partage aussitôt, pour toute l'équipe (avec confirmation). Rien n'est
   supprimé sans avoir été vu : si un collègue a enregistré le fichier depuis ta dernière

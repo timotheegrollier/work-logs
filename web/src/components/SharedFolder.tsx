@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, type Project, type SharedDirSummary, type SharedEntry, type SharedListing, type SharedSearch, type SharedStatus } from '../lib';
 import { badgesFor, REACH_HELP, REACH_LABELS, sinceLabel } from '../shared-session';
 import { editorKind } from '../file-formats';
-import { fileNameProblem, NEW_FILE_TYPES, newFileBytes, withExtension, type NewFileType } from '../new-files';
+import { fileNameProblem, NEW_FILE_TYPES, newFileBytes, PROCEDURE_EXPORT_TYPES, procedureFileBytes, withExtension, type NewFileType, type ProcedureExportExt } from '../new-files';
 import { followDir, linkFor, localDir } from '../shared-links';
+import { richToMarkdown } from '../rich-markdown';
+import { flushPendingSaves } from '../autosave';
 
 const OPEN_KEY = 'worklogs-shared-open';
 const POLL_MS = 30_000;
@@ -30,11 +32,13 @@ const plural = (count: number, word: string) => `${count} ${word}${count > 1 ? '
  * sur cet ordinateur, en arbre. Un fichier s'ouvre au centre comme une entrée.
  * Absente de la PWA (un navigateur n'atteint pas un partage SMB). Voir §25.
  */
-export function SharedFolder({ active, projectId, projects, selectedPath, revision, onOpen, onDeleted, onRenamed, onProjectsChanged }: {
+export function SharedFolder({ active, projectId, projects, procedures, selectedPath, revision, onOpen, onDeleted, onRenamed, onProjectsChanged, onLocalChanged }: {
   /** Colonne Procédures affichée : sinon, ni requête ni sondage. */
   active: boolean;
   projectId: string;
   projects: Project[];
+  /** Procédures locales (hors partage) à envoyer vers le TSE : `{id, title}`. */
+  procedures: { id: string; title: string }[];
   selectedPath: string | null;
   revision: number;
   onOpen: (path: string) => void;
@@ -44,6 +48,8 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   onRenamed: (from: string, to: string) => void;
   /** Le dossier relié est porté par le projet : après l'avoir changé, l'écran relit les projets. */
   onProjectsChanged: () => void;
+  /** Une procédure locale a été supprimée après son envoi : recharger le journal. */
+  onLocalChanged: () => void;
 }) {
   const [status, setStatus] = useState<SharedStatus | null>(null);
   const [open, setOpen] = useState(readOpen);
@@ -67,6 +73,8 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   const [creating, setCreating] = useState<{ ext: NewFileType['ext']; name: string; dir: string } | null>(null);
   /** « Nouveau dossier » : nom, et où (la racine ou un dossier déplié). */
   const [creatingDir, setCreatingDir] = useState<{ name: string; dir: string } | null>(null);
+  /** « Depuis une procédure » : procédure locale, format au choix, nom, dossier, déplacer ou copier. */
+  const [importing, setImporting] = useState<{ procedureId: string; ext: ProcedureExportExt; name: string; dir: string; removeOriginal: boolean } | null>(null);
   /** Dossier dont les actions (Renommer, Supprimer) sont ouvertes sous sa ligne. */
   const [actionsFor, setActionsFor] = useState<string | null>(null);
   /** Dossier renommé dans sa ligne de l'arbre. */
@@ -268,6 +276,56 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
       setCreating(null);
       if (creating.dir) setExpanded((current) => new Set([...current, creating.dir]));
       await loadDir(creating.dir);
+      onOpen(rel);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Envoie une procédure locale vers le partage, au format choisi, dans le dossier
+   * choisi — jamais par-dessus un autre fichier, puis ouverte au centre. Copie par
+   * défaut ; « Supprimer la procédure locale » en fait un déplacement. Seul le texte
+   * part : les pièces jointes restent sur la procédure d'origine.
+   */
+  const importProcedure = async () => {
+    if (!importing) return;
+    const procedure = procedures.find((candidate) => candidate.id === importing.procedureId);
+    if (!procedure) {
+      setError('Choisis une procédure locale à envoyer vers le partage.');
+      return;
+    }
+    const problem = fileNameProblem(importing.name);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    const name = withExtension(importing.name, importing.ext);
+    const rel = importing.dir ? `${importing.dir}/${name}` : name;
+    const { procedureId, ext, removeOriginal } = importing;
+    setBusy(true);
+    setError('');
+    try {
+      // L'éditeur peut avoir une frappe non enregistrée sur cette procédure.
+      await flushPendingSaves().catch(() => {});
+      const entry = await api.entry(procedureId);
+      const markdown = entry.content_json ? richToMarkdown(entry.content_json) : entry.content_md;
+      const bytes = await procedureFileBytes(ext, {
+        title: name.slice(0, name.length - ext.length - 1),
+        markdown,
+        author: status?.displayName ?? '',
+      });
+      await api.createShared(rel, bytes);
+      if (removeOriginal) {
+        await flushPendingSaves().catch(() => {});
+        await api.deleteEntry(procedureId);
+        onLocalChanged();
+      }
+      setImporting(null);
+      if (importing.dir) setExpanded((current) => new Set([...current, importing.dir]));
+      await loadDir(importing.dir);
       onOpen(rel);
     } catch (e) {
       setError((e as Error).message);
@@ -682,6 +740,48 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
                   <button className="ghost" type="button" onClick={() => { setCreatingDir(null); setError(''); }}>Annuler</button>
                 </div>
               </form>
+            ) : importing ? (
+              <form className="shared-new" aria-label="Depuis une procédure" onSubmit={(event) => { event.preventDefault(); void importProcedure(); }}>
+                <label>
+                  Procédure
+                  <select aria-label="Procédure à envoyer" value={importing.procedureId} onChange={(event) => {
+                    const next = procedures.find((candidate) => candidate.id === event.target.value);
+                    setImporting({ ...importing, procedureId: event.target.value, name: next ? importing.name || next.title : importing.name });
+                  }}>
+                    {procedures.map((procedure) => <option key={procedure.id} value={procedure.id}>{procedure.title}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Format
+                  <select aria-label="Format du fichier" value={importing.ext} onChange={(event) => setImporting({ ...importing, ext: event.target.value as ProcedureExportExt })}>
+                    {PROCEDURE_EXPORT_TYPES.map((type) => <option key={type.ext} value={type.ext}>{type.label}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Nom
+                  <input aria-label="Nom du fichier envoyé" placeholder="Procédure sauvegarde" value={importing.name} autoFocus onChange={(event) => setImporting({ ...importing, name: event.target.value })} />
+                </label>
+                <label>
+                  Dans
+                  <select aria-label="Dossier de destination" value={importing.dir} onChange={(event) => setImporting({ ...importing, dir: event.target.value })}>
+                    {dirOptions}
+                  </select>
+                </label>
+                <label className="shared-project-link">
+                  <input
+                    type="checkbox"
+                    checked={importing.removeOriginal}
+                    aria-label="Supprimer la procédure locale après l’envoi"
+                    onChange={(event) => setImporting({ ...importing, removeOriginal: event.target.checked })}
+                  />
+                  Supprimer la procédure locale après l’envoi
+                </label>
+                <p className="empty">Seul le texte part sur le TSE — les pièces jointes restent sur la procédure d’origine. Un nom déjà pris est refusé, rien n’est écrasé.</p>
+                <div className="shared-project-link">
+                  <button className="task-primary" type="submit" disabled={busy || !importing.name.trim() || !importing.procedureId}>Envoyer vers le partage</button>
+                  <button className="ghost" type="button" onClick={() => { setImporting(null); setError(''); }}>Annuler</button>
+                </div>
+              </form>
             ) : reach === 'ok' && (
               <div className="shared-new-buttons">
                 <button className="ghost shared-change" disabled={busy} onClick={() => setCreating({ ext: 'docx', name: '', dir: defaultDir })}>
@@ -689,6 +789,17 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
                 </button>
                 <button className="ghost shared-change" disabled={busy} onClick={() => setCreatingDir({ name: '', dir: defaultDir })}>
                   ＋ Nouveau dossier…
+                </button>
+                <button
+                  className="ghost shared-change"
+                  disabled={busy || procedures.length === 0}
+                  title={procedures.length === 0 ? 'Aucune procédure locale à envoyer' : 'Copier une procédure locale vers le TSE, au format choisi'}
+                  onClick={() => {
+                    const first = procedures[0];
+                    if (first) setImporting({ procedureId: first.id, ext: 'docx', name: first.title, dir: defaultDir, removeOriginal: false });
+                  }}
+                >
+                  ＋ Depuis une procédure…
                 </button>
               </div>
             )}

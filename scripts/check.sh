@@ -23,6 +23,9 @@ node --test scripts/*.test.mjs
 echo "== tests relais Google de la PWA (Worker) =="
 node --test oauth-proxy/*.test.mjs
 
+echo "== tests mise à jour du relais de la VM =="
+node --test relay/*.test.mjs
+
 echo "== build =="
 npm run build
 

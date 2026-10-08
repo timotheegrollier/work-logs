@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { newToken, relayConfig, sameToken, startRelay } from '../src/relay.js';
+import { newToken, relayConfig, relayVersion, sameToken, startRelay } from '../src/relay.js';
 
 const PWA = 'https://worklogs-google.cocodexcocoder.workers.dev';
 
@@ -111,5 +111,22 @@ describe('relais du dossier partagé (PWA)', () => {
     assert.equal(sameToken(token, token), true);
     assert.equal(sameToken(token, token.slice(1)), false);
     assert.equal(sameToken('', token), false);
+  });
+
+  test('/health dit la version déployée par la mise à jour automatique (api/VERSION)', async () => {
+    const file = path.join(data, 'VERSION');
+    assert.equal(relayVersion(file), null, 'depuis les sources : pas de version');
+    fs.writeFileSync(file, '0.52.0\n');
+    assert.equal(relayVersion(file), '0.52.0');
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-relais-data-'));
+    const deployed = startRelay({ root: share, token, origins: [PWA], dataDir, host: '127.0.0.1', port: 0, version: '0.52.0' });
+    try {
+      await new Promise((resolve) => deployed.server.once('listening', resolve));
+      const health = await (await fetch(`http://127.0.0.1:${deployed.server.address().port}/health`)).json();
+      assert.deepEqual(health, { ok: true, service: 'worklogs-relais', version: '0.52.0' });
+    } finally {
+      await deployed.stop();
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
   });
 });

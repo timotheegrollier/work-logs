@@ -640,6 +640,7 @@ export default function App() {
             active={showProcedures}
             projectId={projectId}
             projects={state?.projects ?? []}
+            procedures={(state?.entries ?? []).filter((entry) => entry.kind === 'procedure' && !entry.archived).map((entry) => ({ id: entry.id, title: entry.title }))}
             selectedPath={sharedPath}
             revision={sharedRevision}
             onOpen={(path) => void openShared(path)}
@@ -654,6 +655,7 @@ export default function App() {
               bumpShared();
             }}
             onProjectsChanged={reload}
+            onLocalChanged={() => void reload()}
           />
         </aside>
       </div>

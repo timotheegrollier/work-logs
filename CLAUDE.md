@@ -31,10 +31,11 @@ au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + V
 
 - **Aucune fonctionnalité sans test.** Route API → test dans `api/test/`. Geste utilisateur →
   test dans `web/src/App.test.tsx`, ou dans `e2e/` si ça dépend d'un vrai navigateur.
-- **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 256 tests API, 543 tests front,
+- **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 257 tests API, 550 tests front,
   48 tests desktop (serveur/OAuth/mise à jour/vue Google/dossier partagé), 29 tests des scripts
-  de release, 8 tests du relais, build, 66 parcours navigateur et 16 parcours de l'application
-  desktop — **966 tests**, et finit par `CHECK OK`.
+  de release, 8 tests du relais Google, 11 tests de la mise à jour du relais de la VM, build,
+  66 parcours navigateur et 16 parcours de l'application desktop — **985 tests**, et finit
+  par `CHECK OK`.
 - **Rien de nouveau sans accord** : ni dépendance, ni onglet, ni mode. La valeur de cette
   application est qu'elle tient sur un écran.
 
@@ -46,7 +47,7 @@ npm run desktop      # l'application Electron
 npm test             # API + front (~20 s)
 npm run test:e2e     # build + Playwright (web)
 npm run test:desktop # parcours Electron (xvfb-run si pas d'affichage)
-./scripts/check.sh   # tout, 966 tests (Electron dans Xvfb + metacity s'ils sont là)
+./scripts/check.sh   # tout, 985 tests (Electron dans Xvfb + metacity s'ils sont là)
 WORKLOGS_E2E_PORT=8432 ./scripts/check.sh  # si une autre copie de travail occupe le port 8412
 ./scripts/backup.sh  # sauvegarde base + fichiers joints
 ```
@@ -56,7 +57,8 @@ WORKLOGS_E2E_PORT=8432 ./scripts/check.sh  # si une autre copie de travail occup
 - Base : `api/data/worklogs.db` — **jamais** commitée, jamais touchée par les tests.
 - Tables : `projects`, `entries`, `tasks`, `attachments`. Schéma dans `docs/01-ARCHITECTURE.md`.
   Dossier partagé du TSE (§25) : tables **de la machine**, sans clé étrangère, jamais synchronisées.
-  Sur la PWA, il passe par le **relais** de la VM du bureau (§29, `docs/09-RELAIS.md`).
+  Sur la PWA, il passe par le **relais** de la VM du bureau (§29, `docs/09-RELAIS.md`), qui
+  installe tout seul chaque release publiée dans les 5 minutes (§37) : `/health` dit sa version.
 - Lecture : tout l'écran vient de `GET /api/state`. Le front la rejoue après chaque mutation.
 - Les éléments interactifs portent un `aria-label` parlant : c'est l'accessibilité **et** la
   prise des tests.
