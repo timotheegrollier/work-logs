@@ -243,6 +243,53 @@ test('nouveau classeur Excel dans un dossier : créé, rempli au clavier, enregi
   expect(await readZipText(sent, 'xl/sharedStrings.xml')).toContain('<si><t>Imprimante</t></si>');
 });
 
+test('dossiers du partage : créer, y créer un fichier, renommer (l’éditeur suit), supprimer avec son contenu', async ({ page }) => {
+  put('garde.md', '# Gardé\n');
+  await page.goto('/');
+  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  if (await page.locator('#workspace-procedures').isHidden()) await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+
+  await page.getByRole('button', { name: '＋ Nouveau dossier…' }).click();
+  const form = page.getByRole('form', { name: 'Nouveau dossier' });
+  await form.getByLabel('Nom du dossier').fill('Brouillons TSE');
+  await form.getByRole('button', { name: 'Créer' }).click();
+  await expect(page.getByRole('button', { name: 'Dossier Brouillons TSE' })).toHaveAttribute('aria-expanded', 'true');
+  expect(fs.statSync(path.join(share, 'Brouillons TSE')).isDirectory()).toBe(true);
+
+  await page.getByRole('button', { name: '＋ Nouveau fichier…' }).click();
+  const fileForm = page.getByRole('form', { name: 'Nouveau fichier' });
+  await expect(fileForm.getByLabel('Dossier du nouveau fichier')).toHaveValue('Brouillons TSE');
+  await fileForm.getByLabel('Type de fichier').selectOption('md');
+  await fileForm.getByLabel('Nom du fichier').fill('consignes');
+  await fileForm.getByRole('button', { name: 'Créer' }).click();
+  const editor = page.getByRole('region', { name: 'Fichier partagé' });
+  await expect(editor.getByLabel('Contenu de consignes.md')).toHaveValue('# consignes\n\n');
+
+  await page.getByRole('button', { name: 'Renommer ou supprimer Brouillons TSE' }).click();
+  await page.getByRole('button', { name: 'Renommer Brouillons TSE' }).click();
+  const field = page.getByLabel('Nouveau nom du dossier');
+  await expect(field).toBeFocused();
+  await field.fill('Procédures TSE');
+  await field.press('Enter');
+  await expect(page.getByRole('button', { name: 'Dossier Procédures TSE' })).toHaveAttribute('aria-expanded', 'true');
+  expect(get('Procédures TSE/consignes.md')).toBe('# consignes\n\n');
+  expect(fs.existsSync(path.join(share, 'Brouillons TSE'))).toBe(false);
+  await expect(editor.getByLabel('Contenu de consignes.md')).toHaveValue('# consignes\n\n');
+
+  let question = '';
+  page.once('dialog', (dialog) => {
+    question = dialog.message();
+    void dialog.accept();
+  });
+  await page.getByRole('button', { name: 'Renommer ou supprimer Procédures TSE' }).click();
+  await page.getByRole('button', { name: 'Supprimer Procédures TSE du partage' }).click();
+  await expect(page.getByRole('button', { name: 'Dossier Procédures TSE' })).toBeHidden();
+  expect(question).toContain('« Procédures TSE » et tout son contenu (1 fichier)');
+  await expect(page.getByRole('region', { name: 'Fichier partagé' })).toBeHidden();
+  expect(fs.existsSync(path.join(share, 'Procédures TSE'))).toBe(false);
+  expect(get('garde.md')).toBe('# Gardé\n');
+});
+
 test('IA dans un document Word du partage : procédure suggérée depuis son titre, relue, appliquée, envoyée par Ctrl+S', async ({ page }) => {
   // Service IA simulé dans le navigateur : rien ne sort, la clé reste locale.
   let prompt = '';

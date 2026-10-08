@@ -322,8 +322,22 @@ lorsque la colonne Procédures est affichée.
   supprimé sans avoir été vu : si un collègue a enregistré le fichier depuis ta dernière
   lecture, WorkLogs refuse et te fait rouvrir le fichier ; avec un brouillon non envoyé,
   un envoi en attente, un conflit ou un fichier ouvert par un collègue, il le dit et ne
-  supprime rien. Seuls les fichiers se suppriment, jamais les dossiers. L'historique
-  gardé sur cet ordinateur reste.
+  supprime rien. L'historique gardé sur cet ordinateur reste.
+- **Dossiers** : **＋ Nouveau dossier…** crée un dossier dans la racine ou un dossier
+  déplié ; il s'ouvre aussitôt, et **＋ Nouveau fichier…** y crée le fichier suivant. Le
+  bouton **⋯** d'un dossier propose :
+  - **Renommer** : le nom se change dans la ligne (Entrée valide, Échap annule). Rien n'est
+    remplacé : un nom déjà pris est refusé. Ce que WorkLogs garde du dossier le suit
+    (historique, projet relié, fichier ouvert au centre). Refusé tant qu'un fichier du
+    dossier a un brouillon non envoyé, un envoi en attente ou un conflit, ou qu'un collègue
+    l'a ouvert (Word, Excel, LibreOffice, un autre WorkLogs) — WorkLogs dit lequel.
+  - **Supprimer…** : WorkLogs fait d'abord le bilan, puis demande « Supprimer le dossier
+    « Archives » et tout son contenu (12 fichiers et 2 sous-dossiers) ? ». Seul ce
+    contenu-là part : si quelque chose a changé ou est arrivé entre-temps, rien n'est
+    supprimé (ou la suppression s'arrête et dit ce qui est déjà parti). Chaque fichier
+    supprimé reste gardé sur cet ordinateur. Mêmes refus que pour renommer ; un dossier
+    qui contient un lien, un dossier caché, plus de 300 fichiers ou 100 dossiers, ou plus
+    de 200 Mo, se supprime depuis Windows.
 - **Hors ligne**, l'arbre reste celui que tu as vu en dernier (« Hors ligne — liste vue à
   10h42 ») : les fichiers gardés sur cet ordinateur s'ouvrent, les autres sont grisés. La
   recherche cherche alors dans ces listes.

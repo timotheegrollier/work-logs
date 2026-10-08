@@ -4,7 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { nowISO, uid } from './db.js';
 import { createSharedIo, SharedIoError, transferTimeout } from './shared-io.js';
-import { describeLock, formatWorkLogsLock, isTechnicalName, libreOfficeLockName, lockAppLabel, lockBlocks, ownerFileName } from './shared-locks.js';
+import {
+  describeLock, formatWorkLogsLock, isTechnicalDirName, isTechnicalName, libreOfficeLockName, lockAppLabel, lockBlocks, ownerFileName,
+} from './shared-locks.js';
 
 /**
  * Dossier partagé (le dossier du TSE monté en SMB) : la **référence** des
@@ -46,6 +48,11 @@ const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true })
 /** Comparaison de noms sans casse ni accents (« procedure » trouve « Procédure »). */
 const fold = (text) => String(text ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 const SEARCH = { results: 100, dirs: 3000, depth: 12 };
+/**
+ * Dossier renommé ou supprimé : parcours borné de son contenu. Une suppression
+ * lit chaque fichier (gardé ici avant de partir) : au-delà, c'est pour Windows.
+ */
+const TREE = { files: 300, dirs: 100, depth: 12, bytes: 200 * 1024 * 1024 };
 /** Dossiers dont la dernière liste est gardée pour l'arbre hors ligne. */
 const MAX_REMEMBERED_DIRS = 2000;
 const isoOf = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : null);
@@ -134,12 +141,16 @@ export function relativeParts(rel, { allowRoot = false } = {}) {
 
 const parentOf = (rel) => (rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '');
 const joinRel = (dir, name) => (dir ? `${dir}/${name}` : name);
+/** `rel` est `dir` lui-même ou quelque chose dedans. */
+const within = (rel, dir) => rel === dir || rel.startsWith(dir + '/');
+/** Jamais montré : fichier technique (verrou, temporaire, vignette), dossier caché ou système. */
+const hiddenName = (entry) => (entry.isDir ? isTechnicalDirName(entry.name) : isTechnicalName(entry.name));
 
-/** Ce que Windows (le TSE) refuserait dans un nom de fichier, ou `null`. */
-export function windowsNameProblem(name) {
-  if (!name || !name.trim()) return 'Donne un nom au fichier.';
+/** Ce que Windows (le TSE) refuserait dans un nom de fichier (ou de dossier), ou `null`. */
+export function windowsNameProblem(name, what = 'fichier') {
+  if (!name || !name.trim()) return `Donne un nom au ${what}.`;
   if (/[<>:"/\\|?*\x00-\x1f]/.test(name)) return 'Caractère refusé par Windows dans ce nom (< > : " / \\ | ? *).';
-  if (/[. ]$/.test(name)) return 'Un nom de fichier ne peut pas finir par un point ou une espace sous Windows.';
+  if (/[. ]$/.test(name)) return `Un nom de ${what} ne peut pas finir par un point ou une espace sous Windows.`;
   if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(name)) return 'Nom réservé par Windows.';
   if (name.length > 200) return 'Nom trop long (200 caractères au plus).';
   return null;
@@ -336,6 +347,31 @@ export function createSharedService({
     const dir = path.dirname(abs);
     const [owner, libre] = await io.call('readMany', [[path.join(dir, ownerFileName(name)), lockPathOf(abs)], 4096]);
     return observe(lockPathOf(abs), describeLock({ name, owner, libre, instance, user, host, now: clock() }), libre);
+  }
+
+  /**
+   * Verrous des fichiers `files` d'un dossier déjà lu (`entries` : tout ce qu'il
+   * contient) — on ne lit que les fichiers de verrou qui existent. Nom → verrou.
+   */
+  async function locksIn(absDir, entries, files) {
+    const byLowerName = new Map(entries.map((entry) => [entry.name.toLowerCase(), entry]));
+    const wanted = [];
+    for (const entry of files) {
+      const owner = byLowerName.get(ownerFileName(entry.name).toLowerCase());
+      const libre = byLowerName.get(libreOfficeLockName(entry.name).toLowerCase());
+      if (owner || libre) wanted.push({ entry, owner, libre });
+    }
+    const paths = wanted.flatMap(({ owner, libre }) => [owner, libre].filter(Boolean).map((lockFile) => path.join(absDir, lockFile.name)));
+    const contents = paths.length ? await io.call('readMany', [paths, 4096]) : [];
+    const locks = new Map();
+    let index = 0;
+    for (const { entry, owner, libre } of wanted) {
+      const ownerBytes = owner ? contents[index++] : null;
+      const libreBytes = libre ? contents[index++] : null;
+      const lockPath = path.join(absDir, libreOfficeLockName(entry.name));
+      locks.set(entry.name, observe(lockPath, describeLock({ name: entry.name, owner: ownerBytes, libre: libreBytes, instance, user, host, now: clock() }), libreBytes));
+    }
+    return locks;
   }
   const lockNote = (lock) => `Ouvert par ${lock.by} dans ${lockAppLabel(lock.app)}`;
 
@@ -658,7 +694,7 @@ export function createSharedService({
   }
 
   /** Les 30 dernières versions, 90 jours au plus — jamais la base, un brouillon, un conflit ou une version mise de côté. */
-  function prune(rel) {
+  function prune(rel, { collect = true } = {}) {
     const keep = protectedHashes();
     const limit = clock() - KEEP_DAYS * DAY;
     let kept = 0;
@@ -669,7 +705,7 @@ export function createSharedService({
         db.prepare('DELETE FROM shared_versions WHERE id=?').run(version.id);
       }
     }
-    collectGarbage();
+    if (collect) collectGarbage();
   }
 
   /** 1 Go au plus pour tout le magasin, puis suppression des octets que plus rien ne référence. */
@@ -695,6 +731,175 @@ export function createSharedService({
       for (const file of files) {
         if (!referenced.has(file)) fs.rmSync(path.join(dir, file), { force: true });
       }
+    }
+  }
+
+  // ------------------------------------------------------------ dossiers
+  /** Lignes de cette machine dans un dossier (fichiers ouverts ici, brouillons…). */
+  const rowsUnder = (dir) => db.prepare('SELECT * FROM shared_files').all().filter((row) => row.rel_path.startsWith(dir + '/'));
+  /** Chemin montré dans un message : depuis le dossier qui contient celui qu'on renomme ou supprime. */
+  const shownFrom = (dir, rel) => (parentOf(dir) ? rel.slice(parentOf(dir).length + 1) : rel);
+  const dirNotFound = () => new SharedError(404, 'SHARED_NOT_FOUND', 'Dossier introuvable sur le dossier partagé.');
+
+  /** Ce qui, sur cet ordinateur, attend encore dans ce dossier : à régler avant de le renommer ou de le supprimer. */
+  function localBlocker(dir, verb) {
+    for (const row of rowsUnder(dir)) {
+      const shown = shownFrom(dir, row.rel_path);
+      if (row.state === 'conflict') {
+        return new SharedError(409, 'SHARED_CONFLICT_OPEN', `« ${shown} » a un conflit à régler : règle-le avant de ${verb} ce dossier.`);
+      }
+      if (row.draft_json) {
+        return new SharedError(409, 'SHARED_DRAFT_OPEN', `« ${shown} » a un brouillon sur cet ordinateur : envoie-le ou abandonne-le avant de ${verb} ce dossier.`);
+      }
+      if (row.send_requested || ['pending', 'offline', 'interrupted'].includes(row.state)) {
+        return new SharedError(409, 'SHARED_PENDING', `« ${shown} » a un envoi en attente : attends qu’il parte avant de ${verb} ce dossier.`);
+      }
+    }
+    return null;
+  }
+
+  const openError = (dir, { rel, lock }, verb) => new SharedError(409, 'SHARED_LOCKED',
+    `« ${shownFrom(dir, rel)} » est ouvert par ${lock.by} dans ${lockAppLabel(lock.app)} : il doit être fermé avant de ${verb} ce dossier.`, { lock });
+
+  /** Un vrai dossier du partage (pas un lien vers un dossier). */
+  async function locateDir(dir) {
+    relativeParts(dir);
+    try {
+      const located = await locate(dir);
+      const own = await io.call('lstat', [located.abs]);
+      if (!own.isDir) throw new SharedError(400, 'SHARED_NOT_DIR', 'Ce n’est pas un dossier.');
+      return located;
+    } catch (error) {
+      if (error?.code === 'ENOENT') throw dirNotFound();
+      throw toSharedError(error);
+    }
+  }
+
+  /**
+   * Tout ce que contient un dossier, sous-dossiers compris, sans suivre de lien :
+   * fichiers (taille et date si `sizes`), sous-dossiers, fichiers techniques
+   * (vignettes, restes de verrous), et le premier fichier ouvert par quelqu'un
+   * d'autre. Parcours borné (`TREE`) : `complete` dit si tout a été vu.
+   */
+  async function scanTree(dir, abs, { sizes = true } = {}) {
+    const tree = { files: [], dirs: [], technical: [], open: null, special: null, denied: null, complete: true };
+    const queue = [{ rel: dir, abs, depth: 0 }];
+    while (queue.length) {
+      const current = queue.shift();
+      let listing;
+      try {
+        // Sans les tailles, pas de `stat` par fichier : sur GVFS, chacun est un aller-retour réseau.
+        listing = await io.call(sizes ? 'readdir' : 'names', [current.abs, MAX_SCAN], { timeoutMs: 15_000 });
+      } catch (error) {
+        if (error?.code !== 'EACCES' && error?.code !== 'EPERM') throw error;
+        tree.denied ??= current.rel;
+        tree.complete = false;
+        continue;
+      }
+      if (listing.total > listing.entries.length) tree.complete = false;
+      const files = [];
+      for (const entry of listing.entries) {
+        const child = { rel: joinRel(current.rel, entry.name), abs: path.join(current.abs, entry.name) };
+        if (entry.isSymlink || !(entry.isDir || entry.isFile) || (entry.isDir && isTechnicalDirName(entry.name))) {
+          tree.special ??= child.rel;
+        } else if (entry.isDir) {
+          tree.dirs.push({ ...child, depth: current.depth + 1 });
+          if (current.depth + 1 <= TREE.depth) queue.push({ ...child, depth: current.depth + 1 });
+          else tree.complete = false;
+        } else if (isTechnicalName(entry.name)) {
+          tree.technical.push(child);
+        } else {
+          files.push(entry);
+          tree.files.push({ ...child, size: entry.size, mtimeMs: entry.mtimeMs });
+        }
+      }
+      if (!tree.open && files.length) {
+        const locks = await locksIn(current.abs, listing.entries, files);
+        const open = files.find((entry) => lockBlocks(locks.get(entry.name)));
+        if (open) tree.open = { rel: joinRel(current.rel, open.name), lock: locks.get(open.name) };
+      }
+      if (tree.files.length > TREE.files || tree.dirs.length > TREE.dirs) {
+        tree.complete = false;
+        break;
+      }
+    }
+    return tree;
+  }
+
+  /** Nos verrous dans ce dossier (fichiers ouverts ici, sans brouillon) : rendus avant de le renommer ou de le supprimer. */
+  async function releaseLocksUnder(dir) {
+    for (const row of rowsUnder(dir)) if (row.lock_nonce) await releaseLock(row.rel_path);
+  }
+
+  /**
+   * Ce qu'emporterait la suppression d'un dossier, ou pourquoi elle est refusée :
+   * rien en route sur cet ordinateur, aucun fichier ouvert ailleurs, ni lien ni
+   * dossier caché, un contenu borné (chaque fichier est lu, pour être gardé ici).
+   * `token` : l'empreinte de ce contenu — on ne supprime que s'il est encore celui-là.
+   */
+  async function removalPlan(dir) {
+    const blocker = localBlocker(dir, 'supprimer');
+    if (blocker) throw blocker;
+    const located = await locateDir(dir);
+    let tree;
+    try {
+      tree = await scanTree(dir, located.abs);
+    } catch (error) {
+      throw toSharedError(error);
+    }
+    const name = path.posix.basename(dir);
+    if (tree.open) throw openError(dir, tree.open, 'supprimer');
+    if (tree.denied) {
+      throw new SharedError(403, 'SHARED_DENIED', `« ${shownFrom(dir, tree.denied)} » est fermé au compte du montage : WorkLogs ne peut pas voir ce qu’il contient. Rien n’a été supprimé.`);
+    }
+    if (tree.special) {
+      throw new SharedError(409, 'SHARED_DIR_SPECIAL', `« ${shownFrom(dir, tree.special)} » est un lien ou un dossier caché : WorkLogs n’y touche pas. Supprime « ${name} » depuis Windows.`);
+    }
+    const size = tree.files.reduce((sum, file) => sum + file.size, 0);
+    if (!tree.complete || size > TREE.bytes || tree.files.some((file) => file.size > MAX_FILE)) {
+      throw new SharedError(409, 'SHARED_DIR_TOO_BIG', `« ${name} » est trop gros pour être supprimé depuis WorkLogs (${TREE.files} fichiers, ${TREE.dirs} dossiers, ${TREE.bytes / (1024 * 1024)} Mo en tout et ${MAX_FILE / (1024 * 1024)} Mo par fichier au plus) : vide-le d’abord, ou supprime-le depuis Windows.`);
+    }
+    const token = sha256(JSON.stringify([
+      tree.files.map((file) => `${file.rel}\t${file.size}\t${file.mtimeMs}`).sort(),
+      tree.dirs.map((sub) => sub.rel).sort(),
+    ]));
+    return { located, tree, size, token };
+  }
+
+  /**
+   * Un dossier renommé : les lignes de cette machine le suivent (fichiers ouverts,
+   * historique, listes gardées, projets reliés). Les restes d'un ancien dossier du
+   * même nom, supprimé ailleurs, laissent la place (rien n'y était en route : le
+   * renommage aurait été refusé).
+   */
+  function moveRows(from, to) {
+    const moved = (rel) => to + rel.slice(from.length);
+    db.exec('BEGIN');
+    try {
+      for (const { rel_path: rel } of db.prepare('SELECT rel_path FROM shared_files').all()) {
+        if (rel.startsWith(to + '/')) db.prepare('DELETE FROM shared_files WHERE rel_path=?').run(rel);
+      }
+      for (const { rel_dir: rel } of db.prepare('SELECT rel_dir FROM shared_dirs').all()) {
+        if (within(rel, to)) db.prepare('DELETE FROM shared_dirs WHERE rel_dir=?').run(rel);
+      }
+      for (const { rel_path: rel } of db.prepare('SELECT rel_path FROM shared_files').all()) {
+        if (rel.startsWith(from + '/')) db.prepare('UPDATE shared_files SET rel_path=? WHERE rel_path=?').run(moved(rel), rel);
+      }
+      for (const { id, rel_path: rel } of db.prepare('SELECT id, rel_path FROM shared_versions').all()) {
+        if (rel.startsWith(from + '/')) db.prepare('UPDATE shared_versions SET rel_path=? WHERE id=?').run(moved(rel), id);
+      }
+      for (const { rel_dir: rel } of db.prepare('SELECT rel_dir FROM shared_dirs').all()) {
+        if (within(rel, from)) db.prepare('UPDATE shared_dirs SET rel_dir=? WHERE rel_dir=?').run(moved(rel), rel);
+      }
+      for (const link of db.prepare('SELECT project_id, rel_dir FROM shared_project_folders').all()) {
+        if (within(link.rel_dir, from)) {
+          db.prepare('UPDATE shared_project_folders SET rel_dir=?, updated_at=? WHERE project_id=?').run(moved(link.rel_dir), nowISO(), link.project_id);
+        }
+      }
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
     }
   }
 
@@ -811,29 +1016,11 @@ export function createSharedService({
       }
       try {
         const { entries, total } = await io.call('readdir', [located.abs, MAX_SCAN], { timeoutMs: 15_000 });
-        const byLowerName = new Map(entries.map((entry) => [entry.name.toLowerCase(), entry]));
         const visible = entries
-          .filter((entry) => !entry.isSymlink && (entry.isDir || entry.isFile) && !isTechnicalName(entry.name))
+          .filter((entry) => !entry.isSymlink && (entry.isDir || entry.isFile) && !hiddenName(entry))
           .sort((a, b) => (a.isDir === b.isDir ? collator.compare(a.name, b.name) : a.isDir ? -1 : 1));
         const shown = visible.slice(0, MAX_LIST);
-        // Les verrous sont dans le même dossier : on ne lit que ceux qui existent.
-        const wanted = [];
-        for (const entry of shown) {
-          if (!entry.isFile) continue;
-          const owner = byLowerName.get(ownerFileName(entry.name).toLowerCase());
-          const libre = byLowerName.get(libreOfficeLockName(entry.name).toLowerCase());
-          if (owner || libre) wanted.push({ entry, owner, libre });
-        }
-        const files = wanted.flatMap(({ owner, libre }) => [owner, libre].filter(Boolean).map((lockFile) => path.join(located.abs, lockFile.name)));
-        const contents = files.length ? await io.call('readMany', [files, 4096]) : [];
-        const locks = new Map();
-        let index = 0;
-        for (const { entry, owner, libre } of wanted) {
-          const ownerBytes = owner ? contents[index++] : null;
-          const libreBytes = libre ? contents[index++] : null;
-          const lockPath = path.join(located.abs, libreOfficeLockName(entry.name));
-          locks.set(entry.name, observe(lockPath, describeLock({ name: entry.name, owner: ownerBytes, libre: libreBytes, instance, user, host, now: clock() }), libreBytes));
-        }
+        const locks = await locksIn(located.abs, entries, shown.filter((entry) => entry.isFile));
         const rows = new Map(db.prepare('SELECT * FROM shared_files').all()
           .filter((row) => parentOf(row.rel_path) === dir).map((row) => [row.rel_path, row]));
         const listing = {
@@ -1034,8 +1221,8 @@ export function createSharedService({
      * Supprime un fichier du partage, sans jamais écraser une version qu'on n'a
      * pas vue : si le fichier a changé depuis la dernière lecture, rien n'est
      * supprimé (`SHARED_STALE`). Un brouillon, un envoi en attente ou un conflit
-     * se règle d'abord ; un fichier ouvert ailleurs ne se supprime pas. Seuls
-     * les fichiers se suppriment, jamais les dossiers. L'historique local reste.
+     * se règle d'abord ; un fichier ouvert ailleurs ne se supprime pas. Un
+     * dossier passe par `removeDir`. L'historique local reste.
      */
     async remove(rel) {
       relativeParts(rel);
@@ -1128,6 +1315,161 @@ export function createSharedService({
       });
     },
 
+    /** Dossier neuf dans le partage : jamais par-dessus un dossier ou un fichier du même nom. */
+    async createDir(rel) {
+      const parts = relativeParts(rel);
+      const name = parts[parts.length - 1];
+      const problem = windowsNameProblem(name, 'dossier');
+      if (problem) throw new SharedError(400, 'SHARED_BAD_NAME', problem);
+      if (isTechnicalDirName(name)) throw new SharedError(400, 'SHARED_BAD_NAME', 'Ce nom est celui d’un dossier caché ou système : choisis-en un autre.');
+      let parent;
+      try {
+        parent = await locate(parentOf(rel), { allowRoot: true });
+      } catch (error) {
+        if (error?.code === 'ENOENT') throw dirNotFound();
+        throw toSharedError(error);
+      }
+      let created;
+      try {
+        created = await io.call('mkdir', [path.join(parent.abs, name)]);
+      } catch (error) {
+        if (error?.code === 'EACCES' || error?.code === 'EPERM') {
+          throw new SharedError(403, 'SHARED_DENIED', 'Le compte avec lequel le partage est monté n’a pas le droit de créer un dossier ici.');
+        }
+        throw toSharedError(error);
+      }
+      if (!created.created) throw new SharedError(409, 'SHARED_EXISTS', `« ${name} » existe déjà dans ce dossier : rien n’a été créé. Choisis un autre nom.`);
+      return { status: 201, body: { path: rel, name, type: 'dir' } };
+    },
+
+    /**
+     * Renomme un dossier, au même endroit, sans rien remplacer. Refusé si un de
+     * ses fichiers est en route ici (brouillon, envoi, conflit) ou ouvert ailleurs
+     * (Word, LibreOffice, un autre WorkLogs) ; Windows refuse de son côté tant
+     * qu'un fichier du dossier est ouvert. Ce qui est gardé ici suit le dossier.
+     */
+    async renameDir(rel, newName) {
+      const parts = relativeParts(rel);
+      const name = typeof newName === 'string' ? newName : '';
+      const problem = windowsNameProblem(name, 'dossier');
+      if (problem) throw new SharedError(400, 'SHARED_BAD_NAME', problem);
+      if (isTechnicalDirName(name)) throw new SharedError(400, 'SHARED_BAD_NAME', 'Ce nom est celui d’un dossier caché ou système : choisis-en un autre.');
+      const current = parts[parts.length - 1];
+      if (name === current) return { path: rel, name };
+      const target = joinRel(parentOf(rel), name);
+      const blocker = localBlocker(rel, 'renommer') ?? localBlocker(target, 'renommer');
+      if (blocker) throw blocker;
+      const located = await locateDir(rel);
+      let tree;
+      try {
+        tree = await scanTree(rel, located.abs, { sizes: false });
+      } catch (error) {
+        throw toSharedError(error);
+      }
+      if (tree.open) throw openError(rel, tree.open, 'renommer');
+      await releaseLocksUnder(rel);
+      const parentAbs = path.dirname(located.abs);
+      // Casse seule : par un nom temporaire (voir `renameDir` dans le worker).
+      const temporary = name.toLowerCase() === current.toLowerCase()
+        ? path.join(parentAbs, `.~worklogs-${crypto.randomBytes(6).toString('hex')}`)
+        : null;
+      let result;
+      try {
+        result = await io.call('renameDir', [located.abs, path.join(parentAbs, name), temporary]);
+      } catch (error) {
+        throw toSharedError(error);
+      }
+      switch (result.result) {
+        case 'renamed':
+          moveRows(rel, target);
+          return { path: target, name };
+        case 'exists':
+          throw new SharedError(409, 'SHARED_EXISTS', `« ${name} » existe déjà à cet endroit : rien n’a été renommé. Choisis un autre nom.`);
+        case 'missing':
+          throw dirNotFound();
+        case 'busy':
+          throw new SharedError(409, 'SHARED_BUSY', 'Un fichier de ce dossier est ouvert sous Windows (Word, Excel ?) : ferme-le avant de renommer le dossier.');
+        case 'denied':
+          throw new SharedError(403, 'SHARED_DENIED', 'Le partage refuse de renommer ce dossier : le compte du montage n’en a pas le droit, ou un fichier du dossier est ouvert (Word, Excel ?).');
+        case 'stranded':
+          throw new SharedError(500, 'SHARED_ERROR', `Renommage interrompu : le dossier porte le nom provisoire « ${path.basename(temporary)} ». Renomme-le depuis Windows.`);
+        default:
+          throw new SharedError(500, 'SHARED_ERROR', 'Réponse inattendue du dossier partagé.');
+      }
+    },
+
+    /** Avant de supprimer un dossier : ce qui partirait (ou pourquoi c'est refusé), et l'empreinte à rendre. */
+    async dirSummary(rel) {
+      const { tree, size, token } = await removalPlan(rel);
+      return { path: rel, name: path.posix.basename(rel), files: tree.files.length, dirs: tree.dirs.length, size, token };
+    },
+
+    /**
+     * Supprime un dossier et son contenu, **seulement s'il est encore tel que le
+     * bilan l'a décrit** (`expected`). Chaque fichier est lu puis supprimé s'il n'a
+     * pas bougé, et ses octets restent sur cet ordinateur. Au premier imprévu, on
+     * s'arrête : le reste est intact, le message dit ce qui est parti.
+     */
+    async removeDir(rel, expected) {
+      const { located, tree, token } = await removalPlan(rel);
+      if (!expected || expected !== token) {
+        throw new SharedError(409, 'SHARED_STALE', 'Le dossier a changé depuis : vérifie son contenu et recommence. Rien n’a été supprimé.');
+      }
+      await releaseLocksUnder(rel);
+      let removed = 0;
+      const forget = (file) => db.prepare('DELETE FROM shared_files WHERE rel_path=?').run(file);
+      const stopped = (reason) => {
+        collectGarbage();
+        const done = removed
+          ? `${removed} fichier${removed > 1 ? 's' : ''} déjà supprimé${removed > 1 ? 's' : ''} (gardé${removed > 1 ? 's' : ''} sur cet ordinateur), le reste est intact.`
+          : 'Rien n’a été supprimé.';
+        return new SharedError(409, 'SHARED_DIR_PARTIAL', `Suppression arrêtée : ${reason} ${done}`, { removed });
+      };
+      const call = async (op, args, options) => {
+        try {
+          return await io.call(op, args, options);
+        } catch (error) {
+          throw stopped(isOffline(error) ? 'le dossier partagé ne répond plus.' : `erreur du dossier partagé (${error?.code || 'inconnue'}).`);
+        }
+      };
+      for (const file of tree.files) {
+        const shown = shownFrom(rel, file.rel);
+        const result = await call('deleteSeen', [file.abs, file.size, file.mtimeMs], { timeoutMs: transferTimeout(file.size) * 2 });
+        if (result.result === 'deleted') {
+          const bytes = Buffer.from(result.bytes);
+          storeBlob(result.hash, bytes);
+          addVersion(file.rel, result.hash, result.size, 'base', 'read');
+          forget(file.rel);
+          prune(file.rel, { collect: false });
+          removed++;
+        } else if (result.result === 'missing') {
+          forget(file.rel);
+        } else {
+          throw stopped({
+            changed: `« ${shown} » a changé entre-temps : il est gardé.`,
+            busy: `« ${shown} » est ouvert sous Windows (Word ou Excel ?).`,
+            denied: `le partage refuse de supprimer « ${shown} ».`,
+            notfile: `« ${shown} » n’est plus un fichier.`,
+          }[result.result] ?? `réponse inattendue du dossier partagé pour « ${shown} ».`);
+        }
+      }
+      // Vignettes, restes de verrous, temporaires : ils partent avec le dossier, sans être gardés.
+      for (const file of tree.technical) await call('unlink', [file.abs]);
+      const deepestFirst = [...tree.dirs].sort((a, b) => b.depth - a.depth);
+      for (const dir of [...deepestFirst, { rel, abs: located.abs }]) {
+        const result = await call('rmdir', [dir.abs]);
+        if (result.result === 'notempty') throw stopped(`« ${shownFrom(rel, dir.rel)} » n’est pas vide : un fichier y est arrivé entre-temps, ou ton compte ne le voit pas. Ce dossier est gardé.`);
+        if (result.result === 'busy' || result.result === 'denied') throw stopped(`le partage refuse de supprimer le dossier « ${shownFrom(rel, dir.rel)} ».`);
+        db.prepare('DELETE FROM shared_dirs WHERE rel_dir=?').run(dir.rel);
+      }
+      for (const row of rowsUnder(rel)) forget(row.rel_path);
+      for (const link of db.prepare('SELECT project_id, rel_dir FROM shared_project_folders').all()) {
+        if (within(link.rel_dir, rel)) db.prepare('DELETE FROM shared_project_folders WHERE project_id=?').run(link.project_id);
+      }
+      collectGarbage();
+      return { status: 200, body: { deleted: true, path: rel, files: removed, dirs: tree.dirs.length + 1 } };
+    },
+
     /**
      * Fichiers et dossiers dont le nom contient tous les mots cherchés, de `dir`
      * vers le bas. Borné (temps, dossiers, profondeur) : un partage d'entreprise
@@ -1187,7 +1529,7 @@ export function createSharedService({
         }
         entries.sort((a, b) => collator.compare(a.name, b.name));
         for (const entry of entries) {
-          if (entry.isSymlink || !(entry.isDir || entry.isFile) || isTechnicalName(entry.name)) continue;
+          if (entry.isSymlink || !(entry.isDir || entry.isFile) || hiddenName(entry)) continue;
           const child = joinRel(rel, entry.name);
           add(child, entry.name, entry.isDir);
           if (entry.isDir && depth < SEARCH.depth) queue.push({ rel: child, abs: path.join(abs, entry.name), depth: depth + 1 });

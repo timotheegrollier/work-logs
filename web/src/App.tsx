@@ -639,7 +639,13 @@ export default function App() {
             revision={sharedRevision}
             onOpen={(path) => void openShared(path)}
             onDeleted={(path) => {
-              if (sharedPath === path) setSharedPath(null);
+              // Un fichier, ou un dossier et tout ce qu'il contenait.
+              if (sharedPath && (sharedPath === path || sharedPath.startsWith(path + '/'))) setSharedPath(null);
+              bumpShared();
+            }}
+            onRenamed={(from, to) => {
+              // Le fichier ouvert suit son dossier (rien n'y était en route : le renommage aurait été refusé).
+              if (sharedPath?.startsWith(from + '/')) setSharedPath(to + sharedPath.slice(from.length));
               bumpShared();
             }}
           />

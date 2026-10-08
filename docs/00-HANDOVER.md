@@ -1,7 +1,11 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-08 · Version : v0.50.0 (lot courant non publié).
-> **Lot courant :** **vues rapides des tâches** — pastilles En retard, Aujourd'hui, En cours,
+> **Mise à jour :** 2026-10-08 · Version : v0.50.0 (lots ci-dessous non publiés).
+> **Lot courant :** **dossiers du partage** — créer, renommer, supprimer (avec leur contenu)
+> depuis l'arbre de la colonne Procédures, branche `feat/partage-dossiers`. Détail : « Lot du
+> 2026-10-08 (5) — dossiers du partage » ci-dessous ; décision §25.
+>
+> **Lot précédent, non publié :** **vues rapides des tâches** — pastilles En retard, Aujourd'hui, En cours,
 > Épinglées, ▲ Haute en tête de la colonne Tâches, et « N en cours » / « N en retard » de
 > l'en-tête cliquables. Branche `claude/task-status-visualization-922c08`. Détail : « Lot du
 > 2026-10-08 (4) — vues rapides des tâches » ci-dessous ; décision §33.
@@ -85,6 +89,62 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-10-08 (5) — dossiers du partage : créer, renommer, supprimer
+
+Demande de Timo : « pouvoir créer/renommer/supprimer un dossier sur le serveur distant dans
+les procédures ». Décision : §25 (« Dossiers : créer, renommer, supprimer »).
+- **Serveur** (`shared-service.js`, `shared-io.js`, `shared-routes.js`) :
+  `POST /api/shared/dir` (création exclusive) ; `POST /api/shared/dir/rename` (même endroit,
+  sans rien remplacer, casse seule par un nom provisoire, les lignes locales suivent) ;
+  `GET /api/shared/dir` (bilan : fichiers, sous-dossiers, taille, empreinte — ou le refus
+  motivé) ; `DELETE /api/shared/dir?expect=` (suppression de ce contenu-là, chaque fichier
+  gardé ici avant de partir, arrêt au premier imprévu). Refusé si un fichier du dossier a un
+  brouillon, un envoi en attente ou un conflit ici, ou s'il est ouvert par un collègue.
+  Suppression bornée : 300 fichiers, 100 dossiers, 200 Mo, 100 Mo par fichier ; un lien ou un
+  dossier caché dedans → depuis Windows.
+- **Relais (PWA)** : mêmes routes, rien à régler — mais **recopier `api/` sur la VM** et
+  redémarrer `worklogs-relais` pour les avoir sur le téléphone (`09-RELAIS.md`).
+- **Front** : « ＋ Nouveau dossier… » à côté de « ＋ Nouveau fichier… » (le dossier créé
+  s'ouvre, le fichier suivant y va) ; bouton **⋯** par dossier → **Renommer** (dans la ligne,
+  nom sélectionné, Entrée / Échap) et **Supprimer…** (bilan, puis confirmation chiffrée) ; un
+  refus s'affiche sous le dossier. Le fichier ouvert au centre suit un renommage et se referme
+  si son dossier est supprimé (`App.tsx`). Pas ✎ : c'est déjà la pastille « brouillon ».
+- **Corrigé en route** : un dossier nommé comme un temporaire de Word (`20241231`, huit
+  chiffres) restait caché de l'arbre et de la recherche (`isTechnicalDirName`).
+- **Trouvé en route** : Playwright compare les noms accessibles par sous-chaîne, sans casse —
+  « Actions du dossier 00. PROCEDURE » répondait aussi à `Dossier 00. PROCEDURE` et cassait le
+  parcours « nouveau classeur Excel ». Libellés retenus : « Renommer ou supprimer X »,
+  « Renommer X », « Supprimer X du partage » (comme pour un fichier).
+- **Tests** : `api/test/shared-dirs.test.js` (18 : créer, renommer, bilan, suppression,
+  imprévus en route par un worker instrumenté, refus, bornes), `relay.test.js` (+1),
+  `new-files.test.ts` (+1), `App.test.tsx` (+5 gestes), `e2e/shared-folder.spec.ts` (+1 :
+  créer, y créer un fichier, renommer l'éditeur ouvert, supprimer). Par mutation : 12
+  garde-fous du serveur et 3 comportements du front retirés un à un → leur test échoue.
+- **Vu dans un vrai navigateur** (Chromium, 1440 et 412 px) : arbre avec ⋯, actions ouvertes,
+  renommage sur deux lignes dans la colonne étroite, formulaire « Nouveau dossier » ; aucun
+  débordement.
+- **Recette** : avant le lot, `master` à `CHECK OK` (860 : 230 API, 475 front, 48 desktop,
+  29 scripts, 8 relais, 55 navigateur, 15 parcours desktop). Sur la branche : types, **249
+  API**, 48 desktop, 29 scripts, 8 relais, build, **56 navigateur** et 15 parcours desktop
+  verts ; **481 front** dont les 40 du dossier partagé verts isolément. Pendant la campagne
+  complète, deux ou trois autres sessions lançaient vitest et `check.sh` en parallèle (charge
+  14 à 20 sur 8 cœurs) : 3 à 16 tests lourds (Word, Excel, historique, relais PWA, chargement
+  de l'arbre, et un « espace Google Docs » sans rapport) dépassaient leurs délais — tous verts
+  isolément ; `master` avait fait pareil (2 échecs) sous la même charge. À charge égale, les
+  tests du dossier partagé prennent 74 s sur `master` (32) et 79 s sur la branche (37) : rien
+  de ralenti. **`check.sh` complet d'un seul tenant : à relancer sur machine calme.**
+
+### À vérifier par Timo
+
+1. Sur le TSE : créer un dossier depuis WorkLogs, le renommer, le supprimer — les collègues
+   le voient-ils dans l'Explorateur ? Le dossier créé hérite-t-il des droits NTFS du parent ?
+2. Renommer (ou supprimer) un dossier dont un fichier est ouvert dans Word chez un collègue :
+   WorkLogs le dit-il avec son nom ? Windows refuse-t-il bien de son côté ?
+3. Changer seulement la casse d'un dossier (`procedure` → `Procedure`) par GVFS : le nom
+   change-t-il côté Windows ?
+4. Supprimer par le VPN un dossier de quelques fichiers : durée acceptable ?
+5. Relais : recopier `api/` sur la VM, redémarrer le service, puis essayer depuis le téléphone.
 
 ## Lot du 2026-10-08 (4) — vues rapides des tâches
 

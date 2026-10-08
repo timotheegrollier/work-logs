@@ -167,6 +167,10 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | POST | `/api/shared/merge?path=&theirs=` (octets) | « Fusionner » un conflit : la version réunie part avec la leur pour base (envoi gardé) |
 | POST | `/api/shared/create?path=` (octets) | fichier neuf (modèle fait par le front), création exclusive : `409 SHARED_EXISTS` si le nom est pris |
 | DELETE | `/api/shared/file?path=` | supprime un fichier du partage, gardé sur la dernière version vue : `409 SHARED_STALE` s'il a changé, refusé avec un brouillon, un envoi en attente ou un verrou d'un autre |
+| POST | `/api/shared/dir?path=` | dossier neuf : `201`, `409 SHARED_EXISTS` si le nom est pris (dossier ou fichier) |
+| POST | `/api/shared/dir/rename?path=` | `{name}` : renomme au même endroit, sans rien remplacer ; les lignes locales suivent ; refusé (`409`) avec un brouillon, un envoi, un conflit ou un verrou d'un autre dans le dossier |
+| GET | `/api/shared/dir?path=` | bilan avant suppression : `{files, dirs, size, token}` ou le refus (`409 SHARED_LOCKED`, `SHARED_DRAFT_OPEN`, `SHARED_DIR_SPECIAL`, `SHARED_DIR_TOO_BIG`…) |
+| DELETE | `/api/shared/dir?path=&expect=` | supprime le dossier et son contenu s'il est encore celui du bilan (`409 SHARED_STALE` sinon) ; chaque fichier est gardé ici avant de partir ; arrêt en route : `409 SHARED_DIR_PARTIAL` |
 | GET | `/api/shared/search?q=&dir=` | noms (sans casse ni accents, tous les mots), borné : 100 résultats, 3 000 dossiers, 8 s ; hors ligne : listes gardées |
 | POST | `/api/shared/versions/:id/restore?path=` | la version devient le brouillon (rien n'est envoyé) |
 | POST · DELETE | `/api/shared/lock?path=` | prendre/renouveler la main (`{take_over}`) · la rendre ; `409 SHARED_LOCKED` / `SHARED_LOCK_STALE` + `{lock}` |

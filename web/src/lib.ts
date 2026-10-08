@@ -264,6 +264,16 @@ export interface SharedSearch {
   /** Dossiers fermés au compte du montage, passés. */
   denied: number;
 }
+/** Avant de supprimer un dossier : ce qui partirait, et l'empreinte de ce contenu à rendre. */
+export interface SharedDirSummary {
+  path: string;
+  name: string;
+  /** Fichiers et sous-dossiers, à toutes profondeurs (fichiers techniques non comptés). */
+  files: number;
+  dirs: number;
+  size: number;
+  token: string;
+}
 export interface SharedSendResult {
   state: 'written' | 'pending' | 'offline' | 'interrupted' | 'conflict' | 'theirs' | 'copied' | SharedLocalState;
   hash?: string;
@@ -405,6 +415,16 @@ export function sharedClient(base: string, auth: () => Record<string, string> = 
     /** Supprime un fichier du partage, sans jamais écraser une version non vue. */
     deleteShared: (path: string) =>
       sendJson<{ state: string; deleted: boolean; file: null }>('DELETE', '/api/shared/file?path=' + enc(path)),
+    /** Dossier neuf : jamais par-dessus un dossier ou un fichier du même nom. */
+    createSharedDir: (path: string) => sendJson<{ path: string; name: string }>('POST', '/api/shared/dir?path=' + enc(path)),
+    /** Renomme un dossier au même endroit ; refusé si un fichier dedans est ouvert ou en route. */
+    renameSharedDir: (path: string, name: string) =>
+      sendJson<{ path: string; name: string }>('POST', '/api/shared/dir/rename?path=' + enc(path), { name }),
+    /** Ce que supprimerait un dossier (ou pourquoi c'est refusé), avant de demander confirmation. */
+    sharedDirSummary: (path: string) => json<SharedDirSummary>('/api/shared/dir?path=' + enc(path)),
+    /** Supprime un dossier et son contenu, seulement s'il est encore tel que le bilan l'a décrit. */
+    deleteSharedDir: (path: string, token: string) =>
+      sendJson<{ deleted: boolean; path: string; files: number; dirs: number }>('DELETE', `/api/shared/dir?path=${enc(path)}&expect=${enc(token)}`),
     linkSharedFolder: (projectId: string, dir: string) =>
       sendJson<SharedStatus>('PUT', `/api/shared/projects/${enc(projectId)}/folder`, { dir }),
     unlinkSharedFolder: (projectId: string) => sendJson<SharedStatus>('DELETE', `/api/shared/projects/${enc(projectId)}/folder`),

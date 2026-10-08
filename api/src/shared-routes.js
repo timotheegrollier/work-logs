@@ -76,6 +76,12 @@ export function registerSharedRoutes(app, { shared, guard = localOnly }) {
   router.post('/create', raw, handle((req) => shared.create(text(req.query.path), bytesOf(req.body))));
   // Suppression gardée d'un fichier : rien ne part si le partage a changé depuis la lecture.
   router.delete('/file', handle((req) => shared.remove(text(req.query.path))));
+  // Dossiers : créer et renommer sans rien remplacer ; supprimer avec son contenu, en deux
+  // temps — le bilan (ce qui partirait, son empreinte), puis la suppression de ce contenu-là.
+  router.post('/dir', handle((req) => shared.createDir(text(req.query.path))));
+  router.post('/dir/rename', handle((req) => shared.renameDir(text(req.query.path), (req.body || {}).name)));
+  router.get('/dir', handle((req) => shared.dirSummary(text(req.query.path))));
+  router.delete('/dir', handle((req) => shared.removeDir(text(req.query.path), text(req.query.expect))));
   router.post('/resolve', handle((req) => {
     const body = req.body || {};
     return shared.resolve(text(body.path), text(body.choice), text(body.theirs) || null);

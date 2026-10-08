@@ -3054,6 +3054,131 @@ describe('dossier partagé', () => {
     expect(fs.existsSync(path.join(share, 'notes.md'))).toBe(true);
   });
 
+  test('nouveau dossier : créé où l’on est, déplié aussitôt, un nouveau fichier y va ; un nom pris n’écrase rien', async () => {
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, 'Procédures'));
+    await write('Procédures/existant.md', 'x\n');
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: '＋ Nouveau dossier…' }));
+    const form = screen.getByRole('form', { name: 'Nouveau dossier' });
+    expect(within(form).getByLabelText('Emplacement du nouveau dossier')).toHaveValue('');
+    fireEvent.change(within(form).getByLabelText('Nom du dossier'), { target: { value: ' 3. Sauvegardes ' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Créer' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Dossier 3. Sauvegardes' })).toHaveAttribute('aria-expanded', 'true'));
+    expect(fs.statSync(path.join(share, '3. Sauvegardes')).isDirectory()).toBe(true);
+    expect(await screen.findByText('Dossier vide.')).toBeInTheDocument();
+    // Le fichier neuf suivant va dans le dossier qu'on vient de créer.
+    fireEvent.click(screen.getByRole('button', { name: '＋ Nouveau fichier…' }));
+    const fileForm = screen.getByRole('form', { name: 'Nouveau fichier' });
+    expect(within(fileForm).getByLabelText('Dossier du nouveau fichier')).toHaveValue('3. Sauvegardes');
+    fireEvent.click(within(fileForm).getByRole('button', { name: 'Annuler' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '＋ Nouveau dossier…' }));
+    const again = screen.getByRole('form', { name: 'Nouveau dossier' });
+    fireEvent.change(within(again).getByLabelText('Emplacement du nouveau dossier'), { target: { value: '' } });
+    fireEvent.change(within(again).getByLabelText('Nom du dossier'), { target: { value: 'Procédures' } });
+    fireEvent.click(within(again).getByRole('button', { name: 'Créer' }));
+    expect(await screen.findByText('« Procédures » existe déjà dans ce dossier : rien n’a été créé. Choisis un autre nom.')).toBeInTheDocument();
+    expect(await read('Procédures/existant.md')).toBe('x\n');
+  });
+
+  test('renommer un dossier dans sa ligne : l’arbre et le fichier ouvert dedans suivent', async () => {
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, 'Projets'));
+    await write('Projets/notes.md', 'v1\n');
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Dossier Projets' }));
+    const editorRegion = await openFromTree('notes.md');
+    expect(await within(editorRegion).findByLabelText('Contenu de notes.md')).toHaveValue('v1\n');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Renommer ou supprimer Projets' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Renommer Projets' }));
+    const form = screen.getByRole('form', { name: 'Renommer le dossier Projets' });
+    const field = within(form).getByLabelText('Nouveau nom du dossier');
+    expect(field).toHaveValue('Projets');
+    fireEvent.change(field, { target: { value: 'Chantiers' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Renommer' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Dossier Chantiers' })).toHaveAttribute('aria-expanded', 'true'));
+    expect(fs.existsSync(path.join(share, 'Projets'))).toBe(false);
+    expect(await screen.findByRole('button', { name: /^Ouvrir notes\.md/ })).toBeInTheDocument();
+
+    // Le fichier ouvert a suivi : ce qu'on y écrit part dans le dossier renommé.
+    const content = await within(sharedEditor()).findByLabelText('Contenu de notes.md');
+    fireEvent.change(content, { target: { value: 'v1\nsuite\n' } });
+    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Enregistrer sur le partage' }));
+    await waitFor(() => expect(within(sharedEditor()).getByText('Enregistré sur le partage.')).toBeInTheDocument());
+    expect(await read('Chantiers/notes.md')).toBe('v1\nsuite\n');
+    expect(fs.existsSync(path.join(share, 'Projets'))).toBe(false);
+  });
+
+  test('renommer refusé tant qu’un brouillon attend dedans : la raison sous le dossier, Échap annule', async () => {
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, 'Projets'));
+    await write('Projets/notes.md', 'v1\n');
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Dossier Projets' }));
+    const editorRegion = await openFromTree('notes.md');
+    fireEvent.change(await within(editorRegion).findByLabelText('Contenu de notes.md'), { target: { value: 'v1\nmoi\n' } });
+    await waitFor(() => expect(within(editorRegion).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Renommer ou supprimer Projets' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Renommer Projets' }));
+    const field = screen.getByLabelText('Nouveau nom du dossier');
+    fireEvent.change(field, { target: { value: 'Chantiers' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Renommer' }));
+    expect(await screen.findByText('« Projets/notes.md » a un brouillon sur cet ordinateur : envoie-le ou abandonne-le avant de renommer ce dossier.'))
+      .toHaveAttribute('role', 'alert');
+    expect(fs.existsSync(path.join(share, 'Projets', 'notes.md'))).toBe(true);
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(screen.queryByRole('form', { name: 'Renommer le dossier Projets' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/a un brouillon sur cet ordinateur/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dossier Projets' })).toBeInTheDocument();
+  });
+
+  test('supprimer un dossier : la confirmation dit ce qui part ; le fichier ouvert dedans se referme', async () => {
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, 'Archives', '2024'), { recursive: true });
+    await write('Archives/2024/bilan.md', '# Bilan\n');
+    await write('Archives/notes.md', 'v1\n');
+    await write('garde.md', 'gardé\n');
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Dossier Archives' }));
+    await openFromTree('notes.md');
+    fireEvent.click(screen.getByRole('button', { name: 'Renommer ou supprimer Archives' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer Archives du partage' }));
+    await waitFor(() => expect(fs.existsSync(path.join(share, 'Archives'))).toBe(false));
+    expect(window.confirm).toHaveBeenLastCalledWith(
+      'Supprimer le dossier « Archives » et tout son contenu (2 fichiers et 1 sous-dossier) du dossier partagé ? Cette action est immédiate pour toute l’équipe.',
+    );
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Fichier partagé' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Dossier Archives' })).not.toBeInTheDocument());
+    expect(await read('garde.md')).toBe('gardé\n');
+  });
+
+  test('supprimer un dossier : annulé, rien ne part ; un fichier ouvert par un collègue, refusé sans rien demander', async () => {
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, 'Archives'));
+    await write('Archives/notes.md', 'v1\n');
+    fs.mkdirSync(path.join(share, 'Planning'));
+    await write('Planning/relevés.csv', 'a;b\n');
+    await write('Planning/~$relevés.csv', excelOwner('Jean Dupont'));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Renommer ou supprimer Archives' }));
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer Archives du partage' }));
+    await waitFor(() => expect(window.confirm).toHaveBeenCalledTimes(1));
+    expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining('et tout son contenu (1 fichier)'));
+    expect(fs.existsSync(path.join(share, 'Archives', 'notes.md'))).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Renommer ou supprimer Planning' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer Planning du partage' }));
+    expect(await screen.findByText('« Planning/relevés.csv » est ouvert par Jean Dupont dans Excel : il doit être fermé avant de supprimer ce dossier.'))
+      .toHaveAttribute('role', 'alert');
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(fs.existsSync(path.join(share, 'Planning', 'relevés.csv'))).toBe(true);
+  });
+
   test('choisir une entrée referme le fichier partagé', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Compte rendu' }] });
     await write('notes.md', 'v1\n');

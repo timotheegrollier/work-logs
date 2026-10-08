@@ -23,16 +23,18 @@ export const NEW_FILE_TYPES: NewFileType[] = [
 
 const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 
-/** Ce qui empêcherait Windows (le TSE) d'accepter ce nom, ou `null`. */
-export function fileNameProblem(name: string): string | null {
+/** Ce qui empêcherait Windows (le TSE) d'accepter ce nom de fichier (ou de dossier), ou `null`. */
+export function fileNameProblem(name: string, what: 'fichier' | 'dossier' = 'fichier'): string | null {
   const value = name.trim();
-  if (!value) return 'Donne un nom au fichier.';
+  if (!value) return `Donne un nom au ${what}.`;
   // eslint-disable-next-line no-control-regex
   const forbidden = /[<>:"/\\|?*\u0000-\u001f]/.exec(value);
-  if (forbidden) return `Caractère refusé par Windows dans un nom de fichier : « ${forbidden[0] < ' ' ? '?' : forbidden[0]} ».`;
-  if (/[. ]$/.test(name)) return 'Un nom de fichier ne peut pas finir par un point ou une espace sous Windows.';
+  if (forbidden) return `Caractère refusé par Windows dans un nom de ${what} : « ${forbidden[0] < ' ' ? '?' : forbidden[0]} ».`;
+  if (/[. ]$/.test(name)) return `Un nom de ${what} ne peut pas finir par un point ou une espace sous Windows.`;
   if (RESERVED.test(value)) return `« ${value} » est un nom réservé par Windows.`;
-  if (value.startsWith('.') || value.startsWith('~')) return 'Ce nom est celui d’un fichier technique (point ou ~ au début) : choisis-en un autre.';
+  // Un dossier caché ne se verrait pas dans l'arbre ; « ~ » n'est technique que pour les fichiers (Office).
+  if (what === 'dossier' && value.startsWith('.')) return 'Un dossier dont le nom commence par un point resterait caché : choisis-en un autre.';
+  if (what === 'fichier' && (value.startsWith('.') || value.startsWith('~'))) return 'Ce nom est celui d’un fichier technique (point ou ~ au début) : choisis-en un autre.';
   if (value.length > 200) return 'Nom trop long (200 caractères au plus).';
   return null;
 }
