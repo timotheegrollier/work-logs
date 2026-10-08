@@ -1188,3 +1188,39 @@ serveur Windows (le plus lourd).
 **Limites assumées.** Hors réseau, rien (pas de copie hors ligne sur le téléphone : les
 brouillons vivent sur le relais) ; un seul compte Windows pour tout ce qui passe par le relais
 (les verrous portent « Timothée Grollier (mobile) »). Installation et dépannage : `09-RELAIS.md`.
+
+## 30. Vues rapides des tâches : un filtre, pas un mode — 2026-10-08
+
+**La demande.** « Je veux pouvoir visualiser et accéder rapidement aux tâches marquées comme
+en cours / en retard, etc. » Constaté avant de coder : la colonne empilait À faire, En cours,
+Terminé ; les tâches en cours étaient **sous** toute la liste À faire, les retards dispersés
+dans deux colonnes (seule la date rouge les signalait), et le compteur « en retard » de
+l'en-tête, invisible sous 1 560 px, ne menait nulle part.
+
+**Les choix.**
+- **Une rangée de pastilles** sous « Nouvelle tâche… », du même langage que le filtre projet :
+  En retard, Aujourd'hui, En cours, Épinglées, ▲ Haute (la face de la pastille des cartes : la
+  colonne de ~300 px n'a pas la place de « Priorité haute »), chacune avec son compteur (le
+  retard en rouge). « Etc. » a été lu comme ce qu'une tâche peut **porter** : statut, échéance,
+  épingle, priorité. Une tâche terminée n'entre dans aucune vue.
+- Un clic **filtre** les colonnes : on garde le statut de chaque tâche visible et l'ordre du
+  glisser-déposer (§2 : pas de tri automatique). Les colonnes vides de la vue disparaissent.
+  Recliquer ou « Toutes » lève le filtre.
+- **Une pastille à zéro ne s'affiche pas** (§24 : seul l'écart se signale), sauf la vue active,
+  pour qu'on puisse toujours en sortir ; rien à surveiller → pas de rangée du tout.
+- **Pas un mode** (§1) : rien n'est caché ailleurs, la vue n'est pas retenue au redémarrage, et
+  ajouter une tâche la lève — sinon la tâche neuve, qui n'entre dans aucune vue, disparaîtrait.
+- Glisser-déposer dans une vue : la position est calculée dans la **colonne entière**, pas
+  parmi les seules cartes visibles (sinon une carte déposée passait devant des tâches cachées).
+- **En-tête** : « N en cours » (nouveau) et « N en retard » deviennent des liens vers la vue,
+  et ouvrent le panneau Tâches s'il est replié. Ces compteurs portent sur toute la base : si le
+  projet filtré ou la recherche en cachent une partie, ils sont levés — le clic montre ce que
+  le chiffre annonce, et garde le projet quand il contient déjà tout.
+
+**Écartés.** Une liste à plat « à surveiller » triée par échéance (un second rendu des mêmes
+cartes, et un tri que §2 refuse) ; un onglet ou un panneau dédié (§1) ; « Cette semaine » (pas
+demandé, à ajouter dans `TASK_VIEWS` si l'usage le réclame) ; retenir la vue au redémarrage
+(une colonne qui s'ouvre filtrée sans qu'on s'en souvienne ferait croire à des tâches perdues).
+
+**Rouvrir si** les pastilles ne suffisent plus à l'usage — par exemple un besoin de voir les
+retards de tous les projets sans lever le filtre projet.

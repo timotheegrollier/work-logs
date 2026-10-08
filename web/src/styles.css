@@ -260,6 +260,17 @@ button:disabled {
 .stats .late {
   color: var(--danger);
 }
+/* « 2 en cours », « 1 en retard » : du texte qui mène aux tâches concernées. */
+.stats .stat-link {
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: inherit;
+}
+.stats .stat-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
 
 /* Paramètres › Affichage : largeurs de colonnes au pixel près. */
 .display-settings {
@@ -1292,6 +1303,21 @@ button:disabled {
 .quick button:not(:disabled):hover {
   border-color: transparent;
   filter: brightness(1.08);
+}
+/* Vues rapides : mêmes pastilles que le filtre projet ; le retard garde son rouge. */
+.task-views {
+  margin-top: -6px;
+}
+/* Plus serrées que le filtre projet : la colonne fait ~300 px, six pastilles y tiennent
+   sur deux rangées au lieu de trois. Sur mobile, les cibles tactiles des pastilles reprennent la main. */
+@media (min-width: 601px) {
+  .task-views { gap: 4px; }
+  .task-views .chip { gap: 4px; padding: 3px 7px; font-size: 12.5px; }
+}
+.task-view.is-late .count {
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 700;
 }
 .column {
   border: 1px solid var(--line);

@@ -1,7 +1,12 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-07 · Version : v0.47.0 (lot courant non publié).
-> **Lot courant :** supprimer un fichier du dossier partagé, depuis l'arbre (✕) ou
+> **Mise à jour :** 2026-10-08 · Version : v0.49.0 (lot courant non publié).
+> **Lot courant :** **vues rapides des tâches** — pastilles En retard, Aujourd'hui, En cours,
+> Épinglées, ▲ Haute en tête de la colonne Tâches, et « N en cours » / « N en retard » de
+> l'en-tête cliquables. Branche `claude/task-status-visualization-922c08`. Détail : « Lot du
+> 2026-10-08 — vues rapides des tâches » ci-dessous ; décision §30.
+>
+> **Lot précédent (v0.49.0) :** supprimer un fichier du dossier partagé, depuis l'arbre (✕) ou
 > l'éditeur (« Supprimer du partage ») — suppression gardée sur la dernière version
 > vue, avec confirmation. Détail : « Lot du 2026-10-07 — supprimer les fichiers du
 > partage » ci-dessous ; décision §25.
@@ -52,6 +57,56 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-10-08 — vues rapides des tâches
+
+Demande de Timo : « visualiser et accéder rapidement aux tâches marquées comme en cours /
+en retard, etc. » Décision : §30.
+- **Constaté avant de coder** : la colonne empile À faire, En cours, Terminé — les tâches en
+  cours sont sous toute la liste À faire, les retards dispersés dans deux colonnes, et le
+  compteur « en retard » de l'en-tête (masqué sous 1 560 px) ne menait nulle part.
+- **Colonne Tâches** (`TaskBoard.tsx`) : sous « Nouvelle tâche… », une rangée de pastilles
+  « Filtrer les tâches » — Toutes, En retard, Aujourd'hui, En cours, Épinglées, ▲ Haute, avec
+  leur compteur ; à zéro, une pastille ne s'affiche pas (sauf la vue active). Un clic filtre
+  les colonnes (statut et ordre gardés, colonnes vides de la vue masquées), recliquer ou
+  « Toutes » le lève, ajouter une tâche aussi. Glisser-déposer dans une vue : la position est
+  celle de la colonne entière. Définition des vues : `TASK_VIEWS` (`lib.ts`).
+- **En-tête** (`App.tsx`) : « N en cours » (nouveau) et « N en retard » deviennent des
+  boutons ; ils ouvrent le panneau Tâches (et les tâches à côté d'un document Google) sur la
+  vue, et lèvent projet et recherche s'ils cachent une partie du compte annoncé.
+- La vue vit dans `App` (`taskView`), **non retenue** au redémarrage. Aucune route, aucune
+  dépendance, rien côté API ni PWA (le filtre est calculé sur l'état déjà chargé).
+- **Tests** : `App.test.tsx` +6 (« vues rapides » : compteurs et filtres des cinq vues,
+  pas de rangée sans rien à surveiller, vue vidée, ajout qui lève la vue, position au dépôt,
+  compteurs de l'en-tête avec et sans levée du projet). Trois mutations vérifiées : position
+  du dépôt, levée du projet, levée de la vue à l'ajout — chacune fait échouer son test.
+  Un test existant ajusté : « change la priorité… » cherche « Haute » **sur la carte**
+  (`.card .priority`), la pastille ▲ Haute portant le même mot.
+- **Test instable trouvé en route, hors lot, non corrigé** : le parcours PWA « par le relais
+  du bureau » (`App.local.test.tsx`) a échoué dans la recette *de référence*, avant tout
+  changement (délai de 5 s dépassé), alors que deux autres copies de travail lançaient leurs
+  propres tests (charge 9 à 12 sur 8 cœurs). Seul, code d'origine : 4,1 à 7,9 s sur cinq
+  passages, même plage avec ce lot. Porter le délai à 20 s le fait échouer un cran plus loin
+  (`findByRole('button', { name: 'Dossier 2. TSE' })`, 1 s par défaut) : à traiter à part.
+- **Recette** (machine partagée avec deux autres sessions qui testaient en boucle) :
+  référence sur 0.49.0 — 230 API, 474/475 front (le relais), 48 desktop, 29 scripts,
+  8 relais, 55 navigateur, 15 desktop. Avec le lot — types, 230 API, 48 desktop,
+  29 scripts, 8 relais, build, **55 navigateur, 15 desktop** verts ; front **480/481**,
+  le seul échec étant ce même parcours du relais (délai de 5 s). Les 142 tests de
+  `App.test.tsx`, dont les 6 nouveaux, passent dans chaque campagne complète.
+  **Pas de `CHECK OK` d'un seul tenant** : à relancer machine calme avant fusion.
+- **Vu dans un vrai navigateur** (copie jetable servie par `api/src/server.js`, 13 tâches) :
+  à 1 600 px, six pastilles sur deux rangées dans la colonne de 282 px (trois rangées avant
+  resserrage), vue En retard = 2 À faire + 1 En cours ; Tâches replié + projet Atelier, clic
+  « 4 en cours » → panneau rouvert, « Tout », 4 tâches. À 412 px : deux rangées, pas de
+  débordement horizontal.
+
+### À vérifier par Timo
+
+1. Les cinq vues sont-elles les bonnes ? « Cette semaine » (échéance sous 7 jours) a été
+   écartée faute de demande — une ligne dans `TASK_VIEWS` si besoin.
+2. Le clic sur un compteur de l'en-tête qui **lève le filtre projet** quand il cache des
+   tâches : est-ce le bon réflexe, ou préfères-tu garder le projet et ne voir que les siennes ?
 
 ## Lot du 2026-10-07 — supprimer les fichiers du partage
 

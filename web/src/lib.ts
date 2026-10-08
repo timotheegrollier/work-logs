@@ -545,6 +545,21 @@ export function dayLabel(date: string, now = new Date()): string {
 export const isOverdue = (task: Task, today = todayISO()) =>
   task.status !== 'done' && !!task.due_date && task.due_date < today;
 
+/** Vues rapides de la colonne Tâches : ce qui réclame l'attention, à un clic. */
+export type TaskView = 'late' | 'today' | 'doing' | 'pinned' | 'high';
+export const TASK_VIEWS: { id: TaskView; label: string; icon?: string; hint: string; empty: string; match: (task: Task, today: string) => boolean }[] = [
+  { id: 'late', label: 'En retard', hint: 'Échéance dépassée', empty: 'Rien en retard.', match: (task, today) => isOverdue(task, today) },
+  { id: 'today', label: "Aujourd'hui", hint: "Échéance aujourd'hui", empty: "Rien pour aujourd'hui.",
+    match: (task, today) => task.status !== 'done' && task.due_date === today },
+  { id: 'doing', label: 'En cours', hint: 'Colonne En cours', empty: 'Aucune tâche en cours.', match: (task) => task.status === 'doing' },
+  { id: 'pinned', label: 'Épinglées', hint: 'Marquées ★, non terminées', empty: 'Aucune tâche épinglée.',
+    match: (task) => task.status !== 'done' && !!task.pinned },
+  // Même face que la pastille des cartes (« ▲ Haute ») : la colonne n'a pas la place du libellé long.
+  { id: 'high', label: 'Haute', icon: '▲', hint: 'Priorité haute, non terminées', empty: 'Aucune tâche prioritaire.',
+    match: (task) => task.status !== 'done' && task.priority === 'high' },
+];
+export const taskViewMatch = (view: TaskView) => TASK_VIEWS.find((candidate) => candidate.id === view)!.match;
+
 /** Retire le balisage Markdown pour afficher un extrait lisible sur une ligne. */
 export function plainText(markdown: string): string {
   return markdown
