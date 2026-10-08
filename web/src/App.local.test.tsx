@@ -82,7 +82,12 @@ describe('PWA locale (mêmes écrans, backend IndexedDB/mémoire)', () => {
     expect(editor()).toBeInTheDocument();
   });
 
+  // Écran complet et deux montages de l'éditeur riche. Mesuré le 2026-10-08 : 0,3 s au
+  // repos, 2 à 5,7 s sous charge (un cœur partagé avec dix boucles), dont jusqu'à 2,5 s
+  // pour les deux clics — le rendu de l'éditeur, pas user-event : `fireEvent` coûte autant.
+  // Journal ciblé ; ligne, onglets et contenu attendent le stockage local (10 s), le test 30 s.
   test('document Google multi-onglets : une ligne au journal, navigation entre onglets', async () => {
+    const stockage = { timeout: 10_000 };
     const user = userEvent.setup();
     const { importLocalBackup } = await import('./store/localApi');
     const T = '2026-09-18T10:00:00.000Z';
@@ -104,15 +109,15 @@ describe('PWA locale (mêmes écrans, backend IndexedDB/mémoire)', () => {
       attachments: [],
     });
     render(<App />);
-    await screen.findByRole('region', { name: 'Journal' });
+    const list = within(await screen.findByRole('region', { name: 'Journal' }));
     // Une seule ligne pour les deux onglets, comme sur desktop.
-    expect(await within(journal()).findByText('Doc multi')).toBeInTheDocument();
-    expect(within(journal()).queryByText('Doc multi — A')).not.toBeInTheDocument();
-    await user.click(within(journal()).getByText('Doc multi'));
-    expect(await screen.findByRole('tab', { name: 'Onglet A' })).toBeInTheDocument();
+    expect(await list.findByText('Doc multi', undefined, stockage)).toBeInTheDocument();
+    expect(list.queryByText('Doc multi — A')).not.toBeInTheDocument();
+    await user.click(list.getByText('Doc multi'));
+    expect(await screen.findByRole('tab', { name: 'Onglet A' }, stockage)).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Onglet B' }));
-    expect(await screen.findByText('Contenu B')).toBeInTheDocument();
-  });
+    expect(await screen.findByText('Contenu B', undefined, stockage)).toBeInTheDocument();
+  }, 30_000);
 
   test('panneaux repliables disponibles sur mobile', async () => {
     const user = userEvent.setup();
