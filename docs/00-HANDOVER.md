@@ -1,6 +1,11 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-07 · Version : v0.47.0 (lot courant non publié).
+> **Mise à jour :** 2026-10-08 · Version : v0.49.0 (correctif non publié).
+> **Correctif du 2026-10-08 :** « Nouvelle entrée » et « Nouveau document » réaffichent
+> la colonne Écriture si elle était repliée, comme ouvrir une entrée depuis le journal ou
+> une tâche (`createEntry` dans `App.tsx`). `check.sh` vert : 230 API, 477 front,
+> 48 desktop, 29 scripts, 8 relais, 55 navigateur, 15 desktop — **862**.
+>
 > **Lot courant :** supprimer un fichier du dossier partagé, depuis l'arbre (✕) ou
 > l'éditeur (« Supprimer du partage ») — suppression gardée sur la dernière version
 > vue, avec confirmation. Détail : « Lot du 2026-10-07 — supprimer les fichiers du

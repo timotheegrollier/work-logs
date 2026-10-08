@@ -272,6 +272,7 @@ export default function App() {
     });
     setSearch('');
     setFreshEntry(true);
+    setShowCenter(true);
     setSharedPath(null);
     setSelectedId(created.id);
     setEntry({ ...created, attachments: [] });
