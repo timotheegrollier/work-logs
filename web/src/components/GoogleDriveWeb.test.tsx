@@ -32,18 +32,25 @@ afterEach(() => {
 });
 
 describe('panneau Drive de la PWA', () => {
+  // Collés depuis Google Cloud, comme le demande le formulaire : sous charge, taper
+  // ces 67 caractères touche par touche prenait 2,5 à 3,5 s des 5 s (2026-10-08).
+  // Premier test du fichier, il paie aussi le premier `getComputedStyle` de jsdom
+  // (≈ 70 ms au repos, ≈ 0,8 s sous charge), déclenché par le premier clic : 15 s.
   test('identifiant invalide refusé, valide enregistré', async () => {
     const user = userEvent.setup();
     render(<GoogleDriveWeb onOpen={() => {}} />);
-    await user.type(screen.getByLabelText('Identifiant client Google Web'), 'n’importe quoi');
+    const id = screen.getByLabelText('Identifiant client Google Web');
+    await user.click(id);
+    await user.paste('n’importe quoi');
     await user.click(screen.getByRole('button', { name: 'Enregistrer l’identifiant' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Identifiant client Google invalide');
-    await user.clear(screen.getByLabelText('Identifiant client Google Web'));
-    await user.type(screen.getByLabelText('Identifiant client Google Web'), CLIENT);
-    await user.type(screen.getByLabelText('Secret client Google Web'), 'secret-abc');
+    await user.clear(id);
+    await user.paste(CLIENT);
+    await user.click(screen.getByLabelText('Secret client Google Web'));
+    await user.paste('secret-abc');
     await user.click(screen.getByRole('button', { name: 'Enregistrer l’identifiant' }));
     expect(await screen.findByRole('button', { name: 'Se connecter avec Google' })).toBeInTheDocument();
-  });
+  }, 15_000);
 
   test('le formulaire affiche l’URI de redirection exacte à autoriser', async () => {
     render(<GoogleDriveWeb onOpen={() => {}} />);

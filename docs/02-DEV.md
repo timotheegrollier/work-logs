@@ -52,6 +52,14 @@ npm run test:e2e      # build + playwright, 12 parcours navigateur
   mettre ce qui doit toujours être fait dans un `finally` (espions, serveur,
   `discardPendingSaves()`) et laisser l'erreur remonter : le test fautif reste rouge avec son
   vrai message, les suivants repartent d'un écran et d'une file de sauvegardes vides.
+- **Sous charge** (plusieurs copies de travail lancent vitest ensemble), un test dépasse ses
+  5 s par accumulation, pas sur une attente. Ce qui coûte dans jsdom : `getByRole` sur tout
+  l'écran de l'App (≈ 1 s ; cibler avec `within(...)`), la frappe touche par touche
+  (`user.paste` quand la frappe n'est pas le geste testé ; `{Enter}` reste frappé s'il l'est),
+  et le premier `getComputedStyle` du worker (≈ 0,8 s, payé par le premier test qui clique).
+  Remède : `{ timeout: 10_000 }` sur les seules attentes vraiment asynchrones, délai explicite
+  du test (`}, 30_000)`), jamais `testTimeout` global. Reproduire sans gêner les autres
+  sessions : vitest et 4 à 8 boucles `sh -c 'while :; do :; done'` sous `taskset -c 6,7`.
 
 ## Conventions
 - **Une fonctionnalité = un test.** `check.sh` vert avant et après.
