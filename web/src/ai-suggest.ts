@@ -458,17 +458,39 @@ export async function suggestSubtasks(
 export const MAX_PROOFREAD_CHARS = 12000;
 
 /**
+ * Ce que l'IA lit et doit rendre : du Markdown (entrées, procédures, `.md` du
+ * partage), du texte brut (`.txt` du partage) ou un document Word du partage,
+ * passé en Markdown avec ses objets (images, tableaux…) en marqueurs.
+ */
+export type AiTextFormat = 'markdown' | 'text' | 'word';
+
+/** Ce que la réponse peut contenir pour s'appliquer au fichier sans perte. */
+function formatRule(format: AiTextFormat): string {
+  if (format === 'text') {
+    return 'Le texte vient d’un fichier texte brut (.txt) : réponds en texte brut, sans syntaxe Markdown (ni #, ni **, ni tableau) — titres de section seuls sur leur ligne, étapes numérotées « 1. », puces « - ».';
+  }
+  if (format === 'word') {
+    return 'Le texte vient d’un document Word : n’utilise que des titres (##, ###), des paragraphes, des listes numérotées ou à puces, du gras, de l’italique et des commandes entre accents graves — ni tableau, ni citation, ni image, ni lien nouveau. Chaque ligne [[objet N : …]] est une image, un tableau ou un champ du document : recopie-la telle quelle, seule sur sa ligne, à l’endroit qui convient ; n’en supprime ni n’en ajoute aucune.';
+  }
+  return '';
+}
+
+/**
  * Consigne : corriger et mettre en page, sans inventer ni changer le sens. Une
  * procédure (mode opératoire) garde en plus ses étapes en liste numérotée.
  */
-export function buildProofreadPrompt(title: string, text: string, profile = '', procedure = false): { system: string; user: string } {
+export function buildProofreadPrompt(title: string, text: string, profile = '', procedure = false, format: AiTextFormat = 'markdown'): { system: string; user: string } {
   const user = `${profile.trim() ? `Profil : ${profile.trim()}\n` : ''}${procedure ? 'Procédure' : 'Titre'} : ${title.trim()}\n\nTexte :\n${text}`;
+  const markdown = format !== 'text';
+  const layout = format === 'markdown' ? 'mets en page le Markdown (titres, listes, tableaux, citations)'
+    : format === 'word' ? 'mets en page le Markdown (titres, listes)' : 'mets en forme le texte (titres de section, listes)';
+  const rule = formatRule(format);
   return {
     system: `${procedure
-      ? "Tu relis une procédure de l'utilisateur dans WorkLogs, son journal de travail personnel : un mode opératoire en Markdown qu'il suivra plus tard, pas à pas."
+      ? `Tu relis une procédure de l'utilisateur dans WorkLogs, son journal de travail personnel : un mode opératoire${markdown ? ' en Markdown' : ''} qu'il suivra plus tard, pas à pas.`
       : "Tu relis le journal de travail personnel de l'utilisateur dans WorkLogs : il y écrit ce qu'il fait en Markdown."}
-Corrige l'orthographe, la grammaire, la conjugaison et la typographie française (accents, majuscules, espaces), et mets en page le Markdown (titres, listes, tableaux, citations) sans changer le sens et sans rien inventer.${procedure ? ' Présente les étapes en liste numérotée, une action par étape.' : ''} Conserve tels quels les liens, images, blocs de code et cases à cocher.
-Réponds uniquement avec le texte corrigé en Markdown, sans introduction ni explication.`,
+Corrige l'orthographe, la grammaire, la conjugaison et la typographie française (accents, majuscules, espaces), et ${layout} sans changer le sens et sans rien inventer.${procedure ? ' Présente les étapes en liste numérotée, une action par étape.' : ''} Conserve tels quels les liens, images, blocs de code et cases à cocher.${rule ? `\n${rule}` : ''}
+Réponds uniquement avec le texte corrigé${markdown ? ' en Markdown' : ''}, sans introduction ni explication.`,
     user,
   };
 }
@@ -490,14 +512,14 @@ export async function proofreadEntry(
   settings: AiSettings,
   title: string,
   content: string,
-  options: { timeoutMs?: number; procedure?: boolean } = {}
+  options: { timeoutMs?: number; procedure?: boolean; format?: AiTextFormat } = {}
 ): Promise<string> {
   const text = content.trim();
   if (!text) throw new AiError('Rien à corriger : l’entrée est vide.');
   if (text.length > MAX_PROOFREAD_CHARS) {
     throw new AiError(`Texte trop long pour une relecture (${text.length} caractères, ${MAX_PROOFREAD_CHARS} maximum).`);
   }
-  const prompt = buildProofreadPrompt(title, text, settings.profile, options.procedure);
+  const prompt = buildProofreadPrompt(title, text, settings.profile, options.procedure, options.format);
   const cleaned = cleanProofreadMarkdown(
     await postChatCompletions(settings, 'la mise en page', prompt.system, prompt.user,
       Math.min(8000, Math.max(1200, Math.ceil(text.length / 2))), options.timeoutMs ?? AI_TIMEOUT_MS)
@@ -506,31 +528,39 @@ export async function proofreadEntry(
   return cleaned;
 }
 
-/** Au-delà, la procédure deviendrait une liste qu'on ne suit plus. */
-const MAX_PROCEDURE_STEPS = 15;
+/** Une procédure concise se suit d'un coup d'œil : au-delà, elle devient une liste qu'on ne suit plus. */
+const MAX_PROCEDURE_STEPS = 10;
 
 /** Ce que l'IA sait d'une procédure : son projet, ses fichiers, ce qui est déjà écrit. */
 export interface ProcedureContext {
   project?: string;
   attachments?: string[];
+  /** Dossier du fichier, pour un fichier du partage (ex. « Réseau/Imprimantes »). */
+  folder?: string;
   /** Procédure déjà écrite, en Markdown : gardée et complétée, jamais effacée. */
   text?: string;
+  format?: AiTextFormat;
 }
 
-/** Consigne : un mode opératoire pas à pas, sans rien inventer de précis. */
+/** Consigne : un mode opératoire concis, pas à pas, fondé sur le titre et l'existant, sans rien inventer de précis. */
 export function buildProcedurePrompt(title: string, context: ProcedureContext = {}, profile = ''): { system: string; user: string } {
   const sections: string[] = [];
   if (profile.trim()) sections.push(`Profil : ${profile.trim()}`);
   sections.push(`Procédure : ${title.trim()}`);
   if (context.project) sections.push(`Projet : ${context.project}`);
+  if (context.folder?.trim()) sections.push(`Dossier : ${context.folder.trim()}`);
   const attachments = compactTitles(context.attachments ?? []);
   if (attachments.length > 0) sections.push(`Pièces jointes : ${attachments.join(', ')}`);
   sections.push(context.text?.trim() ? `Déjà écrit :\n${context.text.trim()}` : 'Déjà écrit : rien pour l’instant.');
+  const format = context.format ?? 'markdown';
+  const heading = format === 'text' ? '' : '## ';
+  const rule = formatRule(format);
   return {
     system: `Tu aides l'utilisateur à rédiger ses procédures dans WorkLogs, son journal de travail personnel : une procédure est un mode opératoire qu'il suivra plus tard, pas à pas.
-Propose la procédure complète en Markdown, en français : une phrase d'objectif, puis « ## Prérequis » (matériel, accès, sécurité) si utile, « ## Étapes » en liste numérotée — une action concrète et vérifiable par étape, ${MAX_PROCEDURE_STEPS} au plus — et « ## Vérifications » si utile.
-Garde tout ce qui est déjà écrit (étapes, valeurs, liens, images) en l'intégrant au bon endroit. N'invente ni valeur chiffrée, ni référence, ni nom propre absents du contexte : écris « à préciser » à la place.
-Réponds uniquement avec la procédure en Markdown, sans titre de premier niveau, sans introduction ni explication.`,
+Propose une procédure concise, en ${format === 'text' ? 'texte brut' : 'Markdown'} et en français, fondée sur son titre et sur ce qui est déjà écrit : une phrase d'objectif ; « ${heading}Prérequis » en quelques puces, seulement s'il y en a de réels ; « ${heading}Étapes » en liste numérotée — une action par étape, une ligne courte qui commence par un verbe, ${MAX_PROCEDURE_STEPS} au plus ; « ${heading}Vérification » en une ou deux puces, seulement si c'est utile.
+Va à l'essentiel : ni phrase de remplissage, ni répétition du titre, ni conseil générique (sauvegarde, prudence…) que le contexte ne justifie pas.
+Garde toutes les informations déjà écrites (étapes, valeurs, commandes, liens, images) en les intégrant au bon endroit : commandes et valeurs à l'identique, le reste reformulé plus court si besoin, sans jamais rien retirer. N'invente ni valeur chiffrée, ni référence, ni nom propre absents du contexte : écris « à préciser » à la place.${rule ? `\n${rule}` : ''}
+Réponds uniquement avec la procédure, ${format === 'text' ? 'sans répéter son titre' : 'sans titre de premier niveau'}, sans introduction ni explication.`,
     user: sections.join('\n'),
   };
 }

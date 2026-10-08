@@ -66,7 +66,9 @@ export function AiSettings() {
         Clé gratuite : Google AI Studio. Gardée sur cet appareil uniquement. Chaque clic
         « ✨ Suggérer » envoie le titre, ton profil et le contexte (projet, tâches et
         notes voisines, contenu de l’entrée, pièces jointes, vocabulaire) au service
-        configuré, jamais automatiquement.
+        configuré, jamais automatiquement. Dans le dossier partagé, « ✨ Suggérer une
+        procédure » et « ✨ Mettre en page » envoient le nom, le dossier et le contenu
+        du fichier ouvert.
       </p>
       <label>
         Mon contexte de travail

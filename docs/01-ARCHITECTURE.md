@@ -175,7 +175,8 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 Formats du dossier partagé, côté front (le serveur ne voit que des octets) : `text-codec.ts`,
 `text-file.ts`, `csv-file.ts`, `zip.ts` (archive, réécriture fidèle), `xml-scan.ts` (XML à
 positions), `ooxml.ts` (relations, propriétés : commun à Word et Excel), `docx.ts` +
-`docx-extensions.ts` (Word, §26), `xlsx.ts` + `xlsx-format.ts` (formats à la française,
+`docx-extensions.ts` (Word, §26) + `docx-markdown.ts` (pont Word ⇄ Markdown pour l'IA :
+objets en marqueurs, paragraphes gardés, styles du document — §30), `xlsx.ts` + `xlsx-format.ts` (formats à la française,
 saisie) + `xlsx-formula.ts` (syntaxe, traduction, dépendances) (Excel, §27), `shared-merge.ts`
 (fusion à trois voies : à la ligne pour le texte et les CSV, à la cellule pour Excel),
 `new-files.ts` (modèles des fichiers neufs : Word, Excel, Markdown, texte, CSV).

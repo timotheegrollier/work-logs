@@ -334,16 +334,36 @@ describe('procédures', () => {
     expect(buildProofreadPrompt('T', 'x').system).not.toMatch(/liste numérotée/);
   });
 
-  test('la consigne de suggestion garde l’existant et n’invente rien de précis', () => {
+  test('la consigne de suggestion : concise, fondée sur le titre et l’existant, sans rien inventer de précis', () => {
     const prompt = buildProcedurePrompt(' Changer le filtre ', {
       project: 'Ferme', attachments: ['notice.pdf', 'notice.pdf', 'photo.jpg'], text: ' Bassin 3 seulement. ',
     }, ' Pisciculteur ');
     expect(prompt.user).toBe('Profil : Pisciculteur\nProcédure : Changer le filtre\nProjet : Ferme\nPièces jointes : notice.pdf, photo.jpg\nDéjà écrit :\nBassin 3 seulement.');
-    expect(prompt.system).toMatch(/Garde tout ce qui est déjà écrit/);
+    expect(prompt.system).toMatch(/procédure concise, en Markdown et en français, fondée sur son titre et sur ce qui est déjà écrit/);
+    expect(prompt.system).toMatch(/« ## Étapes » en liste numérotée — une action par étape, une ligne courte qui commence par un verbe, 10 au plus/);
+    expect(prompt.system).toMatch(/seulement s'il y en a de réels/);
+    expect(prompt.system).toMatch(/ni phrase de remplissage/);
+    expect(prompt.system).toMatch(/Garde toutes les informations déjà écrites .* sans jamais rien retirer/);
     expect(prompt.system).toMatch(/« à préciser »/);
-    expect(prompt.system).toMatch(/« ## Étapes » en liste numérotée/);
     expect(prompt.system).toMatch(/sans titre de premier niveau/);
+    expect(prompt.system).not.toMatch(/\[\[objet/);
     expect(buildProcedurePrompt('Vidange').user).toBe('Procédure : Vidange\nDéjà écrit : rien pour l’instant.');
+  });
+
+  test('fichier du partage : son dossier en contexte, consigne propre au texte brut ou au document Word', () => {
+    const text = buildProcedurePrompt('Imprimante', { folder: 'Réseau/Imprimantes', text: 'IP 10.0.0.5', format: 'text' });
+    expect(text.user).toBe('Procédure : Imprimante\nDossier : Réseau/Imprimantes\nDéjà écrit :\nIP 10.0.0.5');
+    expect(text.system).toMatch(/en texte brut et en français/);
+    expect(text.system).toMatch(/« Étapes » en liste numérotée/);
+    expect(text.system).toMatch(/sans syntaxe Markdown/);
+    expect(text.system).toMatch(/sans répéter son titre/);
+    const word = buildProcedurePrompt('Imprimante', { format: 'word' });
+    expect(word.system).toMatch(/document Word/);
+    expect(word.system).toMatch(/Chaque ligne \[\[objet N : …\]\] est une image, un tableau ou un champ du document : recopie-la telle quelle/);
+    const layout = buildProofreadPrompt('Imprimante', '[[objet 1 : Image]]', '', true, 'word');
+    expect(layout.system).toMatch(/recopie-la telle quelle/);
+    expect(layout.system).toMatch(/mets en page le Markdown \(titres, listes\)/);
+    expect(buildProofreadPrompt('Notes', 'x', '', true, 'text').system).toMatch(/mets en forme le texte .*\n.*texte brut[\s\S]*Réponds uniquement avec le texte corrigé, sans introduction/);
   });
 
   test('un appel rend la procédure en Markdown, sans enveloppe ni titre en doublon', async () => {

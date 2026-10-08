@@ -182,6 +182,15 @@ s'ouvre en écriture ; une procédure liée à Google Docs garde son éditeur Go
 taper la commande, ou taper ` ``` ` puis Entrée en début de ligne. Des lignes déjà
 collées : les sélectionner puis **`{ }`** — elles forment un seul bloc.
 
+**✨ Suggérer une procédure** (clé IA collée dans Paramètres) propose une procédure
+**concise** à partir du titre et de ce qui est déjà écrit : une phrase d'objectif, des
+étapes d'une ligne (10 au plus), prérequis et vérification seulement s'il y en a. Ce que
+tu as écrit est gardé — commandes et valeurs à l'identique — et l'IA écrit « à préciser »
+plutôt que d'inventer une valeur. **✨ Mettre en page** corrige les fautes et range les
+étapes en liste numérotée. Dans les deux cas, la proposition se relit d'abord :
+**Appliquer**, **Rafraîchir** (nouvelle proposition) ou **Ignorer**. Rien ne part sans
+clic. Les mêmes boutons existent pour les fichiers du dossier partagé (ci-dessous).
+
 ## Dossier partagé (le dossier du TSE)
 
 Sous les procédures, la section **Dossier partagé** montre le dossier de l'équipe, celui du
@@ -212,6 +221,15 @@ lorsque la colonne Procédures est affichée.
   Seuls les paragraphes que tu as touchés sont réécrits ; le reste du fichier (styles,
   en-têtes, numérotation, images) ne change pas d'un octet. Un document en suivi des
   modifications s'ouvre en lecture seule.
+- **✨ Suggérer une procédure** et **✨ Mettre en page** marchent aussi sur un document Word,
+  une note `.md` ou un texte `.txt` du partage, comme pour les procédures du journal : le
+  titre du document (sinon le nom du fichier) et son contenu partent au service IA des
+  Paramètres, la proposition se relit, puis **Appliquer** en fait ton **brouillon** — rien
+  ne part sur le partage avant **Enregistrer sur le partage**. Dans un document Word, les
+  images, tableaux et sommaires restent ceux du fichier (une proposition qui en perdrait un
+  est refusée), un paragraphe que l'IA n'a pas changé reste tel quel, et un paragraphe neuf
+  prend les styles du document (Titre 2, liste numérotée…). ↶ annule l'application.
+  Inactifs quand le fichier est ouvert par un collègue.
 - **Classeurs Excel** : une feuille à la fois, choisie dans la liste **Feuille** (les
   feuilles masquées y sont signalées). Les valeurs s'affichent comme dans Excel
   (`1 234,50 €`, `05/10/2026`, `12,5 %`) ; la barre « Contenu de la cellule » montre la
