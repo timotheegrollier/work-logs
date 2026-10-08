@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { api, COLUMNS, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project, type RichDocument, type Status } from '../lib';
-import { parseChecklist, proofreadEntry, readAiSettings, suggestProcedure, suggestSubtasks } from '../ai-suggest';
+import { draftProcedure, parseChecklist, proofreadEntry, readAiSettings, suggestProcedure, suggestSubtasks, type DraftedProcedure } from '../ai-suggest';
 import { insertCodeFence, renderMarkdown, toggleChecklistItem } from '../markdown';
 import { markdownToRich, richToMarkdown } from '../rich-markdown';
 import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-download';
@@ -10,6 +10,7 @@ import { RichEditor } from './RichEditor';
 import { DocumentTabs } from './DocumentTabs';
 import { GoogleDocsEditor } from './GoogleDocsEditor';
 import { FileViewer } from './FileViewer';
+import { ProcedureDraft } from './ProcedureDraft';
 
 type SaveState = 'saved' | 'dirty' | 'saving' | 'error';
 const LABELS: Record<SaveState, string> = {
@@ -40,6 +41,7 @@ export function EntryEditor({
   onChanged,
   onDeleted,
   onTaskCreated,
+  onProcedureCreated,
   autoFocusTitle = false,
   editRequest = 0,
 }: {
@@ -53,6 +55,8 @@ export function EntryEditor({
   onChanged: () => void;
   onDeleted: () => void;
   onTaskCreated?: () => void;
+  /** Procédure tirée de cette entrée par l'IA, créée : l'app l'ouvre. */
+  onProcedureCreated?: (procedure: Entry) => void;
   autoFocusTitle?: boolean;
   editRequest?: number;
 }) {
@@ -404,6 +408,33 @@ export function EntryEditor({
     setAiProposal(null);
     setSuggestedBlock(null);
   };
+  // Procédure tirée de cette note par l'IA : relue dans « Procédure rédigée »,
+  // puis créée à part — la note ne change pas. Riche ou Markdown, la note part
+  // en Markdown ; un document Google ne transite pas (§23).
+  const canDraftProcedure = !isProcedure && !googleSync;
+  const [drafting, setDrafting] = useState(false);
+  const [procedureDraft, setProcedureDraft] = useState<DraftedProcedure | null>(null);
+  const draftFromEntry = async () => {
+    if (drafting || syncing || !canDraftProcedure) return;
+    setDrafting(true);
+    setError('');
+    try {
+      await autosave.flush();
+      const current = draftRef.current;
+      setProcedureDraft(await draftProcedure(readAiSettings(), {
+        origin: 'entry',
+        title: current.title,
+        project: projects.find((project) => project.id === current.project_id)?.name,
+        text: current.content_json ? richToMarkdown(current.content_json) : current.content_md,
+        attachments: attachments.map((file) => file.filename),
+        linkedTasks: linkedTasks.map((task) => task.title),
+      }));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDrafting(false);
+    }
+  };
   const createTask = async () => {
     const title = taskTitle.trim();
     if (!title) return;
@@ -686,6 +717,17 @@ export function EntryEditor({
             {aiBusy === 'layout' ? 'Mise en page…' : '✨ Mettre en page'}
           </button>
         )}
+        {canDraftProcedure && (
+          <button
+            className="ghost"
+            type="button"
+            disabled={drafting || syncing}
+            title="Rédige une procédure réutilisable à partir de cette entrée (titre, contenu, noms des pièces jointes et tâches liées envoyés au service IA configuré en Paramètres) ; à relire avant de la créer"
+            onClick={() => void draftFromEntry()}
+          >
+            {drafting ? 'Rédaction…' : '✨ Créer une procédure'}
+          </button>
+        )}
         {suggestedBlock && (
           <button
             className="ghost"
@@ -711,6 +753,19 @@ export function EntryEditor({
           <button className="ghost" type="button" onClick={() => setAiProposal(null)}>Ignorer</button>
         </div>
       </div>}
+      {procedureDraft && canDraftProcedure && (
+        <ProcedureDraft
+          draft={procedureDraft}
+          projectId={draft.project_id || null}
+          busy={drafting}
+          onRefresh={() => void draftFromEntry()}
+          onCreated={(procedure) => {
+            setProcedureDraft(null);
+            onProcedureCreated?.(procedure);
+          }}
+          onClose={() => setProcedureDraft(null)}
+        />
+      )}
       {syncMessage && <p className="rich-count no-print" role="status">{syncMessage}</p>}
       {!nativeGoogle && draft.content_json && <div className="google-sync no-print" aria-label="Synchronisation Google Drive">
         <div className="sync-status" role="status">

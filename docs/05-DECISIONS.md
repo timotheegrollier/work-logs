@@ -1188,3 +1188,49 @@ serveur Windows (le plus lourd).
 **Limites assumées.** Hors réseau, rien (pas de copie hors ligne sur le téléphone : les
 brouillons vivent sur le relais) ; un seul compte Windows pour tout ce qui passe par le relais
 (les verrous portent « Timothée Grollier (mobile) »). Installation et dépannage : `09-RELAIS.md`.
+
+## 31. Procédure tirée d'une entrée ou d'une tâche par l'IA : créée à part, jamais liée — 2026-10-08
+
+**La demande.** « Créer avec l'IA (Gemini) une procédure à partir d'une entrée/tâches. » On
+note sur le moment ce qu'on a fait (une entrée, une tâche et ses notes) ; la procédure est ce
+qu'on suivra la prochaine fois. Jusqu'ici, l'IA ne savait que compléter une procédure déjà
+ouverte, à partir de son titre (§23).
+
+**Les choix.**
+- **Deux points d'entrée, un seul geste** : **✨ Créer une procédure** dans la rangée d'actions
+  d'une note (Markdown ou document riche du journal), **✨ Procédure** au pied d'une carte de
+  tâche. Même service IA que le reste (Paramètres, Gemini par défaut, chaîne de secours §17),
+  même consigne (`draftProcedure`, `ai-suggest.ts`), même panneau de relecture
+  (`ProcedureDraft.tsx`). Ni onglet, ni mode, ni dépendance, ni route : la procédure se crée
+  par `POST /api/entries` (`kind: 'procedure'`), desktop comme PWA.
+- **Ce qui part à l'IA.** Depuis une note : titre, projet, contenu (un document riche passe par
+  le pont Markdown §23), noms des pièces jointes, titres des tâches liées. Depuis une tâche :
+  titre, statut, projet, et le contenu de ses **5 documents liés** les plus récents. Plafond
+  commun de 12 000 caractères : au-delà, le début seul part, marqué « […] », et la relecture
+  le dit. Le texte coupé garde ses lignes (listes et blocs de code lisibles).
+- **Un document Google ne transite pas** (§23) : pas de bouton sur une note Google ; depuis une
+  tâche, il ne donne que son titre (« contenu non transmis »), sans même être relu.
+- **La consigne** demande un titre en `# …` (à l'infinitif), un objectif, Prérequis, Étapes
+  numérotées (15 au plus), Vérifications ; elle **généralise** (pas de récit, pas de dates),
+  garde tels quels commandes, chemins, valeurs et blocs de code, et écrit « à préciser » plutôt
+  que d'inventer. Le `# …` devient le titre proposé, modifiable avant création.
+- **Relue avant d'exister** : rien n'est créé avant « Créer la procédure » ; « Rafraîchir »
+  redemande, « Ignorer » abandonne. Ce qui s'affiche s'enregistre : même conversion et même
+  validation serveur qu'« Appliquer la procédure » (`markdownToRich`).
+- **Créée à part, jamais liée à sa source.** Terminer une tâche archive ses documents liés
+  (`archiveTaskDocuments`) : une procédure liée disparaîtrait de la colonne Procédures dès la
+  tâche terminée — c'est-à-dire au moment même où l'on écrit sa procédure. Elle naît donc dans
+  le projet de sa source, sans `task_entries`, et la source ne change pas.
+- **Ouverte aussitôt, en lecture** (`openCreatedProcedure`, `App.tsx`), comme une procédure
+  ouverte depuis sa colonne. Une recherche en cours qui la masquerait est effacée ; l'état est
+  relu une seule fois, sans l'ancienne recherche (sinon cette relecture pouvait répondre
+  d'abord et refermer la procédure).
+
+**Écartés.** Remplacer la note par une procédure (`kind` changé) : on perdrait le journal du
+jour. Plusieurs tâches cochées pour une seule procédure : un mode de sélection à ajouter, non
+demandé. Ouvrir d'office la colonne Procédures : elle rétrécirait l'éditeur sans qu'on l'ait
+demandé ; la procédure s'ouvre au centre, et la colonne la montre dès qu'on l'affiche.
+
+**Rouvrir si** une procédure doit garder trace de sa source (une ligne « Tirée de … » suffirait,
+sans lien) ; si les documents Google doivent servir de source (lecture seule : seul le §23
+l'interdit, pas une limite technique) ; si 12 000 caractères ne suffisent pas en usage réel.

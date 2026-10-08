@@ -142,6 +142,7 @@ rendu approximatif.
 - **Créer une tâche liée** depuis l’entrée ouverte préremplit son titre et permet d’ajouter une échéance. La tâche apparaît directement dans le panneau de droite avec cette entrée comme contexte.
 - **Relier un document** ouvre la liste des entrées disponibles. Choisir une entrée locale ou un onglet Google puis cliquer sur **Relier** ; chaque document lié reste visible sur la carte avec son origine.
 - Cliquer sur le titre d'un document lié l'ouvre au centre. Le bouton ✕ retire seulement l'association, sans supprimer le document. Une même entrée peut fournir le contexte de plusieurs tâches.
+- **✨ Procédure** (pied de carte) fait rédiger par l'IA une procédure à partir de la tâche et de ses documents liés, à relire avant de la créer — voir « Procédures ».
 
 ## Projets
 
@@ -181,6 +182,17 @@ s'ouvre en écriture ; une procédure liée à Google Docs garde son éditeur Go
 **Bloc de code** dans une procédure : cliquer **`{ }`** dans la barre puis coller ou
 taper la commande, ou taper ` ``` ` puis Entrée en début de ligne. Des lignes déjà
 collées : les sélectionner puis **`{ }`** — elles forment un seul bloc.
+
+**Tirer une procédure de son travail, avec l'IA.** Dans une entrée du journal,
+**✨ Créer une procédure** ; sur une carte de tâche, **✨ Procédure**. L'IA (le service
+réglé dans ⚙ Paramètres, Gemini par défaut) lit l'entrée — ou la tâche et ses documents
+liés — et rédige un mode opératoire : un titre, l'objectif, les prérequis, les étapes
+numérotées, les vérifications ; « à préciser » là où la source ne dit rien. La proposition
+se relit sur place : corriger le titre si besoin, puis **Créer la procédure** (ou
+**Rafraîchir**, ou **Ignorer**). Rien n'est créé avant. La procédure rejoint le projet de sa
+source et s'ouvre en lecture ; l'entrée et la tâche ne changent pas, et la procédure ne leur
+est pas liée — terminer la tâche ne l'archive donc pas. Un document Google n'est jamais
+envoyé à l'IA : pas de bouton sur lui, et depuis une tâche, seul son titre part.
 
 ## Dossier partagé (le dossier du TSE)
 

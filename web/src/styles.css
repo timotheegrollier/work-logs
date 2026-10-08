@@ -935,6 +935,19 @@ button:disabled {
 .proofread-preview { display: grid; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
 .proofread-preview strong { font-size: 13px; }
 .proofread-preview .prose { max-height: 50vh; overflow: auto; padding: 8px 12px; border-radius: 8px; background: var(--surface); }
+/* Procédure rédigée depuis une entrée ou une tâche : son titre se corrige avant
+   la création ; dans une carte étroite, les actions passent à la ligne et
+   l'aperçu reprend une taille de carte. */
+.procedure-draft small { color: var(--muted); font-size: 12px; }
+.procedure-draft label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.procedure-draft input { width: 100%; font-size: 13px; }
+.procedure-draft .task-creator-actions { flex-wrap: wrap; }
+.card .procedure-draft .prose { max-height: 40vh; font-size: 13px; cursor: auto; }
+/* `.column ul` (la liste des cartes) ôte puces et marges à toute liste de la
+   carte : l'aperçu les rend, comme dans l'éditeur. */
+.card .procedure-draft .prose ul { display: block; list-style: disc; margin: 0 0 1em; padding-left: 1.3em; }
+.card .procedure-draft .prose ul ul { list-style: circle; margin: 0; }
+.card .procedure-draft .error { margin: 0; font-size: 12px; }
 @media (max-width: 680px) { .task-creator { grid-template-columns: 1fr; } .task-creator-actions { grid-column: 1; } }
 .modes {
   display: inline-flex;

@@ -559,3 +559,130 @@ export async function suggestProcedure(
   if (!cleaned.trim()) throw new AiError('Réponse IA illisible : réessaie.');
   return cleaned.trim();
 }
+
+/** Au-delà, la source est coupée : l'IA n'en lit que le début, et la relecture le dit. */
+const MAX_SOURCE_CHARS = MAX_PROOFREAD_CHARS;
+/** Documents d'une tâche lus par l'IA, du plus récent au plus ancien. */
+export const MAX_SOURCE_DOCUMENTS = 5;
+/** Un titre de procédure doit tenir sur une ligne de la colonne. */
+const MAX_DRAFT_TITLE = 120;
+
+/** Ce dont une procédure est tirée : une note du journal, ou une tâche et ses documents liés. */
+export interface ProcedureSource {
+  origin: 'entry' | 'task';
+  title: string;
+  project?: string;
+  /** Statut lisible de la tâche (« Terminé »…). */
+  status?: string;
+  /** Contenu de l'entrée, en Markdown. */
+  text?: string;
+  /** Noms des pièces jointes de l'entrée. */
+  attachments?: string[];
+  /** Titres des tâches liées à l'entrée. */
+  linkedTasks?: string[];
+  /** Documents liés à la tâche, du plus récent au plus ancien ; un document Google ne donne que son titre. */
+  documents?: { title: string; date?: string; text?: string; google?: boolean }[];
+}
+
+/** Procédure rédigée par l'IA, à relire avant de la créer. */
+export interface DraftedProcedure {
+  title: string;
+  markdown: string;
+  /** La source dépassait le plafond : l'IA n'en a lu que le début. */
+  truncated: boolean;
+}
+
+/**
+ * Consigne : un mode opératoire réutilisable tiré de ce qui a été fait, titre
+ * compris, sans rien inventer de précis. La source est plafonnée en tout
+ * (`MAX_SOURCE_CHARS`) : au-delà, seul son début part, marqué « […] ».
+ */
+export function buildDraftProcedurePrompt(source: ProcedureSource, profile = ''): { system: string; user: string; truncated: boolean } {
+  let budget = MAX_SOURCE_CHARS;
+  let truncated = false;
+  // Lignes gardées : `truncate` les aplatit, le Markdown y perdrait ses listes et son code.
+  const take = (text: string) => {
+    const kept = text.trim();
+    if (kept.length <= budget) {
+      budget -= kept.length;
+      return kept;
+    }
+    truncated = true;
+    const start = budget > 0 ? `${kept.slice(0, budget).trimEnd()}\n[…]` : '';
+    budget = 0;
+    return start;
+  };
+  const sections: string[] = [];
+  if (profile.trim()) sections.push(`Profil : ${profile.trim()}`);
+  sections.push(`${source.origin === 'entry' ? 'Entrée du journal' : 'Tâche'} : ${source.title.trim()}`);
+  if (source.status) sections.push(`Statut : ${source.status}`);
+  if (source.project) sections.push(`Projet : ${source.project}`);
+  const attachments = compactTitles(source.attachments ?? []);
+  if (attachments.length > 0) sections.push(`Pièces jointes : ${attachments.join(', ')}`);
+  const linkedTasks = compactTitles(source.linkedTasks ?? []);
+  if (linkedTasks.length > 0) sections.push(`Tâches liées : ${linkedTasks.join(', ')}`);
+  if (source.origin === 'entry') {
+    const text = take(source.text ?? '');
+    sections.push(text ? `Contenu :\n${text}` : 'Contenu : rien d’écrit, le titre seul.');
+  } else {
+    const documents = (source.documents ?? []).slice(0, MAX_SOURCE_DOCUMENTS);
+    if (documents.length === 0) sections.push('Documents liés : aucun, le titre seul.');
+    for (const document of documents) {
+      const name = `Document lié « ${document.title.trim()} »${document.date ? ` (${document.date})` : ''}`;
+      if (document.google) {
+        sections.push(`${name} : document Google, contenu non transmis.`);
+      } else if (!document.text?.trim()) {
+        sections.push(`${name} : vide.`);
+      } else {
+        const text = take(document.text);
+        sections.push(text ? `${name} :\n${text}` : `${name} : non transmis, la source est trop longue.`);
+      }
+    }
+  }
+  return {
+    system: `Tu aides l'utilisateur à tirer une procédure de son travail dans WorkLogs, son journal de travail personnel : une procédure est un mode opératoire réutilisable qu'il suivra plus tard, pas à pas, pour refaire ce travail.
+La source est ${source.origin === 'entry' ? 'une entrée de son journal' : 'une tâche et les documents qui lui sont liés'} : ce qu'il a fait ou prévu, noté sur le moment.
+Rédige la procédure en Markdown, en français : en première ligne, « # » suivi d'un titre court qui dit ce qu'elle permet de faire, à l'infinitif ; puis une phrase d'objectif, « ## Prérequis » (matériel, accès, sécurité) si utile, « ## Étapes » en liste numérotée — une action concrète et vérifiable par étape, ${MAX_PROCEDURE_STEPS} au plus — et « ## Vérifications » si utile.
+Généralise : laisse de côté le récit, les dates et ce qui ne valait que ce jour-là ; garde tels quels les commandes, chemins, valeurs et liens utiles, blocs de code compris. N'invente ni valeur chiffrée, ni référence, ni nom propre absents de la source : écris « à préciser » à la place.
+Réponds uniquement avec la procédure en Markdown, sans introduction ni explication.`,
+    user: sections.join('\n'),
+    truncated,
+  };
+}
+
+/**
+ * Réponse de l'IA → titre (son « # » de tête, sinon celui de la source) et
+ * corps de la procédure, sans l'enveloppe de code qu'ajoutent certains modèles.
+ */
+export function parseDraftedProcedure(reply: string, fallbackTitle: string): { title: string; markdown: string } {
+  const cleaned = cleanProofreadMarkdown(reply);
+  const heading = /^#[ \t]+([^\n]*?)[ \t#]*(?:\n|$)/.exec(cleaned);
+  const title = heading?.[1].replace(/[*_`]/g, '').trim() || fallbackTitle.trim();
+  return {
+    title: title.length > MAX_DRAFT_TITLE ? title.slice(0, MAX_DRAFT_TITLE - 1).trimEnd() + '…' : title,
+    markdown: (heading ? cleaned.slice(heading[0].length) : cleaned).trim(),
+  };
+}
+
+/**
+ * Procédure tirée d'une entrée ou d'une tâche : un clic = un appel, avec la
+ * source plafonnée. Rien n'est créé ici : la proposition se relit d'abord,
+ * comme toutes celles de l'IA (`ProcedureDraft.tsx`).
+ */
+export async function draftProcedure(
+  settings: AiSettings,
+  source: ProcedureSource,
+  options: { timeoutMs?: number } = {}
+): Promise<DraftedProcedure> {
+  const named = source.title.trim() && !/^sans titre$/i.test(source.title.trim());
+  const written = source.origin === 'entry'
+    ? Boolean(source.text?.trim())
+    : (source.documents ?? []).some((document) => !document.google && document.text?.trim());
+  if (!named && !written) throw new AiError('Rien à transformer en procédure : donne un titre, ou écris d’abord ce que tu as fait.');
+  const prompt = buildDraftProcedurePrompt(source, settings.profile);
+  const reply = await postChatCompletions(settings, 'la création de procédure', prompt.system, prompt.user,
+    Math.min(8000, Math.max(1500, Math.ceil(prompt.user.length / 2) + 1000)), options.timeoutMs ?? AI_TIMEOUT_MS);
+  const drafted = parseDraftedProcedure(reply, source.title);
+  if (!drafted.markdown) throw new AiError('Réponse IA illisible : réessaie.');
+  return { ...drafted, truncated: prompt.truncated };
+}

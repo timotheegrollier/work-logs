@@ -216,12 +216,14 @@ une tâche, une entrée ou une association inconnue renvoie `404` avec un messag
 | `lib.ts` | types, client API, helpers purs (`dayLabel`, `isOverdue`, `plainText`, `groupByDay`) |
 | `markdown.ts` | `marked` (GFM, `breaks`) puis `DOMPurify` — le rendu part en `dangerouslySetInnerHTML` ; clôtures du bouton « Bloc de code » |
 | `rich-code.ts` | « Bloc de code » de l'éditeur riche : plusieurs lignes sélectionnées → un seul bloc |
+| `ai-suggest.ts` | client IA compatible OpenAI (Gemini par défaut, chaîne de secours) : sous-tâches, mise en page, procédures — dont `draftProcedure`, une procédure tirée d'une entrée ou d'une tâche |
+| `components/ProcedureDraft.tsx` | relecture d'une procédure rédigée par l'IA (titre modifiable, aperçu), puis création par `POST /api/entries` |
 | `components/EntryList.tsx` | journal groupé par jour, extrait sur une ligne |
 | `components/ProcedureList.tsx` | procédures du projet (entrées `kind='procedure'`) + pièces jointes rassemblées |
 | `components/EntryEditor.tsx` | titre, date, projet, Écrire/Lire (entrées Markdown et procédures locales), enregistrement auto, pièces jointes |
 | `components/RichEditor.tsx` | éditeur Tiptap et barre de mise en forme ; `readOnly` = mode Lire d'une procédure |
 | `components/GoogleDrive.tsx` | dialogue Drive dédié, configuration et documents autorisés |
-| `components/TaskBoard.tsx` | ajout rapide, 3 colonnes, glisser-déposer HTML5, édition en place, associations de documents |
+| `components/TaskBoard.tsx` | ajout rapide, 3 colonnes, glisser-déposer HTML5, édition en place, associations de documents, ✨ Procédure |
 | `components/ProjectBar.tsx` | pastilles de filtre + panneau de gestion repliable |
 | `styles.css` | thèmes clair/sombre par variables, typographie du document, feuille d'impression |
 

@@ -1,6 +1,11 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-08 · Version : v0.49.0 (correctif non publié).
+> **Mise à jour :** 2026-10-08 · Version : v0.49.0 (lot et correctif non publiés).
+> **Lot du 2026-10-08 (2) :** **procédure tirée d'une entrée ou d'une tâche par l'IA** —
+> « ✨ Créer une procédure » dans une note, « ✨ Procédure » sur une carte ; relue sur place,
+> puis créée à part, jamais liée à sa source. Branche `feat/procedure-ia-depuis-entree`.
+> Détail : « Lot du 2026-10-08 (2) » ci-dessous ; décision §31.
+>
 > **Correctif du 2026-10-08 :** « Nouvelle entrée » et « Nouveau document » réaffichent
 > la colonne Écriture si elle était repliée, comme ouvrir une entrée depuis le journal ou
 > une tâche (`createEntry` dans `App.tsx`). `check.sh` vert : 230 API, 477 front,
@@ -57,6 +62,57 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-10-08 (2) — procédure tirée d'une entrée ou d'une tâche, par l'IA
+
+Demande de Timo : « créer avec l'IA (Gemini) une procédure à partir d'une entrée/tâches ».
+Décision : §31.
+- **Note** (Markdown ou document riche du journal) : **✨ Créer une procédure** dans la rangée
+  d'actions (`EntryEditor.tsx`). Absent d'une procédure (elle a « Suggérer une procédure ») et
+  d'un document Google (§23 : son contenu ne part pas à l'IA).
+- **Carte de tâche** : **✨ Procédure** au pied (`TaskBoard.tsx`, nom accessible « Créer une
+  procédure avec l'IA »). Lit les 5 documents liés les plus récents (`api.entry`) ; un
+  document Google n'y donne que son titre, sans même être relu.
+- **IA** (`ai-suggest.ts`) : `buildDraftProcedurePrompt`, `parseDraftedProcedure`,
+  `draftProcedure` — même transport et même chaîne de secours Gemini que le reste. Le `# …` de
+  tête devient le titre proposé ; plafond commun de 12 000 caractères, coupe signalée.
+- **Relecture** (`ProcedureDraft.tsx`, formulaire « Procédure rédigée ») : titre modifiable,
+  aperçu, **Créer la procédure** / **Rafraîchir** / **Ignorer** (grisés pendant une rédaction,
+  sinon la réponse en vol rouvrait le panneau). Création par `api.createEntry`
+  (`kind: 'procedure'`, `markdownToRich`) : ni route ni dépendance, desktop comme PWA.
+- **Ouverture** (`openCreatedProcedure`, `App.tsx`) : au centre, en lecture. Une recherche en
+  cours est effacée et l'état relu **une seule fois** : relire aussi avec l'ancienne recherche
+  pouvait répondre d'abord et refermer la procédure (test dédié, vérifié par mutation).
+- **Jamais liée à sa source** : terminer une tâche archive ses documents liés, la procédure
+  aurait quitté sa colonne au moment même où on l'écrit (test : tâche terminée → procédure
+  `archived = 0`, aucun `task_entries`).
+- **Styles** : `.procedure-draft`. Vu en capture : dans une carte, `.column ul` (la liste des
+  cartes) ôtait puces et marges aux listes de l'aperçu — rétablies pour l'aperçu seul.
+- **Tests** : `ai-suggest.test.ts` (+6 : consigne entrée et tâche, Google non transmis, coupe
+  qui garde les lignes, titre, appel, garde-fous sans appel réseau), `App.test.tsx` (+5 : note →
+  procédure relue, titre corrigé, ouverte en lecture ; tâche terminée → ni liée ni archivée ;
+  document riche, Rafraîchir, Ignorer ; recherche effacée ; ni procédure ni document Google,
+  sans clé rien ne part), `e2e/procedures.spec.ts` (+1 : note écrite, procédure relue, créée,
+  rouverte après rechargement, note intacte). Sept garde-fous retirés un à un : chacun fait
+  échouer un test.
+- **Vu dans un vrai navigateur** (Chromium, 1440 et 412 px) : panneau dans l'éditeur et dans
+  une carte, actions qui passent à la ligne, aucun débordement horizontal.
+- **Recette** : `./scripts/check.sh` vert (`CHECK OK`) : 230 API, **488 front**, 48 desktop,
+  29 scripts, 8 relais, **56 navigateur**, 15 desktop — **874**. Un premier passage, sous forte
+  charge (≈ 20 sur 8 cœurs : d'autres copies de travail en campagne), avait vu 8 tests front du
+  partage et de la PWA dépasser leur délai ; relancés seuls, verts, puis tout vert au second
+  passage. Même effet sur `master` avant le lot (2 dépassements, verts relancés seuls).
+
+### À vérifier par Timo
+
+1. Avec ta clé Gemini, sur une vraie note de travail : la procédure proposée est-elle utile
+   (titre, étapes, « à préciser ») ? Les tests simulent la réponse du modèle.
+2. Sur une tâche terminée et ses notes : idem, et la procédure reste-t-elle dans la colonne
+   Procédures ensuite ?
+3. Faut-il une ligne « Tirée de … » dans la procédure (sans lien) ? Pas fait, non demandé.
+4. Constaté, non traité (antérieur au lot) : l'en-tête collant « À faire » de la colonne des
+   tâches n'a pas de fond ; une carte haute (créateur d'entrée liée, procédure rédigée) passe
+   dessous en défilant et les textes se chevauchent.
 
 ## Lot du 2026-10-07 — supprimer les fichiers du partage
 
