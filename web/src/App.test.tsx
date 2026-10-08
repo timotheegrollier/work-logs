@@ -1984,6 +1984,20 @@ describe('panneaux repliables', () => {
     await waitFor(() => expect(columns()).not.toHaveClass('hide-center'));
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Document de la tâche'));
   });
+
+  test.each([
+    ['Nouvelle entrée', /Nouvelle entrée/],
+    ['Nouveau document', /Nouveau document/],
+  ])('« %s » réaffiche directement l’écriture', async (_label, name) => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-show-center', '0');
+    render(<App />);
+
+    await user.click(await within(journal()).findByRole('button', { name }));
+    await waitFor(() => expect(columns()).not.toHaveClass('hide-center'));
+    expect(screen.getByRole('button', { name: 'Écriture' })).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findByLabelText('Titre de l’entrée')).toHaveValue('Sans titre');
+  });
 });
 
 describe('dossier partagé', () => {
