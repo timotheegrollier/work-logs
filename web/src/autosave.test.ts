@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { Autosave, flushPendingSaves, hasPendingSaves } from './autosave';
+import { Autosave, discardPendingSaves, flushPendingSaves, hasPendingSaves } from './autosave';
 
 test('fermer avant le délai enregistre le dernier brouillon', async () => {
   const saved: string[] = [];
@@ -36,4 +36,15 @@ test('un échec empêche la fermeture et permet de réessayer', async () => {
   fails = false;
   await flushPendingSaves();
   expect(hasPendingSaves()).toBe(false);
+});
+
+test('abandonner les brouillons en échec : ils ne se rejouent plus', async () => {
+  let writes = 0;
+  const queue = new Autosave<string>(async () => { writes++; throw new Error('entrée introuvable'); });
+  queue.update('orphelin');
+  await expect(flushPendingSaves()).rejects.toThrow('entrée introuvable');
+  discardPendingSaves();
+  expect(hasPendingSaves()).toBe(false);
+  await flushPendingSaves();
+  expect(writes).toBe(1);
 });
