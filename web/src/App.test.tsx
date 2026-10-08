@@ -1319,6 +1319,19 @@ describe('organiser les tâches', () => {
     expect(row(api.db, 'SELECT * FROM tasks').status).toBe('todo');
   });
 
+  test('la saisie d’une tâche reste hors de la liste qui défile', async () => {
+    seedData(api.db, { tasks: [{ id: 'tk_1', title: 'Rappeler le client' }] });
+    render(<App />);
+
+    const card = (await within(board()).findByText('Rappeler le client')).closest('.card') as HTMLElement;
+    const lists = board().querySelector('.board-lists') as HTMLElement;
+    // Les cartes et les intitulés de colonne défilent ensemble…
+    expect(lists).toContainElement(card);
+    expect(lists).toContainElement(within(board()).getByRole('heading', { name: /En cours/ }));
+    // …la saisie, elle, est l'en-tête du panneau : rien ne défile dessous.
+    expect(lists).not.toContainElement(screen.getByLabelText('Nouvelle tâche'));
+  });
+
   test('rattache la nouvelle tâche au projet filtré', async () => {
     const user = userEvent.setup();
     seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha' }] });
@@ -1702,13 +1715,21 @@ describe('organiser les tâches', () => {
   });
 });
 
+/** La gestion des projets s'ouvre par-dessus le bandeau, depuis son bouton. */
+async function openProjects() {
+  // L'état chargé (les statistiques de l'en-tête en dépendent) : la liste est complète.
+  await screen.findByText(/cette semaine/);
+  fireEvent.click(screen.getByRole('button', { name: 'Gérer les projets' }));
+  return within(await screen.findByRole('dialog', { name: /^Projets/ }));
+}
+
 describe('projets', () => {
   test('crée un projet depuis le panneau de gestion', async () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(await screen.findByText('Gérer les projets'));
-    await user.type(screen.getByLabelText('Nom du nouveau projet'), 'Nouveau chantier{Enter}');
+    const projects = await openProjects();
+    await user.type(projects.getByLabelText('Nom du nouveau projet'), 'Nouveau chantier{Enter}');
 
     expect(await within(filters()).findByRole('button', { name: /Nouveau chantier/ })).toBeInTheDocument();
     expect(row(api.db, 'SELECT * FROM projects').name).toBe('Nouveau chantier');
@@ -1719,18 +1740,18 @@ describe('projets', () => {
     seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha' }] });
     render(<App />);
 
-    await user.click(await screen.findByText('Gérer les projets'));
+    const projects = await openProjects();
     // Le bouton était désactivé : sans projet à l'écran, il se lisait comme cassé.
-    const bouton = screen.getByRole('button', { name: 'Créer' });
+    const bouton = projects.getByRole('button', { name: 'Créer' });
     expect(bouton).toBeEnabled();
 
     await user.click(bouton);
-    expect(await screen.findByText('Donne un nom au projet.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Nom du nouveau projet')).toHaveFocus();
+    expect(await projects.findByText('Donne un nom au projet.')).toBeInTheDocument();
+    expect(projects.getByLabelText('Nom du nouveau projet')).toHaveFocus();
     expect(row(api.db, 'SELECT COUNT(*) n FROM projects').n).toBe(1);
 
-    await user.type(screen.getByLabelText('Nom du nouveau projet'), 'Atelier');
-    expect(screen.queryByText('Donne un nom au projet.')).not.toBeInTheDocument();
+    await user.type(projects.getByLabelText('Nom du nouveau projet'), 'Atelier');
+    expect(projects.queryByText('Donne un nom au projet.')).not.toBeInTheDocument();
     await user.click(bouton);
     await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM projects WHERE name=?', 'Atelier').n).toBe(1));
   });
@@ -1739,13 +1760,13 @@ describe('projets', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(await screen.findByText('Gérer les projets'));
-    expect(screen.getByText(/Aucun projet/)).toBeInTheDocument();
+    const projects = await openProjects();
+    expect(projects.getByText(/Aucun projet/)).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText('Nom du nouveau projet'), 'Premier projet{Enter}');
+    await user.type(projects.getByLabelText('Nom du nouveau projet'), 'Premier projet{Enter}');
 
     expect(await within(filters()).findByRole('button', { name: /Premier projet/ })).toBeInTheDocument();
-    expect(screen.queryByText(/Aucun projet/)).not.toBeInTheDocument();
+    expect(projects.queryByText(/Aucun projet/)).not.toBeInTheDocument();
   });
 
   test('renomme un projet', async () => {
@@ -1753,8 +1774,8 @@ describe('projets', () => {
     seedData(api.db, { projects: [{ id: 'pr_a', name: 'Avant' }] });
     render(<App />);
 
-    await user.click(await screen.findByText('Gérer les projets'));
-    const field = screen.getByLabelText('Nom de Avant');
+    const projects = await openProjects();
+    const field = projects.getByLabelText('Nom de Avant');
     await user.clear(field);
     await user.type(field, 'Après');
     fireEvent.blur(field);
@@ -1767,8 +1788,8 @@ describe('projets', () => {
     seedData(api.db, { projects: [{ id: 'pr_a', name: 'Avant' }] });
     render(<App />);
 
-    await user.click(await screen.findByText('Gérer les projets'));
-    const field = screen.getByLabelText('Nom de Avant');
+    const projects = await openProjects();
+    const field = projects.getByLabelText('Nom de Avant');
     await user.clear(field);
     await user.type(field, 'Après{Enter}');
 
@@ -1778,31 +1799,92 @@ describe('projets', () => {
     expect(await within(filters()).findByRole('button', { name: /Après/ })).toBeInTheDocument();
   });
 
-  test('Échap annule le renommage en cours', async () => {
+  test('Échap annule le renommage en cours sans fermer la gestion', async () => {
     const user = userEvent.setup();
     seedData(api.db, { projects: [{ id: 'pr_a', name: 'Avant' }] });
     render(<App />);
 
-    await user.click(await screen.findByText('Gérer les projets'));
-    const field = screen.getByLabelText('Nom de Avant');
+    const projects = await openProjects();
+    const field = projects.getByLabelText('Nom de Avant');
     await user.clear(field);
-    await user.type(field, 'Jamais enregistré{Escape}');
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    await user.type(field, 'Jamais enregistré');
+    field.dispatchEvent(escape);
 
     expect(field).toHaveValue('Avant');
+    // Échap « consommé » : la fenêtre (qui se ferme sur Échap) reste ouverte.
+    expect(escape.defaultPrevented).toBe(true);
+    expect(screen.getByRole('dialog', { name: /^Projets/ })).toBeInTheDocument();
     expect(row(api.db, 'SELECT * FROM projects').name).toBe('Avant');
   });
 
-  test('le panneau de gestion s’annonce comme un contrôle cliquable', async () => {
+  test('la gestion s’annonce comme un dialogue et ne laisse rien derrière elle', async () => {
+    const user = userEvent.setup();
     render(<App />);
 
-    const summary = await screen.findByText('Gérer les projets');
-    const details = summary.closest('details')!;
-    expect(details).not.toHaveAttribute('open');
-    expect(summary.closest('summary')).toBeInTheDocument();
-
-    // Fermé, le panneau ne doit rien laisser d'utilisable : c'est ce qui rendait
+    const bouton = await screen.findByRole('button', { name: 'Gérer les projets' });
+    expect(bouton).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(bouton).toHaveAttribute('aria-expanded', 'false');
+    // Fermée, la gestion ne doit rien laisser d'utilisable : c'est ce qui rendait
     // la création introuvable quand le dépliant passait pour une simple légende.
-    expect(screen.queryByLabelText('Nom du nouveau projet')).not.toBeVisible();
+    expect(screen.queryByLabelText('Nom du nouveau projet')).not.toBeInTheDocument();
+
+    await user.click(bouton);
+    const dialog = await screen.findByRole('dialog', { name: /^Projets/ });
+    expect(bouton).toHaveAttribute('aria-expanded', 'true');
+    // Hors du bandeau : rien ne s'insère dans la page, rien ne pousse les colonnes.
+    expect(document.querySelector('.project-strip')!.contains(dialog)).toBe(false);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Fermer' }));
+    expect(screen.queryByRole('dialog', { name: /^Projets/ })).not.toBeInTheDocument();
+    expect(bouton).toHaveAttribute('aria-expanded', 'false');
+    expect(bouton).toHaveFocus();
+  });
+
+  test('fermer la gestion enregistre le renommage en cours', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Avant' }] });
+    render(<App />);
+
+    await openProjects();
+    const field = screen.getByLabelText('Nom de Avant');
+    await user.clear(field);
+    await user.type(field, 'Après');
+    // Échap sur la fenêtre (ou clic sur le voile) : le champ encore actif valide d'abord.
+    fireEvent(screen.getByRole('dialog', { name: /^Projets/ }), new Event('cancel', { cancelable: true }));
+
+    await waitFor(() => expect(row(api.db, 'SELECT * FROM projects').name).toBe('Après'));
+    expect(screen.queryByRole('dialog', { name: /^Projets/ })).not.toBeInTheDocument();
+  });
+
+  test('au-delà de sept projets, un champ retrouve un projet par son nom', async () => {
+    const user = userEvent.setup();
+    const names = ['Active Directory', 'Intranet RH', 'Messagerie', 'Onboarding', 'Pare-feu Fortinet', 'Sauvegardes', 'Téléphonie', 'Wi-Fi'];
+    seedData(api.db, { projects: names.map((name, i) => ({ id: `pr_${i}`, name })) });
+    render(<App />);
+
+    const projects = await openProjects();
+    const search = projects.getByLabelText('Retrouver un projet');
+    await user.type(search, 'FORTI');
+    expect(projects.getByLabelText('Nom de Pare-feu Fortinet')).toBeInTheDocument();
+    expect(projects.queryByLabelText('Nom de Messagerie')).not.toBeInTheDocument();
+
+    await user.clear(search);
+    await user.type(search, 'compta');
+    expect(projects.getByText('Aucun projet ne s’appelle « compta ».')).toBeInTheDocument();
+    // Créer depuis la gestion vide le filtre : le nouveau projet est à l'écran.
+    await user.type(projects.getByLabelText('Nom du nouveau projet'), 'Compta{Enter}');
+    expect(await projects.findByLabelText('Nom de Compta')).toBeInTheDocument();
+    expect(search).toHaveValue('');
+  });
+
+  test('peu de projets : pas de champ de recherche', async () => {
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Bêta' }] });
+    render(<App />);
+
+    const projects = await openProjects();
+    expect(projects.getByLabelText('Nom de Alpha')).toBeInTheDocument();
+    expect(projects.queryByLabelText('Retrouver un projet')).not.toBeInTheDocument();
   });
 
   test('supprimer un projet garde ses entrées', async () => {
@@ -1813,11 +1895,23 @@ describe('projets', () => {
     });
     render(<App />);
 
-    await user.click(await screen.findByText('Gérer les projets'));
-    await user.click(screen.getByLabelText('Supprimer Alpha'));
+    const projects = await openProjects();
+    await user.click(projects.getByLabelText('Supprimer Alpha'));
 
     await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM projects').n).toBe(0));
     expect(await within(journal()).findByText('Survivante')).toBeInTheDocument();
+  });
+
+  test('la pastille d’un projet porte sa couleur, celle du filtre actif comprise', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha', color: '#10b981' }] });
+    render(<App />);
+
+    const alpha = await within(filters()).findByRole('button', { name: 'Alpha' });
+    expect(alpha.style.getPropertyValue('--project')).toBe('#10b981');
+    await user.click(alpha);
+    await waitFor(() => expect(alpha).toHaveAttribute('aria-pressed', 'true'));
+    expect(alpha).toHaveClass('is-on');
   });
 
   test('le bandeau projets vit hors du journal et reste utilisable replié', async () => {
@@ -1843,6 +1937,62 @@ describe('projets', () => {
     await user.click(within(chips).getByRole('button', { name: 'Alpha' }));
     await waitFor(() => expect(within(chips).getByRole('button', { name: 'Alpha' })).toHaveAttribute('aria-pressed', 'true'));
     expect(localStorage.getItem('worklogs-project')).toBe('pr_a');
+  });
+});
+
+describe('cartes empilées (mobile, tablette)', () => {
+  /** Simule la largeur d'écran et relève les cartes amenées à l'écran. */
+  function stackedScreen(stacked: boolean) {
+    const shown: string[] = [];
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('max-width: 900px') ? stacked : false,
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    Element.prototype.scrollIntoView = function (this: Element) {
+      if (this.id) shown.push(this.id);
+    };
+    return shown;
+  }
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete (Element.prototype as Partial<Element>).scrollIntoView;
+  });
+
+  test('ouvrir une entrée du journal amène à la carte Écriture', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Récente' }, { id: 'en_2', title: 'Plus ancienne', date: '2026-01-05' }] });
+    const shown = stackedScreen(true);
+    render(<App />);
+
+    await user.click(await within(journal()).findByText('Plus ancienne'));
+
+    await waitFor(() => expect(shown).toContain('workspace-editor'));
+    expect(await screen.findByDisplayValue('Plus ancienne')).toBeInTheDocument();
+  });
+
+  test('« Nouvelle entrée » amène aussi à l’écriture', async () => {
+    const user = userEvent.setup();
+    const shown = stackedScreen(true);
+    render(<App />);
+
+    await user.click(await within(journal()).findByRole('button', { name: /Nouvelle entrée/ }));
+
+    await waitFor(() => expect(shown).toContain('workspace-editor'));
+  });
+
+  test('colonnes côte à côte : la page ne bouge pas', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Récente' }, { id: 'en_2', title: 'Plus ancienne', date: '2026-01-05' }] });
+    const shown = stackedScreen(false);
+    render(<App />);
+
+    await user.click(await within(journal()).findByText('Plus ancienne'));
+
+    expect(await screen.findByDisplayValue('Plus ancienne')).toBeInTheDocument();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(shown).not.toContain('workspace-editor');
   });
 });
 

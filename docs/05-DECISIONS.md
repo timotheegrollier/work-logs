@@ -1438,3 +1438,65 @@ s'ouvre déjà dans son éditeur. Annoter un PDF : demanderait une bibliothèque
 une `<iframe>` n'envoie pas l'en-tête `Authorization` qu'il exige. Sur la PWA,
 `sharedPreviewUrl` répond `null` et un PDF garde l'explication et son téléchargement.
 
+## 35. Projets sur une rangée, gestion par-dessus ; mobile en une seule page — 2026-10-08
+
+**Le besoin.** « Améliore grandement le design et l'UI/UX mobile afin que tous les panneaux
+s'affichent mieux […] ; la liste des projets et **Gérer les projets** (aussi sur desktop)
+prennent trop de place et rendent le layout moche quand il y a trop de projets. » Mesuré avec
+seize projets : bandeau sur **deux rangées** même sur desktop (`flex-wrap` place d'après la
+largeur max-content des pastilles, « Gérer » passait donc toujours à la ligne) ; gestion
+dépliée = une ligne pleine largeur par projet, qui poussait journal, écriture et tâches hors
+de l'écran ; sur mobile, ~110 px de bandeau puis une liste sans fin.
+
+**Décisions.**
+- **Une rangée, toujours** (`ProjectBar`). Les pastilles défilent : molette verticale
+  convertie en défilement horizontal, fondu seulement du côté où il en reste, filtre actif
+  ramené en vue. « Gérer » reste au bout, séparé d'un filet. La pastille active prend la
+  **couleur de son projet** (`--project`) : on sait d'un coup d'œil dans quel projet on est.
+- **La gestion s'ouvre par-dessus**, dans un `<dialog>` modal : fenêtre posée sous son bouton
+  sur desktop (≤ 400 × 580 px), **feuille qui monte du bas** sur mobile. Création en tête,
+  **Retrouver un projet** dès huit projets, seule la liste défile ; rien ne bouge derrière.
+  Échap annule d'abord un renommage commencé, puis ferme ; fermer (bouton, Échap, clic sur le
+  voile) valide le renommage en cours ; le focus revient au bouton. Clavier physique : le champ
+  de création prend le focus ; écran tactile : non, pour ne pas faire surgir un clavier qui
+  masque la liste. Ce n'est ni un onglet ni un mode (§1) : même nature que Paramètres.
+- **Mobile (≤ 600 px) : une seule page qui défile**, en-tête compris. La marque et la
+  recherche s'effacent en descendant (~120 px rendus au contenu), le bandeau projets reste
+  collé en haut, la barre des panneaux en bas (§24). De 601 à 900 px rien ne change :
+  l'en-tête y porte encore les interrupteurs.
+- **Rien ne passe devant le contenu qui défile** (demande du même jour : « l'input Nouvelle
+  tâche et le header En cours passent devant la liste des tâches », desktop comme mobile).
+  La saisie et les intitulés de colonne étaient collants : les cartes défilaient dessous,
+  dépassaient au-dessus de la saisie (le collant s'arrêtait à la marge du panneau) et sous
+  l'intitulé sans fond. Colonnes côte à côte, la saisie devient **l'en-tête fixe du panneau
+  Tâches** et seule la liste défile (`.board-lists`), coupée net sous un filet ; cartes
+  empilées, tout suit la page. Audit des autres éléments collants : les **jours du journal**
+  masquaient l'entrée qui passait dessous → plus collants ; sur mobile, les **barres d'outils
+  des documents Google et Word du partage** restaient à moitié sous le bandeau projets → dans
+  le flux (≤ 600 px). Gardés, parce qu'opaques, à fleur de leur zone et sans rien qui dépasse :
+  le bandeau projets mobile (barre d'application), les barres d'outils Google et Word sur
+  desktop (collées au ras de la colonne, comme dans Docs ou Word), les en-têtes du tableur
+  (ligne et colonne figées dans leur propre zone) et la liste des onglets Google (colonne à
+  part).
+- **Cartes resserrées** : un seul cadre par panneau (plus de marge d'éditeur dans la carte,
+  plus de second cadre autour des colonnes de tâches) ; « Nouvelle entrée » et « Nouveau
+  document » côte à côte ; réglages de l'entrée en grille (date + projet, Écrire/Lire pleine
+  largeur, Imprimer/Archiver/Supprimer à parts égales) ; actions tâche/IA sur une rangée qui
+  défile ; barre de mise en forme sur une rangée qui défile au doigt.
+  Paramètres et Documents Google deviennent des feuilles du bas, comme les projets.
+- **Ouvrir amène à l'écriture** quand les cartes sont empilées (≤ 900 px) : ouvrir une
+  entrée, une procédure, un document de tâche, un fichier partagé, ou en créer une, fait
+  défiler jusqu'à la carte Écriture (`revealEditor`), titre juste sous le bandeau.
+
+Aucune dépendance ajoutée, aucun mot de l'interface renommé : « Gérer les projets », « Nom de
+… », « Supprimer … », « Nom du nouveau projet » restent les noms accessibles (le bouton
+n'affiche que « Gérer » sur mobile).
+
+**Ce que ça coûte.** Sur mobile, la recherche n'est plus visible une fois descendu : il faut
+remonter. Le bouton n'est plus un `<details>` : le panneau fermé n'existe plus dans la page
+(les tests vérifient son absence, plus son masquage). `:has()` décide si les actions de
+l'entrée défilent sur une rangée (seulement sans formulaire ni message ouvert).
+
+**Rouvrir** si la recherche doit rester à portée sur mobile : la réponse serait une loupe dans
+le bandeau collé, pas un tiroir ni un hamburger (§16).
+

@@ -180,8 +180,8 @@ button:disabled {
   background: var(--surface);
   box-shadow: 0 1px 0 rgb(0 0 0 / 0.04);
   position: relative;
-  /* Au-dessus des barres collantes du contenu (`.quick`, z-index 2) : le menu du
-     compte s'ouvre par-dessus les colonnes au lieu de passer dessous. */
+  /* Au-dessus des barres collantes du contenu (barres d'outils, z-index 3) : le
+     menu du compte s'ouvre par-dessus les colonnes au lieu de passer dessous. */
   z-index: 20;
 }
 .logo {
@@ -367,137 +367,315 @@ button:disabled {
 }
 
 /* ------------------------------------------------------------ projets */
+/* Une seule rangée, quel que soit le nombre de projets : les pastilles défilent,
+   la gestion s'ouvre par-dessus (voir `.project-sheet`) au lieu de déplier une
+   liste qui repoussait journal, écriture et tâches hors de l'écran. */
 .project-strip {
   display: flex;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
-  padding: 8px 16px;
+  padding: 6px 16px;
 }
 .project-strip .projects {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
-  flex-wrap: wrap;
 }
-/* Les pastilles défilent horizontalement au lieu de pousser le bandeau ;
-   le fondu à droite montre qu'il en reste à faire défiler. */
 .project-strip .chips {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-  padding-right: 24px;
+  /* Base nulle : la rangée se partage la largeur au lieu de passer à la ligne. */
+  flex: 1 1 0;
+  min-width: 0;
   flex-wrap: nowrap;
   overflow-x: auto;
-  flex: 1;
-  min-width: 0;
-  padding-bottom: 2px;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 24px;
+  scrollbar-width: none;
+  /* De quoi loger l'anneau de focus : la rangée défile, elle rognerait le reste. */
+  padding: 3px 2px;
 }
-.project-strip .manage {
-  margin-top: 0;
-  flex: none;
+.project-strip .chips::-webkit-scrollbar {
+  display: none;
 }
-/* Dépliant ouvert : le panneau occupe toute la rangée suivante. */
-.project-strip .manage[open] {
-  flex-basis: 100%;
+/* Fondu seulement du côté où il reste des projets à voir. */
+.project-strip .chips.fade-end {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent);
+}
+.project-strip .chips.fade-start {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 44px), transparent);
+}
+.project-strip .chips.fade-start.fade-end {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 44px, #000 calc(100% - 44px), transparent);
 }
 .chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
+/* La couleur du projet est l'identité du filtre : la pastille active prend sa
+   teinte, on sait d'un coup d'œil dans quel projet on travaille. */
 .chip {
+  --project: var(--accent);
   display: inline-flex;
   flex: none;
   white-space: nowrap;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+  gap: 7px;
+  padding: 4px 11px;
   border-radius: 99px;
   border: 1px solid var(--line);
   font-size: 13px;
   color: var(--muted);
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+/* Bandeau projets : hauteur fixe, pour que « Gérer » et les pastilles s'alignent. */
+.project-strip .chip {
+  height: 30px;
+  padding: 0 12px;
+}
+.chip .dot {
+  background: var(--project);
 }
 .chip:hover {
   color: var(--text);
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--project) 60%, var(--line));
 }
 .chip.is-on {
-  background: var(--accent-soft);
-  border-color: var(--accent);
   color: var(--text);
+  background: color-mix(in srgb, var(--project) 17%, var(--surface));
+  border-color: color-mix(in srgb, var(--project) 70%, transparent);
+}
+.chip.is-on .dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--project) 32%, transparent);
 }
 .chip .count {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   background: var(--surface-2);
   border-radius: 99px;
-  padding: 0 5px;
+  padding: 0 6px;
+  line-height: 17px;
 }
-.manage {
-  font-size: 13px;
-  color: var(--muted);
-  margin-top: 8px;
+.chip.is-on .count {
+  background: color-mix(in srgb, var(--project) 26%, var(--surface));
 }
-/* Le dépliant se lisait comme une légende : personne ne trouvait comment créer
-   ou renommer un projet. Il reprend donc la forme des pastilles de filtre. */
-.manage summary {
+/* Bouton de gestion : séparé des filtres par un filet, toujours visible au bout
+   de la rangée (il a déjà été introuvable une fois, sous forme de légende). */
+.manage-btn {
+  position: relative;
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  width: fit-content;
-  padding: 4px 11px;
-  border: 1px dashed var(--line);
+  height: 30px;
+  margin-left: 9px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--line);
   border-radius: 99px;
+  background: var(--surface-2);
   color: var(--muted);
-  cursor: pointer;
-  list-style: none;
+  font-size: 13px;
+  white-space: nowrap;
 }
-.manage summary::-webkit-details-marker {
-  display: none;
+.manage-btn::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 5px;
+  bottom: 5px;
+  width: 1px;
+  background: var(--line);
 }
-.manage summary:hover {
+.manage-btn:hover,
+.manage-btn.is-on {
   color: var(--text);
   border-color: var(--accent);
 }
-.manage[open] summary {
-  border-style: solid;
-  border-color: var(--accent);
-  color: var(--text);
-}
-.manage ul {
-  list-style: none;
-  margin: 8px 0;
+
+/* Gestion des projets : fenêtre posée sous son bouton (desktop), feuille qui
+   monte du bas (mobile, ≤ 600 px). Jamais dans le flux : rien ne bouge derrière. */
+.project-sheet {
+  position: fixed;
+  inset: var(--anchor-top, 112px) var(--anchor-right, 16px) auto auto;
+  width: min(400px, calc(100vw - 24px));
+  max-width: none;
+  max-height: min(580px, calc(100dvh - var(--anchor-top, 112px) - 16px));
+  margin: 0;
   padding: 0;
-  display: grid;
-  gap: 6px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18), 0 28px 60px -24px rgb(0 0 0 / 0.6);
 }
-.manage li,
+.project-sheet[open] {
+  display: flex;
+  animation: sheet-drop 0.16s ease-out;
+}
+.project-sheet::backdrop {
+  background: rgb(0 0 0 / 0.22);
+}
+.project-sheet-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.project-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 10px 16px;
+}
+.project-sheet-head h2 {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+}
+.project-sheet-head .count {
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 99px;
+  padding: 0 8px;
+}
+.project-sheet-head .ghost {
+  font-size: 13px;
+  padding: 5px 11px;
+}
 .add-project {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+.add-project input {
+  flex: 1;
+}
+.project-sheet > .project-sheet-body > .error,
+.project-sheet .empty {
+  margin: 0 16px 12px;
+  font-size: 12.5px;
+}
+.project-sheet .empty {
+  padding: 4px 0 8px;
+}
+.project-sheet input.project-filter {
+  margin: 0 16px 10px;
+  padding-left: 32px;
+  background-image: var(--search-icon);
+  background-position: 10px 50%;
+  background-repeat: no-repeat;
+}
+/* La liste seule défile ; création et recherche restent en tête. */
+.project-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  margin: 0;
+  padding: 6px 8px 10px;
+  border-top: 1px solid var(--line);
+}
+.project-list li {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 3px 4px 3px 8px;
+  border-radius: 10px;
 }
-.manage li input[type='color'] {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: none;
+.project-list li:hover,
+.project-list li:focus-within {
+  background: var(--surface-2);
+}
+/* Pastille de couleur ronde : la même que dans le bandeau. */
+.project-list .swatch {
+  -webkit-appearance: none;
+  appearance: none;
   flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
 }
-/* Message d'erreur et état vide du panneau : cadrés sur le contenu du dépliant. */
-.manage .empty,
-.manage .error {
-  padding: 6px 0;
-  font-size: 12.5px;
+.project-list .swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
 }
-.manage li input:not([type='color']),
-.add-project input {
+.project-list .swatch::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+.project-list .swatch::-moz-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+.project-list .swatch:hover {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--project) 35%, transparent);
+}
+/* Le nom se lit comme du texte et s'édite sur place. */
+.project-list input.project-name {
   flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 14px;
+  text-overflow: ellipsis;
+}
+.project-list input.project-name:hover {
+  border-color: var(--line);
+}
+.project-list input.project-name:focus {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.project-usage {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.project-list .project-delete {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   font-size: 13px;
-  padding: 5px 8px;
+}
+.project-list .project-delete:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+@keyframes sheet-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes sheet-rise {
+  from {
+    transform: translateY(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-sheet[open] {
+    animation: none;
+  }
 }
 
 /* ------------------------------------------------------------ journal */
@@ -550,11 +728,10 @@ button:disabled {
   font-weight: 600;
   letter-spacing: 0;
   color: var(--muted);
-  position: sticky;
-  top: -14px;
-  background: var(--panel-bg, var(--bg));
+  /* Repère du nœud du fil (::before). Plus collant : le libellé du jour
+     passait devant l'entrée qui défilait dessous. */
+  position: relative;
   padding: 6px 0 6px 10px;
-  z-index: 1;
 }
 .day::before {
   content: '';
@@ -1295,14 +1472,46 @@ button:disabled {
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
+.board-head,
+.board-lists {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 14px;
+}
+/* Rien ne flotte au-dessus des cartes : la saisie et les intitulés de colonne
+   étaient collants, les cartes défilaient dessous et dépassaient autour.
+   Colonnes côte à côte, la saisie et les vues rapides deviennent l'en-tête fixe
+   du panneau et seule la liste défile ; cartes empilées (≤ 900 px), tout suit la page. */
 .quick {
   display: flex;
   gap: 8px;
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  padding: 2px 0 8px;
-  background: var(--surface);
+}
+@media (min-width: 901px) {
+  .right {
+    padding: 0;
+    gap: 0;
+    overflow: hidden;
+  }
+  .right > .board {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .right .board-head {
+    flex: none;
+    padding: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .right .board-lists {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 14px;
+  }
 }
 .quick input {
   flex: 1;
@@ -1355,9 +1564,6 @@ button:disabled {
   font-size: 13.5px;
   font-weight: 650;
   color: var(--text);
-  position: sticky;
-  top: 52px;
-  z-index: 1;
   padding: 2px 0;
 }
 .column .count {
@@ -2213,7 +2419,7 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .google-editor { padding: 20px; }
   .document-workspace.has-tabs { grid-template-columns: 165px minmax(0, 1fr); gap: 18px; }
   .columns.is-document.with-tasks:where(:not(.show-procedures)) { grid-template-columns: minmax(120px, var(--col-left, 290px)) 8px minmax(320px, 1fr); grid-template-areas: "journal resize-left editor" ". . tasks"; }
-  .columns.is-document.with-tasks:where(:not(.show-procedures)) > .right { max-height: 300px; }
+  .columns.is-document.with-tasks:where(:not(.show-procedures)) > .right { max-height: 300px; border-top: 1px solid var(--line); }
   .columns.is-document.with-tasks:where(:not(.show-procedures)) > .column-resizer-right { display: none; }
   .google-editor .files { padding-left: 0; }
 }
@@ -2376,26 +2582,105 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .columns {
     padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   }
-  /* Cibles tactiles dans le contenu : chips, saisie rapide, lignes du journal. */
+  /* Bandeau projets : une rangée de 56 px au lieu de deux (~110 px) — les
+     pastilles défilent sous le pouce, « Gérer » reste au bout, toujours visible.
+     Cibles de 40 px, comme le reste du contenu. */
+  .project-strip {
+    padding: 5px 12px;
+  }
+  .project-strip .chips {
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 12px;
+  }
   .chip {
     padding: 8px 14px;
     font-size: 14px;
   }
-  /* Bandeau projets : pastilles toute largeur sur leur rangée, gestion dessous.
-     Sur 412 px, partager la rangée avec « Gérer les projets » écrasait le choix
-     dès 2-3 projets (`.projects` enveloppe déjà, il suffit d'élargir `.chips`). */
-  .project-strip {
-    padding: 8px 12px;
-  }
-  .project-strip .chips {
-    flex: 1 1 100%;
-  }
   .project-strip .chip {
+    height: 40px;
+    padding: 0 14px;
+    scroll-snap-align: start;
+  }
+  .manage-btn {
+    height: 40px;
+    margin-left: 7px;
+    padding: 0 13px 0 11px;
+    font-size: 14px;
+  }
+  .manage-btn::before {
+    left: -8px;
+    top: 8px;
+    bottom: 8px;
+  }
+  .manage-btn .manage-more {
+    display: none;
+  }
+  /* Gestion : feuille ancrée en bas, sous le pouce, poignée en tête. */
+  .project-sheet {
+    inset: auto 0 0 0;
+    width: 100%;
+    max-height: min(88dvh, 720px);
+    border-width: 1px 0 0;
+    border-radius: 20px 20px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .project-sheet[open] {
+    animation: sheet-rise 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .project-sheet::backdrop {
+    background: rgb(0 0 0 / 0.5);
+  }
+  .project-sheet-body::before {
+    content: '';
+    flex: none;
+    align-self: center;
+    width: 40px;
+    height: 4px;
+    margin-top: 8px;
+    border-radius: 99px;
+    background: var(--line);
+  }
+  .project-sheet-head {
+    padding: 8px 12px 12px 18px;
+  }
+  .project-sheet-head h2 {
+    font-size: 17px;
+  }
+  .project-sheet-head .ghost {
+    min-height: 40px;
+    padding: 0 14px;
+    font-size: 14px;
+  }
+  /* 16 px : sous ce seuil, le navigateur mobile zoome sur le champ. */
+  .add-project {
+    padding: 0 16px 12px;
+  }
+  .add-project input,
+  .add-project button,
+  .project-sheet input.project-filter {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .project-list {
+    padding: 6px 8px 12px;
+  }
+  .project-list li {
+    min-height: 52px;
+    gap: 8px;
+    padding: 4px 4px 4px 12px;
+  }
+  .project-list .swatch {
+    width: 26px;
+    height: 26px;
+  }
+  .project-list input.project-name {
+    font-size: 16px;
     min-height: 44px;
   }
-  .project-strip .manage summary {
-    padding: 8px 12px;
-    font-size: 13px;
+  .project-list .project-delete {
+    width: 44px;
+    height: 44px;
+    font-size: 15px;
   }
   .quick input,
   .quick button {
@@ -2790,3 +3075,202 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .docx-page td, .docx-page th { border: 1px solid var(--line); padding: 4px 8px; vertical-align: top; }
 .docx-page td .docx-paragraph { margin: 0; }
 @media print { .docx-page { border: 0; padding: 0; } .docx-atom { border-style: solid; } }
+
+/* ---------------------------------------------- mobile : une seule page (≤ 600 px)
+   Placé en fin de feuille : ces règles l'emportent sur les réglages ≤ 900 px.
+   La page entière défile — la marque et la recherche s'effacent en descendant,
+   le bandeau projets reste collé en haut, la barre des panneaux en bas. Rien
+   d'autre ne colle : aucun élément ne passe devant le contenu qui défile. */
+@media (max-width: 600px) {
+  :root {
+    --strip-h: 57px;
+  }
+  .app {
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+  .project-strip {
+    position: sticky;
+    top: 0;
+    z-index: 15;
+  }
+  .columns,
+  .columns.is-document,
+  .columns.is-document.with-tasks {
+    overflow: visible;
+    padding: 10px 10px calc(84px + env(safe-area-inset-bottom, 0px));
+  }
+  .left,
+  .center,
+  .right,
+  .procedures-bar,
+  .columns.show-procedures > .procedures-bar {
+    padding: 14px 12px;
+    margin: 0 0 10px;
+  }
+  /* Intitulés des cartes : un vrai titre de section, pas une étiquette. */
+  .left::before,
+  .center::before,
+  .right::before {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  /* Journal et Tâches espacent déjà leurs enfants (gap) ; l'écriture non. */
+  .center::before {
+    margin-bottom: 14px;
+  }
+  .procedures-head {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  /* Ouvrir une entrée y amène : le titre s'arrête sous le bandeau projets. */
+  .center {
+    scroll-margin-top: calc(var(--strip-h) + 10px);
+  }
+
+  /* Journal : les deux créations côte à côte, une rangée au lieu de deux. */
+  .journal {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    column-gap: 8px;
+  }
+  .journal > * {
+    grid-column: 1 / -1;
+  }
+  .journal > .new-entry {
+    grid-column: 1;
+  }
+  .journal > .new-document {
+    grid-column: 2;
+    margin: 0;
+    padding: 12px 8px;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .journal > .new-document + * {
+    margin-top: 14px;
+  }
+
+  /* Écriture : la carte suffit comme cadre, le texte commence plus haut. */
+  .center > .editor {
+    padding: 0;
+    gap: 12px;
+  }
+  .editor-meta {
+    gap: 8px;
+  }
+  .editor-meta input[type='date'] {
+    flex: none;
+    min-height: 40px;
+  }
+  .editor-meta select {
+    flex: 1 1 140px;
+    min-height: 40px;
+  }
+  .editor-meta .modes {
+    flex: 1 1 auto;
+  }
+  .editor-meta .modes button {
+    flex: 1;
+    min-height: 34px;
+  }
+  /* Imprimer, Archiver, Supprimer : une rangée à parts égales. */
+  .editor-meta .grow {
+    flex-basis: 100%;
+    height: 0;
+  }
+  .editor-meta .grow ~ .ghost,
+  .editor-meta .grow ~ .danger {
+    flex: 1 1 0;
+    min-height: 40px;
+    padding-inline: 6px;
+  }
+  /* Tâche liée et IA : une rangée qui défile au lieu de quatre lignes. */
+  .entry-task-action:not(:has(> :not(.ghost))) {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .entry-task-action::-webkit-scrollbar {
+    display: none;
+  }
+  .entry-task-action > .ghost {
+    flex: none;
+    min-height: 36px;
+  }
+  .google-sync .sync-status {
+    flex: 1 1 150px;
+  }
+  /* Mise en forme : une rangée qui défile au doigt, au lieu de cinq lignes. */
+  .center .rich-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  /* Barres des documents Google et Word du partage : dans le flux. Collées en
+     haut de la page, elles passaient à moitié sous le bandeau projets et
+     devant le texte qui défilait. */
+  .google-editor .rich-toolbar,
+  .docx-toolbar {
+    position: static;
+  }
+  .center .rich-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .center .rich-tools {
+    flex: none;
+    flex-wrap: nowrap;
+  }
+  .center .rich-toolbar button,
+  .center .rich-toolbar select,
+  .center .rich-toolbar .file-button {
+    min-height: 36px;
+  }
+
+  /* Tâches : un seul cadre (la carte), les colonnes deviennent des sections. */
+  .board {
+    gap: 18px;
+  }
+  .right .column {
+    padding: 0;
+  }
+  .right .column:not(.is-over) {
+    border-color: transparent;
+    background: none;
+  }
+  .right .column h2 {
+    margin: 0 0 8px;
+    padding: 6px 0;
+  }
+
+  /* Dialogues (paramètres, documents Google) : même feuille que les projets. */
+  .settings-dialog,
+  .drive-dialog {
+    inset: auto 0 0 0;
+    transform: none;
+    width: 100%;
+    max-width: none;
+    max-height: 92dvh;
+    border-width: 1px 0 0;
+    border-radius: 20px 20px 0 0;
+    animation: sheet-rise 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .settings-content {
+    max-height: none;
+  }
+  .drive-dialog .drive-content {
+    max-height: calc(92dvh - 64px);
+  }
+}
+@media (max-width: 600px) and (prefers-reduced-motion: reduce) {
+  .settings-dialog,
+  .drive-dialog,
+  .project-sheet[open] {
+    animation: none;
+  }
+}

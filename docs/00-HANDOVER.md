@@ -1,8 +1,21 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-08 · Version : **v0.52.0**, qui publie les lots ci-dessous, restés
-> jusque-là non commités dans leurs copies de travail. Détail de la fusion : « Intégration de la
-> v0.52.0 » ci-dessous.
+> **Mise à jour :** 2026-10-08 · Version : **v0.53.0** — **projets sur une rangée, gestion
+> par-dessus, mobile en une page** (branche `feat/mobile-ui-projets`, rebasée sur la v0.52.0).
+> Le bandeau projets tient sur **une rangée** quel que soit le nombre de projets (molette,
+> fondus, couleur du projet actif) ; **Gérer les projets** ouvre une fenêtre sous le bouton
+> (desktop) ou une feuille du bas (mobile) au lieu de déplier une liste qui poussait les
+> colonnes ; sur mobile la page entière défile, bandeau projets collé en haut, cartes
+> resserrées, ouvrir une entrée amène à l'Écriture. **Puis :** plus rien ne passe devant une
+> liste qui défile — saisie « Nouvelle tâche » et vues rapides en en-tête fixe du panneau,
+> intitulés de colonne et jours du journal non collants, barres d'outils des documents dans
+> le flux sur mobile. Détail : « Lot du 2026-10-08 (7) » ci-dessous ; décision §35.
+> `check.sh` sur la v0.52.0 : 256 API, 543 front, 48 desktop, 29 scripts, 8 relais,
+> 66 navigateur, 16 desktop — **966** (desktop e2e lancés hors bac à sable : Electron y refuse son socket ;
+> « fenêtre maximisée » sauté faute de metacity ici).
+>
+> **v0.52.0** publie les lots ci-dessous, restés jusque-là non commités dans leurs copies de
+> travail. Détail de la fusion : « Intégration de la v0.52.0 » ci-dessous.
 > - **Un PDF du dossier partagé se lit sur place** (desktop) — « Lot du 2026-10-07 — PDF du
 >   dossier partagé » ; décision §34. Sur la PWA, le PDF garde son téléchargement.
 > - **Les dossiers reliés aux projets suivent les projets, par Drive** (`projects.shared_dir`,
@@ -91,6 +104,42 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Lot du 2026-10-08 (7) — projets sur une rangée, gestion par-dessus, mobile en une page — v0.53.0
+
+- Demande : « améliorer grandement le design et l'UI/UX mobile […] ; la liste des projets et
+  Gérer les projets (aussi sur desktop) prennent trop de place quand il y a trop de projets ».
+  Pourquoi chaque choix : `05-DECISIONS.md` §35.
+- `ProjectBar.tsx` : rangée unique (`.chips` en base nulle, molette → défilement horizontal,
+  classes `fade-start`/`fade-end` mesurées au défilement et au `ResizeObserver`, filtre actif
+  ramené en vue) ; bouton `manage-btn` (`aria-haspopup="dialog"`, `aria-expanded`) ;
+  `ProjectManager` en `<dialog>` modal via portail : création en tête, « Retrouver un projet »
+  dès 8, liste seule à défiler, Échap annule un renommage avant de fermer, fermer valide le
+  renommage en cours, focus rendu au bouton après démontage (la page est inerte avant).
+- `styles.css` : section « projets » réécrite (pastille teintée par `--project`, fenêtre
+  `.project-sheet` ancrée par `--anchor-top`/`--anchor-right`) ; nouvelle section finale
+  « mobile : une seule page » (≤ 600 px) : `.app` défile, `.project-strip` collant,
+  `--strip-h` (hauteur du bandeau, marge de défilement de l'Écriture) ; cartes
+  resserrées, réglages de l'entrée en grille, actions tâche/IA en rangée défilante,
+  Paramètres et Documents Google en feuilles du bas.
+- `App.tsx` : `revealEditor()` — à ≤ 900 px, ouvrir/créer une entrée, une procédure, un
+  document de tâche ou un fichier partagé fait défiler jusqu'à la carte Écriture.
+- Tests : front (+7 : gestion en dialogue, Échap, fermeture qui valide, recherche ≥ 8,
+  couleur de pastille, `revealEditor` empilé/côte à côte) ; navigateur (+4 :
+  `project-strip.spec.ts` mobile et desktop avec 14 projets, `mobile-header.spec.ts` page
+  qui défile, ouverture vers l'Écriture, écriture compacte). `pwa.spec.ts` : `.app` défile,
+  plus `.columns`. Aucune dépendance ajoutée.
+- Suite, même jour — **rien ne passe devant le contenu qui défile** : `TaskBoard` enveloppe
+  les colonnes dans `.board-lists` ; au-dessus de 900 px, `.right` ne défile plus, la saisie
+  est son en-tête fixe (filet dessous) et seule `.board-lists` défile. `.quick`,
+  `.column h2` et `.day` ne sont plus `sticky` ; à ≤ 600 px, `.google-editor .rich-toolbar`
+  et `.docx-toolbar` passent en `static`. Tests : front (+1, la saisie hors de la liste),
+  navigateur (+4, `e2e/scroll-overlap.spec.ts` : ce qui est peint sur la bande de saisie
+  après défilement, jours du journal, tâches et Word sur mobile) ; `mobile-header.spec.ts`
+  ajusté (jours et barre de mise en forme non collants).
+- Constaté en passant : le test front « par le relais du bureau » (`App.local.test.tsx`)
+  frôle sa limite de 5 s sous charge et échoue parfois **aussi sur master** ; vert dans la
+  campagne complète.
 
 ## Intégration de la v0.52.0 — 2026-10-08
 
