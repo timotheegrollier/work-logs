@@ -142,7 +142,12 @@ describe('dossier partagé dans la PWA', () => {
     await expect(localApi.sharedList('')).rejects.toThrow('application desktop');
   });
 
+  // Vrai relais : serveur HTTP, puis worker du partage démarré à la première liste
+  // (borné à 10 s dans `shared-io`). Sous charge, un aller-retour dépasse la seconde
+  // des `findBy` : les attentes du relais ont 10 s, le test 30 s. Requêtes limitées
+  // à la région concernée — `getByRole` sur tout l'écran coûte cher dans jsdom.
   test('par le relais du bureau : réglé dans Paramètres, le dossier s’ouvre, un fichier s’édite et s’envoie', async () => {
+    const relais = { timeout: 10_000 };
     const [fs, os, path] = await Promise.all([import('node:fs'), import('node:os'), import('node:path')]);
     // @ts-expect-error — relay.js est du JavaScript pur de l'API, chargé par Node.
     const { startRelay, newToken } = await import('../../api/src/relay.js');
@@ -162,28 +167,34 @@ describe('dossier partagé dans la PWA', () => {
 
       await user.click(await screen.findByRole('button', { name: 'Compte et paramètres' }));
       await user.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
-      const settings = within(await screen.findByRole('region', { name: 'Dossier partagé du TSE' }));
-      await user.type(settings.getByLabelText('Adresse du relais'), `http://127.0.0.1:${relay.server.address().port}`);
-      await user.type(settings.getByLabelText('Code d’accès du relais'), token);
+      const dialog = within(await screen.findByRole('dialog', { name: 'Paramètres' }));
+      const settings = within(dialog.getByRole('region', { name: 'Dossier partagé du TSE' }));
+      // Collés, comme l'adresse et le code donnés à l'installation du relais.
+      await user.click(settings.getByLabelText('Adresse du relais'));
+      await user.paste(`http://127.0.0.1:${relay.server.address().port}`);
+      await user.click(settings.getByLabelText('Code d’accès du relais'));
+      await user.paste(token);
       await user.click(settings.getByRole('button', { name: 'Enregistrer' }));
-      expect(await settings.findByText(/^Relié au dossier partagé/)).toBeInTheDocument();
-      await user.click(screen.getByRole('button', { name: 'Fermer' }));
+      expect(await settings.findByText(/^Relié au dossier partagé/, undefined, relais)).toBeInTheDocument();
+      await user.click(dialog.getByRole('button', { name: 'Fermer' }));
 
-      await user.click(await screen.findByRole('button', { name: 'Dossier 2. TSE' }));
-      await user.click(await screen.findByRole('button', { name: /^Ouvrir Redémarrage\.md/ }));
-      const shared = await screen.findByRole('region', { name: 'Fichier partagé' });
-      const area = await within(shared).findByLabelText('Contenu de Redémarrage.md');
+      const tree = within(await screen.findByRole('list', { name: 'Contenu du dossier partagé' }, relais));
+      await user.click(tree.getByRole('button', { name: 'Dossier 2. TSE' }));
+      const folder = within(await tree.findByRole('list', { name: 'Contenu de 2. TSE' }, relais));
+      await user.click(folder.getByRole('button', { name: /^Ouvrir Redémarrage\.md/ }));
+      const shared = within(await screen.findByRole('region', { name: 'Fichier partagé' }, relais));
+      const area = await shared.findByLabelText('Contenu de Redémarrage.md', undefined, relais);
       expect(area).toHaveValue('# Redémarrage\n');
       await user.type(area, 'Redémarrer le service.{Enter}');
-      await user.click(within(shared).getByRole('button', { name: 'Enregistrer sur le partage' }));
-      await waitFor(() => expect(fs.readFileSync(path.join(share, '2. TSE', 'Redémarrage.md'), 'utf8')).toBe('# Redémarrage\nRedémarrer le service.\n'));
-      expect(await within(shared).findByText('Enregistré sur le partage.')).toBeInTheDocument();
+      await user.click(shared.getByRole('button', { name: 'Enregistrer sur le partage' }));
+      await waitFor(() => expect(fs.readFileSync(path.join(share, '2. TSE', 'Redémarrage.md'), 'utf8')).toBe('# Redémarrage\nRedémarrer le service.\n'), relais);
+      expect(await shared.findByText('Enregistré sur le partage.', undefined, relais)).toBeInTheDocument();
     } finally {
       await relay.stop();
       fs.rmSync(share, { recursive: true, force: true });
       fs.rmSync(data, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('adresse du relais : HTTPS exigé, complétée si on l’oublie', async () => {
     const { normalizeRelayUrl } = await import('./relay-settings');
