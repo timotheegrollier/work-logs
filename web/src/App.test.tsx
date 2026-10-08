@@ -2359,7 +2359,12 @@ describe('panneaux repliables', () => {
   });
 });
 
-describe('dossier partagé', () => {
+// Vrai backend : la première lecture du partage démarre le worker de `shared-io` (démarrage
+// borné à part, 10 s), qui traite ensuite un appel à la fois ; l'API tourne dans le fil de
+// jsdom. Sous charge, une réponse de `/api/shared/…` dépasse la seconde des `findBy` (mesuré
+// jusqu'à 4 s pour la première liste) : ces attentes-là ont `partage` (10 s), celles d'un
+// simple rendu gardent le délai par défaut, et chaque test 30 s.
+describe('dossier partagé', { timeout: 30_000 }, () => {
   // Le « partage » est un dossier temporaire : le test y joue le collègue du TSE.
   let share: string;
   const nodeFs = () => import('node:fs');
@@ -2382,9 +2387,13 @@ describe('dossier partagé', () => {
     [...name].forEach((char, i) => { bytes[57 + i * 2] = char.charCodeAt(0); bytes[58 + i * 2] = 0; });
     return bytes;
   };
+  const partage = { timeout: 10_000 };
   const sharedEditor = () => screen.getByRole('region', { name: 'Fichier partagé' });
+  /** L'arbre du partage, une fois lu. Ses boutons s'y cherchent : `getByRole` sur tout l'écran coûte cher dans jsdom. */
+  const tree = async () => within(await screen.findByRole('list', { name: 'Contenu du dossier partagé' }, partage));
   const openFromTree = async (name: string) => {
-    fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^Ouvrir ${name.replace(/[.()]/g, '\\$&')}`) }));
+    // Un fichier d'un dossier déplié attend en plus la liste de ce dossier.
+    fireEvent.click(await (await tree()).findByRole('button', { name: new RegExp(`^Ouvrir ${name.replace(/[.()]/g, '\\$&')}`) }, partage));
     return screen.findByRole('region', { name: 'Fichier partagé' });
   };
 
@@ -2408,7 +2417,7 @@ describe('dossier partagé', () => {
     await screen.findByRole('region', { name: 'Journal' });
     expect(spy).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: /Procédures/ }));
-    expect(await screen.findByText('Dossier partagé')).toBeInTheDocument();
+    expect(await screen.findByText('Dossier partagé', undefined, partage)).toBeInTheDocument();
   });
 
   test('sans partage configuré, la section n’existe pas', async () => {
@@ -2423,17 +2432,17 @@ describe('dossier partagé', () => {
     const original = 'Date;Mesure;Commentaire\r\n05/10/2026;12,5;"pH ; chlore"\r\n06/10/2026;0123;\r\n';
     await write('relevés.csv', latin1(original));
     render(<App />);
-    expect(await screen.findByText('Dossier partagé')).toBeInTheDocument();
+    expect(await screen.findByText('Dossier partagé', undefined, partage)).toBeInTheDocument();
     const editorRegion = await openFromTree('relevés.csv');
 
-    const grid = await within(editorRegion).findByRole('grid', { name: 'Tableau relevés.csv' });
+    const grid = await within(editorRegion).findByRole('grid', { name: 'Tableau relevés.csv' }, partage);
     fireEvent.click(within(grid).getByRole('gridcell', { name: 'C3 : vide' }));
     fireEvent.change(within(editorRegion).getByLabelText('Contenu de la cellule'), { target: { value: 'Filtre lavé' } });
-    await waitFor(() => expect(within(editorRegion).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    await waitFor(() => expect(within(editorRegion).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument(), partage);
     expect(await read('relevés.csv', 'latin1')).toBe(original);
 
     fireEvent.click(within(editorRegion).getByRole('button', { name: 'Enregistrer sur le partage' }));
-    await waitFor(() => expect(within(sharedEditor()).getByText('Enregistré sur le partage.')).toBeInTheDocument());
+    await waitFor(() => expect(within(sharedEditor()).getByText('Enregistré sur le partage.')).toBeInTheDocument(), partage);
     expect(await read('relevés.csv', 'latin1')).toBe('Date;Mesure;Commentaire\r\n05/10/2026;12,5;"pH ; chlore"\r\n06/10/2026;0123;Filtre lavé\r\n');
     expect(within(sharedEditor()).getByText('À jour avec le partage')).toBeInTheDocument();
   });
@@ -2442,20 +2451,20 @@ describe('dossier partagé', () => {
     await write('notes.md', '# Consignes\r\n\r\nLaver le filtre.\r\n');
     render(<App />);
     const editorRegion = await openFromTree('notes.md');
-    const area = await within(editorRegion).findByLabelText('Contenu de notes.md');
+    const area = await within(editorRegion).findByLabelText('Contenu de notes.md', undefined, partage);
     expect(area).toHaveValue('# Consignes\n\nLaver le filtre.\n');
     fireEvent.change(area, { target: { value: '# Consignes\n\nLaver le filtre.\nContrôler le pH.\n' } });
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
-    await waitFor(async () => expect(await read('notes.md')).toBe('# Consignes\r\n\r\nLaver le filtre.\r\nContrôler le pH.\r\n'));
+    await waitFor(async () => expect(await read('notes.md')).toBe('# Consignes\r\n\r\nLaver le filtre.\r\nContrôler le pH.\r\n'), partage);
   });
 
   test('ouvert dans Excel par un collègue : lecture seule avec son nom, brouillon possible sur demande', async () => {
     await write('relevés.csv', 'a;b\n1;2\n');
     await write('~$relevés.csv', excelOwner('Jean Dupont'));
     render(<App />);
-    expect(await screen.findByRole('button', { name: /^Ouvrir relevés\.csv — Ouvert par Jean Dupont dans Excel/ })).toBeInTheDocument();
+    expect((await tree()).getByRole('button', { name: /^Ouvrir relevés\.csv — Ouvert par Jean Dupont dans Excel/ })).toBeInTheDocument();
     const editorRegion = await openFromTree('relevés.csv');
-    expect(await within(editorRegion).findByText(/Lecture seule — Ouvert par Jean Dupont dans Excel/)).toBeInTheDocument();
+    expect(await within(editorRegion).findByText(/Lecture seule — Ouvert par Jean Dupont dans Excel/, undefined, partage)).toBeInTheDocument();
     expect(within(editorRegion).getByRole('grid')).toHaveAttribute('aria-readonly', 'true');
     fireEvent.click(within(editorRegion).getByRole('button', { name: 'Écrire un brouillon quand même' }));
     expect(within(editorRegion).getByRole('grid')).not.toHaveAttribute('aria-readonly');
@@ -2465,17 +2474,17 @@ describe('dossier partagé', () => {
     await write('notes.md', 'v1\n');
     render(<App />);
     const editorRegion = await openFromTree('notes.md');
-    fireEvent.change(await within(editorRegion).findByLabelText('Contenu de notes.md'), { target: { value: 'v1\nmoi\n' } });
-    await waitFor(() => expect(within(editorRegion).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    fireEvent.change(await within(editorRegion).findByLabelText('Contenu de notes.md', undefined, partage), { target: { value: 'v1\nmoi\n' } });
+    await waitFor(() => expect(within(editorRegion).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument(), partage);
     await write('notes.md', 'v1\ncollègue\n');
 
     fireEvent.click(within(editorRegion).getByRole('button', { name: 'Enregistrer sur le partage' }));
-    const alert = await within(sharedEditor()).findByRole('alert');
+    const alert = await within(sharedEditor()).findByRole('alert', undefined, partage);
     expect(alert).toHaveTextContent('Rien n’a été écrasé');
     expect(await read('notes.md')).toBe('v1\ncollègue\n');
 
     fireEvent.click(within(alert).getByRole('button', { name: 'Garder les deux' }));
-    await waitFor(() => expect(within(sharedEditor()).getByLabelText('Contenu de notes.md')).toHaveValue('v1\ncollègue\n'));
+    await waitFor(() => expect(within(sharedEditor()).getByLabelText('Contenu de notes.md')).toHaveValue('v1\ncollègue\n'), partage);
     const [fs] = await Promise.all([nodeFs()]);
     const copy = fs.readdirSync(share).find((name) => name.startsWith('notes (copie '));
     expect(copy).toBeDefined();
@@ -2487,19 +2496,19 @@ describe('dossier partagé', () => {
     await write('relevés.csv', 'Date;Mesure\n05/10;12,5\n06/10;13\n');
     render(<App />);
     const editorRegion = await openFromTree('relevés.csv');
-    const grid = await within(editorRegion).findByRole('grid', { name: 'Tableau relevés.csv' });
+    const grid = await within(editorRegion).findByRole('grid', { name: 'Tableau relevés.csv' }, partage);
     fireEvent.click(within(grid).getByRole('gridcell', { name: 'B3 : 13' }));
     fireEvent.change(within(editorRegion).getByLabelText('Contenu de la cellule'), { target: { value: '14,2' } });
-    await waitFor(() => expect(within(editorRegion).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    await waitFor(() => expect(within(editorRegion).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument(), partage);
     // Le collègue corrige l'autre ligne dans Excel.
     await write('relevés.csv', 'Date;Mesure\n05/10;12,8\n06/10;13\n');
 
     fireEvent.click(within(editorRegion).getByRole('button', { name: 'Enregistrer sur le partage' }));
-    const alert = await within(sharedEditor()).findByRole('alert');
-    expect(await within(alert).findByText(/Vos modifications ne se touchent pas : « Fusionner » garde les deux \(1 modification de ta part ajoutée à leur version\)/)).toBeInTheDocument();
+    const alert = await within(sharedEditor()).findByRole('alert', undefined, partage);
+    expect(await within(alert).findByText(/Vos modifications ne se touchent pas : « Fusionner » garde les deux \(1 modification de ta part ajoutée à leur version\)/, undefined, partage)).toBeInTheDocument();
     fireEvent.click(within(alert).getByRole('button', { name: 'Fusionner' }));
-    await waitFor(async () => expect(await read('relevés.csv')).toBe('Date;Mesure\n05/10;12,8\n06/10;14,2\n'));
-    expect(await within(sharedEditor()).findByText(/Fusionné et enregistré sur le partage/)).toBeInTheDocument();
+    await waitFor(async () => expect(await read('relevés.csv')).toBe('Date;Mesure\n05/10;12,8\n06/10;14,2\n'), partage);
+    expect(await within(sharedEditor()).findByText(/Fusionné et enregistré sur le partage/, undefined, partage)).toBeInTheDocument();
     expect(within(sharedEditor()).getByRole('grid', { name: 'Tableau relevés.csv' })).toBeInTheDocument();
     expect(within(sharedEditor()).getByRole('gridcell', { name: 'B2 : 12,8' })).toBeInTheDocument();
     expect(within(sharedEditor()).getByRole('gridcell', { name: 'B3 : 14,2' })).toBeInTheDocument();
@@ -2509,12 +2518,12 @@ describe('dossier partagé', () => {
     await write('notes.md', 'v1\n');
     render(<App />);
     const editorRegion = await openFromTree('notes.md');
-    fireEvent.change(await within(editorRegion).findByLabelText('Contenu de notes.md'), { target: { value: 'v1 moi\n' } });
-    await waitFor(() => expect(within(editorRegion).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    fireEvent.change(await within(editorRegion).findByLabelText('Contenu de notes.md', undefined, partage), { target: { value: 'v1 moi\n' } });
+    await waitFor(() => expect(within(editorRegion).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument(), partage);
     await write('notes.md', 'v1 collègue\n');
     fireEvent.click(within(editorRegion).getByRole('button', { name: 'Enregistrer sur le partage' }));
-    const alert = await within(sharedEditor()).findByRole('alert');
-    expect(await within(alert).findByText('Fusion impossible : vous avez modifié tous les deux la ligne 1.')).toBeInTheDocument();
+    const alert = await within(sharedEditor()).findByRole('alert', undefined, partage);
+    expect(await within(alert).findByText('Fusion impossible : vous avez modifié tous les deux la ligne 1.', undefined, partage)).toBeInTheDocument();
     expect(within(alert).queryByRole('button', { name: 'Fusionner' })).not.toBeInTheDocument();
     expect(within(alert).getByRole('button', { name: 'Garder ma version' })).toBeInTheDocument();
   });
@@ -2525,17 +2534,17 @@ describe('dossier partagé', () => {
     await write('Global/MURGAT INGENIERIE/00. PROCEDURE/Procédure filtration.md', '# Filtration\n');
     await write('notes.md', 'x');
     render(<App />);
-    const field = await screen.findByLabelText('Chercher dans le partage');
+    const field = await screen.findByLabelText('Chercher dans le partage', undefined, partage);
     fireEvent.change(field, { target: { value: 'procedure' } });
     const results = await screen.findByRole('region', { name: 'Résultats de la recherche' });
-    expect(await within(results).findByText('2 résultats.')).toBeInTheDocument();
+    expect(await within(results).findByText('2 résultats.', undefined, partage)).toBeInTheDocument();
     fireEvent.click(within(results).getByRole('button', { name: 'Ouvrir Global/MURGAT INGENIERIE/00. PROCEDURE/Procédure filtration.md' }));
     const editorRegion = await screen.findByRole('region', { name: 'Fichier partagé' });
-    expect(await within(editorRegion).findByLabelText('Contenu de Procédure filtration.md')).toHaveValue('# Filtration\n');
+    expect(await within(editorRegion).findByLabelText('Contenu de Procédure filtration.md', undefined, partage)).toHaveValue('# Filtration\n');
 
     fireEvent.click(within(screen.getByRole('region', { name: 'Résultats de la recherche' })).getByRole('button', { name: 'Afficher le dossier Global/MURGAT INGENIERIE/00. PROCEDURE' }));
     expect(field).toHaveValue('');
-    expect(await screen.findByRole('list', { name: 'Contenu de Global/MURGAT INGENIERIE/00. PROCEDURE' })).toBeInTheDocument();
+    expect(await screen.findByRole('list', { name: 'Contenu de Global/MURGAT INGENIERIE/00. PROCEDURE' }, partage)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Dossier 00. PROCEDURE' })).toHaveAttribute('aria-expanded', 'true');
   });
 
@@ -2545,15 +2554,15 @@ describe('dossier partagé', () => {
     await write('Global/Procédure filtration.md', '# Filtration\n');
     await write('Global/relevés.csv', 'a;b\n');
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Dossier Global' }));
+    fireEvent.click((await tree()).getByRole('button', { name: 'Dossier Global' }));
     const editorRegion = await openFromTree('relevés.csv');
     // Ouvert pour de bon (lu, donc gardé ici) avant que le partage ne tombe.
-    await within(editorRegion).findByRole('grid', { name: 'Tableau relevés.csv' });
+    await within(editorRegion).findByRole('grid', { name: 'Tableau relevés.csv' }, partage);
     fs.renameSync(share, share + '-ailleurs');
     try {
       act(() => { window.dispatchEvent(new Event('focus')); });
-      expect(await screen.findAllByText(/^Hors ligne — liste vue /)).not.toHaveLength(0);
-      const missing = await screen.findByRole('button', { name: /^Ouvrir Procédure filtration\.md — pas gardé sur cet ordinateur/ });
+      expect(await screen.findAllByText(/^Hors ligne — liste vue /, undefined, partage)).not.toHaveLength(0);
+      const missing = await (await tree()).findByRole('button', { name: /^Ouvrir Procédure filtration\.md — pas gardé sur cet ordinateur/ }, partage);
       expect(missing).toBeDisabled();
       expect(screen.getByRole('button', { name: /^Ouvrir relevés\.csv/ })).toBeEnabled();
     } finally {
@@ -2565,10 +2574,12 @@ describe('dossier partagé', () => {
     await write('notes.md', 'v1\n');
     render(<App />);
     const editorRegion = await openFromTree('notes.md');
-    expect(await within(editorRegion).findByLabelText('Contenu de notes.md')).toHaveValue('v1\n');
+    expect(await within(editorRegion).findByLabelText('Contenu de notes.md', undefined, partage)).toHaveValue('v1\n');
     await write('notes.md', 'v2 du collègue\n');
     act(() => { window.dispatchEvent(new Event('focus')); });
-    await waitFor(() => expect(within(sharedEditor()).getByLabelText('Contenu de notes.md')).toHaveValue('v2 du collègue\n'));
+    // Pas `partage` : l'éditeur relit aussi le partage toutes les 5 s, et une attente plus
+    // longue verrait la version du collègue arriver sans le retour sur la fenêtre.
+    await waitFor(() => expect(within(sharedEditor()).getByLabelText('Contenu de notes.md')).toHaveValue('v2 du collègue\n'), { timeout: 3_000 });
     expect(within(sharedEditor()).getByText('Mis à jour depuis le partage.')).toBeInTheDocument();
   });
 
@@ -2576,11 +2587,11 @@ describe('dossier partagé', () => {
     await write('notes.md', 'v1\n');
     const { unmount } = render(<App />);
     const editorRegion = await openFromTree('notes.md');
-    fireEvent.change(await within(editorRegion).findByLabelText('Contenu de notes.md'), { target: { value: 'v1\nen cours\n' } });
+    fireEvent.change(await within(editorRegion).findByLabelText('Contenu de notes.md', undefined, partage), { target: { value: 'v1\nen cours\n' } });
     await flushPendingSaves();
     unmount();
     render(<App />);
-    expect(await within(await screen.findByRole('region', { name: 'Fichier partagé' })).findByLabelText('Contenu de notes.md')).toHaveValue('v1\nen cours\n');
+    expect(await within(await screen.findByRole('region', { name: 'Fichier partagé' })).findByLabelText('Contenu de notes.md', undefined, partage)).toHaveValue('v1\nen cours\n');
     expect(await read('notes.md')).toBe('v1\n');
   });
 
@@ -2589,7 +2600,7 @@ describe('dossier partagé', () => {
     return fs.existsSync(path.join(share, rel));
   };
   const typeIn = async (name: string, value: string) => {
-    const area = await within(sharedEditor()).findByLabelText(`Contenu de ${name}`);
+    const area = await within(sharedEditor()).findByLabelText(`Contenu de ${name}`, undefined, partage);
     fireEvent.change(area, { target: { value } });
     return area;
   };
@@ -2600,19 +2611,20 @@ describe('dossier partagé', () => {
     await openFromTree('notes.md');
     expect(await exists('.~lock.notes.md#')).toBe(false);
     await typeIn('notes.md', 'v1\nmoi\n');
-    await waitFor(async () => expect(await exists('.~lock.notes.md#')).toBe(true));
+    await waitFor(async () => expect(await exists('.~lock.notes.md#')).toBe(true), partage);
     expect(await read('.~lock.notes.md#')).toMatch(/\(WorkLogs\),.*worklogs:test:/);
-    expect(await within(sharedEditor()).findByText('Tu as la main')).toBeInTheDocument();
+    expect(await within(sharedEditor()).findByText('Tu as la main', undefined, partage)).toBeInTheDocument();
 
     fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Fermer' }));
-    const question = await screen.findByRole('dialog', { name: 'Tes modifications ne sont pas sur le partage' });
+    // La question attend l'écriture du brouillon en attente.
+    const question = await screen.findByRole('dialog', { name: 'Tes modifications ne sont pas sur le partage' }, partage);
     fireEvent.click(within(question).getByRole('button', { name: 'Garder le brouillon ici' }));
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Fichier partagé' })).not.toBeInTheDocument());
-    await waitFor(async () => expect(await exists('.~lock.notes.md#')).toBe(false));
+    await waitFor(async () => expect(await exists('.~lock.notes.md#')).toBe(false), partage);
     expect(await read('notes.md')).toBe('v1\n');
 
     await openFromTree('notes.md');
-    expect(await within(sharedEditor()).findByLabelText('Contenu de notes.md')).toHaveValue('v1\nmoi\n');
+    expect(await within(sharedEditor()).findByLabelText('Contenu de notes.md', undefined, partage)).toHaveValue('v1\nmoi\n');
   });
 
   test('quitter vers une entrée : « Envoyer sur le partage » l’enregistre, puis ouvre l’entrée', async () => {
@@ -2621,11 +2633,11 @@ describe('dossier partagé', () => {
     render(<App />);
     await openFromTree('notes.md');
     await typeIn('notes.md', 'v1\nenvoyé\n');
-    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument(), partage);
     fireEvent.click(await within(journal()).findByText('Compte rendu'));
     const question = await screen.findByRole('dialog', { name: 'Tes modifications ne sont pas sur le partage' });
     fireEvent.click(within(question).getByRole('button', { name: 'Envoyer sur le partage' }));
-    expect(await screen.findByRole('region', { name: 'Entrée' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Entrée' }, partage)).toBeInTheDocument();
     expect(await read('notes.md')).toBe('v1\nenvoyé\n');
   });
 
@@ -2636,7 +2648,7 @@ describe('dossier partagé', () => {
     await openFromTree('notes.md');
     await typeIn('notes.md', 'v1\nen cours\n');
     fireEvent.click(await within(journal()).findByText('Compte rendu'));
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Annuler' }));
+    fireEvent.click(within(await screen.findByRole('dialog', undefined, partage)).getByRole('button', { name: 'Annuler' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(sharedEditor()).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Entrée' })).not.toBeInTheDocument();
@@ -2648,7 +2660,7 @@ describe('dossier partagé', () => {
     await openFromTree('planning.txt');
     await write('.~lock.planning.txt#', 'Hélène Martin,hmartin,TSE01,05.10.2026 09:00,file:///C:/x;');
     const area = await typeIn('planning.txt', 'lundi\nmardi\n');
-    expect(await within(sharedEditor()).findByText(/Lecture seule — Ouvert par Hélène Martin dans LibreOffice/)).toBeInTheDocument();
+    expect(await within(sharedEditor()).findByText(/Lecture seule — Ouvert par Hélène Martin dans LibreOffice/, undefined, partage)).toBeInTheDocument();
     expect(area).toHaveAttribute('readonly');
     await flushPendingSaves();
     expect((await clientApi.sharedFile('planning.txt')).draft?.model).toMatchObject({ text: 'lundi\nmardi\n' });
@@ -2662,14 +2674,15 @@ describe('dossier partagé', () => {
     await write('Piscine/consignes.md', '# Consignes');
     await write('autre.md', 'x');
     render(<App />);
-    expect(await screen.findByRole('button', { name: /^Ouvrir autre\.md/ })).toBeInTheDocument();
+    expect((await tree()).getByRole('button', { name: /^Ouvrir autre\.md/ })).toBeInTheDocument();
     fireEvent.click(within(filters()).getByRole('button', { name: /Piscine/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine à un dossier…' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine au dossier Piscine' }));
-    expect(await screen.findByRole('button', { name: /^Ouvrir consignes\.md/ })).toBeInTheDocument();
+    const piscine = within(await screen.findByRole('list', { name: 'Contenu de Piscine' }, partage));
+    expect(piscine.getByRole('button', { name: /^Ouvrir consignes\.md/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Ouvrir autre\.md/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Délier Piscine de son dossier' }));
-    expect(await screen.findByRole('button', { name: /^Ouvrir autre\.md/ })).toBeInTheDocument();
+    expect((await tree()).getByRole('button', { name: /^Ouvrir autre\.md/ })).toBeInTheDocument();
   });
 
   test('projet relié à un dossier absent du partage : on le dit, « Délier » rend tout le partage', async () => {
@@ -2682,9 +2695,9 @@ describe('dossier partagé', () => {
     fs.rmdirSync(path.join(share, 'Global'));
     render(<App />);
     fireEvent.click(await within(filters()).findByRole('button', { name: /work-logs/ }));
-    expect(await screen.findByText('Le dossier relié à work-logs (« Global ») n’est pas dans ce partage. « Délier work-logs de son dossier » affiche tout le partage.')).toHaveAttribute('role', 'alert');
+    expect(await screen.findByText('Le dossier relié à work-logs (« Global ») n’est pas dans ce partage. « Délier work-logs de son dossier » affiche tout le partage.', undefined, partage)).toHaveAttribute('role', 'alert');
     fireEvent.click(screen.getByRole('button', { name: 'Délier work-logs de son dossier' }));
-    expect(await screen.findByRole('button', { name: /^Ouvrir notes\.md/ })).toBeInTheDocument();
+    expect((await tree()).getByRole('button', { name: /^Ouvrir notes\.md/ })).toBeInTheDocument();
   });
 
   test('nouveau fichier : créé dans le dossier déplié, ouvert au centre ; un nom pris n’écrase rien', async () => {
@@ -2692,8 +2705,9 @@ describe('dossier partagé', () => {
     fs.mkdirSync(path.join(share, '00. PROCEDURE'));
     await write('00. PROCEDURE/existant.md', 'à garder\n');
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Dossier 00. PROCEDURE' }));
-    await screen.findByRole('button', { name: /^Ouvrir existant\.md/ });
+    const files = await tree();
+    fireEvent.click(files.getByRole('button', { name: 'Dossier 00. PROCEDURE' }));
+    await files.findByRole('button', { name: /^Ouvrir existant\.md/ }, partage);
 
     fireEvent.click(screen.getByRole('button', { name: '＋ Nouveau fichier…' }));
     const form = screen.getByRole('form', { name: 'Nouveau fichier' });
@@ -2701,8 +2715,8 @@ describe('dossier partagé', () => {
     fireEvent.change(within(form).getByLabelText('Type de fichier'), { target: { value: 'md' } });
     fireEvent.change(within(form).getByLabelText('Nom du fichier'), { target: { value: 'Procédure sauvegarde' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Créer' }));
-    const editorRegion = await screen.findByRole('region', { name: 'Fichier partagé' });
-    expect(await within(editorRegion).findByLabelText('Contenu de Procédure sauvegarde.md')).toHaveValue('# Procédure sauvegarde\n\n');
+    const editorRegion = await screen.findByRole('region', { name: 'Fichier partagé' }, partage);
+    expect(await within(editorRegion).findByLabelText('Contenu de Procédure sauvegarde.md', undefined, partage)).toHaveValue('# Procédure sauvegarde\n\n');
     expect(await read('00. PROCEDURE/Procédure sauvegarde.md')).toBe('# Procédure sauvegarde\n\n');
     expect(screen.getByRole('button', { name: /^Ouvrir Procédure sauvegarde\.md/ })).toBeInTheDocument();
 
@@ -2712,20 +2726,21 @@ describe('dossier partagé', () => {
     fireEvent.change(within(again).getByLabelText('Type de fichier'), { target: { value: 'md' } });
     fireEvent.change(within(again).getByLabelText('Nom du fichier'), { target: { value: 'existant' } });
     fireEvent.click(within(again).getByRole('button', { name: 'Créer' }));
-    expect(await screen.findByText('« existant.md » existe déjà dans ce dossier : rien n’a été écrasé. Choisis un autre nom.')).toBeInTheDocument();
+    expect(await screen.findByText('« existant.md » existe déjà dans ce dossier : rien n’a été écrasé. Choisis un autre nom.', undefined, partage)).toBeInTheDocument();
     expect(await read('00. PROCEDURE/existant.md')).toBe('à garder\n');
   });
 
   test('nouveau document Word à la racine : il s’ouvre dans l’éditeur Word, titré de son nom', async () => {
     await write('notes.md', 'x');
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '＋ Nouveau fichier…' }));
+    await tree();
+    fireEvent.click(screen.getByRole('button', { name: '＋ Nouveau fichier…' }));
     const form = screen.getByRole('form', { name: 'Nouveau fichier' });
     expect(within(form).getByLabelText('Type de fichier')).toHaveValue('docx');
     fireEvent.change(within(form).getByLabelText('Nom du fichier'), { target: { value: 'Compte rendu' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Créer' }));
-    const editorRegion = await screen.findByRole('region', { name: 'Fichier partagé' });
-    const content = await within(editorRegion).findByRole('textbox', { name: 'Contenu du document Word' });
+    const editorRegion = await screen.findByRole('region', { name: 'Fichier partagé' }, partage);
+    const content = await within(editorRegion).findByRole('textbox', { name: 'Contenu du document Word' }, partage);
     expect(content.querySelector('h1')).toHaveTextContent('Compte rendu');
     const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
     expect(fs.existsSync(path.join(share, 'Compte rendu.docx'))).toBe(true);
@@ -2735,20 +2750,20 @@ describe('dossier partagé', () => {
     await write('notes.md', 'version 1\n');
     render(<App />);
     await openFromTree('notes.md');
-    expect(await within(sharedEditor()).findByLabelText('Contenu de notes.md')).toHaveValue('version 1\n');
+    expect(await within(sharedEditor()).findByLabelText('Contenu de notes.md', undefined, partage)).toHaveValue('version 1\n');
     await write('notes.md', 'version 2 du collègue\n');
     act(() => { window.dispatchEvent(new Event('focus')); });
-    await waitFor(() => expect(within(sharedEditor()).getByLabelText('Contenu de notes.md')).toHaveValue('version 2 du collègue\n'));
+    await waitFor(() => expect(within(sharedEditor()).getByLabelText('Contenu de notes.md')).toHaveValue('version 2 du collègue\n'), partage);
 
     fireEvent.click(within(sharedEditor()).getByText('Historique sur cet ordinateur'));
-    const buttons = await within(sharedEditor()).findAllByRole('button', { name: /^Restaurer la version du/ });
+    const buttons = await within(sharedEditor()).findAllByRole('button', { name: /^Restaurer la version du/ }, partage);
     expect(buttons).toHaveLength(2);
     fireEvent.click(buttons[1]);
-    await waitFor(() => expect(within(sharedEditor()).getByLabelText('Contenu de notes.md')).toHaveValue('version 1\n'));
+    await waitFor(() => expect(within(sharedEditor()).getByLabelText('Contenu de notes.md')).toHaveValue('version 1\n'), partage);
     expect(within(sharedEditor()).getByText(/restaurée en brouillon/)).toBeInTheDocument();
     expect(await read('notes.md')).toBe('version 2 du collègue\n');
     fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Enregistrer sur le partage' }));
-    await waitFor(async () => expect(await read('notes.md')).toBe('version 1\n'));
+    await waitFor(async () => expect(await read('notes.md')).toBe('version 1\n'), partage);
   });
 
   test('Paramètres › Dossier partagé : le nom affiché dans mes verrous', async () => {
@@ -2756,11 +2771,11 @@ describe('dossier partagé', () => {
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Compte et paramètres' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
-    const settings = within(await screen.findByRole('region', { name: 'Dossier partagé' }));
+    const settings = within(await screen.findByRole('region', { name: 'Dossier partagé' }, partage));
     const input = await settings.findByLabelText('Nom affiché dans les verrous');
     fireEvent.change(input, { target: { value: 'T. Grollier' } });
     fireEvent.click(settings.getByRole('button', { name: 'Enregistrer' }));
-    expect(await settings.findByText('Enregistré.')).toBeInTheDocument();
+    expect(await settings.findByText('Enregistré.', undefined, partage)).toBeInTheDocument();
     expect((await clientApi.sharedStatus()).displayName).toBe('T. Grollier');
   });
 
@@ -2772,7 +2787,7 @@ describe('dossier partagé', () => {
     await clientApi.setSharedDisplayName('T. Grollier');
     render(<App />);
     const editorRegion = await openFromTree('Procédure filtration.docx');
-    const content = await within(editorRegion).findByRole('textbox', { name: 'Contenu du document Word' });
+    const content = await within(editorRegion).findByRole('textbox', { name: 'Contenu du document Word' }, partage);
     expect(content).toHaveTextContent('Filtration');
     expect(content.querySelector('h1')).toHaveTextContent('Filtration');
     expect(within(editorRegion).getByText(/Image — conservé/)).toBeInTheDocument();
@@ -2783,9 +2798,9 @@ describe('dossier partagé', () => {
     const style = within(editorRegion).getByLabelText('Style du paragraphe');
     expect(style).toHaveValue('Titre1');
     fireEvent.change(style, { target: { value: '' } });
-    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument(), partage);
     fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Enregistrer sur le partage' }));
-    await waitFor(() => expect(within(sharedEditor()).getByText('Enregistré sur le partage.')).toBeInTheDocument());
+    await waitFor(() => expect(within(sharedEditor()).getByText('Enregistré sur le partage.')).toBeInTheDocument(), partage);
 
     const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
     const sent = new Uint8Array(fs.readFileSync(path.join(share, 'Procédure filtration.docx')));
@@ -2801,7 +2816,7 @@ describe('dossier partagé', () => {
     await write('suivi.docx', wordDocx({ trackRevisions: true }));
     render(<App />);
     const editorRegion = await openFromTree('suivi.docx');
-    expect(await within(editorRegion).findByText(/Le suivi des modifications est activé/)).toBeInTheDocument();
+    expect(await within(editorRegion).findByText(/Le suivi des modifications est activé/, undefined, partage)).toBeInTheDocument();
     expect(within(editorRegion).getByLabelText('Style du paragraphe')).toBeDisabled();
     expect(within(editorRegion).getByRole('textbox', { name: 'Contenu du document Word' })).toHaveAttribute('contenteditable', 'false');
   });
@@ -2936,7 +2951,7 @@ describe('dossier partagé', () => {
     await clientApi.setSharedDisplayName('T. Grollier');
     render(<App />);
     const editorRegion = await openFromTree('Budget atelier.xlsx');
-    const grid = await within(editorRegion).findByRole('grid', { name: 'Feuille Suivi' });
+    const grid = await within(editorRegion).findByRole('grid', { name: 'Feuille Suivi' }, partage);
     expect(within(grid).getByRole('gridcell', { name: 'B2 : 1 234,50 €' })).toHaveClass('is-numeric');
     expect(within(grid).getByRole('gridcell', { name: 'C2 : 05/10/2026' })).toBeInTheDocument();
     const bar = within(editorRegion).getByLabelText('Contenu de la cellule');
@@ -2955,10 +2970,10 @@ describe('dossier partagé', () => {
     fireEvent.change(bar, { target: { value: '250' } });
     fireEvent.keyDown(bar, { key: 'Enter' });
     expect(within(grid).getByRole('gridcell', { name: 'B3 : 250,00 €' })).toBeInTheDocument();
-    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument(), partage);
 
     fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Enregistrer sur le partage' }));
-    await waitFor(() => expect(within(sharedEditor()).getByText('Enregistré sur le partage.')).toBeInTheDocument());
+    await waitFor(() => expect(within(sharedEditor()).getByText('Enregistré sur le partage.')).toBeInTheDocument(), partage);
     const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
     const sent = new Uint8Array(fs.readFileSync(path.join(share, 'Budget atelier.xlsx')));
     const sheet = (await readZipText(readZip(sent), 'xl/worksheets/sheet1.xml'))!;
@@ -2967,7 +2982,7 @@ describe('dossier partagé', () => {
     expect(await readZipText(readZip(sent), 'xl/sharedStrings.xml')).toBe(await readZipText(readZip(original), 'xl/sharedStrings.xml'));
     expect(await readZipText(readZip(sent), 'docProps/core.xml')).toContain('<cp:lastModifiedBy>T. Grollier</cp:lastModifiedBy>');
     // Relu depuis le partage : la formule qui lit B3 attend son recalcul, WorkLogs la montre.
-    await waitFor(() => expect(within(sharedEditor()).getByRole('gridcell', { name: 'B4 : =SOMME(B2:B3)' })).toBeInTheDocument());
+    await waitFor(() => expect(within(sharedEditor()).getByRole('gridcell', { name: 'B4 : =SOMME(B2:B3)' })).toBeInTheDocument(), partage);
   });
 
   test('classeur : feuille masquée et protégée, formule fautive signalée avant l’envoi', async () => {
@@ -2976,7 +2991,7 @@ describe('dossier partagé', () => {
     await write('Budget.xlsx', original);
     render(<App />);
     const editorRegion = await openFromTree('Budget.xlsx');
-    await within(editorRegion).findByRole('grid', { name: 'Feuille Suivi' });
+    await within(editorRegion).findByRole('grid', { name: 'Feuille Suivi' }, partage);
     const sheets = within(editorRegion).getByLabelText('Feuille');
     expect([...(sheets as HTMLSelectElement).options].map((option) => option.text)).toEqual(['Suivi', 'Paramètres (masquée)', 'Résumé']);
     fireEvent.change(sheets, { target: { value: '1' } });
@@ -3004,8 +3019,8 @@ describe('dossier partagé', () => {
     fs.chmodSync(path.join(share, 'Global'), 0o000);
     try {
       render(<App />);
-      fireEvent.click(await screen.findByRole('button', { name: 'Dossier Global' }));
-      expect(await screen.findByText(/Accès refusé à ce dossier : le compte avec lequel le partage est monté n’y a pas droit/)).toHaveAttribute('role', 'alert');
+      fireEvent.click((await tree()).getByRole('button', { name: 'Dossier Global' }));
+      expect(await screen.findByText(/Accès refusé à ce dossier : le compte avec lequel le partage est monté n’y a pas droit/, undefined, partage)).toHaveAttribute('role', 'alert');
       expect(screen.queryByText('Lecture…')).not.toBeInTheDocument();
       // Le reste de l'arbre reste utilisable.
       expect(screen.getByRole('button', { name: /^Ouvrir notes\.md/ })).toBeInTheDocument();
@@ -3018,30 +3033,30 @@ describe('dossier partagé', () => {
     await write('notes.md', 'v1\n');
     render(<App />);
     const editorRegion = await openFromTree('notes.md');
-    await within(editorRegion).findByLabelText('Contenu de notes.md');
+    await within(editorRegion).findByLabelText('Contenu de notes.md', undefined, partage);
     fireEvent.click(within(editorRegion).getByRole('button', { name: 'Supprimer du partage' }));
-    await waitFor(() => expect(screen.queryByRole('region', { name: 'Fichier partagé' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Fichier partagé' })).not.toBeInTheDocument(), partage);
     const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
     expect(fs.existsSync(path.join(share, 'notes.md'))).toBe(false);
-    await waitFor(() => expect(screen.queryByRole('button', { name: /^Ouvrir notes\.md/ })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Ouvrir notes\.md/ })).not.toBeInTheDocument(), partage);
   });
 
   test('supprime un fichier du partage depuis l’arbre, sans l’ouvrir', async () => {
     await write('à-garder.md', 'gardé\n');
     await write('à-jeter.md', 'jeté\n');
     render(<App />);
-    expect(await screen.findByRole('button', { name: /^Ouvrir à-jeter\.md/ })).toBeInTheDocument();
+    expect((await tree()).getByRole('button', { name: /^Ouvrir à-jeter\.md/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Supprimer à-jeter.md du partage' }));
     const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
-    await waitFor(() => expect(fs.existsSync(path.join(share, 'à-jeter.md'))).toBe(false));
+    await waitFor(() => expect(fs.existsSync(path.join(share, 'à-jeter.md'))).toBe(false), partage);
     expect(fs.existsSync(path.join(share, 'à-garder.md'))).toBe(true);
-    await waitFor(() => expect(screen.queryByRole('button', { name: /^Ouvrir à-jeter\.md/ })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Ouvrir à-jeter\.md/ })).not.toBeInTheDocument(), partage);
   });
 
   test('annule la suppression depuis l’arbre : rien ne part', async () => {
     await write('notes.md', 'v1\n');
     render(<App />);
-    expect(await screen.findByRole('button', { name: /^Ouvrir notes\.md/ })).toBeInTheDocument();
+    expect((await tree()).getByRole('button', { name: /^Ouvrir notes\.md/ })).toBeInTheDocument();
     vi.mocked(window.confirm).mockReturnValueOnce(false);
     fireEvent.click(screen.getByRole('button', { name: 'Supprimer notes.md du partage' }));
     const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
@@ -3053,10 +3068,10 @@ describe('dossier partagé', () => {
     await write('notes.md', 'v1\n');
     render(<App />);
     const editorRegion = await openFromTree('notes.md');
-    fireEvent.change(await within(editorRegion).findByLabelText('Contenu de notes.md'), { target: { value: 'v1\nmoi\n' } });
-    await waitFor(() => expect(within(editorRegion).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument());
+    fireEvent.change(await within(editorRegion).findByLabelText('Contenu de notes.md', undefined, partage), { target: { value: 'v1\nmoi\n' } });
+    await waitFor(() => expect(within(editorRegion).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument(), partage);
     fireEvent.click(within(editorRegion).getByRole('button', { name: 'Supprimer du partage' }));
-    expect(await within(editorRegion).findByText(/Envoie ou abandonne d’abord ton brouillon/)).toBeInTheDocument();
+    expect(await within(editorRegion).findByText(/Envoie ou abandonne d’abord ton brouillon/, undefined, partage)).toBeInTheDocument();
     const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
     expect(fs.existsSync(path.join(share, 'notes.md'))).toBe(true);
   });

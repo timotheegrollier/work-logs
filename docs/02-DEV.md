@@ -60,6 +60,15 @@ npm run test:e2e      # build + playwright, 12 parcours navigateur
   Remède : `{ timeout: 10_000 }` sur les seules attentes vraiment asynchrones, délai explicite
   du test (`}, 30_000)`), jamais `testTimeout` global. Reproduire sans gêner les autres
   sessions : vitest et 4 à 8 boucles `sh -c 'while :; do :; done'` sous `taskset -c 6,7`.
+- **Le dossier partagé, sous charge, dépasse la seconde des `findBy`.** Le worker de `shared-io`
+  démarre à la première lecture puis traite un appel à la fois, et l'API tourne dans le fil de
+  jsdom (première liste mesurée jusqu'à 4 s). Dans `describe('dossier partagé')`, `partage`
+  (10 s) va aux seules attentes d'une réponse de `/api/shared/…`, un simple rendu garde le délai
+  par défaut, chaque test a 30 s. Les boutons de l'arbre se cherchent dans sa liste (`tree()`) :
+  `getByRole` sur tout l'écran coûte jusqu'à 1 s par essai et retarde l'API attendue. Jamais
+  d'attente plus longue qu'un sondage qui la satisferait seul (l'éditeur relit le partage toutes
+  les 5 s). Reproduire sans gêner les autres : `taskset -c 4,5` sur vitest et sur 4 boucles
+  `sh -c 'while :; do :; done'`.
 
 ## Conventions
 - **Une fonctionnalité = un test.** `check.sh` vert avant et après.
