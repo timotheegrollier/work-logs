@@ -1,6 +1,11 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
 > **Mise à jour :** 2026-10-08 · Version : v0.50.0 — trois lots, intégrés ensemble.
+> **Correctif du 2026-10-08 (3), non publié :** fenêtre desktop impossible à fermer
+> (« titre requis ») après avoir vidé le titre d'une entrée puis l'avoir quittée. Un titre
+> vidé n'est plus envoyé — l'entrée garde l'ancien, en filigrane — et le dialogue d'échec à
+> la fermeture propose « Fermer sans enregistrer ». Décision §32.
+>
 > **Lots de la v0.50.0 :**
 > - **IA dans les procédures du dossier partagé** (« ✨ Suggérer une procédure », « ✨ Mettre
 >   en page » sur les `.docx`, `.md`, `.txt`) et procédures suggérées **concises**, partout.

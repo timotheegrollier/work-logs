@@ -106,9 +106,13 @@ export function EntryEditor({
   draftRef.current = draft;
   const changedRef = useRef(onChanged);
   changedRef.current = onChanged;
-  const [autosave] = useState(() => new Autosave<typeof draft>(async (body) => {
-    if (!body.title.trim()) throw new Error('Le titre de l’entrée est requis.');
-    await api.updateEntry(entry.id, { ...body, project_id: body.project_id || null });
+  // Un titre vidé n'est pas envoyé : l'entrée garde le dernier (en filigrane du
+  // champ) et le reste du brouillon s'enregistre. Le refuser laissait, une fois
+  // l'entrée quittée, un brouillon en échec que la fermeture rejouait sans fin.
+  const [savedTitle, setSavedTitle] = useState(entry.title);
+  const [autosave] = useState(() => new Autosave<typeof draft>(async ({ title, ...body }) => {
+    await api.updateEntry(entry.id, { ...body, ...(title.trim() ? { title } : {}), project_id: body.project_id || null });
+    if (title.trim()) setSavedTitle(title);
     changedRef.current();
   }));
 
@@ -231,7 +235,7 @@ export function EntryEditor({
   };
 
   const remove = async () => {
-    if (!confirm(`Supprimer l’entrée « ${draft.title} » et ses fichiers ?`)) return;
+    if (!confirm(`Supprimer l’entrée « ${draft.title.trim() ? draft.title : savedTitle} » et ses fichiers ?`)) return;
     await autosave.flush();
     await api.deleteEntry(entry.id);
     onDeleted();
@@ -539,7 +543,7 @@ export function EntryEditor({
           value={draft.title}
           disabled={syncing}
           autoFocus={autoFocusTitle}
-          placeholder="Titre de l’entrée"
+          placeholder={savedTitle || 'Titre de l’entrée'}
           onChange={(e) => update({ title: e.target.value })}
         />
         <span className={'save save-' + save}>{LABELS[save]}</span>
