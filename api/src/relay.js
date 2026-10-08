@@ -85,6 +85,8 @@ export function relayConfig(env = process.env) {
     host: env.HOST || '127.0.0.1',
     port: Number(env.PORT || 8420),
     displayName: env.WORKLOGS_RELAY_NAME || '',
+    // Le nom du dossier tel que l'équipe le connaît (le point de montage s'appelle autrement).
+    label: env.WORKLOGS_RELAY_LABEL || '',
   };
 }
 
@@ -93,7 +95,7 @@ export function startRelay(config) {
   const db = openDb(path.join(config.dataDir, 'relais.db'), { withSeed: false });
   const shared = createSharedService({
     db, blobDir: path.join(config.dataDir, 'shared-blobs'), root: config.root,
-    instance: instanceId(config.dataDir), projectsKnown: false,
+    instance: instanceId(config.dataDir), projectsKnown: false, rootLabel: config.label || null,
   });
   if (config.displayName && !shared.status().displayName?.trim()) shared.setDisplayName(config.displayName);
   const app = createRelayApp({ shared, token: config.token, origins: config.origins });

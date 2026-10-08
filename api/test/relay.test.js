@@ -19,7 +19,7 @@ describe('relais du dossier partagé (PWA)', () => {
   beforeEach(async () => {
     share = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-relais-partage-'));
     data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-relais-data-'));
-    relay = startRelay({ root: share, token, origins: [PWA], dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)' });
+    relay = startRelay({ root: share, token, origins: [PWA], dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)', label: '00. PROCEDURE' });
     await new Promise((resolve) => relay.server.once('listening', resolve));
     base = `http://127.0.0.1:${relay.server.address().port}`;
   });
@@ -40,6 +40,7 @@ describe('relais du dossier partagé (PWA)', () => {
     assert.equal(status.reach, 'ok');
     assert.equal(status.configurable, false, 'la racine ne se règle jamais à distance');
     assert.equal(status.displayName, 'Timothée (mobile)');
+    assert.equal(status.label, '00. PROCEDURE', 'le nom du dossier, pas celui du point de montage');
   });
 
   test('CORS : la PWA seulement, préliminaire « réseau privé » compris', async () => {
