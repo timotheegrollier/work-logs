@@ -1,23 +1,21 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-08 · Version : **v0.51.0**, qui publie les trois lots ci-dessous.
-> **Lot courant :** **dossiers du partage** — créer, renommer, supprimer (avec leur contenu)
-> depuis l'arbre de la colonne Procédures (branche `feat/partage-dossiers`, fusionnée). Détail :
-> « Lot du 2026-10-08 (5) — dossiers du partage » ci-dessous ; décision §25.
+> **Mise à jour :** 2026-10-08 · Version : **v0.52.0**, qui publie les lots ci-dessous, restés
+> jusque-là non commités dans leurs copies de travail. Détail de la fusion : « Intégration de la
+> v0.52.0 » ci-dessous.
+> - **Un PDF du dossier partagé se lit sur place** (desktop) — « Lot du 2026-10-07 — PDF du
+>   dossier partagé » ; décision §34. Sur la PWA, le PDF garde son téléchargement.
+> - **Les dossiers reliés aux projets suivent les projets, par Drive** (`projects.shared_dir`,
+>   adresse complète traduite par chaque appareil) — « Lot du 2026-10-07 (2) » ; décision §29.
+>   **Après la mise à jour : tous les appareils** (une version plus ancienne qui réécrirait le
+>   fichier Drive perdrait le champ), et **redéployer le relais depuis `master`** (`09-RELAIS.md`).
+> - **Tests front stables sous charge** : un test fautif n'entraîne plus les suivants (« Correctif
+>   du 2026-10-08 (6) ») ; les tests lents (relais, création d'entrée, multi-onglets, panneaux
+>   Drive et Google Docs, dossier partagé) ont des délais à la mesure de leur backend (`02-DEV.md`).
 >
-> **Aussi dans la v0.51.0 :** **vues rapides des tâches** — pastilles En retard, Aujourd'hui, En cours,
-> Épinglées, ▲ Haute en tête de la colonne Tâches, et « N en cours » / « N en retard » de
-> l'en-tête cliquables. Branche `claude/task-status-visualization-922c08`. Détail : « Lot du
-> 2026-10-08 (4) — vues rapides des tâches » ci-dessous ; décision §33.
->
-> **Correctif du 2026-10-08 (3), aussi dans la v0.51.0 :** fenêtre desktop impossible à fermer
-> (« titre requis ») après avoir vidé le titre d'une entrée puis l'avoir quittée. Un titre
-> vidé n'est plus envoyé — l'entrée garde l'ancien, en filigrane — et le dialogue d'échec à
-> la fermeture propose « Fermer sans enregistrer ». Décision §32.
->
-> **Correctif du 2026-10-08 (6), tests seulement :** un test front fautif n'entraîne plus tous
-> les suivants de son fichier (« Found multiple elements… Journal », « entrée introuvable »).
-> Détail : « Correctif du 2026-10-08 (6) » ci-dessous.
+> **Lots de la v0.51.0 :** **dossiers du partage** — créer, renommer, supprimer (« Lot du
+> 2026-10-08 (5) », §25) ; **vues rapides des tâches** (« Lot du 2026-10-08 (4) », §33) ;
+> **titre vidé** qui ne bloque plus la fermeture du desktop (correctif du 2026-10-08 (3), §32).
 >
 > **Lots de la v0.50.0 :**
 > - **IA dans les procédures du dossier partagé** (« ✨ Suggérer une procédure », « ✨ Mettre
@@ -93,6 +91,53 @@
 > **Deux courses e2e restent non élucidées : point 0 de « Ce qui reste à faire ».**
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
+
+## Intégration de la v0.52.0 — 2026-10-08
+
+Demande de Timo : récupérer tout le travail des copies de travail qui n'était pas en
+production, le fusionner sur `master` et publier. Branche `integration/v0.52.0`, partie de
+`eb40553` (v0.51.0 + note du relais).
+- **Trouvé** (`git worktree list`, puis `git status` de chacune) : sept copies avec du travail
+  **jamais commité**, leurs sessions arrêtées. Chacun a été commité sur sa propre branche,
+  puis fusionné : `trusting-mendeleev` (correctif (6) ci-dessous), `gifted-bell` (relais du
+  bureau), `lucid-sanderson` (création d'entrée, panneau Drive), `kind-euclid` (multi-onglets,
+  Google Docs), `jovial-saha` (dossier partagé d'`App.test`), `pdf-visualization` (lot PDF,
+  `CHECK OK` à 846 dans sa session), `worklogs-file-coedition` (liens projet ↔ dossier, sa
+  session arrêtée en pleine rédaction de la doc, avant sa recette).
+- **Laissé de côté** : `~/worktrees/WorkLogs/silky-bay` (hors des sessions Claude, partie de
+  la v0.51.0 : `App.tsx`, `SharedFolder.tsx`, `new-files.ts`), **modifiée une minute avant la
+  collecte**, deux processus actifs dedans — un travail en cours, pas un travail oublié.
+  `pearl-breeze` : rien à prendre.
+- **Conflits tranchés** :
+  - lot PDF parti de la v0.47.0 : sa décision §30 devient **§34** (§30 à §33 pris entre-temps) ;
+    les appels du partage avaient été factorisés dans `sharedClient()`. La PWA a reçu le partage
+    par le relais depuis : une `<iframe>` n'envoie pas son en-tête `Authorization`. Tel quel, le
+    lot faisait **planter** l'éditeur d'un PDF sur la PWA (`fail()` au rendu). `sharedPreviewUrl`
+    répond `null` sur la PWA, qui garde l'explication et le téléchargement ; test ajouté,
+    rouge si un aperçu y est proposé ;
+  - test « par le relais du bureau » : gardé dans sa version stabilisée (`gifted-bell`) ; le
+    nouveau test du relais (lot des liens) prend les mêmes délais (10 s, test 30 s) ;
+  - `02-DEV.md` : les trois puces sur les tests sous charge et les `afterEach` sont gardées.
+- **Corrigé à l'intégration** : le renommage et la suppression de dossiers de la v0.51.0
+  mettaient à jour la table de la machine `shared_project_folders`, alors que le lien vit
+  désormais sur le projet. **Renommer un dossier relié cassait le lien ; le supprimer laissait
+  un lien mort.** `followDir` (`shared-links.ts`) et `SharedFolder` font suivre les projets —
+  côté front, car sur la PWA les projets ne sont pas dans la base du relais. Tests :
+  `shared-links.test.ts` (+2), `App.test.tsx` (+1, rouge avant le correctif).
+- **Recette** : `./scripts/check.sh` vert sur la branche d'intégration (`CHECK OK`) : types,
+  **256 API**, **535 front** (dont le « expected fail » voulu de `setup.test.tsx`), 48 desktop,
+  29 scripts, 8 relais, build, **58 navigateur**, **16 desktop** — **950**.
+
+### À vérifier par Timo
+
+1. Desktop installé en 0.52.0 : ouvrir un PDF du dossier partagé — s'affiche-t-il au centre ?
+2. Mettre à jour **tous** les appareils, puis ouvrir la section du partage sur le PC : les
+   liens de la table de la machine passent-ils sur les projets, et arrivent-ils sur le
+   téléphone par Drive ?
+3. **Relais** : il fait tourner le lot des liens **non commité, fusionné à la main** le
+   2026-10-08 (`09-RELAIS.md`) — le redéployer depuis `master` (v0.52.0).
+4. Renommer sur le TSE, depuis WorkLogs, un dossier relié à un projet : le projet suit-il, sur
+   le PC puis sur le téléphone ?
 
 ## Correctif du 2026-10-08 (6) — un test fautif n'entraîne plus les suivants
 
@@ -453,13 +498,13 @@ Décision : §29.
 3. Un bouton « Copier » sur les blocs de code en lecture serait-il utile ? Écarté pour
    l'instant (non demandé).
 
-## Lot du 2026-10-07 (2) — les liens projet ↔ dossier du TSE suivent par Drive — v0.49.0
+## Lot du 2026-10-07 (2) — les liens projet ↔ dossier du TSE suivent par Drive — v0.52.0
 
 Demande de Timo (le relais marche sur le téléphone) : retrouver partout les liens entre ses
 projets et les dossiers du TSE. Ils deviennent un champ du projet, `projects.shared_dir`,
 synchronisé par Drive ; ils portent l'adresse complète du dossier, traduite par chaque
 appareil sous sa racine (`web/src/shared-links.ts`, `api/src/shared-address.js`). Décision : §29,
-paragraphe « v0.49.0 ».
+paragraphe « publié en v0.52.0 ». Code écrit le 07/10, déjà déployé sur la VM du relais le 08/10.
 - **Vérifié avec ses vraies valeurs** : les 4 liens de son PC (OVH/DNS/VPN → `11. VPS OVH`,
   Infra et Téléphonie → `1. TELEPHONIE`, Supervision → `14. SUPERVISION`, Chat → `15. CHAT`)
   retombent sur les bons dossiers sous la racine du relais ; le relais déduit son adresse du
@@ -467,7 +512,10 @@ paragraphe « v0.49.0 ».
   au premier affichage de la section après la mise à jour du desktop, puis partiront par Drive.
 - **Trouvé en route** : le relais réécrivait à chaque démarrage le nom des verrous changé depuis
   le téléphone ; corrigé (déployé sur la VM).
-- **Tests** : __COUNTS__.
+- **Tests** : `api/test/shared-links.test.js` (6), `web/src/shared-links.test.ts` (4),
+  `App.test.tsx` (+3), `App.local.test.tsx` (+1, relier depuis le téléphone) ; `relay.test.js`
+  (nom des verrous après redémarrage) et `shared.test.js` (la sauvegarde n'emporte que
+  `shared_dir`) complétés. Recette : celle de l'intégration de la v0.52.0.
 
 ## Lot du 2026-10-07 — le dossier partagé sur la PWA, par un relais — v0.48.0
 
