@@ -18,7 +18,7 @@ https://<vm>.<tailnet>.ts.net:8443   ← tailscale serve (certificat valide, ré
 ```
 
 Ce qui ne change pas : verrous, envoi gardé, conflits (et « Fusionner »), versions, création
-de fichiers, éditeurs Word / Excel / CSV / texte — c'est le même code (`shared-service.js` côté
+de fichiers, dossiers (créer, renommer, supprimer), éditeurs Word / Excel / CSV / texte — c'est le même code (`shared-service.js` côté
 relais, les mêmes composants côté PWA). Ce qui change : la porte d'entrée (un code d'accès au
 lieu de « cet ordinateur seulement ») et la base locale (celle du relais, sur la VM).
 

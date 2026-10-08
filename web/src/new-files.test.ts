@@ -31,6 +31,17 @@ describe('fichiers neufs du dossier partagé', () => {
     expect(withExtension('Budget.XLSX', 'xlsx')).toBe('Budget.XLSX');
   });
 
+  it('nom de dossier : mêmes règles de Windows, caché refusé, « ~ » et chiffres admis', () => {
+    expect(fileNameProblem('3. Sauvegardes', 'dossier')).toBeNull();
+    expect(fileNameProblem('20241231', 'dossier')).toBeNull();
+    expect(fileNameProblem('~Archives', 'dossier')).toBeNull();
+    expect(fileNameProblem('', 'dossier')).toBe('Donne un nom au dossier.');
+    expect(fileNameProblem('a:b', 'dossier')).toBe('Caractère refusé par Windows dans un nom de dossier : « : ».');
+    expect(fileNameProblem('Archives.', 'dossier')).toBe('Un nom de dossier ne peut pas finir par un point ou une espace sous Windows.');
+    expect(fileNameProblem('.git', 'dossier')).toMatch(/resterait caché/);
+    expect(fileNameProblem('AUX', 'dossier')).toMatch(/réservé par Windows/);
+  });
+
   it('document Word : titre du fichier en Titre 1, auteur, se relit et se modifie', async () => {
     const bytes = await newFileBytes('docx', { title: 'Procédure sauvegarde', author: 'T. Grollier', now });
     const archive = await wellFormed(bytes);

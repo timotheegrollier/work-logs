@@ -77,6 +77,23 @@ describe('relais du dossier partagé (PWA)', () => {
     assert.deepEqual((await linked.json()).projects, { pr_muatn4uej2g098: '2. TSE' });
   });
 
+  test('dossiers par le relais : créer, renommer, supprimer (préliminaire CORS compris)', async () => {
+    const preflight = await fetch(base + '/api/shared/dir?path=x', {
+      method: 'OPTIONS', headers: { Origin: PWA, 'Access-Control-Request-Method': 'DELETE', 'Access-Control-Request-Headers': 'authorization' },
+    });
+    assert.equal(preflight.status, 204);
+    assert.match(preflight.headers.get('access-control-allow-methods'), /DELETE/);
+    assert.equal((await call('/api/shared/dir?path=Nouveau', { method: 'POST' })).status, 201);
+    const renamed = await call('/api/shared/dir/rename?path=Nouveau', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '3. Sauvegardes' }),
+    });
+    assert.deepEqual(await renamed.json(), { path: '3. Sauvegardes', name: '3. Sauvegardes' });
+    const { token } = await (await call(`/api/shared/dir?path=${encodeURIComponent('3. Sauvegardes')}`)).json();
+    const removed = await call(`/api/shared/dir?path=${encodeURIComponent('3. Sauvegardes')}&expect=${token}`, { method: 'DELETE' });
+    assert.equal(removed.status, 200);
+    assert.deepEqual(fs.readdirSync(share), []);
+  });
+
   test('réglages : racine et code obligatoires, origine de la PWA par défaut', () => {
     assert.throws(() => relayConfig({}), /WORKLOGS_SHARED_ROOT/);
     assert.throws(() => relayConfig({ WORKLOGS_SHARED_ROOT: share, WORKLOGS_RELAY_TOKEN: 'court', WORKLOGS_RELAY_TOKEN_FILE: path.join(data, 'absent') }), /Code d’accès/);

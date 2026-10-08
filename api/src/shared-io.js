@@ -188,6 +188,8 @@ function verify(file, mine) {
 const ops = {
   statfs: (file) => ({ type: Number(fs.statfsSync(file).type) }),
   stat: (file) => describe(fs.statSync(file)),
+  // Sans suivre un lien : un dossier qu'on renomme ou supprime n'est jamais la cible d'un lien.
+  lstat: (file) => describe(fs.lstatSync(file)),
   realpath: (file) => fs.realpathSync(file),
   // Noms et types seulement, sans stat par entrée (la recherche parcourt de nombreux dossiers).
   names(dir, max) {
@@ -318,6 +320,108 @@ const ops = {
       throw error;
     }
     return { result: 'deleted', hash, size: current.length };
+  },
+  /** Dossier neuf, jamais par-dessus un dossier ou un fichier du même nom. */
+  mkdir(dir) {
+    try {
+      fs.mkdirSync(dir);
+      return { created: true };
+    } catch (error) {
+      if (error.code === 'EEXIST') return { created: false };
+      throw error;
+    }
+  },
+  /**
+   * Renomme un dossier sans rien remplacer (rename(2) remplacerait un dossier
+   * vide du même nom). Un changement de casse seule passe par un nom temporaire :
+   * le partage Windows ne distingue pas « procedure » de « Procedure », et Linux
+   * prendrait l'un pour l'autre (nom « déjà pris », ou rien de fait).
+   */
+  renameDir(from, to, temporary) {
+    const failure = (error) => {
+      if (error.code === 'ENOENT') return { result: 'missing' };
+      if (error.code === 'EEXIST' || error.code === 'ENOTEMPTY' || error.code === 'ENOTDIR') return { result: 'exists' };
+      if (error.code === 'EBUSY' || error.code === 'ETXTBSY') return { result: 'busy', code: error.code };
+      if (error.code === 'EACCES' || error.code === 'EPERM') return { result: 'denied', code: error.code };
+      throw error;
+    };
+    if (!temporary) {
+      try {
+        fs.lstatSync(to);
+        return { result: 'exists' };
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+      try {
+        fs.renameSync(from, to);
+      } catch (error) {
+        return failure(error);
+      }
+      return { result: 'renamed' };
+    }
+    try {
+      fs.renameSync(from, temporary);
+    } catch (error) {
+      return failure(error);
+    }
+    try {
+      fs.renameSync(temporary, to);
+    } catch (error) {
+      try {
+        fs.renameSync(temporary, from);
+      } catch {
+        return { result: 'stranded', code: error.code || 'EIO' };
+      }
+      return failure(error);
+    }
+    return { result: 'renamed' };
+  },
+  /** Retire un dossier **vide** : ce qui y serait arrivé entre-temps le garde. */
+  rmdir(dir) {
+    try {
+      fs.rmdirSync(dir);
+      return { result: 'removed' };
+    } catch (error) {
+      if (error.code === 'ENOENT') return { result: 'missing' };
+      if (error.code === 'ENOTEMPTY' || error.code === 'EEXIST') return { result: 'notempty' };
+      if (error.code === 'EBUSY') return { result: 'busy', code: error.code };
+      if (error.code === 'EACCES' || error.code === 'EPERM') return { result: 'denied', code: error.code };
+      throw error;
+    }
+  },
+  /**
+   * Supprime un fichier d'un dossier qu'on supprime, seulement s'il est encore
+   * celui qui a été annoncé (taille, date). Ses octets reviennent, pour être
+   * gardés sur cet ordinateur : rien de ce qui part n'est perdu.
+   */
+  deleteSeen(file, size, mtimeMs) {
+    let fd;
+    try {
+      fd = fs.openSync(file, 'r');
+    } catch (error) {
+      if (error.code === 'ENOENT') return { result: 'missing' };
+      if (error.code === 'EBUSY' || error.code === 'ETXTBSY') return { result: 'busy', code: error.code };
+      if (error.code === 'EACCES' || error.code === 'EPERM') return { result: 'denied', code: error.code };
+      throw error;
+    }
+    let bytes;
+    try {
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile()) return { result: 'notfile' };
+      if (stat.size !== size || Math.round(stat.mtimeMs) !== mtimeMs) return { result: 'changed' };
+      bytes = readAll(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    try {
+      fs.unlinkSync(file);
+    } catch (error) {
+      if (error.code === 'ENOENT') return { result: 'missing' };
+      if (error.code === 'EBUSY' || error.code === 'ETXTBSY') return { result: 'busy', code: error.code };
+      if (error.code === 'EACCES' || error.code === 'EPERM') return { result: 'denied', code: error.code };
+      throw error;
+    }
+    return { result: 'deleted', bytes, hash: sha256(bytes), size: bytes.length };
   },
   // Pour les tests : un appel qui bloque comme un montage SMB figé.
   sleep(ms) {

@@ -174,6 +174,15 @@ export const lockBlocks = (lock) => Boolean(lock && !lock.stale && !(lock.app ==
 const APP_LABELS = { word: 'Word', excel: 'Excel', powerpoint: 'PowerPoint', office: 'Office', libreoffice: 'LibreOffice', worklogs: 'WorkLogs' };
 export const lockAppLabel = (app) => APP_LABELS[app] || 'une autre application';
 
+/**
+ * Dossiers jamais montrés ni touchés : cachés (point) et dossiers système de
+ * Windows. Plus étroit que pour les fichiers : un dossier « 20241231 » est un
+ * vrai dossier, pas un temporaire de Word.
+ */
+export function isTechnicalDirName(name) {
+  return name.startsWith('.') || ['$recycle.bin', 'system volume information'].includes(name.toLowerCase());
+}
+
 /** Fichiers techniques jamais montrés : verrous, temporaires Office et LibreOffice, vignettes. */
 export function isTechnicalName(name) {
   if (name.startsWith('.') || name.startsWith('~$')) return true;

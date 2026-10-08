@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError, type Project, type SharedEntry, type SharedListing, type SharedSearch, type SharedStatus } from '../lib';
+import { api, ApiError, type Project, type SharedDirSummary, type SharedEntry, type SharedListing, type SharedSearch, type SharedStatus } from '../lib';
 import { badgesFor, REACH_HELP, REACH_LABELS, sinceLabel } from '../shared-session';
 import { editorKind } from '../file-formats';
 import { fileNameProblem, NEW_FILE_TYPES, newFileBytes, withExtension, type NewFileType } from '../new-files';
@@ -17,12 +17,19 @@ const readOpen = () => {
   try { return localStorage.getItem(OPEN_KEY) !== '0'; } catch { return true; }
 };
 
+const parentOf = (path: string) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '');
+/** `path` est le dossier `dir` lui-même, ou quelque chose dedans. */
+const within = (path: string, dir: string) => path === dir || path.startsWith(dir + '/');
+/** `path` une fois le dossier `from` renommé en `to` (inchangé s'il n'est pas dedans). */
+const movedPath = (path: string, from: string, to: string) => (within(path, from) ? to + path.slice(from.length) : path);
+const plural = (count: number, word: string) => `${count} ${word}${count > 1 ? 's' : ''}`;
+
 /**
  * Section « Dossier partagé » de la colonne Procédures : le dossier du TSE monté
  * sur cet ordinateur, en arbre. Un fichier s'ouvre au centre comme une entrée.
  * Absente de la PWA (un navigateur n'atteint pas un partage SMB). Voir §25.
  */
-export function SharedFolder({ active, projectId, projects, selectedPath, revision, onOpen, onDeleted }: {
+export function SharedFolder({ active, projectId, projects, selectedPath, revision, onOpen, onDeleted, onRenamed }: {
   /** Colonne Procédures affichée : sinon, ni requête ni sondage. */
   active: boolean;
   projectId: string;
@@ -30,7 +37,10 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   selectedPath: string | null;
   revision: number;
   onOpen: (path: string) => void;
+  /** Un fichier, ou un dossier avec tout son contenu. */
   onDeleted: (path: string) => void;
+  /** Un dossier renommé : ce qui était dedans a changé de chemin. */
+  onRenamed: (from: string, to: string) => void;
 }) {
   const [status, setStatus] = useState<SharedStatus | null>(null);
   const [open, setOpen] = useState(readOpen);
@@ -52,6 +62,14 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
   const [searching, setSearching] = useState(false);
   /** « Nouveau fichier » : type, nom, dossier (la racine ou un dossier déplié de l'arbre). */
   const [creating, setCreating] = useState<{ ext: NewFileType['ext']; name: string; dir: string } | null>(null);
+  /** « Nouveau dossier » : nom, et où (la racine ou un dossier déplié). */
+  const [creatingDir, setCreatingDir] = useState<{ name: string; dir: string } | null>(null);
+  /** Dossier dont les actions (Renommer, Supprimer) sont ouvertes sous sa ligne. */
+  const [actionsFor, setActionsFor] = useState<string | null>(null);
+  /** Dossier renommé dans sa ligne de l'arbre. */
+  const [renaming, setRenaming] = useState<{ path: string; name: string } | null>(null);
+  /** Refus d'une action sur un dossier : affiché sous sa ligne, pas en haut de la section. */
+  const [dirError, setDirError] = useState<{ path: string; message: string } | null>(null);
   const [lastOpened, setLastOpened] = useState('');
   useEffect(() => { setLinking(false); }, [projectId]);
   const expandedRef = useRef(expanded);
@@ -234,12 +252,107 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
     setError('');
     try {
       await api.deleteShared(entry.path);
-      const parent = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
-      await loadDir(parent);
+      await loadDir(parentOf(entry.path));
       onDeleted(entry.path);
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Crée le dossier sur le partage (jamais par-dessus un autre), puis le déplie : un nouveau fichier y ira. */
+  const createDir = async () => {
+    if (!creatingDir) return;
+    const name = creatingDir.name.trim();
+    const problem = fileNameProblem(name, 'dossier');
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    const { dir } = creatingDir;
+    const rel = dir ? `${dir}/${name}` : name;
+    setBusy(true);
+    setError('');
+    try {
+      await api.createSharedDir(rel);
+      setCreatingDir(null);
+      setExpanded((current) => new Set([...current, ...(dir && dir !== root ? [dir] : []), rel]));
+      setLastOpened(rel);
+      await Promise.all([loadDir(dir), loadDir(rel)]);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Renomme un dossier sur place : l'arbre (dossiers dépliés, fichier ouvert) suit le nouveau nom. */
+  const renameDir = async () => {
+    if (!renaming) return;
+    const from = renaming.path;
+    const name = renaming.name.trim();
+    if (name === from.split('/').pop()) {
+      setRenaming(null);
+      return;
+    }
+    const problem = fileNameProblem(name, 'dossier');
+    if (problem) {
+      setDirError({ path: from, message: problem });
+      return;
+    }
+    setBusy(true);
+    setDirError(null);
+    try {
+      const { path: to } = await api.renameSharedDir(from, name);
+      setRenaming(null);
+      setExpanded((current) => new Set([...current].map((dir) => movedPath(dir, from, to))));
+      setListings((current) => new Map([...current].filter(([dir]) => !within(dir, from))));
+      setLastOpened((current) => movedPath(current, from, to));
+      await loadDir(parentOf(from));
+      onRenamed(from, to);
+    } catch (e) {
+      setDirError({ path: from, message: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Supprime un dossier et tout ce qu'il contient. Le serveur fait d'abord le
+   * bilan (ou dit pourquoi c'est refusé : fichier ouvert, brouillon…) ; la
+   * confirmation annonce ce qui partira, et seul ce contenu-là est supprimé.
+   */
+  const removeDir = async (entry: SharedEntry) => {
+    setBusy(true);
+    setDirError(null);
+    let summary: SharedDirSummary;
+    try {
+      summary = await api.sharedDirSummary(entry.path);
+    } catch (e) {
+      setDirError({ path: entry.path, message: (e as Error).message });
+      setBusy(false);
+      return;
+    }
+    const content = [summary.files ? plural(summary.files, 'fichier') : '', summary.dirs ? plural(summary.dirs, 'sous-dossier') : '']
+      .filter(Boolean).join(' et ');
+    const question = content
+      ? `Supprimer le dossier « ${entry.name} » et tout son contenu (${content}) du dossier partagé ? Cette action est immédiate pour toute l’équipe.`
+      : `Supprimer le dossier vide « ${entry.name} » du dossier partagé ?`;
+    if (!confirm(question)) {
+      setBusy(false);
+      return;
+    }
+    try {
+      await api.deleteSharedDir(entry.path, summary.token);
+      setActionsFor(null);
+      setExpanded((current) => new Set([...current].filter((dir) => !within(dir, entry.path))));
+      onDeleted(entry.path);
+    } catch (e) {
+      // Arrêtée en route : le message dit ce qui est parti ; l'arbre montre ce qui reste.
+      setDirError({ path: entry.path, message: (e as Error).message });
+    } finally {
+      await loadDir(parentOf(entry.path));
       setBusy(false);
     }
   };
@@ -259,6 +372,16 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
 
   const reach = status.reach ?? 'unconfigured';
   const canConnect = Boolean(status.configurable && window.worklogsDesktop?.shared?.connect);
+  /** Où créer un fichier ou un dossier : le dernier dossier déplié, sinon la racine (ou le dossier du projet). */
+  const defaultDir = lastOpened && expanded.has(lastOpened) && (!root || lastOpened.startsWith(root + '/')) ? lastOpened : root;
+  const dirOptions = (
+    <>
+      <option value={root}>{root ? root.split('/').pop() : status.label}</option>
+      {[...expanded].filter((dir) => dir !== root && (!root || dir.startsWith(root + '/'))).sort().map((dir) => (
+        <option key={dir} value={dir}>{root ? dir.slice(root.length + 1) : dir}</option>
+      ))}
+    </>
+  );
   const connectForm = canConnect && (
     <>
       <form className="shared-connect" onSubmit={(event) => { event.preventDefault(); void connect(address, account); }}>
@@ -320,6 +443,8 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
     }
     const seen = listing.offline && listing.listed_at ? <p className="empty shared-seen">Hors ligne — liste vue {sinceLabel(listing.listed_at)}.</p> : null;
     if (!listing.entries.length) return <>{seen}<p className="empty">{listing.offline ? 'Rien de gardé sur cet ordinateur ici.' : 'Dossier vide.'}</p></>;
+    // Renommer, supprimer : seulement quand le partage répond (pas sur une liste gardée hors ligne).
+    const editable = reach === 'ok' && !listing.offline;
     return (
       <>
       {seen}
@@ -327,21 +452,76 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
         {listing.entries.map((entry) => (entry.type === 'dir'
           ? (
             <li key={entry.path}>
-              <div className="shared-dir-row">
-                <button
-                  className="shared-dir"
-                  aria-expanded={expanded.has(entry.path)}
-                  aria-label={`Dossier ${entry.name}`}
-                  onClick={() => toggleDir(entry.path)}
-                >
-                  <span aria-hidden="true">{expanded.has(entry.path) ? '▾' : '▸'}</span> {entry.name}
-                </button>
-                {linking && project && (
-                  <button className="ghost shared-link-here" disabled={busy} aria-label={`Relier ${project.name} au dossier ${entry.path}`} onClick={() => void link(entry.path)}>
-                    Relier ici
+              {renaming?.path === entry.path ? (
+                <form className="shared-rename" aria-label={`Renommer le dossier ${entry.name}`} onSubmit={(event) => { event.preventDefault(); void renameDir(); }}>
+                  <input
+                    aria-label="Nouveau nom du dossier"
+                    value={renaming.name}
+                    autoFocus
+                    // Le nom entier sélectionné : on tape le nouveau, comme dans l'explorateur de fichiers.
+                    onFocus={(event) => event.currentTarget.select()}
+                    spellCheck={false}
+                    onChange={(event) => setRenaming({ ...renaming, name: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') {
+                        setRenaming(null);
+                        setDirError(null);
+                      }
+                    }}
+                  />
+                  <button className="task-primary" type="submit" disabled={busy || !renaming.name.trim()}>Renommer</button>
+                  <button className="ghost" type="button" onClick={() => { setRenaming(null); setDirError(null); }}>Annuler</button>
+                </form>
+              ) : (
+                <div className="shared-dir-row">
+                  <button
+                    className="shared-dir"
+                    aria-expanded={expanded.has(entry.path)}
+                    aria-label={`Dossier ${entry.name}`}
+                    onClick={() => toggleDir(entry.path)}
+                  >
+                    <span aria-hidden="true">{expanded.has(entry.path) ? '▾' : '▸'}</span> {entry.name}
                   </button>
-                )}
-              </div>
+                  {linking && project ? (
+                    <button className="ghost shared-link-here" disabled={busy} aria-label={`Relier ${project.name} au dossier ${entry.path}`} onClick={() => void link(entry.path)}>
+                      Relier ici
+                    </button>
+                  ) : editable && (
+                    <button
+                      className="ghost shared-dir-more"
+                      aria-label={`Renommer ou supprimer ${entry.name}`}
+                      aria-expanded={actionsFor === entry.path}
+                      title="Renommer ou supprimer ce dossier"
+                      onClick={() => {
+                        setDirError(null);
+                        setActionsFor(actionsFor === entry.path ? null : entry.path);
+                      }}
+                    >
+                      ⋯
+                    </button>
+                  )}
+                </div>
+              )}
+              {actionsFor === entry.path && editable && !linking && renaming?.path !== entry.path && (
+                <div className="shared-dir-actions">
+                  <button
+                    className="ghost"
+                    disabled={busy}
+                    aria-label={`Renommer ${entry.name}`}
+                    onClick={() => {
+                      setActionsFor(null);
+                      setDirError(null);
+                      setRenaming({ path: entry.path, name: entry.name });
+                    }}
+                  >
+                    Renommer
+                  </button>
+                  <button className="ghost shared-dir-remove" disabled={busy} aria-label={`Supprimer ${entry.name} du partage`} onClick={() => void removeDir(entry)}>
+                    Supprimer…
+                  </button>
+                </div>
+              )}
+              {dirError?.path === entry.path && <p className="error shared-dir-error" role="alert">{dirError.message}</p>}
               {expanded.has(entry.path) && depth < 12 && renderDir(entry.path, depth + 1)}
             </li>
           )
@@ -428,10 +608,7 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
                 <label>
                   Dans
                   <select aria-label="Dossier du nouveau fichier" value={creating.dir} onChange={(event) => setCreating({ ...creating, dir: event.target.value })}>
-                    <option value={root}>{root ? root.split('/').pop() : status.label}</option>
-                    {[...expanded].filter((dir) => dir !== root && (!root || dir.startsWith(root + '/'))).sort().map((dir) => (
-                      <option key={dir} value={dir}>{root ? dir.slice(root.length + 1) : dir}</option>
-                    ))}
+                    {dirOptions}
                   </select>
                 </label>
                 <div className="shared-project-link">
@@ -439,14 +616,32 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
                   <button className="ghost" type="button" onClick={() => { setCreating(null); setError(''); }}>Annuler</button>
                 </div>
               </form>
+            ) : creatingDir ? (
+              <form className="shared-new" aria-label="Nouveau dossier" onSubmit={(event) => { event.preventDefault(); void createDir(); }}>
+                <label>
+                  Nom
+                  <input aria-label="Nom du dossier" placeholder="3. Sauvegardes" value={creatingDir.name} autoFocus onChange={(event) => setCreatingDir({ ...creatingDir, name: event.target.value })} />
+                </label>
+                <label>
+                  Dans
+                  <select aria-label="Emplacement du nouveau dossier" value={creatingDir.dir} onChange={(event) => setCreatingDir({ ...creatingDir, dir: event.target.value })}>
+                    {dirOptions}
+                  </select>
+                </label>
+                <div className="shared-project-link">
+                  <button className="task-primary" type="submit" disabled={busy || !creatingDir.name.trim()}>Créer</button>
+                  <button className="ghost" type="button" onClick={() => { setCreatingDir(null); setError(''); }}>Annuler</button>
+                </div>
+              </form>
             ) : reach === 'ok' && (
-              <button
-                className="ghost shared-change"
-                disabled={busy}
-                onClick={() => setCreating({ ext: 'docx', name: '', dir: lastOpened && expanded.has(lastOpened) && (!root || lastOpened.startsWith(root + '/')) ? lastOpened : root })}
-              >
-                ＋ Nouveau fichier…
-              </button>
+              <div className="shared-new-buttons">
+                <button className="ghost shared-change" disabled={busy} onClick={() => setCreating({ ext: 'docx', name: '', dir: defaultDir })}>
+                  ＋ Nouveau fichier…
+                </button>
+                <button className="ghost shared-change" disabled={busy} onClick={() => setCreatingDir({ name: '', dir: defaultDir })}>
+                  ＋ Nouveau dossier…
+                </button>
+              </div>
             )}
             <input
               className="shared-search"

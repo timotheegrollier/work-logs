@@ -962,10 +962,44 @@ qu'un dossier **déjà monté**, pas une adresse `smb://`.
   a changé depuis, rien n'est supprimé (`409 SHARED_STALE`, la version du collègue est
   gardée et rouvrir puis supprimer marche) ; un brouillon, un envoi en attente ou un
   conflit se règle d'abord, un fichier ouvert ailleurs (Word, Excel, LibreOffice, un
-  autre WorkLogs) ne se supprime pas. Seuls les fichiers, jamais les dossiers ; la ligne
+  autre WorkLogs) ne se supprime pas. Seuls les fichiers (les dossiers : point suivant) ; la ligne
   locale est oubliée, **l'historique reste** (restaurable en brouillon, qui repartirait
   comme une recréation gardée). UI : ✕ dans l'arbre et « Supprimer du partage » dans
   l'éditeur, avec confirmation ; l'éditeur se referme, l'arbre se recharge.
+- **Dossiers : créer, renommer, supprimer** (demandé par Timo le 2026-10-08 : « créer/renommer/
+  supprimer un dossier sur le serveur distant dans les procédures »). `POST /dir`,
+  `POST /dir/rename`, `GET` puis `DELETE /dir`. Dans l'arbre : « ＋ Nouveau dossier… » et un
+  bouton **⋯** par dossier (Renommer, Supprimer…) — pas ✎, déjà la pastille « brouillon ».
+  - **Créer** : `mkdir` exclusif, noms refusés par Windows refusés avant, dossiers cachés
+    aussi. Le dossier s'ouvre aussitôt : « Nouveau fichier » y va par défaut.
+  - **Renommer** au même endroit, **sans rien remplacer** : `rename(2)` remplacerait un
+    dossier vide du même nom, le worker vérifie d'abord (fenêtre de quelques µs). La casse
+    seule (`procedure` → `Procedure`) passe par un nom provisoire `.~worklogs-…` : Windows ne
+    distingue pas les deux, Linux prendrait l'un pour l'autre (« déjà pris », ou rien de fait
+    sur CIFS). Les lignes de cette machine suivent (fichiers, historique, listes gardées,
+    projets reliés), et le fichier ouvert au centre aussi.
+  - **Refusé, pour renommer comme pour supprimer**, si un fichier du dossier est en route ici
+    (brouillon, envoi en attente, conflit : l'éditeur écrirait ensuite à l'ancien chemin) ou
+    ouvert par un collègue (`~$`, `.~lock#` lus dans le dossier, parcours borné) ; notre propre
+    main est rendue avant. Windows refuse de son côté de renommer un dossier dont un fichier
+    est ouvert (message « droits, ou fichier ouvert »).
+  - **Supprimer avec le contenu, en deux temps** : le **bilan** (fichiers, sous-dossiers,
+    taille, empreinte de ce contenu) qu'annonce la confirmation, puis la suppression **de ce
+    contenu-là** — empreinte différente : `SHARED_STALE`, rien ne part. Chaque fichier est lu
+    puis supprimé s'il a gardé taille et date (`deleteSeen`) : ses octets restent dans le
+    magasin local (historique, rétention habituelle). Vignettes et restes de verrous partent
+    sans être gardés. Les dossiers se retirent vides, du plus profond au dossier lui-même :
+    un fichier arrivé entre-temps les garde. Au premier imprévu on s'arrête et le message dit
+    ce qui est parti (`SHARED_DIR_PARTIAL`) ; pas de retour en arrière (recréer serait une
+    écriture de plus sur le partage, qu'aucun collègue n'a demandée).
+  - **Bornes** : 300 fichiers, 100 dossiers, profondeur 12, 200 Mo en tout, 100 Mo par fichier
+    (chaque fichier est lu pour être gardé). Au-delà, ou avec un lien, un dossier caché, un
+    sous-dossier fermé au compte : à faire depuis Windows.
+  - **Corrigé en route** : un dossier dont le nom ressemble à un temporaire de Word
+    (`20241231`, huit chiffres) restait caché de l'arbre et de la recherche. La règle des
+    fichiers techniques ne vaut plus que pour les fichiers ; un dossier n'est caché que s'il
+    commence par un point ou est un dossier système (`isTechnicalDirName`).
+  - Pas faits, faute de demande : renommer un fichier, déplacer (glisser-déposer).
 - Restent de l'idée « procédures ↔ partage » : IA par le pont Markdown §23 — à redemander.
 
 **Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :
