@@ -36,3 +36,16 @@ export function localDir(rootAddress: string | null | undefined, sharedDir: stri
   const depth = root.split('/').length;
   return sharedDir.replace(/\//g, '\\').replace(/^\\+/, '').split('\\').filter(Boolean).slice(1 + depth).join('/');
 }
+
+/**
+ * Le dossier `from` vient d'être renommé en `to`, ou supprimé (`to` à `null`) : ce que
+ * devient un lien qui y menait, sous-dossiers compris (`null` : plus relié), `undefined`
+ * s'il ne le concerne pas. Sans casse, comme le partage Windows.
+ */
+export function followDir(rootAddress: string | null | undefined, sharedDir: string | null | undefined, from: string, to: string | null): string | null | undefined {
+  const dir = localDir(rootAddress, sharedDir);
+  if (dir === null) return undefined;
+  const key = (value: string) => value.normalize('NFC').toLowerCase();
+  if (key(dir) !== key(from) && !key(dir).startsWith(key(from) + '/')) return undefined;
+  return to === null ? null : linkFor(rootAddress, to + dir.slice(from.length));
+}

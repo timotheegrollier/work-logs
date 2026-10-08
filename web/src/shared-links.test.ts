@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addressKey, linkFor, localDir } from './shared-links';
+import { addressKey, followDir, linkFor, localDir } from './shared-links';
 
 const PC_ROOT = '\\\\172.16.1.20\\d\\Global\\MURGAT INGENIERIE\\13. SI\\00. PROCEDURE';
 const RELAY_ROOT = '\\\\172.16.1.20\\D\\Global\\MURGAT INGENIERIE\\13. SI\\00. PROCEDURE';
@@ -31,5 +31,22 @@ describe('dossier du TSE relié à un projet', () => {
 
   it('clé sans serveur ni casse', () => {
     expect(addressKey('\\\\SRVMURGAT\\D\\Global\\Procédures')).toBe(addressKey('//172.16.1.20/d/global/procédures'));
+  });
+});
+
+describe('dossier relié renommé ou supprimé', () => {
+  it('le lien suit le dossier, ou celui au-dessus de lui ; les autres ne bougent pas', () => {
+    expect(followDir(RELAY_ROOT, linkFor(PC_ROOT, '2. TSE'), '2. TSE', 'TSE')).toBe(linkFor(RELAY_ROOT, 'TSE'));
+    expect(followDir(null, 'Piscine/Filtres', 'Piscine', 'Bassin')).toBe('Bassin/Filtres');
+    expect(followDir(null, 'Piscines', 'Piscine', 'Bassin')).toBeUndefined();
+    expect(followDir(null, 'Atelier', 'Piscine', 'Bassin')).toBeUndefined();
+    expect(followDir(RELAY_ROOT, '\\\\172.16.1.20\\D\\Pisciculture', '2. TSE', 'TSE')).toBeUndefined();
+    expect(followDir(null, null, 'Piscine', 'Bassin')).toBeUndefined();
+  });
+
+  it('sans casse, comme le partage Windows ; supprimé, le projet n’est plus relié', () => {
+    expect(followDir(null, 'procedure/Réseau', 'Procedure', 'Procédures')).toBe('Procédures/Réseau');
+    expect(followDir(null, 'Piscine/Filtres', 'Piscine', null)).toBeNull();
+    expect(followDir(null, 'Piscine', 'Piscine', null)).toBeNull();
   });
 });

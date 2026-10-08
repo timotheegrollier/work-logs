@@ -3208,6 +3208,32 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     expect(fs.existsSync(path.join(share, 'Projets'))).toBe(false);
   });
 
+  test('renommer ou supprimer un dossier relié à un projet : le lien du projet suit', async () => {
+    seedData(api.db, { projects: [{ id: 'pr_p', name: 'Piscine' }, { id: 'pr_a', name: 'Atelier' }, { id: 'pr_x', name: 'Bureau' }] });
+    const linkOf = (id: string) => row(api.db, 'SELECT shared_dir FROM projects WHERE id=?', id).shared_dir;
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    fs.mkdirSync(path.join(share, 'Piscine', 'Filtres'), { recursive: true });
+    fs.mkdirSync(path.join(share, 'Atelier'));
+    fs.mkdirSync(path.join(share, 'Bureau'));
+    api.db.prepare('UPDATE projects SET shared_dir=? WHERE id=?').run('Piscine/Filtres', 'pr_p');
+    api.db.prepare('UPDATE projects SET shared_dir=? WHERE id=?').run('Atelier', 'pr_a');
+    api.db.prepare('UPDATE projects SET shared_dir=? WHERE id=?').run('Bureau', 'pr_x');
+    render(<App />);
+
+    fireEvent.click(await (await tree()).findByRole('button', { name: 'Renommer ou supprimer Piscine' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Renommer Piscine' }));
+    const form = screen.getByRole('form', { name: 'Renommer le dossier Piscine' });
+    fireEvent.change(within(form).getByLabelText('Nouveau nom du dossier'), { target: { value: 'Bassin' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Renommer' }));
+    // Relié à un sous-dossier : le lien suit le dossier renommé au-dessus de lui.
+    await waitFor(() => expect(linkOf('pr_p')).toBe('Bassin/Filtres'), partage);
+
+    fireEvent.click(await (await tree()).findByRole('button', { name: 'Renommer ou supprimer Atelier' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer Atelier du partage' }));
+    await waitFor(() => expect(linkOf('pr_a')).toBeNull(), partage);
+    expect(linkOf('pr_x')).toBe('Bureau');
+  });
+
   test('renommer refusé tant qu’un brouillon attend dedans : la raison sous le dossier, Échap annule', async () => {
     const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
     fs.mkdirSync(path.join(share, 'Projets'));

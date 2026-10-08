@@ -3,7 +3,7 @@ import { api, ApiError, type Project, type SharedDirSummary, type SharedEntry, t
 import { badgesFor, REACH_HELP, REACH_LABELS, sinceLabel } from '../shared-session';
 import { editorKind } from '../file-formats';
 import { fileNameProblem, NEW_FILE_TYPES, newFileBytes, withExtension, type NewFileType } from '../new-files';
-import { linkFor, localDir } from '../shared-links';
+import { followDir, linkFor, localDir } from '../shared-links';
 
 const OPEN_KEY = 'worklogs-shared-open';
 const POLL_MS = 30_000;
@@ -227,6 +227,15 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
       setBusy(false);
     }
   };
+  /** Un dossier renommé ou supprimé : les projets reliés à lui (ou dessous) le suivent, le lien étant porté par le projet. */
+  const followLinks = async (from: string, to: string | null) => {
+    const moves = projects.flatMap((each) => {
+      const next = followDir(status?.address, each.shared_dir, from, to);
+      return next === undefined ? [] : [{ id: each.id, next }];
+    });
+    for (const { id, next } of moves) await api.updateProject(id, { shared_dir: next });
+    if (moves.length) onProjectsChanged();
+  };
   const unlink = async () => {
     setBusy(true);
     setError('');
@@ -344,6 +353,7 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
       setLastOpened((current) => movedPath(current, from, to));
       await loadDir(parentOf(from));
       onRenamed(from, to);
+      await followLinks(from, to);
     } catch (e) {
       setDirError({ path: from, message: (e as Error).message });
     } finally {
@@ -381,6 +391,7 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
       setActionsFor(null);
       setExpanded((current) => new Set([...current].filter((dir) => !within(dir, entry.path))));
       onDeleted(entry.path);
+      await followLinks(entry.path, null);
     } catch (e) {
       // Arrêtée en route : le message dit ce qui est parti ; l'arbre montre ce qui reste.
       setDirError({ path: entry.path, message: (e as Error).message });
