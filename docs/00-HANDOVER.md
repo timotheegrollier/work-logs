@@ -395,6 +395,20 @@ Décision : §25 (« Supprimer un fichier du partage »).
    referme-t-il, sans laisser de brouillon derrière ?
 3. Un fichier modifié par un collègue juste avant : la suppression est-elle refusée
    (« a changé sur le partage »), et rouvrir puis supprimer marche-t-il ?
+## Lot du 2026-10-07 — PDF du dossier partagé
+
+Demande de Timo : « visualiser les PDF directement dans WorkLogs dans l'app desktop, comme
+dans la PWA sur mobile ». Décision : §34.
+- **Constaté avant de coder** : un PDF **joint à une entrée** s'affiche déjà en desktop
+  (bouton « 👁 Aperçu », visionneuse d'Electron), dans le paquet 0.47.0 installé comme en dev.
+  Le seul endroit où un PDF ne se lisait pas dans WorkLogs : le **dossier partagé** (« WorkLogs
+  ne modifie pas les fichiers .pdf », « Ouvrir avec… » seulement).
+- **Maintenant** : un PDF du partage s'ouvre au centre, dans la visionneuse intégrée, en
+  lecture seule ; « Ouvrir avec… » reste. Route `GET /api/shared/preview?hash=&name=` (PDF
+  seulement, vérifié sur les octets, `415` sinon), aucune CSP assouplie, aucune dépendance.
+- Tests : API (`shared.test.js`, en-têtes, nom, refus du non-PDF), front (`App.test.tsx`,
+  PDF au centre, faux PDF, autre format inchangé ; `file-preview.test.ts`), desktop e2e
+  (la visionneuse de Chromium prend le relais, aucun téléchargement).
 
 ## Lot du 2026-10-06 (3) — procédures en lecture, blocs de code
 

@@ -159,6 +159,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET | `/api/shared/status` | dossier partagé : `available`, racine, montage, `reach` (`ok`, `offline`, `unmounted`, `blocked`, `unconfigured`), envois en attente, conflits |
 | GET | `/api/shared/list?dir=` | un niveau du partage : fichiers, dossiers, verrous lus, état local ; hors ligne `503` + fichiers gardés ici |
 | GET | `/api/shared/file?path=` · `/api/shared/content?hash=` | métadonnées et brouillon · octets d'une version du magasin local |
+| GET | `/api/shared/preview?hash=&name=` | mêmes octets en `inline`, `application/pdf`, sous `name` — **PDF seulement** (`%PDF-` dans le premier Ko), sinon `415 SHARED_NOT_PDF` |
 | PUT | `/api/shared/draft?path=` | brouillon local (modèle JSON) ; ne touche jamais le partage |
 | POST | `/api/shared/draft/discard?path=` | abandonne le brouillon, ses octets restent dans l'historique |
 | POST | `/api/shared/push?path=&base=` | envoi gardé des octets : `200 written` · `202 pending/offline/interrupted` · `409 SHARED_CONFLICT` |

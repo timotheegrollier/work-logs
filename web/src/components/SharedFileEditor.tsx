@@ -4,6 +4,7 @@ import { Autosave } from '../autosave';
 import { proofreadEntry, readAiSettings, suggestProcedure } from '../ai-suggest';
 import { renderMarkdown } from '../markdown';
 import { editorKind, MAX_EDITABLE_TEXT, type FileAiMode, type FileAiProposal, type FileEditorHandle } from '../file-formats';
+import { looksLikePdf } from '../file-preview';
 import { bannerFor, idleExpired, lockBlocks, lockForgotten, lockMessage } from '../shared-session';
 import { requestLeave, setLeaveGuard } from '../shared-leave';
 import { TextFileEditor } from './TextFileEditor';
@@ -568,9 +569,12 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
   // Les tableurs n'ont pas de procédure à rédiger.
   const aiKind = kind === 'text' || kind === 'markdown' || kind === 'docx';
 
+  // Un PDF se lit sur place (lecture seule) : la visionneuse intégrée garde son bouton de téléchargement.
+  // Sur la PWA, pas d'aperçu (`null`) : le PDF garde son téléchargement.
+  const pdfUrl = loaded && !kind && looksLikePdf(loaded.bytes) ? api.sharedPreviewUrl(loaded.template, name) : null;
   const downloadUrl = useMemo(
-    () => (loaded && !kind ? URL.createObjectURL(new Blob([loaded.bytes as BlobPart])) : ''),
-    [loaded, kind],
+    () => (loaded && !kind && !pdfUrl ? URL.createObjectURL(new Blob([loaded.bytes as BlobPart])) : ''),
+    [loaded, kind, pdfUrl],
   );
   useEffect(() => () => { if (downloadUrl) URL.revokeObjectURL(downloadUrl); }, [downloadUrl]);
 
@@ -697,6 +701,8 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
 
       {!loaded ? (
         !error && <p className="empty">Ouverture…</p>
+      ) : pdfUrl ? (
+        <iframe className="shared-pdf" src={pdfUrl} title={`Aperçu de ${name}`} />
       ) : !kind ? (
         <div className="notice">
           <p>

@@ -1,7 +1,17 @@
 import { describe, expect, test } from 'vitest';
-import { previewKind, previewNotice } from './file-preview';
+import { looksLikePdf, previewKind, previewNotice } from './file-preview';
 
 describe('classement des pièces jointes pour l’aperçu', () => {
+  test('un PDF se reconnaît à ses octets, en-tête dans le premier Ko', () => {
+    const bytes = (text: string) => new TextEncoder().encode(text);
+    expect(looksLikePdf(bytes('%PDF-1.7\n…'))).toBe(true);
+    // La norme tolère quelques octets avant l'en-tête.
+    expect(looksLikePdf(bytes('\ufeff  %PDF-1.4\n'))).toBe(true);
+    expect(looksLikePdf(bytes(' '.repeat(1100) + '%PDF-1.4'))).toBe(false);
+    expect(looksLikePdf(bytes('<html>pas un PDF</html>'))).toBe(false);
+    expect(looksLikePdf(new Uint8Array())).toBe(false);
+  });
+
   test('reconnaît images, PDF et texte sur l’extension', () => {
     expect(previewKind({ filename: 'photo.png' })).toBe('image');
     expect(previewKind({ filename: 'plan.jpeg' })).toBe('image');

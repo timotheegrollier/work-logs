@@ -498,6 +498,12 @@ export const remoteApi = {
   deleteProject: (id: string) => send<{ ok: true }>('DELETE', `/api/projects/${id}`),
 
   ...sharedClient(''),
+  /**
+   * PDF du partage, servi `inline` pour la visionneuse intégrée (desktop). Pas par le relais
+   * de la PWA : une `<iframe>` n'envoie pas son en-tête `Authorization`.
+   */
+  sharedPreviewUrl: (hash: string, name: string): string | null =>
+    '/api/shared/preview?hash=' + enc(hash) + '&name=' + enc(name),
 
   deleteAttachment: (id: string) => send<{ ok: true; driveTrashed?: boolean }>('DELETE', `/api/attachments/${id}`),
   fileUrl: (stored: string) => `/api/files/${stored}`,

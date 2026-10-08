@@ -1016,6 +1016,8 @@ export const localApi: Api = {
   linkSharedFolder: async (projectId, dir) => relay().linkSharedFolder(projectId, dir),
   unlinkSharedFolder: async (projectId) => relay().unlinkSharedFolder(projectId),
   setSharedDisplayName: async (displayName) => relay().setSharedDisplayName(displayName),
+  // Pas d'aperçu PDF par le relais (en-tête d'autorisation) : le PDF garde son téléchargement.
+  sharedPreviewUrl: () => null,
   deleteAttachment: async (id) => {
     const { attachments } = await tables();
     const row = (await attachments.get(id)) ?? fail('pièce jointe introuvable');

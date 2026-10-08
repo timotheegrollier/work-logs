@@ -718,11 +718,12 @@ export function SharedFolder({ active, projectId, projects, selectedPath, revisi
 
 function FileRow({ entry, selected, disabled, onOpen, onDelete }: { entry: SharedEntry; selected: boolean; disabled: boolean; onOpen: (path: string) => void; onDelete: (entry: SharedEntry) => void }) {
   const badges = badgesFor(entry);
-  const editable = Boolean(editorKind(entry.ext));
+  // Grisé : WorkLogs ne l'ouvre pas lui-même. Un PDF se lit sur place, sans être modifiable.
+  const opens = Boolean(editorKind(entry.ext)) || entry.ext === 'pdf';
   return (
     <li className="shared-file-row">
       <button
-        className={'shared-file' + (selected ? ' is-selected' : '') + (editable && !entry.unavailable ? '' : ' is-foreign')}
+        className={'shared-file' + (selected ? ' is-selected' : '') + (opens && !entry.unavailable ? '' : ' is-foreign')}
         aria-current={selected ? 'true' : undefined}
         aria-label={`Ouvrir ${entry.name}${badges.length ? ` — ${badges.map((badge) => badge.label).join(', ')}` : ''}${entry.unavailable ? ' — pas gardé sur cet ordinateur, attends le retour du partage' : ''}`}
         title={entry.unavailable ? 'Hors ligne : ce fichier n’est pas gardé sur cet ordinateur.' : undefined}
