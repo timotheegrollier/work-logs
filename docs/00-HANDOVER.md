@@ -4,7 +4,12 @@
 > **Lot courant :** **vues rapides des tâches** — pastilles En retard, Aujourd'hui, En cours,
 > Épinglées, ▲ Haute en tête de la colonne Tâches, et « N en cours » / « N en retard » de
 > l'en-tête cliquables. Branche `claude/task-status-visualization-922c08`. Détail : « Lot du
-> 2026-10-08 (3) — vues rapides des tâches » ci-dessous ; décision §32.
+> 2026-10-08 (4) — vues rapides des tâches » ci-dessous ; décision §33.
+>
+> **Correctif du 2026-10-08 (3), non publié :** fenêtre desktop impossible à fermer
+> (« titre requis ») après avoir vidé le titre d'une entrée puis l'avoir quittée. Un titre
+> vidé n'est plus envoyé — l'entrée garde l'ancien, en filigrane — et le dialogue d'échec à
+> la fermeture propose « Fermer sans enregistrer ». Décision §32.
 >
 > **Lots de la v0.50.0 :**
 > - **IA dans les procédures du dossier partagé** (« ✨ Suggérer une procédure », « ✨ Mettre
@@ -81,10 +86,10 @@
 > **Reprise prioritaire : [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md)** pour le diagnostic
 > réel, les capacités de l’éditeur et les limites Google.
 
-## Lot du 2026-10-08 (3) — vues rapides des tâches
+## Lot du 2026-10-08 (4) — vues rapides des tâches
 
 Demande de Timo : « visualiser et accéder rapidement aux tâches marquées comme en cours /
-en retard, etc. » Décision : §32.
+en retard, etc. » Décision : §33.
 - **Constaté avant de coder** : la colonne empile À faire, En cours, Terminé — les tâches en
   cours sont sous toute la liste À faire, les retards dispersés dans deux colonnes, et le
   compteur « en retard » de l'en-tête (masqué sous 1 560 px) ne menait nulle part.
@@ -117,7 +122,9 @@ en retard, etc. » Décision : §32.
   29 scripts, 8 relais, build, **55 navigateur, 15 desktop** verts ; front **480/481**,
   le seul échec étant ce même parcours du relais (délai de 5 s). Les 142 tests de
   `App.test.tsx`, dont les 6 nouveaux, passent dans chaque campagne complète.
-  **Pas de `CHECK OK` d'un seul tenant** : à relancer machine calme avant fusion.
+  Pas de `CHECK OK` local d'un seul tenant (charge jusqu'à 15) ; la preuve est la **CI
+  GitHub**, verte sur la branche fusionnée avec la v0.50.0 (`2612df0` : 4 jobs sur 4,
+  `CHECK OK`, 510 front, 57 navigateur), puis sur la resynchronisation finale avec `master`.
 - **Vu dans un vrai navigateur** (copie jetable servie par `api/src/server.js`, 13 tâches) :
   à 1 600 px, six pastilles sur deux rangées dans la colonne de 282 px (trois rangées avant
   resserrage), vue En retard = 2 À faire + 1 En cours ; Tâches replié + projet Atelier, clic

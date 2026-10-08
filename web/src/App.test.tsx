@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { seedData, useRealApi } from './test/server';
-import { flushPendingSaves } from './autosave';
+import { flushPendingSaves, hasPendingSaves } from './autosave';
 import { api as clientApi } from './lib';
 
 let api: Awaited<ReturnType<typeof useRealApi>>;
@@ -444,6 +444,32 @@ describe('écrire une entrée', () => {
       expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('B')
     );
     await waitFor(() => expect(row(api.db, 'SELECT title FROM entries WHERE id=?', 'en_a').title).toBe('A modifié'));
+  });
+
+  test('un titre vidé garde l’ancien et ne bloque plus la fermeture une fois l’entrée quittée', async () => {
+    // 0.49.1 : le brouillon sans titre échouait, restait en attente après le changement
+    // d'entrée et la fermeture le rejouait sans fin — sur une entrée introuvable au
+    // journal, qui y portait toujours son ancien titre.
+    const user = userEvent.setup();
+    seedData(api.db, {
+      entries: [
+        { id: 'en_a', title: 'A', date: '2026-06-02' },
+        { id: 'en_b', title: 'B', date: '2026-06-01' },
+      ],
+    });
+    render(<App />);
+
+    await user.clear(await screen.findByLabelText('Titre de l’entrée'));
+    expect(screen.getByLabelText('Titre de l’entrée')).toHaveAttribute('placeholder', 'A');
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Écrit sans titre' } });
+    await user.click(within(journal()).getByText('B'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('B'));
+
+    await flushPendingSaves();
+    expect(hasPendingSaves()).toBe(false);
+    expect(row(api.db, 'SELECT title, content_md FROM entries WHERE id=?', 'en_a'))
+      .toMatchObject({ title: 'A', content_md: 'Écrit sans titre' });
   });
 
   test('crée une tâche liée depuis l’entrée ouverte et affiche son document sur la carte', async () => {

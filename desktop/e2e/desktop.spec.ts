@@ -313,25 +313,43 @@ test('dossier partagé : mot de passe à saisir, la fenêtre du gestionnaire de 
   await expect(page.getByLabel('Compte du partage')).toHaveValue('TSE02\\Timo');
 });
 
-test('impression PDF et refus de fermeture si l’enregistrement échoue', async () => {
+test('impression PDF, refus de fermeture si l’enregistrement échoue, puis sortie sans enregistrer', async () => {
   const bytes = await application!.evaluate(async ({ BrowserWindow }) => {
     const pdf = await BrowserWindow.getAllWindows()[0].webContents.printToPDF({ printBackground: true });
     return pdf.length;
   });
   expect(bytes).toBeGreaterThan(1000);
+  type Dialogs = { closeErrors: string[] };
+  // Premier dialogue : « Revenir à WorkLogs » ; second : « Fermer sans enregistrer ».
   await application!.evaluate(({ dialog }) => {
+    const answers = [0, 1];
+    (globalThis as unknown as Dialogs).closeErrors = [];
     dialog.showMessageBoxSync = (...args: unknown[]) => {
-      (globalThis as unknown as { closeError: string }).closeError = JSON.stringify(args[1]);
-      return 0;
+      (globalThis as unknown as Dialogs).closeErrors.push(JSON.stringify(args[1]));
+      return answers.shift() ?? 0;
     };
   });
+  // Un titre vidé s'enregistre désormais (l'ancien est gardé) : l'échec vient du serveur.
   await page.getByLabel('Titre de l’entrée').fill('');
-  await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
-  await expect.poll(() => application!.evaluate(() => (globalThis as unknown as { closeError: string }).closeError)).toContain('La fenêtre reste ouverte');
-  await expect(page.getByLabel('Titre de l’entrée')).toBeVisible();
-  await page.getByLabel('Titre de l’entrée').fill('Comment ça marche');
-  await page.keyboard.press('Control+s');
   await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    const real = window.fetch.bind(window);
+    window.fetch = (input, init) => init?.method === 'PUT'
+      ? Promise.resolve(new Response(JSON.stringify({ error: 'disque plein' }), { status: 500, headers: { 'Content-Type': 'application/json' } }))
+      : real(input, init);
+  });
+  await page.getByLabel('Titre de l’entrée').fill('Titre jamais enregistré');
+  const errors = () => application!.evaluate(() => (globalThis as unknown as Dialogs).closeErrors);
+  await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  await expect.poll(errors).toHaveLength(1);
+  expect((await errors())[0]).toContain('disque plein');
+  expect((await errors())[0]).toContain('Fermer sans enregistrer');
+  await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Titre jamais enregistré');
+  const closed = application!.waitForEvent('close');
+  await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  await closed;
+  application = undefined;
+  await launch();
 });
 
 test('Google intégré : outils dans le canevas, isolation, dimensions et copie locale', async () => {
