@@ -91,6 +91,22 @@ Décision : §29.
 3. Un bouton « Copier » sur les blocs de code en lecture serait-il utile ? Écarté pour
    l'instant (non demandé).
 
+## Lot du 2026-10-07 (2) — les liens projet ↔ dossier du TSE suivent par Drive — v0.49.0
+
+Demande de Timo (le relais marche sur le téléphone) : retrouver partout les liens entre ses
+projets et les dossiers du TSE. Ils deviennent un champ du projet, `projects.shared_dir`,
+synchronisé par Drive ; ils portent l'adresse complète du dossier, traduite par chaque
+appareil sous sa racine (`web/src/shared-links.ts`, `api/src/shared-address.js`). Décision : §29,
+paragraphe « v0.49.0 ».
+- **Vérifié avec ses vraies valeurs** : les 4 liens de son PC (OVH/DNS/VPN → `11. VPS OVH`,
+  Infra et Téléphonie → `1. TELEPHONIE`, Supervision → `14. SUPERVISION`, Chat → `15. CHAT`)
+  retombent sur les bons dossiers sous la racine du relais ; le relais déduit son adresse du
+  montage CIFS réel (`\\172.16.1.20\D\Global\…\00. PROCEDURE`). Ils seront repris sur les projets
+  au premier affichage de la section après la mise à jour du desktop, puis partiront par Drive.
+- **Trouvé en route** : le relais réécrivait à chaque démarrage le nom des verrous changé depuis
+  le téléphone ; corrigé (déployé sur la VM).
+- **Tests** : __COUNTS__.
+
 ## Lot du 2026-10-07 — le dossier partagé sur la PWA, par un relais — v0.48.0
 
 Demande de Timo : les procédures du TSE sur la PWA du téléphone (lire, modifier, créer). Choix

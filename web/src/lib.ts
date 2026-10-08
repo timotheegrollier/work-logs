@@ -17,6 +17,8 @@ export interface Project {
   name: string;
   color: string;
   created_at: string;
+  /** Dossier du TSE relié : son adresse (`\\serveur\partage\…`), synchronisée par Drive (§29). */
+  shared_dir?: string | null;
   entries: number;
   open_tasks: number;
 }
@@ -470,7 +472,7 @@ export const remoteApi = {
 
   createProject: (body: { name: string; color?: string }) =>
     send<Project>('POST', '/api/projects', body),
-  updateProject: (id: string, body: { name?: string; color?: string }) =>
+  updateProject: (id: string, body: { name?: string; color?: string; shared_dir?: string | null }) =>
     send<Project>('PUT', `/api/projects/${id}`, body),
   deleteProject: (id: string) => send<{ ok: true }>('DELETE', `/api/projects/${id}`),
 

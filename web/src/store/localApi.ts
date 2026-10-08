@@ -109,7 +109,7 @@ interface TaskRow {
   position: number; priority: 'low' | 'normal' | 'high'; project_id: string | null;
   created_at: string; updated_at: string;
 }
-interface ProjectRow { id: string; name: string; color: string; created_at: string; updated_at?: string }
+interface ProjectRow { id: string; name: string; color: string; created_at: string; updated_at?: string; shared_dir?: string | null }
 interface LinkRow { id: string; task_id: string; entry_id: string; created_at: string }
 interface AttachmentRow {
   id: string; filename: string; stored: string; mime: string; size: number;
@@ -943,7 +943,7 @@ export const localApi: Api = {
     const name = str(body.name);
     if (!name) fail('nom requis');
     const time = nowISO();
-    const row: ProjectRow = { id: uid('pr_'), name, color: str(body.color) || '#4f7cff', created_at: time, updated_at: time };
+    const row: ProjectRow = { id: uid('pr_'), name, color: str(body.color) || '#4f7cff', created_at: time, updated_at: time, shared_dir: str((body as { shared_dir?: string }).shared_dir) || null };
     await projects.put(row);
     track('projects', row.id);
     // Comme le serveur (`SELECT *`), sans les compteurs de `/api/state`.
@@ -953,10 +953,17 @@ export const localApi: Api = {
   updateProject: async (id, body) => {
     const { projects } = await tables();
     const current = (await projects.get(id)) ?? fail('projet introuvable');
-    const patch = (body ?? {}) as { name?: string; color?: string };
+    const patch = (body ?? {}) as { name?: string; color?: string; shared_dir?: string | null };
     const name = pick(patch as Record<string, unknown>, 'name', current.name, (v) => str(v));
     if (!name) fail('nom requis');
-    const next = { ...current, name, color: pick(patch as Record<string, unknown>, 'color', current.color, (v) => str(v) || current.color), updated_at: nowISO() };
+    const next = {
+      ...current,
+      name,
+      color: pick(patch as Record<string, unknown>, 'color', current.color, (v) => str(v) || current.color),
+      // Dossier du TSE relié : son adresse, synchronisée par Drive avec le projet (§29).
+      shared_dir: pick(patch as Record<string, unknown>, 'shared_dir', current.shared_dir ?? null, (v) => str(v) || null),
+      updated_at: nowISO(),
+    };
     await projects.put(next);
     track('projects', id);
     return next as unknown as Project;

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
+import { addressFromGvfsPath } from '../api/src/shared-address.js';
 
 /**
  * Monter le dossier du TSE comme le fait Nemo (« Se connecter à un serveur ») :
@@ -106,11 +107,11 @@ export function findShareMount({ host, share, account = null }, gvfsDir = defaul
 export function addressFromPath(dir, gvfsDir = defaultGvfsDir()) {
   const relative = path.relative(gvfsDir, dir);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null;
-  const [mountDir, ...rest] = relative.split(path.sep);
-  const fields = mountFields(mountDir);
-  if (!fields?.server || !fields.share) return null;
+  const fields = mountFields(relative.split(path.sep)[0]);
+  const address = addressFromGvfsPath(dir);
+  if (!fields || !address) return null;
   const account = fields.user ? (fields.domain ? `${fields.domain}\\${fields.user}` : fields.user) : null;
-  return { address: `\\\\${fields.server}\\${fields.share}${rest.length ? '\\' + rest.join('\\') : ''}`, account };
+  return { address, account };
 }
 
 /** Message d'un dossier qu'on ne peut pas lister : refus d'accès (compte) ou absence. */

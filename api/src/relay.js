@@ -6,6 +6,7 @@ import express from 'express';
 import { openDb } from './db.js';
 import { createSharedService, instanceId } from './shared-service.js';
 import { registerSharedRoutes } from './shared-routes.js';
+import { addressFromMountinfo } from './shared-address.js';
 
 /**
  * Relais du dossier partagé pour la PWA (téléphone). Tourne sur une machine du
@@ -87,7 +88,17 @@ export function relayConfig(env = process.env) {
     displayName: env.WORKLOGS_RELAY_NAME || '',
     // Le nom du dossier tel que l'équipe le connaît (le point de montage s'appelle autrement).
     label: env.WORKLOGS_RELAY_LABEL || '',
+    // Adresse Windows de la racine ; à défaut, lue dans le montage CIFS (`/proc/self/mountinfo`).
+    address: env.WORKLOGS_RELAY_ADDRESS || '',
   };
+}
+
+function mountAddress(root) {
+  try {
+    return addressFromMountinfo(root, fs.readFileSync('/proc/self/mountinfo', 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 export function startRelay(config) {
@@ -96,8 +107,11 @@ export function startRelay(config) {
   const shared = createSharedService({
     db, blobDir: path.join(config.dataDir, 'shared-blobs'), root: config.root,
     instance: instanceId(config.dataDir), projectsKnown: false, rootLabel: config.label || null,
+    address: config.address || mountAddress(config.root),
   });
-  if (config.displayName && !shared.status().displayName?.trim()) shared.setDisplayName(config.displayName);
+  // Nom des verrous : celui du réglage, sauf s'il a été changé depuis le téléphone (Paramètres).
+  const chosen = db.prepare("SELECT value FROM local_settings WHERE key='shared.display_name'").get();
+  if (config.displayName && !chosen) shared.setDisplayName(config.displayName);
   const app = createRelayApp({ shared, token: config.token, origins: config.origins });
   const server = app.listen(config.port, config.host);
   const stop = async () => {

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { nowISO, uid } from './db.js';
 import { createSharedIo, SharedIoError, transferTimeout } from './shared-io.js';
+import { addressFromGvfsPath } from './shared-address.js';
 import { describeLock, formatWorkLogsLock, isTechnicalName, libreOfficeLockName, lockAppLabel, lockBlocks, ownerFileName } from './shared-locks.js';
 
 /**
@@ -172,6 +173,8 @@ export function createSharedService({
   projectsKnown = true,
   /** Nom affiché de la racine, quand celui du point de montage ne dit rien (`/mnt/tse-procedures`). */
   rootLabel = null,
+  /** Adresse Windows de la racine (`\\serveur\partage\…`), quand l'appareil la connaît (relais : montage CIFS). */
+  address = null,
 }) {
   fs.mkdirSync(blobDir, { recursive: true });
 
@@ -720,7 +723,8 @@ export function createSharedService({
         configurable,
         root: current,
         /** Adresse du partage (`\\serveur\partage`) quand il a été monté par WorkLogs : « Se reconnecter ». */
-        address: setting('shared.address'),
+        // Sinon déduite d'un montage GVFS (desktop) : c'est elle qui traduit les dossiers reliés aux projets.
+        address: setting('shared.address') || address || addressFromGvfsPath(current),
         /** Compte Windows du montage (`SRVMURGAT\\TonNom`), s'il a été indiqué : repris par « Se reconnecter ». */
         account: setting('shared.account'),
         label: current ? rootLabel || path.basename(current) : '',

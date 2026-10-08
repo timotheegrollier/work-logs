@@ -41,6 +41,13 @@ describe('relais du dossier partagé (PWA)', () => {
     assert.equal(status.configurable, false, 'la racine ne se règle jamais à distance');
     assert.equal(status.displayName, 'Timothée (mobile)');
     assert.equal(status.label, '00. PROCEDURE', 'le nom du dossier, pas celui du point de montage');
+    // Un nom changé depuis le téléphone survit au redémarrage du relais.
+    await call('/api/shared/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: 'T. G. (téléphone)' }) });
+    await relay.stop();
+    relay = startRelay({ root: share, token, origins: [PWA], dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)', label: '00. PROCEDURE' });
+    await new Promise((resolve) => relay.server.once('listening', resolve));
+    base = `http://127.0.0.1:${relay.server.address().port}`;
+    assert.equal((await (await call('/api/shared/status')).json()).displayName, 'T. G. (téléphone)');
   });
 
   test('CORS : la PWA seulement, préliminaire « réseau privé » compris', async () => {

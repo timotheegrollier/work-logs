@@ -486,7 +486,11 @@ describe('dossier partagé', () => {
     write('notes.md', 'v1');
     await open('notes.md');
     const backup = buildBackup(api.db);
-    assert.equal(JSON.stringify(backup).includes('shared'), false);
+    // Les tables de la machine (fichiers, versions, réglages, liens locaux) ne partent pas ;
+    // seul le dossier relié porté par le projet (`shared_dir`) suit, par Drive (§29).
+    assert.deepEqual(Object.keys(backup).filter((key) => /shared|local_settings/.test(key)), []);
+    assert.equal(JSON.stringify(backup).includes('notes.md'), false);
+    assert.deepEqual(backup.projects.map((row) => row.shared_dir), [null]);
     restoreBackup(api.db, backup);
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM shared_files').get().n, 1);
     assert.deepEqual((await api.get('/api/shared/status')).body.projects, { [project.id]: 'Piscine' });

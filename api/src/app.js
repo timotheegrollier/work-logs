@@ -523,16 +523,27 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   });
 
   // ---------------------------------------------------------------- projets
+  /** Dossier du TSE relié : une adresse (`\\serveur\partage\…`) ou un chemin relatif ; vide = aucun. */
+  const sharedDir = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    const text = String(value);
+    if (text.length > 2000 || /[\x00-\x1f]/.test(text)) throw Object.assign(new Error('dossier relié invalide'), { status: 400 });
+    return text;
+  };
+
   app.post('/api/projects', (req, res) => {
     const b = req.body || {};
     const name = str(b.name);
     if (!name) return bad(res, 'nom requis');
+    let dir;
+    try { dir = sharedDir(b.shared_dir); } catch (error) { return bad(res, error.message); }
     const id = uid('pr_');
-    db.prepare('INSERT INTO projects (id,name,color,created_at) VALUES (?,?,?,?)').run(
+    db.prepare('INSERT INTO projects (id,name,color,created_at,shared_dir) VALUES (?,?,?,?,?)').run(
       id,
       name,
       str(b.color) || '#4f7cff',
-      nowISO()
+      nowISO(),
+      dir
     );
     res.status(201).json(getProject(id));
   });
@@ -543,9 +554,12 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const b = req.body || {};
     const name = pick(b, 'name', cur.name, str);
     if (!name) return bad(res, 'nom requis');
-    db.prepare('UPDATE projects SET name=?, color=?, updated_at=? WHERE id=?').run(
+    let dir;
+    try { dir = pick(b, 'shared_dir', cur.shared_dir ?? null, sharedDir); } catch (error) { return bad(res, error.message); }
+    db.prepare('UPDATE projects SET name=?, color=?, shared_dir=?, updated_at=? WHERE id=?').run(
       name,
       pick(b, 'color', cur.color, (v) => str(v) || cur.color),
+      dir,
       nowISO(),
       cur.id
     );

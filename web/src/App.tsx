@@ -592,6 +592,7 @@ export default function App() {
             selectedPath={sharedPath}
             revision={sharedRevision}
             onOpen={(path) => void openShared(path)}
+            onProjectsChanged={reload}
           />
         </aside>
       </div>

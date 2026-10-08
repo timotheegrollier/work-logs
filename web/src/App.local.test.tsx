@@ -156,8 +156,11 @@ describe('dossier partagé dans la PWA', () => {
       await user.click(await screen.findByRole('button', { name: 'Compte et paramètres' }));
       await user.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
       const settings = within(await screen.findByRole('region', { name: 'Dossier partagé du TSE' }));
-      await user.type(settings.getByLabelText('Adresse du relais'), `http://127.0.0.1:${relay.server.address().port}`);
-      await user.type(settings.getByLabelText('Code d’accès du relais'), token);
+      // Collés, comme on le fait sur le téléphone (le code fait 43 caractères).
+      await user.click(settings.getByLabelText('Adresse du relais'));
+      await user.paste(`http://127.0.0.1:${relay.server.address().port}`);
+      await user.click(settings.getByLabelText('Code d’accès du relais'));
+      await user.paste(token);
       await user.click(settings.getByRole('button', { name: 'Enregistrer' }));
       expect(await settings.findByText(/^Relié au dossier partagé/)).toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Fermer' }));
@@ -176,7 +179,40 @@ describe('dossier partagé dans la PWA', () => {
       fs.rmSync(share, { recursive: true, force: true });
       fs.rmSync(data, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
+
+  test('relier un projet depuis le téléphone : l’adresse du dossier va sur le projet (synchronisé par Drive)', async () => {
+    const [fs, os, path] = await Promise.all([import('node:fs'), import('node:os'), import('node:path')]);
+    // @ts-expect-error — relay.js est du JavaScript pur de l'API, chargé par Node.
+    const { startRelay, newToken } = await import('../../api/src/relay.js');
+    const share = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-lien-'));
+    const data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-lien-data-'));
+    fs.mkdirSync(path.join(share, '2. TSE'));
+    fs.writeFileSync(path.join(share, '2. TSE', 'Redémarrage.md'), '# x');
+    fs.writeFileSync(path.join(share, 'autre.md'), 'y');
+    const token = newToken();
+    const address = '\\\\172.16.1.20\\D\\Global\\00. PROCEDURE';
+    const relay = startRelay({ root: share, token, origins: [], dataDir: data, host: '127.0.0.1', port: 0, address });
+    await new Promise((resolve) => relay.server.once('listening', resolve));
+    try {
+      localStorage.setItem('worklogs-show-procedures', '1');
+      localStorage.setItem('worklogs-relais', JSON.stringify({ url: `http://127.0.0.1:${relay.server.address().port}`, token }));
+      const project = await localApi.createProject({ name: 'TSE' });
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await within(await screen.findByRole('group', { name: 'Filtrer par projet' })).findByRole('button', { name: /TSE/ }));
+      await user.click(await screen.findByRole('button', { name: 'Relier TSE à un dossier…' }));
+      await user.click(await screen.findByRole('button', { name: 'Relier TSE au dossier 2. TSE' }));
+      expect(await screen.findByRole('button', { name: /^Ouvrir Redémarrage\.md/ })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Ouvrir autre\.md/ })).not.toBeInTheDocument();
+      const saved = (await localApi.state()).projects.find((row) => row.id === project.id);
+      expect(saved?.shared_dir).toBe('\\\\172.16.1.20\\D\\Global\\00. PROCEDURE\\2. TSE');
+    } finally {
+      await relay.stop();
+      fs.rmSync(share, { recursive: true, force: true });
+      fs.rmSync(data, { recursive: true, force: true });
+    }
+  }, 20_000);
 
   test('adresse du relais : HTTPS exigé, complétée si on l’oublie', async () => {
     const { normalizeRelayUrl } = await import('./relay-settings');

@@ -1178,3 +1178,27 @@ serveur Windows (le plus lourd).
 **Limites assumées.** Hors réseau, rien (pas de copie hors ligne sur le téléphone : les
 brouillons vivent sur le relais) ; un seul compte Windows pour tout ce qui passe par le relais
 (les verrous portent « Timothée Grollier (mobile) »). Installation et dépannage : `09-RELAIS.md`.
+
+**2026-10-07 (v0.49.0) — les dossiers reliés aux projets suivent les projets, par Drive.**
+Timo veut retrouver sur le téléphone les liens projet ↔ dossier du TSE faits sur le PC.
+Jusqu'ici ils vivaient dans une table **de la machine** (`shared_project_folders`, §25),
+une sur le PC, une autre sur le relais. Ils sont désormais **un champ du projet**
+(`projects.shared_dir`), synchronisé par Drive avec lui (fusion : la version la plus
+récente du projet gagne, délier compris).
+- Le champ porte l'**adresse complète** du dossier (`\\172.16.1.20\d\Global\…\00. PROCEDURE\2. TSE`),
+  pas un chemin relatif : le PC et le relais n'ont pas forcément la même racine (le PC a
+  monté tout `D` avant `00. PROCEDURE`). Chaque appareil la traduit sous sa racine
+  (`web/src/shared-links.ts`), en comparant partage et chemin **sans le serveur ni la
+  casse** (`SRVMURGAT` = `172.16.1.20`, `d` = `D`). Hors de sa racine : « relié à … qui
+  n'est pas dans ce partage », tout le partage affiché, « Délier » possible.
+- L'adresse de la racine de chaque appareil : déduite du montage GVFS (desktop) ou du
+  montage CIFS lu dans `/proc/self/mountinfo` (relais) — `api/src/shared-address.js`.
+  Sans adresse (dossier local, tests) : chemin relatif, comme avant.
+- Les anciens liens (table de la machine, du PC ou du relais) sont **repris une fois** sur le
+  projet à l'affichage de la section, puis effacés de la table.
+- Les sauvegardes d'avant n'ont pas le champ : acceptées, aucun dossier relié. Une version
+  plus ancienne de WorkLogs qui réécrirait le fichier Drive perdrait le champ : mettre à jour
+  tous les appareils (le desktop par apt/dnf, la PWA se met à jour seule).
+- Trouvé en route : le relais réécrivait à chaque démarrage le nom des verrous changé depuis
+  le téléphone (statut lu comme s'il était synchrone) ; corrigé, test qui redémarre le relais.
+

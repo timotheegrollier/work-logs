@@ -69,6 +69,10 @@ export function validateBackup(input) {
       name: requiredText(project.name, 'Nom de projet', 500),
       color: requiredText(project.color, 'Couleur de projet', 100),
       created_at: timestamp(project.created_at, 'Date de création du projet'),
+      // Dossier du TSE relié (2026-10-07) : absent des anciens exports.
+      shared_dir: project.shared_dir === undefined || project.shared_dir === null || project.shared_dir === ''
+        ? null
+        : requiredText(project.shared_dir, 'Dossier relié du projet', 2000),
       // Synchro (2026-09-22) : absent des anciens exports, il vaut alors la création.
       updated_at: project.updated_at === undefined || project.updated_at === null || project.updated_at === ''
         ? timestamp(project.created_at, 'Date de création du projet')
