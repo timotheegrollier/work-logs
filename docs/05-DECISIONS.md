@@ -966,7 +966,7 @@ qu'un dossier **déjà monté**, pas une adresse `smb://`.
   locale est oubliée, **l'historique reste** (restaurable en brouillon, qui repartirait
   comme une recréation gardée). UI : ✕ dans l'arbre et « Supprimer du partage » dans
   l'éditeur, avec confirmation ; l'éditeur se referme, l'arbre se recharge.
-- Restent de l'idée « procédures ↔ partage » : IA par le pont Markdown §23 — à redemander.
+- Restait de l'idée « procédures ↔ partage » l'IA par le pont Markdown §23 : faite le 2026-10-08 (§30).
 
 **Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :
 `libsmbclient`, dépendance native), ou si l'équipe veut écrire à plusieurs en même temps
@@ -1189,7 +1189,110 @@ serveur Windows (le plus lourd).
 brouillons vivent sur le relais) ; un seul compte Windows pour tout ce qui passe par le relais
 (les verrous portent « Timothée Grollier (mobile) »). Installation et dépannage : `09-RELAIS.md`.
 
-## 30. Un titre vidé garde l'ancien ; la fermeture a toujours une sortie — 2026-10-08
+## 30. IA dans les fichiers du partage, procédures concises — 2026-10-08
+
+**La demande.** « Pouvoir utiliser les fonctions de mise en page et de suggestions dans les
+procédures, afin qu'il suggère des procédures concises, basées sur le titre et le contenu de ce
+qui a déjà été écrit. » Les deux boutons existaient pour les procédures du journal (§23), pas
+pour les fichiers du dossier partagé — là où vivent désormais les procédures de l'équipe
+(`00. PROCEDURE` : surtout des `.docx`, souvent avec captures d'écran, tableaux et sommaire).
+§25 l'avait laissé « à redemander ».
+
+**Les choix.**
+- **Mêmes boutons, même relecture** : « ✨ Suggérer une procédure » et « ✨ Mettre en page »
+  dans l'éditeur d'un `.docx`, `.md` ou `.txt` du partage. La proposition se relit, puis
+  s'applique **comme une frappe** : un brouillon sur cet ordinateur (verrou pris comme à la
+  première frappe), qui ne part sur le partage qu'avec « Enregistrer sur le partage » — §25
+  tient. Refusée si le fichier a changé pendant l'appel ou a été rechargé. Lecture seule
+  (verrou d'un collègue, conflit, envoi) : boutons inactifs. Pas pour les tableurs.
+- **Concise, pour toutes les procédures** (celles du journal comprises, même consigne) : une
+  phrase d'objectif ; prérequis et vérification seulement s'ils sont réels ; des étapes d'une
+  ligne qui commencent par un verbe, 10 au plus (15 avant) ; rien de générique. Tout ce qui
+  est déjà écrit est gardé — commandes et valeurs à l'identique, le reste raccourci si besoin
+  — et « à préciser » remplace une valeur inventée. Le titre est celui du document (premier
+  titre de niveau 1, `# …` en tête d'un `.md`), qui reste en tête et que l'IA ne réécrit pas ;
+  sinon le nom du fichier. Le dossier part en contexte (« Dossier : Réseau/Imprimantes »).
+- **« Automatiquement », c'est d'un clic**, pas à l'ouverture d'un fichier : §17 tient (jamais
+  d'envoi sans geste), d'autant que ces fichiers sont ceux de l'entreprise. Les Paramètres
+  disent ce qui part (nom, dossier, contenu du fichier ouvert).
+- **Word par le Markdown, sans rien perdre** (`docx-markdown.ts`) :
+  - images, tableaux, champs, sommaires partent en marqueurs `[[objet N : …]]` (avec un extrait
+    de leur texte) et reviennent tels quels ; une réponse qui en perd un est **refusée** ;
+  - un paragraphe dont l'IA garde le texte **reste celui d'origine** (runs, polices, liens,
+    signets), octet pour octet s'il garde aussi sa forme (titre, liste, corps) ;
+  - un paragraphe neuf prend les **styles du document** (titre du niveau voulu, style du texte
+    courant, paragraphe de liste, liste numérotée existante) et les propriétés d'un paragraphe
+    du même genre, nommé par `basedOn` (nouvel attribut du schéma) : avant, un paragraphe neuf
+    héritait du dernier paragraphe d'origine écrit avant lui, bordure ou saut de page compris.
+    Du run modèle, il ne garde que police, taille et langue — ni couleur, ni surlignage ;
+  - un lien ne survit que vers une cible déjà dans le document (en créer un demanderait une
+    relation), avec le style de son run ; une commande entre accents graves passe en Consolas.
+- **Rien n'est créé dans styles.xml ni numbering.xml** (§26 : les autres parties ne sont jamais
+  réécrites). Un niveau de titre que le document n'a pas devient du gras ; une liste sans
+  numérotation à reprendre devient une numérotation écrite (« 1. », « • »). Deux listes
+  numérotées ne partagent jamais la même liste Word (Word continuerait la numérotation de la
+  première dans la seconde) : la seconde est écrite. Une liste qui reprend au numéro suivant
+  après une image (« 3. ») reste la même liste.
+- **À l'écriture, `numPr` suit la liste** : entrer dans une liste, en sortir ou en changer pose
+  ou retire `numPr` à sa place (avant, seul le niveau se réécrivait).
+
+**Ce que ça coûte.** Le Markdown ne porte ni souligné ni couleurs : un paragraphe réécrit les
+perd (la proposition le dit). Les paragraphes vides disparaissent. Au-delà de 12 000 caractères,
+la relecture est refusée. Les documents ainsi réécrits sont vérifiés par les tests et dans
+Chromium, **pas encore ouverts dans Word sur le TSE** (règle « preuve avant annonce »).
+
+**Rouvrir si** les documents créés par WorkLogs doivent avoir de vraies listes numérotées (le
+modèle de `new-files.ts` n'a pas de numbering.xml : en ajouter un ne coûterait qu'une partie de
+plus), ou si la perte de mise en forme gêne (travailler en HTML, comme le prévoit §23).
+
+## 31. Procédure tirée d'une entrée ou d'une tâche par l'IA : créée à part, jamais liée — 2026-10-08
+
+**La demande.** « Créer avec l'IA (Gemini) une procédure à partir d'une entrée/tâches. » On
+note sur le moment ce qu'on a fait (une entrée, une tâche et ses notes) ; la procédure est ce
+qu'on suivra la prochaine fois. Jusqu'ici, l'IA ne savait que compléter une procédure déjà
+ouverte, à partir de son titre (§23).
+
+**Les choix.**
+- **Deux points d'entrée, un seul geste** : **✨ Créer une procédure** dans la rangée d'actions
+  d'une note (Markdown ou document riche du journal), **✨ Procédure** au pied d'une carte de
+  tâche. Même service IA que le reste (Paramètres, Gemini par défaut, chaîne de secours §17),
+  même consigne (`draftProcedure`, `ai-suggest.ts`), même panneau de relecture
+  (`ProcedureDraft.tsx`). Ni onglet, ni mode, ni dépendance, ni route : la procédure se crée
+  par `POST /api/entries` (`kind: 'procedure'`), desktop comme PWA.
+- **Ce qui part à l'IA.** Depuis une note : titre, projet, contenu (un document riche passe par
+  le pont Markdown §23), noms des pièces jointes, titres des tâches liées. Depuis une tâche :
+  titre, statut, projet, et le contenu de ses **5 documents liés** les plus récents. Plafond
+  commun de 12 000 caractères : au-delà, le début seul part, marqué « […] », et la relecture
+  le dit. Le texte coupé garde ses lignes (listes et blocs de code lisibles).
+- **Un document Google ne transite pas** (§23) : pas de bouton sur une note Google ; depuis une
+  tâche, il ne donne que son titre (« contenu non transmis »), sans même être relu.
+- **La consigne** est concise comme celle de toutes les procédures (§30) : un titre en `# …`
+  (à l'infinitif), une phrase d'objectif, des étapes d'une ligne (10 au plus), prérequis et
+  vérification seulement s'ils sont réels. Elle **généralise** en plus (pas de récit, pas de
+  dates), garde tels quels commandes, chemins, valeurs et blocs de code, et écrit « à préciser »
+  plutôt que d'inventer. Le `# …` devient le titre proposé, modifiable avant création.
+- **Relue avant d'exister** : rien n'est créé avant « Créer la procédure » ; « Rafraîchir »
+  redemande, « Ignorer » abandonne. Ce qui s'affiche s'enregistre : même conversion et même
+  validation serveur qu'« Appliquer la procédure » (`markdownToRich`).
+- **Créée à part, jamais liée à sa source.** Terminer une tâche archive ses documents liés
+  (`archiveTaskDocuments`) : une procédure liée disparaîtrait de la colonne Procédures dès la
+  tâche terminée — c'est-à-dire au moment même où l'on écrit sa procédure. Elle naît donc dans
+  le projet de sa source, sans `task_entries`, et la source ne change pas.
+- **Ouverte aussitôt, en lecture** (`openCreatedProcedure`, `App.tsx`), comme une procédure
+  ouverte depuis sa colonne. Une recherche en cours qui la masquerait est effacée ; l'état est
+  relu une seule fois, sans l'ancienne recherche (sinon cette relecture pouvait répondre
+  d'abord et refermer la procédure).
+
+**Écartés.** Remplacer la note par une procédure (`kind` changé) : on perdrait le journal du
+jour. Plusieurs tâches cochées pour une seule procédure : un mode de sélection à ajouter, non
+demandé. Ouvrir d'office la colonne Procédures : elle rétrécirait l'éditeur sans qu'on l'ait
+demandé ; la procédure s'ouvre au centre, et la colonne la montre dès qu'on l'affiche.
+
+**Rouvrir si** une procédure doit garder trace de sa source (une ligne « Tirée de … » suffirait,
+sans lien) ; si les documents Google doivent servir de source (lecture seule : seul le §23
+l'interdit, pas une limite technique) ; si 12 000 caractères ne suffisent pas en usage réel.
+
+## 32. Un titre vidé garde l'ancien ; la fermeture a toujours une sortie — 2026-10-08
 
 **Constat.** Fenêtre impossible à fermer : « l'entrée n'a pas pu être enregistrée », « le
 titre de l'entrée est requis », sans entrée sans titre au journal. Le titre avait été vidé

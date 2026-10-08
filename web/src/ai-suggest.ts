@@ -458,17 +458,39 @@ export async function suggestSubtasks(
 export const MAX_PROOFREAD_CHARS = 12000;
 
 /**
+ * Ce que l'IA lit et doit rendre : du Markdown (entrées, procédures, `.md` du
+ * partage), du texte brut (`.txt` du partage) ou un document Word du partage,
+ * passé en Markdown avec ses objets (images, tableaux…) en marqueurs.
+ */
+export type AiTextFormat = 'markdown' | 'text' | 'word';
+
+/** Ce que la réponse peut contenir pour s'appliquer au fichier sans perte. */
+function formatRule(format: AiTextFormat): string {
+  if (format === 'text') {
+    return 'Le texte vient d’un fichier texte brut (.txt) : réponds en texte brut, sans syntaxe Markdown (ni #, ni **, ni tableau) — titres de section seuls sur leur ligne, étapes numérotées « 1. », puces « - ».';
+  }
+  if (format === 'word') {
+    return 'Le texte vient d’un document Word : n’utilise que des titres (##, ###), des paragraphes, des listes numérotées ou à puces, du gras, de l’italique et des commandes entre accents graves — ni tableau, ni citation, ni image, ni lien nouveau. Chaque ligne [[objet N : …]] est une image, un tableau ou un champ du document : recopie-la telle quelle, seule sur sa ligne, à l’endroit qui convient ; n’en supprime ni n’en ajoute aucune.';
+  }
+  return '';
+}
+
+/**
  * Consigne : corriger et mettre en page, sans inventer ni changer le sens. Une
  * procédure (mode opératoire) garde en plus ses étapes en liste numérotée.
  */
-export function buildProofreadPrompt(title: string, text: string, profile = '', procedure = false): { system: string; user: string } {
+export function buildProofreadPrompt(title: string, text: string, profile = '', procedure = false, format: AiTextFormat = 'markdown'): { system: string; user: string } {
   const user = `${profile.trim() ? `Profil : ${profile.trim()}\n` : ''}${procedure ? 'Procédure' : 'Titre'} : ${title.trim()}\n\nTexte :\n${text}`;
+  const markdown = format !== 'text';
+  const layout = format === 'markdown' ? 'mets en page le Markdown (titres, listes, tableaux, citations)'
+    : format === 'word' ? 'mets en page le Markdown (titres, listes)' : 'mets en forme le texte (titres de section, listes)';
+  const rule = formatRule(format);
   return {
     system: `${procedure
-      ? "Tu relis une procédure de l'utilisateur dans WorkLogs, son journal de travail personnel : un mode opératoire en Markdown qu'il suivra plus tard, pas à pas."
+      ? `Tu relis une procédure de l'utilisateur dans WorkLogs, son journal de travail personnel : un mode opératoire${markdown ? ' en Markdown' : ''} qu'il suivra plus tard, pas à pas.`
       : "Tu relis le journal de travail personnel de l'utilisateur dans WorkLogs : il y écrit ce qu'il fait en Markdown."}
-Corrige l'orthographe, la grammaire, la conjugaison et la typographie française (accents, majuscules, espaces), et mets en page le Markdown (titres, listes, tableaux, citations) sans changer le sens et sans rien inventer.${procedure ? ' Présente les étapes en liste numérotée, une action par étape.' : ''} Conserve tels quels les liens, images, blocs de code et cases à cocher.
-Réponds uniquement avec le texte corrigé en Markdown, sans introduction ni explication.`,
+Corrige l'orthographe, la grammaire, la conjugaison et la typographie française (accents, majuscules, espaces), et ${layout} sans changer le sens et sans rien inventer.${procedure ? ' Présente les étapes en liste numérotée, une action par étape.' : ''} Conserve tels quels les liens, images, blocs de code et cases à cocher.${rule ? `\n${rule}` : ''}
+Réponds uniquement avec le texte corrigé${markdown ? ' en Markdown' : ''}, sans introduction ni explication.`,
     user,
   };
 }
@@ -490,14 +512,14 @@ export async function proofreadEntry(
   settings: AiSettings,
   title: string,
   content: string,
-  options: { timeoutMs?: number; procedure?: boolean } = {}
+  options: { timeoutMs?: number; procedure?: boolean; format?: AiTextFormat } = {}
 ): Promise<string> {
   const text = content.trim();
   if (!text) throw new AiError('Rien à corriger : l’entrée est vide.');
   if (text.length > MAX_PROOFREAD_CHARS) {
     throw new AiError(`Texte trop long pour une relecture (${text.length} caractères, ${MAX_PROOFREAD_CHARS} maximum).`);
   }
-  const prompt = buildProofreadPrompt(title, text, settings.profile, options.procedure);
+  const prompt = buildProofreadPrompt(title, text, settings.profile, options.procedure, options.format);
   const cleaned = cleanProofreadMarkdown(
     await postChatCompletions(settings, 'la mise en page', prompt.system, prompt.user,
       Math.min(8000, Math.max(1200, Math.ceil(text.length / 2))), options.timeoutMs ?? AI_TIMEOUT_MS)
@@ -506,31 +528,39 @@ export async function proofreadEntry(
   return cleaned;
 }
 
-/** Au-delà, la procédure deviendrait une liste qu'on ne suit plus. */
-const MAX_PROCEDURE_STEPS = 15;
+/** Une procédure concise se suit d'un coup d'œil : au-delà, elle devient une liste qu'on ne suit plus. */
+const MAX_PROCEDURE_STEPS = 10;
 
 /** Ce que l'IA sait d'une procédure : son projet, ses fichiers, ce qui est déjà écrit. */
 export interface ProcedureContext {
   project?: string;
   attachments?: string[];
+  /** Dossier du fichier, pour un fichier du partage (ex. « Réseau/Imprimantes »). */
+  folder?: string;
   /** Procédure déjà écrite, en Markdown : gardée et complétée, jamais effacée. */
   text?: string;
+  format?: AiTextFormat;
 }
 
-/** Consigne : un mode opératoire pas à pas, sans rien inventer de précis. */
+/** Consigne : un mode opératoire concis, pas à pas, fondé sur le titre et l'existant, sans rien inventer de précis. */
 export function buildProcedurePrompt(title: string, context: ProcedureContext = {}, profile = ''): { system: string; user: string } {
   const sections: string[] = [];
   if (profile.trim()) sections.push(`Profil : ${profile.trim()}`);
   sections.push(`Procédure : ${title.trim()}`);
   if (context.project) sections.push(`Projet : ${context.project}`);
+  if (context.folder?.trim()) sections.push(`Dossier : ${context.folder.trim()}`);
   const attachments = compactTitles(context.attachments ?? []);
   if (attachments.length > 0) sections.push(`Pièces jointes : ${attachments.join(', ')}`);
   sections.push(context.text?.trim() ? `Déjà écrit :\n${context.text.trim()}` : 'Déjà écrit : rien pour l’instant.');
+  const format = context.format ?? 'markdown';
+  const heading = format === 'text' ? '' : '## ';
+  const rule = formatRule(format);
   return {
     system: `Tu aides l'utilisateur à rédiger ses procédures dans WorkLogs, son journal de travail personnel : une procédure est un mode opératoire qu'il suivra plus tard, pas à pas.
-Propose la procédure complète en Markdown, en français : une phrase d'objectif, puis « ## Prérequis » (matériel, accès, sécurité) si utile, « ## Étapes » en liste numérotée — une action concrète et vérifiable par étape, ${MAX_PROCEDURE_STEPS} au plus — et « ## Vérifications » si utile.
-Garde tout ce qui est déjà écrit (étapes, valeurs, liens, images) en l'intégrant au bon endroit. N'invente ni valeur chiffrée, ni référence, ni nom propre absents du contexte : écris « à préciser » à la place.
-Réponds uniquement avec la procédure en Markdown, sans titre de premier niveau, sans introduction ni explication.`,
+Propose une procédure concise, en ${format === 'text' ? 'texte brut' : 'Markdown'} et en français, fondée sur son titre et sur ce qui est déjà écrit : une phrase d'objectif ; « ${heading}Prérequis » en quelques puces, seulement s'il y en a de réels ; « ${heading}Étapes » en liste numérotée — une action par étape, une ligne courte qui commence par un verbe, ${MAX_PROCEDURE_STEPS} au plus ; « ${heading}Vérification » en une ou deux puces, seulement si c'est utile.
+Va à l'essentiel : ni phrase de remplissage, ni répétition du titre, ni conseil générique (sauvegarde, prudence…) que le contexte ne justifie pas.
+Garde toutes les informations déjà écrites (étapes, valeurs, commandes, liens, images) en les intégrant au bon endroit : commandes et valeurs à l'identique, le reste reformulé plus court si besoin, sans jamais rien retirer. N'invente ni valeur chiffrée, ni référence, ni nom propre absents du contexte : écris « à préciser » à la place.${rule ? `\n${rule}` : ''}
+Réponds uniquement avec la procédure, ${format === 'text' ? 'sans répéter son titre' : 'sans titre de premier niveau'}, sans introduction ni explication.`,
     user: sections.join('\n'),
   };
 }
@@ -558,4 +588,133 @@ export async function suggestProcedure(
   ).replace(/^#\s[^\n]*\n*/, ''); // le titre existe déjà : un `# Titre` en tête ferait doublon
   if (!cleaned.trim()) throw new AiError('Réponse IA illisible : réessaie.');
   return cleaned.trim();
+}
+
+/** Au-delà, la source est coupée : l'IA n'en lit que le début, et la relecture le dit. */
+const MAX_SOURCE_CHARS = MAX_PROOFREAD_CHARS;
+/** Documents d'une tâche lus par l'IA, du plus récent au plus ancien. */
+export const MAX_SOURCE_DOCUMENTS = 5;
+/** Un titre de procédure doit tenir sur une ligne de la colonne. */
+const MAX_DRAFT_TITLE = 120;
+
+/** Ce dont une procédure est tirée : une note du journal, ou une tâche et ses documents liés. */
+export interface ProcedureSource {
+  origin: 'entry' | 'task';
+  title: string;
+  project?: string;
+  /** Statut lisible de la tâche (« Terminé »…). */
+  status?: string;
+  /** Contenu de l'entrée, en Markdown. */
+  text?: string;
+  /** Noms des pièces jointes de l'entrée. */
+  attachments?: string[];
+  /** Titres des tâches liées à l'entrée. */
+  linkedTasks?: string[];
+  /** Documents liés à la tâche, du plus récent au plus ancien ; un document Google ne donne que son titre. */
+  documents?: { title: string; date?: string; text?: string; google?: boolean }[];
+}
+
+/** Procédure rédigée par l'IA, à relire avant de la créer. */
+export interface DraftedProcedure {
+  title: string;
+  markdown: string;
+  /** La source dépassait le plafond : l'IA n'en a lu que le début. */
+  truncated: boolean;
+}
+
+/**
+ * Consigne : un mode opératoire réutilisable tiré de ce qui a été fait, titre
+ * compris, concis comme toutes les procédures (§30), sans rien inventer de
+ * précis. La source est plafonnée en tout
+ * (`MAX_SOURCE_CHARS`) : au-delà, seul son début part, marqué « […] ».
+ */
+export function buildDraftProcedurePrompt(source: ProcedureSource, profile = ''): { system: string; user: string; truncated: boolean } {
+  let budget = MAX_SOURCE_CHARS;
+  let truncated = false;
+  // Lignes gardées : `truncate` les aplatit, le Markdown y perdrait ses listes et son code.
+  const take = (text: string) => {
+    const kept = text.trim();
+    if (kept.length <= budget) {
+      budget -= kept.length;
+      return kept;
+    }
+    truncated = true;
+    const start = budget > 0 ? `${kept.slice(0, budget).trimEnd()}\n[…]` : '';
+    budget = 0;
+    return start;
+  };
+  const sections: string[] = [];
+  if (profile.trim()) sections.push(`Profil : ${profile.trim()}`);
+  sections.push(`${source.origin === 'entry' ? 'Entrée du journal' : 'Tâche'} : ${source.title.trim()}`);
+  if (source.status) sections.push(`Statut : ${source.status}`);
+  if (source.project) sections.push(`Projet : ${source.project}`);
+  const attachments = compactTitles(source.attachments ?? []);
+  if (attachments.length > 0) sections.push(`Pièces jointes : ${attachments.join(', ')}`);
+  const linkedTasks = compactTitles(source.linkedTasks ?? []);
+  if (linkedTasks.length > 0) sections.push(`Tâches liées : ${linkedTasks.join(', ')}`);
+  if (source.origin === 'entry') {
+    const text = take(source.text ?? '');
+    sections.push(text ? `Contenu :\n${text}` : 'Contenu : rien d’écrit, le titre seul.');
+  } else {
+    const documents = (source.documents ?? []).slice(0, MAX_SOURCE_DOCUMENTS);
+    if (documents.length === 0) sections.push('Documents liés : aucun, le titre seul.');
+    for (const document of documents) {
+      const name = `Document lié « ${document.title.trim()} »${document.date ? ` (${document.date})` : ''}`;
+      if (document.google) {
+        sections.push(`${name} : document Google, contenu non transmis.`);
+      } else if (!document.text?.trim()) {
+        sections.push(`${name} : vide.`);
+      } else {
+        const text = take(document.text);
+        sections.push(text ? `${name} :\n${text}` : `${name} : non transmis, la source est trop longue.`);
+      }
+    }
+  }
+  return {
+    system: `Tu aides l'utilisateur à tirer une procédure de son travail dans WorkLogs, son journal de travail personnel : une procédure est un mode opératoire réutilisable qu'il suivra plus tard, pas à pas, pour refaire ce travail.
+La source est ${source.origin === 'entry' ? 'une entrée de son journal' : 'une tâche et les documents qui lui sont liés'} : ce qu'il a fait ou prévu, noté sur le moment.
+Rédige une procédure concise, en Markdown et en français : en première ligne, « # » suivi d'un titre court qui dit ce qu'elle permet de faire, à l'infinitif ; puis une phrase d'objectif ; « ## Prérequis » en quelques puces, seulement s'il y en a de réels ; « ## Étapes » en liste numérotée — une action par étape, une ligne courte qui commence par un verbe, ${MAX_PROCEDURE_STEPS} au plus ; « ## Vérification » en une ou deux puces, seulement si c'est utile.
+Va à l'essentiel : ni phrase de remplissage, ni conseil générique (sauvegarde, prudence…) que la source ne justifie pas.
+Généralise : laisse de côté le récit, les dates et ce qui ne valait que ce jour-là ; garde tels quels les commandes, chemins, valeurs et liens utiles, blocs de code compris. N'invente ni valeur chiffrée, ni référence, ni nom propre absents de la source : écris « à préciser » à la place.
+Réponds uniquement avec la procédure en Markdown, sans introduction ni explication.`,
+    user: sections.join('\n'),
+    truncated,
+  };
+}
+
+/**
+ * Réponse de l'IA → titre (son « # » de tête, sinon celui de la source) et
+ * corps de la procédure, sans l'enveloppe de code qu'ajoutent certains modèles.
+ */
+export function parseDraftedProcedure(reply: string, fallbackTitle: string): { title: string; markdown: string } {
+  const cleaned = cleanProofreadMarkdown(reply);
+  const heading = /^#[ \t]+([^\n]*?)[ \t#]*(?:\n|$)/.exec(cleaned);
+  const title = heading?.[1].replace(/[*_`]/g, '').trim() || fallbackTitle.trim();
+  return {
+    title: title.length > MAX_DRAFT_TITLE ? title.slice(0, MAX_DRAFT_TITLE - 1).trimEnd() + '…' : title,
+    markdown: (heading ? cleaned.slice(heading[0].length) : cleaned).trim(),
+  };
+}
+
+/**
+ * Procédure tirée d'une entrée ou d'une tâche : un clic = un appel, avec la
+ * source plafonnée. Rien n'est créé ici : la proposition se relit d'abord,
+ * comme toutes celles de l'IA (`ProcedureDraft.tsx`).
+ */
+export async function draftProcedure(
+  settings: AiSettings,
+  source: ProcedureSource,
+  options: { timeoutMs?: number } = {}
+): Promise<DraftedProcedure> {
+  const named = source.title.trim() && !/^sans titre$/i.test(source.title.trim());
+  const written = source.origin === 'entry'
+    ? Boolean(source.text?.trim())
+    : (source.documents ?? []).some((document) => !document.google && document.text?.trim());
+  if (!named && !written) throw new AiError('Rien à transformer en procédure : donne un titre, ou écris d’abord ce que tu as fait.');
+  const prompt = buildDraftProcedurePrompt(source, settings.profile);
+  const reply = await postChatCompletions(settings, 'la création de procédure', prompt.system, prompt.user,
+    Math.min(8000, Math.max(1500, Math.ceil(prompt.user.length / 2) + 1000)), options.timeoutMs ?? AI_TIMEOUT_MS);
+  const drafted = parseDraftedProcedure(reply, source.title);
+  if (!drafted.markdown) throw new AiError('Réponse IA illisible : réessaie.');
+  return { ...drafted, truncated: prompt.truncated };
 }

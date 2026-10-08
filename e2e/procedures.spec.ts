@@ -161,3 +161,64 @@ test('IA dans une procédure : étapes proposées, relues puis appliquées au do
   await expect(page.getByRole('textbox', { name: 'Contenu du document' }).locator('ol > li')).toHaveCount(2);
   await expect(page.getByRole('textbox', { name: 'Contenu du document' }).locator('table')).toContainText('à préciser');
 });
+
+test('IA : une entrée du journal devient une procédure, relue puis créée à part', async ({ page }) => {
+  // Service IA simulé dans le navigateur : rien ne sort, la clé reste locale.
+  let prompt = '';
+  await page.route('**/chat/completions', async (route) => {
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    prompt = route.request().postDataJSON().messages[1].content;
+    return route.fulfill({ headers: cors, json: { choices: [{ message: { content: [
+      '# Relancer la pompe',
+      'Remettre la pompe en route après une coupure.',
+      '## Étapes',
+      '1. Couper le disjoncteur\n2. Purger le circuit\n3. Relancer le service',
+      '```\nsudo systemctl restart pompe\n```',
+    ].join('\n\n') } }] } });
+  });
+  await page.evaluate(() => localStorage.setItem('worklogs-ai-key', 'cle-e2e'));
+
+  // La note du jour, écrite sur le moment.
+  const journal = page.getByRole('region', { name: 'Journal' });
+  const editor = page.getByRole('region', { name: 'Entrée' });
+  const title = page.getByLabel('Titre de l’entrée');
+  await page.getByRole('button', { name: 'Nouvelle entrée' }).click();
+  await expect(title).toHaveValue('Sans titre');
+  await title.fill('Panne de la pompe');
+  await editor.getByRole('button', { name: 'Écrire', exact: true }).click();
+  await page.getByLabel('Contenu en Markdown').fill('Disjoncteur coupé, circuit purgé, puis :\n\n```\nsudo systemctl restart pompe\n```');
+  await expect(editor.getByText('Enregistré', { exact: true })).toBeVisible();
+
+  await editor.getByRole('button', { name: '✨ Créer une procédure' }).click();
+  const draft = page.getByRole('form', { name: 'Procédure rédigée' });
+  await expect(draft.getByText('Purger le circuit')).toBeVisible();
+  expect(prompt).toContain('Entrée du journal : Panne de la pompe');
+  expect(prompt).toContain('sudo systemctl restart pompe');
+  await expect(draft.getByLabel('Titre de la procédure')).toHaveValue('Relancer la pompe');
+  await draft.getByRole('button', { name: 'Créer la procédure' }).click();
+
+  // Ouverte en lecture, rangée dans les procédures, absente du journal.
+  await expect(title).toHaveValue('Relancer la pompe');
+  const content = page.getByRole('textbox', { name: 'Contenu du document' });
+  await expect(content).toHaveAttribute('contenteditable', 'false');
+  await expect(content.locator('ol > li')).toHaveCount(3);
+  await expect(content.locator('pre code')).toHaveText('sudo systemctl restart pompe');
+  await expect(journal.getByText('Relancer la pompe')).toBeHidden();
+  await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+  await expect(panel(page).getByText('Relancer la pompe')).toBeVisible();
+
+  // Relue depuis le serveur ; la note du jour n'a pas bougé.
+  await page.reload();
+  await panel(page).getByText('Relancer la pompe').click();
+  await expect(title).toHaveValue('Relancer la pompe');
+  await expect(page.getByRole('textbox', { name: 'Contenu du document' }).locator('ol > li')).toHaveCount(3);
+  await journal.getByText('Panne de la pompe').click();
+  await expect(title).toHaveValue('Panne de la pompe');
+  await expect(editor.locator('article pre code')).toHaveText('sudo systemctl restart pompe');
+
+  // La note est retirée : les recettes suivantes gardent leur entrée ouverte par défaut.
+  page.once('dialog', (dialog) => dialog.accept());
+  await editor.getByRole('button', { name: 'Supprimer', exact: true }).click();
+  await expect(journal.getByText('Panne de la pompe')).toHaveCount(0);
+});

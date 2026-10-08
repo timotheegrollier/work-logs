@@ -242,3 +242,50 @@ test('nouveau classeur Excel dans un dossier : créé, rempli au clavier, enregi
   expect(await readZipText(sent, 'xl/worksheets/sheet1.xml')).toContain('<sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v>3</v></c></row></sheetData>');
   expect(await readZipText(sent, 'xl/sharedStrings.xml')).toContain('<si><t>Imprimante</t></si>');
 });
+
+test('IA dans un document Word du partage : procédure suggérée depuis son titre, relue, appliquée, envoyée par Ctrl+S', async ({ page }) => {
+  // Service IA simulé dans le navigateur : rien ne sort, la clé reste locale.
+  let prompt = '';
+  await page.route('**/chat/completions', async (route) => {
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    prompt = route.request().postDataJSON().messages[1].content;
+    return route.fulfill({ headers: cors, json: { choices: [{ message: { content: [
+      '# Filtration', 'Nettoyer le filtre du bassin chaque lundi.', '## Étapes',
+      '1. Arrêter la pompe\n2. Rincer la cartouche', '[[objet 1 : Image]]', '3. Remettre la pompe en marche',
+      '[[objet 2 : Tableau]]', '[[objet 3 : Table des matières]]',
+    ].join('\n\n') } }] } });
+  });
+  put('filtration.docx', Buffer.from(wordDocx()));
+  const editor = await openShared(page, 'filtration.docx');
+  await page.evaluate(() => localStorage.setItem('worklogs-ai-key', 'cle-e2e'));
+
+  await editor.getByRole('button', { name: '✨ Suggérer une procédure' }).click();
+  const proposal = editor.getByRole('region', { name: 'Procédure proposée' });
+  await expect(proposal.getByText('Rincer la cartouche')).toBeVisible();
+  await expect(proposal.getByText('[Image — conservé tel quel]')).toBeVisible();
+  // Le titre du document fait le titre de la procédure ; l'image part en marqueur.
+  expect(prompt).toContain('Procédure : Filtration\nDéjà écrit :\n*Laver* **le filtre** chaque lundi.');
+  expect(prompt).toContain('[[objet 1 : Image — schéma]]');
+  await proposal.getByRole('button', { name: 'Appliquer la procédure' }).click();
+
+  const content = editor.getByRole('textbox', { name: 'Contenu du document Word' });
+  await expect(content).toContainText('Rincer la cartouche');
+  await expect(editor.getByText('Tu as la main')).toBeVisible();
+  await expect(editor.getByText('Brouillon sur cet ordinateur')).toBeVisible();
+  await page.keyboard.press('Control+s');
+  await expect(editor.getByText('Enregistré sur le partage.')).toBeVisible();
+
+  const after = (await readZipText(readZip(new Uint8Array(fs.readFileSync(path.join(share, 'filtration.docx')))), 'word/document.xml'))!;
+  expect(after).toContain('<w:pPr><w:pStyle w:val="Titre2"/></w:pPr><w:r><w:t xml:space="preserve">Étapes</w:t></w:r>');
+  expect(after).toContain('<w:drawing>');
+  expect(after.match(/<w:numId w:val="1"\/>/g)).toHaveLength(3);
+
+  // Relu depuis le partage : les trois étapes dans la liste Word d'origine, numérotées par-dessus l'image.
+  await page.reload();
+  const reopened = await openShared(page, 'filtration.docx');
+  const reread = reopened.getByRole('textbox', { name: 'Contenu du document Word' });
+  await expect(reread.locator('[data-marker="2."]')).toHaveText('Rincer la cartouche');
+  await expect(reread.locator('[data-marker="3."]')).toHaveText('Remettre la pompe en marche');
+  await expect(reopened.getByText(/Image — conservé/)).toBeVisible();
+});
