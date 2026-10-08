@@ -1,16 +1,16 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-> **Mise à jour :** 2026-10-08 · Version : v0.50.0 (lots ci-dessous non publiés).
+> **Mise à jour :** 2026-10-08 · Version : **v0.51.0**, qui publie les trois lots ci-dessous.
 > **Lot courant :** **dossiers du partage** — créer, renommer, supprimer (avec leur contenu)
-> depuis l'arbre de la colonne Procédures, branche `feat/partage-dossiers`. Détail : « Lot du
-> 2026-10-08 (5) — dossiers du partage » ci-dessous ; décision §25.
+> depuis l'arbre de la colonne Procédures (branche `feat/partage-dossiers`, fusionnée). Détail :
+> « Lot du 2026-10-08 (5) — dossiers du partage » ci-dessous ; décision §25.
 >
-> **Lot précédent, non publié :** **vues rapides des tâches** — pastilles En retard, Aujourd'hui, En cours,
+> **Aussi dans la v0.51.0 :** **vues rapides des tâches** — pastilles En retard, Aujourd'hui, En cours,
 > Épinglées, ▲ Haute en tête de la colonne Tâches, et « N en cours » / « N en retard » de
 > l'en-tête cliquables. Branche `claude/task-status-visualization-922c08`. Détail : « Lot du
 > 2026-10-08 (4) — vues rapides des tâches » ci-dessous ; décision §33.
 >
-> **Correctif du 2026-10-08 (3), non publié :** fenêtre desktop impossible à fermer
+> **Correctif du 2026-10-08 (3), aussi dans la v0.51.0 :** fenêtre desktop impossible à fermer
 > (« titre requis ») après avoir vidé le titre d'une entrée puis l'avoir quittée. Un titre
 > vidé n'est plus envoyé — l'entrée garde l'ancien, en filigrane — et le dialogue d'échec à
 > la fermeture propose « Fermer sans enregistrer ». Décision §32.
@@ -124,16 +124,16 @@ les procédures ». Décision : §25 (« Dossiers : créer, renommer, supprimer 
 - **Vu dans un vrai navigateur** (Chromium, 1440 et 412 px) : arbre avec ⋯, actions ouvertes,
   renommage sur deux lignes dans la colonne étroite, formulaire « Nouveau dossier » ; aucun
   débordement.
-- **Recette** : avant le lot, `master` à `CHECK OK` (860 : 230 API, 475 front, 48 desktop,
-  29 scripts, 8 relais, 55 navigateur, 15 parcours desktop). Sur la branche : types, **249
-  API**, 48 desktop, 29 scripts, 8 relais, build, **56 navigateur** et 15 parcours desktop
-  verts ; **481 front** dont les 40 du dossier partagé verts isolément. Pendant la campagne
-  complète, deux ou trois autres sessions lançaient vitest et `check.sh` en parallèle (charge
-  14 à 20 sur 8 cœurs) : 3 à 16 tests lourds (Word, Excel, historique, relais PWA, chargement
-  de l'arbre, et un « espace Google Docs » sans rapport) dépassaient leurs délais — tous verts
-  isolément ; `master` avait fait pareil (2 échecs) sous la même charge. À charge égale, les
-  tests du dossier partagé prennent 74 s sur `master` (32) et 79 s sur la branche (37) : rien
-  de ralenti. **`check.sh` complet d'un seul tenant : à relancer sur machine calme.**
+- **Recette** : avant le lot, `master` (v0.49.0) à `CHECK OK` (860). Après fusion de `master`
+  (v0.50.0, vues rapides des tâches, correctif de fermeture) : types, **249 API**, **516/517
+  front**, 48 desktop, 29 scripts, 8 relais, build, **58 navigateur**, 15 parcours desktop —
+  **924**. Seul rouge : « par le relais du bureau » (`App.local.test.tsx`, délai de 5 s), déjà
+  instable sur `master` (recette de la v0.50.0) ; vert seul. **CI GitHub de la branche verte,
+  4 jobs sur 4** (run 37776724308 : tests et paquets, installation Mint 22, Fedora 43 et 44).
+  Pendant la mise au point, deux ou trois autres sessions en campagne (charge 14 à 20 sur
+  8 cœurs) faisaient dépasser leurs délais à 3 à 16 tests lourds, tous verts seuls ; à charge
+  égale, les tests du dossier partagé prennent 74 s sur `master` (32) et 79 s sur la branche
+  (37) : rien de ralenti.
 
 ### À vérifier par Timo
 
