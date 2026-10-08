@@ -58,83 +58,89 @@ export function TaskBoard({
 
   return (
     <section className="board" aria-label="Tâches">
-      <div className="quick">
-        <input
-          aria-label="Nouvelle tâche"
-          placeholder="Nouvelle tâche…"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && add()}
-        />
-        <button className="ghost" type="button" onClick={add} disabled={!title.trim()}>
-          Ajouter
-        </button>
+      <div className="board-head">
+        <div className="quick">
+          <input
+            aria-label="Nouvelle tâche"
+            placeholder="Nouvelle tâche…"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && add()}
+          />
+          <button className="ghost" type="button" onClick={add} disabled={!title.trim()}>
+            Ajouter
+          </button>
+        </div>
+
+        {views.length > 0 && (
+          <div className="chips task-views" role="group" aria-label="Filtrer les tâches">
+            <button type="button" className={'chip' + (active ? '' : ' is-on')} aria-pressed={!active} onClick={() => onView(null)}>
+              Toutes
+            </button>
+            {views.map((candidate) => (
+              <button
+                key={candidate.id}
+                type="button"
+                className={'chip task-view is-' + candidate.id + (candidate.id === view ? ' is-on' : '')}
+                aria-pressed={candidate.id === view}
+                title={candidate.hint}
+                onClick={() => onView(candidate.id === view ? null : candidate.id)}
+              >
+                {candidate.icon && <span aria-hidden="true">{candidate.icon}</span>}
+                {candidate.label} <span className="count">{counts.get(candidate.id)}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {views.length > 0 && (
-        <div className="chips task-views" role="group" aria-label="Filtrer les tâches">
-          <button type="button" className={'chip' + (active ? '' : ' is-on')} aria-pressed={!active} onClick={() => onView(null)}>
-            Toutes
-          </button>
-          {views.map((candidate) => (
-            <button
-              key={candidate.id}
-              type="button"
-              className={'chip task-view is-' + candidate.id + (candidate.id === view ? ' is-on' : '')}
-              aria-pressed={candidate.id === view}
-              title={candidate.hint}
-              onClick={() => onView(candidate.id === view ? null : candidate.id)}
+      {/* Seule la liste défile : saisie et vues restent en tête, sans jamais passer
+          devant les cartes (elles étaient collantes, et les cartes défilaient dessous). */}
+      <div className="board-lists">
+        {active && counts.get(active.id) === 0 && <p className="empty">{active.empty}</p>}
+        {COLUMNS.map((column) => {
+          const inColumn = tasks.filter((t) => t.status === column.id);
+          const shown = active ? inColumn.filter((task) => active.match(task, today)) : inColumn;
+          // Une vue ne garde que les colonnes où elle trouve quelque chose.
+          if (active && shown.length === 0) return null;
+          return (
+            <div
+              key={column.id}
+              className={'column' + (over === column.id ? ' is-over' : '')}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setOver(column.id);
+              }}
+              onDragLeave={() => setOver((c) => (c === column.id ? null : c))}
+              onDrop={(e) => drop(e, column.id, inColumn.length)}
             >
-              {candidate.icon && <span aria-hidden="true">{candidate.icon}</span>}
-              {candidate.label} <span className="count">{counts.get(candidate.id)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      {active && counts.get(active.id) === 0 && <p className="empty">{active.empty}</p>}
-
-      {COLUMNS.map((column) => {
-        const inColumn = tasks.filter((t) => t.status === column.id);
-        const shown = active ? inColumn.filter((task) => active.match(task, today)) : inColumn;
-        // Une vue ne garde que les colonnes où elle trouve quelque chose.
-        if (active && shown.length === 0) return null;
-        return (
-          <div
-            key={column.id}
-            className={'column' + (over === column.id ? ' is-over' : '')}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setOver(column.id);
-            }}
-            onDragLeave={() => setOver((c) => (c === column.id ? null : c))}
-            onDrop={(e) => drop(e, column.id, inColumn.length)}
-          >
-            <h2>
-              {column.label} <span className="count">{shown.length}</span>
-            </h2>
-            <ul>
-              {shown.map((task) => (
-                <li key={task.id}>
-                  <TaskCard
-                    task={task}
-                    entries={entries}
-                    editing={editing === task.id}
-                    suggestContext={taskSuggestContext(task, tasks, entries, projects)}
-                    onEdit={() => setEditing(task.id)}
-                    onEditDone={() => setEditing(null)}
-                    onOpenDocument={onOpenDocument}
-                    onProcedureCreated={onProcedureCreated}
-                    onChanged={onChanged}
-                    // Position dans la colonne entière : une vue cache des voisines.
-                    onDrop={(e) => drop(e, column.id, inColumn.indexOf(task))}
-                  />
-                </li>
-              ))}
-            </ul>
-            {inColumn.length === 0 && <p className="empty-column">Déposer ici</p>}
-          </div>
-        );
-      })}
+              <h2>
+                {column.label} <span className="count">{shown.length}</span>
+              </h2>
+              <ul>
+                {shown.map((task) => (
+                  <li key={task.id}>
+                    <TaskCard
+                      task={task}
+                      entries={entries}
+                      editing={editing === task.id}
+                      suggestContext={taskSuggestContext(task, tasks, entries, projects)}
+                      onEdit={() => setEditing(task.id)}
+                      onEditDone={() => setEditing(null)}
+                      onOpenDocument={onOpenDocument}
+                      onProcedureCreated={onProcedureCreated}
+                      onChanged={onChanged}
+                      // Position dans la colonne entière : une vue cache des voisines.
+                      onDrop={(e) => drop(e, column.id, inColumn.indexOf(task))}
+                    />
+                  </li>
+                ))}
+              </ul>
+              {inColumn.length === 0 && <p className="empty-column">Déposer ici</p>}
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }

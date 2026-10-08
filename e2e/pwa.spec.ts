@@ -36,12 +36,14 @@ test('à 390 px les trois zones s’empilent en une page qui défile', async ({ 
   await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Entrée' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Tâches' })).toBeVisible();
-  // Modèle mobile : bloc unique à défilement, pas trois fenêtres fixes.
+  // Modèle mobile : une seule page qui défile (l'application entière, en-tête
+  // compris), pas trois fenêtres fixes.
   const metrics = await page.evaluate(() => ({
     display: getComputedStyle(document.querySelector('.columns') as Element).display,
     overflow: getComputedStyle(document.querySelector('.columns') as Element).overflowY,
+    page: getComputedStyle(document.querySelector('.app') as Element).overflowY,
     center: getComputedStyle(document.querySelector('.center') as Element).overflowY,
     noHorizontalOverflow: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
   }));
-  expect(metrics).toEqual({ display: 'block', overflow: 'auto', center: 'visible', noHorizontalOverflow: true });
+  expect(metrics).toEqual({ display: 'block', overflow: 'visible', page: 'auto', center: 'visible', noHorizontalOverflow: true });
 });

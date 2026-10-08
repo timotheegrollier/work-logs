@@ -132,12 +132,14 @@ export default function App() {
     if (!hasLeaveGuard()) {
       setSharedPath(null);
       setSelectedId(id);
+      revealEditor();
       return;
     }
     void requestLeave().then((ok) => {
       if (!ok) return;
       setSharedPath(null);
       setSelectedId(id);
+      revealEditor();
     });
   }, []);
   const openShared = useCallback(async (path: string) => {
@@ -145,6 +147,7 @@ export default function App() {
     await flushPendingSaves().catch(() => {});
     setSharedPath(path);
     setShowCenter(true);
+    revealEditor();
   }, []);
 
   useEffect(() => {
@@ -279,6 +282,7 @@ export default function App() {
     setSharedPath(null);
     setSelectedId(created.id);
     setEntry({ ...created, attachments: [] });
+    revealEditor();
     reload();
   };
 
@@ -300,6 +304,7 @@ export default function App() {
     setSharedPath(null);
     setSelectedId(created.id);
     setEntry({ ...created, attachments: [] });
+    revealEditor();
     reload();
   };
 
@@ -799,6 +804,18 @@ function readColProcedures() {
   if (typeof localStorage === 'undefined') return 320;
   const v = Number(localStorage.getItem(COL_PROC_KEY));
   return Number.isFinite(v) && v >= PROC_MIN && v <= 600 ? v : 320;
+}
+
+/**
+ * Cartes empilées (≤ 900 px) : ouvrir ou créer une entrée amène à la carte
+ * Écriture, au lieu de la laisser sous un journal qu'il fallait faire défiler.
+ * Sur desktop, les colonnes sont côte à côte : rien à faire.
+ */
+function revealEditor() {
+  if (!window.matchMedia?.('(max-width: 900px)').matches) return;
+  const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  // Après le rendu : la carte vient peut-être d'être réaffichée.
+  requestAnimationFrame(() => document.getElementById('workspace-editor')?.scrollIntoView?.({ block: 'start', behavior }));
 }
 
 /** Panneau visible par défaut ; `'0'` enregistré le replie durablement. */

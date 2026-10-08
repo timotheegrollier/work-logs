@@ -48,6 +48,11 @@ clair/sombre, l'export (masqué une fois connecté à Google : la synchro automa
 déjà une copie sur Drive) et le menu du compte. Sur téléphone, les interrupteurs de
 panneaux passent dans une barre fixée en bas de l'écran, à portée de pouce.
 
+Sur téléphone, l'écran est **une seule page** : la marque et la recherche s'effacent en
+descendant, la rangée des projets reste collée en haut, la barre des panneaux en bas.
+Ouvrir une entrée (depuis le journal, une procédure, une tâche ou le dossier partagé)
+amène directement à la carte **Écriture**.
+
 Les boutons **Journal** et **Tâches** de l'en-tête replient les panneaux latéraux
 pour ne garder que ce qui sert (l'écriture en grand, par exemple) ; l'état est
 retenu au redémarrage. Sur téléphone, c'est ce qui rend chaque zone utilisable
@@ -165,9 +170,15 @@ Les documents associés restent le contexte d'une tâche même s'ils appartienne
 Supprimer une entrée Google dans WorkLogs ne supprime jamais le fichier Google distant ; cela retire
 seulement sa copie locale, y compris si le fichier est déjà absent ou dans la corbeille Drive.
 
-**Gérer les projets** (dépliant sous les pastilles) permet d'en créer, de les renommer, de
-changer leur couleur, de les supprimer. Supprimer un projet ne supprime **rien** : les entrées
-et les tâches restent, simplement détachées.
+Les pastilles tiennent sur **une seule rangée**, quel que soit le nombre de projets : elle
+défile au doigt, au pavé tactile ou à la molette, et la pastille du projet filtré prend sa
+couleur.
+
+**Gérer les projets** (au bout de la rangée, « Gérer » sur téléphone) ouvre une fenêtre
+par-dessus l'écran — sous le bouton sur ordinateur, depuis le bas sur téléphone — pour en
+créer, les renommer (Entrée valide, Échap annule), changer leur couleur, les supprimer. Au-delà
+de sept projets, **Retrouver un projet** filtre la liste. Supprimer un projet ne supprime
+**rien** : les entrées et les tâches restent, simplement détachées.
 
 ## Procédures
 
