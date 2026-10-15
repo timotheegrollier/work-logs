@@ -125,7 +125,14 @@ test('document Word : taper dans un paragraphe puis Ctrl+S ne réécrit que lui,
   const editor = await openShared(page, 'procédure.docx');
   const content = editor.getByRole('textbox', { name: 'Contenu du document Word' });
   await content.getByText('chaque lundi.').click();
-  await page.keyboard.press('End');
+  await content.getByText('chaque lundi.').evaluate(element => {
+    const range = document.createRange();
+    range.selectNodeContents(element.closest('p')!);
+    range.collapse(false);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
   await page.keyboard.type(' Puis rincer.');
   await expect(editor.getByText('Tu as la main')).toBeVisible();
   await expect(editor.getByText('Brouillon sur cet ordinateur')).toBeVisible();

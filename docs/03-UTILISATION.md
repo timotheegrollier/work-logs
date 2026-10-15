@@ -48,6 +48,9 @@ clair/sombre, l'export (masqué une fois connecté à Google : la synchro automa
 déjà une copie sur Drive) et le menu du compte. Sur téléphone, les interrupteurs de
 panneaux passent dans une barre fixée en bas de l'écran, à portée de pouce.
 
+En paysage sur les petits écrans, cette barre devient horizontale et compacte pour
+laisser plus de place au contenu, sans réduire les boutons sous 44 px.
+
 Sur téléphone, l'écran est **une seule page** : la marque et la recherche s'effacent en
 descendant, la rangée des projets reste collée en haut, la barre des panneaux en bas.
 Ouvrir une entrée (depuis le journal, une procédure, une tâche ou le dossier partagé)

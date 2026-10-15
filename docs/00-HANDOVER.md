@@ -1,5 +1,16 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-15 — thème et navigation en paysage
+
+Sur les écrans bas (≤900 × 500 px), l'en-tête reste lisible et la barre fixe des
+panneaux passe en rangée horizontale avec des cibles de 44 px. Palette sombre et
+claire rafraîchie ; thème système des contrôles natifs, meta viewport et couleurs
+PWA / fenêtre desktop harmonisés. Aucune dépendance ajoutée.
+- **Tests** : parcours dédié du header en paysage, PWA et parcours du dossier
+  partagé avec placement déterministe du curseur.
+- **Validation** : `./scripts/check.sh` vert : 256 API, 549 front (1 échec attendu),
+  48 desktop, 29 scripts, 8 relais, 67 navigateur, 16 desktop — **973**.
+
 > **Mise à jour :** 2026-10-08 · Version : **v0.54.0** (publiée à 17:20 ; la 0.53.0 a été bumpée
 > sur `master` mais jamais taguée : son lot, les projets sur une rangée, est dedans). Elle publie :
 > - **procédure locale → TSE** — « ＋ Depuis une procédure… » dans la section Dossier

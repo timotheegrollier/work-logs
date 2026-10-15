@@ -27,7 +27,7 @@ test('PWA installable : manifeste, icônes et service worker versionné', async 
   expect(body).not.toContain('__WORKLOGS_VERSION__');
 
   await page.goto('/');
-  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#0e1118');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#0c1017');
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', './manifest.webmanifest');
 });
 

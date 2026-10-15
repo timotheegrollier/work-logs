@@ -165,6 +165,29 @@ test('mobile : la marque s’efface en descendant, le bandeau projets reste coll
     .not.toContain('sticky');
 });
 
+test('mobile en paysage : barre de panneaux horizontale et cibles tactiles', async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto('/');
+
+  const viewport = page.viewportSize()!;
+  const navigation = page.locator('.head .panel-toggles');
+  const buttons = navigation.locator('.panel-toggle');
+  await expect(buttons).toHaveCount(4);
+
+  const navBounds = (await navigation.boundingBox())!;
+  expect(navBounds.y + navBounds.height).toBeCloseTo(viewport.height, 0);
+  expect(navBounds.height).toBeLessThanOrEqual(56);
+  for (const button of await buttons.all()) {
+    const bounds = (await button.boundingBox())!;
+    expect(bounds.height).toBeGreaterThanOrEqual(44);
+    expect(bounds.width).toBeGreaterThanOrEqual(44);
+    expect(await button.evaluate((el) => getComputedStyle(el).flexDirection)).toBe('row');
+  }
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
+  ).toBe(true);
+});
+
 test('mobile : ouvrir une entrée amène à la carte Écriture, sous le bandeau', async ({ page, request }) => {
   const entry = await (await request.post('/api/entries', { data: { title: 'Compte rendu ancien', entry_date: '2025-03-14' } })).json();
   try {
