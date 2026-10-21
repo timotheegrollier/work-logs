@@ -404,11 +404,13 @@ export default function App() {
     if (isGoogleDocument) setShowDocumentTasks(true);
   };
 
-  const openDocument = useCallback((entryId: string) => {
+  const openDocument = useCallback((entryId: string, knownProject?: string | null) => {
     const summary = state?.entries.find((candidate) => candidate.id === entryId)
       ?? state?.tasks.flatMap((task) => task.documents ?? []).find((candidate) => candidate.id === entryId);
-    // Sans résumé (document inconnu de l'état filtré), on ne change pas le projet.
-    void openEntry(entryId, summary ? (summary.project_id ?? '') : undefined);
+    // Sans résumé (document inconnu de l'état filtré), le projet que l'appelant connaît
+    // (« Trouver la doc ») ; sinon on ne change pas le projet.
+    const project = summary ? summary.project_id : knownProject;
+    void openEntry(entryId, project === undefined ? undefined : (project ?? ''));
   }, [openEntry, state]);
 
   // Procédure rédigée par l'IA depuis une entrée ou une tâche : ouverte au centre,
@@ -649,6 +651,7 @@ export default function App() {
             view={taskView}
             onView={setTaskView}
             onOpenDocument={openDocument}
+            onOpenShared={(path) => void openShared(path)}
             onProcedureCreated={openCreatedProcedure}
             onChanged={reload}
           />

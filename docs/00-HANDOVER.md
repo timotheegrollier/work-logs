@@ -1,5 +1,23 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-21 — « ✨ Trouver la doc »
+
+Sur une carte de tâche, « ✨ Trouver la doc » retrouve la note, la procédure ou le fichier du
+dossier partagé qui aide à la faire. L'IA ne reçoit que des titres (tâche, projet, documents
+liés) et propose au plus six mots ; WorkLogs les cherche dans toutes ses notes et procédures
+(titres et textes, tous projets, archives comprises) et dans les noms de fichiers du partage
+(par le relais sur la PWA). La carte liste au plus huit documents classés : **Ouvrir** (le
+filtre suit le projet du document), **Lier** (route de « ＋ Documents »). Partage absent ou en
+panne : WorkLogs seul, et la liste le dit. Aucune dépendance, route ou migration ajoutée.
+- **Code** : `web/src/doc-finder.ts` (recherche et classement), `suggestSearchTerms` dans
+  `ai-suggest.ts`, la carte dans `TaskBoard.tsx` ; `openDocument` (`App.tsx`) accepte le
+  projet connu d'un document absent de l'état filtré.
+- **Tests** : `ai-suggest.test.ts` (consigne, nettoyage, sans clé), `doc-finder.test.ts`
+  (classement, pannes du partage), 3 parcours dans `App.test.tsx` (partage relié, partage
+  absent, réponse illisible). Pourquoi : `05-DECISIONS.md` §43 ; usage : `03-UTILISATION.md`.
+- **Validation** : typecheck et tests ciblés verts ; `./scripts/check.sh` non relancé sur
+  cette branche (machine partagée) : à passer avant la fusion.
+
 ## Lot du 2026-10-21 — « ✨ Compléter »
 
 Demande : que l'IA termine l'entrée, la tâche ou la procédure en cours d'écriture, à

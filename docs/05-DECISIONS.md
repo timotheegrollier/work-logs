@@ -1779,3 +1779,54 @@ simulé : la qualité d'un modèle réel se juge avec la recette §14 de `04-REC
 **Rouvrir si** la note complétée invente en usage réel (resserrer la consigne, ou ne compléter
 que ce qui suit le dernier point) ; si la perte de mise en forme d'une note riche gêne (§23 :
 faire travailler l'IA en HTML) ; si une tâche doit porter son propre texte.
+
+## 43. Retrouver la doc d’une tâche, dans WorkLogs et sur le partage — 2026-10-21
+
+**La demande.** « Je veux que par rapport à une tâche existante on puisse facilement à l'aide
+d'un bouton sur la tâche et grâce à l'assistance de l'IA retrouver la doc ou procédure qui peut
+permettre de la compléter si elle existe dans les procédures ou locales mais aussi sur le
+serveur distant. »
+
+**Les choix.**
+- **Un bouton au pied de la carte**, « ✨ Trouver la doc », à côté de « ✨ Procédure » ; la liste
+  « Documents trouvés » s'ouvre dans la carte, comme le lieur de documents. Ni onglet, ni mode,
+  ni route, ni migration, ni dépendance.
+- **L'IA choisit les mots, le code cherche.** Elle reçoit le titre et le statut de la tâche, son
+  projet (nom, contexte IA du projet, vocabulaire des titres) et les titres des documents liés,
+  et rend au plus six termes courts en tableau JSON (`suggestSearchTerms`). **Aucun contenu**
+  ne part : des titres suffisent pour deviner les mots, et chercher dans tous les projets ne
+  doit pas envoyer leurs textes à un tiers. Réponse illisible : erreur, rien n'est cherché.
+- **Chaque mot est cherché tel quel, un à la fois** (`web/src/doc-finder.ts`) : dans WorkLogs
+  par la recherche existante (`/api/state?q=`, titres et textes, tous projets, archives
+  comprises ; le stockage de la PWA fait de même) et sur le partage par sa recherche de noms
+  (`/api/shared/search`, bornée en temps §25 ; sur la PWA, par le relais §29). Seuls les
+  fichiers comptent, pas les dossiers.
+- **Un classement prévisible** : un mot pèse d'autant plus qu'il est haut dans la liste de l'IA,
+  le double s'il est dans le titre — un nom de fichier compte comme un titre, c'est tout ce que
+  lit la recherche du partage. À égalité : procédure (elle explique), note (elle raconte),
+  fichier du partage (trouvé par son seul nom), puis le plus récent. Huit au plus ; les
+  documents déjà liés ne reviennent pas.
+- **Le partage ne bloque jamais WorkLogs.** Non réglé, relais injoignable ou en panne au premier
+  mot : WorkLogs seul, et la liste le dit. Tombé en route : ce qui est trouvé reste (« recherche
+  partielle ») et les mots suivants ne l'attendent plus. Hors ligne : les dernières listes vues.
+- **Ouvrir suit le projet** (§40) : une entrée d'un autre projet fait basculer le filtre, même
+  absente de l'état filtré (`openDocument` reçoit le projet que la recherche connaît) ; un
+  fichier du partage s'ouvre au centre comme depuis l'arbre. **Lier** prend la route de
+  « ＋ Documents » : sur une tâche terminée, le document passe donc aux archives (§31).
+
+**Écartés.** Envoyer le contenu des documents candidats à l'IA pour qu'elle les classe (des
+textes d'autres projets partiraient, pour un gain non mesuré) ; lire le contenu des fichiers du
+partage (chaque fichier lu par le réseau SMB : trop lent, d'où une recherche bornée aux noms) ;
+une recherche automatique à l'ouverture de la carte (un appel IA sans clic, contraire au §17) ;
+une route de recherche « l'un des mots » sur le partage (six recherches bornées suffisent, sans
+toucher au serveur ni au relais).
+
+**Validation.** Tests purs de la consigne et du nettoyage des mots (sans clé, rien ne part), du
+classement et des pannes du partage ; trois parcours sur la vraie API de test (partage relié,
+partage absent, réponse illisible). Le service IA y est simulé : la pertinence des mots d'un
+vrai modèle reste à juger en usage.
+
+**Rouvrir si** les résultats sont trop bruyants (un passage IA de classement sur les seuls
+**titres** trouvés), si six recherches sont trop lentes sur le vrai TSE (chercher d'abord dans
+le dossier relié au projet), ou si les accents font manquer des documents : le `LIKE` de SQLite
+ne plie ni les accents ni la casse hors ASCII (« procedure » ne trouve pas « procédure »).

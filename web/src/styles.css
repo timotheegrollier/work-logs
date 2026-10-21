@@ -2000,6 +2000,14 @@ button:disabled {
   color: var(--accent);
   background: var(--accent-soft);
 }
+/* « Trouver la doc » : une ligne par document ; sur une carte étroite, les boutons passent dessous. */
+.doc-found {
+  flex-wrap: wrap;
+  background: var(--surface);
+}
+.doc-found .task-document-open {
+  flex-basis: 140px;
+}
 
 /* ------------------------------------------------------------ progression des mises à jour */
 .update-progress {

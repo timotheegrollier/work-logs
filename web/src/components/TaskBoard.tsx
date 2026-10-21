@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { COLUMNS, PRIORITIES, TASK_VIEWS, api, dayLabel, isOverdue, priorityLabel, subtasksMd, todayISO, type Entry, type EntrySummary, type Priority, type Project, type Status, type Task, type TaskView } from '../lib';
-import { draftProcedure, MAX_SOURCE_DOCUMENTS, readAiSettings, suggestSubtasks, taskSuggestContext, type AiWorkContext, type DraftedProcedure, type SuggestContext } from '../ai-suggest';
-import { loadAiContext, selectedAiContext } from '../ai-context';
+import { draftProcedure, MAX_SOURCE_DOCUMENTS, readAiSettings, suggestSearchTerms, suggestSubtasks, taskSuggestContext, type AiWorkContext, type DraftedProcedure, type SuggestContext } from '../ai-suggest';
+import { loadAiContext, readProjectAiBrief, selectedAiContext } from '../ai-context';
+import { findDocuments, type FoundDocument } from '../doc-finder';
 import { richToMarkdown } from '../rich-markdown';
 import { ProcedureDraft } from './ProcedureDraft';
 import { AiContextDetails } from './AiContextDetails';
@@ -17,6 +18,7 @@ export function TaskBoard({
   view,
   onView,
   onOpenDocument,
+  onOpenShared,
   onProcedureCreated,
   onChanged,
 }: {
@@ -26,7 +28,9 @@ export function TaskBoard({
   projects: Project[];
   view: TaskView | null;
   onView: (view: TaskView | null) => void;
-  onOpenDocument: (entryId: string) => void;
+  /** `projectId` : projet connu d'un document absent de l'état filtré, que l'ouverture suit. */
+  onOpenDocument: (entryId: string, projectId?: string | null) => void;
+  onOpenShared: (path: string) => void;
   /** Procédure tirée d'une tâche par l'IA, créée : l'app l'ouvre. */
   onProcedureCreated: (procedure: Entry) => void;
   onChanged: () => void;
@@ -126,11 +130,13 @@ export function TaskBoard({
                     <TaskCard
                       task={task}
                       entries={entries}
+                      projects={projects}
                       editing={editing === task.id}
                       suggestContext={taskSuggestContext(task, tasks, entries, projects)}
                       onEdit={() => setEditing(task.id)}
                       onEditDone={() => setEditing(null)}
                       onOpenDocument={onOpenDocument}
+                      onOpenShared={onOpenShared}
                       onProcedureCreated={onProcedureCreated}
                       onChanged={onChanged}
                       // Position dans la colonne entière : une vue cache des voisines.
@@ -151,22 +157,26 @@ export function TaskBoard({
 function TaskCard({
   task,
   entries,
+  projects,
   editing,
   suggestContext,
   onEdit,
   onEditDone,
   onOpenDocument,
+  onOpenShared,
   onProcedureCreated,
   onChanged,
   onDrop,
 }: {
   task: Task;
   entries: EntrySummary[];
+  projects: Project[];
   editing: boolean;
   suggestContext: SuggestContext;
   onEdit: () => void;
   onEditDone: () => void;
-  onOpenDocument: (entryId: string) => void;
+  onOpenDocument: (entryId: string, projectId?: string | null) => void;
+  onOpenShared: (path: string) => void;
   onProcedureCreated: (procedure: Entry) => void;
   onChanged: () => void;
   onDrop: (event: React.DragEvent) => void;
@@ -368,6 +378,43 @@ function TaskCard({
     }
   };
 
+  // La doc qui aide à faire la tâche : l'IA propose les mots (des titres partent,
+  // jamais un contenu), WorkLogs et le partage cherchent. Rien n'est lié sans clic.
+  const [finding, setFinding] = useState(false);
+  const [found, setFound] = useState<{ terms: string[]; documents: FoundDocument[]; sharedNote: string } | null>(null);
+  const [findError, setFindError] = useState('');
+  const findDocs = async () => {
+    if (finding) return;
+    setFinding(true);
+    setFindError('');
+    setFound(null);
+    try {
+      const terms = await suggestSearchTerms(readAiSettings(), {
+        title: task.title,
+        status: COLUMNS.find((column) => column.id === task.status)?.label,
+        project: suggestContext.project,
+        projectBrief: readProjectAiBrief(task.project_id),
+        vocabulary: suggestContext.vocabulary,
+        linkedDocuments: linkedDocuments.map((document) => document.title),
+      });
+      setFound({ terms, ...(await findDocuments(terms, linkedIds)) });
+    } catch (e) {
+      setFindError((e as Error).message);
+    } finally {
+      setFinding(false);
+    }
+  };
+  const linkFound = async (entryId: string) => {
+    setFindError('');
+    try {
+      await api.linkTaskDocument(task.id, entryId);
+      onChanged();
+    } catch (e) {
+      setFindError((e as Error).message);
+    }
+  };
+  const projectName = (id: string | null) => projects.find((project) => project.id === id)?.name;
+
   const entryCreator = creatingEntry ? (
     <form
       className="task-creator"
@@ -446,6 +493,67 @@ function TaskCard({
       {drafting ? 'Rédaction…' : <><span aria-hidden="true">✨ </span>Procédure</>}
     </button>
   );
+  const findButton = (
+    <button
+      className="card-link"
+      type="button"
+      aria-label="Trouver la documentation avec l’IA"
+      disabled={finding}
+      title="Envoie au service IA configuré en Paramètres le titre de la tâche, son projet et les titres de ses documents liés (jamais leur contenu), puis cherche dans les notes et procédures de WorkLogs et dans les noms de fichiers du dossier partagé"
+      onClick={() => void findDocs()}
+    >
+      {finding ? 'Recherche…' : <><span aria-hidden="true">✨ </span>Trouver la doc</>}
+    </button>
+  );
+  const finder = found ? (
+    <section className="document-linker" aria-label="Documents trouvés">
+      <p className="ai-hint">Cherché avec : {found.terms.join(', ')}</p>
+      {found.documents.length === 0 ? (
+        <p className="empty">Aucun document trouvé avec ces mots.</p>
+      ) : (
+        <ul className="document-picker">
+          {found.documents.map((document) => {
+            const title = document.kind === 'shared' ? document.file.name : document.entry.title;
+            // Le dossier d'un fichier du partage ; le projet d'une entrée qui n'est pas celui de la tâche.
+            const where = document.kind === 'shared' ? document.file.dir
+              : document.entry.project_id !== task.project_id ? projectName(document.entry.project_id) : '';
+            return (
+              <li className="task-document doc-found" key={document.kind === 'shared' ? 'partage:' + document.file.path : document.entry.id}>
+                <span className="picker-source">{document.kind === 'shared' ? 'Partage' : document.kind === 'procedure' ? 'Procédure' : 'Note'}</span>
+                <span className="task-document-open">
+                  <span className="task-document-title" title={title}>{title}</span>
+                  <span className="task-document-meta">{where ? `${where} · ` : ''}trouvé avec : {document.terms.join(', ')}</span>
+                </span>
+                <span className="document-linker-actions">
+                  <button
+                    className="ghost"
+                    type="button"
+                    aria-label={`Ouvrir ${title}`}
+                    onClick={() => (document.kind === 'shared' ? onOpenShared(document.file.path) : onOpenDocument(document.entry.id, document.entry.project_id))}
+                  >
+                    Ouvrir
+                  </button>
+                  {document.kind !== 'shared' && (linkedIds.has(document.entry.id) ? (
+                    <span className="picker-source">Liée</span>
+                  ) : (
+                    <button className="ghost" type="button" aria-label={`Lier ${title} à la tâche`} onClick={() => void linkFound(document.entry.id)}>
+                      Lier
+                    </button>
+                  ))}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {found.sharedNote && <p className="ai-hint">{found.sharedNote}</p>}
+      <div className="card-actions">
+        <button className="ghost" type="button" onClick={() => setFound(null)}>
+          Fermer
+        </button>
+      </div>
+    </section>
+  ) : null;
   const procedureCreator = procedureDraft ? (
     <ProcedureDraft
       draft={procedureDraft}
@@ -714,7 +822,9 @@ function TaskCard({
       {aiContext && !creatingEntry && <AiContextDetails context={aiContext} excludedIds={excludedSourceIds} onExcludedChange={excludeSources} />}
       {procedureCreator}
       {draftError && <p className="error" role="alert">{draftError}</p>}
-      {!linking && !creatingEntry && !procedureDraft && <div className="card-links">{linkButton}{entryButton}{procedureButton}</div>}
+      {finder}
+      {findError && <p className="error" role="alert">{findError}</p>}
+      {!linking && !creatingEntry && !procedureDraft && !found && <div className="card-links">{linkButton}{entryButton}{procedureButton}{findButton}</div>}
     </div>
   );
 }
