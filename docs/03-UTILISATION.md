@@ -162,12 +162,49 @@ rendu approximatif.
 - Cliquer sur le titre d'un document lié l'ouvre au centre. Le bouton ✕ retire seulement l'association, sans supprimer le document. Une même entrée peut fournir le contexte de plusieurs tâches.
 - **✨ Procédure** (pied de carte) fait rédiger par l'IA une procédure à partir de la tâche et de ses documents liés, à relire avant de la créer — voir « Procédures ».
 
+## Assistance IA
+
+Dans **⚙ Paramètres → Assistance IA**, renseigner le profil métier général et,
+facultativement, le **Contexte IA du projet** : objectif, environnement, contraintes et
+termes utiles. Chaque fiche est conservée **sur cet appareil uniquement**.
+
+Un clic d'assistance lit aussi des documents locaux du même projet : documents liés
+d'abord, puis notes et procédures dont le titre ou l'extrait correspond au sujet.
+Au plus trois extraits de 2 000 caractères accompagnent la demande. Le contenu des
+documents Google et des pièces jointes n'est pas transmis. Pour tirer une procédure
+d'une tâche, ses cinq documents liés restent les sources principales, même d'un autre projet.
+Dans le partage, le contexte local accompagne le fichier seulement si un projet est
+sélectionné ; **Tout** n'ajoute aucun document local au fichier.
+
+**Contexte utilisé par l'IA** apparaît après la première demande : déplier pour lire
+les extraits et décocher une source pour les demandes suivantes. Une modification de
+sélection retire les propositions en attente issues de l'ancienne sélection.
+
+**Ajuster la proposition** précise ce qui est attendu : par exemple « Garde les commandes
+exactement et détaille les vérifications ». **Affiner**, **Plus court** et **Pour un collègue**
+demandent une nouvelle version, avec le texte d'origine et le brouillon précédent.
+Les corrections et procédures restent à relire avant application ; dans le partage,
+appliquer ne crée qu'un brouillon local, à envoyer avec **Enregistrer sur le partage**.
+
+**✨ Extraire les actions**, dans une note locale Markdown ou riche, propose les actions
+encore à faire avec un extrait justificatif. Cocher les actions à conserver, ajuster leur
+titre ou leur échéance si nécessaire, puis **Créer les tâches sélectionnées**. Chaque tâche
+est liée à la note et reprend son projet ; la note est conservée. Seules les dates écrites
+explicitement au format `YYYY-MM-DD` dans le passage cité deviennent automatiquement des
+échéances : « demain » ou « vendredi » laisse le champ vide. Une création partiellement
+réussie garde les tâches déjà créées pour permettre de réessayer les autres.
+
 ## Projets
 
 Les pastilles en haut à gauche filtrent **le journal et les tâches en même temps** : un clic sur
 « Chantier » et l'écran entier ne parle plus que de ce chantier. Recliquer enlève le filtre ; le dernier
 projet sélectionné est retenu au prochain démarrage. Si le projet a été supprimé, WorkLogs revient à
 « Tout ».
+
+Changer de projet referme l'entrée et le fichier du partage ouverts au centre : les listes et le
+document affiché parlent ainsi du même projet. « Tout » les garde, puisqu'ils y restent visibles.
+Un fichier du partage avec un brouillon non envoyé pose d'abord sa question (Envoyer · Garder le
+brouillon ici · Annuler) ; « Annuler » laisse le projet où il était.
 
 Les documents associés restent le contexte d'une tâche même s'ils appartiennent à un autre projet.
 Supprimer une entrée Google dans WorkLogs ne supprime jamais le fichier Google distant ; cela retire
@@ -411,6 +448,8 @@ tâche ou projet garde sa version la plus récente, et une suppression se propag
 **Documents Google** (menu du compte) : la liste des documents autorisés pour WorkLogs,
 avec pour chacun **Ouvrir**, un choix de **projet**, et 🗑 (**corbeille Google Drive**,
 récupérable 30 jours ; la copie dans WorkLogs est retirée). On y crée aussi un Google Docs.
+**Ouvrir** bascule le filtre sur le projet du document, comme une carte de tâche ; le journal
+et le document affiché parlent alors du même projet.
 
 **Pièces jointes et Drive.** Connecté, chaque fichier joint (procédures comprises) part dans
 le dossier `WorkLogs/Pièces jointes` de ton Drive quelques secondes après l'ajout, et reste

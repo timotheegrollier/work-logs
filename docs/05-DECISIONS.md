@@ -1650,3 +1650,87 @@ entre-temps).
 
 **Rouvrir si** le Worker cesse d'être le passage obligé de la connexion Google, ou si le relais
 sort du seul réseau Tailscale.
+
+## 40. Changer de projet referme ce qui appartient à l'ancien — 2026-10-21
+
+**La demande.** « Quand on change de projet, les documents/fichiers ouverts ou édités dans le
+projet précédent restent affichés alors que les procédures, entrées et tâches listées sont bien
+celles du projet sélectionné ; cela crée des incohérences. »
+
+**Constaté avant de coder.** Le journal, les tâches et les procédures relisent l'état filtré,
+mais deux choses vivaient en dehors : `sharedPath` (le fichier du dossier partagé au centre)
+n'était jamais refermé, et l'entrée ouverte restait affichée jusqu'au retour de la nouvelle
+entrée. La fenêtre « Documents Google » ouvrait en plus un document sans suivre son projet,
+contrairement à une carte de tâche.
+
+**Les choix.**
+- **Le centre suit le filtre projet.** Changer de projet referme le fichier du partage et
+  l'entrée ouverte ; le rechargement rouvre ensuite la première entrée du projet choisi. Une
+  lecture d'état déjà en vol est invalidée pour ne pas réafficher l'ancien filtre.
+- **« Tout » ne ferme rien.** L'entrée et le fichier y restent dans les listes : les garder ne
+  crée aucune contradiction. Recliquer sur la pastille active garde donc le travail en cours.
+- **Le brouillon d'abord.** Un fichier du partage modifié mais pas envoyé passe par la garde
+  existante (Envoyer · Garder le brouillon ici · Annuler), après un envoi des sauvegardes en
+  attente. « Annuler » annule aussi le changement de projet, sinon le fichier serait resté
+  ouvert sous les listes d'un autre projet.
+- **Documents Google : le document mène au projet.** Ouvrir un document depuis la fenêtre
+  « Documents Google » applique le même réflexe qu'une carte de tâche : le filtre passe au
+  projet du document. Le journal ne montre donc pas un document qui n'appartient pas à la
+  liste affichée.
+
+**Écartés.** Vider le centre sans rien rouvrir (un écran vide après chaque pastille, alors que
+l'ouverture d'une entrée est le geste courant) ; fermer aussi le fichier en revenant à « Tout »
+(il y est visible) ; demander le projet du fichier au serveur à chaque clic de pastille (un
+aller-retour pour une règle qui ne dépend pas du contenu du fichier).
+
+**Rouvrir si** plusieurs fichiers d'un même projet doivent rester ouverts côte à côte (il
+faudrait alors une navigation par onglets, refusée en §1) ou si l'on veut conserver le fichier du
+partage en passant d'un projet à l'autre (il faudrait alors vérifier sa présence dans le dossier
+relié, adresse du partage à l'appui).
+
+## 41. Assistance IA : contexte du projet, affinement et actions sourcées — 2026-10-21
+
+**Le besoin.** Rendre les fonctions IA plus pertinentes et plus faciles à ajuster dans
+l'écran existant. Les suggestions depuis une tâche ne connaissaient que les titres des
+documents liés ; celles d'une note lisaient son début. Une régénération ne permettait
+pas d'indiquer ce qui devait changer.
+
+**Les choix.**
+- `ai-context.ts` prépare le même contexte pour notes, tâches et fichiers du partage :
+  fiche facultative par projet, tâches voisines et vocabulaire du même projet, puis
+  documents liés ou pertinents par mots du titre et de l'extrait. Trois sources de
+  2 000 caractères maximum ; les passages sont choisis dans le document, pas seulement
+  au début. Projet et origine Google sont vérifiés avant et après lecture. Une lecture
+  impossible interrompt la demande au lieu de faire croire à un contexte complet.
+- Les fiches de projet sont dans `localStorage`, comme le profil métier : aucune
+  migration ni nouvelle donnée synchronisée. Le libellé dit « sur cet appareil ».
+  Pour le partage, seul un projet explicitement sélectionné apporte du contexte local.
+- Les documents transmis sont visibles après le premier geste et excluables pour les
+  suivants. Une sélection changée invalide les propositions et les réponses encore en
+  vol qui s'appuyaient dessus. Les documents Google et le contenu des pièces jointes
+  gardent l'exclusion des décisions §17/§23. Les cinq documents principaux d'une
+  procédure tirée d'une tâche restent bornés à 12 000 caractères au total (§31) ; liés
+  exprès, ils en restent les sources même s'ils appartiennent à un autre projet.
+- Un affinement transmet la source originale, la proposition précédente et une
+  instruction courte. Le brouillon précédent ne devient jamais une source de faits ;
+  les règles de fidélité et les marqueurs Word restent applicables. Même composant
+  `AiRefinement` dans les relectures, procédures et créateurs de sous-tâches.
+- L'extraction ne produit que des propositions : JSON validé, huit actions au plus,
+  extrait exact obligatoire, doublons et cases terminées écartés. Une date n'est gardée
+  que si elle est calendairement valide et écrite littéralement dans le passage cité.
+  L'utilisateur sélectionne et peut corriger avant création par la route transactionnelle
+  existante `POST /api/entries/:id/task`. Les liens existants sont relus avant une
+  nouvelle tentative ; les créations réussies ne sont pas rejouées.
+- Les frappes pendant une suggestion sont conservées. Un changement de projet, de
+  contenu source ou de sélection est vérifié avant application/création ; une réponse
+  tardive ne rouvre pas le document quitté.
+
+**Validation.** Tests purs des prompts, de la sélection de contexte et des réponses ;
+gestes sur la vraie API de test ; parcours Chromium tâche, mobile et partage. Le service
+IA est simulé dans ces tests : ils prouvent les garde-fous et le parcours, pas la qualité
+d'un modèle réel. La recette §14 de `04-RECETTES.md` donne les cas à juger avec une clé réelle.
+Aucune dépendance, route, migration, onglet ou mode ajouté.
+
+**Rouvrir si** la recherche par mots manque régulièrement une procédure utile (mesurer
+sur les cas réels avant d'ajouter un index sémantique), si les fiches doivent suivre Drive,
+ou si l'on veut consulter des pièces jointes ou des documents Google avec l'IA.

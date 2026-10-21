@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, todayISO, type Entry } from '../lib';
 import type { DraftedProcedure } from '../ai-suggest';
 import { renderMarkdown } from '../markdown';
 import { markdownToRich } from '../rich-markdown';
+import { AiRefinement } from './AiRefinement';
 
 /**
  * Procédure rédigée par l'IA depuis une entrée ou une tâche : on la relit, on
@@ -22,13 +23,18 @@ export function ProcedureDraft({
   projectId: string | null;
   /** Une nouvelle rédaction est en cours (Rafraîchir). */
   busy: boolean;
-  onRefresh: () => void;
+  onRefresh: (instruction?: string) => void;
   onCreated: (procedure: Entry) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(draft.title);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   // Rafraîchir apporte un nouveau titre avec le nouveau texte.
   useEffect(() => setTitle(draft.title), [draft]);
   const html = useMemo(() => renderMarkdown(draft.markdown), [draft.markdown]);
@@ -47,11 +53,11 @@ export function ProcedureDraft({
         kind: 'procedure',
         content_json: markdownToRich(draft.markdown),
       });
-      onCreated(created);
+      if (mounted.current) onCreated(created);
     } catch (e) {
-      setError((e as Error).message);
+      if (mounted.current) setError((e as Error).message);
     } finally {
-      setCreating(false);
+      if (mounted.current) setCreating(false);
     }
   };
 
@@ -72,11 +78,12 @@ export function ProcedureDraft({
         <input aria-label="Titre de la procédure" value={title} disabled={creating} onChange={(event) => setTitle(event.target.value)} />
       </label>
       <article className="prose" dangerouslySetInnerHTML={{ __html: html }} />
+      <AiRefinement busy={busy || creating} onRefine={onRefresh} />
       <div className="task-creator-actions">
         <button className="task-primary" type="submit" disabled={creating || busy || !title.trim()}>
           {creating ? 'Création…' : 'Créer la procédure'}
         </button>
-        <button className="ghost" type="button" disabled={creating || busy} onClick={onRefresh}>
+        <button className="ghost" type="button" disabled={creating || busy} onClick={() => onRefresh()}>
           {busy ? 'Rédaction…' : 'Rafraîchir'}
         </button>
         {/* Pendant une rédaction, fermer ne l'arrêterait pas : sa réponse rouvrirait le panneau. */}

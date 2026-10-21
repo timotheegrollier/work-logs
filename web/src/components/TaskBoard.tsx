@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { COLUMNS, PRIORITIES, TASK_VIEWS, api, dayLabel, isOverdue, priorityLabel, subtasksMd, todayISO, type Entry, type EntrySummary, type Priority, type Project, type Status, type Task, type TaskView } from '../lib';
-import { draftProcedure, MAX_SOURCE_DOCUMENTS, readAiSettings, suggestSubtasks, taskSuggestContext, type DraftedProcedure, type SuggestContext } from '../ai-suggest';
+import { draftProcedure, MAX_SOURCE_DOCUMENTS, readAiSettings, suggestSubtasks, taskSuggestContext, type AiWorkContext, type DraftedProcedure, type SuggestContext } from '../ai-suggest';
+import { loadAiContext, selectedAiContext } from '../ai-context';
 import { richToMarkdown } from '../rich-markdown';
 import { ProcedureDraft } from './ProcedureDraft';
+import { AiContextDetails } from './AiContextDetails';
+import { AiRefinement } from './AiRefinement';
 
 const DRAG_TYPE = 'text/plain';
 
@@ -181,6 +184,16 @@ function TaskCard({
   // Suggestion IA : un clic = un envoi du titre au service configuré en Paramètres.
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState('');
+  const [aiContext, setAiContext] = useState<AiWorkContext | null>(null);
+  const [excludedSourceIds, setExcludedSourceIds] = useState<string[]>([]);
+  const contextVersion = useRef(0);
+  const [canRefineCreator, setCanRefineCreator] = useState(false);
+  const excludeSources = (ids: string[]) => {
+    contextVersion.current += 1;
+    setExcludedSourceIds(ids);
+    setCanRefineCreator(false);
+    setProcedureDraft(null);
+  };
   const linkedDocuments = task.documents ?? [];
   const linkedIds = new Set(linkedDocuments.map((document) => document.id));
   const availableDocuments = entries.filter((entry) => !linkedIds.has(entry.id));
@@ -239,19 +252,41 @@ function TaskCard({
     setEntryTitle(task.title);
     setEntrySubtasks('');
     setSuggestError('');
+    setCanRefineCreator(false);
     setCreatingEntry(true);
   };
 
-  const suggestForCreator = async () => {
-    if (suggesting) return;
+  const contextForTask = async (version: number, title = task.title) => {
+    const context = await loadAiContext({
+      projectId: task.project_id,
+      title,
+      taskId: task.id,
+      linkedDocumentIds: linkedDocuments.map((document) => document.id),
+    });
+    if (contextVersion.current !== version) throw new Error('Le contexte IA a changé : relance la demande.');
+    setAiContext(context);
+    return context;
+  };
+
+  const suggestForCreator = async (instruction?: string) => {
+    if (suggesting || drafting) return;
+    const version = contextVersion.current;
     setSuggesting(true);
     setSuggestError('');
     try {
-      const raw = await suggestSubtasks(readAiSettings(), entryTitle.trim() || task.title, {
-        context: { ...suggestContext, linkedDocuments: linkedDocuments.map((document) => document.title) },
+      const settings = readAiSettings();
+      if (!settings.key) throw new Error('Colle ta clé IA dans ⚙ Paramètres pour activer les suggestions.');
+      const context = selectedAiContext(await contextForTask(version, entryTitle.trim() || task.title), excludedSourceIds);
+      const raw = await suggestSubtasks(settings, entryTitle.trim() || task.title, {
+        context: { ...context, linkedDocuments: linkedDocuments
+          .filter((document) => !excludedSourceIds.includes(document.id))
+          .map((document) => document.title) },
+        refinement: instruction ? { instruction, previous: entrySubtasks } : undefined,
       });
+      if (contextVersion.current !== version) return;
       // Suggérer remplace toujours : un seul geste pour générer et recharger.
       setEntrySubtasks(raw);
+      setCanRefineCreator(true);
     } catch (e) {
       setSuggestError((e as Error).message);
     } finally {
@@ -281,28 +316,51 @@ function TaskCard({
   const [drafting, setDrafting] = useState(false);
   const [procedureDraft, setProcedureDraft] = useState<DraftedProcedure | null>(null);
   const [draftError, setDraftError] = useState('');
-  const draftFromTask = async () => {
-    if (drafting) return;
+  const draftFromTask = async (instruction?: string) => {
+    if (drafting || suggesting) return;
+    const version = contextVersion.current;
     setDrafting(true);
     setDraftError('');
     try {
-      const documents = await Promise.all(linkedDocuments.slice(0, MAX_SOURCE_DOCUMENTS).map(async (document) => {
-        if (isGoogleDocument(document)) return { title: document.title, date: document.entry_date, google: true };
-        // Un document supprimé entre-temps est simplement passé.
-        const full = await api.entry(document.id).catch(() => null);
-        return full && {
+      const settings = readAiSettings();
+      if (!settings.key) throw new Error('Colle ta clé IA dans ⚙ Paramètres pour activer la création de procédure.');
+      const fullContext = await contextForTask(version);
+      const context = selectedAiContext(fullContext, excludedSourceIds);
+      // Un document lié reste le contexte de la tâche, même d'un autre projet : on l'a lié exprès.
+      const sourceDocuments = linkedDocuments.slice(0, MAX_SOURCE_DOCUMENTS);
+      const documents = await Promise.all(sourceDocuments.map(async (document) => {
+        if (isGoogleDocument(document)) return { id: document.id, title: document.title, date: document.entry_date, google: true, text: '', kind: document.kind };
+        const full = await api.entry(document.id);
+        if (full.google_sync) throw new Error('Un document lié est devenu un document Google : relance la demande.');
+        return {
+          id: full.id,
           title: full.title,
           date: full.entry_date,
           text: full.content_json ? richToMarkdown(full.content_json) : full.content_md,
+          kind: full.kind,
+          google: false,
         };
       }));
-      setProcedureDraft(await draftProcedure(readAiSettings(), {
+      const sourceIds = new Set(sourceDocuments.map((document) => document.id));
+      // Les documents liés sont la source intégrale ; les extraits complémentaires
+      // ne les répètent pas. Le sélecteur montre aussi les sources intégrales.
+      const supplementary = { ...context, sources: context.sources?.filter((source) => !sourceIds.has(source.id)) };
+      if (contextVersion.current !== version) return;
+      setAiContext({ ...context, sources: [
+        ...documents.flatMap((document) => !document.google ? [{ id: document.id, title: document.title, text: document.text, kind: document.kind }] : []),
+        ...(fullContext.sources?.filter((source) => !sourceIds.has(source.id)) ?? []),
+      ] });
+      const proposed = await draftProcedure(settings, {
         origin: 'task',
         title: task.title,
         status: COLUMNS.find((column) => column.id === task.status)?.label,
         project: suggestContext.project,
-        documents: documents.filter((document) => document !== null),
-      }));
+        documents: documents.filter((document) => !excludedSourceIds.includes(document.id)),
+      }, {
+        context: supplementary,
+        refinement: instruction && procedureDraft ? { instruction, previous: `# ${procedureDraft.title}\n\n${procedureDraft.markdown}` } : undefined,
+      });
+      if (contextVersion.current === version) setProcedureDraft(proposed);
     } catch (e) {
       setDraftError((e as Error).message);
     } finally {
@@ -318,7 +376,7 @@ function TaskCard({
     >
       <strong>Nouvelle entrée liée à cette tâche</strong>
       <label className="task-creator-wide">Titre de l’entrée liée
-        <input aria-label="Titre de l’entrée liée" autoFocus value={entryTitle} onChange={(e) => setEntryTitle(e.target.value)} />
+        <input aria-label="Titre de l’entrée liée" autoFocus disabled={suggesting || entryBusy} value={entryTitle} onChange={(e) => setEntryTitle(e.target.value)} />
       </label>
       <div className="task-creator-wide">
         <div className="subtasks-head">
@@ -340,9 +398,12 @@ function TaskCard({
           rows={4}
           placeholder={'Relire le devis\nAppeler le client'}
           value={entrySubtasks}
+          disabled={suggesting || entryBusy}
           onChange={(e) => setEntrySubtasks(e.target.value)}
         />
       </div>
+      {entrySubtasks.trim() && canRefineCreator && <AiRefinement busy={suggesting || entryBusy || drafting} onRefine={(instruction) => void suggestForCreator(instruction)} />}
+      {aiContext && <AiContextDetails context={aiContext} excludedIds={excludedSourceIds} onExcludedChange={excludeSources} />}
       <div className="task-creator-actions">
         <button
           className="ghost"
@@ -390,7 +451,7 @@ function TaskCard({
       draft={procedureDraft}
       projectId={task.project_id}
       busy={drafting}
-      onRefresh={() => void draftFromTask()}
+      onRefresh={(instruction) => void draftFromTask(instruction)}
       onCreated={(procedure) => {
         setProcedureDraft(null);
         onProcedureCreated(procedure);
@@ -650,6 +711,7 @@ function TaskCard({
       </div>
       {documentControls}
       {entryCreator}
+      {aiContext && !creatingEntry && <AiContextDetails context={aiContext} excludedIds={excludedSourceIds} onExcludedChange={excludeSources} />}
       {procedureCreator}
       {draftError && <p className="error" role="alert">{draftError}</p>}
       {!linking && !creatingEntry && !procedureDraft && <div className="card-links">{linkButton}{entryButton}{procedureButton}</div>}

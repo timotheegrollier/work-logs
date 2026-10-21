@@ -150,6 +150,56 @@ export default function App() {
     revealEditor();
   }, []);
 
+  /**
+   * Ouvre une entrée au centre, en suivant son projet si `project` est donné.
+   * Le fichier du partage n'est quitté qu'une fois la garde passée, et le
+   * filtre projet ne change qu'après : « Annuler » laisse tout en place.
+   */
+  const openEntry = useCallback(async (id: string, project: string | undefined) => {
+    if (!(await requestLeave())) return false;
+    await flushPendingSaves().catch(() => {});
+    if (project !== undefined && project !== projectId) setProjectId(project);
+    setFreshEntry(false);
+    setShowCenter(true);
+    setSharedPath(null);
+    selectedRef.current = id;
+    setSelectedId(id);
+    revealEditor();
+    return true;
+  }, [projectId]);
+
+  /**
+   * Le centre suit le filtre : changer de projet referme ce qui appartient au
+   * précédent — un fichier du partage (il n'est plus dans l'arbre affiché) et
+   * l'entrée ouverte (elle n'est plus dans le journal). Sans ça, les listes
+   * changeaient sous un document resté là, et les deux se contredisaient.
+   * Un brouillon de fichier non envoyé pose sa question d'abord ; « Annuler »
+   * laisse le projet où il est.
+   */
+  const switchProject = useCallback(async (next: string) => {
+    if (next === projectId) return;
+    if (!(await requestLeave())) return;
+    await flushPendingSaves().catch(() => {});
+    // Un fichier du partage est toujours rattaché à un projet par son dossier :
+    // en changer le referme. « Tout » garde le partage entier, donc le fichier.
+    if (next && sharedPath) setSharedPath(null);
+    const openSummary = state?.entries.find((candidate) => candidate.id === selectedRef.current);
+    const openProject = openSummary?.project_id
+      ?? (entry && entry.id === selectedRef.current ? entry.project_id : null);
+    // « Tout » affiche aussi l'entrée du projet quitté : elle peut rester.
+    if (next && openProject !== next) {
+      // Une lecture d'état déjà en vol répondrait avec l'ancien filtre.
+      reloadSequence.current += 1;
+      selectedRef.current = null;
+      setSelectedId(null);
+      setEntry(null);
+      setFreshEntry(false);
+      setShowDocumentTasks(false);
+      setProcedureEdit({ id: '', sequence: 0 });
+    }
+    setProjectId(next);
+  }, [entry?.project_id, projectId, sharedPath, state?.entries]);
+
   useEffect(() => {
     const unsubscribe = window.worklogsDesktop?.onBeforeClose(flushPendingSaves);
     // Le garde se contentait d'un preventDefault() : il demandait confirmation
@@ -357,12 +407,9 @@ export default function App() {
   const openDocument = useCallback((entryId: string) => {
     const summary = state?.entries.find((candidate) => candidate.id === entryId)
       ?? state?.tasks.flatMap((task) => task.documents ?? []).find((candidate) => candidate.id === entryId);
-    if (summary && summary.project_id !== projectId) setProjectId(summary.project_id ?? '');
-    setFreshEntry(false);
-    setShowCenter(true);
-    selectedRef.current = entryId;
-    selectEntry(entryId);
-  }, [projectId, state, selectEntry]);
+    // Sans résumé (document inconnu de l'état filtré), on ne change pas le projet.
+    void openEntry(entryId, summary ? (summary.project_id ?? '') : undefined);
+  }, [openEntry, state]);
 
   // Procédure rédigée par l'IA depuis une entrée ou une tâche : ouverte au centre,
   // en lecture. Elle naît dans le projet de sa source, donc dans le filtre ; une
@@ -378,15 +425,20 @@ export default function App() {
     else void reload();
   }, [query, reload, selectEntry]);
 
-  // Ouverture d'un document Drive : même geste que depuis une carte de tâche,
-  // mais en rechargeant l'état sans filtrer par projet.
+  // Ouverture d'un document Drive : le filtre suit le projet du document, comme
+  // une carte de tâche — sinon le journal d'un projet montrait le document d'un autre.
   const openDriveEntry = useCallback((opened: Entry) => {
-    const sequence = ++reloadSequence.current;
-    setSearch(''); setQuery(''); setFreshEntry(false);
-    selectedRef.current = opened.id;
-    selectEntry(opened.id); setEntry(opened);
-    void api.state('', projectId).then(next => { if (sequence === reloadSequence.current) setState(next); }).catch(() => {});
-  }, [projectId, selectEntry]);
+    const project = opened.project_id ?? '';
+    // La recherche est levée tout de suite : elle pourrait masquer le document
+    // dans l'état relu, même avant que la garde de sortie ne réponde.
+    setSearch(''); setQuery('');
+    void openEntry(opened.id, project).then((allowed) => {
+      if (!allowed) return;
+      setEntry(opened);
+      const sequence = ++reloadSequence.current;
+      void api.state('', project).then(next => { if (sequence === reloadSequence.current) setState(next); }).catch(() => {});
+    });
+  }, [openEntry]);
 
   useEffect(() => {
     if (!showSettings) return;
@@ -521,7 +573,7 @@ export default function App() {
         <ProjectBar
           projects={state?.projects ?? []}
           selected={projectId}
-          onSelect={setProjectId}
+          onSelect={(id) => void switchProject(id)}
           onChanged={reload}
         />
       </div>
@@ -553,6 +605,7 @@ export default function App() {
             <SharedFileEditor
               key={sharedPath}
               path={sharedPath}
+              projectId={projectId || null}
               onOpenPath={(path) => void openShared(path)}
               onChanged={bumpShared}
               onClose={() => setSharedPath(null)}
@@ -684,7 +737,7 @@ export default function App() {
           </div>
           <div className="settings-content">
             <GoogleDrive onRestored={reload} onOpen={openDriveEntry} onDocuments={() => { setShowSettings(false); setShowDocuments(true); }} />
-            <AiSettings />
+            <AiSettings projects={state?.projects ?? []} />
             {isPwa && <RelaySettings onChange={() => setSharedRevision((n) => n + 1)} />}
             <SharedSettings key={`nom-${sharedRevision}`} />
             {/* Largeurs au pixel près : les poignées entre les colonnes font le
