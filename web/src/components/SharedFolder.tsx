@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, type Project, type SharedDirSummary, type SharedEntry, type SharedListing, type SharedSearch, type SharedStatus } from '../lib';
 import { badgesFor, REACH_HELP, REACH_LABELS, sinceLabel } from '../shared-session';
 import { editorKind } from '../file-formats';
+import { previewKind } from '../file-preview';
 import { fileNameProblem, NEW_FILE_TYPES, newFileBytes, PROCEDURE_EXPORT_TYPES, procedureFileBytes, withExtension, type NewFileType, type ProcedureExportExt } from '../new-files';
 import { followDir, linkFor, localDir } from '../shared-links';
 import { richToMarkdown } from '../rich-markdown';
@@ -878,8 +879,8 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
 
 function FileRow({ entry, selected, disabled, onOpen, onDelete }: { entry: SharedEntry; selected: boolean; disabled: boolean; onOpen: (path: string) => void; onDelete: (entry: SharedEntry) => void }) {
   const badges = badgesFor(entry);
-  // Grisé : WorkLogs ne l'ouvre pas lui-même. Un PDF se lit sur place, sans être modifiable.
-  const opens = Boolean(editorKind(entry.ext)) || entry.ext === 'pdf';
+  // Grisé : WorkLogs ne l'ouvre pas lui-même. Un PDF ou une image se voit sur place, sans être modifiable.
+  const opens = Boolean(editorKind(entry.ext)) || entry.ext === 'pdf' || previewKind({ filename: entry.name }) === 'image';
   return (
     <li className="shared-file-row">
       <button

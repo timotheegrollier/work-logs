@@ -115,6 +115,7 @@ function objectLabel(node: JSONContent): { label: string; text: string } {
     const rows = (node.content ?? []).map((row) => (row.content ?? []).map((item) => cell(item.content)).join(' | '));
     return { label: 'Tableau', text: rows.join(' / ') };
   }
+  if (node.type === 'docxImage') return { label: 'Image insérée', text: String(node.attrs?.name ?? '') };
   return { label: String(node.attrs?.label ?? 'Objet Word'), text: String(node.attrs?.text ?? '') };
 }
 

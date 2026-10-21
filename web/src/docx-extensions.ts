@@ -3,14 +3,15 @@ import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { Fragment, Slice, type Node as ProseMirrorNode } from '@tiptap/pm/model';
+import { Fragment, Slice, type DOMOutputSpec, type Node as ProseMirrorNode } from '@tiptap/pm/model';
 
 /**
  * Schéma de l'éditeur des documents Word du dossier partagé. Volontairement
  * étroit : ce qui se ramène à Word sans perte (texte, gras, italique, souligné,
  * barré, style de paragraphe, alignement, niveau de liste, texte des liens et des
- * cellules). Le reste — images, champs, tables des matières, zones de texte… —
- * est un **objet conservé** : affiché, recopié tel quel à l'envoi.
+ * cellules) et les images qu'on y insère. Le reste — images d'origine, champs,
+ * tables des matières, zones de texte… — est un **objet conservé** : affiché
+ * (ses images comprises), recopié tel quel à l'envoi.
  */
 
 export interface DocxNumbering {
@@ -103,7 +104,7 @@ export const DocxLink = Mark.create({
 });
 
 /** Objet Word conservé tel quel (image, champ, table des matières, section…) : affiché, jamais réécrit. */
-export const DocxAtom = Node.create({
+export const DocxAtom = Node.create<{ images: Map<string, string[]> }>({
   name: 'docxAtom',
   group: 'block',
   atom: true,
@@ -116,11 +117,38 @@ export const DocxAtom = Node.create({
       text: { default: '', rendered: false },
     };
   },
+  addOptions() {
+    // Images de l'objet (`data:`), hors du document : ni brouillon ni empreinte ne les portent.
+    return { images: new Map<string, string[]>() };
+  },
   parseHTML() { return []; },
   renderHTML({ node }) {
+    const images = (this.options.images.get(String(node.attrs.id)) ?? []).map((src): DOMOutputSpec => ['img', { src, alt: node.attrs.text || node.attrs.label }]);
     return ['div', { class: 'docx-atom', contenteditable: 'false', 'data-label': node.attrs.label },
       ['span', { class: 'docx-atom-label' }, `${node.attrs.label} — conservé, modifiable dans Word`],
+      ...images,
       ['span', { class: 'docx-atom-text' }, node.attrs.text || '']];
+  },
+});
+
+/** Image insérée depuis WorkLogs : ses octets en `data:`, écrits dans l'archive à l'envoi (`docx.ts`). */
+export const DocxImage = Node.create({
+  name: 'docxImage',
+  group: 'block',
+  atom: true,
+  selectable: true,
+  draggable: false,
+  addAttributes() {
+    return {
+      src: { default: '', rendered: false },
+      name: { default: '', rendered: false },
+    };
+  },
+  // Jamais depuis du HTML collé : une image distante n'entre pas dans le document.
+  parseHTML() { return []; },
+  renderHTML({ node }) {
+    const src = /^data:image\//.test(node.attrs.src) ? node.attrs.src : '';
+    return ['div', { class: 'docx-image', contenteditable: 'false' }, ['img', { src, alt: node.attrs.name || 'Image insérée' }]];
   },
 });
 
@@ -204,14 +232,14 @@ function noAtomPaste() {
   });
 }
 
-export function docxExtensions(numbering: DocxNumbering = {}) {
+export function docxExtensions(numbering: DocxNumbering = {}, images = new Map<string, string[]>()) {
   return [
     StarterKit.configure({
       paragraph: false, heading: false, blockquote: false, bulletList: false, orderedList: false, listItem: false,
       listKeymap: false, code: false, codeBlock: false, horizontalRule: false, link: false, trailingNode: false,
       dropcursor: false,
     }),
-    DocxParagraph, DocxRun, DocxLink, DocxAtom, DocxTable, TableIdentity,
+    DocxParagraph, DocxRun, DocxLink, DocxAtom.configure({ images }), DocxImage, DocxTable, TableIdentity,
     Extension.create({
       name: 'docxPlugins',
       addProseMirrorPlugins: () => [listMarkers(numbering), noAtomPaste()],

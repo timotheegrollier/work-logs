@@ -254,7 +254,10 @@ lorsque la colonne Procédures est affichée.
 - **Documents Word** : texte, gras/italique/souligné/barré, style de paragraphe (Normal,
   Titre 1, Titre 2…), alignement, niveau de liste (Tab / Maj+Tab), texte des liens et des
   cellules de tableau. Images, champs, table des matières, zones de texte… s'affichent en
-  « objet conservé » : ils repartent tels quels, modifiables dans Word (« Ouvrir avec… »).
+  « objet conservé » (les images se voient) : ils repartent tels quels, modifiables dans Word
+  (« Ouvrir avec… »). **Image** (ou coller une capture d'écran) insère une image PNG, JPEG ou
+  GIF à la place du curseur, réduite à la largeur de la page.
+- Une **image** du partage (PNG, JPEG, GIF, WebP…) se voit sur place, en lecture seule.
   Seuls les paragraphes que tu as touchés sont réécrits ; le reste du fichier (styles,
   en-têtes, numérotation, images) ne change pas d'un octet. Un document en suivi des
   modifications s'ouvre en lecture seule.
