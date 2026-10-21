@@ -20,6 +20,7 @@ import {
   recurringVocabulary,
   saveAiSettings,
   suggestProcedure,
+  suggestSearchTerms,
   suggestSubtasks,
   taskSuggestContext,
   testAiConnection,
@@ -821,5 +822,58 @@ describe('modèle saturé', () => {
     // marcher pour une ancienne clé et pas pour une nouvelle).
     localStorage.setItem('worklogs-ai-model', 'gemini-2.5-flash-lite');
     expect(readAiSettings().model).toBe('gemini-2.5-flash-lite');
+  });
+});
+
+describe('mots pour retrouver la doc d’une tâche', () => {
+  const bodyOf = (fetch: ReturnType<typeof vi.fn>) => JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+
+  test('partent le titre, le statut, le projet et les titres des documents liés ; jamais un contenu', async () => {
+    const fetch = vi.fn(async () => aiResponse('["imprimante", "pilote"]'));
+    vi.stubGlobal('fetch', fetch);
+    // Un contexte qui porterait des sources ne transmet pas leur texte.
+    const context = {
+      project: 'Bureau', projectBrief: 'Parc de PC et imprimantes', vocabulary: ['poste', 'réseau'],
+      linkedDocuments: ['Imprimante du bureau 2'],
+      sources: [{ id: 'en_lie', title: 'Imprimante du bureau 2', kind: 'note' as const, text: 'CONTENU DU DOCUMENT LIÉ' }],
+    };
+    await expect(suggestSearchTerms({ ...settings, profile: 'Technicien' }, { title: 'Brancher la nouvelle imprimante', status: 'À faire', ...context }))
+      .resolves.toEqual(['imprimante', 'pilote']);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const body = bodyOf(fetch);
+    expect(body.messages[1].content).toBe([
+      'Profil : Technicien',
+      'Tâche : Brancher la nouvelle imprimante',
+      'Statut : À faire',
+      'Projet : Bureau',
+      'Repères du projet : Parc de PC et imprimantes',
+      'Vocabulaire du métier : poste, réseau',
+      'Documents déjà liés à la tâche : Imprimante du bureau 2',
+    ].join('\n'));
+    expect(JSON.stringify(body)).not.toContain('CONTENU DU DOCUMENT LIÉ');
+    expect(body.messages[0].content).toContain('au plus 6 termes de recherche courts');
+    expect(body.messages[0].content).toContain("dans le nom d'un fichier du dossier partagé");
+    expect(body.messages[0].content).toContain('Aucun mot générique');
+    expect(body.messages[0].content).toContain('tableau JSON de chaînes');
+  });
+
+  test('enveloppe JSON acceptée ; doublons sans accents ni casse, termes trop courts et non textuels écartés ; six au plus', async () => {
+    const reply = ['Imprimante', 'imprimante', ' Écran   tactile ', 'ecran TACTILE', 'x', 3, null, 'pilote', 'HP', 'réseau', 'câble', 'toner'];
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse('```json\n' + JSON.stringify(reply) + '\n```')));
+    await expect(suggestSearchTerms(settings, { title: 'Écran' })).resolves.toEqual(['Imprimante', 'Écran tactile', 'pilote', 'HP', 'réseau', 'câble']);
+  });
+
+  test('réponse illisible, autre chose qu’un tableau ou sans terme utilisable : erreur ; sans clé, rien ne part', async () => {
+    const fetch = vi.fn(async () => aiResponse('Voici les mots : imprimante, pilote'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSearchTerms(settings, { title: 'T' })).rejects.toThrow('Réponse IA illisible : réessaie.');
+    for (const reply of ['{"termes":["imprimante"]}', '[]', '[1, " ", "a"]']) {
+      fetch.mockImplementation(async () => aiResponse(reply));
+      await expect(suggestSearchTerms(settings, { title: 'T' })).rejects.toBeInstanceOf(AiError);
+    }
+    fetch.mockClear();
+    await expect(suggestSearchTerms({ ...settings, key: '' }, { title: 'T' }))
+      .rejects.toThrow('Colle ta clé IA dans ⚙ Paramètres pour activer la recherche de documentation.');
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

@@ -912,3 +912,61 @@ Une échéance n'est permise que si sa date YYYY-MM-DD est écrite littéralemen
   }
   return actions;
 }
+
+/** Chaque mot est une recherche de plus dans le partage : six suffisent à couvrir synonymes et objets. */
+const MAX_SEARCH_TERMS = 6;
+
+/** Ce que l'IA sait d'une tâche pour en retrouver la doc : des titres et des repères, jamais un contenu. */
+export interface SearchTermsContext extends Pick<AiWorkContext, 'project' | 'projectBrief' | 'vocabulary'> {
+  profile?: string;
+  /** Titres des documents déjà liés à la tâche. */
+  linkedDocuments?: string[];
+}
+
+/** Consigne : les mots qu'on taperait pour retrouver la procédure ou la note qui aide à faire la tâche. */
+export function buildSearchTermsPrompt(task: { title: string; status?: string }, context: SearchTermsContext = {}): { system: string; user: string } {
+  const sections: string[] = [];
+  if (context.profile?.trim()) sections.push(`Profil : ${context.profile.trim()}`);
+  sections.push(`Tâche : ${task.title.trim()}`);
+  if (task.status) sections.push(`Statut : ${task.status}`);
+  // Champs choisis un par un : un contexte qui porterait des sources n'en transmet rien.
+  sections.push(...workContextSections({ project: context.project, projectBrief: context.projectBrief, vocabulary: context.vocabulary }));
+  const linked = compactTitles(context.linkedDocuments ?? []);
+  if (linked.length > 0) sections.push(`Documents déjà liés à la tâche : ${linked.join(', ')}`);
+  return {
+    system: `Tu aides l'utilisateur à retrouver, parmi ses documents, la procédure ou la note qui explique comment faire une tâche de WorkLogs, son journal de travail personnel.
+${REFERENCE_RULE}
+Propose au plus ${MAX_SEARCH_TERMS} termes de recherche courts (un ou deux mots chacun), du plus important au moins important, tels qu'ils apparaîtraient dans le titre ou le texte d'une note ou d'une procédure, ou dans le nom d'un fichier du dossier partagé de l'équipe : noms de produits, de matériels ou de logiciels, actions, synonymes, termes techniques. Aucun mot générique (« faire », « tâche », « procédure », « document »…).
+Réponds uniquement avec un tableau JSON de chaînes, sans enveloppe ni commentaire.`,
+    user: sections.join('\n'),
+  };
+}
+
+const foldTerm = (term: string) => term.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+/**
+ * Un clic = un appel : titre et statut de la tâche, son projet (nom, repères,
+ * vocabulaire) et les titres de ses documents liés. Aucun contenu ne part.
+ * Rend les termes nettoyés, dédoublonnés sans accents ni casse, six au plus.
+ */
+export async function suggestSearchTerms(
+  settings: AiSettings,
+  input: { title: string; status?: string } & SearchTermsContext,
+  options: { timeoutMs?: number } = {}
+): Promise<string[]> {
+  const prompt = buildSearchTermsPrompt(input, { ...input, profile: settings.profile });
+  const reply = await postChatCompletions(settings, 'la recherche de documentation', prompt.system, prompt.user, SUGGEST_MAX_TOKENS, options.timeoutMs ?? AI_TIMEOUT_MS);
+  let parsed: unknown = null;
+  try {
+    parsed = JSON.parse(reply.trim().replace(/^```(?:json)?[ \t]*\n([\s\S]*?)\n```$/i, '$1'));
+  } catch {
+    // Illisible : traité plus bas comme une réponse sans terme.
+  }
+  const terms = (Array.isArray(parsed) ? parsed : [])
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim().replace(/\s+/g, ' '))
+    .filter((term) => term.length >= 2);
+  const unique = terms.filter((term, index) => terms.findIndex((other) => foldTerm(other) === foldTerm(term)) === index);
+  if (unique.length === 0) throw new AiError('Réponse IA illisible : réessaie.');
+  return unique.slice(0, MAX_SEARCH_TERMS);
+}

@@ -3819,6 +3819,94 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     expect(await screen.findByRole('region', { name: 'Entrée' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Fichier partagé' })).not.toBeInTheDocument();
   });
+
+  describe('« ✨ Trouver la doc » d’une tâche', () => {
+    // Une procédure d'un autre projet, une note trouvée par son texte, une note déjà liée.
+    const seedTask = () => {
+      seedData(api.db, {
+        projects: [{ id: 'pr_bureau', name: 'Bureau' }, { id: 'pr_info', name: 'Informatique' }],
+        entries: [
+          { id: 'en_proc', title: 'Installer une imprimante', kind: 'procedure', project_id: 'pr_info', content_md: 'Brancher le câble USB.' },
+          { id: 'en_note', title: 'Compte rendu du lundi', project_id: 'pr_bureau', content_md: 'Le pilote fourni ne marche pas sous Windows 11.' },
+          { id: 'en_lie', title: 'Imprimante du bureau 2', project_id: 'pr_bureau', content_md: 'Contenu de la note liée.' },
+        ],
+        tasks: [{ id: 'tk_imp', title: 'Brancher la nouvelle imprimante', project_id: 'pr_bureau' }],
+      });
+      api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_imp', 'en_lie', new Date().toISOString());
+      localStorage.setItem('worklogs-project', 'pr_bureau');
+      localStorage.setItem('worklogs-ai-key', 'cle-test');
+    };
+    const findDocs = async () => {
+      const card = (await within(board()).findByText('Brancher la nouvelle imprimante')).closest('.card') as HTMLElement;
+      fireEvent.click(within(card).getByRole('button', { name: 'Trouver la documentation avec l’IA' }));
+      return card;
+    };
+
+    test('Trouver la doc : WorkLogs et le partage répondent aux mots de l’IA ; lier une procédure, ouvrir un fichier', async () => {
+      mockAiSuggest(JSON.stringify(['imprimante', 'pilote']));
+      seedTask();
+      const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+      fs.mkdirSync(path.join(share, 'Imprimantes'));
+      await write('Imprimantes/Pilote HP.md', '# Pilote HP\n');
+      render(<App />);
+
+      const card = await findDocs();
+      const found = await within(card).findByRole('region', { name: 'Documents trouvés' }, partage);
+      expect(within(found).getByText('Cherché avec : imprimante, pilote')).toBeInTheDocument();
+      // Mot du titre avant mot du texte ; la note déjà liée n'est pas reproposée.
+      expect(within(found).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+        'ProcédureInstaller une imprimanteInformatique · trouvé avec : imprimanteOuvrirLier',
+        'PartagePilote HP.mdImprimantes · trouvé avec : piloteOuvrir',
+        'NoteCompte rendu du lunditrouvé avec : piloteOuvrirLier',
+      ]);
+      // Des titres partent, jamais le texte d'un document.
+      const sent = (aiBodies.at(-1) as { messages: { content: string }[] }).messages[1].content;
+      expect(sent).toContain('Tâche : Brancher la nouvelle imprimante\nStatut : À faire\nProjet : Bureau');
+      expect(sent).toContain('Documents déjà liés à la tâche : Imprimante du bureau 2');
+      expect(sent).not.toContain('Contenu de la note liée');
+      expect(sent).not.toContain('Le pilote fourni');
+
+      fireEvent.click(within(found).getByRole('button', { name: 'Lier Installer une imprimante à la tâche' }));
+      expect(await within(found).findByText('Liée')).toBeInTheDocument();
+      expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries WHERE task_id=? AND entry_id=?', 'tk_imp', 'en_proc').n).toBe(1);
+      expect(within(card).getByRole('button', { name: 'Retirer Installer une imprimante de Brancher la nouvelle imprimante' })).toBeInTheDocument();
+
+      fireEvent.click(within(found).getByRole('button', { name: 'Ouvrir Pilote HP.md' }));
+      const opened = await screen.findByRole('region', { name: 'Fichier partagé' }, partage);
+      expect(await within(opened).findByLabelText('Contenu de Pilote HP.md', undefined, partage)).toHaveValue('# Pilote HP\n');
+    });
+
+    test('Trouver la doc sans dossier partagé : WorkLogs seul, et « Ouvrir » suit le projet du document', async () => {
+      await api.close();
+      api = await useRealApi();
+      mockAiSuggest(JSON.stringify(['imprimante', 'pilote']));
+      seedTask();
+      render(<App />);
+
+      const found = await within(await findDocs()).findByRole('region', { name: 'Documents trouvés' }, partage);
+      expect(within(found).getByText('Dossier partagé indisponible : recherche dans WorkLogs seulement.')).toBeInTheDocument();
+      expect(within(found).getAllByRole('button', { name: /^Ouvrir / }).map((button) => button.getAttribute('aria-label')))
+        .toEqual(['Ouvrir Installer une imprimante', 'Ouvrir Compte rendu du lundi']);
+
+      // La procédure n'est ni dans le projet filtré ni liée : le filtre suit quand même son projet.
+      fireEvent.click(within(found).getByRole('button', { name: 'Ouvrir Installer une imprimante' }));
+      await waitFor(() => expect(within(filters()).getByRole('button', { name: /^Informatique/ })).toHaveAttribute('aria-pressed', 'true'));
+      await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Installer une imprimante'));
+    });
+
+    test('Trouver la doc : une réponse IA illisible s’affiche en erreur, rien n’est cherché ni listé', async () => {
+      mockAiSuggest('Voici quelques mots : imprimante, pilote.');
+      seedTask();
+      const search = vi.spyOn(clientApi, 'searchShared');
+      render(<App />);
+
+      const card = await findDocs();
+      expect(await within(card).findByRole('alert')).toHaveTextContent('Réponse IA illisible : réessaie.');
+      expect(within(card).queryByRole('region', { name: 'Documents trouvés' })).not.toBeInTheDocument();
+      expect(within(card).getByRole('button', { name: 'Trouver la documentation avec l’IA' })).toBeEnabled();
+      expect(search).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('IA dans les notes : contexte, affinement et actions', () => {
