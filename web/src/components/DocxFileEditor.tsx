@@ -1,10 +1,14 @@
 import { useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import type { JSONContent } from '@tiptap/core';
-import { docxProblems, normalizeDocx, readDocxDocument, writeDocx, type DocxDocument, type DocxDraft } from '../docx';
+import type { EditorView } from '@tiptap/pm/view';
+import { docxImages, docxProblems, normalizeDocx, readDocxDocument, writeDocx, type DocxDocument, type DocxDraft } from '../docx';
 import { docxExtensions } from '../docx-extensions';
 import { docxFromAi, docxPreview, docxToAi } from '../docx-markdown';
+import { toBase64 } from '../docx-preview';
 import { FormatError, type FileEditorHandle, type FileEditorProps } from '../file-formats';
+import { imageMime } from '../file-preview';
+import { imageSize } from '../image-size';
 
 const ALIGNMENTS: { value: string | null; label: string; icon: string }[] = [
   { value: null, label: 'Aligner à gauche', icon: '⯇' },
@@ -23,6 +27,26 @@ function currentParagraph(editor: Editor) {
   return null;
 }
 
+// Le brouillon garde les images insérées : il doit tenir sous `MAX_DRAFT` (api/src/shared-service.js).
+const DRAFT_BUDGET = 4 * 1024 * 1024;
+const WORD_IMAGES = ['image/png', 'image/jpeg', 'image/gif'];
+
+/** Insère une image (fichier choisi ou collé) à la place de la sélection ; renvoie l'erreur à afficher, ou `''`. */
+async function insertImage(view: EditorView, file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const mime = imageMime(bytes);
+  if (!mime || !WORD_IMAGES.includes(mime)) return `« ${file.name} » : seules les images PNG, JPEG ou GIF s’insèrent dans un document Word.`;
+  if (!imageSize(bytes)) return `« ${file.name} » : image illisible.`;
+  const src = `data:${mime};base64,${toBase64(bytes)}`;
+  if (JSON.stringify(view.state.doc.toJSON()).length + src.length > DRAFT_BUDGET) {
+    return 'Image trop lourde pour le brouillon (3 Mo d’images en attente au plus) : enregistre sur le partage avant d’en ajouter une autre, ou réduis-la.';
+  }
+  const node = view.state.schema.nodes.docxImage.create({ src, name: file.name });
+  view.dispatch(view.state.tr.replaceSelectionWith(node));
+  view.focus();
+  return '';
+}
+
 function setParagraphAttrs(editor: Editor, attrs: Record<string, unknown>) {
   const { from, to } = editor.state.selection;
   let tr = editor.state.tr;
@@ -38,35 +62,48 @@ function setParagraphAttrs(editor: Editor, attrs: Record<string, unknown>) {
 
 /**
  * `.docx` du dossier partagé. On édite le texte, les styles de paragraphe,
- * l'alignement, le niveau des listes, le gras/italique/souligné/barré ; tout le
- * reste du document Word est conservé tel quel. À l'envoi, seuls les paragraphes
- * modifiés sont réécrits (`docx.ts`).
+ * l'alignement, le niveau des listes, le gras/italique/souligné/barré, on insère
+ * des images ; tout le reste du document Word est conservé tel quel (ses images
+ * affichées). À l'envoi, seuls les paragraphes modifiés sont réécrits (`docx.ts`).
  */
 export function DocxFileEditor({ bytes, initialDraft, readOnly, onEdit, handleRef, author }: FileEditorProps) {
-  const [document, setDocument] = useState<DocxDocument | null>(null);
+  const [loaded, setLoaded] = useState<{ document: DocxDocument; images: Map<string, string[]> } | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let alive = true;
-    readDocxDocument(bytes).then((loaded) => { if (alive) setDocument(loaded); }, (e: Error) => { if (alive) setError(e.message); });
+    readDocxDocument(bytes)
+      .then(async (document) => ({ document, images: await docxImages(document) }))
+      .then((result) => { if (alive) setLoaded(result); }, (e: Error) => { if (alive) setError(e.message); });
     return () => { alive = false; };
   }, [bytes]);
 
   if (error) return <p className="error" role="alert">{error}</p>;
-  if (!document) return <p className="empty">Lecture du document…</p>;
-  return <DocxEditorBody document={document} bytes={bytes} initialDraft={initialDraft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} author={author} />;
+  if (!loaded) return <p className="empty">Lecture du document…</p>;
+  return <DocxEditorBody document={loaded.document} images={loaded.images} bytes={bytes} initialDraft={initialDraft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} author={author} />;
 }
 
-function DocxEditorBody({ document, bytes, initialDraft, readOnly, onEdit, handleRef, author }: Omit<FileEditorProps, 'name'> & { document: DocxDocument }) {
+function DocxEditorBody({ document, images, bytes, initialDraft, readOnly, onEdit, handleRef, author }: Omit<FileEditorProps, 'name'> & { document: DocxDocument; images: Map<string, string[]> }) {
   const saved = initialDraft as DocxDraft | null;
-  const extensions = useMemo(() => docxExtensions(document.numbering), [document]);
+  const extensions = useMemo(() => docxExtensions(document.numbering, images), [document, images]);
   const lockedReason = document.readOnly ?? readOnly;
+  const [imageError, setImageError] = useState('');
   const editor = useEditor({
     extensions,
     content: saved?.format === 'docx' && saved.doc ? saved.doc : document.doc,
     editable: !lockedReason,
     immediatelyRender: true,
-    editorProps: { attributes: { class: 'docx-page', 'aria-label': 'Contenu du document Word', role: 'textbox', 'aria-multiline': 'true' } },
+    editorProps: {
+      attributes: { class: 'docx-page', 'aria-label': 'Contenu du document Word', role: 'textbox', 'aria-multiline': 'true' },
+      // Une capture d'écran collée devient une image du document. Du texte copié depuis
+      // Word ou Excel arrive avec une image de la sélection : c'est alors le texte qui se colle.
+      handlePaste: (view, event) => {
+        const file = Array.from(event.clipboardData?.files ?? []).find((candidate) => candidate.type.startsWith('image/'));
+        if (!file || event.clipboardData?.getData('text/plain') || !view.editable) return false;
+        void insertImage(view, file).then(setImageError);
+        return true;
+      },
+    },
     // Seule une transaction qui change le document est une modification.
     onUpdate: ({ transaction }) => { if (transaction.docChanged) onEdit(); },
   }, [extensions]);
@@ -176,6 +213,20 @@ function DocxEditorBody({ document, bytes, initialDraft, readOnly, onEdit, handl
             <button type="button" aria-label="Augmenter le niveau de liste" disabled={disabled || state.ilvl >= 8} onClick={() => indent(1)}>⇥</button>
           </span>
         )}
+        <label className="ghost file-button" title="Insérer une image (PNG, JPEG ou GIF) à la place du curseur ; une capture collée s’insère aussi">
+          Image
+          <input
+            type="file"
+            aria-label="Insérer une image"
+            accept="image/png,image/jpeg,image/gif"
+            disabled={disabled}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (file) void insertImage(editor.view, file).then(setImageError);
+            }}
+          />
+        </label>
         <span className="grow" />
         <span className="docx-group">
           <button type="button" aria-label="Annuler" disabled={disabled || !state?.canUndo} onClick={() => editor.chain().focus().undo().run()}>↶</button>
@@ -183,7 +234,8 @@ function DocxEditorBody({ document, bytes, initialDraft, readOnly, onEdit, handl
         </span>
       </div>
       {document.readOnly && <p className="notice">{document.readOnly}</p>}
-      <p className="docx-hint no-print">Seuls les paragraphes modifiés seront réécrits ; images, champs, tables des matières, en-têtes et pieds de page restent ceux du fichier.</p>
+      {imageError && <p className="error no-print" role="alert">{imageError}</p>}
+      <p className="docx-hint no-print">Seuls les paragraphes modifiés seront réécrits ; images d’origine, champs, tables des matières, en-têtes et pieds de page restent ceux du fichier.</p>
       <EditorContent editor={editor} className="docx-content prose" />
     </div>
   );

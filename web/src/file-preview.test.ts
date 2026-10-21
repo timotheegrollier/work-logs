@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { looksLikePdf, previewKind, previewNotice } from './file-preview';
+import { imageMime, looksLikePdf, previewKind, previewNotice } from './file-preview';
 
 describe('classement des pièces jointes pour l’aperçu', () => {
   test('un PDF se reconnaît à ses octets, en-tête dans le premier Ko', () => {
@@ -10,6 +10,17 @@ describe('classement des pièces jointes pour l’aperçu', () => {
     expect(looksLikePdf(bytes(' '.repeat(1100) + '%PDF-1.4'))).toBe(false);
     expect(looksLikePdf(bytes('<html>pas un PDF</html>'))).toBe(false);
     expect(looksLikePdf(new Uint8Array())).toBe(false);
+  });
+
+  test('une image se reconnaît à ses octets, jamais à son nom', () => {
+    const bytes = (values: number[]) => new Uint8Array(values);
+    expect(imageMime(bytes([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toBe('image/png');
+    expect(imageMime(bytes([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
+    expect(imageMime(bytes([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]))).toBe('image/gif');
+    expect(imageMime(bytes([0x42, 0x4d, 0x00, 0x00]))).toBe('image/bmp');
+    // Du HTML, même dans un fichier nommé « image.png » : ce n'est pas une image.
+    expect(imageMime(new TextEncoder().encode('<script>alert(1)</script>'))).toBeNull();
+    expect(imageMime(new Uint8Array())).toBeNull();
   });
 
   test('reconnaît images, PDF et texte sur l’extension', () => {

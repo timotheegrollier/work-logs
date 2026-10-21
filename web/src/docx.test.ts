@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { JSONContent } from '@tiptap/core';
-import { docxProblems, readDocxDocument, writeDocx } from './docx';
+import { docxImages, docxProblems, readDocxDocument, writeDocx } from './docx';
 import { patchCoreProperties } from './ooxml';
-import { readZip, readZipText } from './zip';
+import { readZip, readZipEntry, readZipText } from './zip';
 import { readDocx } from './docx-preview';
 import { FormatError } from './file-formats';
-import { wordDocx } from './test/docx-fixture';
+import { pngImage, wordDocx, wordPicture } from './test/docx-fixture';
 
 const now = new Date(Date.UTC(2026, 9, 5, 10, 47, 0));
 const write = (bytes: Uint8Array, doc: JSONContent) => writeDocx(bytes, doc, { author: 'T. Grollier', now });
@@ -16,10 +16,10 @@ const block = (doc: JSONContent, id: string) => doc.content!.find((node) => node
 const mainXml = async (bytes: Uint8Array) => (await readZipText(readZip(bytes), 'word/document.xml'))!;
 
 /** Toutes les entrées sauf celles qui doivent changer : octets compressés identiques. */
-function untouchedEntries(before: Uint8Array, after: Uint8Array, changed: string[]) {
+function untouchedEntries(before: Uint8Array, after: Uint8Array, changed: string[], added: string[] = []) {
   const a = readZip(before);
   const b = readZip(after);
-  expect(b.entries.map((entry) => entry.name)).toEqual(a.entries.map((entry) => entry.name));
+  expect(b.entries.map((entry) => entry.name)).toEqual([...a.entries.map((entry) => entry.name), ...added]);
   for (const entry of a.entries) {
     if (changed.includes(entry.name)) continue;
     const other = b.byName.get(entry.name)!;
@@ -55,6 +55,65 @@ describe('documents Word : lecture', () => {
 
   it('refuse un fichier qui n’est pas un document Word', async () => {
     await expect(readDocxDocument(new TextEncoder().encode('pas un zip'))).rejects.toThrow(/illisible/);
+  });
+});
+
+describe('documents Word : images', () => {
+  const dataUrl = (bytes: Uint8Array, mime = 'image/png') => `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
+
+  it('une image du document s’affiche dans l’éditeur, sans entrer dans le brouillon', async () => {
+    const doc = await readDocxDocument(wordDocx({ body: wordPicture('rId10') + '<w:p/>' }));
+    expect(block(doc.doc, 'b0')).toMatchObject({ type: 'docxAtom', attrs: { label: 'Image' } });
+    expect(JSON.stringify(doc.doc)).not.toContain('data:');
+    expect((await docxImages(doc)).get('b0')).toEqual([dataUrl(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]))]);
+    // Relation absente : rien d'affiché, l'objet reste conservé.
+    expect((await docxImages(await readDocxDocument(wordDocx({ body: wordPicture('rId404') })))).size).toBe(0);
+  });
+
+  it('image insérée : média, relation et type de contenu ajoutés, réduite à la largeur de la page ; le reste intact', async () => {
+    const bytes = wordDocx();
+    const doc = await readDocxDocument(bytes);
+    const png = pngImage(2000, 1000);
+    const edited = clone(doc.doc);
+    edited.content!.splice(2, 0, { type: 'docxImage', attrs: { src: dataUrl(png), name: 'Capture "écran".png' } });
+    const out = await write(bytes, edited);
+    const archive = readZip(out);
+    expect(Buffer.from(await readZipEntry(archive, archive.byName.get('word/media/worklogs1.png')!)).equals(Buffer.from(png))).toBe(true);
+    expect(await readZipText(archive, 'word/_rels/document.xml.rels')).toContain(
+      '<Relationship Id="rIdWorkLogs1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/worklogs1.png"/></Relationships>');
+    expect(await readZipText(archive, '[Content_Types].xml')).toContain('<Default Extension="png" ContentType="image/png"/></Types>');
+    const xml = await mainXml(out);
+    // A4 et marges de 1417 twips : 9072 twips utiles, soit 5 760 720 EMU ; la hauteur suit.
+    expect(xml).toContain('<wp:extent cx="5760720" cy="2880360"/><wp:docPr id="2" name="Capture &quot;écran&quot;.png"');
+    expect(xml).toContain('<a:blip r:embed="rIdWorkLogs1"/>');
+    untouchedEntries(bytes, out, ['word/document.xml', 'word/_rels/document.xml.rels', '[Content_Types].xml', 'docProps/core.xml'], ['word/media/worklogs1.png']);
+    const { execFileSync } = await import('node:child_process');
+    const file = path.join(fs.mkdtempSync(path.join((await import('node:os')).tmpdir(), 'docx-')), 'image.docx');
+    fs.writeFileSync(file, out);
+    expect(execFileSync('unzip', ['-tq', file], { encoding: 'utf8' })).toMatch(/No errors detected/);
+
+    // Relu, l'image est un objet conservé et s'affiche ; une deuxième prend des noms libres, sans type en double.
+    const again = await readDocxDocument(out);
+    const atom = again.doc.content![2];
+    expect(atom).toMatchObject({ type: 'docxAtom', attrs: { label: 'Image' } });
+    expect((await docxImages(again)).get(String(atom.attrs!.id))).toEqual([dataUrl(png)]);
+    const second = clone(again.doc);
+    second.content!.push({ type: 'docxImage', attrs: { src: dataUrl(pngImage(10, 10)), name: 'petite.png' } });
+    const twice = readZip(await write(out, second));
+    expect(twice.byName.has('word/media/worklogs2.png')).toBe(true);
+    expect(await readZipText(twice, 'word/_rels/document.xml.rels')).toContain('<Relationship Id="rIdWorkLogs2"');
+    expect((await readZipText(twice, '[Content_Types].xml'))!.match(/Extension="png"/g)).toHaveLength(1);
+    expect(await readZipText(twice, 'word/document.xml')).toContain('<wp:extent cx="95250" cy="95250"/><wp:docPr id="3" name="petite.png"');
+  });
+
+  it('image insérée illisible ou dans un format que Word ne lit pas : rien n’est écrit', async () => {
+    const bytes = wordDocx();
+    const doc = await readDocxDocument(bytes);
+    for (const src of ['data:image/png;base64,AAAA', dataUrl(new TextEncoder().encode('RIFF....WEBPVP8 '), 'image/webp'), 'https://exemple.fr/a.png']) {
+      const edited = clone(doc.doc);
+      edited.content!.push({ type: 'docxImage', attrs: { src, name: 'x' } });
+      await expect(write(bytes, edited)).rejects.toThrow(/illisible/);
+    }
   });
 });
 

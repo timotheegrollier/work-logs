@@ -1,9 +1,12 @@
 import { getSchema, type JSONContent } from '@tiptap/core';
-import { readZip, readZipText, writeZip, ZipError, type ZipArchive } from './zip';
+import { readZip, readZipEntry, readZipText, writeZip, ZipError, type ZipAddition, type ZipArchive } from './zip';
 import { attrNS, elements, escapeAttr, escapeText, findChild, scanXml, XmlScanError, type XmlElement } from './xml-scan';
-import { coreAuthor, isWellFormed, packageParts, patchCoreProperties, relationships, resolveTarget, textOf } from './ooxml';
+import { coreAuthor, isWellFormed, packageParts, partRelsPath, patchCoreProperties, relationships, resolveTarget, textOf } from './ooxml';
 import { docxExtensions, type DocxNumbering } from './docx-extensions';
 import { FormatError } from './file-formats';
+import { imageMime } from './file-preview';
+import { imageSize } from './image-size';
+import { toBase64 } from './docx-preview';
 
 /**
  * Documents Word (.docx) du dossier partagé, **réécrits au plus juste** : un bloc
@@ -13,11 +16,17 @@ import { FormatError } from './file-formats';
  * des matières, zones de texte…) est un objet conservé, recopié tel quel. Les
  * autres parties de l'archive (styles, en-têtes, numérotation, médias) ne sont
  * jamais réécrites. Rien de modifié : le fichier d'origine, à l'identique.
+ * Une image **insérée** ajoute son média, sa relation et, s'il manque, le type
+ * de contenu de son extension : c'est tout ce qu'elle touche hors du corps.
  */
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const W_STRICT = 'http://purl.oclc.org/ooxml/wordprocessingml/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+const WP = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
+const PIC = 'http://schemas.openxmlformats.org/drawingml/2006/picture';
+const IMAGE_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
 
 export interface DocxStyle {
   id: string;
@@ -68,6 +77,8 @@ export interface DocxDocument {
   numbering: DocxNumbering;
   readOnly: string | null;
   author: string | null;
+  /** Objet conservé → médias de ses images (`a:blip`), pour les afficher. */
+  imageParts: Map<string, string[]>;
 }
 
 const RPR_ORDER = ['rStyle', 'rFonts', 'b', 'bCs', 'i', 'iCs', 'caps', 'smallCaps', 'strike', 'dstrike', 'outline', 'shadow', 'emboss',
@@ -250,9 +261,27 @@ function complexLabel(el: XmlElement): string {
 
 interface ParseContext {
   xml: string;
+  mainPart: string;
   styles: Map<string, DocxStyle>;
   sources: Map<string, Source>;
   rels: Map<string, string>;
+  imageParts: Map<string, string[]>;
+}
+
+/** Objet conservé ; les médias de ses images sont notés pour l'affichage. */
+function keepAtom(el: XmlElement, id: string, ctx: ParseContext) {
+  ctx.sources.set(id, { kind: 'atom', el });
+  const parts: string[] = [];
+  const walk = (node: XmlElement) => {
+    for (const child of elements(node)) {
+      const embed = child.ns === A && child.local === 'blip' ? attrNS(child, R, 'embed') : null;
+      const target = embed ? ctx.rels.get(embed) : undefined;
+      if (target) parts.push(resolveTarget(ctx.mainPart, target));
+      walk(child);
+    }
+  };
+  walk(el);
+  if (parts.length) ctx.imageParts.set(id, parts);
 }
 
 function paragraph(el: XmlElement, id: string, ctx: ParseContext): JSONContent {
@@ -298,7 +327,7 @@ function paragraph(el: XmlElement, id: string, ctx: ParseContext): JSONContent {
   // Un saut de section dans le paragraphe : on n'y touche pas.
   if (pPrEl && (findChild(pPrEl, W, 'sectPr') || findChild(pPrEl, W, 'pPrChange'))) simple = false;
   if (!simple) {
-    ctx.sources.set(id, { kind: 'atom', el });
+    keepAtom(el, id, ctx);
     return { type: 'docxAtom', attrs: { id, label: complexLabel(el), text: plainText(el).slice(0, 240) } };
   }
   const styleId = attrNS(findChild(pPrEl, W, 'pStyle'), W, 'val');
@@ -322,7 +351,7 @@ function paragraph(el: XmlElement, id: string, ctx: ParseContext): JSONContent {
 
 function table(el: XmlElement, id: string, ctx: ParseContext): JSONContent {
   const atom = () => {
-    ctx.sources.set(id, { kind: 'atom', el });
+    keepAtom(el, id, ctx);
     return { type: 'docxAtom', attrs: { id, label: 'Tableau', text: plainText(el).slice(0, 240) } };
   };
   const rows: SourceCell[][] = [];
@@ -365,7 +394,7 @@ function table(el: XmlElement, id: string, ctx: ParseContext): JSONContent {
 function block(el: XmlElement, id: string, ctx: ParseContext): JSONContent {
   if (el.ns === W && el.local === 'p') return paragraph(el, id, ctx);
   if (el.ns === W && el.local === 'tbl') return table(el, id, ctx);
-  ctx.sources.set(id, { kind: 'atom', el });
+  keepAtom(el, id, ctx);
   let label = 'Objet Word';
   if (el.ns === W && el.local === 'sdt') {
     const gallery = attrNS(findChild(findChild(findChild(el, W, 'sdtPr'), W, 'docPartObj'), W, 'docPartGallery'), W, 'val');
@@ -438,7 +467,8 @@ export async function readDocxDocument(bytes: Uint8Array): Promise<DocxDocument>
     }
 
     const sources = new Map<string, Source>();
-    const ctx: ParseContext = { xml, styles: byId, sources, rels };
+    const imageParts = new Map<string, string[]>();
+    const ctx: ParseContext = { xml, mainPart, styles: byId, sources, rels, imageParts };
     const children = elements(body);
     const last = children[children.length - 1];
     const finalSectPr = last && last.ns === W && last.local === 'sectPr' ? last : null;
@@ -459,10 +489,33 @@ export async function readDocxDocument(bytes: Uint8Array): Promise<DocxDocument>
     doc.content?.forEach(remember);
 
     const author = await coreAuthor(archive, corePart);
-    return { archive, mainPart, corePart, xml, body, w, sources, baselines, finalSectPr, doc, styles, numbering, readOnly, author };
+    return { archive, mainPart, corePart, xml, body, w, sources, baselines, finalSectPr, doc, styles, numbering, readOnly, author, imageParts };
   } catch (error) {
     wrapError(error);
   }
+}
+
+// Garde-fou contre une archive piégée, comme l'aperçu (`docx-preview.ts`).
+const MAX_SHOWN_IMAGE = 8 * 1024 * 1024;
+
+/**
+ * Images des objets conservés, en `data:` (les CSP de l'app n'autorisent pas
+ * `blob:`). EMF/WMF, images géantes ou abîmées : omises, l'objet reste annoncé.
+ */
+export async function docxImages(doc: DocxDocument): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  for (const [id, parts] of doc.imageParts) {
+    const srcs: string[] = [];
+    for (const part of parts) {
+      const entry = doc.archive.byName.get(part);
+      if (!entry || entry.size > MAX_SHOWN_IMAGE) continue;
+      const bytes = await readZipEntry(doc.archive, entry, MAX_SHOWN_IMAGE).catch(() => null);
+      const mime = bytes && imageMime(bytes);
+      if (mime) srcs.push(`data:${mime};base64,${toBase64(bytes)}`);
+    }
+    if (srcs.length) out.set(id, srcs);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- écriture
@@ -590,10 +643,18 @@ function inlineXml(content: JSONContent[] | undefined, w: string): string {
   return out;
 }
 
+interface InsertedImage { part: string; target: string; rid: string; data: Uint8Array; ext: string; mime: string }
+
 interface ExportContext {
   doc: DocxDocument;
   used: Set<string>;
   previous: SourceParagraph | null;
+  /** Images insérées : médias et relations à ajouter à l'archive. */
+  media: InsertedImage[];
+  relIds: Set<string>;
+  counter: number;
+  docPr: number;
+  maxWidth: number;
 }
 
 const NO_ATTRS: ParagraphAttrs = { styleId: null, align: null, numId: null, ilvl: null };
@@ -632,9 +693,73 @@ function paragraphXml(node: JSONContent, ctx: ExportContext): string {
   return `${open}${pPr}${anchors[0]}${inlineXml(node.content, w)}${anchors[1]}</${w}:p>`;
 }
 
+/** Formats qu'acceptent Word et LibreOffice sans conversion. */
+const WORD_IMAGES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpeg', 'image/gif': 'gif' };
+const EMU_PER_PX = 9525;
+const EMU_PER_TWIP = 635;
+
+function fromDataUrl(src: string): Uint8Array | null {
+  const match = /^data:image\/[\w.+-]+;base64,([A-Za-z0-9+/=]+)$/.exec(src);
+  if (!match) return null;
+  const binary = atob(match[1]);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/** Largeur utile de la page (hors marges) de la dernière section, en EMU ; 16 cm sinon. */
+function textWidth(doc: DocxDocument): number {
+  const twips = (local: string, name: string) => Number(attrNS(findChild(doc.finalSectPr, W, local), W, name));
+  const width = twips('pgSz', 'w') - twips('pgMar', 'left') - twips('pgMar', 'right');
+  return Number.isFinite(width) && width > 0 ? width * EMU_PER_TWIP : 5760000;
+}
+
+/** Image insérée → son propre paragraphe, image « en ligne » comme Word l'écrit, réduite à la largeur de la page. */
+function imageXml(node: JSONContent, ctx: ExportContext): string {
+  const { doc } = ctx;
+  const { w } = doc;
+  const data = fromDataUrl(String(node.attrs?.src ?? ''));
+  const mime = data ? imageMime(data) : null;
+  const size = data ? imageSize(data) : null;
+  if (!data || !mime || !WORD_IMAGES[mime] || !size?.width || !size.height) {
+    throw new FormatError('Une image insérée est illisible : retire-la et insère-la de nouveau.');
+  }
+  const ext = WORD_IMAGES[mime];
+  const dir = doc.mainPart.slice(0, doc.mainPart.lastIndexOf('/') + 1);
+  let target: string;
+  let rid: string;
+  do {
+    ctx.counter += 1;
+    target = `media/worklogs${ctx.counter}.${ext}`;
+    rid = `rIdWorkLogs${ctx.counter}`;
+  } while (doc.archive.byName.has(dir + target) || ctx.relIds.has(rid));
+  ctx.media.push({ part: dir + target, target, rid, data, ext, mime });
+  ctx.docPr += 1;
+  const scale = Math.min(1, ctx.maxWidth / (size.width * EMU_PER_PX));
+  const cx = Math.round(size.width * EMU_PER_PX * scale);
+  const cy = Math.round(size.height * EMU_PER_PX * scale);
+  const name = escapeAttr(String(node.attrs?.name || `Image ${ctx.docPr}`));
+  // Espaces de noms déclarés sur place : le document d'origine ne les déclare pas forcément.
+  return `<${w}:p><${w}:r><${w}:drawing><wp:inline distT="0" distB="0" distL="0" distR="0" xmlns:wp="${WP}" xmlns:a="${A}" xmlns:pic="${PIC}" xmlns:r="${R}">`
+    + `<wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${ctx.docPr}" name="${name}" descr="${name}"/>`
+    + '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>'
+    + `<a:graphic><a:graphicData uri="${PIC}"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr>`
+    + `<pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
+    + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>`
+    + `</pic:pic></a:graphicData></a:graphic></wp:inline></${w}:drawing></${w}:r></${w}:p>`;
+}
+
+/** Ajoute des enfants à la fin de l'élément racine d'une partie XML. */
+function appendToRoot(xml: string, extra: string): string {
+  const root = scanXml(xml);
+  if (!root.selfClosing) return xml.slice(0, root.closeStart) + extra + xml.slice(root.closeStart);
+  return xml.slice(0, root.start) + xml.slice(root.start, root.end).replace(/\s*\/>$/, '>') + extra + `</${root.name}>` + xml.slice(root.end);
+}
+
 function blockXml(node: JSONContent, ctx: ExportContext): string {
   const id = node.attrs?.id ? String(node.attrs.id) : null;
   if (node.type === 'docxParagraph') return paragraphXml(node, ctx);
+  if (node.type === 'docxImage') return imageXml(node, ctx);
   const source = id ? ctx.doc.sources.get(id) : undefined;
   // Objet ou tableau collé une seconde fois : on n'écrit jamais deux fois la même identité.
   if (!source || ctx.used.has(id!)) return '';
@@ -694,7 +819,10 @@ export async function writeDocx(bytes: Uint8Array, edited: JSONContent, { author
   if (doc.readOnly) throw new FormatError(doc.readOnly);
   const normalized = normalizeDocx(edited);
   if (JSON.stringify(normalized) === JSON.stringify(doc.doc)) return bytes;
-  const ctx: ExportContext = { doc, used: new Set(), previous: null };
+  const relIds = new Set((await relationships(doc.archive, doc.mainPart)).map((rel) => rel.id));
+  let docPr = 0;
+  for (const match of doc.xml.matchAll(/docPr\b[^>]*?\sid="(\d+)"/g)) docPr = Math.max(docPr, Number(match[1]));
+  const ctx: ExportContext = { doc, used: new Set(), previous: null, media: [], relIds, counter: 0, docPr, maxWidth: textWidth(doc) };
   let body = (normalized.content ?? []).map((node) => blockXml(node, ctx)).join('');
   if (!body) body = `<${doc.w}:p/>`;
   if (doc.finalSectPr) body += doc.xml.slice(doc.finalSectPr.start, doc.finalSectPr.end);
@@ -702,10 +830,26 @@ export async function writeDocx(bytes: Uint8Array, edited: JSONContent, { author
     ? doc.xml.slice(0, doc.body.start) + `<${doc.body.name}>${body}</${doc.body.name}>` + doc.xml.slice(doc.body.end)
     : doc.xml.slice(0, doc.body.openEnd) + body + doc.xml.slice(doc.body.closeStart);
   if (!isWellFormed(xml)) throw new FormatError('WorkLogs a produit un document Word invalide : rien n’est envoyé. Signale-le.');
-  const edits = new Map<string, Uint8Array>([[doc.mainPart, new TextEncoder().encode(xml)]]);
+  const encoder = new TextEncoder();
+  const edits = new Map<string, Uint8Array>([[doc.mainPart, encoder.encode(xml)]]);
   if (doc.corePart) {
     const core = await readZipText(doc.archive, doc.corePart);
-    if (core) edits.set(doc.corePart, new TextEncoder().encode(patchCoreProperties(core, author, now)));
+    if (core) edits.set(doc.corePart, encoder.encode(patchCoreProperties(core, author, now)));
   }
-  return writeZip(doc.archive, edits);
+  const added: ZipAddition[] = ctx.media.map((image) => ({ name: image.part, data: image.data }));
+  if (ctx.media.length) {
+    const relsPart = partRelsPath(doc.mainPart);
+    const rels = ctx.media.map((image) => `<Relationship Id="${image.rid}" Type="${IMAGE_REL}" Target="${image.target}"/>`).join('');
+    const relsXml = await readZipText(doc.archive, relsPart);
+    if (relsXml) edits.set(relsPart, encoder.encode(appendToRoot(relsXml, rels)));
+    else added.push({ name: relsPart, data: encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}</Relationships>`) });
+    const types = await readZipText(doc.archive, '[Content_Types].xml');
+    if (types) {
+      const known = new Set(elements(scanXml(types)).filter((el) => el.local === 'Default').map((el) => (el.attrs.Extension ?? '').toLowerCase()));
+      const missing = new Map(ctx.media.filter((image) => !known.has(image.ext)).map((image) => [image.ext, image.mime]));
+      const defaults = [...missing].map(([ext, mime]) => `<Default Extension="${ext}" ContentType="${mime}"/>`).join('');
+      if (defaults) edits.set('[Content_Types].xml', encoder.encode(appendToRoot(types, defaults)));
+    }
+  }
+  return writeZip(doc.archive, edits, { added, now });
 }
