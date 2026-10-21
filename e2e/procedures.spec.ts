@@ -143,7 +143,7 @@ test('IA dans une procédure : étapes proposées, relues puis appliquées au do
   await title.fill('Vidange du bassin 3');
   await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: '✨ Suggérer une procédure' }).click();
+  await page.getByRole('button', { name: '✨ Compléter' }).click();
   const proposal = page.getByRole('region', { name: 'Procédure proposée' });
   await expect(proposal.getByText('Ouvrir la vanne de fond')).toBeVisible();
   expect(prompt).toContain('Procédure : Vidange du bassin 3');

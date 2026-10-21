@@ -276,6 +276,8 @@ confondre « le modèle répond » et « la proposition aide ».
 | Échéance explicite `2026-10-30` | Date reprise ; « demain » laisse une échéance vide. |
 | Création partiellement refusée ou réponse perdue | Réessayer ne recrée pas les tâches déjà liées. |
 | Texte/projet changé pendant la demande | Les frappes restent et la réponse obsolète n'est pas appliquée. |
+| « ✨ Compléter » sur un titre et trois points | Chaque point développé ; « à préciser » là où l'information manque, rien d'inventé. |
+| « ✨ Compléter » avec commande, valeur et case cochée | Commande et valeur à l'identique, case toujours cochée, rien de prévu présenté comme fait. |
 
 Pour chaque cas, relever : proposition utilisable, corrections nécessaires, détails
 inventés, doublons et temps ressenti. Comparer les mêmes exemples avant/après toute

@@ -1734,3 +1734,48 @@ Aucune dépendance, route, migration, onglet ou mode ajouté.
 **Rouvrir si** la recherche par mots manque régulièrement une procédure utile (mesurer
 sur les cas réels avant d'ajouter un index sémantique), si les fiches doivent suivre Drive,
 ou si l'on veut consulter des pièces jointes ou des documents Google avec l'IA.
+
+## 42. L’IA complète le document en cours — 2026-10-21
+
+**La demande.** « En plus de suggérer des sous-tâches je voudrais une feat qui permet de
+terminer/compléter l'entrée, la tâche ou la procédure en cours d'édit (par rapport à ce qui a
+déjà été saisi dedans) afin que l'IA assiste vraiment la personne qui rédige la doc, voire même
+qu'il n'ait rien à rédiger à part le titre et certains points importants. »
+
+**Les choix.**
+- **Un bouton, « ✨ Compléter »**, dans la rangée IA de l'éditeur. Sur une note locale du
+  journal, Markdown ou riche, il rédige la note complète (`completeNote`, `ai-suggest.ts`) ;
+  sur une procédure, du journal ou du partage, c'est « ✨ Suggérer une procédure » renommé,
+  consigne inchangée (§23, §30). Ni onglet, ni mode, ni route, ni dépendance, ni migration.
+- **Ce qui part** : titre, contenu (une note riche passe par le pont Markdown, §23), contexte
+  du projet (§41), titres des tâches liées, noms des pièces jointes ; le texte déjà écrit en
+  dernier. Plafond de 12 000 caractères, comme la mise en page.
+- **La consigne** développe chaque point en phrases courtes ; intertitres et cases « - [ ] »
+  seulement si la note en a besoin ou les mentionne. Tout ce qui est écrit est gardé —
+  commandes et valeurs à l'identique, cases cochées ou non — et le sens ne bouge pas : une
+  action prévue reste à faire, rien ne devient « fait ». Fait, résultat, valeur, date ou nom
+  absents du texte et du contexte : « à préciser ». Avec un titre seul : le plan de la note.
+- **Relue avant d'être écrite**, comme toute proposition (§17) : « Note proposée », puis
+  « Appliquer la note », « Rafraîchir » ou « Ignorer », et l'affinement de §41. Refusée si la
+  note a changé pendant l'appel.
+- **Une tâche n'a pas de texte**, donc pas de bouton sur sa carte : « ＋ Entrée liée »,
+  « Créer et ouvrir », les points importants, puis « ✨ Compléter » ; la demande connaît la
+  tâche liée.
+- **Pas pour un document Google** (§17, §23) : pas de bouton, rien ne transite.
+
+**Écartés.** Un champ de texte sur la carte de tâche (l'entrée liée porte déjà ce texte) ;
+écrire sans relecture, ou compléter pendant la frappe (§17 : jamais d'envoi sans geste) ;
+envoyer un document Google ; un bouton de plus sur les procédures (le geste est le même :
+compléter à partir du titre et de l'existant).
+
+**Ce que ça coûte.** Une note riche repasse par le Markdown : surlignage, couleurs et
+alignements sont remis à plat, et une case proposée y devient une puce (l'éditeur riche n'a
+pas de cases).
+
+**Validation.** Tests purs de la consigne et des refus sans appel réseau ; gestes sur la vraie
+API de test (note Markdown, note riche, « Plus court », note Google). Le service IA y est
+simulé : la qualité d'un modèle réel se juge avec la recette §14 de `04-RECETTES.md`.
+
+**Rouvrir si** la note complétée invente en usage réel (resserrer la consigne, ou ne compléter
+que ce qui suit le dernier point) ; si la perte de mise en forme d'une note riche gêne (§23 :
+faire travailler l'IA en HTML) ; si une tâche doit porter son propre texte.

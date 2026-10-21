@@ -612,6 +612,17 @@ Réponds uniquement avec la procédure, ${format === 'text' ? 'sans répéter so
 }
 
 /**
+ * Réponse → corps du document : le titre existe déjà, un `# Titre` en tête ferait
+ * doublon — sauf si le texte source commence lui-même par un `# …`, qui est alors du contenu.
+ */
+function documentBody(reply: string, source = ''): string {
+  const cleaned = cleanProofreadMarkdown(reply);
+  const body = (/^#\s/.test(source) ? cleaned : cleaned.replace(/^#\s[^\n]*\n*/, '')).trim();
+  if (!body) throw new AiError('Réponse IA illisible : réessaie.');
+  return body;
+}
+
+/**
  * Suggestion de procédure : un clic = un appel avec le titre, le projet, les
  * noms des pièces jointes et ce qui est déjà écrit. La proposition revient en
  * Markdown, à relire avant application — comme la mise en page.
@@ -628,12 +639,60 @@ export async function suggestProcedure(
     throw new AiError(`Procédure trop longue pour une suggestion (${text.length} caractères, ${MAX_PROOFREAD_CHARS} maximum).`);
   }
   const prompt = refinePrompt(buildProcedurePrompt(title, options.context, settings.profile), options.refinement);
-  const cleaned = cleanProofreadMarkdown(
-    await postChatCompletions(settings, 'les suggestions de procédure', prompt.system, prompt.user,
-      Math.min(8000, Math.max(1500, Math.ceil(text.length / 2) + 1000)), options.timeoutMs ?? AI_TIMEOUT_MS)
-  ).replace(/^#\s[^\n]*\n*/, ''); // le titre existe déjà : un `# Titre` en tête ferait doublon
-  if (!cleaned.trim()) throw new AiError('Réponse IA illisible : réessaie.');
-  return cleaned.trim();
+  return documentBody(await postChatCompletions(settings, 'les suggestions de procédure', prompt.system, prompt.user,
+    Math.min(8000, Math.max(1500, Math.ceil(text.length / 2) + 1000)), options.timeoutMs ?? AI_TIMEOUT_MS));
+}
+
+/** Ce que l'IA sait d'une note : son projet, ses tâches liées, ses fichiers, ce qui est déjà écrit. */
+export interface NoteContext extends AiWorkContext {
+  attachments?: string[];
+  /** Titres des tâches liées à la note. */
+  linkedTasks?: string[];
+  /** Note déjà écrite, en Markdown : gardée et développée, jamais effacée. */
+  text?: string;
+}
+
+/** Consigne : la note entière, développée à partir du titre et des points notés, sans rien retirer ni inventer. */
+export function buildCompleteNotePrompt(title: string, context: NoteContext = {}, profile = ''): { system: string; user: string } {
+  const sections: string[] = [];
+  if (profile.trim()) sections.push(`Profil : ${profile.trim()}`);
+  sections.push(`Note : ${title.trim()}`);
+  sections.push(...workContextSections(context));
+  const linkedTasks = compactTitles(context.linkedTasks ?? []);
+  if (linkedTasks.length > 0) sections.push(`Tâches liées : ${linkedTasks.join(', ')}`);
+  const attachments = compactTitles(context.attachments ?? []);
+  if (attachments.length > 0) sections.push(`Pièces jointes : ${attachments.join(', ')}`);
+  sections.push(context.text?.trim() ? `Déjà écrit :\n${context.text.trim()}` : 'Déjà écrit : rien pour l’instant.');
+  return {
+    system: `Tu aides l'utilisateur à rédiger une note de son journal de travail personnel dans WorkLogs : ce qu'il a fait, constaté ou prévu, qu'il relira plus tard.
+${REFERENCE_RULE}
+Rédige la note complète, en Markdown et en français, à partir de son titre et de ce qui est déjà écrit — souvent quelques points clés : développe chaque point en phrases courtes et claires ; ajoute des intertitres « ## » seulement si la note en a besoin ; liste les actions restantes en cases « - [ ] » seulement si le texte les mentionne.
+Garde toutes les informations déjà écrites (valeurs, commandes, chemins, liens, images, blocs de code, cases cochées ou non) : commandes et valeurs à l'identique, sans jamais rien retirer. Ne change jamais le sens : une action prévue reste à faire, un constat reste un constat, rien ne devient « fait ».
+N'invente ni fait, ni résultat, ni valeur chiffrée, ni date, ni nom propre absents du texte et du contexte : écris « à préciser » à la place. Avec un titre seul, propose le plan de la note, avec « à préciser » là où ses informations sont nécessaires.
+Réponds uniquement avec la note, sans titre de premier niveau, sans introduction ni explication.`,
+    user: sections.join('\n'),
+  };
+}
+
+/**
+ * Note complétée : un clic = un appel avec le titre, le contexte du projet, les
+ * tâches liées, les noms des pièces jointes et ce qui est déjà écrit. Comme la
+ * procédure, la proposition revient en Markdown, à relire avant application.
+ */
+export async function completeNote(
+  settings: AiSettings,
+  title: string,
+  options: { context?: NoteContext; refinement?: AiRefinement; timeoutMs?: number } = {}
+): Promise<string> {
+  const text = options.context?.text?.trim() ?? '';
+  const named = title.trim() && !/^sans titre$/i.test(title.trim());
+  if (!named && !text) throw new AiError('Donne un titre à la note ou note quelques points : l’IA s’en sert pour la rédiger.');
+  if (text.length > MAX_PROOFREAD_CHARS) {
+    throw new AiError(`Note trop longue pour être complétée (${text.length} caractères, ${MAX_PROOFREAD_CHARS} maximum).`);
+  }
+  const prompt = refinePrompt(buildCompleteNotePrompt(title, options.context, settings.profile), options.refinement);
+  return documentBody(await postChatCompletions(settings, 'la complétion de la note', prompt.system, prompt.user,
+    Math.min(8000, Math.max(1500, Math.ceil(text.length / 2) + 1000)), options.timeoutMs ?? AI_TIMEOUT_MS), text);
 }
 
 /** Au-delà, la source est coupée : l'IA n'en lit que le début, et la relecture le dit. */
