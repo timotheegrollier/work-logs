@@ -198,7 +198,7 @@ export default function App() {
       setProcedureEdit({ id: '', sequence: 0 });
     }
     setProjectId(next);
-  }, [entry?.project_id, projectId, sharedPath, state?.entries]);
+  }, [entry, projectId, sharedPath, state?.entries]);
 
   useEffect(() => {
     const unsubscribe = window.worklogsDesktop?.onBeforeClose(flushPendingSaves);
