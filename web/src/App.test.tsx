@@ -778,7 +778,7 @@ describe('écrire une entrée', () => {
     JSON.stringify({ type: 'doc', content: paragraphs.map((text) => ({ type: 'paragraph', content: [{ type: 'text', text }] })) });
   const documentContent = () => screen.getByRole('textbox', { name: 'Contenu du document' });
 
-  test('procédure riche : « Suggérer une procédure » propose les étapes, appliquées après relecture', async () => {
+  test('procédure riche : « Compléter » propose les étapes, appliquées après relecture', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     mockAiSuggest('```markdown\n# Changer le filtre\n\nRemplacer le filtre du bassin 3.\n\n## Étapes\n\n1. Couper l’arrivée d’eau\n2. Changer la cartouche\n```');
@@ -793,7 +793,7 @@ describe('écrire une entrée', () => {
 
     // Une procédure propose ses étapes, pas des sous-tâches.
     expect(screen.queryByRole('button', { name: '✨ Suggérer des sous-tâches' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '✨ Suggérer une procédure' }));
+    await user.click(screen.getByRole('button', { name: '✨ Compléter' }));
     const proposal = await screen.findByRole('region', { name: 'Procédure proposée' });
     expect(within(proposal).getByText('Changer la cartouche')).toBeInTheDocument();
     // Le titre en tête de réponse ferait doublon avec celui de l'entrée.
@@ -857,7 +857,7 @@ describe('écrire une entrée', () => {
     render(<App />);
     await openProcedure(user, 'Vidange');
 
-    await user.click(screen.getByRole('button', { name: '✨ Suggérer une procédure' }));
+    await user.click(screen.getByRole('button', { name: '✨ Compléter' }));
     const proposal = await screen.findByRole('region', { name: 'Procédure proposée' });
     // Le document change après la demande (Rechercher et remplacer) : appliquer l'écraserait.
     // La procédure s'ouvre en lecture : Écrire donne la barre d'outils.
@@ -882,11 +882,101 @@ describe('écrire une entrée', () => {
     render(<App />);
     await openProcedure(user, 'Consignes Google');
     expect(documentContent()).toHaveTextContent('Google');
-    expect(screen.queryByRole('button', { name: '✨ Suggérer une procédure' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '✨ Compléter' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '✨ Mettre en page' })).not.toBeInTheDocument();
     // Ni Lire ni Écrire : un document Google garde son propre parcours d'édition.
     expect(screen.queryByRole('button', { name: 'Lire' })).not.toBeInTheDocument();
     expect(documentContent()).toHaveAttribute('contenteditable', 'true');
+  });
+
+  test('note Markdown : « Compléter » rédige la note à partir du titre et des points notés, appliquée après relecture', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('```markdown\n# Panne de la pompe\n\nLa pompe du bassin 3 s’est arrêtée.\n\n- [ ] Commander un joint (référence à préciser)\n```');
+    const points = '- pompe bassin 3 arrêtée\n- [ ] commander un joint';
+    seedData(api.db, {
+      entries: [{ id: 'en_panne', title: 'Panne de la pompe', content_md: points }],
+      tasks: [{ id: 'tk_pompe', title: 'Réparer la pompe' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_pompe', 'en_panne', new Date().toISOString());
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Compléter' }));
+    const proposal = await screen.findByRole('region', { name: 'Note proposée' });
+    expect(within(proposal).getByText('La pompe du bassin 3 s’est arrêtée.')).toBeInTheDocument();
+    // Le titre en tête de réponse ferait doublon avec celui de l'entrée.
+    expect(within(proposal).queryByRole('heading', { name: 'Panne de la pompe' })).not.toBeInTheDocument();
+    const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+    expect(sent).toContain('Note : Panne de la pompe');
+    expect(sent).toContain('Tâches liées : Réparer la pompe');
+    expect(sent).toContain(`Déjà écrit :\n${points}`);
+    // Rien n'est écrit avant « Appliquer la note ».
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue(points);
+    expect(row(api.db, "SELECT content_md FROM entries WHERE id='en_panne'").content_md).toBe(points);
+
+    await user.click(within(proposal).getByRole('button', { name: 'Appliquer la note' }));
+    const completed = 'La pompe du bassin 3 s’est arrêtée.\n\n- [ ] Commander un joint (référence à préciser)';
+    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue(completed);
+    expect(screen.queryByRole('region', { name: 'Note proposée' })).not.toBeInTheDocument();
+    await waitFor(() => expect(row(api.db, "SELECT content_md FROM entries WHERE id='en_panne'").content_md).toBe(completed));
+  });
+
+  test('note riche locale : « Compléter » part en Markdown, la note appliquée s’enregistre dans le document', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('## Constat\n\nLa vanne fuit au raccord du bassin 2.\n\n## Suite\n\n- Changer le joint (modèle à préciser)');
+    seedData(api.db, { entries: [{ id: 'en_doc', title: 'Fuite de la vanne' }] });
+    api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(richText('vanne bassin 2 fuit', 'changer le joint'), 'en_doc');
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Compléter' }));
+    const proposal = await screen.findByRole('region', { name: 'Note proposée' });
+    expect(within(proposal).getByText(/surlignage, couleurs et alignements sont remis à plat/)).toBeInTheDocument();
+    const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+    expect(sent).toContain('Note : Fuite de la vanne');
+    expect(sent).toContain('Déjà écrit :\nvanne bassin 2 fuit\n\nchanger le joint');
+    expect(documentContent()).not.toHaveTextContent('La vanne fuit au raccord');
+
+    await user.click(within(proposal).getByRole('button', { name: 'Appliquer la note' }));
+    await waitFor(() => expect(documentContent()).toHaveTextContent('La vanne fuit au raccord du bassin 2.'));
+    await waitFor(() => {
+      const saved = row(api.db, "SELECT content_json FROM entries WHERE id='en_doc'").content_json as string;
+      expect(saved).toContain('La vanne fuit au raccord du bassin 2.');
+      expect(saved).not.toContain('vanne bassin 2 fuit');
+    });
+  });
+
+  test('affiner une note proposée : « Plus court » envoie la proposition précédente, le texte d’origine reste la source', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('Première rédaction, plutôt longue.');
+    const points = '- délai de 3 semaines\n- prix à revoir';
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Réunion fournisseur', content_md: points }] });
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Compléter' }));
+    const proposal = await screen.findByRole('region', { name: 'Note proposée' });
+    await within(proposal).findByText('Première rédaction, plutôt longue.');
+    mockAiSuggest('Rédaction courte.');
+    await user.click(within(proposal).getByRole('button', { name: 'Plus court' }));
+    await within(proposal).findByText('Rédaction courte.');
+    const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+    expect(sent).toContain('Note : Réunion fournisseur');
+    expect(sent.slice(sent.indexOf('Déjà écrit :'))).toBe(`Déjà écrit :\n${points}\n\nProposition précédente (brouillon) :\nPremière rédaction, plutôt longue.\n\nConsigne d’affinement de l’utilisateur :\nPlus court`);
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue(points);
+  });
+
+  test('note liée à Google : pas de « Compléter », le document Google ne transite pas', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { entries: [{ id: 'en_google', title: 'Consignes Google' }] });
+    seedGoogleLink(api.db, 'en_google', 'doc-consignes');
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Consignes Google'));
+    expect(screen.getByRole('button', { name: 'Créer une tâche liée' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '✨ Compléter' })).not.toBeInTheDocument();
   });
 
   test('une entrée devient une procédure : rédigée par l’IA, relue, créée à part puis ouverte', async () => {
@@ -3316,7 +3406,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
 
   const aiUserMessage = () => (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
 
-  test('Markdown du partage : « Suggérer une procédure » lit titre et contenu, s’applique en brouillon, part au geste', async () => {
+  test('Markdown du partage : « Compléter » lit titre et contenu, s’applique en brouillon, part au geste', async () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     mockAiSuggest('```markdown\n# Imprimante du bureau\n\nAjouter l’imprimante du bureau.\n\n## Étapes\n\n1. Ouvrir les paramètres\n2. Saisir l’adresse 10.0.0.5\n```');
     await write('Imprimante.md', '# Imprimante du bureau\r\n\r\nIP : 10.0.0.5\r\n');
@@ -3324,7 +3414,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     const editorRegion = await openFromTree('Imprimante.md');
     const area = await within(editorRegion).findByLabelText('Contenu de Imprimante.md');
 
-    fireEvent.click(within(editorRegion).getByRole('button', { name: '✨ Suggérer une procédure' }));
+    fireEvent.click(within(editorRegion).getByRole('button', { name: '✨ Compléter' }));
     const proposal = await within(sharedEditor()).findByRole('region', { name: 'Procédure proposée' });
     // Le titre du fichier fait le titre de la procédure ; l'IA lit ce qui suit.
     expect(aiUserMessage()).toBe('Procédure : Imprimante du bureau\nDéjà écrit :\nIP : 10.0.0.5');
@@ -3398,7 +3488,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     await write('.~lock.planning.txt#', 'Hélène Martin,hmartin,TSE01,05.10.2026 09:00,file:///C:/x;');
     act(() => { window.dispatchEvent(new Event('focus')); });
     expect(await within(sharedEditor()).findByText(/Lecture seule — Ouvert par Hélène Martin dans LibreOffice/)).toBeInTheDocument();
-    expect(within(sharedEditor()).getByRole('button', { name: '✨ Suggérer une procédure' })).toBeDisabled();
+    expect(within(sharedEditor()).getByRole('button', { name: '✨ Compléter' })).toBeDisabled();
     expect(within(sharedEditor()).getByRole('button', { name: '✨ Mettre en page' })).toBeDisabled();
 
     // Un tableur n'a pas de procédure à rédiger.
@@ -3408,7 +3498,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
 
     await openFromTree('Redémarrage.txt');
     const area = await within(sharedEditor()).findByLabelText('Contenu de Redémarrage.txt');
-    fireEvent.click(within(sharedEditor()).getByRole('button', { name: '✨ Suggérer une procédure' }));
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: '✨ Compléter' }));
     const proposal = await within(sharedEditor()).findByRole('region', { name: 'Procédure proposée' });
     expect((aiBodies.at(-1) as { messages: { content: string }[] }).messages[0].content).toMatch(/texte brut, sans syntaxe Markdown/);
     expect(aiUserMessage()).toBe('Procédure : Redémarrage\nDéjà écrit :\nservice web');

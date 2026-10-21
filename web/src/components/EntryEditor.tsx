@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { api, COLUMNS, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project, type RichDocument, type Status } from '../lib';
-import { draftProcedure, extractEntryActions, parseChecklist, proofreadEntry, readAiSettings, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
+import { completeNote, draftProcedure, extractEntryActions, parseChecklist, proofreadEntry, readAiSettings, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
 import { insertCodeFence, renderMarkdown, toggleChecklistItem } from '../markdown';
 import { markdownToRich, richToMarkdown } from '../rich-markdown';
@@ -23,8 +23,8 @@ const LABELS: Record<SaveState, string> = {
   error: 'Échec de l’enregistrement',
 };
 
-/** Proposition IA à relire : mise en page de l'entrée, ou étapes d'une procédure. */
-type AiMode = 'layout' | 'procedure';
+/** Proposition IA à relire : mise en page de l'entrée, procédure ou note complétée. */
+type AiMode = 'layout' | 'procedure' | 'note';
 /** Empreinte du contenu : ce qui a changé entre la demande et l'application. */
 const contentSnapshot = (draft: { content_md: string; content_json: RichDocument | null }) =>
   draft.content_json ? JSON.stringify(draft.content_json) : draft.content_md;
@@ -407,8 +407,8 @@ export function EntryEditor({
   };
   // Propositions IA, même transport que les suggestions, à relire avant
   // application — jamais d'écrasement aveugle : mise en page de toute entrée
-  // Markdown et, pour une procédure, suggestion des étapes. Une procédure riche
-  // passe par le Markdown (`rich-markdown.ts`) ; un document Google reste exclu.
+  // Markdown, procédure ou note complétée. Une procédure ou une note riche passe
+  // par le Markdown (`rich-markdown.ts`) ; un document Google reste exclu (§23).
   const isProcedure = entry.kind === 'procedure';
   // Écrire / Lire : les entrées Markdown, et les procédures riches locales ; un
   // document Google garde son propre parcours d'édition.
@@ -419,14 +419,14 @@ export function EntryEditor({
   const [aiProposal, setAiProposal] = useState<{ mode: AiMode; snapshot: string; projectId: string; version: number; source: string; title: string; fixed: string } | null>(null);
   const aiProposalHtml = useMemo(() => (aiProposal ? renderMarkdown(aiProposal.fixed) : ''), [aiProposal]);
   const requestAi = async (mode: AiMode, instruction?: string) => {
-    if (aiWorking || syncing || !aiAvailable) return;
+    if (aiWorking || syncing || !(mode === 'note' ? canDraftProcedure : aiAvailable)) return;
     const projectId = draftRef.current.project_id;
     const version = projectVersion.current;
     const contextVersion = aiContextVersion.current;
     setAiBusy(mode);
     setError('');
     try {
-      const settings = settingsForAi(mode === 'layout' ? 'la mise en page' : 'les suggestions de procédure');
+      const settings = settingsForAi(mode === 'layout' ? 'la mise en page' : mode === 'note' ? 'la complétion de la note' : 'les suggestions de procédure');
       await autosave.flush();
       if (!mounted.current) return;
       const current = draftRef.current;
@@ -442,14 +442,24 @@ export function EntryEditor({
       const refinement = previous && instruction ? { instruction, previous: previous.fixed } : undefined;
       const fixed = mode === 'layout'
         ? await proofreadEntry(settings, title, source, { procedure: isProcedure, context, refinement })
-        : await suggestProcedure(settings, title, {
-          refinement,
-          context: {
-            ...context,
-            attachments: attachments.map((file) => file.filename),
-            text: source,
-          },
-        });
+        : mode === 'note'
+          ? await completeNote(settings, title, {
+            refinement,
+            context: {
+              ...context,
+              attachments: attachments.map((file) => file.filename),
+              linkedTasks: linkedTasks.map((task) => task.title),
+              text: source,
+            },
+          })
+          : await suggestProcedure(settings, title, {
+            refinement,
+            context: {
+              ...context,
+              attachments: attachments.map((file) => file.filename),
+              text: source,
+            },
+          });
       if (sameProject(current.project_id) && projectVersion.current === version && aiContextVersion.current === contextVersion) setAiProposal({ mode, snapshot, projectId: current.project_id, version, source, title, fixed });
     } catch (e) {
       if (sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
@@ -464,7 +474,9 @@ export function EntryEditor({
       setAiProposal(null);
       setError(aiProposal.mode === 'layout'
         ? 'L’entrée a changé pendant la mise en page : relance-la pour ne rien perdre.'
-        : 'La procédure a changé pendant la suggestion : relance-la pour ne rien perdre.');
+        : aiProposal.mode === 'note'
+          ? 'La note a changé pendant la rédaction : relance-la pour ne rien perdre.'
+          : 'La procédure a changé pendant la suggestion : relance-la pour ne rien perdre.');
       return;
     }
     if (draftRef.current.content_json) {
@@ -904,15 +916,17 @@ export function EntryEditor({
             {suggesting ? 'Suggestion…' : '✨ Suggérer des sous-tâches'}
           </button>
         )}
-        {aiAvailable && isProcedure && (
+        {(isProcedure ? aiAvailable : canDraftProcedure) && (
           <button
             className="ghost"
             type="button"
             disabled={aiWorking || syncing}
-            title="Propose les étapes à partir du titre, de ce qui est déjà écrit et du contexte du projet (envoyés au service IA configuré en Paramètres, à relire avant application)"
-            onClick={() => void requestAi('procedure')}
+            title={isProcedure
+              ? 'Complète la procédure à partir du titre, de ce qui est déjà écrit et du contexte du projet (envoyés au service IA configuré en Paramètres, à relire avant application)'
+              : 'Rédige la note complète à partir du titre et de ce qui est déjà écrit (titre, contenu, contexte du projet, noms des pièces jointes et tâches liées envoyés au service IA configuré en Paramètres) ; à relire avant application'}
+            onClick={() => void requestAi(isProcedure ? 'procedure' : 'note')}
           >
-            {aiBusy === 'procedure' ? 'Suggestion…' : '✨ Suggérer une procédure'}
+            {aiBusy === 'procedure' || aiBusy === 'note' ? 'Rédaction…' : '✨ Compléter'}
           </button>
         )}
         {aiAvailable && (
@@ -968,14 +982,14 @@ export function EntryEditor({
         <strong>Sous-tâches suggérées</strong>
         <AiRefinement busy={aiWorking || syncing} onRefine={(instruction) => void suggestForEntry(instruction)} />
       </div>}
-      {aiProposal && aiAvailable && <div className="proofread-preview no-print" role="region" aria-label={aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'}>
-        <strong>{aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'} — relis avant d’appliquer</strong>
+      {aiProposal && (aiProposal.mode === 'note' ? canDraftProcedure : aiAvailable) && <div className="proofread-preview no-print" role="region" aria-label={aiProposal.mode === 'layout' ? 'Mise en page proposée' : aiProposal.mode === 'note' ? 'Note proposée' : 'Procédure proposée'}>
+        <strong>{aiProposal.mode === 'layout' ? 'Mise en page proposée' : aiProposal.mode === 'note' ? 'Note proposée' : 'Procédure proposée'} — relis avant d’appliquer</strong>
         {draft.content_json && <small>Titres, listes, gras, liens, images et tableaux sont gardés ; surlignage, couleurs et alignements sont remis à plat.</small>}
         <article className="prose" dangerouslySetInnerHTML={{ __html: aiProposalHtml }} />
         <AiRefinement busy={aiWorking || syncing} onRefine={(instruction) => void requestAi(aiProposal.mode, instruction)} />
         <div className="task-creator-actions">
-          <button className="task-primary" type="button" disabled={aiWorking || syncing} onClick={applyAi}>{aiProposal.mode === 'layout' ? 'Appliquer la mise en page' : 'Appliquer la procédure'}</button>
-          <button className="ghost" type="button" disabled={aiWorking || syncing} onClick={() => void requestAi(aiProposal.mode)}>{aiBusy ? (aiBusy === 'layout' ? 'Mise en page…' : 'Suggestion…') : 'Rafraîchir'}</button>
+          <button className="task-primary" type="button" disabled={aiWorking || syncing} onClick={applyAi}>{aiProposal.mode === 'layout' ? 'Appliquer la mise en page' : aiProposal.mode === 'note' ? 'Appliquer la note' : 'Appliquer la procédure'}</button>
+          <button className="ghost" type="button" disabled={aiWorking || syncing} onClick={() => void requestAi(aiProposal.mode)}>{aiBusy ? (aiBusy === 'layout' ? 'Mise en page…' : 'Rédaction…') : 'Rafraîchir'}</button>
           <button className="ghost" type="button" disabled={aiWorking} onClick={() => setAiProposal(null)}>Ignorer</button>
         </div>
       </div>}

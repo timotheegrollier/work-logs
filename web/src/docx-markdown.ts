@@ -5,7 +5,7 @@ import { decodeEntities as decode, elements, scanXml } from './xml-scan';
 import { FormatError } from './file-formats';
 
 /**
- * Pont document Word du partage ⇄ Markdown, pour l'IA (« Suggérer une procédure »,
+ * Pont document Word du partage ⇄ Markdown, pour l'IA (« Compléter »,
  * « Mettre en page »). Le Markdown est ce que les modèles manient le mieux ; le
  * document Word, lui, ne doit rien perdre :
  * - images, tableaux, champs, tables des matières partent en **marqueurs**

@@ -2,12 +2,14 @@ import { describe, expect, test, vi, afterEach } from 'vitest';
 import {
   AiError,
   AI_MODELS,
+  buildCompleteNotePrompt,
   buildDraftProcedurePrompt,
   buildProcedurePrompt,
   buildProofreadPrompt,
   buildSuggestPrompt,
   cleanProofreadMarkdown,
   cleanSuggestionLines,
+  completeNote,
   draftProcedure,
   extractEntryActions,
   MAX_PROOFREAD_CHARS,
@@ -53,6 +55,7 @@ describe('contexte commun et affinement', () => {
       buildProofreadPrompt('Vidange', 'un texte', '', true, 'markdown', context),
       buildProcedurePrompt('Vidange', context),
       buildDraftProcedurePrompt({ ...context, origin: 'entry', title: 'Vidange', text: 'Fait.' }),
+      buildCompleteNotePrompt('Vidange', context),
     ];
     for (const prompt of prompts) {
       expect(prompt.user).toContain('Projet : Ferme');
@@ -93,7 +96,8 @@ describe('contexte commun et affinement', () => {
     await proofreadEntry(settings, 'Note', original, { context, refinement });
     await suggestProcedure(settings, 'Procédure', { context: { ...context, text: original }, refinement });
     await draftProcedure(settings, { origin: 'entry', title: 'Note', text: original }, { context, refinement });
-    expect(fetch).toHaveBeenCalledTimes(4);
+    await completeNote(settings, 'Note', { context: { ...context, text: original }, refinement });
+    expect(fetch).toHaveBeenCalledTimes(5);
     for (const call of fetch.mock.calls) {
       const body = JSON.parse((call as unknown as [string, RequestInit])[1].body as string);
       expect(body.messages[1].content).toContain(original);
@@ -556,6 +560,60 @@ describe('procédures', () => {
   test('réponse réduite au titre : illisible', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => aiResponse('# Vidange')));
     await expect(suggestProcedure(settings, 'Vidange')).rejects.toBeInstanceOf(AiError);
+  });
+});
+
+describe('note complétée', () => {
+  test('la consigne : la note entière à partir du titre et des points notés, sans rien retirer ni inventer', () => {
+    const prompt = buildCompleteNotePrompt(' Panne de la pompe ', {
+      project: 'Ferme',
+      linkedTasks: ['Réparer la pompe', 'Réparer la pompe'],
+      attachments: ['photo.jpg'],
+      text: ' - pompe arrêtée\n- [x] disjoncteur relevé\n- [ ] commander un joint ',
+    }, ' Pisciculteur ');
+    // Le texte déjà écrit part en dernier, après le contexte.
+    expect(prompt.user).toBe('Profil : Pisciculteur\nNote : Panne de la pompe\nProjet : Ferme\nTâches liées : Réparer la pompe\nPièces jointes : photo.jpg\nDéjà écrit :\n- pompe arrêtée\n- [x] disjoncteur relevé\n- [ ] commander un joint');
+    expect(prompt.system).toMatch(/note complète, en Markdown et en français, à partir de son titre et de ce qui est déjà écrit/);
+    expect(prompt.system).toMatch(/développe chaque point en phrases courtes/);
+    expect(prompt.system).toMatch(/Garde toutes les informations déjà écrites \(.*cases cochées ou non\).*sans jamais rien retirer/);
+    expect(prompt.system).toMatch(/une action prévue reste à faire, un constat reste un constat, rien ne devient « fait »/);
+    expect(prompt.system).toMatch(/N'invente ni fait, ni résultat, ni valeur chiffrée, ni date, ni nom propre .* écris « à préciser » à la place/);
+    expect(prompt.system).toMatch(/Avec un titre seul, propose le plan de la note/);
+    expect(prompt.system).toMatch(/sans titre de premier niveau, sans introduction ni explication/);
+    expect(buildCompleteNotePrompt('Vidange').user).toBe('Note : Vidange\nDéjà écrit : rien pour l’instant.');
+  });
+
+  test('un appel rend la note en Markdown, sans enveloppe ni titre en doublon', async () => {
+    const fetch = vi.fn(async () => aiResponse('```markdown\n# Panne de la pompe\n\nLa pompe s’est arrêtée.\n\n- [ ] Commander un joint\n```'));
+    vi.stubGlobal('fetch', fetch);
+    const result = await completeNote({ ...settings, profile: 'Pisciculteur' }, 'Panne de la pompe', { context: { linkedTasks: ['Réparer la pompe'], text: '- pompe arrêtée' } });
+    expect(result).toBe('La pompe s’est arrêtée.\n\n- [ ] Commander un joint');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.messages[1].content).toBe('Profil : Pisciculteur\nNote : Panne de la pompe\nTâches liées : Réparer la pompe\nDéjà écrit :\n- pompe arrêtée');
+    expect(body.max_tokens).toBe(1500);
+    // Un `# …` déjà en tête de la note est son contenu, pas un titre en doublon : il reste.
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse('# Contexte\n\nLa pompe s’est arrêtée.')));
+    await expect(completeNote(settings, 'Panne', { context: { text: '# Contexte\n\n- pompe arrêtée' } })).resolves.toBe('# Contexte\n\nLa pompe s’est arrêtée.');
+  });
+
+  test('ni titre ni texte, trop longue ou sans clé : aucun appel réseau', async () => {
+    const fetch = vi.fn(async () => aiResponse('Note rédigée.'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(completeNote(settings, 'Sans titre')).rejects.toThrow('Donne un titre à la note ou note quelques points');
+    await expect(completeNote(settings, '  ', { context: { text: '  ' } })).rejects.toThrow(/Donne un titre à la note/);
+    await expect(completeNote(settings, 'T', { context: { text: 'a'.repeat(MAX_PROOFREAD_CHARS + 1) } })).rejects.toThrow(/Note trop longue/);
+    await expect(completeNote({ ...settings, key: '' }, 'Réunion')).rejects.toThrow('activer la complétion de la note');
+    expect(fetch).not.toHaveBeenCalled();
+    // « Sans titre », mais déjà des points : l'IA a de quoi rédiger.
+    await expect(completeNote(settings, 'Sans titre', { context: { text: '- vanne fermée' } })).resolves.toBe('Note rédigée.');
+  });
+
+  test('réponse réduite au titre ou à une enveloppe vide : illisible', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse('# Réunion')));
+    await expect(completeNote(settings, 'Réunion')).rejects.toThrow(/illisible/);
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse('```\n\n```')));
+    await expect(completeNote(settings, 'Réunion')).rejects.toThrow(/illisible/);
   });
 });
 

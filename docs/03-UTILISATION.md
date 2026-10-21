@@ -180,10 +180,27 @@ sélectionné ; **Tout** n'ajoute aucun document local au fichier.
 les extraits et décocher une source pour les demandes suivantes. Une modification de
 sélection retire les propositions en attente issues de l'ancienne sélection.
 
+**✨ Compléter** rédige le document ouvert à partir de son titre et de ce qui est déjà
+écrit : quelques points clés suffisent, l'IA en fait la note complète (phrases courtes ;
+intertitres et cases « à faire » seulement si la note en a besoin). Tout ce qui est écrit
+est gardé — commandes et valeurs à l'identique, cases cochées ou non — rien de prévu ne
+devient « fait », et l'IA écrit « à préciser » plutôt que d'inventer un fait, une valeur,
+une date ou un nom. Avec un titre seul, elle propose le plan de la note. Partent aussi le
+contexte du projet, les titres des tâches liées et les noms des pièces jointes. La
+proposition se relit : rien n'est écrit avant **Appliquer la note** (**Rafraîchir**
+redemande, **Ignorer** abandonne). Le même bouton complète une procédure et un fichier du
+dossier partagé (voir « Procédures »). Pas de bouton sur une note Google : son contenu
+n'est jamais envoyé. Une note riche passe par le Markdown : appliquer remet à plat
+surlignage, couleurs et alignements, et une case proposée y devient une puce.
+
+Une **tâche** n'a pas de texte à compléter : sur sa carte, **＋ Entrée liée** (le titre
+reprend la tâche), **Créer et ouvrir**, noter les points importants dans l'entrée, puis
+**✨ Compléter** — la demande connaît la tâche liée.
+
 **Ajuster la proposition** précise ce qui est attendu : par exemple « Garde les commandes
 exactement et détaille les vérifications ». **Affiner**, **Plus court** et **Pour un collègue**
 demandent une nouvelle version, avec le texte d'origine et le brouillon précédent.
-Les corrections et procédures restent à relire avant application ; dans le partage,
+Corrections, notes et procédures restent à relire avant application ; dans le partage,
 appliquer ne crée qu'un brouillon local, à envoyer avec **Enregistrer sur le partage**.
 
 **✨ Extraire les actions**, dans une note locale Markdown ou riche, propose les actions
@@ -244,7 +261,7 @@ s'ouvre en écriture ; une procédure liée à Google Docs garde son éditeur Go
 taper la commande, ou taper ` ``` ` puis Entrée en début de ligne. Des lignes déjà
 collées : les sélectionner puis **`{ }`** — elles forment un seul bloc.
 
-**✨ Suggérer une procédure** (clé IA collée dans Paramètres) propose une procédure
+**✨ Compléter** (clé IA collée dans Paramètres) propose une procédure
 **concise** à partir du titre et de ce qui est déjà écrit : une phrase d'objectif, des
 étapes d'une ligne (10 au plus), prérequis et vérification seulement s'il y en a. Ce que
 tu as écrit est gardé — commandes et valeurs à l'identique — et l'IA écrit « à préciser »
@@ -298,7 +315,7 @@ lorsque la colonne Procédures est affichée.
   Seuls les paragraphes que tu as touchés sont réécrits ; le reste du fichier (styles,
   en-têtes, numérotation, images) ne change pas d'un octet. Un document en suivi des
   modifications s'ouvre en lecture seule.
-- **✨ Suggérer une procédure** et **✨ Mettre en page** marchent aussi sur un document Word,
+- **✨ Compléter** et **✨ Mettre en page** marchent aussi sur un document Word,
   une note `.md` ou un texte `.txt` du partage, comme pour les procédures du journal : le
   titre du document (sinon le nom du fichier) et son contenu partent au service IA des
   Paramètres, la proposition se relit, puis **Appliquer** en fait ton **brouillon** — rien

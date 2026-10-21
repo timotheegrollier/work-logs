@@ -1,5 +1,29 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-21 — « ✨ Compléter »
+
+Demande : que l'IA termine l'entrée, la tâche ou la procédure en cours d'écriture, à
+partir du titre et de quelques points importants.
+- **« ✨ Compléter »** dans une note locale, Markdown ou riche : l'IA rédige la note
+  complète (`completeNote`, `ai-suggest.ts`) avec le contexte du projet, les tâches liées
+  et les noms des pièces jointes. Tout ce qui est écrit est gardé ; « à préciser » plutôt
+  qu'inventer. Région « Note proposée » : rien n'est écrit avant « Appliquer la note ».
+- **Procédures** (journal et partage) : « ✨ Suggérer une procédure » devient
+  « ✨ Compléter », même consigne ; attente affichée « Rédaction… ». Une tâche n'a pas de
+  texte : « ＋ Entrée liée », « Créer et ouvrir », puis « ✨ Compléter » dans l'entrée.
+- Documents Google exclus (§17/§23). Une note riche perd surlignage, couleurs et
+  alignements à l'application, et une case proposée y devient une puce.
+
+Aucune dépendance, route ou migration ajoutée. Pourquoi : décision §42 ; usage :
+`03-UTILISATION.md` (« Assistance IA ») ; qualité réelle : `04-RECETTES.md` §14.
+- **Tests** : 4 tests purs (`ai-suggest.test.ts`), 4 gestes dans `App.test.tsx` (note
+  Markdown liée à une tâche, note riche, « Plus court », note Google) ; libellé suivi dans
+  les tests et parcours existants (`App.test.tsx`, `e2e/procedures.spec.ts`,
+  `e2e/shared-folder.spec.ts`).
+- **Validation** : typecheck, fichiers de tests IA et tests `App.test.tsx` ciblés verts.
+  `./scripts/check.sh` et Playwright **pas lancés** sur ce lot (machine partagée) : à
+  passer avant fusion.
+
 ## Lot du 2026-10-21 — assistance IA : contexte, affinement, actions
 
 Premier lot demandé pour rendre l'IA plus utile dans l'écran existant :

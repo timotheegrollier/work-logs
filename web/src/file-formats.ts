@@ -15,7 +15,7 @@ export interface FileEditorHandle {
   /** Ce qui empêcherait l'envoi (caractère non représentable…), en clair. */
   problems(): string[];
   serialize(): Promise<Uint8Array>;
-  /** IA (« Suggérer une procédure », « Mettre en page ») : texte, Markdown et Word seulement. */
+  /** IA (« Compléter », « Mettre en page ») : texte, Markdown et Word seulement. */
   ai?: FileAi;
 }
 

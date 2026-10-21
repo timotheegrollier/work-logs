@@ -695,10 +695,10 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
             className="ghost"
             type="button"
             disabled={aiBusy !== null || Boolean(readOnly)}
-            title="Propose une procédure concise à partir du titre, du contenu et du contexte du projet sélectionné (envoyés au service IA configuré en Paramètres, à relire avant application)"
+            title="Complète la procédure à partir du titre, du contenu et du contexte du projet sélectionné (envoyés au service IA configuré en Paramètres, à relire avant application)"
             onClick={() => void requestAi('procedure')}
           >
-            {aiBusy === 'procedure' ? 'Suggestion…' : '✨ Suggérer une procédure'}
+            {aiBusy === 'procedure' ? 'Rédaction…' : '✨ Compléter'}
           </button>
           <button
             className="ghost"
@@ -726,7 +726,7 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
               {aiProposal.mode === 'layout' ? 'Appliquer la mise en page' : 'Appliquer la procédure'}
             </button>
             <button className="ghost" type="button" disabled={aiBusy !== null} onClick={() => void requestAi(aiProposal.mode)}>
-              {aiBusy ? (aiBusy === 'layout' ? 'Mise en page…' : 'Suggestion…') : 'Rafraîchir'}
+              {aiBusy ? (aiBusy === 'layout' ? 'Mise en page…' : 'Rédaction…') : 'Rafraîchir'}
             </button>
             <button className="ghost" type="button" onClick={() => setAiProposal(null)}>Ignorer</button>
           </div>
