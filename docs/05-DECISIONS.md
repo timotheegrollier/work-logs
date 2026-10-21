@@ -1709,7 +1709,8 @@ pas d'indiquer ce qui devait changer.
   suivants. Une sélection changée invalide les propositions et les réponses encore en
   vol qui s'appuyaient dessus. Les documents Google et le contenu des pièces jointes
   gardent l'exclusion des décisions §17/§23. Les cinq documents principaux d'une
-  procédure tirée d'une tâche restent bornés à 12 000 caractères au total (§31).
+  procédure tirée d'une tâche restent bornés à 12 000 caractères au total (§31) ; liés
+  exprès, ils en restent les sources même s'ils appartiennent à un autre projet.
 - Un affinement transmet la source originale, la proposition précédente et une
   instruction courte. Le brouillon précédent ne devient jamais une source de faits ;
   les règles de fidélité et les marqueurs Word restent applicables. Même composant

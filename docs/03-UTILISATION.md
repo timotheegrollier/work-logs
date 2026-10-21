@@ -172,7 +172,7 @@ Un clic d'assistance lit aussi des documents locaux du même projet : documents 
 d'abord, puis notes et procédures dont le titre ou l'extrait correspond au sujet.
 Au plus trois extraits de 2 000 caractères accompagnent la demande. Le contenu des
 documents Google et des pièces jointes n'est pas transmis. Pour tirer une procédure
-d'une tâche, les cinq documents liés du même projet restent les sources principales.
+d'une tâche, ses cinq documents liés restent les sources principales, même d'un autre projet.
 Dans le partage, le contexte local accompagne le fichier seulement si un projet est
 sélectionné ; **Tout** n'ajoute aucun document local au fichier.
 

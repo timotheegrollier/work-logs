@@ -676,6 +676,30 @@ describe('écrire une entrée', () => {
     expect(screen.queryByRole('button', { name: 'Retirer la suggestion' })).not.toBeInTheDocument();
   });
 
+  test('affiner les sous-tâches suggérées les retravaille sans les donner pour déjà présentes', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('Relire le devis\nPayer la facture');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Intro.\n- [ ] Déjà là\n' }] });
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '✨ Suggérer des sous-tâches' }));
+    const refine = await screen.findByRole('region', { name: 'Affiner les sous-tâches suggérées' });
+    mockAiSuggest('Payer la facture');
+    await user.click(within(refine).getByRole('button', { name: 'Plus court' }));
+    await waitFor(() => expect(aiBodies).toHaveLength(1));
+    const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+    // Le bloc à retravailler est le brouillon précédent, pas une sous-tâche à ne jamais reproposer.
+    const existing = sent.slice(sent.indexOf('Sous-tâches déjà présentes'), sent.indexOf('Proposition précédente'));
+    expect(existing).toContain('- [ ] Déjà là');
+    expect(existing).not.toContain('Relire le devis');
+    expect(sent).toContain('Proposition précédente (brouillon) :\n## Sous-tâches\n- [ ] Relire le devis\n- [ ] Payer la facture');
+    await user.click(screen.getByRole('button', { name: 'Écrire' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Intro.\n- [ ] Déjà là\n## Sous-tâches\n- [ ] Payer la facture\n');
+    });
+  });
+
   test('met en page une entrée Markdown après relecture de la proposition', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-key', 'cle-test');
@@ -920,17 +944,18 @@ describe('écrire une entrée', () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     mockAiSuggest('# Changer la cartouche\n\n## Étapes\n\n1. Couper l’arrivée d’eau\n2. Changer la cartouche');
     seedData(api.db, {
-      projects: [{ id: 'pr_ferme', name: 'Ferme' }],
+      projects: [{ id: 'pr_ferme', name: 'Ferme' }, { id: 'pr_atelier', name: 'Atelier' }],
       entries: [
         { id: 'en_cr', title: 'Compte rendu filtre', project_id: 'pr_ferme', content_md: 'Cartouche changée, eau coupée 10 min.' },
         { id: 'en_google', title: 'Consignes', project_id: 'pr_ferme' },
+        { id: 'en_atelier', title: 'Fiche atelier', project_id: 'pr_atelier', content_md: 'Joint torique de 12 mm.' },
       ],
       tasks: [{ id: 'tk_filtre', title: 'Changer le filtre', status: 'done', project_id: 'pr_ferme' }],
     });
     seedGoogleLink(api.db, 'en_google', 'doc-consignes');
     api.db.prepare('UPDATE entries SET content_md=?, content_json=? WHERE id=?')
       .run('Texte Google à ne pas transmettre', richText('Texte Google à ne pas transmettre'), 'en_google');
-    for (const entryId of ['en_cr', 'en_google']) {
+    for (const entryId of ['en_cr', 'en_google', 'en_atelier']) {
       api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_filtre', entryId, new Date().toISOString());
     }
     render(<App />);
@@ -943,6 +968,8 @@ describe('écrire une entrée', () => {
     expect(sent).toContain('Tâche : Changer le filtre\nStatut : Terminé\nProjet : Ferme');
     expect(sent).toContain('Document lié « Compte rendu filtre »');
     expect(sent).toContain('Cartouche changée, eau coupée 10 min.');
+    // Lié exprès, un document d'un autre projet reste une source de la tâche.
+    expect(sent).toContain('Joint torique de 12 mm.');
     // Le document Google ne donne que son titre.
     expect(sent).toMatch(/« Consignes » \(\d{4}-\d{2}-\d{2}\) : document Google, contenu non transmis\./);
     expect(sent).not.toContain('Texte Google');

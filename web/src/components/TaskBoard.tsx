@@ -279,7 +279,7 @@ function TaskCard({
       const context = selectedAiContext(await contextForTask(version, entryTitle.trim() || task.title), excludedSourceIds);
       const raw = await suggestSubtasks(settings, entryTitle.trim() || task.title, {
         context: { ...context, linkedDocuments: linkedDocuments
-          .filter((document) => document.project_id === task.project_id && !excludedSourceIds.includes(document.id))
+          .filter((document) => !excludedSourceIds.includes(document.id))
           .map((document) => document.title) },
         refinement: instruction ? { instruction, previous: entrySubtasks } : undefined,
       });
@@ -326,11 +326,12 @@ function TaskCard({
       if (!settings.key) throw new Error('Colle ta clé IA dans ⚙ Paramètres pour activer la création de procédure.');
       const fullContext = await contextForTask(version);
       const context = selectedAiContext(fullContext, excludedSourceIds);
-      const sourceDocuments = linkedDocuments.filter((document) => document.project_id === task.project_id).slice(0, MAX_SOURCE_DOCUMENTS);
+      // Un document lié reste le contexte de la tâche, même d'un autre projet : on l'a lié exprès.
+      const sourceDocuments = linkedDocuments.slice(0, MAX_SOURCE_DOCUMENTS);
       const documents = await Promise.all(sourceDocuments.map(async (document) => {
         if (isGoogleDocument(document)) return { id: document.id, title: document.title, date: document.entry_date, google: true, text: '', kind: document.kind };
         const full = await api.entry(document.id);
-        if (full.google_sync || full.project_id !== task.project_id) throw new Error('Un document lié a changé de projet ou de source : relance la demande.');
+        if (full.google_sync) throw new Error('Un document lié est devenu un document Google : relance la demande.');
         return {
           id: full.id,
           title: full.title,

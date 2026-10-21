@@ -91,7 +91,6 @@ test('IA sur mobile : extrait des actions sourcées, ne crée que la sélection 
     await proposal.getByRole('checkbox', { name: 'Créer l’action Préparer le devis', exact: true }).uncheck();
     await proposal.scrollIntoViewIfNeeded();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
-    await page.screenshot({ path: '/tmp/worklogs-ai-mobile.png', fullPage: true });
     await proposal.getByRole('button', { name: 'Créer les tâches sélectionnées', exact: true }).click();
     await expect(proposal.getByText('Créée et liée', { exact: true })).toBeVisible();
     const state = await (await request.get('/api/state')).json();

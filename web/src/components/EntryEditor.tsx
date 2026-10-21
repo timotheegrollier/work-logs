@@ -348,11 +348,13 @@ export function EntryEditor({
       await autosave.flush();
       if (!mounted.current) return;
       const current = draftRef.current;
-      const content = current.content_md;
+      const refinement = instruction && suggestedBlock && suggestedContextVersion.current === contextVersion ? { instruction, previous: suggestedBlock } : undefined;
+      // Affiner retravaille le bloc suivi : il n'est pas une sous-tâche « déjà présente » à éviter.
+      const content = refinement ? current.content_md.replace(refinement.previous, '') : current.content_md;
       const context = await contextForAi(current, version, contextVersion);
       if (!context) return;
       const raw = await suggestSubtasks(settings, current.title, {
-        refinement: instruction && suggestedBlock && suggestedContextVersion.current === contextVersion ? { instruction, previous: suggestedBlock } : undefined,
+        refinement,
         context: {
           ...context,
           entryText: content,

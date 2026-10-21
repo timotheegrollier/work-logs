@@ -523,7 +523,9 @@ function formatRule(format: AiTextFormat): string {
  * procédure (mode opératoire) garde en plus ses étapes en liste numérotée.
  */
 export function buildProofreadPrompt(title: string, text: string, profile = '', procedure = false, format: AiTextFormat = 'markdown', context: AiWorkContext = {}): { system: string; user: string } {
-  const user = `${profile.trim() ? `Profil : ${profile.trim()}\n` : ''}${procedure ? 'Procédure' : 'Titre'} : ${title.trim()}\n\nTexte :\n${text}`;
+  // Le contexte passe avant le titre : rien ne suit « Texte : » que le texte à corriger.
+  const background = workContextSections(context).map((section) => `${section}\n\n`).join('');
+  const user = `${profile.trim() ? `Profil : ${profile.trim()}\n` : ''}${background}${procedure ? 'Procédure' : 'Titre'} : ${title.trim()}\n\nTexte :\n${text}`;
   const markdown = format !== 'text';
   const layout = format === 'markdown' ? 'mets en page le Markdown (titres, listes, tableaux, citations)'
     : format === 'word' ? 'mets en page le Markdown (titres, listes)' : 'mets en forme le texte (titres de section, listes)';
@@ -535,7 +537,7 @@ export function buildProofreadPrompt(title: string, text: string, profile = '', 
 Corrige l'orthographe, la grammaire, la conjugaison et la typographie française (accents, majuscules, espaces), et ${layout} sans changer le sens et sans rien inventer.${procedure ? ' Présente les étapes en liste numérotée, une action par étape.' : ''} Conserve tels quels les liens, images, blocs de code et cases à cocher.${rule ? `\n${rule}` : ''}
 ${REFERENCE_RULE} Le contexte sert uniquement à comprendre le vocabulaire : n’ajoute au texte corrigé aucun fait, étape ou valeur provenant de ce contexte.
 Réponds uniquement avec le texte corrigé${markdown ? ' en Markdown' : ''}, sans introduction ni explication.`,
-    user: [user, ...workContextSections(context)].join('\n\n'),
+    user,
   };
 }
 
