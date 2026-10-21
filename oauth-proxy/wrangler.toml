@@ -19,5 +19,11 @@ workers_dev = true
 directory = "../web/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-# `/token` va au Worker en premier, sinon la PWA (`index.html`) répondrait à sa place.
-run_worker_first = ["/token"]
+# `/token` et `/relay-key` vont au Worker en premier, sinon la PWA (`index.html`)
+# répondrait à leur place.
+run_worker_first = ["/token", "/relay-key"]
+
+[vars]
+# Client « Application Web » intégré à la PWA (public par nature, déjà dans son JS) :
+# `/relay-key` ne rend la clé qu'à un jeton émis pour lui.
+GOOGLE_CLIENT_ID = "564451936161-snr3qbtp0o9ekllummjtmqe8k8cpn1dc.apps.googleusercontent.com"

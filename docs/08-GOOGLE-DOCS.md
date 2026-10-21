@@ -278,6 +278,11 @@ renouvellement, réponse de Google rendue telle quelle. Pourquoi et limites : d�
 Depuis l'option B, ce même Worker sert aussi le front (`[assets]` dans `wrangler.toml`,
 `web/dist/` construit avec `VITE_PWA=1`) : la PWA est à `/`, le relais à `/token`.
 
+Depuis le 2026-10-21, `POST /relay-key` rend aussi la clé qui chiffre, dans le Drive du compte,
+l'accès au relais du dossier partagé (`WorkLogs/WorkLogs relais.json`) : HMAC du secret et de
+l'identifiant du compte, pour un jeton que Google confirme émis pour `GOOGLE_CLIENT_ID`
+(`[vars]` de `wrangler.toml`). Rien n'est stocké. Pourquoi : décision §39.
+
 **Déployer** (compte Cloudflare gratuit), depuis la racine puis `oauth-proxy/` :
 
 ```bash

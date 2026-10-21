@@ -241,6 +241,11 @@ export default function App() {
     if (syncRevision.current !== null && sync.revision !== syncRevision.current) void reload();
     syncRevision.current = sync.revision;
   }, [sync, reload]);
+  // L'accès au relais est revenu du compte Google : la section « Dossier partagé » apparaît.
+  const relayRevision = sync?.relayRevision ?? 0;
+  useEffect(() => {
+    if (relayRevision) bumpShared();
+  }, [relayRevision, bumpShared]);
 
   useEffect(() => {
     reload();

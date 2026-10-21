@@ -119,6 +119,8 @@ export interface GoogleSyncStatus {
   error: string;
   lastSyncedAt: string | null;
   revision: number;
+  /** PWA : avance quand l'accès au relais est revenu du compte Google. */
+  relayRevision?: number;
 }
 export interface GoogleFile {
   id: string; name: string; modifiedTime: string;

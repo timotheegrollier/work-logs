@@ -133,14 +133,21 @@ racine du partage, 401 sans code ; le script de la VM est celui de la release,
 1. Tailscale allumé sur le téléphone (le même réseau que la VM).
 2. WorkLogs (PWA) › Paramètres › **Dossier partagé du TSE** : adresse
    `https://<vm>.<tailnet>.ts.net:8443`, code d'accès (le contenu de `/etc/worklogs-relais/code`).
-   Pour ne pas le recopier à la main : sur la VM, en root, `qrencode -t ansiutf8 < /etc/worklogs-relais/code`,
+   Pour ne pas le recopier à la main : sur la VM, `sudo qrencode -t ansiutf8 -r /etc/worklogs-relais/code`
+   (le fichier est `root:worklogs-relais` 640 ; `sudo qrencode … < fichier` échoue : la redirection
+   est faite par le shell de l'utilisateur, avant `sudo` — « Permission non accordée », vécu le 2026-10-21),
    le scanner avec l'appareil photo du téléphone, copier le texte, le coller dans le champ.
    « Enregistrer » vérifie aussitôt que le relais répond. Si Chrome demande l'accès au réseau
    local, l'accepter (adresse Tailscale privée).
 3. La section « Dossier partagé » apparaît dans la colonne Procédures.
 
-Le code reste sur ce téléphone (stockage de la PWA), jamais synchronisé par Drive. Changer de
-code : en générer un nouveau sur la VM, `sudo systemctl restart worklogs-relais`, le ressaisir.
+Une fois enregistrés, l'adresse et le code sont aussi gardés **chiffrés** dans le compte Google
+connecté (`WorkLogs/WorkLogs relais.json`, AES-GCM). Si le téléphone les perd (stockage effacé,
+PWA réinstallée), ils reviennent tout seuls à la connexion Google : rien à ressaisir. Le fichier
+Drive seul ne suffit pas à les lire ; la clé est rendue par le Worker au seul compte connecté
+(`/relay-key`, §29 de `05-DECISIONS.md`). « Oublier ce relais » retire aussi la copie du compte.
+Changer de code : en générer un nouveau sur la VM, `sudo systemctl restart worklogs-relais`, le
+ressaisir une fois : la copie du compte suit.
 
 ## Quand ça ne marche pas
 
