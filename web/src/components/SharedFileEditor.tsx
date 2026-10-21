@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatSize, type SharedFile, type SharedSendResult, type SharedVersion } from '../lib';
 import { Autosave } from '../autosave';
-import { proofreadEntry, readAiSettings, suggestProcedure } from '../ai-suggest';
+import { proofreadEntry, readAiSettings, suggestProcedure, type AiWorkContext } from '../ai-suggest';
+import { loadAiContext, selectedAiContext } from '../ai-context';
+import { AiContextDetails } from './AiContextDetails';
+import { AiRefinement } from './AiRefinement';
 import { renderMarkdown } from '../markdown';
 import { editorKind, MAX_EDITABLE_TEXT, type FileAiMode, type FileAiProposal, type FileEditorHandle } from '../file-formats';
 import { imageMime, looksLikePdf } from '../file-preview';
@@ -51,8 +54,9 @@ const STATES: Record<string, string> = {
  * que WorkLogs n'a pas vue. La première frappe prend la main (notre verrou) ; elle
  * se rend à la fermeture ou après 10 min sans frappe. Monté avec `key={path}`.
  */
-export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
+export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged, onClose }: {
   path: string;
+  projectId?: string | null;
   onOpenPath: (path: string) => void;
   onChanged: () => void;
   onClose: () => void;
@@ -495,35 +499,57 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
   // IA : un clic = un envoi du titre, du dossier et du contenu au service des Paramètres.
   // La proposition se relit ici et s'applique comme une frappe : un brouillon, jamais un envoi.
   const [aiBusy, setAiBusy] = useState<FileAiMode | null>(null);
-  const [aiProposal, setAiProposal] = useState<{ mode: FileAiMode; snapshot: string; version: number; proposal: FileAiProposal } | null>(null);
+  const [aiProposal, setAiProposal] = useState<{ mode: FileAiMode; snapshot: string; version: number; answer: string; proposal: FileAiProposal } | null>(null);
+  const [aiContext, setAiContext] = useState<AiWorkContext | null>(null);
+  const [excludedSourceIds, setExcludedSourceIds] = useState<string[]>([]);
+  const contextVersion = useRef(0);
+  const excludeSources = (ids: string[]) => {
+    contextVersion.current += 1;
+    setExcludedSourceIds(ids);
+    setAiProposal(null);
+  };
   const aiProposalHtml = useMemo(
     () => (aiProposal?.proposal.previewFormat === 'markdown' ? renderMarkdown(aiProposal.proposal.preview) : ''),
     [aiProposal],
   );
   // Fichier rechargé (version du collègue, envoi) : la proposition portait sur l'ancien.
   useEffect(() => { setAiProposal(null); }, [loaded?.version]);
-  const requestAi = async (mode: FileAiMode) => {
+  const requestAi = async (mode: FileAiMode, instruction?: string) => {
     const handle = handleRef.current;
     const version = loadedRef.current?.version;
     if (aiBusy || !handle?.ai || version === undefined) return;
+    const selection = contextVersion.current;
     setAiBusy(mode);
     setError('');
     setNotice('');
     try {
       const snapshot = JSON.stringify(handle.draft());
+      if (instruction && aiProposal && (snapshot !== aiProposal.snapshot || version !== aiProposal.version)) {
+        throw new Error('Le fichier a changé depuis la proposition : relance la demande avant de l’affiner.');
+      }
       const request = handle.ai.begin(mode);
       // Le titre du document s'il en porte un, sinon le nom du fichier.
       const title = request.title || (fileRef.current?.name ?? basename(path)).replace(/\.[^.]+$/, '');
       const format = handle.ai.format;
+      const settings = readAiSettings();
+      if (!settings.key) throw new Error(`Colle ta clé IA dans ⚙ Paramètres pour activer ${mode === 'layout' ? 'la mise en page' : 'les suggestions de procédure'}.`);
+      // « Tout » n'est pas un projet : seul un projet explicitement sélectionné
+      // apporte des notes locales à un fichier du partage.
+      const loadedContext = projectId ? await loadAiContext({ projectId, title }) : {};
+      if (contextVersion.current !== selection) return;
+      setAiContext(loadedContext);
+      const context = selectedAiContext(loadedContext, excludedSourceIds);
+      const refinement = instruction && aiProposal ? { instruction, previous: aiProposal.answer } : undefined;
       let answer: string;
       if (mode === 'layout') {
         if (!request.text.trim()) throw new Error('Rien à mettre en page : le fichier est vide.');
-        answer = await proofreadEntry(readAiSettings(), title, request.text, { procedure: true, format });
+        answer = await proofreadEntry(settings, title, request.text, { procedure: true, format, context, refinement });
       } else {
-        answer = await suggestProcedure(readAiSettings(), title, { context: { text: request.text, folder: parentOf(path), format } });
+        answer = await suggestProcedure(settings, title, { context: { ...context, text: request.text, folder: parentOf(path), format }, refinement });
       }
       if (loadedRef.current?.version !== version) throw new Error('Le fichier a été rechargé pendant la demande : relance-la.');
-      setAiProposal({ mode, snapshot, version, proposal: request.prepare(answer) });
+      if (contextVersion.current !== selection) return;
+      setAiProposal({ mode, snapshot, version, answer, proposal: request.prepare(answer) });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -669,7 +695,7 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
             className="ghost"
             type="button"
             disabled={aiBusy !== null || Boolean(readOnly)}
-            title="Propose une procédure concise à partir du titre et de ce qui est déjà écrit (envoyés au service IA configuré en Paramètres, à relire avant application)"
+            title="Propose une procédure concise à partir du titre, du contenu et du contexte du projet sélectionné (envoyés au service IA configuré en Paramètres, à relire avant application)"
             onClick={() => void requestAi('procedure')}
           >
             {aiBusy === 'procedure' ? 'Suggestion…' : '✨ Suggérer une procédure'}
@@ -678,13 +704,14 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
             className="ghost"
             type="button"
             disabled={aiBusy !== null || Boolean(readOnly)}
-            title="Corrige les fautes et met en page (envoie le titre et le contenu du fichier au service IA configuré en Paramètres, à relire avant application)"
+            title="Corrige les fautes et met en page (envoie le titre, le contenu du fichier et le contexte du projet sélectionné au service IA configuré en Paramètres, à relire avant application)"
             onClick={() => void requestAi('layout')}
           >
             {aiBusy === 'layout' ? 'Mise en page…' : '✨ Mettre en page'}
           </button>
         </div>
       )}
+      {aiContext && projectId && <AiContextDetails context={aiContext} excludedIds={excludedSourceIds} onExcludedChange={excludeSources} />}
       {aiProposal && (
         <div className="proofread-preview no-print" role="region" aria-label={aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'}>
           <strong>{aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'} — relis avant d’appliquer</strong>
@@ -693,8 +720,9 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
           {aiProposal.proposal.previewFormat === 'markdown'
             ? <article className="prose" dangerouslySetInnerHTML={{ __html: aiProposalHtml }} />
             : <pre className="prose shared-ai-text">{aiProposal.proposal.preview}</pre>}
+          <AiRefinement busy={aiBusy !== null || Boolean(readOnly)} onRefine={(instruction) => void requestAi(aiProposal.mode, instruction)} />
           <div className="task-creator-actions">
-            <button className="task-primary" type="button" disabled={Boolean(readOnly)} onClick={applyAi}>
+            <button className="task-primary" type="button" disabled={aiBusy !== null || Boolean(readOnly)} onClick={applyAi}>
               {aiProposal.mode === 'layout' ? 'Appliquer la mise en page' : 'Appliquer la procédure'}
             </button>
             <button className="ghost" type="button" disabled={aiBusy !== null} onClick={() => void requestAi(aiProposal.mode)}>

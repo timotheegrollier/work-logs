@@ -1,5 +1,49 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-21 — assistance IA : contexte, affinement, actions
+
+Premier lot demandé pour rendre l'IA plus utile dans l'écran existant :
+- Contexte commun aux gestes des notes, tâches et fichiers du partage : fiche locale
+  par projet, vocabulaire du même projet, documents liés ou pertinents (3 extraits
+  de 2 000 caractères). Sources visibles et excluables pour les prochains appels.
+- « Ajuster la proposition », « Plus court » et « Pour un collègue » conservent la
+  source et la proposition précédente. Relecture avant application/création.
+- « ✨ Extraire les actions » dans une note : extraits justificatifs, titres/dates
+  modifiables, sélection puis création transactionnelle de tâches liées à la note.
+  Dates littérales validées, tâches déjà liées et cases terminées écartées.
+- Réponses obsolètes ignorées après changement de projet/sources ; frappes gardées
+  pendant les suggestions. Les créations sont réconciliées avec les liens existants
+  avant reprise, même si une réponse réseau s'est perdue après création serveur.
+
+Aucune dépendance, route ou migration ajoutée. Documents Google et contenu des pièces
+jointes exclus. Fiches projet sur cet appareil seulement. Pourquoi : décision §41 ;
+usage : `03-UTILISATION.md`, recette qualité réelle : `04-RECETTES.md` §14.
+Les tests IA utilisent un fournisseur simulé ; aucune qualité de modèle réel annoncée.
+**Validation** : `./scripts/check.sh` vert sur l'arbre des deux lots : **258 API,
+601 front (dont 1 échec attendu), 48 desktop unitaires, 29 scripts, 8 Worker,
+11 relais, 70 navigateur et 16 desktop e2e — 1 041 tests**. Les trois nouveaux
+parcours navigateur couvrent tâche, mobile et fichier du partage. L'affichage
+des actions a aussi été contrôlé visuellement à 412 px.
+
+## Lot du 2026-10-21 — le centre suit le projet
+
+Changer de projet ne laisse plus au centre le document du projet quitté. L'entrée
+ouverte est retirée **tout de suite** (plus d'attente pendant que la nouvelle
+entrée se charge), le fichier du dossier partagé se referme, et le centre repart
+sur la première entrée du projet choisi. « Tout » garde l'entrée et le fichier,
+qui y restent visibles. Un brouillon de fichier non envoyé pose sa question
+d'abord ; « Annuler » laisse le projet en place. Ouvrir un document depuis
+« Documents Google » suit désormais son projet, comme une carte de tâche.
+Aucune dépendance ajoutée.
+- **Tests** : 5 parcours dans `App.test.tsx` — entrée quittée sans attendre la
+  nouvelle, fichier du projet précédent refermé, « Annuler » qui garde projet et
+  fichier, « Annuler » lors de l'ouverture d'un document d'un autre projet qui ne
+  change pas le filtre, et document ouvert depuis « Documents Google » qui bascule
+  vers son projet. Pourquoi en `05-DECISIONS.md` §40.
+- **Validation** : `./scripts/check.sh` vert : **258 API, 601 front (dont 1 échec
+  attendu), 48 desktop unitaires, 29 scripts, 8 Worker, 11 relais, 70 navigateur,
+  16 desktop e2e — 1 041 tests**.
+
 ## Lot du 2026-10-15 — thème et navigation en paysage
 
 Sur les écrans bas (≤900 × 500 px), l'en-tête reste lisible et la barre fixe des
