@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AiSettings } from './AiSettings';
+import { readProjectAiBrief } from '../ai-context';
 
 beforeEach(() => {
   localStorage.clear();
@@ -15,6 +16,24 @@ function okResponse(content: string) {
 }
 
 describe('réglages IA', () => {
+  test('les consignes sont propres au projet choisi et restent sur cet appareil', async () => {
+    const user = userEvent.setup();
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    render(<AiSettings projects={[{ id: 'p1', name: 'Atelier' }, { id: 'p2', name: 'Bureau' }]} />);
+    expect(screen.getByRole('heading', { name: 'Assistance IA' })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Projet du contexte IA'), 'p1');
+    await user.type(screen.getByLabelText('Contexte IA du projet'), 'Utiliser les commandes Linux');
+    await user.selectOptions(screen.getByLabelText('Projet du contexte IA'), 'p2');
+    expect(screen.getByLabelText('Contexte IA du projet')).toHaveValue('');
+    await user.type(screen.getByLabelText('Contexte IA du projet'), 'Postes Windows');
+    await user.selectOptions(screen.getByLabelText('Projet du contexte IA'), 'p1');
+    expect(screen.getByLabelText('Contexte IA du projet')).toHaveValue('Utiliser les commandes Linux');
+    expect(readProjectAiBrief('p2')).toBe('Postes Windows');
+    expect(screen.getByText(/Facultatif, enregistré sur cet appareil uniquement/)).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   test('le select propose les modèles vérifiés et le défaut est sélectionné', () => {
     render(<AiSettings />);
     const select = screen.getByLabelText('Modèle IA');

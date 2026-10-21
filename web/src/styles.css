@@ -1140,6 +1140,40 @@ button:disabled {
    carte : l'aperçu les rend, comme dans l'éditeur. */
 .card .procedure-draft .prose ul { display: block; list-style: disc; margin: 0 0 1em; padding-left: 1.3em; }
 .card .procedure-draft .prose ul ul { list-style: circle; margin: 0; }
+
+/* L'assistance reste dans le document : sources consultables, consigne courte,
+   puis propositions sélectionnables. Les champs rétrécissent sur téléphone. */
+.ai-context-details { min-width: 0; margin: 8px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.ai-context-details > summary { cursor: pointer; color: var(--text); }
+.ai-context-details p { margin: 8px 0 0; }
+.ai-context-brief { white-space: pre-wrap; }
+.ai-context-sources { display: grid; gap: 8px; min-width: 0; margin: 8px 0 0; padding: 8px; border: 1px solid var(--line); border-radius: 6px; }
+.ai-context-sources label { display: flex; align-items: start; gap: 6px; }
+.ai-context-sources input[type="checkbox"] { width: auto; flex-shrink: 0; margin-top: 2px; }
+.ai-context-excerpt { margin: 4px 0 0 22px; }
+.ai-context-excerpt summary { cursor: pointer; }
+.ai-context-excerpt pre { max-height: 180px; overflow: auto; margin: 6px 0; padding: 8px; border-radius: 6px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 ui-monospace, monospace; }
+.ai-refinement { display: grid; gap: 6px; min-width: 0; padding-top: 8px; border-top: 1px solid var(--line); }
+.task-creator > .ai-refinement, .task-creator > .ai-context-details { grid-column: 1 / -1; }
+.ai-refinement > label { font-size: 12px; color: var(--muted); }
+.ai-refinement-input { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ai-refinement-input input { width: 100%; min-width: 0; font-size: 13px; }
+.ai-refinement .task-creator-actions { flex-wrap: wrap; }
+.ai-refinement button { font-size: 12px; padding: 5px 9px; }
+.ai-action-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.ai-action-row { display: grid; gap: 6px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.ai-action-row > label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.ai-action-row input[type="checkbox"] { width: auto; }
+.ai-action-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(135px, .35fr); gap: 8px; }
+.ai-action-fields label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.ai-action-fields input { min-width: 0; width: 100%; font-size: 13px; }
+.ai-action-evidence { margin: 0; padding: 4px 8px; border-left: 2px solid var(--line); font-size: 12px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-actions-proposal small { font-size: 12px; color: var(--muted); }
+@media (max-width: 600px) {
+  .ai-action-fields { grid-template-columns: minmax(0, 1fr); }
+  .ai-context-details summary, .ai-context-sources label, .ai-refinement button { min-height: 36px; }
+  .ai-context-details summary, .ai-context-sources label { align-content: center; }
+}
 .card .procedure-draft .error { margin: 0; font-size: 12px; }
 @media (max-width: 680px) { .task-creator { grid-template-columns: 1fr; } .task-creator-actions { grid-column: 1; } }
 .modes {

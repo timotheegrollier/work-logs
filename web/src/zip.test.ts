@@ -55,6 +55,38 @@ describe('zip', () => {
     expect(execFileSync('unzip', ['-tq', file], { encoding: 'utf8' })).toMatch(/No errors detected/);
   });
 
+  it('ajoute une entrée : archive relisible, entrées d’origine intactes', async () => {
+    const bytes = buildZip([
+      { name: 'a.xml', data: '<a/>' },
+      { name: 'word/media/image1.png', data: 'png', deflate: false },
+    ]);
+    const out = await writeZip(readZip(bytes), new Map(), { added: [{ name: 'word/media/image2.png', data: text('PNG2') }] });
+    const again = readZip(out);
+    expect(again.entries.map((entry) => entry.name)).toEqual(['a.xml', 'word/media/image1.png', 'word/media/image2.png']);
+    expect(await readZipText(again, 'word/media/image2.png')).toBe('PNG2');
+    // L'entrée ajoutée est compressée et datée : les compteurs du répertoire suivent.
+    const eocd = new DataView(again.eocd.buffer, again.eocd.byteOffset);
+    expect([eocd.getUint16(8, true), eocd.getUint16(10, true)]).toEqual([3, 3]);
+    // Les entrées d'origine sont recopiées telles quelles.
+    const before = readZip(bytes);
+    const old = before.byName.get('a.xml')!;
+    const now = again.byName.get('a.xml')!;
+    expect(Buffer.from(out.subarray(now.localOffset, now.recordEnd)).equals(Buffer.from(bytes.subarray(old.localOffset, old.recordEnd)))).toBe(true);
+    // L'outil de référence relit l'archive sans avertissement.
+    const { execFileSync } = await import('node:child_process');
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const file = join(mkdtempSync(join(tmpdir(), 'zip-')), 'out.zip');
+    writeFileSync(file, out);
+    expect(execFileSync('unzip', ['-tq', file], { encoding: 'utf8' })).toMatch(/No errors detected/);
+  });
+
+  it('refuse d’ajouter une entrée déjà présente', async () => {
+    const archive = readZip(buildZip([{ name: 'a.xml', data: '<a/>' }]));
+    await expect(writeZip(archive, new Map(), { added: [{ name: 'a.xml', data: text('x') }] })).rejects.toThrow(/déjà présente/);
+  });
+
   it('refuse ancien format Office, archive chiffrée, zip64 et entrées en double', () => {
     expect(() => readZip(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]))).toThrow(/ancien format/);
     const encrypted = buildZip([{ name: 'a', data: 'x' }]);

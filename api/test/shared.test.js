@@ -196,9 +196,28 @@ describe('dossier partagé', () => {
     const html = (await open('page.html')).body;
     const refused = await fetch(`${api.base}/api/shared/preview?hash=${html.hash}&name=page.pdf`);
     assert.equal(refused.status, 415);
-    assert.equal((await refused.json()).code, 'SHARED_NOT_PDF');
+    assert.equal((await refused.json()).code, 'SHARED_NOT_PREVIEW');
     const unknown = await fetch(`${api.base}/api/shared/preview?hash=${'0'.repeat(64)}`);
     assert.equal(unknown.status, 404);
+  });
+
+  test('aperçu : une image du partage se lit inline ; un fichier qui en usurpe le nom, jamais', async () => {
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('suite')]);
+    write('schema.png', png);
+    const image = (await open('schema.png')).body;
+    const res = await fetch(`${api.base}/api/shared/preview?hash=${image.hash}&name=${q('schema.png')}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'image/png');
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+    assert.match(res.headers.get('content-disposition'), /^inline; filename="schema\.png"/);
+    assert.deepEqual(Buffer.from(await res.arrayBuffer()), png);
+
+    // Un fichier nommé « image.png » mais contenant du HTML : refusé comme tout le reste.
+    write('faux.png', '<script>alert(1)</script>');
+    const fake = (await open('faux.png')).body;
+    const refused = await fetch(`${api.base}/api/shared/preview?hash=${fake.hash}&name=${q('faux.png')}`);
+    assert.equal(refused.status, 415);
+    assert.equal((await refused.json()).code, 'SHARED_NOT_PREVIEW');
   });
 
   test('un brouillon reste sur cet ordinateur ; l’envoi l’écrit et le consomme', async () => {

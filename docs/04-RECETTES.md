@@ -252,3 +252,32 @@ git add -A && git status  # relire le diff : rien de la base ni des uploads
 ```
 Et mettre à jour, dans le même diff : `01-ARCHITECTURE.md` si le schéma ou l'API bougent,
 `03-UTILISATION.md` si un geste change, `00-HANDOVER.md` si l'état du projet change.
+
+## 14. Juger la pertinence de l'assistance IA
+
+Les tests automatisés utilisent un service simulé. Avec une vraie clé, reprendre des
+exemples anonymisés du travail courant et vérifier les résultats sur place. Ne pas
+confondre « le modèle répond » et « la proposition aide ».
+
+| Cas | Résultat attendu |
+| --- | --- |
+| Tâche avec une note liée précise | Réutilise ses informations utiles. |
+| Procédure pertinente du même projet | Emploie les étapes et termes existants. |
+| Note d'un autre projet au titre identique | Son contenu ne part pas. |
+| Document Google lié | Seul son titre peut servir de source principale à une procédure. |
+| Information utile en fin d'un document retenu | L'extrait ne se limite pas au début. |
+| Fiche projet avec une contrainte métier | La proposition respecte cette contrainte. |
+| Source décochée puis nouvelle demande | Ni extrait ni ancienne proposition dérivée n'est réenvoyé. |
+| « Plus court » sur une correction | Réduit la longueur sans changer commandes, valeurs ou sens. |
+| « Pour un collègue » sur une procédure | Rend les étapes compréhensibles sans inventer de configuration. |
+| Note relatant seulement du travail terminé | Aucune action proposée à créer. |
+| Checklist avec cases cochées et non cochées | Seules les actions restantes sont extractibles. |
+| Action déjà liée à la note | Aucune nouvelle tâche identique. |
+| Échéance explicite `2026-10-30` | Date reprise ; « demain » laisse une échéance vide. |
+| Création partiellement refusée ou réponse perdue | Réessayer ne recrée pas les tâches déjà liées. |
+| Texte/projet changé pendant la demande | Les frappes restent et la réponse obsolète n'est pas appliquée. |
+
+Pour chaque cas, relever : proposition utilisable, corrections nécessaires, détails
+inventés, doublons et temps ressenti. Comparer les mêmes exemples avant/après toute
+modification de prompt ou de modèle ; conserver les exemples localement sans clé ni
+donnée confidentielle dans le dépôt.

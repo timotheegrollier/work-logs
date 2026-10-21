@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type { Project } from '../lib';
+import { readProjectAiBrief, saveProjectAiBrief } from '../ai-context';
 import {
   AI_CUSTOM_MODEL,
   AI_MODELS,
@@ -19,8 +21,10 @@ type Probe = { state: 'idle' } | { state: 'testing' } | { state: 'ok'; ms: numbe
  * l'appareil, comme les largeurs de colonnes. Aucun appel n'est fait ici,
  * sauf « Tester ».
  */
-export function AiSettings() {
+export function AiSettings({ projects = [] }: { projects?: Pick<Project, 'id' | 'name'>[] }) {
   const [form, setForm] = useState<AiSettingsValues>(readAiSettings);
+  const [briefProject, setBriefProject] = useState('');
+  const [projectBrief, setProjectBrief] = useState(() => readProjectAiBrief(null));
   const knownModel = AI_MODELS.some((option) => option.id === form.model);
   const [customModel, setCustomModel] = useState(knownModel ? '' : form.model);
   const [probe, setProbe] = useState<Probe>({ state: 'idle' });
@@ -61,11 +65,12 @@ export function AiSettings() {
 
   return (
     <section className="ai-settings" aria-label="IA — suggestions de sous-tâches">
-      <h3>IA — suggestions de sous-tâches</h3>
+      <h3>Assistance IA</h3>
       <p className="ai-hint">
         Clé gratuite : Google AI Studio. Gardée sur cet appareil uniquement. Chaque clic
-        « ✨ Suggérer » envoie le titre, ton profil et le contexte (projet, tâches et
-        notes voisines, contenu de l’entrée, pièces jointes, vocabulaire) au service
+        d’assistance envoie le titre, ton profil et le contexte (projet, consignes,
+        documents locaux sélectionnés, tâches voisines, contenu de l’entrée,
+        noms des pièces jointes, vocabulaire) au service
         configuré, jamais automatiquement. Dans le dossier partagé, « ✨ Suggérer une
         procédure » et « ✨ Mettre en page » envoient le nom, le dossier et le contenu
         du fichier ouvert.
@@ -80,6 +85,31 @@ export function AiSettings() {
           onChange={setText('profile')}
         />
       </label>
+      <label>
+        Projet du contexte IA
+        <select aria-label="Projet du contexte IA" value={briefProject} onChange={(event) => {
+          setBriefProject(event.target.value);
+          setProjectBrief(readProjectAiBrief(event.target.value || null));
+        }}>
+          <option value="">Sans projet</option>
+          {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+        </select>
+      </label>
+      <label>
+        Contexte IA du projet
+        <textarea
+          aria-label="Contexte IA du projet"
+          rows={3}
+          maxLength={2000}
+          placeholder="Objectif, environnement, contraintes et termes propres à ce projet…"
+          value={projectBrief}
+          onChange={(event) => {
+            setProjectBrief(event.target.value);
+            saveProjectAiBrief(briefProject || null, event.target.value);
+          }}
+        />
+      </label>
+      <p className="ai-hint">Facultatif, enregistré sur cet appareil uniquement. Ces consignes accompagnent les actions IA de ce projet.</p>
       <label>
         Endpoint IA
         <input aria-label="Endpoint IA" value={form.endpoint} onChange={setText('endpoint')} inputMode="url" autoComplete="off" spellCheck={false} />

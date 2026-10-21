@@ -41,6 +41,12 @@ export const ZIP_LIMITS = {
   entry: 40 * 1024 * 1024,
 };
 
+/** Une entrée à ajouter à une archive (un média dans un .docx, par exemple). */
+export interface ZipAddition {
+  name: string;
+  data: Uint8Array;
+}
+
 const view = (bytes: Uint8Array) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 /** Un ancien .doc/.xls (OLE) ou un fichier protégé par mot de passe commence ainsi. */
@@ -154,14 +160,18 @@ export function crc32(bytes: Uint8Array): number {
 }
 
 /**
- * Réécrit l'archive avec quelques entrées remplacées (`null` : retirée). L'ordre
- * des entrées, leurs noms, dates, champs supplémentaires et attributs sont
- * gardés ; une entrée remplacée garde sa méthode (stockée ou compressée). Aucune
- * modification : les octets d'origine.
+ * Réécrit l'archive avec quelques entrées remplacées (`null` : retirée) et,
+ * éventuellement, des **entrées ajoutées** (un média dans un .docx, par exemple).
+ * L'ordre des entrées, leurs noms, dates, champs supplémentaires et attributs
+ * sont gardés ; une entrée remplacée garde sa méthode (stockée ou compressée).
+ * Une entrée ajoutée est compressée et datée de l'instant de l'écriture.
+ * Aucune modification : les octets d'origine.
  */
-export async function writeZip(archive: ZipArchive, edits: Map<string, Uint8Array | null>): Promise<Uint8Array> {
-  if (!edits.size) return archive.bytes;
+export async function writeZip(archive: ZipArchive, edits: Map<string, Uint8Array | null>,
+  { added = [], now = new Date() }: { added?: ZipAddition[]; now?: Date } = {}): Promise<Uint8Array> {
+  if (!edits.size && !added.length) return archive.bytes;
   for (const name of edits.keys()) if (!archive.byName.has(name)) throw new ZipError(`Entrée absente de l’archive : ${name}.`);
+  for (const entry of added) if (archive.byName.has(entry.name)) throw new ZipError(`Entrée déjà présente dans l’archive : ${entry.name}.`);
   const source = archive.bytes;
   const parts: Uint8Array[] = [];
   const offsets = new Map<ZipEntry, number>();
@@ -190,6 +200,15 @@ export async function writeZip(archive: ZipArchive, edits: Map<string, Uint8Arra
     position += header.length + body.length;
     replaced.set(entry, { crc, compressed: body.length, size: edit.length });
   }
+  // Les entrées ajoutées viennent après les autres, comme le fait Word.
+  const stamp = dosDateTime(now);
+  const additions: { name: string; local: Uint8Array; central: Uint8Array }[] = [];
+  for (const entry of added) {
+    const record = await newRecord(entry.name, entry.data, stamp, position);
+    parts.push(record.local);
+    position += record.local.length;
+    additions.push({ name: entry.name, local: record.local, central: record.central });
+  }
   const directoryOffset = position;
   for (const entry of kept) {
     const record = entry.central.slice();
@@ -205,10 +224,14 @@ export async function writeZip(archive: ZipArchive, edits: Map<string, Uint8Arra
     parts.push(record);
     position += record.length;
   }
+  for (const entry of additions) {
+    parts.push(entry.central);
+    position += entry.central.length;
+  }
   const eocd = archive.eocd.slice();
   const eocdView = view(eocd);
-  eocdView.setUint16(8, kept.length, true);
-  eocdView.setUint16(10, kept.length, true);
+  eocdView.setUint16(8, kept.length + additions.length, true);
+  eocdView.setUint16(10, kept.length + additions.length, true);
   eocdView.setUint32(12, position - directoryOffset, true);
   eocdView.setUint32(16, directoryOffset, true);
   parts.push(eocd);
@@ -227,50 +250,59 @@ function dosDateTime(date: Date) {
 }
 
 /**
+ * Une entrée neuve, compressée : son en-tête local et son enregistrement
+ * central (noms en UTF-8, comme Office). `offset` : où l'entrée commence.
+ */
+async function newRecord(name: string, data: Uint8Array, stamp: { time: number; day: number }, offset: number) {
+  const encoder = new TextEncoder();
+  const encoded = encoder.encode(name);
+  const body = await deflate(data);
+  const crc = crc32(data);
+  const local = new Uint8Array(30 + encoded.length);
+  const lv = view(local);
+  lv.setUint32(0, 0x04034b50, true);
+  lv.setUint16(4, 20, true);
+  lv.setUint16(6, 0x800, true);
+  lv.setUint16(8, 8, true);
+  lv.setUint16(10, stamp.time, true);
+  lv.setUint16(12, stamp.day, true);
+  lv.setUint32(14, crc, true);
+  lv.setUint32(18, body.length, true);
+  lv.setUint32(22, data.length, true);
+  lv.setUint16(26, encoded.length, true);
+  local.set(encoded, 30);
+  const central = new Uint8Array(46 + encoded.length);
+  const cv = view(central);
+  cv.setUint32(0, 0x02014b50, true);
+  cv.setUint16(4, 20, true);
+  cv.setUint16(6, 20, true);
+  cv.setUint16(8, 0x800, true);
+  cv.setUint16(10, 8, true);
+  cv.setUint16(12, stamp.time, true);
+  cv.setUint16(14, stamp.day, true);
+  cv.setUint32(16, crc, true);
+  cv.setUint32(20, body.length, true);
+  cv.setUint32(24, data.length, true);
+  cv.setUint16(28, encoded.length, true);
+  cv.setUint32(42, offset, true);
+  central.set(encoded, 46);
+  return { local: new Uint8Array([...local, ...body]), central };
+}
+
+/**
  * Archive neuve (un .docx ou un .xlsx vierges) : entrées compressées, noms en
  * UTF-8, dans l'ordre donné — `[Content_Types].xml` d'abord, comme Office.
  */
 export async function createZip(files: { name: string; data: Uint8Array }[], now = new Date()): Promise<Uint8Array> {
-  const encoder = new TextEncoder();
-  const { time, day } = dosDateTime(now);
+  const stamp = dosDateTime(now);
   const parts: Uint8Array[] = [];
   const centrals: Uint8Array[] = [];
   let offset = 0;
   for (const file of files) {
-    const name = encoder.encode(file.name);
-    const body = await deflate(file.data);
-    const crc = crc32(file.data);
-    const local = new Uint8Array(30 + name.length);
-    const lv = view(local);
-    lv.setUint32(0, 0x04034b50, true);
-    lv.setUint16(4, 20, true);
-    lv.setUint16(6, 0x800, true);
-    lv.setUint16(8, 8, true);
-    lv.setUint16(10, time, true);
-    lv.setUint16(12, day, true);
-    lv.setUint32(14, crc, true);
-    lv.setUint32(18, body.length, true);
-    lv.setUint32(22, file.data.length, true);
-    lv.setUint16(26, name.length, true);
-    local.set(name, 30);
-    const central = new Uint8Array(46 + name.length);
-    const cv = view(central);
-    cv.setUint32(0, 0x02014b50, true);
-    cv.setUint16(4, 20, true);
-    cv.setUint16(6, 20, true);
-    cv.setUint16(8, 0x800, true);
-    cv.setUint16(10, 8, true);
-    cv.setUint16(12, time, true);
-    cv.setUint16(14, day, true);
-    cv.setUint32(16, crc, true);
-    cv.setUint32(20, body.length, true);
-    cv.setUint32(24, file.data.length, true);
-    cv.setUint16(28, name.length, true);
-    cv.setUint32(42, offset, true);
-    central.set(name, 46);
-    parts.push(local, body);
-    centrals.push(central);
-    offset += local.length + body.length;
+    const record = await newRecord(file.name, file.data, stamp, offset);
+    parts.push(record.local);
+    centrals.push(record.central);
+    offset += record.local.length;
   }
   const directorySize = centrals.reduce((sum, central) => sum + central.length, 0);
   const eocd = new Uint8Array(22);

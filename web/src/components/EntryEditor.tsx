@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { api, COLUMNS, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project, type RichDocument, type Status } from '../lib';
-import { draftProcedure, parseChecklist, proofreadEntry, readAiSettings, suggestProcedure, suggestSubtasks, type DraftedProcedure } from '../ai-suggest';
+import { draftProcedure, extractEntryActions, parseChecklist, proofreadEntry, readAiSettings, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
+import { loadAiContext, selectedAiContext } from '../ai-context';
 import { insertCodeFence, renderMarkdown, toggleChecklistItem } from '../markdown';
 import { markdownToRich, richToMarkdown } from '../rich-markdown';
 import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-download';
@@ -11,6 +12,8 @@ import { DocumentTabs } from './DocumentTabs';
 import { GoogleDocsEditor } from './GoogleDocsEditor';
 import { FileViewer } from './FileViewer';
 import { ProcedureDraft } from './ProcedureDraft';
+import { AiContextDetails } from './AiContextDetails';
+import { AiRefinement } from './AiRefinement';
 
 type SaveState = 'saved' | 'dirty' | 'saving' | 'error';
 const LABELS: Record<SaveState, string> = {
@@ -25,6 +28,8 @@ type AiMode = 'layout' | 'procedure';
 /** Empreinte du contenu : ce qui a changé entre la demande et l'application. */
 const contentSnapshot = (draft: { content_md: string; content_json: RichDocument | null }) =>
   draft.content_json ? JSON.stringify(draft.content_json) : draft.content_md;
+const actionTitleKey = (title: string) => title.normalize('NFKC').toLocaleLowerCase('fr').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+type ActionChoice = ExtractedAction & { selected: boolean; created: boolean };
 
 /**
  * Éditeur d'une entrée. Rendu avec `key={entry.id}` par le parent : changer
@@ -104,6 +109,10 @@ export function EntryEditor({
   }, [entry.id, entry.archived]);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const projectVersion = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const sameProject = (projectId: string) => mounted.current && draftRef.current.project_id === projectId;
   const changedRef = useRef(onChanged);
   changedRef.current = onChanged;
   // Un titre vidé n'est pas envoyé : l'entrée garde le dernier (en filigrane du
@@ -117,6 +126,7 @@ export function EntryEditor({
   }));
 
   const update = (patch: Partial<typeof draft>) => {
+    if (patch.project_id !== undefined && patch.project_id !== draftRef.current.project_id) projectVersion.current += 1;
     const next = { ...draftRef.current, ...patch };
     draftRef.current = next;
     setDraft(next);
@@ -303,16 +313,48 @@ export function EntryEditor({
   // ou le retirer sans toucher au reste.
   const [suggesting, setSuggesting] = useState(false);
   const [suggestedBlock, setSuggestedBlock] = useState<string | null>(null);
-  const suggestForEntry = async () => {
-    if (suggesting || draftRef.current.content_json) return;
+  const [aiContext, setAiContext] = useState<AiWorkContext | null>(null);
+  const [excludedAiSources, setExcludedAiSources] = useState<string[]>([]);
+  const excludedAiSourcesRef = useRef(excludedAiSources);
+  const aiContextVersion = useRef(0);
+  const suggestedContextVersion = useRef(-1);
+  const excludeAiSources = (ids: string[]) => {
+    aiContextVersion.current += 1;
+    excludedAiSourcesRef.current = ids;
+    setExcludedAiSources(ids);
+    setAiProposal(null);
+    setProcedureDraft(null);
+  };
+  const settingsForAi = (feature: string) => {
+    const settings = readAiSettings();
+    if (!settings.key) throw new Error(`Colle ta clé IA dans ⚙ Paramètres pour activer ${feature}.`);
+    return settings;
+  };
+  const contextForAi = async (current: typeof draft, version: number, contextVersion: number) => {
+    const context = await loadAiContext({ projectId: current.project_id || null, title: current.title, entryId: entry.id });
+    if (!sameProject(current.project_id) || projectVersion.current !== version || aiContextVersion.current !== contextVersion) return null;
+    setAiContext(context);
+    return selectedAiContext(context, excludedAiSourcesRef.current);
+  };
+  const suggestForEntry = async (instruction?: string) => {
+    if (aiWorking || draftRef.current.content_json) return;
+    const projectId = draftRef.current.project_id;
+    const version = projectVersion.current;
+    const contextVersion = aiContextVersion.current;
     setSuggesting(true);
     setError('');
     try {
+      const settings = settingsForAi('les suggestions');
       await autosave.flush();
-      const content = draftRef.current.content_md;
-      const raw = await suggestSubtasks(readAiSettings(), draftRef.current.title, {
+      if (!mounted.current) return;
+      const current = draftRef.current;
+      const content = current.content_md;
+      const context = await contextForAi(current, version, contextVersion);
+      if (!context) return;
+      const raw = await suggestSubtasks(settings, current.title, {
+        refinement: instruction && suggestedBlock && suggestedContextVersion.current === contextVersion ? { instruction, previous: suggestedBlock } : undefined,
         context: {
-          project: projects.find((project) => project.id === entry.project_id)?.name,
+          ...context,
           entryText: content,
           existingSubtasks: parseChecklist(content),
           attachments: attachments.map((file) => file.filename),
@@ -321,19 +363,33 @@ export function EntryEditor({
             .map((task) => task.title),
         },
       });
-      const block = subtasksMd(raw);
-      const current = content.trim();
+      if (!sameProject(current.project_id) || projectVersion.current !== version || aiContextVersion.current !== contextVersion) return;
+      // Les frappes faites pendant l'appel restent prioritaires ; on ne remplace
+      // que le bloc suivi, s'il existe toujours dans le brouillon actuel.
+      const latest = draftRef.current.content_md;
+      const outsideBlock = suggestedBlock && latest.includes(suggestedBlock) ? latest.replace(suggestedBlock, '') : latest;
+      const existing = new Set(parseChecklist(outsideBlock).map((item) => actionTitleKey(item.text)));
+      const freshLines = raw.split('\n').filter((line) => {
+        const key = actionTitleKey(line);
+        if (!key || existing.has(key)) return false;
+        existing.add(key);
+        return true;
+      });
+      // Une case ajoutée pendant la demande compte elle aussi comme existante.
+      if (!freshLines.length) return;
+      const block = subtasksMd(freshLines.join('\n'));
       // Suggérer remplace le bloc suivi, sinon ajoute : un seul geste.
-      if (suggestedBlock && content.includes(suggestedBlock)) {
-        update({ content_md: content.replace(suggestedBlock, block) });
+      if (suggestedBlock && latest.includes(suggestedBlock)) {
+        update({ content_md: latest.replace(suggestedBlock, block) });
       } else {
-        update({ content_md: (current ? current.replace(/\s+$/, '') + '\n' : '') + block });
+        update({ content_md: (latest.trim() ? latest.replace(/\s+$/, '') + '\n' : '') + block });
       }
+      suggestedContextVersion.current = contextVersion;
       setSuggestedBlock(block);
     } catch (e) {
-      setError((e as Error).message);
+      if (sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
     } finally {
-      setSuggesting(false);
+      if (mounted.current) setSuggesting(false);
     }
   };
   const removeSuggestion = () => {
@@ -358,37 +414,51 @@ export function EntryEditor({
   const aiAvailable = !draft.content_json || (isProcedure && !googleSync);
   const aiText = useMemo(() => (draft.content_json ? richToMarkdown(draft.content_json) : draft.content_md), [draft.content_json, draft.content_md]);
   const [aiBusy, setAiBusy] = useState<AiMode | null>(null);
-  const [aiProposal, setAiProposal] = useState<{ mode: AiMode; snapshot: string; fixed: string } | null>(null);
+  const [aiProposal, setAiProposal] = useState<{ mode: AiMode; snapshot: string; projectId: string; version: number; source: string; title: string; fixed: string } | null>(null);
   const aiProposalHtml = useMemo(() => (aiProposal ? renderMarkdown(aiProposal.fixed) : ''), [aiProposal]);
-  const requestAi = async (mode: AiMode) => {
-    if (aiBusy || syncing || !aiAvailable) return;
+  const requestAi = async (mode: AiMode, instruction?: string) => {
+    if (aiWorking || syncing || !aiAvailable) return;
+    const projectId = draftRef.current.project_id;
+    const version = projectVersion.current;
+    const contextVersion = aiContextVersion.current;
     setAiBusy(mode);
     setError('');
     try {
+      const settings = settingsForAi(mode === 'layout' ? 'la mise en page' : 'les suggestions de procédure');
       await autosave.flush();
+      if (!mounted.current) return;
       const current = draftRef.current;
-      const snapshot = contentSnapshot(current);
-      const source = current.content_json ? richToMarkdown(current.content_json) : current.content_md;
+      const previous = instruction ? aiProposal : null;
+      const snapshot = previous?.snapshot ?? contentSnapshot(current);
+      if (previous && (contentSnapshot(current) !== previous.snapshot || current.project_id !== previous.projectId)) {
+        throw new Error('L’entrée a changé depuis la proposition : relance-la pour ne rien perdre.');
+      }
+      const source = previous?.source ?? (current.content_json ? richToMarkdown(current.content_json) : current.content_md);
+      const title = previous?.title ?? current.title;
+      const context = await contextForAi(current, version, contextVersion);
+      if (!context) return;
+      const refinement = previous && instruction ? { instruction, previous: previous.fixed } : undefined;
       const fixed = mode === 'layout'
-        ? await proofreadEntry(readAiSettings(), current.title, source, { procedure: isProcedure })
-        : await suggestProcedure(readAiSettings(), current.title, {
+        ? await proofreadEntry(settings, title, source, { procedure: isProcedure, context, refinement })
+        : await suggestProcedure(settings, title, {
+          refinement,
           context: {
-            project: projects.find((project) => project.id === current.project_id)?.name,
+            ...context,
             attachments: attachments.map((file) => file.filename),
             text: source,
           },
         });
-      setAiProposal({ mode, snapshot, fixed });
+      if (sameProject(current.project_id) && projectVersion.current === version && aiContextVersion.current === contextVersion) setAiProposal({ mode, snapshot, projectId: current.project_id, version, source, title, fixed });
     } catch (e) {
-      setError((e as Error).message);
+      if (sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
     } finally {
-      setAiBusy(null);
+      if (mounted.current) setAiBusy(null);
     }
   };
   const applyAi = () => {
     if (!aiProposal) return;
     // Le contenu a bougé pendant l'appel : appliquer effacerait ces frappes.
-    if (contentSnapshot(draftRef.current) !== aiProposal.snapshot) {
+    if (contentSnapshot(draftRef.current) !== aiProposal.snapshot || draftRef.current.project_id !== aiProposal.projectId || projectVersion.current !== aiProposal.version) {
       setAiProposal(null);
       setError(aiProposal.mode === 'layout'
         ? 'L’entrée a changé pendant la mise en page : relance-la pour ne rien perdre.'
@@ -418,25 +488,158 @@ export function EntryEditor({
   const canDraftProcedure = !isProcedure && !googleSync;
   const [drafting, setDrafting] = useState(false);
   const [procedureDraft, setProcedureDraft] = useState<DraftedProcedure | null>(null);
-  const draftFromEntry = async () => {
-    if (drafting || syncing || !canDraftProcedure) return;
+  const draftFromEntry = async (instruction?: string) => {
+    if (aiWorking || syncing || !canDraftProcedure) return;
+    const projectId = draftRef.current.project_id;
+    const version = projectVersion.current;
+    const contextVersion = aiContextVersion.current;
     setDrafting(true);
     setError('');
     try {
+      const settings = settingsForAi('la création de procédure');
       await autosave.flush();
+      if (!mounted.current) return;
       const current = draftRef.current;
-      setProcedureDraft(await draftProcedure(readAiSettings(), {
+      const context = await contextForAi(current, version, contextVersion);
+      if (!context) return;
+      const drafted = await draftProcedure(settings, {
         origin: 'entry',
         title: current.title,
         project: projects.find((project) => project.id === current.project_id)?.name,
         text: current.content_json ? richToMarkdown(current.content_json) : current.content_md,
         attachments: attachments.map((file) => file.filename),
         linkedTasks: linkedTasks.map((task) => task.title),
-      }));
+      }, {
+        context,
+        refinement: instruction && procedureDraft ? { instruction, previous: procedureDraft.markdown } : undefined,
+      });
+      if (sameProject(current.project_id) && projectVersion.current === version && aiContextVersion.current === contextVersion) setProcedureDraft(drafted);
     } catch (e) {
-      setError((e as Error).message);
+      if (sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
     } finally {
-      setDrafting(false);
+      if (mounted.current) setDrafting(false);
+    }
+  };
+  const [extracting, setExtracting] = useState(false);
+  const [actionsCreating, setActionsCreating] = useState(false);
+  const [actionsProposal, setActionsProposal] = useState<{ snapshot: string; projectId: string; version: number; items: ActionChoice[] } | null>(null);
+  const [actionsMessage, setActionsMessage] = useState('');
+  const createdActionTitles = useRef(new Set<string>());
+  const aiWorking = suggesting || aiBusy !== null || drafting || extracting || actionsCreating;
+  // Un projet changé invalide ses sources et ses propositions ; les réponses
+  // encore en vol vérifient elles aussi le projet avant de revenir à l'écran.
+  useEffect(() => {
+    setAiContext(null);
+    excludedAiSourcesRef.current = [];
+    setExcludedAiSources([]);
+    setAiProposal(null);
+    setProcedureDraft(null);
+    setActionsProposal(null);
+    setActionsMessage('');
+  }, [draft.project_id]);
+  const extractActions = async () => {
+    if (aiWorking || syncing || !canDraftProcedure) return;
+    const projectId = draftRef.current.project_id;
+    const version = projectVersion.current;
+    const contextVersion = aiContextVersion.current;
+    setExtracting(true);
+    setError('');
+    setActionsMessage('');
+    try {
+      const settings = settingsForAi('l’extraction d’actions');
+      await autosave.flush();
+      if (!mounted.current) return;
+      const current = draftRef.current;
+      const snapshot = contentSnapshot(current);
+      const source = current.content_json ? richToMarkdown(current.content_json) : current.content_md;
+      const context = await contextForAi(current, version, contextVersion);
+      if (!context) return;
+      const extracted = await extractEntryActions(settings, current.title, source, {
+        context: {
+          ...context,
+          linkedTasks: linkedTasks.map((task) => task.title),
+          existingSubtasks: parseChecklist(source),
+          attachments: attachments.map((file) => file.filename),
+        },
+      });
+      if (!sameProject(current.project_id) || projectVersion.current !== version || aiContextVersion.current !== contextVersion) return;
+      if (contentSnapshot(draftRef.current) !== snapshot) throw new Error('La note a changé pendant l’extraction : relance-la pour utiliser le texte actuel.');
+      const existing = new Set([...linkedTasks.map((task) => actionTitleKey(task.title)), ...createdActionTitles.current]);
+      const items = extracted.filter((action) => {
+        const key = actionTitleKey(action.title);
+        if (existing.has(key)) return false;
+        existing.add(key);
+        return true;
+      }).map((action) => ({ ...action, selected: true, created: false }));
+      setActionsProposal({ snapshot, projectId: current.project_id, version, items });
+    } catch (e) {
+      if (sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
+    } finally {
+      if (mounted.current) setExtracting(false);
+    }
+  };
+  const editAction = (index: number, patch: Partial<ActionChoice>) => {
+    setActionsProposal((proposal) => proposal ? { ...proposal, items: proposal.items.map((item, position) => position === index ? { ...item, ...patch } : item) } : null);
+  };
+  const createSelectedActions = async () => {
+    if (!actionsProposal || aiWorking) return;
+    const proposal = actionsProposal;
+    const sourceIsCurrent = () => sameProject(proposal.projectId) && projectVersion.current === proposal.version && contentSnapshot(draftRef.current) === proposal.snapshot;
+    if (!sourceIsCurrent()) {
+      setError('La note ou son projet a changé depuis l’extraction : relance-la avant de créer les tâches.');
+      return;
+    }
+    setActionsCreating(true);
+    setActionsMessage('');
+    setError('');
+    let created = 0;
+    let reconciled = 0;
+    const failures: string[] = [];
+    try {
+      await autosave.flush();
+      // Une réponse peut se perdre après le commit serveur : le retry relit les
+      // liens réels avant toute création, même si le dernier appel a échoué ici.
+      const state = await api.state('', proposal.projectId).catch(() => {
+        throw new Error('Impossible de vérifier les tâches déjà liées : aucune nouvelle tâche n’a été créée. Réessaie.');
+      });
+      const freshLinked = state.tasks.filter((task) => task.documents.some((document) => document.id === entry.id));
+      const existing = new Set([...linkedTasks.map((task) => actionTitleKey(task.title)), ...freshLinked.map((task) => actionTitleKey(task.title)), ...createdActionTitles.current]);
+      for (const [index, action] of proposal.items.entries()) {
+        if (!action.selected || action.created || !action.title.trim()) continue;
+        if (!mounted.current) return;
+        if (!sourceIsCurrent()) throw new Error('La note ou son projet a changé : les tâches restantes n’ont pas été créées. Relance l’extraction.');
+        const key = actionTitleKey(action.title);
+        if (existing.has(key)) {
+          createdActionTitles.current.add(key);
+          editAction(index, { created: true, selected: false });
+          reconciled += 1;
+          continue;
+        }
+        try {
+          await api.createTaskFromEntry(entry.id, { title: action.title.trim(), due_date: action.due_date || null });
+          createdActionTitles.current.add(key);
+          existing.add(key);
+          created += 1;
+          if (!mounted.current) return;
+          editAction(index, { created: true, selected: false });
+        } catch (e) {
+          failures.push(`« ${action.title} » : ${(e as Error).message}`);
+        }
+      }
+      if (mounted.current) {
+        const messages = [];
+        if (created) messages.push(`${created} tâche${created > 1 ? 's créées et liées' : ' créée et liée'} à cette note.`);
+        if (reconciled) messages.push(`${reconciled} tâche${reconciled > 1 ? 's déjà créées et liées' : ' déjà créée et liée'} à cette note.`);
+        if (messages.length) setActionsMessage(messages.join(' '));
+        if (failures.length) setError(`Certaines tâches n’ont pas été créées : ${failures.join(' ; ')}`);
+      }
+    } catch (e) {
+      if (mounted.current) setError((e as Error).message);
+    } finally {
+      if (mounted.current) {
+        setActionsCreating(false);
+        if (created || reconciled) onTaskCreated?.();
+      }
     }
   };
   const createTask = async () => {
@@ -692,8 +895,8 @@ export function EntryEditor({
           <button
             className="ghost"
             type="button"
-            disabled={suggesting || syncing}
-            title="Remplace le bloc suggéré, ou l’ajoute (envoie le titre et le contenu de l’entrée au service IA configuré en Paramètres)"
+            disabled={aiWorking || syncing}
+            title="Remplace le bloc suggéré, ou l’ajoute (envoie le titre, le contenu et le contexte du projet au service IA configuré en Paramètres)"
             onClick={() => void suggestForEntry()}
           >
             {suggesting ? 'Suggestion…' : '✨ Suggérer des sous-tâches'}
@@ -703,8 +906,8 @@ export function EntryEditor({
           <button
             className="ghost"
             type="button"
-            disabled={aiBusy !== null || syncing}
-            title="Propose les étapes à partir du titre et de ce qui est déjà écrit (envoyés au service IA configuré en Paramètres, à relire avant application)"
+            disabled={aiWorking || syncing}
+            title="Propose les étapes à partir du titre, de ce qui est déjà écrit et du contexte du projet (envoyés au service IA configuré en Paramètres, à relire avant application)"
             onClick={() => void requestAi('procedure')}
           >
             {aiBusy === 'procedure' ? 'Suggestion…' : '✨ Suggérer une procédure'}
@@ -714,8 +917,8 @@ export function EntryEditor({
           <button
             className="ghost"
             type="button"
-            disabled={suggesting || aiBusy !== null || syncing || !aiText.trim()}
-            title="Corrige les fautes et met en page (envoie le titre et le contenu de l’entrée au service IA configuré en Paramètres, à relire avant application)"
+            disabled={aiWorking || syncing || !aiText.trim()}
+            title="Corrige les fautes et met en page (envoie le titre, le contenu et le contexte du projet au service IA configuré en Paramètres, à relire avant application)"
             onClick={() => void requestAi('layout')}
           >
             {aiBusy === 'layout' ? 'Mise en page…' : '✨ Mettre en page'}
@@ -725,18 +928,29 @@ export function EntryEditor({
           <button
             className="ghost"
             type="button"
-            disabled={drafting || syncing}
-            title="Rédige une procédure réutilisable à partir de cette entrée (titre, contenu, noms des pièces jointes et tâches liées envoyés au service IA configuré en Paramètres) ; à relire avant de la créer"
+            disabled={aiWorking || syncing}
+            title="Rédige une procédure réutilisable à partir de cette entrée (titre, contenu, contexte du projet, noms des pièces jointes et tâches liées envoyés au service IA configuré en Paramètres) ; à relire avant de la créer"
             onClick={() => void draftFromEntry()}
           >
             {drafting ? 'Rédaction…' : '✨ Créer une procédure'}
+          </button>
+        )}
+        {canDraftProcedure && (
+          <button
+            className="ghost"
+            type="button"
+            disabled={aiWorking || syncing || !aiText.trim()}
+            title="Envoie la note et le contexte du projet au service IA configuré en Paramètres ; choisis les actions à créer comme tâches liées après relecture"
+            onClick={() => void extractActions()}
+          >
+            {extracting ? 'Extraction…' : '✨ Extraire les actions'}
           </button>
         )}
         {suggestedBlock && (
           <button
             className="ghost"
             type="button"
-            disabled={suggesting || syncing}
+            disabled={aiWorking || syncing}
             aria-label="Retirer la suggestion"
             title="Supprime le bloc suggéré sans toucher au reste"
             onClick={removeSuggestion}
@@ -745,25 +959,61 @@ export function EntryEditor({
           </button>
         )}
       </div>
+      {aiContext && <AiContextDetails context={aiContext} excludedIds={excludedAiSources} onExcludedChange={excludeAiSources} />}
       {error && <p role="alert" className="error no-print">{error}</p>}
       {error && googleHelp && <a className="no-print" href={googleHelp} target="_blank" rel="noopener noreferrer">Activer l’API dans Google Cloud</a>}
+      {suggestedBlock && suggestedContextVersion.current === aiContextVersion.current && <div className="proofread-preview no-print" role="region" aria-label="Affiner les sous-tâches suggérées">
+        <strong>Sous-tâches suggérées</strong>
+        <AiRefinement busy={aiWorking || syncing} onRefine={(instruction) => void suggestForEntry(instruction)} />
+      </div>}
       {aiProposal && aiAvailable && <div className="proofread-preview no-print" role="region" aria-label={aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'}>
         <strong>{aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'} — relis avant d’appliquer</strong>
         {draft.content_json && <small>Titres, listes, gras, liens, images et tableaux sont gardés ; surlignage, couleurs et alignements sont remis à plat.</small>}
         <article className="prose" dangerouslySetInnerHTML={{ __html: aiProposalHtml }} />
+        <AiRefinement busy={aiWorking || syncing} onRefine={(instruction) => void requestAi(aiProposal.mode, instruction)} />
         <div className="task-creator-actions">
-          <button className="task-primary" type="button" disabled={syncing} onClick={applyAi}>{aiProposal.mode === 'layout' ? 'Appliquer la mise en page' : 'Appliquer la procédure'}</button>
-          <button className="ghost" type="button" disabled={aiBusy !== null || syncing} onClick={() => void requestAi(aiProposal.mode)}>{aiBusy ? (aiBusy === 'layout' ? 'Mise en page…' : 'Suggestion…') : 'Rafraîchir'}</button>
-          <button className="ghost" type="button" onClick={() => setAiProposal(null)}>Ignorer</button>
+          <button className="task-primary" type="button" disabled={aiWorking || syncing} onClick={applyAi}>{aiProposal.mode === 'layout' ? 'Appliquer la mise en page' : 'Appliquer la procédure'}</button>
+          <button className="ghost" type="button" disabled={aiWorking || syncing} onClick={() => void requestAi(aiProposal.mode)}>{aiBusy ? (aiBusy === 'layout' ? 'Mise en page…' : 'Suggestion…') : 'Rafraîchir'}</button>
+          <button className="ghost" type="button" disabled={aiWorking} onClick={() => setAiProposal(null)}>Ignorer</button>
         </div>
+      </div>}
+      {actionsProposal && canDraftProcedure && <div className="proofread-preview ai-actions-proposal no-print" role="region" aria-label="Actions proposées">
+        <strong>Actions proposées — choisis les tâches à créer</strong>
+        <small>Chaque tâche sera liée à cette note, dans son projet. La note est conservée.</small>
+        {actionsProposal.items.length === 0 ? <p>Aucune nouvelle action à créer dans cette note.</p> : <ul className="ai-action-list">
+          {actionsProposal.items.map((action, index) => <li className="ai-action-row" key={index}>
+            <label>
+              <input
+                type="checkbox"
+                aria-label={`Créer l’action ${action.title}`}
+                checked={action.selected}
+                disabled={actionsCreating || action.created}
+                onChange={(event) => editAction(index, { selected: event.target.checked })}
+              />
+              <span>{action.created ? 'Créée et liée' : `Action ${index + 1}`}</span>
+            </label>
+            <div className="ai-action-fields">
+              <label>Titre<input aria-label={`Titre de l’action ${index + 1}`} value={action.title} disabled={actionsCreating || action.created} onChange={(event) => editAction(index, { title: event.target.value })} /></label>
+              <label>Échéance facultative<input type="date" aria-label={`Échéance de l’action ${index + 1}`} value={action.due_date || ''} disabled={actionsCreating || action.created} onChange={(event) => editAction(index, { due_date: event.target.value || null })} /></label>
+            </div>
+            <blockquote className="ai-action-evidence">{action.evidence}</blockquote>
+          </li>)}
+        </ul>}
+        <div className="task-creator-actions">
+          {actionsProposal.items.length > 0 && <button className="task-primary" type="button" disabled={aiWorking || !actionsProposal.items.some((action) => action.selected && !action.created && action.title.trim())} onClick={() => void createSelectedActions()}>{actionsCreating ? 'Création…' : 'Créer les tâches sélectionnées'}</button>}
+          <button className="ghost" type="button" disabled={aiWorking || syncing} onClick={() => void extractActions()}>Relancer l’extraction</button>
+          <button className="ghost" type="button" disabled={actionsCreating || extracting} onClick={() => setActionsProposal(null)}>Fermer les actions</button>
+        </div>
+        {actionsMessage && <p role="status" className="task-message">{actionsMessage}</p>}
       </div>}
       {procedureDraft && canDraftProcedure && (
         <ProcedureDraft
           draft={procedureDraft}
           projectId={draft.project_id || null}
           busy={drafting}
-          onRefresh={() => void draftFromEntry()}
+          onRefresh={(instruction) => void draftFromEntry(instruction)}
           onCreated={(procedure) => {
+            if (!mounted.current || (draftRef.current.project_id || null) !== procedure.project_id) return;
             setProcedureDraft(null);
             onProcedureCreated?.(procedure);
           }}
