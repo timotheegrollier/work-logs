@@ -90,6 +90,12 @@ function tokenProxy(): string {
   return getWebClientId() === '' && builtinWebClientId() !== '' ? builtinTokenProxy() : '';
 }
 
+/** Clé de la copie chiffrée de l'accès au relais (`/relay-key`, même Worker) : client intégré seulement. */
+export function relayKeyUrl(): string {
+  const proxy = tokenProxy();
+  return proxy ? new URL('/relay-key', proxy).href : '';
+}
+
 /** Oublie le client personnel : retour au client intégré, session effacée. */
 export function clearWebClient(): void {
   try {
@@ -534,6 +540,32 @@ export async function uploadDriveFile({ name, mimeType, data, appProperties, par
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 let folderPromise: Promise<string | null> | null = null;
 
+let rootPromise: Promise<string | null> | null = null;
+
+async function findFolder(type: string): Promise<string | null> {
+  const params = new URLSearchParams({
+    q: `mimeType='${FOLDER_MIME}' and appProperties has { key='worklogs_type' and value='${type}' } and trashed=false`,
+    fields: 'files(id)', pageSize: '1', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
+  });
+  return ((await webGoogleRequest(`/drive/v3/files?${params}`)) as { files?: { id: string }[] }).files?.[0]?.id || null;
+}
+
+async function createFolder(name: string, type: string, parent: string | null): Promise<string | null> {
+  return ((await webGoogleRequest('/drive/v3/files?supportsAllDrives=true&fields=id', {
+    method: 'POST',
+    body: JSON.stringify({ name, mimeType: FOLDER_MIME, appProperties: { worklogs_type: type }, ...(parent ? { parents: [parent] } : {}) }),
+  })) as { id?: string }).id || null;
+}
+
+/** Dossier `WorkLogs` (le même que le desktop, retrouvé par étiquette), créé au besoin. */
+export function worklogsFolderId(): Promise<string | null> {
+  rootPromise ??= (async () => (await findFolder('root-folder')) || (await createFolder('WorkLogs', 'root-folder', null)))().catch(() => {
+    rootPromise = null;
+    return null;
+  });
+  return rootPromise;
+}
+
 /**
  * Dossier `WorkLogs/Pièces jointes` (le même que le desktop, retrouvé par étiquette),
  * créé au besoin. `null` si Google refuse : le fichier part à la racine plutôt que
@@ -541,22 +573,9 @@ let folderPromise: Promise<string | null> | null = null;
  */
 export function attachmentFolderId(): Promise<string | null> {
   folderPromise ??= (async () => {
-    const find = async (type: string) => {
-      const params = new URLSearchParams({
-        q: `mimeType='${FOLDER_MIME}' and appProperties has { key='worklogs_type' and value='${type}' } and trashed=false`,
-        fields: 'files(id)', pageSize: '1', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
-      });
-      return ((await webGoogleRequest(`/drive/v3/files?${params}`)) as { files?: { id: string }[] }).files?.[0]?.id || null;
-    };
-    const create = async (name: string, type: string, parent: string | null) =>
-      ((await webGoogleRequest('/drive/v3/files?supportsAllDrives=true&fields=id', {
-        method: 'POST',
-        body: JSON.stringify({ name, mimeType: FOLDER_MIME, appProperties: { worklogs_type: type }, ...(parent ? { parents: [parent] } : {}) }),
-      })) as { id?: string }).id || null;
-    const existing = await find('attachments-folder');
+    const existing = await findFolder('attachments-folder');
     if (existing) return existing;
-    const root = (await find('root-folder')) || (await create('WorkLogs', 'root-folder', null));
-    return create('Pièces jointes', 'attachments-folder', root);
+    return createFolder('Pièces jointes', 'attachments-folder', await worklogsFolderId());
   })().catch(() => {
     folderPromise = null;
     return null;

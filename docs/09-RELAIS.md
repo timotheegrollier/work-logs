@@ -139,8 +139,13 @@ racine du partage, 401 sans code ; le script de la VM est celui de la release,
    local, l'accepter (adresse Tailscale privée).
 3. La section « Dossier partagé » apparaît dans la colonne Procédures.
 
-Le code reste sur ce téléphone (stockage de la PWA), jamais synchronisé par Drive. Changer de
-code : en générer un nouveau sur la VM, `sudo systemctl restart worklogs-relais`, le ressaisir.
+Une fois enregistrés, l'adresse et le code sont aussi gardés **chiffrés** dans le compte Google
+connecté (`WorkLogs/WorkLogs relais.json`, AES-GCM). Si le téléphone les perd (stockage effacé,
+PWA réinstallée), ils reviennent tout seuls à la connexion Google : rien à ressaisir. Le fichier
+Drive seul ne suffit pas à les lire ; la clé est rendue par le Worker au seul compte connecté
+(`/relay-key`, §29 de `05-DECISIONS.md`). « Oublier ce relais » retire aussi la copie du compte.
+Changer de code : en générer un nouveau sur la VM, `sudo systemctl restart worklogs-relais`, le
+ressaisir une fois : la copie du compte suit.
 
 ## Quand ça ne marche pas
 

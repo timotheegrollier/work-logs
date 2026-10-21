@@ -10,6 +10,7 @@ import {
   attachmentFolderId, consumeRedirectCallback, downloadWebBackup, hasRedirectCallback, listWebBackups, saveBackupJson,
   uploadDriveFile, webGoogleStatus,
 } from './google-web';
+import { syncRelayVault } from './relay-drive';
 
 /**
  * Synchronisation automatique PWA ⇄ Drive, jumelle de `api/src/google-sync.js` :
@@ -22,12 +23,16 @@ export interface WebSyncStatus {
   error: string;
   lastSyncedAt: string | null;
   revision: number;
+  /** Avance quand l'accès au relais est revenu du compte Google : la colonne Procédures se relit. */
+  relayRevision: number;
 }
 
 const DEBOUNCE_MS = 3000;
 const INTERVAL_MS = 60_000;
 
-let status: WebSyncStatus = { state: 'off', error: '', lastSyncedAt: null, revision: 0 };
+let status: WebSyncStatus = { state: 'off', error: '', lastSyncedAt: null, revision: 0, relayRevision: 0 };
+/** Accès au relais comparé à la copie du compte : une fois par ouverture et par connexion. */
+let relayChecked = false;
 let running: Promise<void> | null = null;
 let again = false;
 let debounce: ReturnType<typeof setTimeout> | null = null;
@@ -113,6 +118,16 @@ async function pass(): Promise<void> {
     }
   } catch (e) {
     publish({ state: 'error', error: (e as Error).message || 'Synchronisation impossible.' });
+    return;
+  }
+  if (!relayChecked) {
+    try {
+      const result = await syncRelayVault();
+      relayChecked = true;
+      if (result === 'restored') publish({ relayRevision: status.relayRevision + 1 });
+    } catch {
+      // Worker ou Drive injoignable : on retentera au passage suivant, sans gêner la synchro.
+    }
   }
 }
 
@@ -140,9 +155,15 @@ export function scheduleWebSync(): void {
   debounce = setTimeout(() => void syncWebNow(), DEBOUNCE_MS);
 }
 
+/** La copie de l'accès au relais n'a pas pu suivre (réseau) : le prochain passage s'en charge. */
+export function checkRelayAgain(): void {
+  relayChecked = false;
+}
+
 /** Déconnexion ou changement de compte : on oublie le fichier vu. */
 export function resetWebSync(): void {
   seen = { id: '', modifiedTime: '', snapshot: null };
+  relayChecked = false;
   publish({ state: 'off', error: '', lastSyncedAt: null });
 }
 

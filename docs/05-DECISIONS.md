@@ -1217,7 +1217,8 @@ serveur Windows (le plus lourd).
   n'importe quel identifiant de projet (`projectsKnown: false`).
 - Relais injoignable (Tailscale éteint, VM arrêtée) : la section reste, « Injoignable », et dit
   quoi vérifier, au lieu de disparaître.
-- Le code d'accès reste sur le téléphone (stockage de la PWA), jamais synchronisé.
+- Le code d'accès reste sur le téléphone (stockage de la PWA), jamais synchronisé **en clair**.
+  Depuis le 2026-10-21, une copie **chiffrée** vit dans le compte Google (§38).
 
 **Limites assumées.** Hors réseau, rien (pas de copie hors ligne sur le téléphone : les
 brouillons vivent sur le relais) ; un seul compte Windows pour tout ce qui passe par le relais
@@ -1571,3 +1572,39 @@ GitHub).
 
 **Rouvrir si** la PWA se met à dépendre de routes qui arrivent sur `master` longtemps avant la
 release : suivre alors les commits de `master` à CI verte.
+
+## 38. L'accès au relais revient du compte Google, chiffré — 2026-10-21
+
+**La demande.** « Sur la PWA de mon téléphone j'ai perdu l'accès au serveur distant et j'ai la
+flemme de remettre l'URL et de regénérer un code » — puis, précisé : **pas en clair dans Google
+Drive**, mais enregistré et rechargé automatiquement. Revient en partie sur §29 (« le code reste
+sur le téléphone, jamais synchronisé »).
+
+**Le choix.** Un hash ne convient pas : le téléphone doit présenter le code lui-même
+(`Authorization: Bearer`). La PWA le **chiffre** (AES-GCM, IV aléatoire, donnée associée
+`worklogs-relais-v1`) avec l'adresse et la date d'enregistrement, et garde le chiffré dans
+`WorkLogs/WorkLogs relais.json` (étiquette `worklogs_type=relay`, autorisation `drive.file`
+déjà accordée : rien de plus à accepter).
+- **La clé n'est stockée nulle part.** Le Worker la recalcule (`POST /relay-key`) :
+  HMAC-SHA256 du secret qu'il détient déjà (`GOOGLE_CLIENT_SECRET`) et de l'identifiant Google
+  du compte (`sub`). Il ne la rend qu'à un jeton d'accès que Google confirme (`tokeninfo`)
+  émis pour le client intégré (`GOOGLE_CLIENT_ID`, variable publique de `wrangler.toml`) et
+  encore valide, et seulement à l'origine de la PWA. Un autre compte obtient une autre clé.
+- **À part de `WorkLogs backup.json`** : le desktop réécrit la sauvegarde sans connaître le
+  relais (le champ y serait perdu), et l'export téléchargé ne doit pas emporter le code.
+- **Quand.** « Enregistrer » envoie la copie, « Oublier ce relais » la met à la corbeille (un
+  oubli fait hors connexion est retenu, et la copie plus ancienne ne revient pas). Une fois par
+  ouverture de la PWA et à chaque connexion Google, la synchro compare : rien ici → la copie
+  revient et la colonne Procédures se relit ; sinon le plus récent (`saved_at`) gagne. Un
+  échec (Worker, Drive) ne gêne jamais la synchro des données ; nouvel essai au passage suivant.
+- Client Google personnel (sans le Worker) : rien ne part, l'accès reste sur le téléphone.
+
+**Limites assumées.** Qui tient le compte Google tient l'accès : c'est le but (« reload
+auto »), et il faut en plus être dans le réseau Tailscale pour joindre le relais. Le fichier
+Drive seul (partagé par erreur, export Google, autre application) ne livre rien. Changer le
+`GOOGLE_CLIENT_SECRET` du Worker change la clé : l'ancienne copie devient illisible, elle part
+à la corbeille et la suivante la remplace (ressaisie une fois si le téléphone l'avait perdue
+entre-temps).
+
+**Rouvrir si** le Worker cesse d'être le passage obligé de la connexion Google, ou si le relais
+sort du seul réseau Tailscale.

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { discardPendingSaves, flushPendingSaves } from './autosave';
+import { FAKE_CLIENT, FAKE_PROXY, connectGoogle, fakeGoogle } from './test/fake-google';
 
 // Backend local AVANT tout import d'écran : la sélection dans `lib.ts` se fait
 // à l'évaluation du module. Fichier séparé d'`App.test.tsx` (un worker = un
@@ -10,6 +11,7 @@ vi.stubEnv('VITE_PWA', '1');
 const { default: App } = await import('./App');
 const { localApi, setLocalDatabase } = await import('./store/localApi');
 const { createMemoryDatabase } = await import('./store/storage');
+const { checkRelayAgain } = await import('./store/sync-web');
 
 beforeEach(() => {
   setLocalDatabase(createMemoryDatabase());
@@ -206,6 +208,59 @@ describe('dossier partagé dans la PWA', () => {
       await waitFor(() => expect(fs.readFileSync(path.join(share, '2. TSE', 'Redémarrage.md'), 'utf8')).toBe('# Redémarrage\nRedémarrer le service.\n'), relais);
       expect(await shared.findByText('Enregistré sur le partage.', undefined, relais)).toBeInTheDocument();
     } finally {
+      await relay.stop();
+      fs.rmSync(share, { recursive: true, force: true });
+      fs.rmSync(data, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  // Vrai relais, comme ci-dessus ; Google (Drive et la clé du Worker) simulé.
+  test('accès perdu sur le téléphone : il revient du compte Google, où il n’est gardé que chiffré', async () => {
+    const relais = { timeout: 10_000 };
+    const [fs, os, path] = await Promise.all([import('node:fs'), import('node:os'), import('node:path')]);
+    // @ts-expect-error — relay.js est du JavaScript pur de l'API, chargé par Node.
+    const { startRelay, newToken } = await import('../../api/src/relay.js');
+    const share = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-relais-'));
+    const data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-relais-data-'));
+    fs.mkdirSync(path.join(share, '2. TSE'));
+    const token = newToken();
+    const relay = startRelay({ root: share, token, origins: [], dataDir: data, host: '127.0.0.1', port: 0 });
+    await new Promise((resolve) => relay.server.once('listening', resolve));
+    const address = `http://127.0.0.1:${relay.server.address().port}`;
+    vi.stubEnv('VITE_GOOGLE_CLIENT_ID', FAKE_CLIENT);
+    vi.stubEnv('VITE_GOOGLE_TOKEN_PROXY', FAKE_PROXY);
+    const drive = fakeGoogle();
+    connectGoogle();
+    try {
+      localStorage.setItem('worklogs-show-procedures', '1');
+      const user = userEvent.setup();
+      const first = render(<App />);
+      await screen.findByRole('region', { name: 'Journal' });
+      await user.click(await screen.findByRole('button', { name: 'Compte Google : Timo' }));
+      await user.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
+      const dialog = within(await screen.findByRole('dialog', { name: 'Paramètres' }));
+      const settings = within(dialog.getByRole('region', { name: 'Dossier partagé du TSE' }));
+      await user.click(settings.getByLabelText('Adresse du relais'));
+      await user.paste(address);
+      await user.click(settings.getByLabelText('Code d’accès du relais'));
+      await user.paste(token);
+      await user.click(settings.getByRole('button', { name: 'Enregistrer' }));
+      expect(await settings.findByText(/Copie chiffrée gardée dans ton compte Google\.$/, undefined, relais)).toBeInTheDocument();
+      const [copy] = drive.relayFiles();
+      expect(copy.text).not.toContain(token);
+      expect(copy.text).not.toContain('127.0.0.1');
+      first.unmount();
+
+      // Le téléphone a perdu le réglage ; la PWA rouverte, le compte Google le ramène.
+      localStorage.removeItem('worklogs-relais');
+      checkRelayAgain();
+      render(<App />);
+      expect(await screen.findByRole('list', { name: 'Contenu du dossier partagé' }, relais)).toBeInTheDocument();
+      expect(JSON.parse(localStorage.getItem('worklogs-relais') ?? '{}')).toMatchObject({ url: address, token });
+    } finally {
+      vi.unstubAllGlobals();
+      vi.stubEnv('VITE_GOOGLE_CLIENT_ID', '');
+      vi.stubEnv('VITE_GOOGLE_TOKEN_PROXY', '');
       await relay.stop();
       fs.rmSync(share, { recursive: true, force: true });
       fs.rmSync(data, { recursive: true, force: true });
