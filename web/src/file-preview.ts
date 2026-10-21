@@ -41,6 +41,25 @@ export function looksLikePdf(bytes: Uint8Array): boolean {
   return String.fromCharCode(...bytes.subarray(0, 1024)).includes('%PDF-');
 }
 
+/**
+ * Type MIME d'une image, d'après ses premiers octets (jamais son nom), ou
+ * `null` : un fichier nommé « image.png » qui contient du HTML n'est pas une image.
+ */
+export function imageMime(bytes: Uint8Array): string | null {
+  if (bytes.length < 4) return null;
+  const head = bytes.subarray(0, 16);
+  if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return 'image/png';
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
+  if (head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x38) return 'image/gif';
+  if (head[0] === 0x42 && head[1] === 0x4d) return 'image/bmp';
+  if (head.length >= 12 && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46
+    && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50) return 'image/webp';
+  if (head.length >= 12 && head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70
+    && head[8] === 0x61 && head[9] === 0x76 && head[10] === 0x69 && head[11] === 0x66) return 'image/avif';
+  if (head[0] === 0x00 && head[1] === 0x00 && head[2] === 0x01 && head[3] === 0x00) return 'image/x-icon';
+  return null;
+}
+
 /** Message affiché pour les formats qu'on ne peut pas rendre honnêtement. */
 export function previewNotice(kind: PreviewKind, filename: string): string {
   if (kind === 'sheet') {

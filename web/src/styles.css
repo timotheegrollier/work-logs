@@ -3073,6 +3073,10 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .docx-page .docx-atom.ProseMirror-selectednode { border-color: var(--accent); }
 .docx-atom-label { font-weight: 600; font-size: 12px; }
 .docx-atom-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docx-page .docx-atom img, .docx-page .docx-image img { display: block; max-width: 100%; height: auto; }
+.docx-page .docx-image { margin: 0 0 0.6em; border: 1px solid transparent; border-radius: 6px; }
+.docx-page .docx-image.ProseMirror-selectednode { border-color: var(--accent); }
+.shared-image { display: block; max-width: 100%; height: auto; margin: 0 auto 12px; }
 .docx-page table { border-collapse: collapse; margin: 0 0 0.8em; width: 100%; table-layout: fixed; }
 .docx-page td, .docx-page th { border: 1px solid var(--line); padding: 4px 8px; vertical-align: top; }
 .docx-page td .docx-paragraph { margin: 0; }

@@ -3093,6 +3093,59 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     expect(await readZipText(readZip(sent), 'docProps/core.xml')).toContain('<cp:lastModifiedBy>T. Grollier</cp:lastModifiedBy>');
   });
 
+  test('document Word : ses images s’affichent ; une image insérée part dans le fichier du partage', async () => {
+    const { pngImage, wordDocx, wordPicture } = await import('./test/docx-fixture');
+    const { readZip, readZipText } = await import('./zip');
+    await write('Schémas.docx', wordDocx({ body: wordPicture('rId10') + '<w:p><w:r><w:t>Fin</w:t></w:r></w:p>' }));
+    render(<App />);
+    const editorRegion = await openFromTree('Schémas.docx');
+    const content = await within(editorRegion).findByRole('textbox', { name: 'Contenu du document Word' }, partage);
+    await waitFor(() => expect(within(content).getByRole('img', { name: 'Image' })).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/)), partage);
+
+    // Ce que Word ne lit pas tel quel (SVG…) : refusé, rien n'est inséré.
+    const input = within(editorRegion).getByLabelText('Insérer une image');
+    fireEvent.change(input, { target: { files: [new File(['<svg xmlns="http://www.w3.org/2000/svg"/>'], 'dessin.svg', { type: 'image/svg+xml' })] } });
+    expect(await within(editorRegion).findByText(/seules les images PNG, JPEG ou GIF/)).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { files: [new File([pngImage(40, 20) as BlobPart], 'capture.png', { type: 'image/png' })] } });
+    expect(await within(content).findByRole('img', { name: 'capture.png' })).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/));
+    expect(within(editorRegion).queryByText(/seules les images PNG, JPEG ou GIF/)).toBeNull();
+    // Une capture d'écran collée s'insère de même ; du texte copié depuis Word (qui l'accompagne d'une image), non.
+    const screenshot = new File([pngImage(8, 8) as BlobPart], 'image.png', { type: 'image/png' });
+    // jsdom ne mesure rien, et ProseMirror fait défiler jusqu'au texte collé.
+    const ranges = Range.prototype as unknown as Record<string, unknown>;
+    ranges.getClientRects = () => [];
+    ranges.getBoundingClientRect = () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 });
+    fireEvent.paste(content, { clipboardData: { files: [screenshot], types: ['text/plain', 'Files'], getData: (type: string) => (type === 'text/plain' ? 'Texte copié' : '') } });
+    delete ranges.getClientRects;
+    delete ranges.getBoundingClientRect;
+    expect(content).toHaveTextContent('Texte copié');
+    expect(within(content).queryByRole('img', { name: 'image.png' })).toBeNull();
+    fireEvent.paste(content, { clipboardData: { files: [screenshot], types: ['Files'], getData: () => '' } });
+    expect(await within(content).findByRole('img', { name: 'image.png' })).toBeInTheDocument();
+    await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument(), partage);
+    fireEvent.click(within(sharedEditor()).getByRole('button', { name: 'Enregistrer sur le partage' }));
+    await waitFor(() => expect(within(sharedEditor()).getByText('Enregistré sur le partage.')).toBeInTheDocument(), partage);
+
+    const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
+    const sent = readZip(new Uint8Array(fs.readFileSync(path.join(share, 'Schémas.docx'))));
+    expect(sent.byName.has('word/media/worklogs1.png') && sent.byName.has('word/media/worklogs2.png')).toBe(true);
+    expect(await readZipText(sent, 'word/document.xml')).toContain('<a:blip r:embed="rIdWorkLogs1"/>');
+  });
+
+  test('une image du partage se voit sur place ; un fichier qui en usurpe le nom, non', async () => {
+    const { pngImage } = await import('./test/docx-fixture');
+    await write('schema.png', pngImage(4, 2));
+    await write('faux.png', '<script>alert(1)</script>');
+    render(<App />);
+    const image = await openFromTree('schema.png');
+    expect(await within(image).findByRole('img', { name: 'schema.png' }, partage)).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/));
+    await openFromTree('faux.png');
+    await waitFor(() => expect(within(sharedEditor()).getByRole('heading', { name: 'faux.png' })).toBeInTheDocument(), partage);
+    expect(await within(sharedEditor()).findByText(/ne modifie pas les fichiers \.png/, undefined, partage)).toBeInTheDocument();
+    expect(within(sharedEditor()).queryByRole('img')).toBeNull();
+  });
+
   test('document Word en suivi des modifications : lecture seule, raison donnée', async () => {
     const { wordDocx } = await import('./test/docx-fixture');
     await write('suivi.docx', wordDocx({ trackRevisions: true }));

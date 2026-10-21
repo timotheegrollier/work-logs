@@ -1218,7 +1218,7 @@ serveur Windows (le plus lourd).
 - Relais injoignable (Tailscale éteint, VM arrêtée) : la section reste, « Injoignable », et dit
   quoi vérifier, au lieu de disparaître.
 - Le code d'accès reste sur le téléphone (stockage de la PWA), jamais synchronisé **en clair**.
-  Depuis le 2026-10-21, une copie **chiffrée** vit dans le compte Google (§38).
+  Depuis le 2026-10-21, une copie **chiffrée** vit dans le compte Google (§39).
 
 **Limites assumées.** Hors réseau, rien (pas de copie hors ligne sur le téléphone : les
 brouillons vivent sur le relais) ; un seul compte Windows pour tout ce qui passe par le relais
@@ -1573,7 +1573,49 @@ GitHub).
 **Rouvrir si** la PWA se met à dépendre de routes qui arrivent sur `master` longtemps avant la
 release : suivre alors les commits de `master` à CI verte.
 
-## 38. L'accès au relais revient du compte Google, chiffré — 2026-10-21
+## 38. Images dans les documents Word du partage, et images du partage — 2026-10-21
+
+**La demande.** « Voir les images et pouvoir en insérer dans un docx directement depuis
+WorkLogs, même chargé depuis un dossier partagé. » L'aperçu des pièces jointes (§15) montrait
+déjà les images d'un `.docx` ; l'éditeur du partage (§26) n'en affichait que le nom, « Image —
+conservé », et les fichiers image du partage étaient grisés (§34, écartés faute de demande).
+
+**Les choix.**
+- **Les images d'origine restent des objets conservés** : affichées dans leur cadre, recopiées
+  octet pour octet, jamais redimensionnées. Leurs octets passent par une option de l'extension
+  (`docxImages` → `DocxAtom.configure({ images })`), **pas par les attributs** : le brouillon et
+  les empreintes ne portent que le document, pas des mégaoctets d'images qu'on ne modifie pas.
+- **Une image insérée est un nœud `docxImage`**, son propre paragraphe, écrite comme Word
+  l'écrit (`wp:inline`) : un média `word/media/worklogsN.ext`, une relation `rIdWorkLogsN`, le
+  type de contenu de l'extension s'il manque, `docPr` au-dessus du plus grand du document.
+  Rien d'autre ne change hors du corps. Taille : celle de l'image à 96 ppp, réduite à la
+  largeur utile de la page (`pgSz` − marges de la dernière section). Espaces de noms déclarés
+  sur l'élément, comme python-docx : un document qui ne les déclare pas à la racine reste
+  valide. Vérifié en ouvrant le fichier envoyé dans LibreOffice (`pdfimages`) : image à sa
+  place, à la bonne taille, celles d'origine intactes.
+- **PNG, JPEG, GIF seulement**, reconnus à leurs octets : ce que Word et LibreOffice lisent
+  sans conversion. WebP, SVG, HEIC sont refusés avec un message plutôt que convertis.
+- **Coller une capture d'écran insère l'image ; coller du texte reste du texte.** Word et Excel
+  joignent une image de la sélection au texte copié : dès qu'il y a du texte, c'est lui qui gagne.
+- **Le brouillon porte les images insérées** (en `data:`), sinon elles seraient perdues à la
+  fermeture. Il est plafonné (`MAX_DRAFT`, 4,5 Mo) et un brouillon refusé bloque l'envoi : au-delà
+  d'environ 3 Mo d'images en attente, l'insertion est refusée avec un message (« enregistre sur
+  le partage avant d'en ajouter une autre »). Une fois envoyée, une image devient un objet
+  conservé et ne pèse plus dans le brouillon.
+- **Les fichiers image du partage se voient sur place**, en `data:` depuis les octets déjà
+  chargés, reconnus à leurs octets (`imageMime`) : pas de route serveur à ajouter, et ça marche
+  aussi sur la PWA, où l'`<iframe>` du PDF ne passe pas (§34). Un faux `.png` (du HTML) garde
+  l'explication et le téléchargement.
+
+**Écartés.** Réduire une photo trop lourde dans le navigateur (canvas) : une perte de qualité
+silencieuse, et personne ne l'a demandée ; images flottantes ou habillées, redimensionnement
+à la souris, légendes : « Ouvrir avec… ». Une route serveur pour l'aperçu des images (ébauchée
+sur la copie principale) : inutile une fois les octets dans le navigateur.
+
+**Rouvrir si** des photos de téléphone (4 Mo et plus) doivent entrer telles quelles : relever
+alors `MAX_DRAFT` et la limite JSON (`app.js`, `relay.js`), ou réduire l'image à l'insertion.
+
+## 39. L'accès au relais revient du compte Google, chiffré — 2026-10-21
 
 **La demande.** « Sur la PWA de mon téléphone j'ai perdu l'accès au serveur distant et j'ai la
 flemme de remettre l'URL et de regénérer un code » — puis, précisé : **pas en clair dans Google

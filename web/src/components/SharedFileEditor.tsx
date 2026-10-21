@@ -4,7 +4,8 @@ import { Autosave } from '../autosave';
 import { proofreadEntry, readAiSettings, suggestProcedure } from '../ai-suggest';
 import { renderMarkdown } from '../markdown';
 import { editorKind, MAX_EDITABLE_TEXT, type FileAiMode, type FileAiProposal, type FileEditorHandle } from '../file-formats';
-import { looksLikePdf } from '../file-preview';
+import { imageMime, looksLikePdf } from '../file-preview';
+import { toBase64 } from '../docx-preview';
 import { bannerFor, idleExpired, lockBlocks, lockForgotten, lockMessage } from '../shared-session';
 import { requestLeave, setLeaveGuard } from '../shared-leave';
 import { TextFileEditor } from './TextFileEditor';
@@ -577,6 +578,11 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
     [loaded, kind, pdfUrl],
   );
   useEffect(() => () => { if (downloadUrl) URL.revokeObjectURL(downloadUrl); }, [downloadUrl]);
+  // Une image se voit sur place, reconnue à ses octets (jamais au nom : pas de SVG ni de HTML déguisé).
+  const imageSrc = useMemo(() => {
+    const mime = loaded && !kind ? imageMime(loaded.bytes) : null;
+    return mime ? `data:${mime};base64,${toBase64(loaded!.bytes)}` : '';
+  }, [loaded, kind]);
 
   const deletedConflict = banner?.kind === 'conflict' && banner.deleted;
 
@@ -705,6 +711,7 @@ export function SharedFileEditor({ path, onOpenPath, onChanged, onClose }: {
         <iframe className="shared-pdf" src={pdfUrl} title={`Aperçu de ${name}`} />
       ) : !kind ? (
         <div className="notice">
+          {imageSrc && <img className="shared-image" src={imageSrc} alt={name} />}
           <p>
             WorkLogs ne modifie pas les fichiers .{file?.ext || '?'}.
             {canOpenWith && ' « Ouvrir avec… » les ouvre dans LibreOffice, sur le vrai fichier du partage.'}

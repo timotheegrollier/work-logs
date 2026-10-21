@@ -281,7 +281,7 @@ Depuis l'option B, ce même Worker sert aussi le front (`[assets]` dans `wrangle
 Depuis le 2026-10-21, `POST /relay-key` rend aussi la clé qui chiffre, dans le Drive du compte,
 l'accès au relais du dossier partagé (`WorkLogs/WorkLogs relais.json`) : HMAC du secret et de
 l'identifiant du compte, pour un jeton que Google confirme émis pour `GOOGLE_CLIENT_ID`
-(`[vars]` de `wrangler.toml`). Rien n'est stocké. Pourquoi : décision §38.
+(`[vars]` de `wrangler.toml`). Rien n'est stocké. Pourquoi : décision §39.
 
 **Déployer** (compte Cloudflare gratuit), depuis la racine puis `oauth-proxy/` :
 
