@@ -133,7 +133,9 @@ racine du partage, 401 sans code ; le script de la VM est celui de la release,
 1. Tailscale allumé sur le téléphone (le même réseau que la VM).
 2. WorkLogs (PWA) › Paramètres › **Dossier partagé du TSE** : adresse
    `https://<vm>.<tailnet>.ts.net:8443`, code d'accès (le contenu de `/etc/worklogs-relais/code`).
-   Pour ne pas le recopier à la main : sur la VM, en root, `qrencode -t ansiutf8 < /etc/worklogs-relais/code`,
+   Pour ne pas le recopier à la main : sur la VM, `sudo qrencode -t ansiutf8 -r /etc/worklogs-relais/code`
+   (le fichier est `root:worklogs-relais` 640 ; `sudo qrencode … < fichier` échoue : la redirection
+   est faite par le shell de l'utilisateur, avant `sudo` — « Permission non accordée », vécu le 2026-10-21),
    le scanner avec l'appareil photo du téléphone, copier le texte, le coller dans le champ.
    « Enregistrer » vérifie aussitôt que le relais répond. Si Chrome demande l'accès au réseau
    local, l'accepter (adresse Tailscale privée).
