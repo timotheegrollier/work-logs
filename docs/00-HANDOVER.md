@@ -9,6 +9,11 @@ exprès depuis les Archives porte le bandeau « Document archivé » (`EntryEdit
 `.notice` existante). Test : `App.test.tsx` « changer de projet n'ouvre jamais une archive ».
 Pourquoi : `05-DECISIONS.md` §40 (dernier choix).
 
+Même lot : une **procédure** affichée au centre déplie la colonne Procédures, où elle est
+surlignée (un `useEffect` dans `App.tsx`, une fois par procédure ; refermée à la main, la
+colonne le reste). Test : « une procédure ouverte au centre déplie la colonne Procédures ».
+Pourquoi : §45.
+
 ## Lot du 2026-10-22 — les actions IA sous « ✨ IA »
 
 Les actions IA prenaient une pastille chacune ; elles sont rangées dans un menu **✨ IA** au bout

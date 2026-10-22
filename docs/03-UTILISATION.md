@@ -263,6 +263,10 @@ procédures s'y retrouvent, pastille projet à l'appui. Les procédures ne
 figurent **pas** dans le journal (seulement dans ses archives une fois archivées,
 pour pouvoir les restaurer). Comme les autres panneaux, la sidebar est toujours
 dépliée quand elle est affichée, se masque par son bouton et l'état est retenu.
+Une procédure affichée au centre — ouverte depuis une tâche, « Trouver la doc », la
+recherche ou au changement de projet — **déplie la sidebar** et y est surlignée : on voit
+d'où elle vient. La masquer ensuite tient tant que la même procédure reste ouverte ; une
+procédure archivée, absente de la sidebar, ne la déplie pas.
 
 Comme une entrée, une procédure a ses modes **Écrire** / **Lire**. Lire montre le
 document seul, sans barre d'outils ni risque de le modifier en le suivant (les liens

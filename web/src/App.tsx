@@ -254,6 +254,13 @@ export default function App() {
     localStorage.setItem('worklogs-show-procedures', showProcedures ? '1' : '0');
   }, [showProcedures]);
 
+  // Une procédure affichée au centre montre d'où elle vient : la colonne Procédures se
+  // déplie, une fois par procédure (la refermer ensuite tient). Archivée, elle n'y est pas.
+  const openProcedureId = showCenter && !sharedPath && entry?.kind === 'procedure' && !entry.archived ? entry.id : null;
+  useEffect(() => {
+    if (openProcedureId) setShowProcedures(true);
+  }, [openProcedureId]);
+
   // La recherche attend une pause de frappe avant d'interroger l'API.
   useEffect(() => {
     const timer = setTimeout(() => setQuery(search.trim()), 200);

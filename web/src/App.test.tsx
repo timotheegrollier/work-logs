@@ -1494,6 +1494,39 @@ describe('retrouver son travail', () => {
     load.mockRestore();
   });
 
+  test('une procédure ouverte au centre déplie la colonne Procédures, qui la montre', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      entries: [{ id: 'en_note', title: 'Note du jour' }, { id: 'en_proc', title: 'Vidange', kind: 'procedure' }],
+      tasks: [{ id: 'tk_v', title: 'Vidanger le bassin' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_v', 'en_proc', new Date().toISOString());
+    render(<App />);
+    const toggle = await screen.findByRole('button', { name: 'Procédures' });
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Note du jour'));
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+
+    // Ouverte depuis sa tâche : la colonne se déplie, la procédure y est désignée.
+    await user.click(await within(board()).findByRole('button', { name: 'Ouvrir Vidange' }));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Vidange'));
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'true'));
+    const panel = screen.getByRole('region', { name: 'Procédures du projet' });
+    expect(within(panel).getByRole('button', { current: true })).toHaveTextContent('Vidange');
+
+    // Refermée à la main, elle le reste pendant qu'on travaille la même procédure.
+    await user.click(toggle);
+    await user.type(screen.getByLabelText('Titre de l’entrée'), ' du bassin');
+    await waitFor(() => expect(row(api.db, 'SELECT title FROM entries WHERE id=?', 'en_proc').title).toBe('Vidange du bassin'));
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+
+    // Une note n'y touche pas ; rouvrir la procédure la redéplie.
+    await user.click(within(journal()).getByText('Note du jour'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Note du jour'));
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await user.click(within(board()).getByRole('button', { name: 'Ouvrir Vidange du bassin' }));
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'true'));
+  });
+
   test('recliquer sur le projet actif enlève le filtre', async () => {
     const user = userEvent.setup();
     seedData(api.db, {
