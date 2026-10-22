@@ -4,6 +4,7 @@ import { Autosave } from '../autosave';
 import { proofreadEntry, readAiSettings, suggestProcedure, type AiWorkContext } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
 import { AiContextDetails } from './AiContextDetails';
+import { AiMenu } from './AiMenu';
 import { AiRefinement } from './AiRefinement';
 import { renderMarkdown } from '../markdown';
 import { editorKind, MAX_EDITABLE_TEXT, type FileAiMode, type FileAiProposal, type FileEditorHandle } from '../file-formats';
@@ -691,24 +692,26 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
 
       {aiKind && loaded && (
         <div className="entry-task-action no-print">
-          <button
-            className="ghost"
-            type="button"
-            disabled={aiBusy !== null || Boolean(readOnly)}
-            title="Complète la procédure à partir du titre, du contenu et du contexte du projet sélectionné (envoyés au service IA configuré en Paramètres, à relire avant application)"
-            onClick={() => void requestAi('procedure')}
-          >
-            {aiBusy === 'procedure' ? 'Rédaction…' : '✨ Compléter'}
-          </button>
-          <button
-            className="ghost"
-            type="button"
-            disabled={aiBusy !== null || Boolean(readOnly)}
-            title="Corrige les fautes et met en page (envoie le titre, le contenu du fichier et le contexte du projet sélectionné au service IA configuré en Paramètres, à relire avant application)"
-            onClick={() => void requestAi('layout')}
-          >
-            {aiBusy === 'layout' ? 'Mise en page…' : '✨ Mettre en page'}
-          </button>
+          <AiMenu label="Assistance IA" busy={aiBusy === 'procedure' ? 'Rédaction…' : aiBusy === 'layout' ? 'Mise en page…' : null}>
+            <button
+              role="menuitem"
+              type="button"
+              disabled={aiBusy !== null || Boolean(readOnly)}
+              title="Complète la procédure à partir du titre, du contenu et du contexte du projet sélectionné (envoyés au service IA configuré en Paramètres, à relire avant application)"
+              onClick={() => void requestAi('procedure')}
+            >
+              Compléter
+            </button>
+            <button
+              role="menuitem"
+              type="button"
+              disabled={aiBusy !== null || Boolean(readOnly)}
+              title="Corrige les fautes et met en page (envoie le titre, le contenu du fichier et le contexte du projet sélectionné au service IA configuré en Paramètres, à relire avant application)"
+              onClick={() => void requestAi('layout')}
+            >
+              Mettre en page
+            </button>
+          </AiMenu>
         </div>
       )}
       {aiContext && projectId && <AiContextDetails context={aiContext} excludedIds={excludedSourceIds} onExcludedChange={excludeSources} />}

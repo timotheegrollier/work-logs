@@ -71,9 +71,8 @@ export function AiSettings({ projects = [] }: { projects?: Pick<Project, 'id' | 
         d’assistance envoie le titre, ton profil et le contexte (projet, consignes,
         documents locaux sélectionnés, tâches voisines, contenu de l’entrée,
         noms des pièces jointes, vocabulaire) au service
-        configuré, jamais automatiquement. Dans le dossier partagé, « ✨ Suggérer une
-        procédure » et « ✨ Mettre en page » envoient le nom, le dossier et le contenu
-        du fichier ouvert.
+        configuré, jamais automatiquement. Dans le dossier partagé, « ✨ IA › Compléter »
+        et « Mettre en page » envoient le nom, le dossier et le contenu du fichier ouvert.
       </p>
       <label>
         Mon contexte de travail

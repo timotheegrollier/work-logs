@@ -6,6 +6,7 @@ import { findDocuments, type FoundDocument } from '../doc-finder';
 import { richToMarkdown } from '../rich-markdown';
 import { ProcedureDraft } from './ProcedureDraft';
 import { AiContextDetails } from './AiContextDetails';
+import { AiMenu } from './AiMenu';
 import { AiRefinement } from './AiRefinement';
 
 const DRAG_TYPE = 'text/plain';
@@ -481,29 +482,27 @@ function TaskCard({
       <span aria-hidden="true">＋ </span>Documents
     </button>
   );
-  const procedureButton = (
-    <button
-      className="card-link"
-      type="button"
-      aria-label="Créer une procédure avec l’IA"
-      disabled={drafting}
-      title="Rédige une procédure réutilisable à partir de cette tâche et de ses documents liés (envoyés au service IA configuré en Paramètres) ; à relire avant de la créer"
-      onClick={() => void draftFromTask()}
-    >
-      {drafting ? 'Rédaction…' : <><span aria-hidden="true">✨ </span>Procédure</>}
-    </button>
-  );
-  const findButton = (
-    <button
-      className="card-link"
-      type="button"
-      aria-label="Trouver la documentation avec l’IA"
-      disabled={finding}
-      title="Envoie au service IA configuré en Paramètres le titre de la tâche, son projet et les titres de ses documents liés (jamais leur contenu), puis cherche dans les notes et procédures de WorkLogs et dans les noms de fichiers du dossier partagé"
-      onClick={() => void findDocs()}
-    >
-      {finding ? 'Recherche…' : <><span aria-hidden="true">✨ </span>Trouver la doc</>}
-    </button>
+  const aiMenu = (
+    <AiMenu label="Assistance IA de la tâche" className="card-link" busy={drafting ? 'Rédaction…' : finding ? 'Recherche…' : null}>
+      <button
+        role="menuitem"
+        type="button"
+        disabled={drafting}
+        title="Rédige une procédure réutilisable à partir de cette tâche et de ses documents liés (envoyés au service IA configuré en Paramètres) ; à relire avant de la créer"
+        onClick={() => void draftFromTask()}
+      >
+        Créer une procédure
+      </button>
+      <button
+        role="menuitem"
+        type="button"
+        disabled={finding}
+        title="Envoie au service IA configuré en Paramètres le titre de la tâche, son projet et les titres de ses documents liés (jamais leur contenu), puis cherche dans les notes et procédures de WorkLogs et dans les noms de fichiers du dossier partagé"
+        onClick={() => void findDocs()}
+      >
+        Trouver la doc
+      </button>
+    </AiMenu>
   );
   const finder = found ? (
     <section className="document-linker" aria-label="Documents trouvés">
@@ -824,7 +823,7 @@ function TaskCard({
       {draftError && <p className="error" role="alert">{draftError}</p>}
       {finder}
       {findError && <p className="error" role="alert">{findError}</p>}
-      {!linking && !creatingEntry && !procedureDraft && !found && <div className="card-links">{linkButton}{entryButton}{procedureButton}{findButton}</div>}
+      {!linking && !creatingEntry && !procedureDraft && !found && <div className="card-links">{linkButton}{entryButton}{aiMenu}</div>}
     </div>
   );
 }
