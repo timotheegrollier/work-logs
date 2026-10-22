@@ -91,6 +91,9 @@ déplient en bas de la colonne de gauche, par jour comme le journal ;
 **Désarchiver** remet le document à sa place. Même geste pour un document Google :
 l'archiver le masque de l'application locale en conservant le fichier distant, tandis
 que **Supprimer** ne retire que la copie locale (jamais le fichier Google).
+Un document archivé ne s'ouvre jamais tout seul, même en changeant de projet : il faut
+aller le chercher dans les Archives, et il s'affiche alors sous le bandeau
+« Document archivé ».
 
 ### Aide-mémoire Markdown
 

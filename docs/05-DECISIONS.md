@@ -1677,6 +1677,11 @@ contrairement à une carte de tâche.
   « Documents Google » applique le même réflexe qu'une carte de tâche : le filtre passe au
   projet du document. Le journal ne montre donc pas un document qui n'appartient pas à la
   liste affichée.
+- **Jamais une archive (2026-10-22).** Ce qui se rouvre tout seul est la plus récente entrée
+  **non archivée** du journal, sinon une procédure non archivée, sinon rien : une archive
+  ouverte sans l'avoir demandée passait pour un document en cours. Ouverte exprès depuis les
+  Archives, elle porte le bandeau « Document archivé » (aussi quand une tâche terminée
+  l'archive sous les yeux).
 
 **Écartés.** Vider le centre sans rien rouvrir (un écran vide après chaque pastille, alors que
 l'ouverture d'une entrée est le geste courant) ; fermer aussi le fichier en revenant à « Tout »

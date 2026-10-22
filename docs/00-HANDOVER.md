@@ -1,5 +1,14 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-22 — un changement de projet n'ouvre jamais une archive
+
+Changer de projet (ou lancer l'app, ou supprimer l'entrée ouverte) rouvrait la première
+entrée du projet, archivée comprise. `reload` (`App.tsx`) ne choisit plus que parmi les
+entrées non archivées : journal d'abord, puis procédure, sinon rien. Une archive ouverte
+exprès depuis les Archives porte le bandeau « Document archivé » (`EntryEditor.tsx`, classe
+`.notice` existante). Test : `App.test.tsx` « changer de projet n'ouvre jamais une archive ».
+Pourquoi : `05-DECISIONS.md` §40 (dernier choix).
+
 ## Lot du 2026-10-22 — les actions IA sous « ✨ IA »
 
 Les actions IA prenaient une pastille chacune ; elles sont rangées dans un menu **✨ IA** au bout

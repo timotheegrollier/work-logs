@@ -746,6 +746,11 @@ export function EntryEditor({
 
   return (
     <section className={'editor' + (googleSync ? ' google-editor' : '') + (nativeGoogle ? ' has-google-native' : '')} aria-label="Entrée">
+      {Boolean(archived) && (
+        <p className="notice no-print" role="status">
+          <b>Document archivé.</b> Il ne figure plus que dans les Archives du journal ; « Désarchiver » le remet en place.
+        </p>
+      )}
       {googleSync && <div className="document-heading no-print">
         <div><span className="document-eyebrow">Google Docs</span><h1>{googleSync.document_title || draft.title}</h1></div>
         {integratedGoogle ? !nativeGoogle && <button className="sync-primary" disabled={syncing} onClick={() => void openIntegratedGoogle()}>{googleSync.dirty ? 'Envoyer le brouillon et ouvrir l’éditeur complet' : 'Modifier dans WorkLogs'}</button> : <a className="ghost" href={googleUrl} target="_blank" rel="noopener noreferrer">Ouvrir dans Google Docs ↗</a>}
