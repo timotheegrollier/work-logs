@@ -207,8 +207,9 @@ test('IA : une entrée du journal devient une procédure, relue puis créée à 
   await expect(content.locator('ol > li')).toHaveCount(3);
   await expect(content.locator('pre code')).toHaveText('sudo systemctl restart pompe');
   await expect(journal.getByText('Relancer la pompe')).toBeHidden();
-  await page.getByRole('button', { name: 'Procédures', exact: true }).click();
-  await expect(panel(page).getByText('Relancer la pompe')).toBeVisible();
+  // Affichée au centre, elle a déplié la colonne Procédures, où elle est désignée.
+  await expect(page.getByRole('button', { name: 'Procédures', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(panel(page).getByRole('button', { name: /^Relancer la pompe/ })).toHaveAttribute('aria-current', 'true');
 
   // Relue depuis le serveur ; la note du jour n'a pas bougé.
   await page.reload();

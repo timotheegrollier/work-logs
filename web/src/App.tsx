@@ -254,6 +254,13 @@ export default function App() {
     localStorage.setItem('worklogs-show-procedures', showProcedures ? '1' : '0');
   }, [showProcedures]);
 
+  // Une procédure affichée au centre montre d'où elle vient : la colonne Procédures se
+  // déplie, une fois par procédure (la refermer ensuite tient). Archivée, elle n'y est pas.
+  const openProcedureId = showCenter && !sharedPath && entry?.kind === 'procedure' && !entry.archived ? entry.id : null;
+  useEffect(() => {
+    if (openProcedureId) setShowProcedures(true);
+  }, [openProcedureId]);
+
   // La recherche attend une pause de frappe avant d'interroger l'API.
   useEffect(() => {
     const timer = setTimeout(() => setQuery(search.trim()), 200);
@@ -276,10 +283,12 @@ export default function App() {
               ...(selectedSummary.kind === 'procedure' ? { attachments: next.procedure_attachments.filter((file) => file.entry_id === current.id) } : {}) }
           : current);
       }
-      // Rien de sélectionné (premier chargement, ou entrée supprimée) : on ouvre la
-      // plus récente du journal — jamais une procédure, qui n'y figure pas.
+      // Rien de sélectionné (premier chargement, changement de projet, entrée supprimée) :
+      // on ouvre la plus récente du journal, sinon une procédure — jamais une archive,
+      // qui ne s'ouvre que si on va la chercher dans les Archives.
       const stillThere = next.entries.some((e) => e.id === selectedRef.current || (documentRef.current && e.google_document_id === documentRef.current));
-      if (!stillThere) setSelectedId((next.entries.find((e) => e.kind !== 'procedure') ?? next.entries[0])?.id ?? null);
+      const active = next.entries.filter((e) => !e.archived);
+      if (!stillThere) setSelectedId((active.find((e) => e.kind !== 'procedure') ?? active[0])?.id ?? null);
     } catch {
       setError('API injoignable. Lance `npm run dev` dans /home/timo/WorkLogs.');
     }

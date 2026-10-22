@@ -91,6 +91,9 @@ déplient en bas de la colonne de gauche, par jour comme le journal ;
 **Désarchiver** remet le document à sa place. Même geste pour un document Google :
 l'archiver le masque de l'application locale en conservant le fichier distant, tandis
 que **Supprimer** ne retire que la copie locale (jamais le fichier Google).
+Un document archivé ne s'ouvre jamais tout seul, même en changeant de projet : il faut
+aller le chercher dans les Archives, et il s'affiche alors sous le bandeau
+« Document archivé ».
 
 ### Aide-mémoire Markdown
 
@@ -260,6 +263,10 @@ procédures s'y retrouvent, pastille projet à l'appui. Les procédures ne
 figurent **pas** dans le journal (seulement dans ses archives une fois archivées,
 pour pouvoir les restaurer). Comme les autres panneaux, la sidebar est toujours
 dépliée quand elle est affichée, se masque par son bouton et l'état est retenu.
+Une procédure affichée au centre — ouverte depuis une tâche, « Trouver la doc », la
+recherche ou au changement de projet — **déplie la sidebar** et y est surlignée : on voit
+d'où elle vient. La masquer ensuite tient tant que la même procédure reste ouverte ; une
+procédure archivée, absente de la sidebar, ne la déplie pas.
 
 Comme une entrée, une procédure a ses modes **Écrire** / **Lire**. Lire montre le
 document seul, sans barre d'outils ni risque de le modifier en le suivant (les liens

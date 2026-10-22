@@ -1455,6 +1455,78 @@ describe('retrouver son travail', () => {
     }
   });
 
+  test('changer de projet n’ouvre jamais une archive ; ouverte exprès, elle se dit archivée', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Beta' }, { id: 'pr_c', name: 'Gamma' }],
+      entries: [
+        { id: 'en_a', title: 'Entrée Alpha', project_id: 'pr_a' },
+        { id: 'en_b_old', title: 'Panne réglée', project_id: 'pr_b', date: '2026-06-03' },
+        { id: 'en_b', title: 'Entrée Beta', project_id: 'pr_b', date: '2026-06-01' },
+        { id: 'en_c', title: 'Procédure close', project_id: 'pr_c', kind: 'procedure' },
+      ],
+    });
+    for (const id of ['en_b_old', 'en_c']) api.db.prepare('UPDATE entries SET archived=1 WHERE id=?').run(id);
+    const load = vi.spyOn(clientApi, 'entry');
+    render(<App />);
+    await user.click(await within(filters()).findByRole('button', { name: /Alpha/ }));
+    await waitFor(() => expect(within(editor()).getByLabelText('Titre de l’entrée')).toHaveValue('Entrée Alpha'));
+
+    // La plus récente de Beta est archivée : c'est la suivante qui s'ouvre.
+    await user.click(within(filters()).getByRole('button', { name: /Beta/ }));
+    await waitFor(() => expect(within(editor()).getByLabelText('Titre de l’entrée')).toHaveValue('Entrée Beta'));
+    expect(within(editor()).queryByText('Document archivé.')).not.toBeInTheDocument();
+
+    // Gamma n'a qu'une procédure archivée : rien ne s'ouvre tout seul.
+    await user.click(within(filters()).getByRole('button', { name: /Gamma/ }));
+    await waitFor(() => expect(within(journal()).queryByText('Entrée Beta')).not.toBeInTheDocument());
+    expect(screen.queryByRole('region', { name: 'Entrée' })).not.toBeInTheDocument();
+    expect(load.mock.calls.map(([id]) => id)).not.toContain('en_b_old');
+    expect(load.mock.calls.map(([id]) => id)).not.toContain('en_c');
+
+    // Allée chercher dans les Archives, elle s'ouvre et le dit.
+    await user.click(within(journal()).getByText('Archives', { selector: 'summary' }));
+    await user.click(await within(journal()).findByText('Procédure close'));
+    await waitFor(() => expect(within(editor()).getByLabelText('Titre de l’entrée')).toHaveValue('Procédure close'));
+    expect(within(editor()).getByText('Document archivé.')).toBeInTheDocument();
+    await user.click(within(editor()).getByRole('button', { name: 'Désarchiver' }));
+    await waitFor(() => expect(within(editor()).queryByText('Document archivé.')).not.toBeInTheDocument());
+    load.mockRestore();
+  });
+
+  test('une procédure ouverte au centre déplie la colonne Procédures, qui la montre', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      entries: [{ id: 'en_note', title: 'Note du jour' }, { id: 'en_proc', title: 'Vidange', kind: 'procedure' }],
+      tasks: [{ id: 'tk_v', title: 'Vidanger le bassin' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_v', 'en_proc', new Date().toISOString());
+    render(<App />);
+    const toggle = await screen.findByRole('button', { name: 'Procédures' });
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Note du jour'));
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+
+    // Ouverte depuis sa tâche : la colonne se déplie, la procédure y est désignée.
+    await user.click(await within(board()).findByRole('button', { name: 'Ouvrir Vidange' }));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Vidange'));
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'true'));
+    const panel = screen.getByRole('region', { name: 'Procédures du projet' });
+    expect(within(panel).getByRole('button', { current: true })).toHaveTextContent('Vidange');
+
+    // Refermée à la main, elle le reste pendant qu'on travaille la même procédure.
+    await user.click(toggle);
+    await user.type(screen.getByLabelText('Titre de l’entrée'), ' du bassin');
+    await waitFor(() => expect(row(api.db, 'SELECT title FROM entries WHERE id=?', 'en_proc').title).toBe('Vidange du bassin'));
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+
+    // Une note n'y touche pas ; rouvrir la procédure la redéplie.
+    await user.click(within(journal()).getByText('Note du jour'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Note du jour'));
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await user.click(within(board()).getByRole('button', { name: 'Ouvrir Vidange du bassin' }));
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'true'));
+  });
+
   test('recliquer sur le projet actif enlève le filtre', async () => {
     const user = userEvent.setup();
     seedData(api.db, {

@@ -1677,6 +1677,11 @@ contrairement à une carte de tâche.
   « Documents Google » applique le même réflexe qu'une carte de tâche : le filtre passe au
   projet du document. Le journal ne montre donc pas un document qui n'appartient pas à la
   liste affichée.
+- **Jamais une archive (2026-10-22).** Ce qui se rouvre tout seul est la plus récente entrée
+  **non archivée** du journal, sinon une procédure non archivée, sinon rien : une archive
+  ouverte sans l'avoir demandée passait pour un document en cours. Ouverte exprès depuis les
+  Archives, elle porte le bandeau « Document archivé » (aussi quand une tâche terminée
+  l'archive sous les yeux).
 
 **Écartés.** Vider le centre sans rien rouvrir (un écran vide après chaque pastille, alors que
 l'ouverture d'une entrée est le geste courant) ; fermer aussi le fichier en revenant à « Tout »
@@ -1865,3 +1870,24 @@ par le menu (`aiAction` dans `App.test.tsx`, trois specs Playwright).
 
 **Rouvrir si** une action IA devient quotidienne au point de mériter sa pastille, ou si le menu
 doit s'ouvrir vers le haut (bas d'écran sans place) : alors le positionner au calcul.
+
+## 45. Une procédure ouverte déplie la colonne Procédures — 2026-10-22
+
+**La demande.** « Si le document affiché dans le module Écriture est une procédure, il faut que
+ça déplie l'onglet Procédures pour voir directement d'où provient le document. »
+
+**Décision.** Un seul point, `App.tsx` : dès qu'une procédure non archivée s'affiche au centre,
+la colonne Procédures s'affiche (`showProcedures`), où `ProcedureList` la surligne déjà. Le
+réflexe vaut quel que soit le chemin (tâche, « Trouver la doc », recherche, changement de
+projet, procédure créée par l'IA), parce qu'il regarde ce qui est affiché et non le geste qui
+l'a ouvert.
+- **Une fois par procédure.** Masquer la colonne ensuite tient tant que la même procédure reste
+  ouverte : l'outil ne reprend pas la main sur un choix qu'on vient de faire. Ouvrir une autre
+  procédure (ou revenir à celle-ci après une note) redéplie.
+- **Rien pour une archive** : elle n'est pas dans la colonne, la déplier ne montrerait rien ;
+  le bandeau « Document archivé » dit déjà d'où elle vient (§40).
+
+**Écarté.** Déplier aussi pour un fichier du dossier partagé (son arbre est dans la même
+colonne) : la demande parle des procédures, et l'arbre ne déplie pas encore les dossiers
+jusqu'au fichier ouvert. **Rouvrir si** c'est demandé : la même ligne, avec `sharedPath`.
+
