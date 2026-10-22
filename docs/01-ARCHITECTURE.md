@@ -232,7 +232,8 @@ une tâche, une entrée ou une association inconnue renvoie `404` avec un messag
 | `components/EntryEditor.tsx` | titre, date, projet, Écrire/Lire (entrées Markdown et procédures locales), enregistrement auto, pièces jointes |
 | `components/RichEditor.tsx` | éditeur Tiptap et barre de mise en forme ; `readOnly` = mode Lire d'une procédure |
 | `components/GoogleDrive.tsx` | dialogue Drive dédié, configuration et documents autorisés |
-| `components/TaskBoard.tsx` | ajout rapide, 3 colonnes, glisser-déposer HTML5, édition en place, associations de documents, ✨ Procédure |
+| `components/TaskBoard.tsx` | ajout rapide, 3 colonnes, glisser-déposer HTML5, édition en place, associations de documents, menu ✨ IA de la carte |
+| `components/AiMenu.tsx` | menu « ✨ IA » : les actions IA d'une note, d'un fichier du partage ou d'une carte derrière un bouton (clavier du menu du compte) |
 | `components/ProjectBar.tsx` | pastilles de filtre + panneau de gestion repliable |
 | `styles.css` | thèmes clair/sombre par variables, typographie du document, feuille d'impression |
 

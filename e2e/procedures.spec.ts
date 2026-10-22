@@ -143,7 +143,8 @@ test('IA dans une procédure : étapes proposées, relues puis appliquées au do
   await title.fill('Vidange du bassin 3');
   await expect(page.getByText('Enregistré', { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: '✨ Compléter' }).click();
+  await page.getByRole('button', { name: 'Assistance IA', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Compléter', exact: true }).click();
   const proposal = page.getByRole('region', { name: 'Procédure proposée' });
   await expect(proposal.getByText('Ouvrir la vanne de fond')).toBeVisible();
   expect(prompt).toContain('Procédure : Vidange du bassin 3');
@@ -190,7 +191,8 @@ test('IA : une entrée du journal devient une procédure, relue puis créée à 
   await page.getByLabel('Contenu en Markdown').fill('Disjoncteur coupé, circuit purgé, puis :\n\n```\nsudo systemctl restart pompe\n```');
   await expect(editor.getByText('Enregistré', { exact: true })).toBeVisible();
 
-  await editor.getByRole('button', { name: '✨ Créer une procédure' }).click();
+  await editor.getByRole('button', { name: 'Assistance IA', exact: true }).click();
+  await editor.getByRole('menuitem', { name: 'Créer une procédure', exact: true }).click();
   const draft = page.getByRole('form', { name: 'Procédure rédigée' });
   await expect(draft.getByText('Purger le circuit')).toBeVisible();
   expect(prompt).toContain('Entrée du journal : Panne de la pompe');

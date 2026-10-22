@@ -30,6 +30,12 @@ const journal = () => screen.getByRole('region', { name: 'Journal' });
 const board = () => screen.getByRole('region', { name: 'Tâches' });
 const editor = () => screen.getByRole('region', { name: 'Entrée' });
 const filters = () => screen.getByRole('group', { name: 'Filtrer par projet' });
+/** Ouvre le menu « ✨ IA » (celui de l'entrée par défaut) et rend l'action demandée. */
+async function aiAction(name: string, scope: HTMLElement = document.body, menu = 'Assistance IA') {
+  const trigger = await within(scope).findByRole('button', { name: menu });
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
+  return within(scope).findByRole('menuitem', { name });
+}
 const row = (db: typeof api.db, sql: string, ...args: unknown[]) =>
   db.prepare(sql).get(...args) as Record<string, unknown>;
 
@@ -635,7 +641,7 @@ describe('écrire une entrée', () => {
     await api.upload('devis.pdf', '%PDF', { entry_id: 'en_note' });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: '✨ Suggérer des sous-tâches' }));
+    await user.click(await aiAction('Suggérer des sous-tâches'));
     // Le prompt connaît le contenu : texte, case existante, pièce jointe et tâche liée.
     await waitFor(() => expect(aiBodies).toHaveLength(1));
     const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
@@ -656,14 +662,14 @@ describe('écrire une entrée', () => {
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Intro.' }] });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: '✨ Suggérer des sous-tâches' }));
+    await user.click(await aiAction('Suggérer des sous-tâches'));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Retirer la suggestion' })).toBeInTheDocument();
     });
 
     // Second appel : le bloc est remplacé en place, pas dupliqué.
     mockAiSuggest('Payer');
-    await user.click(screen.getByRole('button', { name: '✨ Suggérer des sous-tâches' }));
+    await user.click(await aiAction('Suggérer des sous-tâches'));
     await user.click(screen.getByRole('button', { name: 'Écrire' }));
     await waitFor(() => {
       expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Intro.\n## Sous-tâches\n- [ ] Payer\n');
@@ -683,7 +689,7 @@ describe('écrire une entrée', () => {
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Intro.\n- [ ] Déjà là\n' }] });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: '✨ Suggérer des sous-tâches' }));
+    await user.click(await aiAction('Suggérer des sous-tâches'));
     const refine = await screen.findByRole('region', { name: 'Affiner les sous-tâches suggérées' });
     mockAiSuggest('Payer la facture');
     await user.click(within(refine).getByRole('button', { name: 'Plus court' }));
@@ -700,6 +706,45 @@ describe('écrire une entrée', () => {
     });
   });
 
+  test('« ✨ IA » range les actions de la note dans un menu, au clavier comme à la souris', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Réunion', content_md: 'on a decidé' }] });
+    const diverted = globalThis.fetch;
+    let finish: (() => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('chat/completions')) return new Promise<Response>((resolve) => { finish = () => resolve({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '## Réunion' } }] }) } as Response); });
+      return diverted(input, init);
+    }));
+    render(<App />);
+
+    const trigger = await screen.findByRole('button', { name: 'Assistance IA' });
+    await user.click(trigger);
+    const menu = screen.getByRole('menu', { name: 'Assistance IA' });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(
+      ['Compléter', 'Mettre en page', 'Suggérer des sous-tâches', 'Extraire les actions', 'Créer une procédure'],
+    );
+    expect(within(menu).getByRole('menuitem', { name: 'Compléter' })).toHaveFocus();
+    await user.keyboard('{ArrowUp}');
+    expect(within(menu).getByRole('menuitem', { name: 'Créer une procédure' })).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    await user.click(trigger);
+    await user.click(screen.getByLabelText('Titre de l’entrée'));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    // Choisir referme le menu : le bouton dit l'attente à sa place et garde le focus.
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Mise en page…' })).toHaveFocus();
+    await act(async () => { finish?.(); });
+    expect(await screen.findByRole('region', { name: 'Mise en page proposée' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Assistance IA' })).toBe(trigger);
+  });
+
   test('met en page une entrée Markdown après relecture de la proposition', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-key', 'cle-test');
@@ -707,7 +752,7 @@ describe('écrire une entrée', () => {
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Réunion', content_md: 'on a decidé' }] });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: '✨ Mettre en page' }));
+    await user.click(await aiAction('Mettre en page'));
     const proposal = await screen.findByRole('region', { name: 'Mise en page proposée' });
     expect(within(proposal).getByRole('heading', { name: 'Réunion' })).toBeInTheDocument();
     const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
@@ -732,7 +777,7 @@ describe('écrire une entrée', () => {
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'texte original' }] });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: '✨ Mettre en page' }));
+    await user.click(await aiAction('Mettre en page'));
     const proposal = await screen.findByRole('region', { name: 'Mise en page proposée' });
     expect(within(proposal).getByText('Première proposition.')).toBeInTheDocument();
 
@@ -752,14 +797,14 @@ describe('écrire une entrée', () => {
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'corige' }] });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: '✨ Mettre en page' }));
+    await user.click(await aiAction('Mettre en page'));
     await user.click(await screen.findByRole('button', { name: 'Ignorer' }));
     expect(screen.queryByRole('region', { name: 'Mise en page proposée' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Écrire' }));
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('corige');
 
     // Une frappe après la demande : appliquer l'écraserait, on refuse.
-    await user.click(screen.getByRole('button', { name: '✨ Mettre en page' }));
+    await user.click(await aiAction('Mettre en page'));
     await screen.findByRole('region', { name: 'Mise en page proposée' });
     await user.type(screen.getByLabelText('Contenu en Markdown'), '!');
     await user.click(screen.getByRole('button', { name: 'Appliquer la mise en page' }));
@@ -791,9 +836,10 @@ describe('écrire une entrée', () => {
     render(<App />);
     await openProcedure(user, 'Changer le filtre');
 
+    const complete = await aiAction('Compléter');
     // Une procédure propose ses étapes, pas des sous-tâches.
-    expect(screen.queryByRole('button', { name: '✨ Suggérer des sous-tâches' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '✨ Compléter' }));
+    expect(screen.queryByRole('menuitem', { name: 'Suggérer des sous-tâches' })).not.toBeInTheDocument();
+    await user.click(complete);
     const proposal = await screen.findByRole('region', { name: 'Procédure proposée' });
     expect(within(proposal).getByText('Changer la cartouche')).toBeInTheDocument();
     // Le titre en tête de réponse ferait doublon avec celui de l'entrée.
@@ -834,7 +880,7 @@ describe('écrire une entrée', () => {
     render(<App />);
     await openProcedure(user, 'Vidange');
 
-    await user.click(screen.getByRole('button', { name: '✨ Mettre en page' }));
+    await user.click(await aiAction('Mettre en page'));
     const proposal = await screen.findByRole('region', { name: 'Mise en page proposée' });
     // Le document riche part en Markdown, annoncé comme une procédure.
     const request = aiBodies.at(-1) as { messages: { role: string; content: string }[] };
@@ -857,7 +903,7 @@ describe('écrire une entrée', () => {
     render(<App />);
     await openProcedure(user, 'Vidange');
 
-    await user.click(screen.getByRole('button', { name: '✨ Compléter' }));
+    await user.click(await aiAction('Compléter'));
     const proposal = await screen.findByRole('region', { name: 'Procédure proposée' });
     // Le document change après la demande (Rechercher et remplacer) : appliquer l'écraserait.
     // La procédure s'ouvre en lecture : Écrire donne la barre d'outils.
@@ -882,8 +928,8 @@ describe('écrire une entrée', () => {
     render(<App />);
     await openProcedure(user, 'Consignes Google');
     expect(documentContent()).toHaveTextContent('Google');
-    expect(screen.queryByRole('button', { name: '✨ Compléter' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '✨ Mettre en page' })).not.toBeInTheDocument();
+    // Ni « Compléter » ni « Mettre en page » : pas de menu IA du tout.
+    expect(screen.queryByRole('button', { name: 'Assistance IA' })).not.toBeInTheDocument();
     // Ni Lire ni Écrire : un document Google garde son propre parcours d'édition.
     expect(screen.queryByRole('button', { name: 'Lire' })).not.toBeInTheDocument();
     expect(documentContent()).toHaveAttribute('contenteditable', 'true');
@@ -901,7 +947,7 @@ describe('écrire une entrée', () => {
     api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_pompe', 'en_panne', new Date().toISOString());
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: '✨ Compléter' }));
+    await user.click(await aiAction('Compléter'));
     const proposal = await screen.findByRole('region', { name: 'Note proposée' });
     expect(within(proposal).getByText('La pompe du bassin 3 s’est arrêtée.')).toBeInTheDocument();
     // Le titre en tête de réponse ferait doublon avec celui de l'entrée.
@@ -930,7 +976,7 @@ describe('écrire une entrée', () => {
     api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(richText('vanne bassin 2 fuit', 'changer le joint'), 'en_doc');
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: '✨ Compléter' }));
+    await user.click(await aiAction('Compléter'));
     const proposal = await screen.findByRole('region', { name: 'Note proposée' });
     expect(within(proposal).getByText(/surlignage, couleurs et alignements sont remis à plat/)).toBeInTheDocument();
     const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
@@ -955,7 +1001,7 @@ describe('écrire une entrée', () => {
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Réunion fournisseur', content_md: points }] });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: '✨ Compléter' }));
+    await user.click(await aiAction('Compléter'));
     const proposal = await screen.findByRole('region', { name: 'Note proposée' });
     await within(proposal).findByText('Première rédaction, plutôt longue.');
     mockAiSuggest('Rédaction courte.');
@@ -976,7 +1022,7 @@ describe('écrire une entrée', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Consignes Google'));
     expect(screen.getByRole('button', { name: 'Créer une tâche liée' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '✨ Compléter' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Assistance IA' })).not.toBeInTheDocument();
   });
 
   test('une entrée devient une procédure : rédigée par l’IA, relue, créée à part puis ouverte', async () => {
@@ -992,7 +1038,7 @@ describe('écrire une entrée', () => {
     await api.upload('schéma.pdf', '%PDF', { entry_id: 'en_panne' });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: '✨ Créer une procédure' }));
+    await user.click(await aiAction('Créer une procédure'));
     const draft = await screen.findByRole('form', { name: 'Procédure rédigée' });
     expect(within(draft).getByText('Purger le circuit')).toBeInTheDocument();
     // Le « # » de tête devient le titre, sans doublon dans le corps.
@@ -1051,7 +1097,7 @@ describe('écrire une entrée', () => {
     render(<App />);
 
     const card = (await within(board()).findByText('Changer le filtre')).closest('.card') as HTMLElement;
-    await user.click(within(card).getByRole('button', { name: 'Créer une procédure avec l’IA' }));
+    await user.click(await aiAction('Créer une procédure', card, 'Assistance IA de la tâche'));
     const draft = await within(card).findByRole('form', { name: 'Procédure rédigée' });
     expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Changer la cartouche');
     const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
@@ -1072,7 +1118,7 @@ describe('écrire une entrée', () => {
     expect(created.archived).toBe(0);
     expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries WHERE entry_id=?', created.id).n).toBe(0);
     expect(within(card).queryByRole('form', { name: 'Procédure rédigée' })).not.toBeInTheDocument();
-    expect(within(card).getByRole('button', { name: 'Créer une procédure avec l’IA' })).toBeInTheDocument();
+    expect(await aiAction('Créer une procédure', card, 'Assistance IA de la tâche')).toBeInTheDocument();
   });
 
   test('une recherche en cours ne masque pas la procédure créée', async () => {
@@ -1086,7 +1132,7 @@ describe('écrire une entrée', () => {
     await waitFor(() => expect(within(journal()).queryByText('Autre note')).not.toBeInTheDocument());
     await user.click(within(journal()).getByText('Panne du matin'));
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Panne du matin'));
-    await user.click(screen.getByRole('button', { name: '✨ Créer une procédure' }));
+    await user.click(await aiAction('Créer une procédure'));
     await user.click(within(await screen.findByRole('form', { name: 'Procédure rédigée' })).getByRole('button', { name: 'Créer la procédure' }));
 
     // « Relancer la pompe » ne contient pas « Panne » : la recherche est effacée, la procédure reste ouverte.
@@ -1104,7 +1150,7 @@ describe('écrire une entrée', () => {
     api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(richText('Vanne ouverte.', 'Bassin rempli.'), 'en_doc');
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: '✨ Créer une procédure' }));
+    await user.click(await aiAction('Créer une procédure'));
     const draft = await screen.findByRole('form', { name: 'Procédure rédigée' });
     expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Première version');
     expect((aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content)
@@ -1152,13 +1198,14 @@ describe('écrire une entrée', () => {
     render(<App />);
 
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Consignes Google'));
-    expect(screen.queryByRole('button', { name: '✨ Créer une procédure' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Assistance IA' })).not.toBeInTheDocument();
     await openProcedure(user, 'Vidange');
-    expect(screen.queryByRole('button', { name: '✨ Créer une procédure' })).not.toBeInTheDocument();
+    await aiAction('Compléter');
+    expect(screen.queryByRole('menuitem', { name: 'Créer une procédure' })).not.toBeInTheDocument();
 
     // Sans clé, la carte renvoie aux Paramètres sans appeler personne.
     const card = (await within(board()).findByText('Changer le filtre')).closest('.card') as HTMLElement;
-    await user.click(within(card).getByRole('button', { name: 'Créer une procédure avec l’IA' }));
+    await user.click(await aiAction('Créer une procédure', card, 'Assistance IA de la tâche'));
     expect(await within(card).findByRole('alert')).toHaveTextContent('⚙ Paramètres');
     expect(calls.some((url) => url.includes('chat/completions'))).toBe(false);
   });
@@ -3414,7 +3461,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     const editorRegion = await openFromTree('Imprimante.md');
     const area = await within(editorRegion).findByLabelText('Contenu de Imprimante.md');
 
-    fireEvent.click(within(editorRegion).getByRole('button', { name: '✨ Compléter' }));
+    fireEvent.click(await aiAction('Compléter', editorRegion));
     const proposal = await within(sharedEditor()).findByRole('region', { name: 'Procédure proposée' });
     // Le titre du fichier fait le titre de la procédure ; l'IA lit ce qui suit.
     expect(aiUserMessage()).toBe('Procédure : Imprimante du bureau\nDéjà écrit :\nIP : 10.0.0.5');
@@ -3445,7 +3492,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
 
     // L'IA a perdu le tableau : rien n'est proposé.
     mockAiSuggest('# Filtration\n\nLaver le filtre chaque lundi.\n\n[[objet 1 : Image]]\n\n[[objet 3 : Table des matières]]');
-    fireEvent.click(within(editorRegion).getByRole('button', { name: '✨ Mettre en page' }));
+    fireEvent.click(await aiAction('Mettre en page', editorRegion));
     expect(await within(sharedEditor()).findByRole('alert')).toHaveTextContent('La proposition a perdu un objet du document (tableau) : relance-la.');
     // Le document part en Markdown, ses objets en marqueurs.
     expect(aiUserMessage()).toContain('Procédure : Filtration\n\nTexte :\n# Filtration\n\n*Laver* **le filtre** chaque lundi.');
@@ -3453,7 +3500,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     expect(within(sharedEditor()).queryByRole('region', { name: 'Mise en page proposée' })).not.toBeInTheDocument();
 
     mockAiSuggest('# Filtration\n\nLaver le filtre chaque lundi.\n\nVoir [le guide](https://exemple.fr/guide).\n\n1. Arrêter la pompe\n2. Fermer la vanne\n\n[[objet 1 : Image]]\n\n[[objet 2 : Tableau]]\n\n[[objet 3 : Table des matières]]');
-    fireEvent.click(within(sharedEditor()).getByRole('button', { name: '✨ Mettre en page' }));
+    fireEvent.click(await aiAction('Mettre en page', sharedEditor()));
     const proposal = await within(sharedEditor()).findByRole('region', { name: 'Mise en page proposée' });
     expect(within(proposal).getByText(/Image — conservé tel quel/)).toBeInTheDocument();
     fireEvent.click(within(proposal).getByRole('button', { name: 'Appliquer la mise en page' }));
@@ -3488,17 +3535,17 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     await write('.~lock.planning.txt#', 'Hélène Martin,hmartin,TSE01,05.10.2026 09:00,file:///C:/x;');
     act(() => { window.dispatchEvent(new Event('focus')); });
     expect(await within(sharedEditor()).findByText(/Lecture seule — Ouvert par Hélène Martin dans LibreOffice/)).toBeInTheDocument();
-    expect(within(sharedEditor()).getByRole('button', { name: '✨ Compléter' })).toBeDisabled();
-    expect(within(sharedEditor()).getByRole('button', { name: '✨ Mettre en page' })).toBeDisabled();
+    expect(await aiAction('Compléter', sharedEditor())).toBeDisabled();
+    expect(await aiAction('Mettre en page', sharedEditor())).toBeDisabled();
 
     // Un tableur n'a pas de procédure à rédiger.
     await openFromTree('relevés.csv');
     await within(sharedEditor()).findByRole('grid', { name: 'Tableau relevés.csv' });
-    expect(within(sharedEditor()).queryByRole('button', { name: '✨ Mettre en page' })).not.toBeInTheDocument();
+    expect(within(sharedEditor()).queryByRole('button', { name: 'Assistance IA' })).not.toBeInTheDocument();
 
     await openFromTree('Redémarrage.txt');
     const area = await within(sharedEditor()).findByLabelText('Contenu de Redémarrage.txt');
-    fireEvent.click(within(sharedEditor()).getByRole('button', { name: '✨ Compléter' }));
+    fireEvent.click(await aiAction('Compléter', sharedEditor()));
     const proposal = await within(sharedEditor()).findByRole('region', { name: 'Procédure proposée' });
     expect((aiBodies.at(-1) as { messages: { content: string }[] }).messages[0].content).toMatch(/texte brut, sans syntaxe Markdown/);
     expect(aiUserMessage()).toBe('Procédure : Redémarrage\nDéjà écrit :\nservice web');
@@ -3521,7 +3568,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     await write('notes.md', 'Laver le filtre.\n');
     render(<App />);
     await openFromTree('notes.md');
-    fireEvent.click(await within(sharedEditor()).findByRole('button', { name: '✨ Mettre en page' }));
+    fireEvent.click(await aiAction('Mettre en page', sharedEditor()));
     expect(await within(sharedEditor()).findByRole('alert')).toHaveTextContent('Colle ta clé IA dans ⚙ Paramètres pour activer la mise en page.');
     expect(calls.some((url) => url.includes('chat/completions'))).toBe(false);
   });
@@ -3838,7 +3885,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     };
     const findDocs = async () => {
       const card = (await within(board()).findByText('Brancher la nouvelle imprimante')).closest('.card') as HTMLElement;
-      fireEvent.click(within(card).getByRole('button', { name: 'Trouver la documentation avec l’IA' }));
+      fireEvent.click(await aiAction('Trouver la doc', card, 'Assistance IA de la tâche'));
       return card;
     };
 
@@ -3903,7 +3950,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
       const card = await findDocs();
       expect(await within(card).findByRole('alert')).toHaveTextContent('Réponse IA illisible : réessaie.');
       expect(within(card).queryByRole('region', { name: 'Documents trouvés' })).not.toBeInTheDocument();
-      expect(within(card).getByRole('button', { name: 'Trouver la documentation avec l’IA' })).toBeEnabled();
+      expect(await aiAction('Trouver la doc', card, 'Assistance IA de la tâche')).toBeEnabled();
       expect(search).not.toHaveBeenCalled();
     });
   });
@@ -3927,7 +3974,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     render(<App />);
     // Le démarrage lit d'abord le journal puis le document sélectionné.
     await within(journal()).findByText('Compte rendu');
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Extraire les actions' }));
+    fireEvent.click(await aiAction('Extraire les actions'));
     const proposal = await screen.findByRole('region', { name: 'Actions proposées' });
     expect(within(proposal).getAllByRole('checkbox')).toHaveLength(2);
     expect(within(proposal).getByText('Vérifier la pompe le 2026-11-01.')).toBeInTheDocument();
@@ -3956,7 +4003,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
       .mockImplementationOnce(actualCreate)
       .mockRejectedValueOnce(new Error('Enregistrement temporairement indisponible.'));
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Extraire les actions' }));
+    fireEvent.click(await aiAction('Extraire les actions'));
     const proposal = await screen.findByRole('region', { name: 'Actions proposées' });
     fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Enregistrement temporairement indisponible');
@@ -3975,7 +4022,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Appeler le client.' }] });
     mockAiSuggest(JSON.stringify([{ title: 'Appeler le client', due_date: null, evidence: 'Appeler le client.' }]));
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Extraire les actions' }));
+    fireEvent.click(await aiAction('Extraire les actions'));
     await screen.findByRole('region', { name: 'Actions proposées' });
     fireEvent.click(screen.getByRole('button', { name: 'Écrire' }));
     fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Le client a été appelé.' } });
@@ -3991,7 +4038,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'La pompe a été réparée.' }] }] }), 'en_note');
     mockAiSuggest('[]');
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Extraire les actions' }));
+    fireEvent.click(await aiAction('Extraire les actions'));
     const proposal = await screen.findByRole('region', { name: 'Actions proposées' });
     expect(within(proposal).getByText('Aucune nouvelle action à créer dans cette note.')).toBeInTheDocument();
     expect(within(proposal).queryByRole('button', { name: 'Créer les tâches sélectionnées' })).not.toBeInTheDocument();
@@ -4005,7 +4052,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'texte original\n\n`cp fichier copie`' }] });
     mockAiSuggest('Une première proposition détaillée.');
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Mettre en page' }));
+    fireEvent.click(await aiAction('Mettre en page'));
     const proposal = await screen.findByRole('region', { name: 'Mise en page proposée' });
     mockAiSuggest('Une proposition plus courte.');
     fireEvent.change(within(proposal).getByLabelText('Ajuster la proposition'), { target: { value: 'Conserver la commande exactement.' } });
@@ -4049,7 +4096,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     fireEvent.click(await within(await screen.findByRole('region', { name: 'Journal' })).findByText('Pompe : diagnostic'));
     fireEvent.click(await screen.findByRole('button', { name: 'Écrire' }));
     fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Vérifier la pompe. Brouillon récent.' } });
-    fireEvent.click(screen.getByRole('button', { name: '✨ Suggérer des sous-tâches' }));
+    fireEvent.click(await aiAction('Suggérer des sous-tâches'));
     await waitFor(() => expect(finish).toBeTypeOf('function'));
     fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Vérifier la pompe. Brouillon récent. Frappe pendant IA.' } });
     await act(async () => { finish?.(); });
@@ -4072,7 +4119,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
       return diverted(input, init);
     }));
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Créer une procédure' }));
+    fireEvent.click(await aiAction('Créer une procédure'));
     await waitFor(() => expect(finish).toBeTypeOf('function'));
     fireEvent.click(within(journal()).getByText('Autre note'));
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Autre note'));
@@ -4084,7 +4131,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
   test('sans clé, extraire explique le réglage requis avant de charger le contexte', async () => {
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Appeler le client.' }] });
     render(<App />);
-    const button = await screen.findByRole('button', { name: '✨ Extraire les actions' });
+    const button = await aiAction('Extraire les actions');
     const state = vi.spyOn(clientApi, 'state');
     const readEntry = vi.spyOn(clientApi, 'entry');
     fireEvent.click(button);
@@ -4104,14 +4151,14 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     });
     mockAiSuggest('Première proposition dérivée du document complémentaire.');
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Mettre en page' }));
+    fireEvent.click(await aiAction('Mettre en page'));
     await screen.findByRole('region', { name: 'Mise en page proposée' });
     expect(JSON.stringify(aiBodies.at(-1))).toContain('Instruction privée du document complémentaire.');
     fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Procédure : Purger la pompe' }));
     expect(screen.queryByRole('region', { name: 'Mise en page proposée' })).not.toBeInTheDocument();
     mockAiSuggest('Proposition indépendante.');
-    fireEvent.click(screen.getByRole('button', { name: '✨ Mettre en page' }));
+    fireEvent.click(await aiAction('Mettre en page'));
     await within(await screen.findByRole('region', { name: 'Mise en page proposée' })).findByText('Proposition indépendante.');
     const sent = JSON.stringify(aiBodies.at(-1));
     expect(sent).not.toContain('Instruction privée du document complémentaire.');
@@ -4133,19 +4180,19 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     }));
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Écrire' }));
-    fireEvent.click(screen.getByRole('button', { name: '✨ Suggérer des sous-tâches' }));
+    fireEvent.click(await aiAction('Suggérer des sous-tâches'));
     await waitFor(() => expect(finish).toBeTypeOf('function'));
     fireEvent.change(screen.getByLabelText('Projet de l’entrée'), { target: { value: 'pr_b' } });
     fireEvent.change(screen.getByLabelText('Projet de l’entrée'), { target: { value: 'pr_a' } });
     await act(async () => { finish?.(); });
-    await waitFor(() => expect(screen.getByRole('button', { name: '✨ Suggérer des sous-tâches' })).toBeEnabled());
+    expect(await aiAction('Suggérer des sous-tâches')).toBeEnabled();
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Texte conservé.');
     expect(screen.queryByRole('button', { name: 'Retirer la suggestion' })).not.toBeInTheDocument();
   });
 
   test.each([
-    { feature: 'les sous-tâches', button: '✨ Suggérer des sous-tâches', reply: 'Purger la pompe' },
-    { feature: 'les actions', button: '✨ Extraire les actions', reply: JSON.stringify([{ title: 'Appeler le client', due_date: null, evidence: 'Appeler le client.' }]) },
+    { feature: 'les sous-tâches', button: 'Suggérer des sous-tâches', reply: 'Purger la pompe' },
+    { feature: 'les actions', button: 'Extraire les actions', reply: JSON.stringify([{ title: 'Appeler le client', due_date: null, evidence: 'Appeler le client.' }]) },
   ])('retirer une source pendant la réponse invalide aussi $feature', async ({ button, reply }) => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     seedData(api.db, {
@@ -4162,12 +4209,12 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
       return diverted(input, init);
     }));
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: button }));
+    fireEvent.click(await aiAction(button));
     await waitFor(() => expect(finish).toBeTypeOf('function'));
     fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Procédure : Purger la pompe' }));
     await act(async () => { finish?.(); });
-    await waitFor(() => expect(screen.getByRole('button', { name: button })).toBeEnabled());
+    expect(await aiAction(button)).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Retirer la suggestion' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Actions proposées' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Écrire' }));
@@ -4184,7 +4231,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
       throw new Error('Réponse perdue après enregistrement.');
     });
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Extraire les actions' }));
+    fireEvent.click(await aiAction('Extraire les actions'));
     const proposal = await screen.findByRole('region', { name: 'Actions proposées' });
     fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Réponse perdue après enregistrement');
@@ -4215,11 +4262,11 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     }));
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Écrire' }));
-    fireEvent.click(screen.getByRole('button', { name: '✨ Suggérer des sous-tâches' }));
+    fireEvent.click(await aiAction('Suggérer des sous-tâches'));
     await waitFor(() => expect(finish).toBeTypeOf('function'));
     fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Vérifier la pompe.\n- [ ] Purger la pompe' } });
     await act(async () => { finish?.(); });
-    await waitFor(() => expect(screen.getByRole('button', { name: '✨ Suggérer des sous-tâches' })).toBeEnabled());
+    expect(await aiAction('Suggérer des sous-tâches')).toBeEnabled();
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Vérifier la pompe.\n- [ ] Purger la pompe');
     expect(screen.queryByRole('button', { name: 'Retirer la suggestion' })).not.toBeInTheDocument();
   });

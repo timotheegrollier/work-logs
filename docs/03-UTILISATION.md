@@ -160,8 +160,8 @@ rendu approximatif.
 - **Créer une tâche liée** depuis l’entrée ouverte préremplit son titre et permet d’ajouter une échéance. La tâche apparaît directement dans le panneau de droite avec cette entrée comme contexte.
 - **Relier un document** ouvre la liste des entrées disponibles. Choisir une entrée locale ou un onglet Google puis cliquer sur **Relier** ; chaque document lié reste visible sur la carte avec son origine.
 - Cliquer sur le titre d'un document lié l'ouvre au centre. Le bouton ✕ retire seulement l'association, sans supprimer le document. Une même entrée peut fournir le contexte de plusieurs tâches.
-- **✨ Procédure** (pied de carte) fait rédiger par l'IA une procédure à partir de la tâche et de ses documents liés, à relire avant de la créer — voir « Procédures ».
-- **✨ Trouver la doc** (pied de carte) retrouve la note, la procédure ou le fichier du dossier partagé qui aide à faire la tâche. L'IA réglée dans ⚙ Paramètres reçoit le titre et le statut de la tâche, son projet (nom, contexte IA du projet, vocabulaire) et les **titres** de ses documents liés — jamais un contenu — et propose au plus six mots. WorkLogs les cherche dans les titres et le texte de **toutes** les notes et procédures (tous projets, archives comprises) et dans les **noms** des fichiers du dossier partagé (sur le téléphone, par le relais du bureau). « Documents trouvés » liste, dans la carte, au plus huit documents : leur type (Procédure, Note, Partage), leur projet s'il n'est pas celui de la tâche ou leur dossier, et les mots qui les ont trouvés ; les documents déjà liés n'y reviennent pas. **Ouvrir** affiche le document au centre (le filtre passe à son projet) ; **Lier** l'associe à la tâche, comme « ＋ Documents ». Sans dossier partagé (non réglé, relais injoignable), la recherche se fait dans WorkLogs seulement et la liste le dit.
+- **✨ IA › Créer une procédure** (pied de carte) fait rédiger par l'IA une procédure à partir de la tâche et de ses documents liés, à relire avant de la créer — voir « Procédures ».
+- **✨ IA › Trouver la doc** (pied de carte) retrouve la note, la procédure ou le fichier du dossier partagé qui aide à faire la tâche. L'IA réglée dans ⚙ Paramètres reçoit le titre et le statut de la tâche, son projet (nom, contexte IA du projet, vocabulaire) et les **titres** de ses documents liés — jamais un contenu — et propose au plus six mots. WorkLogs les cherche dans les titres et le texte de **toutes** les notes et procédures (tous projets, archives comprises) et dans les **noms** des fichiers du dossier partagé (sur le téléphone, par le relais du bureau). « Documents trouvés » liste, dans la carte, au plus huit documents : leur type (Procédure, Note, Partage), leur projet s'il n'est pas celui de la tâche ou leur dossier, et les mots qui les ont trouvés ; les documents déjà liés n'y reviennent pas. **Ouvrir** affiche le document au centre (le filtre passe à son projet) ; **Lier** l'associe à la tâche, comme « ＋ Documents ». Sans dossier partagé (non réglé, relais injoignable), la recherche se fait dans WorkLogs seulement et la liste le dit.
 
 ## Assistance IA
 
@@ -177,11 +177,19 @@ d'une tâche, ses cinq documents liés restent les sources principales, même d'
 Dans le partage, le contexte local accompagne le fichier seulement si un projet est
 sélectionné ; **Tout** n'ajoute aucun document local au fichier.
 
+Les actions IA sont rangées sous un seul bouton, **✨ IA**, au bout de la rangée d'actions
+d'une note, d'une procédure ou d'un fichier du partage, et au pied de chaque carte de tâche.
+Il n'apparaît que si une action est possible (jamais sur un document Google). Le menu
+s'ouvre au clic ou au clavier (flèches, Entrée, Échap) ; pendant la demande, le bouton
+affiche l'attente (« Rédaction… », « Mise en page… »). Le survol d'une action dit ce qui
+part au service IA. Seul **✨ Suggérer** du formulaire « ＋ Entrée liée » reste à côté de
+sa zone de sous-tâches, qu'il remplit.
+
 **Contexte utilisé par l'IA** apparaît après la première demande : déplier pour lire
 les extraits et décocher une source pour les demandes suivantes. Une modification de
 sélection retire les propositions en attente issues de l'ancienne sélection.
 
-**✨ Compléter** rédige le document ouvert à partir de son titre et de ce qui est déjà
+**✨ IA › Compléter** rédige le document ouvert à partir de son titre et de ce qui est déjà
 écrit : quelques points clés suffisent, l'IA en fait la note complète (phrases courtes ;
 intertitres et cases « à faire » seulement si la note en a besoin). Tout ce qui est écrit
 est gardé — commandes et valeurs à l'identique, cases cochées ou non — rien de prévu ne
@@ -189,14 +197,14 @@ devient « fait », et l'IA écrit « à préciser » plutôt que d'inventer un 
 une date ou un nom. Avec un titre seul, elle propose le plan de la note. Partent aussi le
 contexte du projet, les titres des tâches liées et les noms des pièces jointes. La
 proposition se relit : rien n'est écrit avant **Appliquer la note** (**Rafraîchir**
-redemande, **Ignorer** abandonne). Le même bouton complète une procédure et un fichier du
-dossier partagé (voir « Procédures »). Pas de bouton sur une note Google : son contenu
+redemande, **Ignorer** abandonne). La même action complète une procédure et un fichier du
+dossier partagé (voir « Procédures »). Pas de menu IA sur une note Google : son contenu
 n'est jamais envoyé. Une note riche passe par le Markdown : appliquer remet à plat
 surlignage, couleurs et alignements, et une case proposée y devient une puce.
 
 Une **tâche** n'a pas de texte à compléter : sur sa carte, **＋ Entrée liée** (le titre
 reprend la tâche), **Créer et ouvrir**, noter les points importants dans l'entrée, puis
-**✨ Compléter** — la demande connaît la tâche liée.
+**✨ IA › Compléter** — la demande connaît la tâche liée.
 
 **Ajuster la proposition** précise ce qui est attendu : par exemple « Garde les commandes
 exactement et détaille les vérifications ». **Affiner**, **Plus court** et **Pour un collègue**
@@ -204,7 +212,7 @@ demandent une nouvelle version, avec le texte d'origine et le brouillon précéd
 Corrections, notes et procédures restent à relire avant application ; dans le partage,
 appliquer ne crée qu'un brouillon local, à envoyer avec **Enregistrer sur le partage**.
 
-**✨ Extraire les actions**, dans une note locale Markdown ou riche, propose les actions
+**✨ IA › Extraire les actions**, dans une note locale Markdown ou riche, propose les actions
 encore à faire avec un extrait justificatif. Cocher les actions à conserver, ajuster leur
 titre ou leur échéance si nécessaire, puis **Créer les tâches sélectionnées**. Chaque tâche
 est liée à la note et reprend son projet ; la note est conservée. Seules les dates écrites
@@ -262,17 +270,17 @@ s'ouvre en écriture ; une procédure liée à Google Docs garde son éditeur Go
 taper la commande, ou taper ` ``` ` puis Entrée en début de ligne. Des lignes déjà
 collées : les sélectionner puis **`{ }`** — elles forment un seul bloc.
 
-**✨ Compléter** (clé IA collée dans Paramètres) propose une procédure
+**✨ IA › Compléter** (clé IA collée dans Paramètres) propose une procédure
 **concise** à partir du titre et de ce qui est déjà écrit : une phrase d'objectif, des
 étapes d'une ligne (10 au plus), prérequis et vérification seulement s'il y en a. Ce que
 tu as écrit est gardé — commandes et valeurs à l'identique — et l'IA écrit « à préciser »
-plutôt que d'inventer une valeur. **✨ Mettre en page** corrige les fautes et range les
+plutôt que d'inventer une valeur. **✨ IA › Mettre en page** corrige les fautes et range les
 étapes en liste numérotée. Dans les deux cas, la proposition se relit d'abord :
 **Appliquer**, **Rafraîchir** (nouvelle proposition) ou **Ignorer**. Rien ne part sans
-clic. Les mêmes boutons existent pour les fichiers du dossier partagé (ci-dessous).
+clic. Les mêmes actions existent pour les fichiers du dossier partagé (ci-dessous).
 
 **Tirer une procédure de son travail, avec l'IA.** Dans une entrée du journal,
-**✨ Créer une procédure** ; sur une carte de tâche, **✨ Procédure**. L'IA (le service
+**✨ IA › Créer une procédure**, et de même au pied d'une carte de tâche. L'IA (le service
 réglé dans ⚙ Paramètres, Gemini par défaut) lit l'entrée — ou la tâche et ses documents
 liés — et rédige un mode opératoire concis, comme ci-dessus : un titre, l'objectif, des
 étapes d'une ligne (10 au plus), prérequis et vérification seulement s'il y en a ;
@@ -316,7 +324,7 @@ lorsque la colonne Procédures est affichée.
   Seuls les paragraphes que tu as touchés sont réécrits ; le reste du fichier (styles,
   en-têtes, numérotation, images) ne change pas d'un octet. Un document en suivi des
   modifications s'ouvre en lecture seule.
-- **✨ Compléter** et **✨ Mettre en page** marchent aussi sur un document Word,
+- **✨ IA › Compléter** et **Mettre en page** marchent aussi sur un document Word,
   une note `.md` ou un texte `.txt` du partage, comme pour les procédures du journal : le
   titre du document (sinon le nom du fichier) et son contenu partent au service IA des
   Paramètres, la proposition se relit, puis **Appliquer** en fait ton **brouillon** — rien

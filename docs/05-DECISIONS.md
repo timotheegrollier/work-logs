@@ -1830,3 +1830,38 @@ vrai modèle reste à juger en usage.
 **titres** trouvés), si six recherches sont trop lentes sur le vrai TSE (chercher d'abord dans
 le dossier relié au projet), ou si les accents font manquer des documents : le `LIKE` de SQLite
 ne plie ni les accents ni la casse hors ASCII (« procedure » ne trouve pas « procédure »).
+
+## 44. Les actions IA derrière un seul « ✨ IA » — 2026-10-22
+
+**Le besoin.** Chaque action IA était une pastille de plus : jusqu'à cinq dans la rangée d'une
+note, à côté de « ＋ Créer une tâche liée » et « ＋ Lier une tâche existante », deux au pied de
+**chaque** carte de tâche, deux dans un fichier du partage. Demande : les ranger dans un menu.
+
+**Décision.**
+- **Un bouton « ✨ IA », un menu par endroit** (`AiMenu.tsx`) : note ou procédure, fichier du
+  partage, carte de tâche. Les actions dépendent de ce qui est ouvert : un menu global dans
+  l'en-tête aurait dû deviner sa cible. Sans action possible (document Google), pas de bouton.
+- **Au bout de sa rangée, ouvert vers la gauche** : le menu reste dans la colonne, même au pied
+  d'une carte du panneau Tâches (dont le débord est coupé). Sur mobile, il se fait voir en
+  entier au-dessus de la barre du bas (`scroll-margin-bottom`).
+- **Le clavier du menu du compte** (flèches, Échap, Tab) plutôt qu'un `<details>` ou l'API
+  `popover` : le geste existe déjà, il se teste dans jsdom, et le menu ne doit pas se coller
+  ailleurs que sous son bouton (le positionnement CSS par ancre n'est pas garanti sur tous
+  les navigateurs de la PWA).
+- **L'attente s'affiche sur le bouton** (« Rédaction… », « Mise en page… », « Recherche… ») :
+  le menu se referme au choix et rend le focus au bouton. Le résultat (proposition à relire,
+  « Affiner », « Retirer ») reste où il était, sous la rangée.
+- **Les actions perdent leur ✨**, porté une fois par le bouton ; leur infobulle dit toujours
+  ce qui part au service IA.
+
+**Écartés.** Mettre dans le menu le **✨ Suggérer** du formulaire « ＋ Entrée liée » : seule
+action de ce formulaire, il remplit la zone juste au-dessus — un menu d'une ligne aurait
+ajouté un clic sans rien ranger. Une ligne d'explication sous chaque action (l'infobulle le
+fait, et le menu doublait de hauteur).
+
+**Validation.** Un geste dans `App.test.tsx` (ordre des actions, flèches, Échap, clic
+extérieur, attente sur le bouton, focus rendu) ; les tests et parcours IA existants passent
+par le menu (`aiAction` dans `App.test.tsx`, trois specs Playwright).
+
+**Rouvrir si** une action IA devient quotidienne au point de mériter sa pastille, ou si le menu
+doit s'ouvrir vers le haut (bas d'écran sans place) : alors le positionner au calcul.

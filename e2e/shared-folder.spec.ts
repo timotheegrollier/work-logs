@@ -314,7 +314,8 @@ test('IA dans un document Word du partage : procédure suggérée depuis son tit
   const editor = await openShared(page, 'filtration.docx');
   await page.evaluate(() => localStorage.setItem('worklogs-ai-key', 'cle-e2e'));
 
-  await editor.getByRole('button', { name: '✨ Compléter' }).click();
+  await editor.getByRole('button', { name: 'Assistance IA', exact: true }).click();
+  await editor.getByRole('menuitem', { name: 'Compléter', exact: true }).click();
   const proposal = editor.getByRole('region', { name: 'Procédure proposée' });
   await expect(proposal.getByText('Rincer la cartouche')).toBeVisible();
   await expect(proposal.getByText('[Image — conservé tel quel]')).toBeVisible();

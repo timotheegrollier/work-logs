@@ -84,7 +84,8 @@ test('IA sur mobile : extrait des actions sourcées, ne crée que la sélection 
       ]) } }] } });
     });
     await page.goto('/');
-    await page.getByRole('button', { name: '✨ Extraire les actions', exact: true }).click();
+    await page.getByRole('button', { name: 'Assistance IA', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Extraire les actions', exact: true }).click();
     const proposal = page.getByRole('region', { name: 'Actions proposées', exact: true });
     await expect(proposal.getByLabel('Titre de l’action 1')).toHaveValue('Appeler le fournisseur');
     await expect(proposal.getByLabel('Échéance de l’action 1')).toHaveValue('2026-10-30');
@@ -125,7 +126,8 @@ test('IA dans le partage : affine avec le contexte du projet puis applique en br
     await page.getByRole('button', { name: 'Procédures', exact: true }).click();
     await page.getByRole('button', { name: `Ouvrir ${filename}`, exact: true }).click();
     const editor = page.getByRole('region', { name: 'Fichier partagé' });
-    await editor.getByRole('button', { name: '✨ Mettre en page', exact: true }).click();
+    await editor.getByRole('button', { name: 'Assistance IA', exact: true }).click();
+    await editor.getByRole('menuitem', { name: 'Mettre en page', exact: true }).click();
     const proposal = editor.getByRole('region', { name: 'Mise en page proposée', exact: true });
     await expect(proposal.getByText('Fermer la vanne avant intervention.', { exact: true })).toBeVisible();
     expect(prompts[0]).toContain('La vanne rouge isole le circuit.');

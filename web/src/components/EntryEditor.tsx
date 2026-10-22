@@ -13,6 +13,7 @@ import { GoogleDocsEditor } from './GoogleDocsEditor';
 import { FileViewer } from './FileViewer';
 import { ProcedureDraft } from './ProcedureDraft';
 import { AiContextDetails } from './AiContextDetails';
+import { AiMenu } from './AiMenu';
 import { AiRefinement } from './AiRefinement';
 
 type SaveState = 'saved' | 'dirty' | 'saving' | 'error';
@@ -905,63 +906,68 @@ export function EntryEditor({
             </div>
           </div>
         )}
-        {!draft.content_json && !isProcedure && (
-          <button
-            className="ghost"
-            type="button"
-            disabled={aiWorking || syncing}
-            title="Remplace le bloc suggéré, ou l’ajoute (envoie le titre, le contenu et le contexte du projet au service IA configuré en Paramètres)"
-            onClick={() => void suggestForEntry()}
-          >
-            {suggesting ? 'Suggestion…' : '✨ Suggérer des sous-tâches'}
-          </button>
-        )}
-        {(isProcedure ? aiAvailable : canDraftProcedure) && (
-          <button
-            className="ghost"
-            type="button"
-            disabled={aiWorking || syncing}
-            title={isProcedure
-              ? 'Complète la procédure à partir du titre, de ce qui est déjà écrit et du contexte du projet (envoyés au service IA configuré en Paramètres, à relire avant application)'
-              : 'Rédige la note complète à partir du titre et de ce qui est déjà écrit (titre, contenu, contexte du projet, noms des pièces jointes et tâches liées envoyés au service IA configuré en Paramètres) ; à relire avant application'}
-            onClick={() => void requestAi(isProcedure ? 'procedure' : 'note')}
-          >
-            {aiBusy === 'procedure' || aiBusy === 'note' ? 'Rédaction…' : '✨ Compléter'}
-          </button>
-        )}
-        {aiAvailable && (
-          <button
-            className="ghost"
-            type="button"
-            disabled={aiWorking || syncing || !aiText.trim()}
-            title="Corrige les fautes et met en page (envoie le titre, le contenu et le contexte du projet au service IA configuré en Paramètres, à relire avant application)"
-            onClick={() => void requestAi('layout')}
-          >
-            {aiBusy === 'layout' ? 'Mise en page…' : '✨ Mettre en page'}
-          </button>
-        )}
-        {canDraftProcedure && (
-          <button
-            className="ghost"
-            type="button"
-            disabled={aiWorking || syncing}
-            title="Rédige une procédure réutilisable à partir de cette entrée (titre, contenu, contexte du projet, noms des pièces jointes et tâches liées envoyés au service IA configuré en Paramètres) ; à relire avant de la créer"
-            onClick={() => void draftFromEntry()}
-          >
-            {drafting ? 'Rédaction…' : '✨ Créer une procédure'}
-          </button>
-        )}
-        {canDraftProcedure && (
-          <button
-            className="ghost"
-            type="button"
-            disabled={aiWorking || syncing || !aiText.trim()}
-            title="Envoie la note et le contexte du projet au service IA configuré en Paramètres ; choisis les actions à créer comme tâches liées après relecture"
-            onClick={() => void extractActions()}
-          >
-            {extracting ? 'Extraction…' : '✨ Extraire les actions'}
-          </button>
-        )}
+        <AiMenu
+          label="Assistance IA"
+          busy={suggesting ? 'Suggestion…' : aiBusy === 'layout' ? 'Mise en page…' : aiBusy || drafting ? 'Rédaction…' : extracting ? 'Extraction…' : null}
+        >
+          {(isProcedure ? aiAvailable : canDraftProcedure) && (
+            <button
+              role="menuitem"
+              type="button"
+              disabled={aiWorking || syncing}
+              title={isProcedure
+                ? 'Complète la procédure à partir du titre, de ce qui est déjà écrit et du contexte du projet (envoyés au service IA configuré en Paramètres, à relire avant application)'
+                : 'Rédige la note complète à partir du titre et de ce qui est déjà écrit (titre, contenu, contexte du projet, noms des pièces jointes et tâches liées envoyés au service IA configuré en Paramètres) ; à relire avant application'}
+              onClick={() => void requestAi(isProcedure ? 'procedure' : 'note')}
+            >
+              Compléter
+            </button>
+          )}
+          {aiAvailable && (
+            <button
+              role="menuitem"
+              type="button"
+              disabled={aiWorking || syncing || !aiText.trim()}
+              title="Corrige les fautes et met en page (envoie le titre, le contenu et le contexte du projet au service IA configuré en Paramètres, à relire avant application)"
+              onClick={() => void requestAi('layout')}
+            >
+              Mettre en page
+            </button>
+          )}
+          {!draft.content_json && !isProcedure && (
+            <button
+              role="menuitem"
+              type="button"
+              disabled={aiWorking || syncing}
+              title="Remplace le bloc suggéré, ou l’ajoute (envoie le titre, le contenu et le contexte du projet au service IA configuré en Paramètres)"
+              onClick={() => void suggestForEntry()}
+            >
+              Suggérer des sous-tâches
+            </button>
+          )}
+          {canDraftProcedure && (
+            <button
+              role="menuitem"
+              type="button"
+              disabled={aiWorking || syncing || !aiText.trim()}
+              title="Envoie la note et le contexte du projet au service IA configuré en Paramètres ; choisis les actions à créer comme tâches liées après relecture"
+              onClick={() => void extractActions()}
+            >
+              Extraire les actions
+            </button>
+          )}
+          {canDraftProcedure && (
+            <button
+              role="menuitem"
+              type="button"
+              disabled={aiWorking || syncing}
+              title="Rédige une procédure réutilisable à partir de cette entrée (titre, contenu, contexte du projet, noms des pièces jointes et tâches liées envoyés au service IA configuré en Paramètres) ; à relire avant de la créer"
+              onClick={() => void draftFromEntry()}
+            >
+              Créer une procédure
+            </button>
+          )}
+        </AiMenu>
         {suggestedBlock && (
           <button
             className="ghost"

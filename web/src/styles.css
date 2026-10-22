@@ -1097,14 +1097,16 @@ button:disabled {
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
-.entry-task-action > .ghost {
+.entry-task-action > .ghost,
+.entry-task-action > .ai-menu > .ghost {
   font-size: 12.5px;
   padding: 4px 11px;
   border-radius: 99px;
   color: var(--muted);
 }
-.entry-task-action > .ghost:hover:not(:disabled) { color: var(--text); }
-.entry-task-action > :not(.ghost) { flex-basis: 100%; }
+.entry-task-action > .ghost:hover:not(:disabled),
+.entry-task-action > .ai-menu > .ghost:hover:not(:disabled) { color: var(--text); }
+.entry-task-action > :not(.ghost, .ai-menu) { flex-basis: 100%; }
 .task-primary { background: var(--accent-solid); color: #fff; border-color: transparent; padding: 7px 12px; font-weight: 650; }
 .task-primary:hover:not(:disabled) { filter: brightness(1.08); }
 .task-creator { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(150px, .6fr) auto; align-items: end; gap: 8px; padding: 10px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); }
@@ -2626,6 +2628,8 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .columns {
     padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   }
+  /* Le menu « ✨ IA » ouvert ne finit pas sous la barre du bas. */
+  .ai-menu-popover { scroll-margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
   /* Bandeau projets : une rangée de 56 px au lieu de deux (~110 px) — les
      pastilles défilent sous le pouce, « Gérer » reste au bout, toujours visible.
      Cibles de 40 px, comme le reste du contenu. */
@@ -2767,7 +2771,8 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .sync-dot.is-off { background: var(--muted); }
 @keyframes sync-pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .sync-dot.is-syncing { animation: none; } }
-.account-popover {
+.account-popover,
+.ai-menu-popover {
   position: absolute; right: 0; top: calc(100% + 8px); z-index: 60;
   width: min(300px, calc(100vw - 24px));
   display: grid; gap: 2px; padding: 6px;
@@ -2780,14 +2785,25 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
 .account-card strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-card small { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .account-card .sync-line.is-error { color: var(--danger, #c0392b); }
-.account-popover [role="menuitem"] {
+.account-popover [role="menuitem"],
+.ai-menu-popover [role="menuitem"] {
   text-align: left; border: 0; background: transparent; color: inherit;
   padding: 9px 10px; min-height: 40px; border-radius: 9px; font-size: 14px; cursor: pointer;
 }
 .account-popover [role="menuitem"]:hover:not(:disabled),
-.account-popover [role="menuitem"]:focus-visible { background: var(--surface-2); outline: none; }
+.account-popover [role="menuitem"]:focus-visible,
+.ai-menu-popover [role="menuitem"]:hover:not(:disabled),
+.ai-menu-popover [role="menuitem"]:focus-visible { background: var(--surface-2); outline: none; }
 .account-popover [role="menuitem"].is-primary { color: var(--accent); font-weight: 650; }
 .account-popover [role="menuitem"].is-danger { color: var(--danger, #c0392b); }
+/* Menu « ✨ IA » : au bout de sa rangée, il s'ouvre vers la gauche et reste ainsi
+   dans la colonne, même au pied d'une carte de tâche. */
+.ai-menu { position: relative; display: inline-flex; margin-left: auto; }
+.ai-menu > [aria-expanded='true'],
+.entry-task-action > .ai-menu > [aria-expanded='true'] { color: var(--accent); }
+.ai-menu-caret { margin-left: 4px; font-size: .85em; }
+.ai-menu-popover { top: calc(100% + 4px); width: max-content; min-width: 200px; max-width: calc(100vw - 24px); }
+.ai-menu-popover:focus { outline: none; }
 
 /* Documents Google : une ligne par document, actions à portée de main. */
 .documents-dialog { width: min(760px, calc(100vw - 24px)); }
@@ -3247,7 +3263,8 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .entry-task-action::-webkit-scrollbar {
     display: none;
   }
-  .entry-task-action > .ghost {
+  .entry-task-action > .ghost,
+  .entry-task-action > .ai-menu > .ghost {
     flex: none;
     min-height: 36px;
   }
@@ -3379,4 +3396,5 @@ div.google-preserved { display: block; padding: 12px; margin: 12px 0; }
   .head .panel-toggle::before { display: none; }
   .update-progress-label { bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
   .columns { padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+  .ai-menu-popover { scroll-margin-bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
 }

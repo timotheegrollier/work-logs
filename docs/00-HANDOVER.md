@@ -1,5 +1,20 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-22 — les actions IA sous « ✨ IA »
+
+Les actions IA prenaient une pastille chacune ; elles sont rangées dans un menu **✨ IA** au bout
+de leur rangée : note ou procédure (Compléter, Mettre en page, Suggérer des sous-tâches,
+Extraire les actions, Créer une procédure), fichier du partage (Compléter, Mettre en page),
+pied de carte de tâche (Créer une procédure, Trouver la doc). Pendant la demande, le bouton
+affiche l'attente. **✨ Suggérer** du formulaire « ＋ Entrée liée » reste en place (seule
+action du formulaire). Aucune dépendance, route ou migration ajoutée.
+- **Code** : `web/src/components/AiMenu.tsx` (clavier repris du menu du compte), utilisé par
+  `EntryEditor.tsx`, `SharedFileEditor.tsx` et `TaskBoard.tsx` ; styles partagés avec
+  `.account-popover` dans `styles.css`. Pourquoi : `05-DECISIONS.md` §44 ; usage :
+  `03-UTILISATION.md` (« Assistance IA »).
+- **Tests** : un geste dédié dans `App.test.tsx` ; les tests IA ouvrent le menu par
+  `aiAction(nom, zone?, menu?)` ; `e2e/procedures`, `shared-folder` et `ai-assistance` aussi.
+
 ## Lot du 2026-10-21 — « ✨ Trouver la doc »
 
 Sur une carte de tâche, « ✨ Trouver la doc » retrouve la note, la procédure ou le fichier du
