@@ -4,12 +4,20 @@ import vm from 'node:vm';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderSw, readRootVersion, SW_VERSION_PLACEHOLDER } from './pwa-sw.mjs';
+import { renderSw, readRootVersion, SW_ASSETS_PLACEHOLDER, SW_VERSION_PLACEHOLDER } from './pwa-sw.mjs';
 
 test('injecte la version racine à chaque occurrence du marqueur', () => {
   const rendered = renderSw(`const VERSION = '${SW_VERSION_PLACEHOLDER}'; // ${SW_VERSION_PLACEHOLDER}`, '0.15.1');
   assert.equal(rendered, "const VERSION = '0.15.1'; // 0.15.1");
   assert.ok(!rendered.includes(SW_VERSION_PLACEHOLDER));
+});
+
+test('précache les fichiers du build à la place de leur marqueur, aucun par défaut', () => {
+  const template = `const V = '${SW_VERSION_PLACEHOLDER}'; const A = ${SW_ASSETS_PLACEHOLDER};`;
+  assert.equal(renderSw(template, '0.15.1', ['./assets/index-abc.js', './assets/index-abc.css']),
+    "const V = '0.15.1'; const A = [\"./assets/index-abc.js\",\"./assets/index-abc.css\"];");
+  assert.equal(renderSw(template, '0.15.1'), "const V = '0.15.1'; const A = [];");
+  assert.throws(() => renderSw(template, '0.15.1', ['ok', 42]), /fichiers/);
 });
 
 test('refuse un gabarit sans marqueur ou une version mal formée', () => {

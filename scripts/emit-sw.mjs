@@ -12,5 +12,8 @@ const dist = path.join(root, 'web', 'dist');
 if (!fs.existsSync(path.join(dist, 'index.html'))) {
   throw new Error('web/dist/index.html absent : lance `vite build` avant emit-sw.');
 }
-fs.writeFileSync(path.join(dist, 'sw.js'), renderSw(template, version));
-console.log(`sw.js émis (version ${version})`);
+// Tout le build est précaché : les morceaux chargés à la demande restent lisibles hors ligne.
+const assetsDir = path.join(dist, 'assets');
+const assets = (fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir) : []).filter((name) => /\.(js|css)$/.test(name)).sort().map((name) => `./assets/${name}`);
+fs.writeFileSync(path.join(dist, 'sw.js'), renderSw(template, version, assets));
+console.log(`sw.js émis (version ${version}, ${assets.length} fichier(s) précaché(s))`);

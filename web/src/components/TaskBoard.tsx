@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { COLUMNS, PRIORITIES, TASK_VIEWS, api, dayLabel, isOverdue, priorityLabel, subtasksMd, todayISO, type Entry, type EntrySummary, type Priority, type Project, type Status, type Task, type TaskView } from '../lib';
-import { draftProcedure, MAX_SOURCE_DOCUMENTS, readAiSettings, suggestSearchTerms, suggestSubtasks, taskSuggestContext, type AiWorkContext, type DraftedProcedure, type SuggestContext } from '../ai-suggest';
+import { draftProcedure, MAX_SOURCE_DOCUMENTS, readAiSettings, suggestSearchTerms, suggestSubtasks, taskSuggestContext, type AiWorkContext, type DraftedProcedure } from '../ai-suggest';
 import { loadAiContext, readProjectAiBrief, selectedAiContext } from '../ai-context';
 import { findDocuments, type FoundDocument } from '../doc-finder';
 import { richToMarkdown } from '../rich-markdown';
@@ -11,7 +11,8 @@ import { AiRefinement } from './AiRefinement';
 
 const DRAG_TYPE = 'text/plain';
 
-export function TaskBoard({
+/** Mémoïsé : la recherche de l'en-tête se redessine à chaque frappe, pas les cartes. */
+export const TaskBoard = memo(function TaskBoard({
   tasks,
   entries,
   projectId,
@@ -36,7 +37,6 @@ export function TaskBoard({
   onProcedureCreated: (procedure: Entry) => void;
   onChanged: () => void;
 }) {
-  const [title, setTitle] = useState('');
   const [over, setOver] = useState<Status | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const today = todayISO();
@@ -44,15 +44,6 @@ export function TaskBoard({
   const counts = new Map(TASK_VIEWS.map((candidate) => [candidate.id, tasks.filter((task) => candidate.match(task, today)).length]));
   // Une vue vide n'apprend rien : elle s'efface, sauf celle qu'on regarde.
   const views = TASK_VIEWS.filter((candidate) => counts.get(candidate.id)! > 0 || candidate.id === view);
-
-  const add = async () => {
-    if (!title.trim()) return;
-    await api.createTask({ title: title.trim(), project_id: projectId || null });
-    setTitle('');
-    // Une tâche neuve n'entre dans aucune vue : on lève le filtre pour la voir arriver.
-    onView(null);
-    onChanged();
-  };
 
   const drop = async (event: React.DragEvent, status: Status, position: number) => {
     event.preventDefault();
@@ -67,18 +58,8 @@ export function TaskBoard({
   return (
     <section className="board" aria-label="Tâches">
       <div className="board-head">
-        <div className="quick">
-          <input
-            aria-label="Nouvelle tâche"
-            placeholder="Nouvelle tâche…"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && add()}
-          />
-          <button className="ghost" type="button" onClick={add} disabled={!title.trim()}>
-            Ajouter
-          </button>
-        </div>
+        {/* Une tâche neuve n'entre dans aucune vue : on lève le filtre pour la voir arriver. */}
+        <QuickAdd projectId={projectId} onAdded={() => { onView(null); onChanged(); }} />
 
         {views.length > 0 && (
           <div className="chips task-views" role="group" aria-label="Filtrer les tâches">
@@ -130,10 +111,10 @@ export function TaskBoard({
                   <li key={task.id}>
                     <TaskCard
                       task={task}
+                      tasks={tasks}
                       entries={entries}
                       projects={projects}
                       editing={editing === task.id}
-                      suggestContext={taskSuggestContext(task, tasks, entries, projects)}
                       onEdit={() => setEditing(task.id)}
                       onEditDone={() => setEditing(null)}
                       onOpenDocument={onOpenDocument}
@@ -153,14 +134,39 @@ export function TaskBoard({
       </div>
     </section>
   );
+});
+
+/** Saisie d'une tâche : son état vit ici, pour que taper ne redessine pas chaque carte. */
+function QuickAdd({ projectId, onAdded }: { projectId: string; onAdded: () => void }) {
+  const [title, setTitle] = useState('');
+  const add = async () => {
+    if (!title.trim()) return;
+    await api.createTask({ title: title.trim(), project_id: projectId || null });
+    setTitle('');
+    onAdded();
+  };
+  return (
+    <div className="quick">
+      <input
+        aria-label="Nouvelle tâche"
+        placeholder="Nouvelle tâche…"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && add()}
+      />
+      <button className="ghost" type="button" onClick={add} disabled={!title.trim()}>
+        Ajouter
+      </button>
+    </div>
+  );
 }
 
 function TaskCard({
   task,
+  tasks,
   entries,
   projects,
   editing,
-  suggestContext,
   onEdit,
   onEditDone,
   onOpenDocument,
@@ -170,10 +176,11 @@ function TaskCard({
   onDrop,
 }: {
   task: Task;
+  /** Toutes les tâches du filtre : le contexte IA (tâches voisines, vocabulaire) s'en déduit à la demande. */
+  tasks: Task[];
   entries: EntrySummary[];
   projects: Project[];
   editing: boolean;
-  suggestContext: SuggestContext;
   onEdit: () => void;
   onEditDone: () => void;
   onOpenDocument: (entryId: string, projectId?: string | null) => void;
@@ -335,6 +342,7 @@ function TaskCard({
     try {
       const settings = readAiSettings();
       if (!settings.key) throw new Error('Colle ta clé IA dans ⚙ Paramètres pour activer la création de procédure.');
+      const suggestContext = taskSuggestContext(task, tasks, entries, projects);
       const fullContext = await contextForTask(version);
       const context = selectedAiContext(fullContext, excludedSourceIds);
       // Un document lié reste le contexte de la tâche, même d'un autre projet : on l'a lié exprès.
@@ -390,6 +398,7 @@ function TaskCard({
     setFindError('');
     setFound(null);
     try {
+      const suggestContext = taskSuggestContext(task, tasks, entries, projects);
       const terms = await suggestSearchTerms(readAiSettings(), {
         title: task.title,
         status: COLUMNS.find((column) => column.id === task.status)?.label,

@@ -91,7 +91,7 @@ export function AccountMenu({
           </>
         ) : (
           <>
-            <span className="settings-icon" aria-hidden="true">⚙</span>
+            <span className="settings-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" /><circle cx="6" cy="4.5" r="1.6" fill="var(--surface)" /><circle cx="10.5" cy="8" r="1.6" fill="var(--surface)" /><circle cx="5.2" cy="11.5" r="1.6" fill="var(--surface)" /></svg></span>
             <span className="settings-label">Paramètres</span>
           </>
         )}
