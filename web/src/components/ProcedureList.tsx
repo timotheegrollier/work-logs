@@ -1,16 +1,18 @@
-import { useState } from 'react';
+import { lazy, memo, Suspense, useState, type CSSProperties } from 'react';
 import { api, plainText, type Attachment, type EntrySummary, type Project } from '../lib';
 import { flushPendingSaves } from '../autosave';
-import { FileViewer } from './FileViewer';
 import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-download';
+
+// L'aperçu (Word compris) ne se charge qu'au premier fichier consulté.
+const FileViewer = lazy(() => import('./FileViewer').then((m) => ({ default: m.FileViewer })));
 
 /**
  * Panneau Procédures : les modes d'emploi d'un projet, avec leurs pièces
  * jointes rassemblées. Une procédure est une entrée comme une autre
  * (`kind: 'procedure'`) : même éditeur, mêmes pièces jointes, mêmes
- * sauvegardes — seul l'aiguillage diffère.
+ * sauvegardes — seul l'aiguillage diffère. Mémoïsé comme le journal.
  */
-export function ProcedureList({
+export const ProcedureList = memo(function ProcedureList({
   entries,
   attachments,
   projects,
@@ -133,6 +135,7 @@ export function ProcedureList({
               <button
                 className={'entry' + (entry.id === selectedId ? ' is-selected' : '')}
                 aria-current={entry.id === selectedId ? 'true' : undefined}
+                style={{ '--project': colors.get(entry.project_id ?? '') } as CSSProperties}
                 disabled={busy}
                 onClick={() => onSelect(entry.id)}
               >
@@ -223,14 +226,14 @@ export function ProcedureList({
         })}
       </ol>
       {error && <p role="alert" className="error">{error}</p>}
-      {previewing && <FileViewer
+      {previewing && <Suspense fallback={null}><FileViewer
         key={`${previewing.id}-${previewVersion}`}
         file={previewing}
         onClose={() => setPreviewing(null)}
         onFetch={() => void recover(previewing)}
         fetching={fetching}
         fetchError={fetchError}
-      />}
+      /></Suspense>}
     </section>
   );
-}
+});

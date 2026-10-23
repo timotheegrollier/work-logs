@@ -1,5 +1,48 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-23 — refonte visuelle, colonnes en flex, paquet découpé
+
+Branche `ui/design-refresh` (copie de travail `.claude/worktrees/design-refresh`, partie de
+`origin/master` à v0.58.0). Demande : « améliorer grandement le design, l'UI, le layout, l'UX
+et le responsive ; refactor et performances, code propre ». Pourquoi et quoi : `05-DECISIONS.md`
+§46. Aucune dépendance, route ou migration ajoutée ; aucun nom accessible ni mot de
+l'interface changé.
+- **Design** (`web/src/styles.css`, réécrit, 5 300 lignes contre 3 400 — tout est aéré et
+  commenté) : jetons `--paper`, `--mark`, `--line-soft`, `--faint`, `--font-ui`, `--font-mono` ;
+  page au centre, outils sur les côtés ; fil du journal à nœud ambré ; pastilles et badges sans
+  cadre ; « Supprimer » en texte ; ★ et ✕ des cartes au survol ; procédures en lignes ;
+  en-tête allégé (SVG en ligne dans `App.tsx` et `AccountMenu.tsx`), statistiques dès 1 300 px ;
+  tâches sur trois colonnes de 640 à 900 px. Captures avant/après dans `.design/shots/`
+  (hors git), données de démonstration par `.design/seed.mjs`, script `.design/run.sh`.
+- **Layout** : `.columns` en flex (une dizaine de règles au lieu de quarante) ; débordement
+  d'un bloc de code à longue ligne corrigé (`minmax(0, 1fr)`, `.prose { min-width: 0 }`).
+- **Performances** : `React.lazy` pour `RichEditor`, `SharedFileEditor`, `GoogleDrive`,
+  `GoogleDocuments`, `FileViewer` (premier chargement 1 110 → 471 Ko) ; le service worker
+  précache les morceaux (`scripts/pwa-sw.mjs`, `renderSw(template, version, assets)`,
+  `scripts/emit-sw.mjs`, `web/src/sw-template.js`) ; `EntryList`, `TaskBoard`, `ProcedureList`
+  mémoïsés, gestes stables dans `App.tsx`, `QuickAdd` à part, contexte IA d'une carte calculé
+  au clic, `usePersisted` pour les réglages retenus.
+- **Tests** : aucun ajouté ni modifié côté front (les 634 passent tels quels, lazy compris),
+  `scripts/pwa-sw.test.mjs` +1 (liste des fichiers précachés). Les parcours Playwright de
+  mise en page (`sidebar-widths`, `procedure-layout`, `mobile-header`, `scroll-overlap`,
+  `project-strip`, `pwa`, `google-documents`) valident la nouvelle feuille.
+- **Validation** : `./scripts/check.sh` vert, sandbox désactivé et `env -u DISPLAY` pour
+  qu'Electron tourne dans Xvfb : **256 API** (+1 ignoré), **634 front** (+1 échec attendu),
+  48 desktop unitaires, 30 scripts, 11 Worker, 11 relais, **70 navigateur**, **15 desktop**
+  (+1 ignoré, « fenêtre maximisée », pas de gestionnaire de fenêtres) — **1 075 tests**.
+  Le port 8443 était pris par un autre processus de la machine : les parcours navigateur et
+  Electron ont été rejoués sur un port libre (`WORKLOGS_E2E_PORT`), mêmes résultats.
+
+### À vérifier par Timo
+
+1. Dans l'application desktop, en sombre puis en clair : le centre se lit-il bien comme une
+   page, les côtés comme des outils ? Le nœud ambré d'aujourd'hui et le liseré des tâches
+   épinglées sont-ils assez visibles sans crier ?
+2. Sur une carte de tâche : ★ et ✕ apparaissent au survol ; est-ce naturel ou préférer les
+   garder toujours visibles (§46, « Rouvrir si ») ?
+3. Sur le téléphone (PWA) : la première ouverture d'une procédure après la mise à jour
+   affiche brièvement « Chargement… » ; puis hors ligne, tout s'ouvre encore ?
+
 ## Lot du 2026-10-22 — un changement de projet n'ouvre jamais une archive
 
 Changer de projet (ou lancer l'app, ou supprimer l'entrée ouverte) rouvrait la première
