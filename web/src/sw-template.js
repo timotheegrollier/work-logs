@@ -4,7 +4,10 @@
 // mise à jour est transparente au rechargement suivant.
 const VERSION = '__WORKLOGS_VERSION__';
 const CACHE = `worklogs-${VERSION}`;
-const CORE = ['./', './index.html', './manifest.webmanifest'];
+// Fichiers du build, listés par `emit-sw.mjs` : les morceaux chargés à la demande
+// (éditeur riche, dossier partagé, Drive) sont là hors ligne dès l'installation.
+const ASSETS = __WORKLOGS_ASSETS__;
+const CORE = ['./', './index.html', './manifest.webmanifest', ...ASSETS];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

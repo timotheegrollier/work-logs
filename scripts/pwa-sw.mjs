@@ -1,17 +1,24 @@
 // PWA WorkLogs : génère `sw.js` au build en y injectant la version racine.
 // Le gabarit vit dans `web/src/sw-template.js`, la sortie part dans `web/dist/`.
 export const SW_VERSION_PLACEHOLDER = '__WORKLOGS_VERSION__';
+export const SW_ASSETS_PLACEHOLDER = '__WORKLOGS_ASSETS__';
 const VERSION_RE = /^\d+\.\d+\.\d+$/;
 
-/** Remplace chaque occurrence du marqueur par la version, sans autre transformation. */
-export function renderSw(template, version) {
+/**
+ * Remplace chaque occurrence du marqueur par la version, et le marqueur des
+ * fichiers du build par leur liste JSON (chemins relatifs à précacher).
+ */
+export function renderSw(template, version, assets = []) {
   if (typeof template !== 'string' || !template.includes(SW_VERSION_PLACEHOLDER)) {
     throw new Error('Gabarit de service worker invalide : marqueur de version absent.');
   }
   if (typeof version !== 'string' || !VERSION_RE.test(version)) {
     throw new Error('Version de service worker invalide.');
   }
-  return template.split(SW_VERSION_PLACEHOLDER).join(version);
+  if (!Array.isArray(assets) || assets.some((asset) => typeof asset !== 'string')) {
+    throw new Error('Liste des fichiers du service worker invalide.');
+  }
+  return template.split(SW_VERSION_PLACEHOLDER).join(version).split(SW_ASSETS_PLACEHOLDER).join(JSON.stringify(assets));
 }
 
 /** Lit la version du paquet racine depuis le texte de son `package.json`. */

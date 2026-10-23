@@ -61,6 +61,9 @@ pour ne garder que ce qui sert (l'écriture en grand, par exemple) ; l'état est
 retenu au redémarrage. Sur téléphone, c'est ce qui rend chaque zone utilisable
 plein écran.
 
+Entre 640 et 900 px (tablette), les trois colonnes de tâches sont côte à côte dans la
+carte Tâches ; en dessous, elles s'empilent.
+
 Pour régler les barres latérales, **cliquer-glisser la poignée entre le journal et
 le document, ou entre le document et les tâches**. La largeur change immédiatement
 et reste mémorisée après redémarrage. Les champs de largeur au pixel près et **Largeurs par défaut**
@@ -171,7 +174,9 @@ rendu approximatif.
 - **Terminer** : cocher la case. Le titre se barre et la carte rejoint Terminé.
 - **Modifier** : cliquer sur le titre ouvre le nom, l'échéance et la priorité. `Entrée` valide, `Échap` annule.
 - **Priorité** : chaque carte affiche sa pastille — Basse, Normale ou Haute (▲ rouge). Elle ne réordonne pas la colonne : l'ordre reste celui du glisser-déposer.
-- **★** met la tâche en avant (liseré coloré à gauche), indépendamment de sa priorité.
+- **★** met la tâche en avant (liseré ambré à gauche), indépendamment de sa priorité. Sur
+  un écran avec souris, ★ et ✕ n'apparaissent qu'au survol de la carte (ou au clavier) ;
+  l'épingle posée reste toujours visible. Au doigt, les deux boutons restent affichés.
 - Une échéance dépassée s'affiche en rouge, et le compteur « en retard » apparaît en haut.
 - **Vues rapides** : sous « Nouvelle tâche… », des pastilles comptent ce qui réclame
   l'attention — **En retard**, **Aujourd'hui** (échéance du jour), **En cours**, **Épinglées**,
