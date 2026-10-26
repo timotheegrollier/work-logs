@@ -3,6 +3,15 @@
 
 ## Lot du 2026-10-26 — catégories et sous-catégories par projet
 
+**Publication 0.59.0 — correction après fusion :** la première CI de `master` (`7a10b70`,
+run `40294643157`) a révélé un rafraîchissement perdu : la migration d'un ancien lien de
+partage débutait sous « Tout », finissait après le choix d'un projet, puis son callback
+`reload` obsolète était ignoré. Le projet gardait `shared_dir=NULL` à l'écran bien que la
+migration soit terminée. `latestReload` réadresse ce callback vers les filtres courants ;
+les réponses d'anciennes lectures restent ignorées. Le test du dossier absent bloque la
+migration, attend la lecture du nouveau filtre, puis la libère : échec reproduit avant
+correction, sans retry ni attente arbitraire. Recette après correction en cours.
+
 Demande : mieux ranger les tâches/objectifs et entrées, voir leur classement dans chaque
 projet, filtrer et regrouper les listes.
 - Arbres de catégories visibles sous les projets, couleurs et compteurs, création directe
@@ -18,7 +27,8 @@ projet, filtrer et regrouper les listes.
   boîte mobile et Drive conservent catégories et affectations. Cycles concurrents réparés,
   application PWA sérialisée avec les mutations relationnelles. Les retours Google gardent
   le classement courant après une suppression/reclassification locale. Anciens exports acceptés.
-- Revue : callbacks d'anciens filtres ignorés, dernière navigation retenue pendant un
+- Revue : réponses d'anciens filtres ignorées, notifications de mutation reprises sous le filtre
+  courant, dernière navigation retenue pendant un
   enregistrement, couple projet/catégorie distant réconcilié sans toucher au texte saisi,
   onglet Google reclassé hors filtre remplacé par un onglet visible. Glisser-déposer ciblé
   par position globale même avec des voisins cachés par les filtres.

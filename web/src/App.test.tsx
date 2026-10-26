@@ -3454,8 +3454,27 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     await clientApi.linkSharedFolder('pr_w', 'Global');
     // Le dossier disparaît du partage (ou la racine a changé) : le lien ne mène plus nulle part.
     fs.rmdirSync(path.join(share, 'Global'));
+    // La reprise de l'ancien lien commence sous « Tout », puis le projet est
+    // choisi avant sa fin : le rafraîchissement doit suivre le filtre courant.
+    let resumeMigration!: () => void;
+    const migrationGate = new Promise<void>((resolve) => { resumeMigration = resolve; });
+    const updateProject = clientApi.updateProject;
+    const migration = vi.spyOn(clientApi, 'updateProject').mockImplementation(async (id, body) => {
+      if (id === 'pr_w' && body.shared_dir) await migrationGate;
+      return updateProject(id, body);
+    });
+    let filteredRead = false;
+    const readState = clientApi.state;
+    vi.spyOn(clientApi, 'state').mockImplementation(async (...args) => {
+      const next = await readState(...args);
+      if (args[1] === 'pr_w') filteredRead = true;
+      return next;
+    });
     render(<App />);
+    await waitFor(() => expect(migration).toHaveBeenCalledWith('pr_w', { shared_dir: 'Global' }), partage);
     fireEvent.click(await within(filters()).findByRole('button', { name: /work-logs/ }));
+    await waitFor(() => expect(filteredRead).toBe(true), partage);
+    await act(async () => { resumeMigration(); await migrationGate; });
     expect(await screen.findByText('Le dossier relié à work-logs (« Global ») n’est pas dans ce partage. « Délier work-logs de son dossier » affiche tout le partage.', undefined, partage)).toHaveAttribute('role', 'alert');
     fireEvent.click(screen.getByRole('button', { name: 'Délier work-logs de son dossier' }));
     expect((await tree()).getByRole('button', { name: /^Ouvrir notes\.md/ })).toBeInTheDocument();

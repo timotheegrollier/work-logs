@@ -280,9 +280,12 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [search]);
 
+  const latestReload = useRef<() => Promise<void>>(async () => {});
   const reload = useCallback(async () => {
     const isCurrent = () => currentFilters.current.query === query && currentFilters.current.projectId === projectId && currentFilters.current.categoryId === categoryId;
-    if (!isCurrent()) return;
+    // Une mutation commencée sous l'ancien filtre doit encore rafraîchir l'écran,
+    // en relisant le filtre courant plutôt qu'en perdant sa notification.
+    if (!isCurrent()) return latestReload.current();
     const sequence = ++reloadSequence.current;
     try {
       const next = await api.state(query, projectId, categoryId);
@@ -309,6 +312,7 @@ export default function App() {
       setError('API injoignable. Lance `npm run dev` dans /home/timo/WorkLogs.');
     }
   }, [query, projectId, categoryId]);
+  latestReload.current = reload;
 
   const switchCategory = async (next: string) => {
     if (currentFilters.current.projectId !== projectId || currentFilters.current.categoryId !== categoryId) return;
