@@ -1891,3 +1891,33 @@ l'a ouvert.
 colonne) : la demande parle des procédures, et l'arbre ne déplie pas encore les dossiers
 jusqu'au fichier ouvert. **Rouvrir si** c'est demandé : la même ligne, avec `sharedPath`.
 
+---
+
+## 46. Catégories imbriquées dans chaque projet — 2026-10-26
+
+**Demande.** Ranger les tâches, objectifs et entrées dans des sous-catégories visibles,
+filtrer leur contenu et regrouper les listes.
+
+**Choix.** Une arborescence par projet, commune aux notes, tâches et procédures ; chaque
+élément a au plus une catégorie. Elle complète le projet et les statuts existants sur le
+même écran. Le bandeau montre les arbres, les couleurs et les compteurs ; les cartes
+montrent le chemin. Le filtre inclut les descendants et se cumule à la recherche ;
+« Sans catégorie » aide à ranger l'existant. Le regroupement est un choix d'affichage,
+sans changer les dates, statuts ou positions de glisser-déposer.
+
+**Intégrité.** Migration additive ; parent et contenu doivent rester dans le même projet,
+cycles refusés. Reclasser une catégorie conserve ses enfants ; la supprimer remonte ses
+enfants et son contenu dans son parent (ou à la racine sans catégorie), avec confirmation.
+Changer le projet d'un élément libère le classement précédent ; les créations liées et
+copies héritent de la source. Une suppression attend les sauvegardes de l'éditeur.
+
+**Tous les appareils.** Même modèle dans SQLite et IndexedDB v2 (service worker aligné),
+sauvegardes v2 rétrocompatibles, import mobile, fusion Drive par date de modification et
+pierres tombales. Des reparentages concurrents peuvent former un cycle absent des deux
+sources : la fusion le casse de façon déterministe avant validation/restauration.
+Aucune dépendance, aucun onglet ajouté.
+
+**Validation.** Tests API (CRUD, migration, validations et filtres), sauvegardes/fusion,
+PWA et gestes intégrés ; parcours navigateur desktop/mobile. Bilan de la recette complète
+dans `00-HANDOVER.md`.
+

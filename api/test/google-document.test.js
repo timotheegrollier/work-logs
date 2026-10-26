@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildGoogleUpdate, documentTabs, googleToDocument, selectDocumentTab, isDefaultInk } from '../src/google-document.js';
 import { startApi, make } from './helpers.js';
+import { validateBackup } from '../src/backup-format.js';
 
 const doc = (text = 'Bonjour') => ({ documentId: 'google-123', title: 'Document Google', revisionId: 'r1',
   tabs: [{ tabProperties: { tabId: 't.0' }, documentTab: { body: { content: [
@@ -440,6 +441,41 @@ test('le retour de l’éditeur Google actualise les onglets intacts et importe 
     const base = api.db.prepare('SELECT revision_id,synced_content_json FROM google_documents WHERE entry_id=?').get(second);
     assert.equal(base.revision_id, 'r1');
     assert.match(base.synced_content_json, /Deuxième/);
+  } finally { await api.close(); }
+});
+
+test('documents Google : le classement de chaque onglet suit son projet et reste exportable', async () => {
+  const google = stub(), api = await startApi({ google });
+  google.setSource({ ...doc(), tabs: [
+    { ...doc('Premier').tabs[0], tabProperties: { tabId: 't.0' } },
+    { ...doc('Deuxième').tabs[0], tabProperties: { tabId: 't.1' } },
+  ] });
+  try {
+    const project = await make.project(api, 'Classé');
+    const other = await make.project(api, 'Destination');
+    const category = (await api.post('/api/categories', { name: 'Objectifs', project_id: project.id })).body;
+    await api.post('/api/google/documents/open', { document_id: 'google-123' });
+    await api.post('/api/google/documents/google-123/project', { project_id: project.id });
+    const ids = api.db.prepare('SELECT entry_id FROM google_documents').all().map((row) => row.entry_id);
+    assert.equal(ids.length, 2);
+    for (const id of ids) await api.put(`/api/entries/${id}`, { category_id: category.id });
+    // Choisir à nouveau le même projet ne défait pas le classement des onglets.
+    await api.post('/api/google/documents/google-123/project', { project_id: project.id });
+    for (const id of ids) assert.equal((await api.get(`/api/entries/${id}`)).body.category_id, category.id);
+    // Le déplacement du document entier libère toutes les anciennes catégories.
+    const moved = await api.post('/api/google/documents/google-123/project', { project_id: other.id });
+    assert.equal(moved.status, 200);
+    for (const id of ids) {
+      const entry = (await api.get(`/api/entries/${id}`)).body;
+      assert.equal(entry.project_id, other.id);
+      assert.equal(entry.category_id, null);
+    }
+    const destinationCategory = (await api.post('/api/categories', { name: 'Suivi', project_id: other.id })).body;
+    for (const id of ids) await api.put(`/api/entries/${id}`, { category_id: destinationCategory.id });
+    await api.post('/api/google/documents/google-123/project', { project_id: null });
+    for (const id of ids) assert.equal((await api.get(`/api/entries/${id}`)).body.category_id, null);
+    const exported = (await api.get('/api/export')).body;
+    assert.doesNotThrow(() => validateBackup(exported));
   } finally { await api.close(); }
 });
 

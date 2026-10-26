@@ -7,12 +7,13 @@
  * de base, la version et les magasins — y toucher impose de mettre les deux à jour.
  */
 export const LOCAL_DB_NAME = 'worklogs';
-export const LOCAL_DB_VERSION = 1;
+export const LOCAL_DB_VERSION = 2;
 
 /** Magasin → colonne portant la clé. `task_entries` utilise un id synthétique
  * `${task_id}\0${entry_id}`, comme l'unicité de `api/src/backup.js`. */
 export const LOCAL_STORES: Record<string, string> = {
   projects: 'id',
+  categories: 'id',
   entries: 'id',
   tasks: 'id',
   task_entries: 'id',

@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { COLUMNS, PRIORITIES, TASK_VIEWS, api, dayLabel, isOverdue, priorityLabel, subtasksMd, todayISO, type Entry, type EntrySummary, type Priority, type Project, type Status, type Task, type TaskView } from '../lib';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { COLUMNS, PRIORITIES, TASK_VIEWS, api, dayLabel, isOverdue, priorityLabel, subtasksMd, todayISO, type Category, type Entry, type EntrySummary, type Priority, type Project, type Status, type Task, type TaskView } from '../lib';
 import { draftProcedure, MAX_SOURCE_DOCUMENTS, readAiSettings, suggestSearchTerms, suggestSubtasks, taskSuggestContext, type AiWorkContext, type DraftedProcedure, type SuggestContext } from '../ai-suggest';
 import { loadAiContext, readProjectAiBrief, selectedAiContext } from '../ai-context';
 import { findDocuments, type FoundDocument } from '../doc-finder';
@@ -9,13 +9,21 @@ import { AiContextDetails } from './AiContextDetails';
 import { AiMenu } from './AiMenu';
 import { AiRefinement } from './AiRefinement';
 
+import { groupByCategory } from '../categories';
+import { CategoryBadge, CategoryPicker } from './CategoryPicker';
+
 const DRAG_TYPE = 'text/plain';
+type TaskEditForm = { title: string; due_date: string; priority: Priority; category_id: string };
+const taskForm = (task: Task): TaskEditForm => ({ title: task.title, due_date: task.due_date ?? '', priority: task.priority ?? 'normal', category_id: task.category_id || '' });
 
 export function TaskBoard({
   tasks,
   entries,
   projectId,
   projects,
+  categories = [],
+  categoryId = '',
+  grouped = false,
   view,
   onView,
   onOpenDocument,
@@ -27,6 +35,9 @@ export function TaskBoard({
   entries: EntrySummary[];
   projectId: string;
   projects: Project[];
+  categories?: Category[];
+  categoryId?: string;
+  grouped?: boolean;
   view: TaskView | null;
   onView: (view: TaskView | null) => void;
   /** `projectId` : projet connu d'un document absent de l'état filtré, que l'ouverture suit. */
@@ -39,6 +50,11 @@ export function TaskBoard({
   const [title, setTitle] = useState('');
   const [over, setOver] = useState<Status | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+  // Le brouillon survit au passage de la carte dans un autre groupe (suppression
+  // ou déplacement de catégorie), même si React remonte cette carte.
+  const [editingForm, setEditingForm] = useState<TaskEditForm | null>(null);
   const today = todayISO();
   const active = TASK_VIEWS.find((candidate) => candidate.id === view);
   const counts = new Map(TASK_VIEWS.map((candidate) => [candidate.id, tasks.filter((task) => candidate.match(task, today)).length]));
@@ -47,7 +63,8 @@ export function TaskBoard({
 
   const add = async () => {
     if (!title.trim()) return;
-    await api.createTask({ title: title.trim(), project_id: projectId || null });
+    const category = categories.find((candidate) => candidate.id === categoryId);
+    await api.createTask({ title: title.trim(), project_id: projectId || category?.project_id || null, category_id: category?.id || null });
     setTitle('');
     // Une tâche neuve n'entre dans aucune vue : on lève le filtre pour la voir arriver.
     onView(null);
@@ -120,31 +137,42 @@ export function TaskBoard({
                 setOver(column.id);
               }}
               onDragLeave={() => setOver((c) => (c === column.id ? null : c))}
-              onDrop={(e) => drop(e, column.id, inColumn.length)}
+              onDrop={(e) => drop(e, column.id, Number.MAX_SAFE_INTEGER)}
             >
               <h2>
                 {column.label} <span className="count">{shown.length}</span>
               </h2>
               <ul>
-                {shown.map((task) => (
-                  <li key={task.id}>
-                    <TaskCard
-                      task={task}
-                      entries={entries}
-                      projects={projects}
-                      editing={editing === task.id}
-                      suggestContext={taskSuggestContext(task, tasks, entries, projects)}
-                      onEdit={() => setEditing(task.id)}
-                      onEditDone={() => setEditing(null)}
-                      onOpenDocument={onOpenDocument}
-                      onOpenShared={onOpenShared}
-                      onProcedureCreated={onProcedureCreated}
-                      onChanged={onChanged}
-                      // Position dans la colonne entière : une vue cache des voisines.
-                      onDrop={(e) => drop(e, column.id, inColumn.indexOf(task))}
-                    />
-                  </li>
-                ))}
+                {(grouped ? groupByCategory(shown, categories, projects) : [{ id: '', label: '', items: shown }]).map((group) => {
+                  const cards = group.items.map((task) => (
+                    <li key={task.id}>
+                      <TaskCard
+                        task={task}
+                        entries={entries}
+                        projects={projects}
+                        categories={categories}
+                        editing={editing === task.id}
+                        form={editing === task.id && editingForm ? editingForm : taskForm(task)}
+                        onFormChange={(next) => { if (editingRef.current === task.id) setEditingForm((current) => typeof next === 'function' ? next(current || taskForm(task)) : next); }}
+                        suggestContext={taskSuggestContext(task, tasks, entries, projects)}
+                        onEdit={() => { setEditingForm(taskForm(task)); setEditing(task.id); }}
+                        onEditDone={() => { if (editingRef.current === task.id) { editingRef.current = null; setEditing(null); setEditingForm(null); } }}
+                        onOpenDocument={onOpenDocument}
+                        onOpenShared={onOpenShared}
+                        onProcedureCreated={onProcedureCreated}
+                        onChanged={onChanged}
+                        // Position dans la colonne entière : filtres et groupes cachent des voisines.
+                        onDrop={(e) => drop(e, column.id, task.position)}
+                      />
+                    </li>
+                  ));
+                  return grouped ? (
+                    <li key={group.id} className="task-category-group">
+                      <h3 className="category-group-title">{group.label} <span className="count">{group.items.length}</span></h3>
+                      <ul className="task-category-items">{cards}</ul>
+                    </li>
+                  ) : cards;
+                })}
               </ul>
               {inColumn.length === 0 && <p className="empty-column">Déposer ici</p>}
             </div>
@@ -159,7 +187,10 @@ function TaskCard({
   task,
   entries,
   projects,
+  categories,
   editing,
+  form,
+  onFormChange: setForm,
   suggestContext,
   onEdit,
   onEditDone,
@@ -172,7 +203,10 @@ function TaskCard({
   task: Task;
   entries: EntrySummary[];
   projects: Project[];
+  categories: Category[];
   editing: boolean;
+  form: TaskEditForm;
+  onFormChange: Dispatch<SetStateAction<TaskEditForm>>;
   suggestContext: SuggestContext;
   onEdit: () => void;
   onEditDone: () => void;
@@ -182,7 +216,16 @@ function TaskCard({
   onChanged: () => void;
   onDrop: (event: React.DragEvent) => void;
 }) {
-  const [form, setForm] = useState({ title: task.title, due_date: task.due_date ?? '', priority: (task.priority ?? 'normal') as Priority });
+  const [editError, setEditError] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  useEffect(() => {
+    if (!editing) {
+      setEditError('');
+      return;
+    }
+    setForm((current) => current.category_id && !categories.some((category) => category.id === current.category_id && category.project_id === task.project_id)
+      ? { ...current, category_id: task.category_id || '' } : current);
+  }, [editing, form.category_id, task.category_id, task.project_id, categories]);
   const [linking, setLinking] = useState(false);
   const [filter, setFilter] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
@@ -225,9 +268,17 @@ function TaskCard({
   };
 
   const saveEdit = async () => {
-    if (!form.title.trim()) return;
-    onEditDone();
-    await patch({ title: form.title.trim(), due_date: form.due_date || null, priority: form.priority });
+    if (!form.title.trim() || editSaving) return;
+    setEditSaving(true);
+    setEditError('');
+    try {
+      await patch({ title: form.title.trim(), due_date: form.due_date || null, priority: form.priority, category_id: form.category_id || null });
+      onEditDone();
+    } catch (e) {
+      setEditError((e as Error).message);
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const startLinking = () => {
@@ -707,10 +758,12 @@ function TaskCard({
       <div className="card is-editing">
         <input
           aria-label="Titre de la tâche"
+          disabled={editSaving}
           autoFocus
           value={form.title}
           onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
           onKeyDown={(e) => {
+            if (editSaving) return;
             if (e.key === 'Enter') void saveEdit();
             if (e.key === 'Escape') onEditDone();
           }}
@@ -718,6 +771,7 @@ function TaskCard({
         <input
           type="date"
           aria-label="Échéance"
+          disabled={editSaving}
           value={form.due_date}
           onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
         />
@@ -725,6 +779,7 @@ function TaskCard({
           Priorité
           <select
             aria-label="Priorité"
+            disabled={editSaving}
             value={form.priority}
             onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value as Priority }))}
           >
@@ -735,14 +790,16 @@ function TaskCard({
             ))}
           </select>
         </label>
+        <CategoryPicker categories={categories} projectId={task.project_id || ''} value={form.category_id} label="Catégorie de la tâche" disabled={editSaving} onChange={(value) => setForm((current) => ({ ...current, category_id: value || '' }))} />
         <div className="card-actions">
-          <button className="ghost" type="button" onClick={() => void saveEdit()}>
+          <button className="ghost" type="button" disabled={editSaving} onClick={() => void saveEdit()}>
             Enregistrer
           </button>
-          <button className="ghost" type="button" onClick={onEditDone}>
+          <button className="ghost" type="button" disabled={editSaving} onClick={onEditDone}>
             Annuler
           </button>
         </div>
+        {editError && <p className="error" role="alert">{editError}</p>}
         {documentControls}
         {!linking && <div className="card-links">{linkButton}</div>}
       </div>
@@ -794,6 +851,7 @@ function TaskCard({
         </span>
       </div>
       <div className="card-meta">
+        <CategoryBadge categories={categories} categoryId={task.category_id} />
         {/* « Normale » sur chaque carte n'apprenait rien : seul l'écart se signale. */}
         {task.priority && task.priority !== 'normal' && (
           <span

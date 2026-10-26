@@ -163,13 +163,13 @@ const sameEntry = (current, next) =>
   current.title === next.title && current.content_md === next.content_md &&
   (current.content_json || null) === (next.content_json ? JSON.stringify(next.content_json) : null) &&
   current.entry_date === next.entry_date && (current.project_id || null) === (next.project_id || null) &&
-  (current.archived ?? 0) === (next.archived ?? 0) && (current.kind ?? 'note') === (next.kind ?? 'note');
+  (current.archived ?? 0) === (next.archived ?? 0) && (current.kind ?? 'note') === (next.kind ?? 'note') && (current.category_id || null) === (next.category_id || null);
 
 const sameTask = (current, next) =>
   current.title === next.title && current.status === next.status &&
   (current.due_date || null) === (next.due_date || null) && current.pinned === next.pinned &&
   current.position === next.position && current.priority === next.priority &&
-  (current.project_id || null) === (next.project_id || null);
+  (current.project_id || null) === (next.project_id || null) && (current.category_id || null) === (next.category_id || null);
 
 /**
  * Fusionne une boîte mobile validée : insertions, mises à jour si la version
@@ -199,29 +199,44 @@ export async function importOutbox(db, { google, uploadDir }, data) {
         counts.projects++;
       }
     }
+    if (data.categories?.length) {
+      const categoryMap = new Map(db.prepare('SELECT * FROM categories').all().map((row) => [row.id, row]));
+      const incoming = [];
+      for (const next of data.categories) {
+        const current = categoryMap.get(next.id);
+        if (current && current.project_id !== next.project_id) throw Object.assign(new Error('Une catégorie ne peut pas changer de projet.'), { status: 400 });
+        if (!current || next.updated_at > current.updated_at) { categoryMap.set(next.id, next); incoming.push(next); }
+      }
+      // Validate the complete prospective tree before touching any category.
+      validateBackup({ version: 2, projects: db.prepare('SELECT * FROM projects').all(), categories: [...categoryMap.values()], entries: [], tasks: [], task_entries: [], attachments: [] });
+      const category = db.prepare(`INSERT INTO categories (id,name,project_id,parent_id,color,created_at,updated_at) VALUES (?,?,?,NULL,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET name=excluded.name,parent_id=NULL,color=excluded.color,updated_at=excluded.updated_at`);
+      for (const next of incoming) category.run(next.id, next.name, next.project_id, next.color, next.created_at, next.updated_at);
+      for (const next of incoming) db.prepare('UPDATE categories SET parent_id=? WHERE id=?').run(next.parent_id, next.id);
+    }
     for (const next of data.entries) {
       const current = db.prepare('SELECT * FROM entries WHERE id=?').get(next.id);
       const content = next.content_json ? JSON.stringify(next.content_json) : null;
       if (!current) {
-        db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
-          .run(next.id, next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.created_at, next.updated_at);
+        db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+          .run(next.id, next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.created_at, next.updated_at, next.category_id ?? null);
         counts.entries++;
       } else if (next.updated_at > current.updated_at) {
-        db.prepare('UPDATE entries SET title=?,content_md=?,content_json=?,entry_date=?,project_id=?,archived=?,kind=?,updated_at=? WHERE id=?')
-          .run(next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.updated_at, next.id);
+        db.prepare('UPDATE entries SET title=?,content_md=?,content_json=?,entry_date=?,project_id=?,archived=?,kind=?,updated_at=?,category_id=? WHERE id=?')
+          .run(next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.updated_at, next.category_id ?? null, next.id);
         counts.updated++;
       } else if (!sameEntry(current, next)) counts.conflicts++;
     }
     for (const next of data.tasks) {
       const current = db.prepare('SELECT * FROM tasks WHERE id=?').get(next.id);
       if (!current) {
-        db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
-          .run(next.id, next.title, next.status, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.created_at, next.updated_at);
+        db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+          .run(next.id, next.title, next.status, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.created_at, next.updated_at, next.category_id ?? null);
         counts.tasks++;
         touched.add(next.status);
       } else if (next.updated_at > current.updated_at) {
-        db.prepare('UPDATE tasks SET title=?,status=?,due_date=?,pinned=?,position=?,priority=?,project_id=?,updated_at=? WHERE id=?')
-          .run(next.title, next.status, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.updated_at, next.id);
+        db.prepare('UPDATE tasks SET title=?,status=?,due_date=?,pinned=?,position=?,priority=?,project_id=?,updated_at=?,category_id=? WHERE id=?')
+          .run(next.title, next.status, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.updated_at, next.category_id ?? null, next.id);
         counts.updated++;
         touched.add(current.status);
         touched.add(next.status);
@@ -264,7 +279,7 @@ export function googleLink(db, entry) {
     document_title: link.document_title, tab_title: link.tab_title, tab_order: link.tab_order, tab_depth: link.tab_depth,
     preserved_elements: entry.content_json ? googlePreservedCount(JSON.parse(entry.content_json)) : 0,
     sync_blocked: link.readonly_reason || '',
-    tabs: db.prepare(`SELECT e.id, e.title, e.entry_date, e.project_id, e.updated_at,
+    tabs: db.prepare(`SELECT e.id, e.title, e.entry_date, e.project_id, e.category_id, e.updated_at,
       '' excerpt, 0 attachments, g.document_id google_document_id, g.tab_id google_tab_id,
       g.tab_title google_tab_title, g.tab_order google_tab_order, g.tab_depth google_tab_depth,
       g.readonly_reason google_sync_blocked, (e.content_json != g.synced_content_json) google_dirty
@@ -542,8 +557,8 @@ export function registerGoogleRoutes(app, { db, google, uploadDir, autoSync = fa
     const documentId = fileId(req.params.id);
     const projectId = req.body?.project_id || null;
     if (projectId !== null && (typeof projectId !== 'string' || !db.prepare('SELECT 1 FROM projects WHERE id=?').get(projectId))) fail('projet introuvable');
-    const changed = db.prepare('UPDATE entries SET project_id=?, updated_at=? WHERE id IN (SELECT entry_id FROM google_documents WHERE document_id=?)')
-      .run(projectId, nowISO(), documentId).changes;
+    const changed = db.prepare('UPDATE entries SET category_id=CASE WHEN project_id IS ? THEN category_id ELSE NULL END, project_id=?, updated_at=? WHERE id IN (SELECT entry_id FROM google_documents WHERE document_id=?)')
+      .run(projectId, projectId, nowISO(), documentId).changes;
     if (!changed) fail('Ouvre d’abord ce document dans WorkLogs pour le ranger dans un projet.', 409);
     res.json({ ok: true, entries: changed, ...localDocument(documentId) });
   });

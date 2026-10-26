@@ -22,12 +22,24 @@ export interface Project {
   entries: number;
   open_tasks: number;
 }
+export interface Category {
+  id: string;
+  name: string;
+  project_id: string;
+  parent_id: string | null;
+  color: string;
+  created_at: string;
+  updated_at: string;
+  entries?: number;
+  open_tasks?: number;
+}
 /** Ligne de la liste de gauche : sans le corps, avec un extrait. */
 export interface EntrySummary {
   id: string;
   title: string;
   entry_date: string;
   project_id: string | null;
+  category_id?: string | null;
   /** 1 = rangée dans les archives (masquée du journal, sans rien détruire). */
   archived: 0 | 1;
   /** `procedure` = mode d'emploi du projet, rassemblé dans le panneau Procédures. */
@@ -93,6 +105,7 @@ export interface Entry {
   google_sync?: GoogleSync | null;
   entry_date: string;
   project_id: string | null;
+  category_id?: string | null;
   archived: 0 | 1;
   kind: 'note' | 'procedure';
   created_at: string;
@@ -139,6 +152,7 @@ export interface Task {
   /** Toujours renseignée par l'API (`'normal'` par défaut et après migration). */
   priority: Priority;
   project_id: string | null;
+  category_id?: string | null;
   created_at: string;
   updated_at: string;
   documents: EntrySummary[];
@@ -162,6 +176,7 @@ export interface Stats {
 }
 export interface AppState {
   projects: Project[];
+  categories?: Category[];
   entries: EntrySummary[];
   tasks: Task[];
   /** Pièces jointes des procédures du filtre courant, pour le panneau Procédures. */
@@ -468,13 +483,19 @@ export const remoteApi = {
   openGoogleDocument: (document_id: string, tab_id?: string) => send<Entry>('POST', '/api/google/documents/open', { document_id, ...(tab_id ? { tab_id } : {}) }),
   pushGoogleDocument: (id: string) => send<Entry>('POST', `/api/entries/${id}/google/push`),
   pullGoogleDocument: (id: string, expected_content_json: RichDocument) => send<Entry>('POST', `/api/entries/${id}/google/pull`, { expected_content_json }),
-  state: (q = '', projectId = '') => {
+  state: (q = '', projectId = '', categoryId = '') => {
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     if (projectId) params.set('project_id', projectId);
+    if (categoryId) params.set('category_id', categoryId);
     const query = params.toString();
     return req<AppState>('/api/state' + (query ? '?' + query : ''));
   },
+  createCategory: (body: { name: string; project_id: string; parent_id?: string | null; color?: string }) =>
+    send<Category>('POST', '/api/categories', body),
+  updateCategory: (id: string, body: Partial<Pick<Category, 'name' | 'parent_id' | 'color'>>) =>
+    send<Category>('PUT', `/api/categories/${encodeURIComponent(id)}`, body),
+  deleteCategory: (id: string) => send<{ ok: true }>('DELETE', `/api/categories/${encodeURIComponent(id)}`),
   entry: (id: string) => req<Entry>(`/api/entries/${id}`),
   createEntry: (body: Partial<Entry>) => send<Entry>('POST', '/api/entries', body),
   updateEntry: (id: string, body: Partial<Entry>) => send<Entry>('PUT', `/api/entries/${id}`, body),

@@ -283,3 +283,25 @@ Pour chaque cas, relever : proposition utilisable, corrections nécessaires, dé
 inventés, doublons et temps ressenti. Comparer les mêmes exemples avant/après toute
 modification de prompt ou de modèle ; conserver les exemples localement sans clé ni
 donnée confidentielle dans le dépôt.
+
+
+## 15. Catégories et sous-catégories (2026-10-26)
+
+1. Choisir un projet, créer « Préparation », puis « Devis » avec son bouton **＋**.
+   Créer une seconde catégorie « Exploitation ». Vérifier couleurs et indentation.
+2. Classer une entrée et une tâche dans « Devis ». Cliquer « Préparation » : toutes deux
+   restent visibles, les éléments non classés disparaissent. Créer une note et une tâche
+   sous ce filtre : elles sont rangées dans « Préparation ». « Sans catégorie » retrouve
+   les éléments non classés ; la recherche se cumule au filtre.
+3. Cocher **Regrouper par catégorie** : chemins lisibles dans le journal et sous chaque
+   statut des tâches. Déplacer une carte en conservant son classement ; vérifier l'ordre
+   même si le filtre masque des cartes d'un autre projet.
+4. Par **✎**, ranger « Devis » dans « Exploitation » : chemins et compteurs suivent.
+   Éditer le titre d'une tâche groupée, supprimer « Devis » puis enregistrer : titre gardé,
+   tâche et entrée remontées dans « Exploitation », aucune note supprimée.
+5. À 412 px, vérifier noms longs, arbre défilant et formulaire sans débordement horizontal.
+   Exporter/restaurer une sauvegarde : parents et affectations sont identiques. Mettre à
+   jour tous les appareils synchronisés avant de contrôler l'aller-retour Drive réel.
+
+Les deux parcours `e2e/categories.spec.ts` couvrent desktop et mobile ; les tests API,
+PWA et App couvrent aussi les suppressions et reclassements pendant un retour réseau.

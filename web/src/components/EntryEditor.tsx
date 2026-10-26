@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { api, COLUMNS, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Entry, type EntrySummary, type Project, type RichDocument, type Status } from '../lib';
+import { api, COLUMNS, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type RichDocument, type Status } from '../lib';
 import { completeNote, draftProcedure, extractEntryActions, parseChecklist, proofreadEntry, readAiSettings, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
 import { insertCodeFence, renderMarkdown, toggleChecklistItem } from '../markdown';
@@ -15,6 +15,8 @@ import { ProcedureDraft } from './ProcedureDraft';
 import { AiContextDetails } from './AiContextDetails';
 import { AiMenu } from './AiMenu';
 import { AiRefinement } from './AiRefinement';
+
+import { CategoryPicker } from './CategoryPicker';
 
 type SaveState = 'saved' | 'dirty' | 'saving' | 'error';
 const LABELS: Record<SaveState, string> = {
@@ -42,6 +44,7 @@ export function EntryEditor({
   onSelectTab = () => {},
   entry,
   projects,
+  categories = [],
   linkedTasks = [],
   tasks = [],
   onChanged,
@@ -55,6 +58,7 @@ export function EntryEditor({
   onSelectTab?: (id: string) => void;
   entry: Entry;
   projects: Project[];
+  categories?: Category[];
   linkedTasks?: { id: string; title: string; status: Status }[];
   /** Toutes les tâches, pour lier l'entrée à des existantes (miroir du lieur de la carte). */
   tasks?: { id: string; title: string; status: Status }[];
@@ -72,6 +76,7 @@ export function EntryEditor({
     content_json: entry.content_json ?? null,
     entry_date: entry.entry_date,
     project_id: entry.project_id ?? '',
+    category_id: entry.category_id ?? '',
   });
   const [attachments, setAttachments] = useState<Attachment[]>(entry.attachments ?? []);
   /** Pièce jointe dont l'aperçu est ouvert, sinon `null` (aucun dialogue). */
@@ -81,6 +86,8 @@ export function EntryEditor({
   // L'archivage est une action explicite, hors enregistrement automatique.
   const [archived, setArchived] = useState(entry.archived ?? 0);
   const [save, setSave] = useState<SaveState>('saved');
+  const saveRef = useRef(save);
+  saveRef.current = save;
   const [writing, setWriting] = useState(autoFocusTitle);
   useEffect(() => { if (editRequest) setWriting(true); }, [editRequest]);
   // Les fichiers peuvent aussi être ajoutés depuis la sidebar Procédures.
@@ -121,19 +128,42 @@ export function EntryEditor({
   // l'entrée quittée, un brouillon en échec que la fermeture rejouait sans fin.
   const [savedTitle, setSavedTitle] = useState(entry.title);
   const [autosave] = useState(() => new Autosave<typeof draft>(async ({ title, ...body }) => {
-    await api.updateEntry(entry.id, { ...body, ...(title.trim() ? { title } : {}), project_id: body.project_id || null });
+    await api.updateEntry(entry.id, { ...body, ...(title.trim() ? { title } : {}), project_id: body.project_id || null, category_id: body.category_id || null });
     if (title.trim()) setSavedTitle(title);
     changedRef.current();
   }));
 
   const update = (patch: Partial<typeof draft>) => {
-    if (patch.project_id !== undefined && patch.project_id !== draftRef.current.project_id) projectVersion.current += 1;
+    if (patch.project_id !== undefined && patch.project_id !== draftRef.current.project_id) {
+      projectVersion.current += 1;
+      patch.category_id = '';
+    }
     const next = { ...draftRef.current, ...patch };
     draftRef.current = next;
     setDraft(next);
     autosave.update(next);
     if (patch.content_json) setGoogleSync(current => current ? { ...current, dirty: true } : current);
   };
+
+  // Une suppression ou un reclassement distant doit aussi actualiser le prochain
+  // brouillon envoyé. Une sélection locale encore en cours garde la priorité.
+  const serverClassification = useRef({ project: entry.project_id || '', category: entry.category_id || '' });
+  useEffect(() => {
+    const nextProject = entry.project_id || '';
+    const nextCategory = entry.category_id || '';
+    const current = draftRef.current;
+    const previous = serverClassification.current;
+    serverClassification.current = { project: nextProject, category: nextCategory };
+    if (current.category_id === nextCategory && current.project_id === nextProject) return;
+    const changedLocally = current.category_id !== previous.category || current.project_id !== previous.project;
+    const validLocal = !current.category_id || categories.some((category) => category.id === current.category_id && category.project_id === current.project_id);
+    if (saveRef.current !== 'saved' && changedLocally && validLocal) return;
+    if (current.project_id !== nextProject) projectVersion.current += 1;
+    const next = { ...current, project_id: nextProject, category_id: nextCategory };
+    draftRef.current = next;
+    setDraft(next);
+    if (saveRef.current !== 'saved') autosave.update(next);
+  }, [entry.project_id, entry.category_id, categories, autosave]);
 
   // L'aperçu Markdown (marked + DOMPurify) est le rendu le plus coûteux :
   // on ne le recalcule qu'à contenu changeant, pas à chaque changement
@@ -793,6 +823,15 @@ export function EntryEditor({
             </option>
           ))}
         </select>
+
+        <CategoryPicker
+          categories={categories}
+          projectId={draft.project_id}
+          value={draft.category_id}
+          label="Catégorie de l’entrée"
+          disabled={syncing}
+          onChange={(value) => update({ category_id: value || '' })}
+        />
 
         {hasModes && <div className="modes" role="group" aria-label="Mode d’affichage">
           <button

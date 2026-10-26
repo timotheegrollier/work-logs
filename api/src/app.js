@@ -9,6 +9,7 @@ import { buildBackup } from './backup.js';
 import { googleLink, registerGoogleRoutes } from './google-routes.js';
 import { registerSharedRoutes } from './shared-routes.js';
 import { attachmentHeader, inlineHeader } from './disposition.js';
+import { categoryFor, nextCategory, categoryDescendants, registerCategoryRoutes } from './categories.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
 export const PRIORITIES = ['low', 'normal', 'high'];
@@ -82,7 +83,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const task = getTask(id);
     if (!task) return task;
     const documents = db.prepare(
-      `SELECT e.id, e.title, e.entry_date, e.project_id, e.archived, e.updated_at,
+      `SELECT e.id, e.title, e.entry_date, e.project_id, e.category_id, e.archived, e.updated_at,
               '' excerpt, 0 attachments,
               g.document_id google_document_id, g.tab_id google_tab_id,
               g.document_title google_document_title, g.tab_title google_tab_title
@@ -97,6 +98,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   const getProject = (id) => db.prepare('SELECT * FROM projects WHERE id=?').get(id);
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, ts: nowISO() }));
+  registerCategoryRoutes(app, db);
 
   // ---------------------------------------------------------------- état global
   // Un seul appel alimente tout l'écran : projets, entrées (sans le corps),
@@ -110,10 +112,17 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       where.push('project_id=?');
       args.push(projectId);
     }
+    const categoryId = str(req.query.category_id);
+    if (categoryId === '__none__') where.push('category_id IS NULL');
+    else if (categoryId) {
+      const ids = categoryDescendants(db, categoryId);
+      where.push(ids.length ? `category_id IN (${ids.map(() => '?').join(',')})` : '0=1');
+      args.push(...ids);
+    }
 
     // Les entrées sont jointes à google_documents : leurs colonnes doivent être
     // qualifiées, alors que la requête des tâches partage le même filtre brut.
-    const entryWhere = where.map((clause) => 'entries.' + clause);
+    const entryWhere = where.map((clause) => clause === '0=1' ? clause : 'entries.' + clause);
     const entryArgs = [...args];
     if (q) {
       entryWhere.push('(entries.title LIKE ? OR entries.content_md LIKE ?)');
@@ -121,7 +130,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     }
     const entries = db
       .prepare(
-        `SELECT entries.id, entries.title, entries.entry_date, entries.project_id, entries.archived, entries.kind, entries.updated_at,
+        `SELECT entries.id, entries.title, entries.entry_date, entries.project_id, entries.category_id, entries.archived, entries.kind, entries.updated_at,
                 substr(entries.content_md, 1, 240) excerpt,
                 (SELECT COUNT(*) FROM attachments a WHERE a.entry_id = entries.id) attachments,
                 g.document_id google_document_id, g.tab_id google_tab_id,
@@ -142,7 +151,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       taskArgs.push(`%${q}%`);
     }
     const taskDocuments = db.prepare(
-      `SELECT te.task_id, e.id, e.title, e.entry_date, e.project_id, e.archived, e.updated_at,
+      `SELECT te.task_id, e.id, e.title, e.entry_date, e.project_id, e.category_id, e.archived, e.updated_at,
               g.document_id google_document_id, g.tab_id google_tab_id,
               g.document_title google_document_title, g.tab_title google_tab_title
        FROM task_entries te
@@ -193,6 +202,10 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
         .all(),
       entries,
       tasks,
+      categories: db.prepare(`SELECT c.*,
+        (SELECT COUNT(*) FROM entries e WHERE e.category_id=c.id) entries,
+        (SELECT COUNT(*) FROM tasks t WHERE t.category_id=c.id AND t.status!='done') open_tasks
+        FROM categories c ORDER BY c.name COLLATE NOCASE, c.id`).all(),
       procedure_attachments: procedureAttachments,
       stats: stats(db),
     });
@@ -219,13 +232,14 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       return bad(res, 'projet introuvable');
     const kind = kindOf(b.kind);
     if (!kind) return bad(res, 'type de document invalide (note ou procédure attendu)');
+    const categoryId = categoryFor(db, orNull(b.project_id), b.category_id);
 
     const id = uid('en_');
     const t = nowISO();
     const rich = b.content_json == null ? null : validateDocument(b.content_json);
     db.prepare(
-      'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,created_at,updated_at,content_json) VALUES (?,?,?,?,?,?,?,?,?)'
-    ).run(id, title, rich ? documentText(rich) : typeof b.content_md === 'string' ? b.content_md : '', date, orNull(b.project_id), kind, t, t, rich ? JSON.stringify(rich) : null);
+      'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,created_at,updated_at,content_json,category_id) VALUES (?,?,?,?,?,?,?,?,?,?)'
+    ).run(id, title, rich ? documentText(rich) : typeof b.content_md === 'string' ? b.content_md : '', date, orNull(b.project_id), kind, t, t, rich ? JSON.stringify(rich) : null, categoryId);
     res.status(201).json(getEntry(id));
   });
 
@@ -240,6 +254,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     if (!DATE_RE.test(date)) return bad(res, 'date invalide (AAAA-MM-JJ attendu)');
     const projectId = pick(b, 'project_id', cur.project_id, orNull);
     if (projectId && !getProject(projectId)) return bad(res, 'projet introuvable');
+    const categoryId = nextCategory(db, b, cur, projectId);
     const archived = pick(b, 'archived', cur.archived ?? 0, (v) => (v ? 1 : 0));
     const kind = pick(b, 'kind', cur.kind ?? 'note', (v) => kindOf(v, cur.kind ?? 'note'));
     if (!kind) return bad(res, 'type de document invalide (note ou procédure attendu)');
@@ -249,7 +264,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     if (cur.content_json && rich === null) return bad(res, 'la conversion d’un document riche en Markdown n’est pas prise en charge');
 
     db.prepare(
-      'UPDATE entries SET title=?, content_md=?, entry_date=?, project_id=?, archived=?, kind=?, updated_at=?, content_json=? WHERE id=?'
+      'UPDATE entries SET title=?, content_md=?, entry_date=?, project_id=?, archived=?, kind=?, updated_at=?, content_json=?, category_id=? WHERE id=?'
     ).run(
       title,
       rich ? documentText(rich) : pick(b, 'content_md', cur.content_md, (v) => (typeof v === 'string' ? v : cur.content_md)),
@@ -259,6 +274,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       kind,
       nowISO(),
       rich ? JSON.stringify(rich) : null,
+      categoryId,
       cur.id
     );
     res.json(getEntry(cur.id));
@@ -288,8 +304,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     };
     db.exec('BEGIN');
     try {
-      db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,kind,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
-        .run(id, `${original.title} — copie locale`, markdown, rich ? JSON.stringify(rich) : null, original.entry_date, original.project_id, original.kind ?? 'note', time, time);
+      db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,kind,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .run(id, `${original.title} — copie locale`, markdown, rich ? JSON.stringify(rich) : null, original.entry_date, original.project_id, original.kind ?? 'note', time, time, original.category_id);
       for (const attachment of db.prepare('SELECT * FROM attachments WHERE entry_id=?').all(original.id)) {
         const stored = uid('copy_') + path.extname(attachment.stored);
         const target = path.join(uploadDir, stored);
@@ -328,8 +344,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     db.exec('BEGIN');
     try {
       db.prepare(
-        'INSERT INTO tasks (id,title,status,due_date,pinned,position,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)'
-      ).run(id, title, 'todo', dueDate, 0, position, source.project_id, time, time);
+        'INSERT INTO tasks (id,title,status,due_date,pinned,position,project_id,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?)'
+      ).run(id, title, 'todo', dueDate, 0, position, source.project_id, time, time, source.category_id);
       db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run(id, source.id, time);
       db.exec('COMMIT');
     } catch (error) {
@@ -354,8 +370,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     db.exec('BEGIN');
     try {
       db.prepare(
-        'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,created_at,updated_at,content_json) VALUES (?,?,?,?,?,?,?,?,?)'
-      ).run(id, title, content, today(), source.project_id, 'note', time, time, null);
+        'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,created_at,updated_at,content_json,category_id) VALUES (?,?,?,?,?,?,?,?,?,?)'
+      ).run(id, title, content, today(), source.project_id, 'note', time, time, null, source.category_id);
       db.prepare('INSERT INTO task_entries (task_id, entry_id, created_at) VALUES (?,?,?)').run(source.id, id, time);
       if (source.status === 'done') archiveTaskDocuments(db, source.id, time);
       db.exec('COMMIT');
@@ -376,6 +392,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     if (!priority) return bad(res, 'priorité invalide (basse, normale ou haute attendue)');
     if (orNull(b.project_id) && !getProject(str(b.project_id)))
       return bad(res, 'projet introuvable');
+    const categoryId = categoryFor(db, orNull(b.project_id), b.category_id);
 
     const id = uid('tk_');
     const t = nowISO();
@@ -383,8 +400,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       .prepare('SELECT COALESCE(MAX(position),-1)+1 p FROM tasks WHERE status=?')
       .get(status).p;
     db.prepare(
-      'INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
-    ).run(id, title, status, orNull(b.due_date), b.pinned ? 1 : 0, position, priority, orNull(b.project_id), t, t);
+      'INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(id, title, status, orNull(b.due_date), b.pinned ? 1 : 0, position, priority, orNull(b.project_id), t, t, categoryId);
     res.status(201).json(getTask(id));
   });
 
@@ -401,12 +418,13 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     if (!priority) return bad(res, 'priorité invalide (basse, normale ou haute attendue)');
     const projectId = pick(b, 'project_id', cur.project_id, orNull);
     if (projectId && !getProject(projectId)) return bad(res, 'projet introuvable');
+    const categoryId = nextCategory(db, b, cur, projectId);
 
     const time = nowISO();
     db.exec('BEGIN');
     try {
       db.prepare(
-        'UPDATE tasks SET title=?, status=?, due_date=?, pinned=?, priority=?, project_id=?, updated_at=? WHERE id=?'
+        'UPDATE tasks SET title=?, status=?, due_date=?, pinned=?, priority=?, project_id=?, updated_at=?, category_id=? WHERE id=?'
       ).run(
         title,
         status,
@@ -415,6 +433,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
         priority,
         projectId,
         time,
+        categoryId,
         cur.id
       );
       if (cur.status !== 'done' && status === 'done') archiveTaskDocuments(db, cur.id, time);
@@ -547,10 +566,21 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   app.delete('/api/projects/:id', (req, res) => {
     const cur = getProject(req.params.id);
     if (!cur) return notFound(res, 'projet introuvable');
-    db.prepare('DELETE FROM projects WHERE id=?').run(cur.id);
-    // Lien vers un sous-dossier du partage : local, sans clé étrangère (§25).
-    db.prepare('DELETE FROM shared_project_folders WHERE project_id=?').run(cur.id);
-    tombstone(db, 'project', cur.id);
+    const time = nowISO();
+    db.exec('BEGIN');
+    try {
+      for (const category of db.prepare('SELECT id FROM categories WHERE project_id=?').all(cur.id)) {
+        tombstone(db, 'category', category.id);
+      }
+      for (const table of ['entries', 'tasks']) {
+        db.prepare(`UPDATE ${table} SET project_id=NULL,category_id=NULL,updated_at=? WHERE project_id=?`).run(time, cur.id);
+      }
+      db.prepare('DELETE FROM projects WHERE id=?').run(cur.id);
+      // Lien vers un sous-dossier du partage : local, sans clé étrangère (§25).
+      db.prepare('DELETE FROM shared_project_folders WHERE project_id=?').run(cur.id);
+      tombstone(db, 'project', cur.id);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
     res.json({ ok: true });
   });
 

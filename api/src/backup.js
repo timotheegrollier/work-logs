@@ -17,6 +17,7 @@ export function buildBackup(db) {
     version: BACKUP_VERSION,
     exported_at: nowISO(),
     projects: db.prepare('SELECT * FROM projects ORDER BY name, id').all(),
+    categories: db.prepare('SELECT * FROM categories ORDER BY name, id').all(),
     entries: db.prepare('SELECT * FROM entries ORDER BY entry_date DESC, updated_at DESC, id').all().map(decodeEntry),
     tasks: db.prepare('SELECT * FROM tasks ORDER BY status, position, id').all(),
     task_entries: db.prepare('SELECT * FROM task_entries ORDER BY task_id, entry_id').all(),
@@ -33,13 +34,17 @@ export function restoreBackup(db, input, { tombstones = null } = {}) {
   const data = validateBackup(input);
   db.exec('BEGIN');
   try {
-    db.exec('DELETE FROM task_entries; DELETE FROM google_documents; DELETE FROM attachments; DELETE FROM tasks; DELETE FROM entries; DELETE FROM projects;');
+    db.exec('DELETE FROM task_entries; DELETE FROM google_documents; DELETE FROM attachments; DELETE FROM tasks; DELETE FROM entries; DELETE FROM categories; DELETE FROM projects;');
     const project = db.prepare('INSERT INTO projects (id,name,color,created_at,updated_at,shared_dir) VALUES (?,?,?,?,?,?)');
     for (const value of data.projects) project.run(value.id, value.name, value.color, value.created_at, value.updated_at || value.created_at, value.shared_dir ?? null);
-    const entry = db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)');
-    for (const value of data.entries) entry.run(value.id, value.title, value.content_md, value.content_json ? JSON.stringify(value.content_json) : null, value.entry_date, value.project_id, value.archived, value.kind, value.created_at, value.updated_at);
-    const task = db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)');
-    for (const value of data.tasks) task.run(value.id, value.title, value.status, value.due_date, value.pinned, value.position, value.priority, value.project_id, value.created_at, value.updated_at);
+    const category = db.prepare('INSERT INTO categories (id,name,project_id,parent_id,color,created_at,updated_at) VALUES (?,?,?,NULL,?,?,?)');
+    for (const value of data.categories) category.run(value.id, value.name, value.project_id, value.color, value.created_at, value.updated_at);
+    const parent = db.prepare('UPDATE categories SET parent_id=? WHERE id=?');
+    for (const value of data.categories) if (value.parent_id) parent.run(value.parent_id, value.id);
+    const entry = db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+    for (const value of data.entries) entry.run(value.id, value.title, value.content_md, value.content_json ? JSON.stringify(value.content_json) : null, value.entry_date, value.project_id, value.archived, value.kind, value.created_at, value.updated_at, value.category_id);
+    const task = db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+    for (const value of data.tasks) task.run(value.id, value.title, value.status, value.due_date, value.pinned, value.position, value.priority, value.project_id, value.created_at, value.updated_at, value.category_id);
     const google = db.prepare(`INSERT INTO google_documents
       (entry_id,document_id,tab_id,revision_id,synced_content_json,synced_at,document_title,tab_title,tab_order,tab_depth,readonly_reason)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`);

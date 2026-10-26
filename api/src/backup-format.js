@@ -81,6 +81,42 @@ export function validateBackup(input) {
   });
   const projectIds = unique(projects.map((project) => project.id), 'Identifiant de projet');
 
+  if (data.categories !== undefined && (!Array.isArray(data.categories) || data.categories.length > 100_000)) fail('Liste categories invalide.');
+  const categories = (data.categories || []).map((category) => {
+    record(category, 'Catégorie');
+    const projectId = id(category.project_id, 'Projet de la catégorie');
+    if (!projectIds.has(projectId)) fail('Une catégorie référence un projet absent.');
+    const color = category.color === undefined ? '#64748b' : requiredText(category.color, 'Couleur de catégorie', 7);
+    if (!/^#[a-fA-F0-9]{6}$/.test(color)) fail('Couleur de catégorie invalide.');
+    return {
+      id: id(category.id, 'Identifiant de catégorie'), name: requiredText(category.name, 'Nom de catégorie', 100),
+      project_id: projectId, parent_id: optionalId(category.parent_id, 'Catégorie parente'), color,
+      created_at: timestamp(category.created_at, 'Date de création de catégorie'),
+      updated_at: timestamp(category.updated_at || category.created_at, 'Date de modification de catégorie'),
+    };
+  });
+  unique(categories.map((category) => category.id), 'Identifiant de catégorie');
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  for (const category of categories) {
+    if (category.parent_id && categoryById.get(category.parent_id)?.project_id !== category.project_id) fail('Catégorie parente absente ou d’un autre projet.');
+  }
+  const checked = new Set();
+  for (const category of categories) {
+    const path = new Set();
+    let current = category;
+    while (current && !checked.has(current.id)) {
+      if (path.has(current.id)) fail('Cycle dans les catégories.');
+      path.add(current.id);
+      current = categoryById.get(current.parent_id);
+    }
+    for (const key of path) checked.add(key);
+  }
+  const categoryOf = (value, projectId) => {
+    const categoryId = optionalId(value, 'Catégorie');
+    if (categoryId && categoryById.get(categoryId)?.project_id !== projectId) fail('Catégorie absente ou d’un autre projet.');
+    return categoryId;
+  };
+
   const entries = data.entries.map((entry) => {
     record(entry, 'Entrée');
     const projectId = optionalId(entry.project_id, 'Projet de l’entrée');
@@ -98,6 +134,7 @@ export function validateBackup(input) {
       content_json: contentValue(entry.content_json, 'Document riche'),
       entry_date: date,
       project_id: projectId,
+      category_id: categoryOf(entry.category_id, projectId),
       archived: entry.archived === undefined ? 0 : Number(entry.archived),
       kind: entry.kind === undefined ? 'note' : entry.kind,
       created_at: timestamp(entry.created_at, 'Date de création de l’entrée'),
@@ -127,6 +164,7 @@ export function validateBackup(input) {
       position: task.position,
       priority,
       project_id: projectId,
+      category_id: categoryOf(task.category_id, projectId),
       created_at: timestamp(task.created_at, 'Date de création de la tâche'),
       updated_at: timestamp(task.updated_at, 'Date de modification de la tâche'),
     };
@@ -195,7 +233,7 @@ export function validateBackup(input) {
   });
   unique(attachments.map((attachment) => attachment.id), 'Identifiant de pièce jointe');
 
-  return { version: BACKUP_VERSION, projects, entries, tasks, task_entries: taskEntries, google_documents: googleDocuments, attachments };
+  return { version: BACKUP_VERSION, projects, categories, entries, tasks, task_entries: taskEntries, google_documents: googleDocuments, attachments };
 }
 
 /**
@@ -223,6 +261,7 @@ export function validateOutbox(input) {
   const backup = validateBackup({
     version: BACKUP_VERSION,
     projects: data.projects,
+    categories: data.categories,
     entries: data.entries,
     tasks: data.tasks,
     task_entries: data.task_entries,
@@ -238,6 +277,7 @@ export function validateOutbox(input) {
     base_exported_at: base,
     device: data.device.trim(),
     projects: backup.projects,
+    categories: backup.categories,
     entries: backup.entries,
     tasks: backup.tasks,
     task_entries: backup.task_entries,

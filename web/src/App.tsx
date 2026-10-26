@@ -10,6 +10,8 @@ import { Logo } from './components/Logo';
 import { UpdateBar } from './components/UpdateBar';
 import { TaskBoard } from './components/TaskBoard';
 import { ProjectBar } from './components/ProjectBar';
+import { CategoryBar } from './components/CategoryBar';
+import { categoryDescendants, UNCATEGORIZED } from './categories';
 import { GoogleDrive } from './components/GoogleDrive';
 import { AiSettings } from './components/AiSettings';
 import { AccountMenu } from './components/AccountMenu';
@@ -31,6 +33,11 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [projectId, setProjectId] = useState(readProject);
+  const [categoryId, setCategoryId] = useState('');
+  const [groupedCategories, setGroupedCategories] = useState(false);
+  const currentFilters = useRef({ query, projectId, categoryId });
+  currentFilters.current = { query, projectId, categoryId };
+  const navigationSequence = useRef(0);
   // L'entrée ouverte survit au rechargement et au redémarrage : on retrouve le
   // document qu'on éditait, au lieu de retomber sur « le plus récent ». C'est
   // aussi ce qui rend les recettes déterministes — elles pariaient jusqu'ici sur
@@ -156,8 +163,11 @@ export default function App() {
    * filtre projet ne change qu'après : « Annuler » laisse tout en place.
    */
   const openEntry = useCallback(async (id: string, project: string | undefined) => {
+    const navigation = ++navigationSequence.current;
     if (!(await requestLeave())) return false;
     await flushPendingSaves().catch(() => {});
+    if (navigation !== navigationSequence.current) return false;
+    setCategoryId('');
     if (project !== undefined && project !== projectId) setProjectId(project);
     setFreshEntry(false);
     setShowCenter(true);
@@ -177,9 +187,11 @@ export default function App() {
    * laisse le projet où il est.
    */
   const switchProject = useCallback(async (next: string) => {
+    const navigation = ++navigationSequence.current;
     if (next === projectId) return;
     if (!(await requestLeave())) return;
     await flushPendingSaves().catch(() => {});
+    if (navigation !== navigationSequence.current) return;
     // Un fichier du partage est toujours rattaché à un projet par son dossier :
     // en changer le referme. « Tout » garde le partage entier, donc le fichier.
     if (next && sharedPath) setSharedPath(null);
@@ -198,6 +210,7 @@ export default function App() {
       setProcedureEdit({ id: '', sequence: 0 });
     }
     setProjectId(next);
+    setCategoryId('');
   }, [entry, projectId, sharedPath, state?.entries]);
 
   useEffect(() => {
@@ -268,10 +281,12 @@ export default function App() {
   }, [search]);
 
   const reload = useCallback(async () => {
+    const isCurrent = () => currentFilters.current.query === query && currentFilters.current.projectId === projectId && currentFilters.current.categoryId === categoryId;
+    if (!isCurrent()) return;
     const sequence = ++reloadSequence.current;
     try {
-      const next = await api.state(query, projectId);
-      if (sequence !== reloadSequence.current) return;
+      const next = await api.state(query, projectId, categoryId);
+      if (sequence !== reloadSequence.current || !isCurrent()) return;
       setState(next);
       setError('');
       // Une tâche terminée peut archiver l'entrée actuellement ouverte :
@@ -279,20 +294,39 @@ export default function App() {
       const selectedSummary = next.entries.find((e) => e.id === selectedRef.current);
       if (selectedSummary) {
         setEntry((current) => current && current.id === selectedSummary.id
-          ? { ...current, archived: selectedSummary.archived, updated_at: selectedSummary.updated_at,
+          ? { ...current, archived: selectedSummary.archived, project_id: selectedSummary.project_id, category_id: selectedSummary.category_id, updated_at: selectedSummary.updated_at,
               ...(selectedSummary.kind === 'procedure' ? { attachments: next.procedure_attachments.filter((file) => file.entry_id === current.id) } : {}) }
           : current);
       }
       // Rien de sélectionné (premier chargement, changement de projet, entrée supprimée) :
       // on ouvre la plus récente du journal, sinon une procédure — jamais une archive,
       // qui ne s'ouvre que si on va la chercher dans les Archives.
-      const stillThere = next.entries.some((e) => e.id === selectedRef.current || (documentRef.current && e.google_document_id === documentRef.current));
+      const stillThere = next.entries.some((e) => e.id === selectedRef.current || (!categoryId && documentRef.current && e.google_document_id === documentRef.current));
       const active = next.entries.filter((e) => !e.archived);
       if (!stillThere) setSelectedId((active.find((e) => e.kind !== 'procedure') ?? active[0])?.id ?? null);
     } catch {
+      if (!isCurrent() || sequence !== reloadSequence.current) return;
       setError('API injoignable. Lance `npm run dev` dans /home/timo/WorkLogs.');
     }
-  }, [query, projectId]);
+  }, [query, projectId, categoryId]);
+
+  const switchCategory = async (next: string) => {
+    if (currentFilters.current.projectId !== projectId || currentFilters.current.categoryId !== categoryId) return;
+    const navigation = ++navigationSequence.current;
+    if (next === categoryId || !(await requestLeave())) return;
+    await flushPendingSaves();
+    if (navigation !== navigationSequence.current) return;
+    reloadSequence.current += 1;
+    const selected = state?.entries.find((row) => row.id === selectedRef.current) ?? entry;
+    const matches = !next || (next === UNCATEGORIZED ? !selected?.category_id : categoryDescendants(state?.categories ?? [], next).has(selected?.category_id || ''));
+    if (!matches) {
+      selectedRef.current = null;
+      setSelectedId(null);
+      setEntry(null);
+      setFreshEntry(false);
+    }
+    setCategoryId(next);
+  };
 
   // Des changements sont arrivés de l'autre appareil : l'écran se met à jour seul.
   useEffect(() => {
@@ -313,8 +347,13 @@ export default function App() {
   useEffect(() => {
     if (state && projectId && !state.projects.some((project) => project.id === projectId)) {
       setProjectId('');
+      setCategoryId('');
     }
   }, [state, projectId]);
+
+  useEffect(() => {
+    if (state && categoryId && categoryId !== UNCATEGORIZED && !(state.categories ?? []).some((category) => category.id === categoryId && (!projectId || category.project_id === projectId))) setCategoryId('');
+  }, [state, categoryId, projectId]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -337,7 +376,8 @@ export default function App() {
     const created = await api.createEntry({
       title: 'Sans titre',
       entry_date: todayISO(),
-      project_id: projectId || null,
+      project_id: projectId || state?.categories?.find((category) => category.id === categoryId)?.project_id || null,
+      category_id: categoryId && categoryId !== UNCATEGORIZED ? categoryId : null,
       ...(rich ? { content_json: emptyDocument() } : {}),
     });
     setSearch('');
@@ -358,7 +398,8 @@ export default function App() {
     const created = await api.createEntry({
       title: 'Sans titre',
       entry_date: todayISO(),
-      project_id: projectId || null,
+      project_id: projectId || state?.categories?.find((category) => category.id === categoryId)?.project_id || null,
+      category_id: categoryId && categoryId !== UNCATEGORIZED ? categoryId : null,
       kind: 'procedure',
       content_json: emptyDocument(),
     });
@@ -406,6 +447,7 @@ export default function App() {
     const match = taskViewMatch(view);
     if ((state?.tasks ?? []).filter((task) => match(task, today)).length < total) {
       setProjectId('');
+      setCategoryId('');
       setSearch('');
     }
     setTaskView(view);
@@ -427,6 +469,7 @@ export default function App() {
   // recherche en cours la masquerait : on l'efface, ce qui relit l'état (relire
   // aussi avec l'ancienne recherche pourrait répondre d'abord et la refermer).
   const openCreatedProcedure = useCallback((procedure: Entry) => {
+    setCategoryId('');
     setSearch('');
     setFreshEntry(false);
     setShowCenter(true);
@@ -589,12 +632,26 @@ export default function App() {
         />
       </div>
 
+      <CategoryBar
+        key={projectId}
+        categories={state?.categories ?? []}
+        projects={state?.projects ?? []}
+        projectId={projectId}
+        selected={categoryId}
+        grouped={groupedCategories}
+        onSelect={(id) => void switchCategory(id).catch((e) => setError((e as Error).message))}
+        onGrouped={setGroupedCategories}
+        onChanged={reload}
+      />
+
       {isGoogleDocument && <div className="workspace-switch no-print"><span>Document Google · {siblingTabs.length} onglet{siblingTabs.length > 1 ? 's' : ''}</span>
         <button aria-expanded={showDocumentTasks} aria-controls="workspace-tasks" onClick={() => setShowDocumentTasks(!showDocumentTasks)}>{showDocumentTasks ? 'Masquer les tâches' : 'Afficher les tâches'}</button>
       </div>}
       <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showDocumentTasks ? ' with-tasks' : '') + (showLeft ? '' : ' hide-left') + (showCenter ? '' : ' hide-center') + (showRight ? '' : ' hide-right') + (showProcedures ? ' show-procedures' : '')}>
         <aside id="workspace-journal" className="left no-print">
           <EntryList
+            categories={state?.categories ?? []}
+            grouped={groupedCategories}
             entries={journalEntries}
             projects={state?.projects ?? []}
             selectedId={sharedPath ? null : selectedId}
@@ -623,6 +680,7 @@ export default function App() {
             />
           ) : entry && state ? (
             <EntryEditor
+              categories={state.categories ?? []}
               key={entry.id}
               tabs={siblingTabs}
               onSelectTab={setSelectedId}
@@ -653,6 +711,9 @@ export default function App() {
 
         <aside id="workspace-tasks" className="right no-print">
           <TaskBoard
+            categories={state?.categories ?? []}
+            categoryId={categoryId}
+            grouped={groupedCategories}
             tasks={state?.tasks ?? []}
             entries={state?.entries ?? []}
             projectId={projectId}
@@ -678,6 +739,8 @@ export default function App() {
 
         <aside id="workspace-procedures" className="procedures-bar no-print">
           <ProcedureList
+            categories={state?.categories ?? []}
+            grouped={groupedCategories}
             entries={state?.entries ?? []}
             attachments={state?.procedure_attachments ?? []}
             projects={state?.projects ?? []}

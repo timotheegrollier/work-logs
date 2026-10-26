@@ -49,18 +49,23 @@ s'enregistre qu'en production sur http(s) — jamais sur `worklogs://` ni en dev
 Les données locales (IndexedDB) et la connexion directe à Google (client OAuth
 « Web », lots suivants) n'ont besoin d'aucun serveur.
 
-## Base — 6 tables synchronisées + 4 tables de la machine
+## Base — tables synchronisées et tables de la machine
 
 ```sql
 projects(id, name, color, created_at)
 
+categories(id, name, project_id → projects ON DELETE CASCADE,
+           parent_id → categories ON DELETE SET NULL, color, created_at, updated_at)
+
 entries(id, title, content_md, content_json JSON|NULL, entry_date 'AAAA-MM-JJ',
-        project_id → projects ON DELETE SET NULL, archived 0|1 DEFAULT 0,
+        project_id → projects ON DELETE SET NULL, category_id → categories ON DELETE SET NULL,
+        archived 0|1 DEFAULT 0,
         kind ∈ {'note','procedure'} DEFAULT 'note', created_at, updated_at)
 
 tasks(id, title, status ∈ {todo, doing, done}, due_date 'AAAA-MM-JJ'|NULL,
       pinned 0|1, position, priority ∈ {low, normal, high} DEFAULT 'normal',
-      project_id → projects ON DELETE SET NULL, created_at, updated_at)
+      project_id → projects ON DELETE SET NULL, category_id → categories ON DELETE SET NULL,
+      created_at, updated_at)
 
 task_entries(task_id → tasks ON DELETE CASCADE, entry_id → entries ON DELETE CASCADE,
              created_at, PRIMARY KEY(task_id, entry_id))
@@ -153,6 +158,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | POST · DELETE | `/api/tasks/:id/documents/:entryId` | associer ou retirer une entrée (locale ou Google) |
 | PATCH | `/api/tasks/:id/move` | `{status, position}` puis renumérotation |
 | POST · PUT · DELETE | `/api/projects[/:id]` | créer · renommer/recolorer · supprimer |
+| POST · PUT · DELETE | `/api/categories[/:id]` | créer · renommer/recolorer/reparent · supprimer en remontant contenu et enfants dans le parent |
 | POST | `/api/uploads` | multipart `file` + `entry_id` (obligatoire) |
 | GET | `/api/files/:stored` | télécharger (`Content-Disposition: attachment`, nom RFC 6266) |
 | GET | `/api/files/:stored/preview` | afficher dans l’app : mêmes octets, `inline` + type enregistré |
@@ -200,6 +206,17 @@ le chemin du partage (dialogue natif desktop ou `WORKLOGS_SHARED_ROOT`). Elles p
 Conventions : erreurs `{"error": "…"}` en français, `400` pour une validation, `404` pour un
 identifiant inconnu, `201` à la création. Un champ absent d'un `PUT` **n'est pas écrasé** ;
 une chaîne vide vaut NULL.
+
+`state.categories` contient tous les arbres de projets et leurs compteurs directs
+`entries` / `open_tasks`, indépendamment des filtres. `category_id` sur `/api/state`
+filtre les entrées, tâches et pièces jointes de procédures sur la catégorie et ses
+descendants ; `__none__` sélectionne les éléments sans catégorie. Les liens de documents
+d'une tâche restent complets. Les résumés et documents liés portent `category_id`.
+Le serveur et le backend PWA refusent les cycles et les affectations entre projets.
+Changer le projet d'un élément libère son ancienne catégorie ; copier une entrée ou
+créer un élément lié conserve le classement de la source. La table est incluse dans
+les sauvegardes v2 (champ absent accepté), les boîtes mobiles et les fusions Drive,
+avec suppression synchronisée `category`. IndexedDB passe à la version 2, alignée sur le SW.
 
 `/api/state` est le cœur du front : une seule requête alimente les trois colonnes, et le front
 la rejoue après chaque mutation. C'est ce qui permet à `App.tsx` de tenir en ~170 lignes. Chaque

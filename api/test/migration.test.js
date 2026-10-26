@@ -92,11 +92,11 @@ describe('migration V1 → V2', () => {
 
   test('les clés étrangères pointent toujours vers les bonnes tables', () => {
     assert.deepEqual(
-      db.prepare('PRAGMA foreign_key_list(entries)').all().map((f) => f.table),
-      ['projects'],
+      db.prepare('PRAGMA foreign_key_list(entries)').all().map((f) => f.table).sort(),
+      ['categories', 'projects'],
       'entries.project_id ne doit pas pointer vers projects_v1'
     );
-    assert.deepEqual(db.prepare('PRAGMA foreign_key_list(tasks)').all().map((f) => f.table), ['projects']);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_list(tasks)').all().map((f) => f.table).sort(), ['categories', 'projects']);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_list(attachments)').all().map((f) => f.table), ['entries']);
     assert.deepEqual(
       db.prepare('PRAGMA foreign_key_list(task_entries)').all().map((f) => f.table).sort(),

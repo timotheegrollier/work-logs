@@ -28,7 +28,9 @@ const SW_TEMPLATE = fs.readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'src', 'sw-template.js'), 'utf8');
 
 /** Charge le gabarit rendu avec des globaux stubés, comme dans un worker. */
-function loadSw({ fetchImpl, files = [] }) {
+function loadSw({ fetchImpl, files = [], upgrade = false }) {
+  const createdStores = [];
+  const openedVersions = [];
   const listeners = {};
   const cached = new Map();
   const sandbox = {
@@ -50,10 +52,13 @@ function loadSw({ fetchImpl, files = [] }) {
     },
     fetch: fetchImpl,
     indexedDB: {
-      open: () => {
+      open: (name, version) => {
+        openedVersions.push({ name, version });
         const request = {};
         queueMicrotask(() => {
           request.result = {
+            objectStoreNames: { contains: (name) => createdStores.includes(name) },
+            createObjectStore: (name) => { createdStores.push(name); },
             transaction: () => ({
               objectStore: () => ({
                 getAll: () => {
@@ -67,6 +72,7 @@ function loadSw({ fetchImpl, files = [] }) {
               }),
             }),
           };
+          if (upgrade) request.onupgradeneeded();
           request.onsuccess();
         });
         return request;
@@ -77,7 +83,7 @@ function loadSw({ fetchImpl, files = [] }) {
   };
   vm.createContext(sandbox);
   vm.runInContext(renderSw(SW_TEMPLATE, '9.9.9'), sandbox, { filename: 'sw-template.js' });
-  return { listeners, cached };
+  return { listeners, cached, createdStores, openedVersions };
 }
 
 const getEvent = (url, mode = 'cors') => {
@@ -175,4 +181,13 @@ describe('routage fetch du service worker', () => {
     offline.listeners.fetch(download);
     assert.match((await download.responses[0]).headers.get('content-disposition'), /^attachment; /);
   });
+});
+
+test('une pièce jointe qui ouvre IndexedDB en premier crée aussi le schéma des catégories', async () => {
+  const env = loadSw({ fetchImpl: async () => { throw new Error('hors-ligne'); }, upgrade: true });
+  const event = getEvent('https://pwa.test/api/files/absent.txt');
+  env.listeners.fetch(event);
+  assert.equal((await event.responses[0]).status, 404);
+  assert.deepEqual(env.openedVersions, [{ name: 'worklogs', version: 2 }]);
+  assert.deepEqual(env.createdStores.sort(), ['projects', 'categories', 'entries', 'tasks', 'task_entries', 'attachments', 'google_documents'].sort());
 });

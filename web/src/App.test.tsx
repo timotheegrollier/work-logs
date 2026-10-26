@@ -39,6 +39,176 @@ async function aiAction(name: string, scope: HTMLElement = document.body, menu =
 const row = (db: typeof api.db, sql: string, ...args: unknown[]) =>
   db.prepare(sql).get(...args) as Record<string, unknown>;
 
+describe('catégories et sous-catégories', () => {
+  const categories = () => within(screen.getByRole('region', { name: 'Catégories' }));
+  const createCategory = (name: string, parent_id?: string) => clientApi.createCategory({ name, project_id: 'p', parent_id });
+
+  test('crée une catégorie et sa sous-catégorie puis les renomme, regroupe et supprime sans perdre les notes', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }] });
+    render(<App />);
+    await screen.findByRole('button', { name: 'Chantier' });
+    fireEvent.click(categories().getByRole('button', { name: '＋ Catégorie' }));
+    fireEvent.change(categories().getByLabelText('Nom de la catégorie'), { target: { value: 'Préparation' } });
+    fireEvent.click(categories().getByRole('button', { name: 'Enregistrer la catégorie' }));
+    fireEvent.click(await categories().findByRole('button', { name: 'Ajouter une sous-catégorie à Préparation' }));
+    fireEvent.change(categories().getByLabelText('Nom de la catégorie'), { target: { value: 'Devis' } });
+    fireEvent.click(categories().getByRole('button', { name: 'Enregistrer la catégorie' }));
+    await categories().findByRole('button', { name: 'Modifier la catégorie Devis' });
+    const parent = row(api.db, 'SELECT * FROM categories WHERE name=?', 'Préparation');
+    const child = row(api.db, 'SELECT * FROM categories WHERE name=?', 'Devis');
+    expect(child.parent_id).toBe(parent.id);
+    const note = await clientApi.createEntry({ title: 'Note classée', project_id: 'p', category_id: child.id as string });
+    fireEvent.click(categories().getByRole('button', { name: 'Modifier la catégorie Devis' }));
+    fireEvent.change(categories().getByLabelText('Nom de la catégorie'), { target: { value: 'Contrats' } });
+    fireEvent.change(categories().getByLabelText('Catégorie parente'), { target: { value: '' } });
+    fireEvent.click(categories().getByRole('button', { name: 'Enregistrer la catégorie' }));
+    await categories().findByRole('button', { name: 'Modifier la catégorie Contrats' });
+    expect(row(api.db, 'SELECT * FROM categories WHERE id=?', child.id).parent_id).toBeNull();
+    fireEvent.click(categories().getByRole('button', { name: 'Supprimer la catégorie Contrats' }));
+    await waitFor(() => expect(categories().queryByRole('button', { name: 'Modifier la catégorie Contrats' })).not.toBeInTheDocument());
+    expect((await clientApi.entry(note.id)).category_id).toBeNull();
+    await within(journal()).findByText('Note classée');
+  });
+
+  test('filtre ensemble entrées et tâches, inclut les descendants et hérite du filtre à la création', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }] });
+    const parent = await createCategory('Préparation');
+    const child = await createCategory('Devis', parent.id);
+    await clientApi.createEntry({ title: 'Note devis', project_id: 'p', category_id: child.id });
+    await clientApi.createEntry({ title: 'Note libre', project_id: 'p' });
+    await clientApi.createTask({ title: 'Signer devis', project_id: 'p', category_id: child.id });
+    await clientApi.createTask({ title: 'Tâche libre', project_id: 'p' });
+    render(<App />);
+    fireEvent.click(await categories().findByRole('button', { name: 'Afficher la catégorie Préparation' }));
+    await waitFor(() => expect(within(journal()).queryByText('Note libre')).not.toBeInTheDocument());
+    expect(within(journal()).getByText('Note devis')).toBeInTheDocument();
+    expect(within(board()).getByRole('button', { name: 'Signer devis' })).toBeInTheDocument();
+    expect(within(board()).queryByRole('button', { name: 'Tâche libre' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Nouvelle tâche'), { target: { value: 'Nouvel objectif' } });
+    fireEvent.click(within(board()).getByRole('button', { name: 'Ajouter' }));
+    await within(board()).findByRole('button', { name: 'Nouvel objectif' });
+    expect(row(api.db, 'SELECT * FROM tasks WHERE title=?', 'Nouvel objectif')).toMatchObject({ project_id: 'p', category_id: parent.id });
+    fireEvent.click(within(journal()).getByRole('button', { name: 'Nouvelle entrée' }));
+    await waitFor(() => expect(screen.getByLabelText('Catégorie de l’entrée')).toHaveValue(parent.id));
+    fireEvent.click(categories().getByRole('button', { name: 'Sans catégorie' }));
+    await within(journal()).findByText('Note libre');
+    expect(within(journal()).queryByText('Note devis')).not.toBeInTheDocument();
+    expect(within(board()).getByRole('button', { name: 'Tâche libre' })).toBeInTheDocument();
+  });
+
+  test('classe depuis l’éditeur et les cartes et affiche les groupes par projet', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }], entries: [{ id: 'e', title: 'Compte rendu', project_id: 'p' }], tasks: [{ id: 't', title: 'Objectif', project_id: 'p' }] });
+    const parent = await createCategory('Préparation');
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText('Catégorie de l’entrée'), { target: { value: parent.id } });
+    await waitFor(() => expect(row(api.db, 'SELECT category_id FROM entries WHERE id=?', 'e').category_id).toBe(parent.id));
+    fireEvent.click(within(board()).getByRole('button', { name: 'Objectif' }));
+    fireEvent.change(screen.getByLabelText('Catégorie de la tâche'), { target: { value: parent.id } });
+    fireEvent.click(within(board()).getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(row(api.db, 'SELECT category_id FROM tasks WHERE id=?', 't').category_id).toBe(parent.id));
+    fireEvent.click(categories().getByLabelText('Regrouper par catégorie'));
+    await within(journal()).findByRole('heading', { name: /Chantier · Préparation/ });
+    await within(board()).findByRole('heading', { name: /Chantier · Préparation/ });
+    fireEvent.change(screen.getByLabelText('Projet de l’entrée'), { target: { value: '' } });
+    await waitFor(() => expect(row(api.db, 'SELECT category_id FROM entries WHERE id=?', 'e').category_id).toBeNull());
+  });
+
+  test('un reclassement distant actualise projet et catégorie ensemble en gardant le texte saisi', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Projet P' }, { id: 'q', name: 'Projet Q' }], entries: [{ id: 'e', title: 'Note initiale', project_id: 'p' }], tasks: [{ id: 't', title: 'Relire', project_id: 'p' }] });
+    const destination = await clientApi.createCategory({ name: 'Destination', project_id: 'q' });
+    render(<App />);
+    const title = await screen.findByDisplayValue('Note initiale');
+    fireEvent.change(title, { target: { value: 'Texte en cours' } });
+    await clientApi.updateEntry('e', { project_id: 'q', category_id: destination.id });
+    fireEvent.click(within(board()).getByRole('button', { name: 'Épingler Relire' }));
+    await waitFor(() => expect(screen.getByLabelText('Projet de l’entrée')).toHaveValue('q'));
+    expect(screen.getByLabelText('Catégorie de l’entrée')).toHaveValue(destination.id);
+    expect(title).toHaveValue('Texte en cours');
+    await flushPendingSaves();
+    expect(await clientApi.entry('e')).toMatchObject({ title: 'Texte en cours', project_id: 'q', category_id: destination.id });
+  });
+
+  test('une réponse de création de catégorie tardive ne recharge pas le projet quitté', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Projet P' }, { id: 'q', name: 'Projet Q' }], entries: [{ id: 'ep', title: 'Note P', project_id: 'p' }, { id: 'eq', title: 'Note Q', project_id: 'q' }] });
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const original = clientApi.createCategory;
+    vi.spyOn(clientApi, 'createCategory').mockImplementation(async (body) => { await pending; return original(body); });
+    render(<App />);
+    fireEvent.click(await within(filters()).findByRole('button', { name: /^Projet P/ }));
+    await waitFor(() => expect(within(journal()).queryByText('Note Q')).not.toBeInTheDocument());
+    fireEvent.click(categories().getByRole('button', { name: '＋ Catégorie' }));
+    fireEvent.change(categories().getByLabelText('Nom de la catégorie'), { target: { value: 'Réponse tardive' } });
+    fireEvent.click(categories().getByRole('button', { name: 'Enregistrer la catégorie' }));
+    fireEvent.click(within(filters()).getByRole('button', { name: /^Projet Q/ }));
+    await within(journal()).findByText('Note Q');
+    await act(async () => { release(); await pending; });
+    await waitFor(() => expect(row(api.db, 'SELECT count(*) n FROM categories WHERE name=?', 'Réponse tardive').n).toBe(1));
+    expect(within(journal()).getByText('Note Q')).toBeInTheDocument();
+    expect(within(journal()).queryByText('Note P')).not.toBeInTheDocument();
+  });
+
+  test('la dernière navigation attendue pendant une sauvegarde garde un couple projet et catégorie cohérent', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Projet P' }, { id: 'q', name: 'Projet Q' }], entries: [{ id: 'e', title: 'Note initiale', project_id: 'p' }] });
+    const category = await createCategory('Préparation');
+    render(<App />);
+    await screen.findByDisplayValue('Note initiale');
+    fireEvent.click(within(filters()).getByRole('button', { name: /^Projet P/ }));
+    await waitFor(() => expect(within(filters()).getByRole('button', { name: /^Projet P/ })).toHaveAttribute('aria-pressed', 'true'));
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const original = clientApi.updateEntry;
+    vi.spyOn(clientApi, 'updateEntry').mockImplementation(async (id, body) => { await pending; return original(id, body); });
+    fireEvent.change(screen.getByLabelText('Titre de l’entrée'), { target: { value: 'Brouillon' } });
+    fireEvent.click(within(filters()).getByRole('button', { name: /^Projet Q/ }));
+    fireEvent.click(categories().getByRole('button', { name: 'Afficher la catégorie Préparation' }));
+    await act(async () => { release(); await pending; });
+    await waitFor(() => expect(categories().getByRole('button', { name: 'Afficher la catégorie Préparation' })).toHaveAttribute('aria-pressed', 'true'));
+    expect(within(filters()).getByRole('button', { name: /^Projet P/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(category.project_id).toBe('p');
+  });
+
+  test('reclasser un onglet Google hors du filtre ouvre son frère encore visible', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Projet P' }], entries: [{ id: 'e1', title: 'Onglet un', project_id: 'p' }, { id: 'e2', title: 'Onglet deux', project_id: 'p' }] });
+    const source = await createCategory('Source');
+    const destination = await createCategory('Destination');
+    seedGoogleLink(api.db, 'e1', 'doc');
+    seedGoogleLink(api.db, 'e2', 'doc2');
+    api.db.prepare('UPDATE google_documents SET document_id=?,tab_id=?,tab_title=?,tab_order=1 WHERE entry_id=?').run('doc', 'tab-1', 'Onglet deux', 'e2');
+    api.db.prepare('UPDATE entries SET category_id=?').run(source.id);
+    localStorage.setItem('worklogs-entry', 'e1');
+    render(<App />);
+    await screen.findByDisplayValue('Onglet un');
+    fireEvent.click(categories().getByRole('button', { name: 'Afficher la catégorie Source' }));
+    await waitFor(() => expect(categories().getByRole('button', { name: 'Afficher la catégorie Source' })).toHaveAttribute('aria-pressed', 'true'));
+    fireEvent.change(screen.getByLabelText('Catégorie de l’entrée'), { target: { value: destination.id } });
+    await screen.findByDisplayValue('Onglet deux');
+    expect(screen.getByLabelText('Catégorie de l’entrée')).toHaveValue(source.id);
+  });
+
+  test('une sauvegarde de tâche en attente verrouille les champs et ne ferme pas une autre carte', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Projet' }], tasks: [{ id: 't1', title: 'Premier objectif', project_id: 'p' }, { id: 't2', title: 'Second objectif', project_id: 'p' }] });
+    render(<App />);
+    fireEvent.click(await within(board()).findByRole('button', { name: 'Premier objectif' }));
+    fireEvent.change(screen.getByLabelText('Titre de la tâche'), { target: { value: 'Premier objectif modifié' } });
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const original = clientApi.updateTask;
+    vi.spyOn(clientApi, 'updateTask').mockImplementation(async (id, body) => { await pending; return original(id, body); });
+    fireEvent.click(within(board()).getByRole('button', { name: 'Enregistrer' }));
+    expect(screen.getByLabelText('Titre de la tâche')).toBeDisabled();
+    expect(screen.getByLabelText('Échéance')).toBeDisabled();
+    expect(screen.getByLabelText('Priorité')).toBeDisabled();
+    fireEvent.keyDown(screen.getByLabelText('Titre de la tâche'), { key: 'Escape' });
+    expect(screen.getByLabelText('Titre de la tâche')).toBeInTheDocument();
+    fireEvent.click(within(board()).getByRole('button', { name: 'Second objectif' }));
+    fireEvent.change(screen.getByLabelText('Titre de la tâche'), { target: { value: 'Deuxième brouillon' } });
+    await act(async () => { release(); await pending; });
+    await waitFor(() => expect(row(api.db, 'SELECT title FROM tasks WHERE id=?', 't1').title).toBe('Premier objectif modifié'));
+    expect(screen.getByLabelText('Titre de la tâche')).toHaveValue('Deuxième brouillon');
+  });
+});
+
 function seedGoogleLink(db: typeof api.db, entryId: string, documentId: string) {
   const rich = JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Google' }] }] });
   db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(rich, entryId);
@@ -3783,7 +3953,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     fs.mkdirSync(path.join(share, 'Procédures'));
     await write('Procédures/existant.md', 'x\n');
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '＋ Nouveau dossier…' }));
+    fireEvent.click(await screen.findByRole('button', { name: '＋ Nouveau dossier…' }, partage));
     const form = screen.getByRole('form', { name: 'Nouveau dossier' });
     expect(within(form).getByLabelText('Emplacement du nouveau dossier')).toHaveValue('');
     fireEvent.change(within(form).getByLabelText('Nom du dossier'), { target: { value: ' 3. Sauvegardes ' } });

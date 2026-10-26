@@ -166,6 +166,63 @@ button:disabled {
   flex: none;
 }
 
+/* Catégories : classement commun aux listes, sous le bandeau des projets. */
+.category-bar {
+  flex: none;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  max-height: 34vh;
+  overflow: auto;
+}
+.category-toolbar, .category-filters, .category-group-toggle, .category-node,
+.category-filter, .category-project h2, .category-badge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.category-toolbar { flex-wrap: wrap; }
+.category-toolbar strong { font-size: 13px; }
+.category-filters { flex-wrap: wrap; }
+.category-group-toggle { color: var(--muted); font-size: 12px; cursor: pointer; }
+.category-projects { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 7px; }
+.category-project { min-width: 200px; max-width: 100%; }
+.category-project h2 { margin: 0 0 3px; color: var(--muted); font-size: 12px; }
+.category-tree { list-style: none; padding: 0; margin: 0; }
+.category-node { border-radius: 7px; gap: 2px; }
+.category-node.is-selected { background: var(--accent-soft); }
+.category-node.is-selected .category-filter { color: var(--accent); }
+.category-indent { color: var(--muted); white-space: pre; font-size: 12px; }
+.category-filter { text-align: left; padding: 4px 6px; min-width: 0; flex: 1; }
+.category-filter:hover { background: var(--surface-2); }
+.category-name { overflow-wrap: anywhere; font-size: 13px; }
+.category-count { color: var(--muted); font-size: 11px; margin-left: auto; white-space: nowrap; }
+.category-node .icon { padding: 6px; flex: none; }
+.category-hint { color: var(--muted); font-size: 12px; margin: 5px 0 0; }
+.category-form { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+.category-form label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.category-form label:first-child { flex: 1; min-width: 160px; }
+.category-form input[type='color'] { width: 42px; height: 36px; padding: 2px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 7px; }
+.category-badge { width: fit-content; max-width: 100%; color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; margin: 4px 0; }
+.category-badge .dot { width: 6px; height: 6px; }
+.category-group-title { color: var(--accent); font-size: 12px; line-height: 1.5; margin: 12px 0 6px; overflow-wrap: anywhere; }
+.category-item-group { min-width: 0; }
+.task-category-group { list-style: none; }
+.task-category-items { list-style: none; padding: 0; margin: 0; }
+@media (max-width: 700px) {
+  .category-bar { padding: 8px 12px; max-height: none; }
+  .category-toolbar { gap: 8px; }
+  .category-toolbar .grow { display: none; }
+  .category-filters { width: 100%; order: 2; }
+  .category-group-toggle { margin-left: auto; }
+  .category-projects { display: block; max-height: min(40vh, 300px); overflow: auto; }
+  .category-project { margin-bottom: 8px; }
+  .category-filter { display: grid; grid-template-columns: 8px minmax(0, 1fr); min-height: 44px; gap: 3px 7px; }
+  .category-count { grid-column: 2; margin-left: 0; }
+  .category-node .icon { min-width: 36px; min-height: 44px; }
+  .category-form select { max-width: 100%; }
+}
+
 /* ------------------------------------------------------------ ossature */
 .app {
   display: flex;

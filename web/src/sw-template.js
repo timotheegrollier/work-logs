@@ -39,11 +39,18 @@ function serveLocalFile(pathname) {
     };
     const missing = () => done(new Response('fichier introuvable', { status: 404 }));
     try {
-      const open = indexedDB.open('worklogs', 1);
+      const open = indexedDB.open('worklogs', 2);
+      open.onupgradeneeded = () => {
+        for (const [name, keyPath] of Object.entries({ projects: 'id', categories: 'id', entries: 'id', tasks: 'id', task_entries: 'id', attachments: 'id', google_documents: 'entry_id' })) {
+          if (!open.result.objectStoreNames.contains(name)) open.result.createObjectStore(name, { keyPath });
+        }
+      };
       open.onerror = missing;
       open.onsuccess = () => {
         try {
-          const got = open.result.transaction('attachments', 'readonly').objectStore('attachments').getAll();
+          const transaction = open.result.transaction('attachments', 'readonly');
+          transaction.oncomplete = () => open.result.close();
+          const got = transaction.objectStore('attachments').getAll();
           got.onerror = missing;
           got.onsuccess = () => {
             const found = (got.result || []).find((row) => row && row.stored === stored);

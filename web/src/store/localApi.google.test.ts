@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { importLocalBackup, localApi, readLocalOutbox, setLocalDatabase } from './localApi';
+import { importLocalBackup, localApi, localSyncSnapshot, readLocalOutbox, setLocalDatabase } from './localApi';
 import { createMemoryDatabase } from './storage';
 // @ts-expect-error — module Docs pur partagé avec l'API (comme test/server.ts).
 import { importGoogleDocument } from '../../../api/src/google-preserve.js';
@@ -183,4 +183,34 @@ describe('synchronisation Docs dans le navigateur', () => {
     const refreshed = await localApi.openGoogleDocument('gdoc-multi');
     expect(refreshed.content_md).toContain('Contenu distant');
   });
+});
+
+test.each(['catégorie', 'projet'])('pull suspendu : supprimer le %s préserve le nouveau classement au retour Google', async (deleted) => {
+  await linkedEntry();
+  const project = await localApi.createProject({ name: 'Projet Google' });
+  const parent = await localApi.createCategory({ name: 'Documents', project_id: project.id });
+  const child = await localApi.createCategory({ name: 'Comptes rendus', project_id: project.id, parent_id: parent.id });
+  await localApi.updateEntry('en_g', { project_id: project.id, category_id: child.id });
+  const before = await localApi.entry('en_g');
+  currentDoc = docJson('Version Google après attente\n', 'r6');
+  const previousFetch = globalThis.fetch;
+  let release!: () => void;
+  let arrived!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const waiting = new Promise<void>((resolve) => { arrived = resolve; });
+  vi.stubGlobal('fetch', async (url: unknown, init?: RequestInit) => {
+    if (String(url).includes('includeTabsContent')) { arrived(); await gate; }
+    return previousFetch(url as RequestInfo, init);
+  });
+  const pulling = localApi.pullGoogleDocument('en_g', before.content_json as never);
+  await waiting;
+  if (deleted === 'catégorie') await localApi.deleteCategory(child.id);
+  else await localApi.deleteProject(project.id);
+  release();
+  const pulled = await pulling;
+  expect(pulled.content_md).toContain('Version Google après attente');
+  expect(pulled.project_id).toBe(deleted === 'projet' ? null : project.id);
+  expect(pulled.category_id).toBe(deleted === 'projet' ? null : parent.id);
+  // localSyncSnapshot validates every category/project reference.
+  await expect(localSyncSnapshot()).resolves.toBeDefined();
 });

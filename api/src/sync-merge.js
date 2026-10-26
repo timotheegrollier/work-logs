@@ -11,7 +11,7 @@
 // - deux copies locales du même onglet Google (ouvert sur les deux appareils) :
 //   la plus récente est gardée, l'autre supprimée proprement.
 
-export const TOMBSTONE_KINDS = ['project', 'entry', 'task', 'link', 'attachment'];
+export const TOMBSTONE_KINDS = ['project', 'category', 'entry', 'task', 'link', 'attachment'];
 export const TOMBSTONE_TTL_MS = 60 * 24 * 3600 * 1000;
 export const SEED_IDS = new Set(['pr_perso', 'pr_pro', 'en_welcome', 'tk_1', 'tk_2', 'tk_3']);
 const MAX_TOMBSTONES = 100_000;
@@ -72,6 +72,7 @@ export function canonical(snapshot) {
   }, {}));
   return JSON.stringify({
     projects: sortBy(snapshot.projects, (r) => r.id).map(clean),
+    categories: sortBy(snapshot.categories || [], (r) => r.id).map(clean),
     entries: sortBy(snapshot.entries, (r) => r.id).map(clean),
     tasks: sortBy(snapshot.tasks, (r) => r.id).map(clean),
     task_entries: sortBy(snapshot.task_entries, linkKey).map(clean),
@@ -87,13 +88,52 @@ export function canonical(snapshot) {
  * et ce qui doit être réécrit de chaque côté.
  */
 export function mergeSnapshots(local, remote, now = Date.now()) {
-  const empty = { projects: [], entries: [], tasks: [], task_entries: [], google_documents: [], attachments: [], deleted: [] };
+  const empty = { projects: [], categories: [], entries: [], tasks: [], task_entries: [], google_documents: [], attachments: [], deleted: [] };
   const other = remote || empty;
   const tombs = mergeTombstones(local.deleted || [], other.deleted || [], now);
 
   const projects = mergeRows('project', local.projects, other.projects, tombs);
   const projectIds = new Set(projects.map((row) => row.id));
-  const detach = (row) => (row.project_id && !projectIds.has(row.project_id) ? { ...row, project_id: null } : row);
+  const categories = mergeRows('category', local.categories || [], other.categories || [], tombs)
+    .filter((row) => projectIds.has(row.project_id)).map((row) => ({ ...row }));
+  const byCategory = new Map(categories.map((row) => [row.id, row]));
+  const oldCategories = new Map(mergeRows('category', local.categories || [], other.categories || [], new Map()).map((row) => [row.id, row]));
+  // Concurrent reparentings can form a cycle although each device's tree was valid.
+  // Break it deterministically at the first id, then keep every category and item.
+  const checked = new Set();
+  for (const category of [...categories].sort((a, b) => a.id < b.id ? -1 : 1)) {
+    const path = new Set();
+    let current = category;
+    while (current && !checked.has(current.id)) {
+      if (path.has(current.id)) { current.parent_id = null; break; }
+      path.add(current.id);
+      let parent = byCategory.get(current.parent_id);
+      if (current.parent_id && !parent) {
+        let ancestor = oldCategories.get(current.parent_id)?.parent_id || null;
+        const ancestors = new Set([current.id, current.parent_id]);
+        while (ancestor && !byCategory.has(ancestor) && !ancestors.has(ancestor)) {
+          ancestors.add(ancestor); ancestor = oldCategories.get(ancestor)?.parent_id || null;
+        }
+        current.parent_id = ancestor && byCategory.get(ancestor)?.project_id === current.project_id && !ancestors.has(ancestor) ? ancestor : null;
+        parent = byCategory.get(current.parent_id);
+      }
+      if (parent && parent.project_id !== current.project_id) { current.parent_id = null; break; }
+      current = parent;
+    }
+    for (const id of path) checked.add(id);
+  }
+  const detach = (row) => {
+    const projectId = row.project_id && !projectIds.has(row.project_id) ? null : row.project_id;
+    let categoryId = row.category_id || null;
+    const visited = new Set();
+    while (categoryId && !byCategory.has(categoryId) && !visited.has(categoryId)) {
+      visited.add(categoryId);
+      categoryId = oldCategories.get(categoryId)?.parent_id || null;
+    }
+    if (categoryId && byCategory.get(categoryId)?.project_id !== projectId) categoryId = null;
+    return projectId !== row.project_id || categoryId !== (row.category_id || null)
+      ? { ...row, project_id: projectId, category_id: categoryId } : row;
+  };
   let entries = mergeRows('entry', local.entries, other.entries, tombs).map(detach);
   const tasks = mergeRows('task', local.tasks, other.tasks, tombs).map(detach);
 
@@ -132,7 +172,7 @@ export function mergeSnapshots(local, remote, now = Date.now()) {
     .map((row) => (row.driveFileId ? row : { ...row, driveFileId: remoteAttachments.get(row.id)?.driveFileId || local.attachments.find((a) => a.id === row.id)?.driveFileId || null }));
 
   const merged = {
-    projects, entries, tasks, task_entries, google_documents, attachments,
+    projects, categories, entries, tasks, task_entries, google_documents, attachments,
     deleted: [...tombs.values()],
   };
   const text = canonical(merged);
