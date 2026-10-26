@@ -182,6 +182,7 @@ describe('catégories et sous-catégories', () => {
     fireEvent.click(categories().getByRole('button', { name: 'Afficher la catégorie Source' }));
     await waitFor(() => expect(categories().getByRole('button', { name: 'Afficher la catégorie Source' })).toHaveAttribute('aria-pressed', 'true'));
     fireEvent.change(screen.getByLabelText('Catégorie de l’entrée'), { target: { value: destination.id } });
+    await act(async () => { await flushPendingSaves(); });
     await screen.findByDisplayValue('Onglet deux');
     expect(screen.getByLabelText('Catégorie de l’entrée')).toHaveValue(source.id);
   });

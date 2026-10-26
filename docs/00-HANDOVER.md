@@ -10,7 +10,11 @@ partage débutait sous « Tout », finissait après le choix d'un projet, puis s
 migration soit terminée. `latestReload` réadresse ce callback vers les filtres courants ;
 les réponses d'anciennes lectures restent ignorées. Le test du dossier absent bloque la
 migration, attend la lecture du nouveau filtre, puis la libère : échec reproduit avant
-correction, sans retry ni attente arbitraire. Recette après correction en cours.
+correction, sans retry ni attente arbitraire. Le test du reclassement d’un onglet Google
+attend maintenant `flushPendingSaves()` avant de vérifier l’onglet suivant : sa fenêtre
+de lecture de 1 s ne doit pas englober le debounce de sauvegarde. Les trois parcours
+ciblés (migration, reclassement Google, callback de catégorie tardif) passent.
+Recette après correction en cours.
 
 Demande : mieux ranger les tâches/objectifs et entrées, voir leur classement dans chaque
 projet, filtrer et regrouper les listes.
