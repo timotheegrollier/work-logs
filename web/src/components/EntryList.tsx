@@ -1,9 +1,14 @@
 import { useState } from 'react';
-import { dayLabel, groupByDay, groupTabs, plainText, todayISO, type EntrySummary, type JournalItem, type Project } from '../lib';
+import { dayLabel, groupByDay, groupTabs, plainText, todayISO, type Category, type EntrySummary, type JournalItem, type Project } from '../lib';
+
+import { groupByCategory } from '../categories';
+import { CategoryBadge } from './CategoryPicker';
 
 export function EntryList({
   entries,
   projects,
+  categories = [],
+  grouped = false,
   selectedId,
   onSelect,
   onCreate,
@@ -12,6 +17,8 @@ export function EntryList({
 }: {
   entries: EntrySummary[];
   projects: Project[];
+  categories?: Category[];
+  grouped?: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onCreate: () => void;
@@ -40,7 +47,7 @@ export function EntryList({
         </p>
       )}
 
-      <DayGroups items={groupTabs(active)} colors={colors} selectedId={selectedId} onSelect={onSelect} />
+      <EntryGroups entries={active} projects={projects} categories={categories} grouped={grouped} colors={colors} selectedId={selectedId} onSelect={onSelect} />
 
       {archived.length > 0 && (
         <details className="archives" open={archivesOpen} onToggle={(e) => setArchivesOpen(e.currentTarget.open)}>
@@ -48,7 +55,7 @@ export function EntryList({
             Archives <span className="count" title={`${archived.length} document${archived.length > 1 ? 's' : ''} archivé${archived.length > 1 ? 's' : ''}`}>{archived.length}</span>
           </summary>
           {archivesOpen && (
-            <DayGroups items={groupTabs(archived)} colors={colors} selectedId={selectedId} onSelect={onSelect} dimmed />
+            <EntryGroups entries={archived} projects={projects} categories={categories} grouped={grouped} colors={colors} selectedId={selectedId} onSelect={onSelect} dimmed />
           )}
         </details>
       )}
@@ -56,15 +63,39 @@ export function EntryList({
   );
 }
 
+
+function EntryGroups({ entries, projects, categories, grouped, ...props }: {
+  entries: EntrySummary[];
+  projects: Project[];
+  categories: Category[];
+  grouped: boolean;
+  colors: Map<string, string>;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  dimmed?: boolean;
+}) {
+  if (!grouped) return <DayGroups items={groupTabs(entries)} categories={categories} {...props} />;
+  return <div className="category-item-groups">
+    {groupByCategory(entries, categories, projects).map((group) => (
+      <section key={group.id} className="category-item-group" aria-label={group.label}>
+        <h3 className="category-group-title">{group.label} <span className="count">{group.items.length}</span></h3>
+        <DayGroups items={groupTabs(group.items)} categories={categories} {...props} />
+      </section>
+    ))}
+  </div>;
+}
+
 function DayGroups({
   items,
   colors,
+  categories,
   selectedId,
   onSelect,
   dimmed = false,
 }: {
   items: JournalItem[];
   colors: Map<string, string>;
+  categories: Category[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   dimmed?: boolean;
@@ -97,6 +128,7 @@ function DayGroups({
                       <span className="count" title={`${tabs.length} onglets`}>{tabs.length}</span>
                     )}
                   </span>
+                  <CategoryBadge categories={categories} categoryId={entry.category_id} />
                   <span className="entry-excerpt">
                     {plainText(entry.excerpt) || 'Vide'}
                     {entry.attachments > 0 && (

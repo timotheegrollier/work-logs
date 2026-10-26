@@ -18,6 +18,15 @@ CREATE TABLE IF NOT EXISTS projects (
   color TEXT NOT NULL DEFAULT '#4f7cff',
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  parent_id TEXT REFERENCES categories(id) ON DELETE SET NULL,
+  color TEXT NOT NULL DEFAULT '#64748b',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS entries (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
@@ -268,6 +277,16 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   // Priorités (2026-09-18) : les tâches existantes deviennent « normale », sans toucher
   // à l'ordre des colonnes — la position et l'épingle gardent leur rôle.
   if (!columns(db, 'tasks').includes('priority')) db.exec("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'");
+  // Classement du projet : une seule catégorie par document/tâche, nullable
+  // pour conserver les données existantes et les éléments sans classement.
+  for (const table of ['entries', 'tasks']) {
+    if (!columns(db, table).includes('category_id')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN category_id TEXT REFERENCES categories(id) ON DELETE SET NULL`);
+    }
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_categories_project ON categories(project_id, parent_id);
+    CREATE INDEX IF NOT EXISTS idx_entries_category ON entries(category_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category_id);`);
   // Synchro Drive (2026-09-22) : un renommage de projet doit pouvoir gagner la fusion,
   // et une suppression doit se propager (pierres tombales, purgées après 60 jours).
   if (!columns(db, 'projects').includes('updated_at')) {

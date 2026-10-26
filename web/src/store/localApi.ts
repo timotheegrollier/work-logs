@@ -3,6 +3,7 @@ import {
   sharedClient,
   type Api,
   type AppState,
+  type Category,
   type Attachment,
   type Entry,
   type EntrySummary,
@@ -101,14 +102,15 @@ const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 interface EntryRow {
   id: string; title: string; content_md: string; content_json: string | null;
-  entry_date: string; project_id: string | null; archived: 0 | 1; kind: 'note' | 'procedure';
+  entry_date: string; project_id: string | null; category_id?: string | null; archived: 0 | 1; kind: 'note' | 'procedure';
   created_at: string; updated_at: string;
 }
 interface TaskRow {
   id: string; title: string; status: Status; due_date: string | null; pinned: 0 | 1;
-  position: number; priority: 'low' | 'normal' | 'high'; project_id: string | null;
+  position: number; priority: 'low' | 'normal' | 'high'; project_id: string | null; category_id?: string | null;
   created_at: string; updated_at: string;
 }
+interface CategoryRow { id: string; name: string; color: string; project_id: string; parent_id: string | null; created_at: string; updated_at: string }
 interface ProjectRow { id: string; name: string; color: string; created_at: string; updated_at?: string; shared_dir?: string | null }
 interface LinkRow { id: string; task_id: string; entry_id: string; created_at: string }
 interface AttachmentRow {
@@ -128,6 +130,15 @@ interface GoogleRow {
 
 const linkId = (taskId: string, entryId: string): string => `${taskId}\0${entryId}`;
 
+// Serialize relational mutations and sync application on this browser. A graph
+// edit cannot slip between two IndexedDB awaits of another graph operation.
+let localWrites: Promise<unknown> = Promise.resolve();
+function localWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const result = localWrites.catch(() => {}).then(operation);
+  localWrites = result;
+  return result;
+}
+
 let backend: Database | null = null;
 let seeded = false;
 
@@ -139,12 +150,50 @@ async function tables() {
   }
   return {
     projects: backend.table<ProjectRow>('projects'),
+    categories: backend.table<CategoryRow>('categories'),
     entries: backend.table<EntryRow>('entries'),
     tasks: backend.table<TaskRow>('tasks'),
     links: backend.table<LinkRow>('task_entries'),
     attachments: backend.table<AttachmentRow>('attachments'),
     google: backend.table<GoogleRow>('google_documents'),
   };
+}
+
+/** Même validation de classement que le serveur. */
+async function categoryFor(value: unknown, projectId: string | null): Promise<string | null> {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') fail('catégorie invalide');
+  const id = str(value);
+  if (!id) return null;
+  const { categories } = await tables();
+  const category = (await categories.get(id)) ?? fail('catégorie introuvable');
+  if (category.project_id !== projectId) fail('la catégorie doit appartenir au même projet');
+  return id;
+}
+async function categoryForPatch(body: Record<string, unknown>, current: { project_id: string | null; category_id?: string | null }, projectId: string | null): Promise<string | null> {
+  return body['category_id'] !== undefined ? categoryFor(body['category_id'], projectId)
+    : projectId === current.project_id ? current.category_id ?? null : null;
+}
+async function categoryValues(body: Record<string, unknown>, current?: CategoryRow): Promise<Omit<CategoryRow, 'id' | 'created_at' | 'updated_at'>> {
+  const name = body['name'] === undefined && current ? current.name : str(body['name']);
+  if (!name || name.length > 100) fail('nom de catégorie requis (100 caractères maximum)');
+  const projectId = body['project_id'] === undefined && current ? current.project_id : str(body['project_id']);
+  const { projects, categories } = await tables();
+  if (!projectId || !(await projects.get(projectId))) fail('projet introuvable');
+  if (current && projectId !== current.project_id) fail('une catégorie ne peut pas changer de projet');
+  const parentId = body['parent_id'] === undefined ? current?.parent_id ?? null : await categoryFor(body['parent_id'], projectId);
+  const color = body['color'] === undefined ? current?.color ?? '#64748b' : str(body['color']);
+  if (!/^#[\da-f]{6}$/i.test(color)) fail('couleur de catégorie invalide (#RRGGBB attendu)');
+  if (current) {
+    let parent = parentId;
+    const seen = new Set<string>();
+    while (parent) {
+      if (parent === current.id || seen.has(parent)) fail('une catégorie ne peut pas être rangée dans elle-même ou une sous-catégorie');
+      seen.add(parent);
+      parent = (await categories.get(parent))?.parent_id ?? null;
+    }
+  }
+  return { name, project_id: projectId, parent_id: parentId, color };
 }
 
 /** Tests : substitue un backend frais (l'amorçage rejoue automatiquement). */
@@ -158,9 +207,9 @@ export function setLocalDatabase(next: Database | null): void {
 // `localStorage` uniquement : jamais de binaire, juste des identifiants.
 const OUTBOX_KEY = 'worklogs-outbox';
 export interface LocalOutbox {
-  entries: string[]; tasks: string[]; links: string[]; attachments: string[]; projects: string[];
+  entries: string[]; tasks: string[]; links: string[]; attachments: string[]; projects: string[]; categories?: string[];
 }
-const emptyOutbox = (): LocalOutbox => ({ entries: [], tasks: [], links: [], attachments: [], projects: [] });
+const emptyOutbox = (): LocalOutbox => ({ entries: [], tasks: [], links: [], attachments: [], projects: [], categories: [] });
 
 export function readLocalOutbox(): LocalOutbox {
   try {
@@ -189,8 +238,8 @@ function writeOutbox(outbox: LocalOutbox): void {
 
 function track(kind: keyof LocalOutbox, id: string): void {
   const outbox = readLocalOutbox();
-  if (!outbox[kind].includes(id)) {
-    outbox[kind].push(id);
+  if (!(outbox[kind] ?? []).includes(id)) {
+    (outbox[kind] ??= []).push(id);
     writeOutbox(outbox);
   }
   notifyLocalChange();
@@ -198,7 +247,7 @@ function track(kind: keyof LocalOutbox, id: string): void {
 
 function untrack(kind: keyof LocalOutbox, id: string): void {
   const outbox = readLocalOutbox();
-  outbox[kind] = outbox[kind].filter((current) => current !== id);
+  outbox[kind] = (outbox[kind] ?? []).filter((current) => current !== id);
   writeOutbox(outbox);
   notifyLocalChange();
 }
@@ -207,7 +256,7 @@ function untrack(kind: keyof LocalOutbox, id: string): void {
 // Suppressions à propager (pierres tombales, même format que le desktop) et
 // signal « quelque chose a changé » pour la synchro automatique (sync-web.ts).
 const DELETED_KEY = 'worklogs-sync-deleted';
-export interface LocalTombstone { kind: 'project' | 'entry' | 'task' | 'link' | 'attachment'; id: string; deleted_at: string }
+export interface LocalTombstone { kind: 'project' | 'category' | 'entry' | 'task' | 'link' | 'attachment'; id: string; deleted_at: string }
 let changeListener: (() => void) | null = null;
 
 export function onLocalChange(listener: (() => void) | null): void {
@@ -314,7 +363,7 @@ async function googleSync(entryId: string, contentJson: string | null): Promise<
     const target = await entries.get(sibling.entry_id);
     if (!target) continue;
     tabs.push({
-      id: target.id, title: target.title, entry_date: target.entry_date, project_id: target.project_id,
+      id: target.id, title: target.title, entry_date: target.entry_date, project_id: target.project_id, category_id: target.category_id ?? null,
       archived: target.archived ?? 0, kind: target.kind ?? 'note',
       updated_at: target.updated_at, excerpt: '', attachments: 0,
       google_document_id: sibling.document_id, google_tab_id: sibling.tab_id,
@@ -356,7 +405,7 @@ function taskDocuments(taskId: string, entries: EntryRow[], links: LinkRow[], go
       const link = googleByEntry.get(entry.id);
       return {
         id: entry.id, title: entry.title, entry_date: entry.entry_date,
-        project_id: entry.project_id, archived: entry.archived ?? 0, kind: entry.kind ?? 'note', updated_at: entry.updated_at,
+        project_id: entry.project_id, category_id: entry.category_id ?? null, archived: entry.archived ?? 0, kind: entry.kind ?? 'note', updated_at: entry.updated_at,
         excerpt: '', attachments: 0,
         google_document_id: link?.document_id ?? null, google_tab_id: link?.tab_id ?? null,
         google_document_title: link?.document_title ?? null, google_tab_title: link?.tab_title ?? null,
@@ -497,20 +546,22 @@ export const localApi: Api = {
     const serialized = JSON.stringify(rich);
     const id = uid('en_');
     const time = nowISO();
-    const t = await tables();
-    await t.entries.put({
-      id, title: clean, content_md: '', content_json: serialized, entry_date: today(),
-      project_id: null, archived: 0, kind: 'note', created_at: time, updated_at: time,
+    return localWrite(async () => {
+      const t = await tables();
+      await t.entries.put({
+        id, title: clean, content_md: '', content_json: serialized, entry_date: today(),
+        project_id: null, archived: 0, kind: 'note', created_at: time, updated_at: time,
+      });
+      const tabs = documentTabs(created);
+      const createdRevision = typeof created['revisionId'] === 'string' ? created['revisionId'] : '';
+      await t.google.put({
+        entry_id: id, document_id: documentId, tab_id: tabs[0]?.id || '', revision_id: createdRevision,
+        synced_content_json: serialized, synced_at: time,
+        document_title: '', tab_title: '', tab_order: 0, tab_depth: 0, readonly_reason: '',
+      });
+      track('entries', id);
+      return fullEntry(id);
     });
-    const tabs = documentTabs(created);
-    const createdRevision = typeof created['revisionId'] === 'string' ? created['revisionId'] : '';
-    await t.google.put({
-      entry_id: id, document_id: documentId, tab_id: tabs[0]?.id || '', revision_id: createdRevision,
-      synced_content_json: serialized, synced_at: time,
-      document_title: '', tab_title: '', tab_order: 0, tab_depth: 0, readonly_reason: '',
-    });
-    track('entries', id);
-    return fullEntry(id);
   },
   googleDocumentTabs: async () => fail('Google Drive est disponible dans l’application desktop.'),
   openGoogleDocument: async (documentId, tabId) => {
@@ -518,48 +569,50 @@ export const localApi: Api = {
     if (tabId !== undefined && (typeof tabId !== 'string' || (tabId && !/^[\w.-]{1,200}$/.test(tabId)))) {
       fail('Identifiant d’onglet Google invalide.');
     }
-    const t = await tables();
     const source = (await webGoogleRequest(`/docs/v1/documents/${documentId}?includeTabsContent=true`)) as Record<string, unknown>;
     const allTabs = documentTabs(source);
     const list: { id: string; title: string; depth: number }[] = allTabs.length ? allTabs : [{ id: '', title: (source.title as string) || 'Document', depth: 0 }];
     if (tabId && !list.some((tab) => tab.id === tabId)) fail('Onglet Google introuvable.');
     const documentTitle = (source.title as string) || 'Document Google';
-    const time = nowISO();
-    let first: string | null = null;
-    let asked: string | null = null;
-    for (const [order, tab] of list.entries()) {
-      const existing = ((await t.google.all()).find((row) => row.document_id === documentId && row.tab_id === tab.id)
-        ?? (tab.id && order === 0 ? (await t.google.all()).find((row) => row.document_id === documentId && row.tab_id === '') : undefined));
-      if (existing) {
-        await t.google.put({ ...existing, document_title: documentTitle, tab_title: tab.title, tab_order: order, tab_depth: tab.depth, tab_id: tab.id });
-        const entryRow = (await t.entries.get(existing.entry_id)) as EntryRow | undefined;
-        if (entryRow && entryRow.content_json === existing.synced_content_json) {
-          const rich = importGoogleDocument(selectDocumentTab(source, tab.id));
-          const serialized = JSON.stringify(rich);
-          await t.entries.put({ ...entryRow, content_json: serialized, content_md: documentText(rich) });
-          await t.google.put({ ...existing, document_title: documentTitle, tab_title: tab.title, tab_order: order, tab_depth: tab.depth, tab_id: tab.id, synced_content_json: serialized, revision_id: (source.revisionId as string) || '', synced_at: time, readonly_reason: '' });
+    return localWrite(async () => {
+      const t = await tables();
+      const time = nowISO();
+      let first: string | null = null;
+      let asked: string | null = null;
+      for (const [order, tab] of list.entries()) {
+        const existing = ((await t.google.all()).find((row) => row.document_id === documentId && row.tab_id === tab.id)
+          ?? (tab.id && order === 0 ? (await t.google.all()).find((row) => row.document_id === documentId && row.tab_id === '') : undefined));
+        if (existing) {
+          await t.google.put({ ...existing, document_title: documentTitle, tab_title: tab.title, tab_order: order, tab_depth: tab.depth, tab_id: tab.id });
+          const entryRow = (await t.entries.get(existing.entry_id)) as EntryRow | undefined;
+          if (entryRow && entryRow.content_json === existing.synced_content_json) {
+            const rich = importGoogleDocument(selectDocumentTab(source, tab.id));
+            const serialized = JSON.stringify(rich);
+            await t.entries.put({ ...entryRow, content_json: serialized, content_md: documentText(rich) });
+            await t.google.put({ ...existing, document_title: documentTitle, tab_title: tab.title, tab_order: order, tab_depth: tab.depth, tab_id: tab.id, synced_content_json: serialized, revision_id: (source.revisionId as string) || '', synced_at: time, readonly_reason: '' });
+          }
+          first ??= existing.entry_id;
+          if (tab.id === tabId) asked = existing.entry_id;
+          continue;
         }
-        first ??= existing.entry_id;
-        if (tab.id === tabId) asked = existing.entry_id;
-        continue;
+        const rich = importGoogleDocument(selectDocumentTab(source, tab.id));
+        const id = uid('en_');
+        await t.entries.put({
+          id, title: list.length > 1 ? `${documentTitle} — ${tab.title}` : documentTitle,
+          content_md: documentText(rich), content_json: JSON.stringify(rich),
+          entry_date: today(), project_id: null, archived: 0, kind: 'note', created_at: time, updated_at: time,
+        });
+        await t.google.put({
+          entry_id: id, document_id: documentId, tab_id: tab.id, revision_id: (source.revisionId as string) || '',
+          synced_content_json: JSON.stringify(rich), synced_at: time,
+          document_title: documentTitle, tab_title: tab.title, tab_order: order, tab_depth: tab.depth, readonly_reason: '',
+        });
+        track('entries', id);
+        first ??= id;
+        if (tab.id === tabId) asked = id;
       }
-      const rich = importGoogleDocument(selectDocumentTab(source, tab.id));
-      const id = uid('en_');
-      await t.entries.put({
-        id, title: list.length > 1 ? `${documentTitle} — ${tab.title}` : documentTitle,
-        content_md: documentText(rich), content_json: JSON.stringify(rich),
-        entry_date: today(), project_id: null, archived: 0, kind: 'note', created_at: time, updated_at: time,
-      });
-      await t.google.put({
-        entry_id: id, document_id: documentId, tab_id: tab.id, revision_id: (source.revisionId as string) || '',
-        synced_content_json: JSON.stringify(rich), synced_at: time,
-        document_title: documentTitle, tab_title: tab.title, tab_order: order, tab_depth: tab.depth, readonly_reason: '',
-      });
-      track('entries', id);
-      first ??= id;
-      if (tab.id === tabId) asked = id;
-    }
-    return fullEntry((asked ?? first) as string);
+      return fullEntry((asked ?? first) as string);
+    });
   },
   pushGoogleDocument: async (id) => {
     const t = await tables();
@@ -577,13 +630,18 @@ export const localApi: Api = {
       const rawId: unknown = created['documentId'];
       const documentId: string = typeof rawId === 'string' && /^[\w-]{1,200}$/.test(rawId) ? rawId : fail('Identifiant de document Google invalide.');
       const fresh = await readGoogleSource(documentId);
-      if (!(await t.entries.get(id))) fail('entrée introuvable');
-      await t.google.put({
-        entry_id: id, document_id: documentId, tab_id: documentBody(fresh).tabId || '', revision_id: fresh.revisionId || '',
-        synced_content_json: JSON.stringify(importGoogleDocument(fresh)),
-        synced_at: null, document_title: '', tab_title: '', tab_order: 0, tab_depth: 0, readonly_reason: '',
+      link = await localWrite(async () => {
+        if (!(await t.entries.get(id))) fail('entrée introuvable');
+        const existing = await t.google.get(id);
+        if (existing) return existing;
+        const createdLink: GoogleRow = {
+          entry_id: id, document_id: documentId, tab_id: documentBody(fresh).tabId || '', revision_id: fresh.revisionId || '',
+          synced_content_json: JSON.stringify(importGoogleDocument(fresh)),
+          synced_at: null, document_title: '', tab_title: '', tab_order: 0, tab_depth: 0, readonly_reason: '',
+        };
+        await t.google.put(createdLink);
+        return createdLink;
       });
-      link = ((await t.google.get(id)) ?? fail('Ce document n’est pas encore associé à Google Drive.')) as GoogleRow;
     }
     const source = await readGoogleSource(link.document_id, link.tab_id);
     const unchangedNewDocument = !link.revision_id && JSON.stringify(importGoogleDocument(source)) === link.synced_content_json;
@@ -597,21 +655,25 @@ export const localApi: Api = {
       : { writeControl: { requiredRevisionId: source.revisionId } };
     const revision = result.writeControl?.requiredRevisionId;
     if (!revision) fail('Google a reçu la mise à jour sans renvoyer sa révision. Recharge la version Google pour vérifier l’enregistrement.');
-    // La révision vaut pour tout le document : ne pas créer de faux conflit
-    // sur les autres onglets lus à cette même révision (miroir serveur).
-    for (const sibling of (await t.google.all()).filter((row) => row.document_id === (link as GoogleRow).document_id && row.revision_id === source.revisionId && row.entry_id !== id)) {
-      await t.google.put({ ...sibling, revision_id: revision });
-    }
-    const serialized = JSON.stringify(rich);
-    const latest = ((await t.entries.get(id)) ?? fail('entrée introuvable')) as EntryRow;
-    const local = latest.content_json === current.content_json
-      ? rich
-      : mergeGoogleChanges(JSON.parse(current.content_json as string), JSON.parse(latest.content_json as string), rich);
-    await t.entries.put({ ...latest, content_json: JSON.stringify(local), content_md: documentText(local), updated_at: latest.updated_at });
-    await t.google.put({ ...(link as GoogleRow), revision_id: revision, synced_content_json: serialized, synced_at: nowISO() });
-    // Google porte désormais la modification : la file d'envoi vers le PC n'a plus à la transmettre.
-    untrack('entries', id);
-    return fullEntry(id);
+    return localWrite(async () => {
+      // La révision vaut pour tout le document : ne pas créer de faux conflit
+      // sur les autres onglets lus à cette même révision (miroir serveur).
+      for (const sibling of (await t.google.all()).filter((row) => row.document_id === (link as GoogleRow).document_id && row.revision_id === source.revisionId && row.entry_id !== id)) {
+        await t.google.put({ ...sibling, revision_id: revision });
+      }
+      const serialized = JSON.stringify(rich);
+      const latest = ((await t.entries.get(id)) ?? fail('entrée introuvable')) as EntryRow;
+      const latestLink = (await t.google.get(id)) ?? fail('Ce document n’est pas encore associé à Google Drive.');
+      if (latestLink.document_id !== link?.document_id || latestLink.tab_id !== link?.tab_id) fail('L’association Google a changé pendant l’envoi. Recharge le document.');
+      const local = latest.content_json === current.content_json
+        ? rich
+        : mergeGoogleChanges(JSON.parse(current.content_json as string), JSON.parse(latest.content_json as string), rich);
+      await t.entries.put({ ...latest, content_json: JSON.stringify(local), content_md: documentText(local), updated_at: latest.updated_at });
+      await t.google.put({ ...latestLink, revision_id: revision, synced_content_json: serialized, synced_at: nowISO() });
+      // Google porte désormais la modification : la file d'envoi vers le PC n'a plus à la transmettre.
+      untrack('entries', id);
+      return fullEntry(id);
+    });
   },
   pullGoogleDocument: async (id, expected) => {
     const t = await tables();
@@ -620,19 +682,32 @@ export const localApi: Api = {
     if (JSON.stringify(expected) !== current.content_json) fail('Le brouillon a changé. Enregistre-le avant de recharger Google.');
     const source = await readGoogleSource(link.document_id, link.tab_id);
     const rich = importGoogleDocument(source);
-    if (((await t.entries.get(id)) as EntryRow | undefined)?.content_json !== current.content_json) {
-      fail('Tu as modifié le brouillon pendant le rechargement. Il a été conservé.');
-    }
-    const serialized = JSON.stringify(rich);
-    const time = nowISO();
-    await t.entries.put({ ...current, content_json: serialized, content_md: documentText(rich), updated_at: time });
-    await t.google.put({ ...link, revision_id: source.revisionId || '', synced_content_json: serialized, synced_at: time, readonly_reason: '' });
-    track('entries', id);
-    return fullEntry(id);
+    return localWrite(async () => {
+      const latest = (await t.entries.get(id)) ?? fail('entrée introuvable');
+      if (latest.content_json !== current.content_json) fail('Tu as modifié le brouillon pendant le rechargement. Il a été conservé.');
+      const latestLink = (await t.google.get(id)) ?? fail('Ce document n’est pas encore associé à Google Drive.');
+      if (latestLink.document_id !== link.document_id || latestLink.tab_id !== link.tab_id) fail('L’association Google a changé pendant le rechargement. Recharge le document.');
+      const serialized = JSON.stringify(rich);
+      const time = nowISO();
+      await t.entries.put({ ...latest, content_json: serialized, content_md: documentText(rich), updated_at: time });
+      await t.google.put({ ...latestLink, revision_id: source.revisionId || '', synced_content_json: serialized, synced_at: time, readonly_reason: '' });
+      track('entries', id);
+      return fullEntry(id);
+    });
   },
 
-  state: async (q = '', projectId = ''): Promise<AppState> => {
-    const { projects, entries, tasks, links, attachments, google } = await tables();
+  state: async (q = '', projectId = '', categoryId = ''): Promise<AppState> => {
+    const { projects, categories, entries, tasks, links, attachments, google } = await tables();
+    const allCategories = await categories.all();
+    const selected = new Set(categoryId ? [categoryId] : []);
+    if (categoryId && categoryId !== '__none__') {
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const category of allCategories) if (category.parent_id && selected.has(category.parent_id) && !selected.has(category.id)) { selected.add(category.id); changed = true; }
+      }
+    }
+    const matchesCategory = (row: { category_id?: string | null }) => !categoryId || (categoryId === '__none__' ? !row.category_id : selected.has(row.category_id || ''));
     const allEntries = await entries.all();
     const allTasks = await tasks.all();
     const allLinks = await links.all();
@@ -640,7 +715,7 @@ export const localApi: Api = {
     const googleByEntry = new Map((await google.all()).map((row) => [row.entry_id, row]));
     const needle = q.trim().toLowerCase();
     const matching = allEntries
-      .filter((entry) => (!projectId || entry.project_id === projectId))
+      .filter((entry) => (!projectId || entry.project_id === projectId) && matchesCategory(entry))
       // SQLite `LIKE` est insensible à la casse (ASCII) : on compare en minuscules.
       .filter((entry) => !needle || entry.title.toLowerCase().includes(needle) || entry.content_md.toLowerCase().includes(needle))
       .sort((a, b) => cmp(b.entry_date, a.entry_date) || cmp(b.updated_at, a.updated_at));
@@ -649,7 +724,7 @@ export const localApi: Api = {
     const summaries = matching.map((entry) => {
       const link = googleByEntry.get(entry.id);
       return {
-        id: entry.id, title: entry.title, entry_date: entry.entry_date, project_id: entry.project_id,
+        id: entry.id, title: entry.title, entry_date: entry.entry_date, project_id: entry.project_id, category_id: entry.category_id ?? null,
         archived: entry.archived ?? 0, kind: entry.kind ?? 'note',
         updated_at: entry.updated_at, excerpt: entry.content_md.slice(0, 240),
         attachments: counts.get(entry.id) ?? 0,
@@ -661,7 +736,7 @@ export const localApi: Api = {
       };
     });
     const matchingTasks = allTasks
-      .filter((task) => (!projectId || task.project_id === projectId))
+      .filter((task) => (!projectId || task.project_id === projectId) && matchesCategory(task))
       .filter((task) => !needle || task.title.toLowerCase().includes(needle))
       .sort((a, b) => a.position - b.position || cmp(b.updated_at, a.updated_at) || cmp(a.id, b.id))
       .map((task) => ({ ...task, documents: taskDocuments(task.id, allEntries, allLinks, googleByEntry) }));
@@ -688,6 +763,7 @@ export const localApi: Api = {
         entries: allEntries.filter((entry) => entry.project_id === project.id).length,
         open_tasks: allTasks.filter((task) => task.project_id === project.id && task.status !== 'done').length,
       })),
+      categories: allCategories.sort((a, b) => cmp(a.name, b.name) || cmp(a.id, b.id)).map((category) => ({ ...category, entries: allEntries.filter((entry) => entry.category_id === category.id).length, open_tasks: allTasks.filter((task) => task.category_id === category.id && task.status !== 'done').length })),
       entries: summaries,
       tasks: matchingTasks,
       procedure_attachments: procedureAttachments,
@@ -715,7 +791,7 @@ export const localApi: Api = {
     const rich = body.content_json == null ? null : validateDocument(body.content_json);
     await entries.put({
       id, title, content_md: rich ? documentText(rich) : typeof body.content_md === 'string' ? body.content_md : '',
-      entry_date: date, project_id: orNull(body.project_id), archived: 0, kind, created_at: t, updated_at: t,
+      entry_date: date, project_id: orNull(body.project_id), category_id: await categoryFor(body.category_id, orNull(body.project_id)), archived: 0, kind, created_at: t, updated_at: t,
       content_json: rich ? JSON.stringify(rich) : null,
     });
     track('entries', id);
@@ -742,7 +818,7 @@ export const localApi: Api = {
     await entries.put({
       ...row, title,
       content_md: rich ? documentText(rich) : pick(patch, 'content_md', current.content_md, (v) => (typeof v === 'string' ? v : current.content_md)),
-      entry_date: date, project_id: projectId, archived, kind, updated_at: nowISO(),
+      entry_date: date, project_id: projectId, category_id: await categoryForPatch(patch, current, projectId), archived, kind, updated_at: nowISO(),
       content_json: rich ? JSON.stringify(rich) : null,
     });
     track('entries', id);
@@ -783,7 +859,7 @@ export const localApi: Api = {
     await entries.put({
       id: copyId, title: `${original.title} — copie locale`, content_md: markdown,
       content_json: rich ? JSON.stringify(rich) : null, entry_date: original.entry_date,
-      project_id: original.project_id, archived: 0, kind: original.kind ?? 'note', created_at: time, updated_at: time,
+      project_id: original.project_id, category_id: original.category_id ?? null, archived: 0, kind: original.kind ?? 'note', created_at: time, updated_at: time,
     });
     for (const file of (await attachments.all()).filter((row) => row.entry_id === id)) {
       const stored = uid('copy_') + ext(file.stored);
@@ -815,7 +891,7 @@ export const localApi: Api = {
     const position = Math.max(-1, ...(await tasks.all()).filter((task) => task.status === 'todo').map((task) => task.position)) + 1;
     await tasks.put({
       id, title, status: 'todo', due_date: dueDate, pinned: 0, position,
-      priority: 'normal', project_id: source.project_id, created_at: time, updated_at: time,
+      priority: 'normal', project_id: source.project_id, category_id: source.category_id ?? null, created_at: time, updated_at: time,
     });
     await links.put({ id: linkId(id, source.id), task_id: id, entry_id: source.id, created_at: time });
     track('tasks', id);
@@ -832,7 +908,7 @@ export const localApi: Api = {
     const id = uid('en_');
     const time = nowISO();
     await entries.put({
-      id, title, content_md: content, entry_date: today(), project_id: source.project_id,
+      id, title, content_md: content, entry_date: today(), project_id: source.project_id, category_id: source.category_id ?? null,
       archived: 0, kind: 'note', created_at: time, updated_at: time, content_json: null,
     });
     await links.put({ id: linkId(source.id, id), task_id: source.id, entry_id: id, created_at: time });
@@ -856,7 +932,7 @@ export const localApi: Api = {
     const position = Math.max(-1, ...(await tasks.all()).filter((task) => task.status === status).map((task) => task.position)) + 1;
     const row: TaskRow = {
       id, title, status, due_date: orNull(body.due_date), pinned: body.pinned ? 1 : 0, position,
-      priority: priority as TaskRow['priority'], project_id: orNull(body.project_id), created_at: t, updated_at: t,
+      priority: priority as TaskRow['priority'], project_id: orNull(body.project_id), category_id: await categoryFor(body.category_id, orNull(body.project_id)), created_at: t, updated_at: t,
     };
     await tasks.put(row);
     track('tasks', id);
@@ -879,7 +955,7 @@ export const localApi: Api = {
       ...current, title, status,
       due_date: pick(patch, 'due_date', current.due_date, orNull),
       pinned: pick(patch, 'pinned', current.pinned, (v) => (v ? 1 : 0)),
-      priority: priority as TaskRow['priority'], project_id: projectId, updated_at: nowISO(),
+      priority: priority as TaskRow['priority'], project_id: projectId, category_id: await categoryForPatch(patch, current, projectId), updated_at: nowISO(),
     };
     await tasks.put(next);
     if (current.status !== 'done' && status === 'done') await archiveTaskDocuments(id);
@@ -938,6 +1014,45 @@ export const localApi: Api = {
     return { ok: true };
   },
 
+  createCategory: async (body): Promise<Category> => {
+    const values = await categoryValues(body);
+    const { categories } = await tables();
+    const time = nowISO();
+    const row = { ...values, id: uid('ca_'), created_at: time, updated_at: time };
+    await categories.put(row);
+    track('categories', row.id);
+    return row;
+  },
+  updateCategory: async (id, body): Promise<Category> => {
+    const { categories } = await tables();
+    const current = (await categories.get(id)) ?? fail('catégorie introuvable');
+    const row = { ...current, ...await categoryValues(body, current), updated_at: nowISO() };
+    await categories.put(row);
+    track('categories', id);
+    return row;
+  },
+  deleteCategory: async (id) => {
+    const { categories, entries, tasks } = await tables();
+    const current = (await categories.get(id)) ?? fail('catégorie introuvable');
+    const updated_at = nowISO();
+    for (const category of await categories.all()) if (category.parent_id === id) {
+      await categories.put({ ...category, parent_id: current.parent_id, updated_at });
+      track('categories', category.id);
+    }
+    for (const entry of await entries.all()) if (entry.category_id === id) {
+      await entries.put({ ...entry, category_id: current.parent_id, updated_at });
+      track('entries', entry.id);
+    }
+    for (const task of await tasks.all()) if (task.category_id === id) {
+      await tasks.put({ ...task, category_id: current.parent_id, updated_at });
+      track('tasks', task.id);
+    }
+    await categories.remove(id);
+    untrack('categories', id);
+    tombstone('category', id);
+    return { ok: true };
+  },
+
   createProject: async (body) => {
     const { projects } = await tables();
     const name = str(body.name);
@@ -970,15 +1085,20 @@ export const localApi: Api = {
   },
 
   deleteProject: async (id) => {
-    const { projects, entries, tasks } = await tables();
+    const { projects, categories, entries, tasks } = await tables();
     if (!(await projects.get(id))) fail('projet introuvable');
     await projects.remove(id);
     // `ON DELETE SET NULL` : les entrées et tâches sont détachées, jamais perdues.
     for (const entry of (await entries.all()).filter((row) => row.project_id === id)) {
-      await entries.put({ ...entry, project_id: null });
+      await entries.put({ ...entry, project_id: null, category_id: null, updated_at: nowISO() });
+      track('entries', entry.id);
     }
     for (const task of (await tasks.all()).filter((row) => row.project_id === id)) {
-      await tasks.put({ ...task, project_id: null });
+      await tasks.put({ ...task, project_id: null, category_id: null, updated_at: nowISO() });
+      track('tasks', task.id);
+    }
+    for (const category of (await categories.all()).filter((row) => row.project_id === id)) {
+      await categories.remove(category.id); untrack('categories', category.id); tombstone('category', category.id);
     }
     untrack('projects', id);
     tombstone('project', id);
@@ -1074,12 +1194,24 @@ export const localApi: Api = {
   },
 };
 
+// These operations use internal helpers, so none recursively waits for this
+// queue. Google actions that call updateEntry/deleteEntry join it per mutation.
+for (const method of [
+  'createCategory', 'updateCategory', 'deleteCategory', 'createProject', 'updateProject', 'deleteProject',
+  'createEntry', 'updateEntry', 'deleteEntry', 'copyEntry', 'createTaskFromEntry', 'createEntryFromTask',
+  'createTask', 'updateTask', 'moveTask', 'deleteTask', 'linkTaskDocument', 'unlinkTaskDocument', 'exportBackup',
+] as const) {
+  const operation = localApi[method];
+  Object.assign(localApi, { [method]: (...args: unknown[]) => localWrite(() => Reflect.apply(operation, localApi, args) as Promise<unknown>) });
+}
+
 async function backupObject() {
-  const { projects, entries, tasks, links, attachments, google } = await tables();
+  const { projects, categories, entries, tasks, links, attachments, google } = await tables();
   return {
     version: BACKUP_VERSION,
     exported_at: nowISO(),
     projects: await projects.all(),
+    categories: await categories.all(),
     entries: (await entries.all()).map((row) => decodeEntry(row)),
     tasks: await tasks.all(),
     task_entries: (await links.all()).map(({ task_id, entry_id, created_at }) => ({ task_id, entry_id, created_at })),
@@ -1090,11 +1222,12 @@ async function backupObject() {
 
 /** Instantané local pour la fusion : même forme validée que le fichier Drive, suppressions comprises. */
 export async function localSyncSnapshot(): Promise<SyncSnapshot> {
-  return { ...(validateBackup(await backupObject()) as Omit<SyncSnapshot, 'deleted'>), deleted: readLocalTombstones() };
+  return localWrite(async () => ({ ...(validateBackup(await backupObject()) as Omit<SyncSnapshot, 'deleted'>), deleted: readLocalTombstones() }));
 }
 
 export interface SyncSnapshot {
   projects: (ProjectRow & { updated_at: string })[];
+  categories?: CategoryRow[];
   entries: (Omit<EntryRow, 'content_json'> & { content_json: RichDocument | null })[];
   tasks: TaskRow[];
   task_entries: { task_id: string; entry_id: string; created_at: string }[];
@@ -1109,8 +1242,21 @@ export interface SyncSnapshot {
  * (saisie pendant la synchro) n'est jamais écrasée : elle est comptée dans
  * `skipped` et repartira au passage suivant. Les binaires présents sont conservés.
  */
-export async function applySyncSnapshot(merged: SyncSnapshot, base: SyncSnapshot): Promise<{ changed: number; skipped: number }> {
+export function applySyncSnapshot(merged: SyncSnapshot, base: SyncSnapshot): Promise<{ changed: number; skipped: number }> {
+  return localWrite(() => applySyncSnapshotUnlocked(merged, base));
+}
+async function applySyncSnapshotUnlocked(merged: SyncSnapshot, base: SyncSnapshot): Promise<{ changed: number; skipped: number }> {
   const t = await tables();
+  // A category move or assignment made while Drive was read changes the graph.
+  // Retry the merge from that graph before applying any row: retaining just the
+  // edited row could otherwise make a cycle or an orphan with incoming changes.
+  const graph = (rows: { id: string; project_id?: string | null; category_id?: string | null; parent_id?: string | null }[], category = false) =>
+    JSON.stringify(rows.map((row) => [row.id, row.project_id ?? null, category ? row.parent_id ?? null : row.category_id ?? null]).sort((a, b) => cmp(a[0] || '', b[0] || '')));
+  const projectIds = (rows: { id: string }[]) => JSON.stringify(rows.map((row) => row.id).sort());
+  if (projectIds(await t.projects.all()) !== projectIds(base.projects)
+    || graph(await t.categories.all(), true) !== graph(base.categories || [], true)
+    || graph(await t.entries.all()) !== graph(base.entries)
+    || graph(await t.tasks.all()) !== graph(base.tasks)) return { changed: 0, skipped: 1 };
   let changed = 0;
   let skipped = 0;
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -1147,11 +1293,12 @@ export async function applySyncSnapshot(merged: SyncSnapshot, base: SyncSnapshot
     }
   }
   await sync(t.projects, merged.projects, base.projects, (row) => (row as ProjectRow).id, (row) => ({ ...row }), ['name', 'color']);
+  await sync(t.categories, merged.categories || [], base.categories || [], (row) => (row as CategoryRow).id, (row) => ({ ...row }), ['name', 'color', 'project_id', 'parent_id']);
   await sync(t.entries, merged.entries, base.entries, (row) => (row as EntryRow).id,
     (row) => ({ ...row, content_json: row.content_json ? JSON.stringify(row.content_json) : null }) as EntryRow,
-    ['title', 'content_md', 'content_json', 'entry_date', 'project_id', 'archived', 'kind']);
+    ['title', 'content_md', 'content_json', 'entry_date', 'project_id', 'category_id', 'archived', 'kind']);
   await sync(t.tasks, merged.tasks, base.tasks, (row) => (row as TaskRow).id, (row) => ({ ...row }),
-    ['title', 'status', 'due_date', 'pinned', 'position', 'priority', 'project_id']);
+    ['title', 'status', 'due_date', 'pinned', 'position', 'priority', 'project_id', 'category_id']);
   await sync(t.links, merged.task_entries, base.task_entries, (row) => linkId(row.task_id, row.entry_id),
     (row) => ({ id: linkId(row.task_id, row.entry_id), ...row }), []);
   await sync(t.google, merged.google_documents, base.google_documents, (row) => (row as GoogleRow).entry_id, (row) => ({ ...row }), []);
@@ -1170,18 +1317,22 @@ export async function applySyncSnapshot(merged: SyncSnapshot, base: SyncSnapshot
  * `restoreBackup` (`api/src/backup.js`), sans transaction (un seul
  * utilisateur) mais avec validation préalable : rien n'est écrit si elle échoue.
  */
-export async function importLocalBackup(input: unknown): Promise<{ ok: true; projects: number; entries: number; tasks: number }> {
+export function importLocalBackup(input: unknown): Promise<{ ok: true; projects: number; entries: number; tasks: number }> {
+  return localWrite(() => importLocalBackupUnlocked(input));
+}
+async function importLocalBackupUnlocked(input: unknown): Promise<{ ok: true; projects: number; entries: number; tasks: number }> {
   const data = validateBackup(input) as {
-    projects: ProjectRow[]; entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; archived: 0 | 1; kind: 'note' | 'procedure'; created_at: string; updated_at: string }[];
+    projects: ProjectRow[]; categories: CategoryRow[]; entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; archived: 0 | 1; kind: 'note' | 'procedure'; created_at: string; updated_at: string }[];
     tasks: TaskRow[]; task_entries: { task_id: string; entry_id: string; created_at: string }[];
     google_documents: GoogleRow[]; attachments: { id: string; filename: string; stored: string; mime: string; size: number; entry_id: string; created_at: string; driveFileId?: string | null }[];
   };
   const t = await tables();
-  const byName = { projects: t.projects, entries: t.entries, tasks: t.tasks, task_entries: t.links, google_documents: t.google, attachments: t.attachments };
-  for (const name of ['task_entries', 'google_documents', 'attachments', 'tasks', 'entries', 'projects'] as const) {
+  const byName = { projects: t.projects, categories: t.categories, entries: t.entries, tasks: t.tasks, task_entries: t.links, google_documents: t.google, attachments: t.attachments };
+  for (const name of ['task_entries', 'google_documents', 'attachments', 'tasks', 'entries', 'categories', 'projects'] as const) {
     await byName[name].clear();
   }
   for (const project of data.projects) await t.projects.put(project);
+  for (const category of data.categories) await t.categories.put(category);
   for (const entry of data.entries) {
     await t.entries.put({ ...entry, content_json: entry.content_json ? JSON.stringify(entry.content_json) : null });
   }
@@ -1202,6 +1353,7 @@ export interface OutboxPayload {
   base_exported_at: string | null;
   device: 'pwa';
   projects: ProjectRow[];
+  categories?: CategoryRow[];
   entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; archived: 0 | 1; kind: 'note' | 'procedure'; created_at: string; updated_at: string }[];
   tasks: TaskRow[];
   task_entries: { task_id: string; entry_id: string; created_at: string }[];
@@ -1213,7 +1365,10 @@ export interface OutboxPayload {
  * dernier import, avec les métadonnées des pièces jointes (binaires envoyés
  * séparément). Vide si rien n'a changé.
  */
-export async function exportLocalOutbox(baseExportedAt: string | null = null): Promise<OutboxPayload> {
+export function exportLocalOutbox(baseExportedAt: string | null = null): Promise<OutboxPayload> {
+  return localWrite(() => exportLocalOutboxUnlocked(baseExportedAt));
+}
+async function exportLocalOutboxUnlocked(baseExportedAt: string | null): Promise<OutboxPayload> {
   const t = await tables();
   const outbox = readLocalOutbox();
   const take = async <T extends { id: string }>(table: { get(key: string): Promise<T | undefined> }, ids: string[]): Promise<T[]> => {
@@ -1228,12 +1383,23 @@ export async function exportLocalOutbox(baseExportedAt: string | null = null): P
   const tasks = await take(t.tasks, outbox.tasks);
   const links = await take(t.links, outbox.links);
   const files = await take(t.attachments, outbox.attachments);
+  // A changed item needs its category and ancestors even if those did not change.
+  const categoryIds = new Set([...(outbox.categories || []), ...entries.map((row) => row.category_id || ''), ...tasks.map((row) => row.category_id || '')].filter(Boolean));
+  const categories: CategoryRow[] = [];
+  for (const id of categoryIds) {
+    const row = await t.categories.get(id);
+    if (!row) continue;
+    categories.push(row);
+    if (row.parent_id) categoryIds.add(row.parent_id);
+  }
+  const projectIds = new Set([...outbox.projects, ...entries.map((row) => row.project_id || ''), ...tasks.map((row) => row.project_id || ''), ...categories.map((row) => row.project_id)].filter(Boolean));
   return {
     version: OUTBOX_VERSION,
     exported_at: nowISO(),
     base_exported_at: baseExportedAt,
     device: 'pwa',
-    projects: await take(t.projects, outbox.projects),
+    projects: await take(t.projects, [...projectIds]),
+    categories,
     entries: entries.map((row) => ({ ...row, content_json: row.content_json ? (JSON.parse(row.content_json) as RichDocument) : null })),
     tasks,
     task_entries: links.map(({ task_id, entry_id, created_at }) => ({ task_id, entry_id, created_at })),
@@ -1242,7 +1408,7 @@ export async function exportLocalOutbox(baseExportedAt: string | null = null): P
 }
 
 export function outboxSize(outbox: LocalOutbox = readLocalOutbox()): number {
-  return outbox.entries.length + outbox.tasks.length + outbox.links.length + outbox.attachments.length + outbox.projects.length;
+  return outbox.entries.length + outbox.tasks.length + outbox.links.length + outbox.attachments.length + outbox.projects.length + (outbox.categories?.length || 0);
 }
 
 /** Pièces jointes avec binaire local en attente d'envoi sur Drive. */

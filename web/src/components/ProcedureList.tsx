@@ -1,8 +1,11 @@
 import { useState } from 'react';
-import { api, plainText, type Attachment, type EntrySummary, type Project } from '../lib';
+import { api, plainText, type Attachment, type Category, type EntrySummary, type Project } from '../lib';
 import { flushPendingSaves } from '../autosave';
 import { FileViewer } from './FileViewer';
 import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-download';
+
+import { groupByCategory } from '../categories';
+import { CategoryBadge } from './CategoryPicker';
 
 /**
  * Panneau Procédures : les modes d'emploi d'un projet, avec leurs pièces
@@ -14,6 +17,8 @@ export function ProcedureList({
   entries,
   attachments,
   projects,
+  categories = [],
+  grouped = false,
   projectId,
   selectedId,
   onSelect,
@@ -25,6 +30,8 @@ export function ProcedureList({
   entries: EntrySummary[];
   attachments: (Attachment & { entry_title: string })[];
   projects: Project[];
+  categories?: Category[];
+  grouped?: boolean;
   projectId: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -125,8 +132,11 @@ export function ProcedureList({
           {projectId ? `Aucune procédure pour ${project?.name ?? 'ce projet'}.` : 'Aucune procédure pour l’instant.'}
         </p>
       )}
+      {(grouped ? groupByCategory(procedures, categories, projects) : [{ id: '', label: '', items: procedures }]).map((group) => (
+      <div key={group.id} className={grouped ? 'category-item-group' : undefined}>
+      {grouped && <h3 className="category-group-title">{group.label} <span className="count">{group.items.length}</span></h3>}
       <ol className="procedure-items">
-        {procedures.map((entry) => {
+        {group.items.map((entry) => {
           const entryFiles = files.filter((file) => file.entry_id === entry.id);
           return (
             <li key={entry.id}>
@@ -146,6 +156,7 @@ export function ProcedureList({
                   )}
                   {entry.title}
                 </span>
+                <CategoryBadge categories={categories} categoryId={entry.category_id} />
                 <span className="entry-excerpt">
                   {plainText(entry.excerpt) || 'Vide'}
                   {entry.attachments > 0 && (
@@ -222,6 +233,8 @@ export function ProcedureList({
           );
         })}
       </ol>
+      </div>
+      ))}
       {error && <p role="alert" className="error">{error}</p>}
       {previewing && <FileViewer
         key={`${previewing.id}-${previewVersion}`}

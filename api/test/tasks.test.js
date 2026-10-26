@@ -302,6 +302,7 @@ describe('tâches', () => {
       title: 'Onglet Google',
       entry_date: google.entry_date,
       project_id: documentProject.id,
+      category_id: null,
       archived: 0,
       updated_at: google.updated_at,
       google_document_id: 'google-doc',

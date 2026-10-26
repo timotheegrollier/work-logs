@@ -1,5 +1,54 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+
+## Lot du 2026-10-26 — catégories et sous-catégories par projet
+
+Demande : mieux ranger les tâches/objectifs et entrées, voir leur classement dans chaque
+projet, filtrer et regrouper les listes.
+- Arbres de catégories visibles sous les projets, couleurs et compteurs, création directe
+  de sous-catégories ; renommer, recolorer et ranger dans un autre parent du même projet.
+- Filtre commun journal/tâches/procédures, descendants compris, « Sans catégorie », recherche
+  cumulable ; badges de chemin sur les cartes, sélecteurs dans l'entrée et l'édition tâche.
+  Les créations sous filtre et les créations liées héritent du classement. Regroupement des
+  listes par chemin, statuts et glisser-déposer des tâches conservés.
+- Suppression confirmée sans perte : contenu direct et enfants remontent dans le parent,
+  sinon sans catégorie. Sauvegarde de l'entrée attendue avant suppression ; brouillons
+  de tâches gardés même si un changement de groupe remonte la carte.
+- Migration SQLite additive, IndexedDB v2 et service worker alignés ; sauvegardes v2,
+  boîte mobile et Drive conservent catégories et affectations. Cycles concurrents réparés,
+  application PWA sérialisée avec les mutations relationnelles. Les retours Google gardent
+  le classement courant après une suppression/reclassification locale. Anciens exports acceptés.
+- Revue : callbacks d'anciens filtres ignorés, dernière navigation retenue pendant un
+  enregistrement, couple projet/catégorie distant réconcilié sans toucher au texte saisi,
+  onglet Google reclassé hors filtre remplacé par un onglet visible. Glisser-déposer ciblé
+  par position globale même avec des voisins cachés par les filtres.
+
+**Code** : `api/src/categories.js`, migrations/routes, backup/fusion ;
+`web/src/categories.ts`, `CategoryBar.tsx`, `CategoryPicker.tsx`, listes/éditeur et store PWA.
+**Tests** : API catégories + sauvegarde/fusion/import + Google ; tests purs/PWA ; 8 gestes
+App et 2 parcours navigateur desktop/mobile (412 px), captures inspectées.
+Aucune dépendance ajoutée. Pourquoi : décision §46 ; usage :
+`03-UTILISATION.md`.
+
+**Intégration :** reprise sur `master` v0.58.0 (menus IA et procédures/archives conservés).
+Version **0.59.0**, manifeste et lockfile alignés, sur `codex/categories`, sans tag de publication.
+Recette complète après intégration et bump **verte** : 277 API, 655 front (dont 1 échec
+attendu préexistant), 48 desktop unitaires, 30 scripts, 11 Worker, 11 relais,
+72 navigateur et 16 desktop e2e — **1 120 tests**.
+
+**Compatibilité Drive :** mettre à jour les appareils synchronisés ensemble. Un ancien
+client qui réécrit une entrée/tâche ne conserve pas son `category_id` (même limite que
+`shared_dir`).
+
+**Validation :** recette complète de départ verte sur copie isolée de HEAD : 257 API,
+632 front (dont 1 échec attendu), 48 desktop unitaires, 29 scripts, 11 Worker, 11 relais,
+70 navigateur et 16 desktop e2e. **Recette finale `./scripts/check.sh` verte : 277 API,
+652 front (dont 1 échec attendu préexistant), 48 desktop unitaires, 30 scripts, 11 Worker,
+11 relais, 72 navigateur et 16 desktop e2e — 1 117 tests.**
+Un test existant « nouveau dossier »
+a dépassé son attente UI d'1 s sous campagnes parallèles ; il utilise maintenant le délai
+borné `partage` déjà prévu pour les opérations du partage, sans retry.
+
 ## Lot du 2026-10-22 — un changement de projet n'ouvre jamais une archive
 
 Changer de projet (ou lancer l'app, ou supprimer l'entrée ouverte) rouvrait la première
@@ -28,6 +77,7 @@ action du formulaire). Aucune dépendance, route ou migration ajoutée.
   `03-UTILISATION.md` (« Assistance IA »).
 - **Tests** : un geste dédié dans `App.test.tsx` ; les tests IA ouvrent le menu par
   `aiAction(nom, zone?, menu?)` ; `e2e/procedures`, `shared-folder` et `ai-assistance` aussi.
+
 
 ## Lot du 2026-10-21 — « ✨ Trouver la doc »
 

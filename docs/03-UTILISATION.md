@@ -69,6 +69,29 @@ les flèches gauche/droite (10 px, ou 50 px avec Maj) ; Début/Fin donnent les l
 Sur une petite fenêtre, les colonnes se resserrent pour conserver la place du document.
 Les poignées disparaissent lorsque les panneaux sont empilés ou masqués.
 
+### Catégories et sous-catégories
+
+Sous les projets, **＋ Catégorie** crée un classement dans le projet choisi. Le bouton
+**＋** d'une catégorie ajoute une sous-catégorie ; **✎** permet de renommer, choisir une
+couleur ou la ranger dans une autre catégorie du même projet. Dans **Tout**, chaque arbre
+est présenté sous le nom de son projet.
+
+Cliquer sur une catégorie filtre ensemble le journal, les tâches et les procédures,
+**sous-catégories comprises**. La recherche et les vues rapides des tâches restent
+cumulables. **Toutes les catégories** enlève ce filtre ; **Sans catégorie** retrouve ce qui
+reste à ranger. Changer de projet lève le filtre de catégorie.
+
+Le sélecteur **Catégorie de l’entrée** et celui de l'édition d'une tâche permettent de
+classer les éléments existants. Leur chemin apparaît sur les cartes. Une nouvelle entrée,
+procédure ou tâche reprend la catégorie filtrée ; une création liée reprend celle de sa
+source. **Regrouper par catégorie** rassemble les listes par chemin de catégorie ; les
+tâches gardent leurs colonnes À faire / En cours / Terminé et leur glisser-déposer.
+
+Supprimer une catégorie demande confirmation : son contenu et ses sous-catégories remontent
+dans son parent, ou deviennent sans catégorie à la racine. Les notes et tâches sont conservées.
+Les catégories sont disponibles sur mobile hors ligne et suivent les sauvegardes et la
+synchronisation Drive. Les anciennes sauvegardes reviennent sans catégorie.
+
 ## Écrire une entrée
 
 1. **+ Nouvelle entrée** — elle est créée à la date du jour, le curseur est dans le titre.
