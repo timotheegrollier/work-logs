@@ -31,7 +31,10 @@ Aucune dépendance ajoutée. Pourquoi : décision §46 ; usage :
 `03-UTILISATION.md`.
 
 **Intégration :** reprise sur `master` v0.58.0 (menus IA et procédures/archives conservés).
-Version 0.59.0 préparée pour ce lot, sans tag de publication. Recette après intégration à passer.
+Version **0.59.0**, manifeste et lockfile alignés, sur `codex/categories`, sans tag de publication.
+Recette complète après intégration et bump **verte** : 277 API, 655 front (dont 1 échec
+attendu préexistant), 48 desktop unitaires, 30 scripts, 11 Worker, 11 relais,
+72 navigateur et 16 desktop e2e — **1 120 tests**.
 
 **Compatibilité Drive :** mettre à jour les appareils synchronisés ensemble. Un ancien
 client qui réécrit une entrée/tâche ne conserve pas son `category_id` (même limite que
