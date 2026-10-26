@@ -3,7 +3,20 @@
 
 ## Lot du 2026-10-26 — catégories et sous-catégories par projet
 
-**Publication 0.59.0 — correction après fusion :** la première CI de `master` (`7a10b70`,
+**Publié en [v0.59.0](https://github.com/timotheegrollier/work-logs/releases/tag/v0.59.0)**
+le 26/10/2026 : [PR #22](https://github.com/timotheegrollier/work-logs/pull/22) fusionnée,
+tag sur `c8fba9d`. [CI Linux](https://github.com/timotheegrollier/work-logs/actions/runs/40339337880)
+et [Release Linux](https://github.com/timotheegrollier/work-logs/actions/runs/40341509396) vertes,
+installations Mint 22 / Fedora 43 / 44 comprises. Six fichiers publiés (DEB, RPM, AppImage,
+blockmap, latest-linux.yml et SHA256SUMS) ; les cinq sommes du manifeste correspondent aux
+digests GitHub, version de mise à jour 0.59.0, attestation générée. PWA Cloudflare et Pages
+publiées ; `sw.js` en 0.59.0 et `/token` configuré, vérifiés en direct.
+Dépôts apt/dnf : [actualisation validée](https://github.com/timotheegrollier/work-logs/actions/runs/40341876534),
+[publication Pages verte](https://github.com/timotheegrollier/work-logs/actions/runs/40342992708).
+Index publics APT et RPM en 0.59.0 vérifiés, sommes SHA256 des paquets identiques à la release.
+Relais VM : installation automatique attendue, non vérifiable ici (nom DNS Tailscale non résolu).
+
+**Correction avant publication :** la première CI de `master` (`7a10b70`,
 run `40294643157`) a révélé un rafraîchissement perdu : la migration d'un ancien lien de
 partage débutait sous « Tout », finissait après le choix d'un projet, puis son callback
 `reload` obsolète était ignoré. Le projet gardait `shared_dir=NULL` à l'écran bien que la
@@ -14,7 +27,8 @@ correction, sans retry ni attente arbitraire. Le test du reclassement d’un ong
 attend maintenant `flushPendingSaves()` avant de vérifier l’onglet suivant : sa fenêtre
 de lecture de 1 s ne doit pas englober le debounce de sauvegarde. Les trois parcours
 ciblés (migration, reclassement Google, callback de catégorie tardif) passent.
-Recette après correction en cours.
+Recette après correction `./scripts/check.sh` entièrement verte, **1 120 tests**
+(dont l’échec attendu préexistant) ; même commit validé par la CI avant le tag.
 
 Demande : mieux ranger les tâches/objectifs et entrées, voir leur classement dans chaque
 projet, filtrer et regrouper les listes.
@@ -45,7 +59,7 @@ Aucune dépendance ajoutée. Pourquoi : décision §46 ; usage :
 `03-UTILISATION.md`.
 
 **Intégration :** reprise sur `master` v0.58.0 (menus IA et procédures/archives conservés).
-Version **0.59.0**, manifeste et lockfile alignés, sur `codex/categories`, sans tag de publication.
+Version **0.59.0**, manifeste et lockfile alignés, fusionnée sur `master` et publiée.
 Recette complète après intégration et bump **verte** : 277 API, 655 front (dont 1 échec
 attendu préexistant), 48 desktop unitaires, 30 scripts, 11 Worker, 11 relais,
 72 navigateur et 16 desktop e2e — **1 120 tests**.
