@@ -50,16 +50,18 @@ describe('catégories et sous-catégories', () => {
   const createCategory = (name: string, parent_id?: string) => clientApi.createCategory({ name, project_id: 'p', parent_id });
 
   test('crée une catégorie et sa sous-catégorie puis les renomme, regroupe et supprime sans perdre les notes', async () => {
+    // Chaque attente couvre un aller-retour serveur et la relecture de l'état : sous charge, plus d'une seconde.
+    const backend = { timeout: 5000 };
     seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }] });
     render(<App />);
     await screen.findByRole('button', { name: 'Chantier' });
     fireEvent.click(categories().getByRole('button', { name: '＋ Catégorie' }));
     fireEvent.change(categories().getByLabelText('Nom de la catégorie'), { target: { value: 'Préparation' } });
     fireEvent.click(categories().getByRole('button', { name: 'Enregistrer la catégorie' }));
-    fireEvent.click(await categories().findByRole('button', { name: 'Ajouter une sous-catégorie à Préparation' }));
+    fireEvent.click(await categories().findByRole('button', { name: 'Ajouter une sous-catégorie à Préparation' }, backend));
     fireEvent.change(categories().getByLabelText('Nom de la catégorie'), { target: { value: 'Devis' } });
     fireEvent.click(categories().getByRole('button', { name: 'Enregistrer la catégorie' }));
-    await categories().findByRole('button', { name: 'Modifier la catégorie Devis' });
+    await categories().findByRole('button', { name: 'Modifier la catégorie Devis' }, backend);
     const parent = row(api.db, 'SELECT * FROM categories WHERE name=?', 'Préparation');
     const child = row(api.db, 'SELECT * FROM categories WHERE name=?', 'Devis');
     expect(child.parent_id).toBe(parent.id);
@@ -68,10 +70,10 @@ describe('catégories et sous-catégories', () => {
     fireEvent.change(categories().getByLabelText('Nom de la catégorie'), { target: { value: 'Contrats' } });
     fireEvent.change(categories().getByLabelText('Catégorie parente'), { target: { value: '' } });
     fireEvent.click(categories().getByRole('button', { name: 'Enregistrer la catégorie' }));
-    await categories().findByRole('button', { name: 'Modifier la catégorie Contrats' });
+    await categories().findByRole('button', { name: 'Modifier la catégorie Contrats' }, backend);
     expect(row(api.db, 'SELECT * FROM categories WHERE id=?', child.id).parent_id).toBeNull();
     fireEvent.click(categories().getByRole('button', { name: 'Supprimer la catégorie Contrats' }));
-    await waitFor(() => expect(categories().queryByRole('button', { name: 'Modifier la catégorie Contrats' })).not.toBeInTheDocument());
+    await waitFor(() => expect(categories().queryByRole('button', { name: 'Modifier la catégorie Contrats' })).not.toBeInTheDocument(), backend);
     expect((await clientApi.entry(note.id)).category_id).toBeNull();
     await within(journal()).findByText('Note classée');
   });
