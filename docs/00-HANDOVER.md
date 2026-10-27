@@ -12,7 +12,16 @@ Le parcours de création d'une procédure vérifie sa saisie intermédiaire, att
 chargement effectif de l'éditeur riche et utilise la colonne Procédures déjà ouverte.
 La première recette locale a échoué sur ce parcours (titre dupliqué après clear/type) ;
 le parcours ciblé passe avec ces observations. Ne pas présenter cela comme une correction
-prouvée d'un bug de saisie. Recette complète et contrôles GitHub à terminer avant fusion.
+prouvée d'un bug de saisie.
+
+Le parcours navigateur des retraits a révélé une autre course de recette : `End`, puis
+`Enter` en moins d'un frame, avant le vrai `selectionchange` lu par ProseMirror, remplaçait
+la citation sélectionnée. Sonde DOM/ProseMirror à l'appui, sans callback de focus différé.
+La recette s'abonne maintenant avant `End`, attend cet événement et vérifie les deux
+paragraphes avant de tester les retraits ; parcours ciblé vert sans délai ni retry.
+L'éditeur n'a pas été modifié pour cette course de sélection. Les 656 tests front (dont
+un échec attendu préexistant) sont verts ; la CI du précédent arbre a également validé
+la recette complète et les paquets Mint/Fedora. Derniers contrôles à terminer avant fusion.
 
 ## Intégration de la PR #21 — 2026-10-26 — version 0.60.0 préparée
 
