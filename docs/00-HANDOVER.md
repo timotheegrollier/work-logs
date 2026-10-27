@@ -11,8 +11,12 @@ vert après, sans retry ni délai arbitraire. Les 9 gestes catégories passent.
 Le parcours de création d'une procédure vérifie sa saisie intermédiaire, attend le
 chargement effectif de l'éditeur riche et utilise la colonne Procédures déjà ouverte.
 La première recette locale a échoué sur ce parcours (titre dupliqué après clear/type) ;
-le parcours ciblé passe avec ces observations. Ne pas présenter cela comme une correction
-prouvée d'un bug de saisie.
+les observations ont ensuite localisé la perte dès l'effacement, en CI. Reproduction
+déterministe : une saisie native dans le layout du parent précède les effets passifs de
+montage ; l'effet qui recopiait le titre suggéré écrasait cette saisie. `ProcedureDraft`
+associe désormais la correction à sa proposition, sans copie différée. Test rouge avant,
+vert après ; une nouvelle proposition réinitialise bien le titre, même si son titre
+suggéré est identique. Deux tests de composant et trois parcours App ciblés verts.
 
 Le parcours navigateur des retraits a révélé une autre course de recette : `End`, puis
 `Enter` en moins d'un frame, avant le vrai `selectionchange` lu par ProseMirror, remplaçait
