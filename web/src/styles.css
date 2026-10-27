@@ -5020,17 +5020,15 @@ div.google-preserved {
   .project-strip {
     padding: 5px 12px;
   }
+  /* Pas d'aimantation : elle ramenait la rangée sur un point d'accroche juste après
+     le défilement qui montre le projet choisi, et le laissait à moitié hors champ. */
   .project-strip .chips {
-    scroll-snap-type: x proximity;
     scroll-padding-inline: 12px;
   }
   .chip {
     height: 40px;
     padding: 0 14px;
     font-size: 14px;
-  }
-  .project-strip .chip {
-    scroll-snap-align: start;
   }
   .manage-btn {
     height: 40px;
