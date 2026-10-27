@@ -36,9 +36,24 @@ terminé. Pourquoi : décision **§48**. Aucune dépendance ajoutée.
   1100, 844 × 390, 800, 412 et 360 px. Attentes serveur du parcours de rangement portées à
   5 s : une seconde ne suffisait pas sous la charge de la recette complète.
 
-Validation : recette `./scripts/check.sh` complète et CI de la
-[PR #23](https://github.com/timotheegrollier/work-logs/pull/23) vertes avant fusion ;
-décomptes et publication relevés ci-dessous après le tag.
+**Publié en [v0.60.0](https://github.com/timotheegrollier/work-logs/releases/tag/v0.60.0)**
+le 27/10/2026 : [PR #23](https://github.com/timotheegrollier/work-logs/pull/23) fusionnée
+(`1b02dc7`, arbre identique à la tête testée `0daaa7c`), tag sur `1b02dc7`.
+[CI Linux de master](https://github.com/timotheegrollier/work-logs/actions/runs/40491254063) et
+[Release Linux](https://github.com/timotheegrollier/work-logs/actions/runs/40492828026) (chemin
+rapide) vertes, installations Mint 22 / Fedora 43 / 44 comprises. Six fichiers publiés (DEB, RPM,
+AppImage, blockmap, latest-linux.yml, SHA256SUMS) ; les cinq sommes du manifeste correspondent aux
+empreintes GitHub, mise à jour intégrée en 0.60.0. [Dépôts apt/dnf](https://github.com/timotheegrollier/work-logs/actions/runs/40493101162)
+puis Pages verts : index publics APT et RPM en 0.60.0, sommes identiques à la release. PWA
+Cloudflare : `sw.js` en 0.60.0 et `/token` configuré, vérifiés en direct. Relais VM : installation
+automatique attendue, non vérifiable ici (nom Tailscale non résolu).
+
+Recette locale `./scripts/check.sh` verte sur `0daaa7c` : 282 API, 669 front (dont l'échec attendu
+préexistant), 48 desktop unitaires, 32 scripts, 11 Worker, 11 relais, 75 navigateur et 17 desktop
+e2e — **1 145 tests**. Deux passages précédents étaient rouges, corrigés avant fusion : trois tests
+de cartes qui lisaient le texte retiré, puis le premier parcours catégories trop lent sous charge
+(helpers `getByRole` sur toute l'application → requêtes DOM, budget de 15 s). La CI de la PR a
+révélé le conflit d'aimantation du bandeau mobile décrit plus haut.
 
 ## Reprise de la PR #21 — 2026-10-27
 
