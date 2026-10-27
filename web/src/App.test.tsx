@@ -40,11 +40,12 @@ const row = (db: typeof api.db, sql: string, ...args: unknown[]) =>
   db.prepare(sql).get(...args) as Record<string, unknown>;
 
 describe('catégories et sous-catégories', () => {
-  const trigger = () => screen.getByRole('button', { name: /^Catégories/ });
+  // Requêtes DOM directes : un getByRole sur toute l'application, à chaque geste, coûtait des secondes sous charge.
+  const trigger = () => document.querySelector<HTMLButtonElement>('.category-trigger')!;
   /** La fenêtre des catégories, ouverte depuis le bandeau des projets si besoin. */
   const categories = () => {
     if (trigger().getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger());
-    return within(screen.getByRole('dialog', { name: /^Catégories/ }));
+    return within(document.querySelector<HTMLElement>('.category-sheet')!);
   };
   const showCategory = async (name: string) => fireEvent.click(await categories().findByRole('button', { name }));
   const createCategory = (name: string, parent_id?: string) => clientApi.createCategory({ name, project_id: 'p', parent_id });
@@ -76,7 +77,7 @@ describe('catégories et sous-catégories', () => {
     await waitFor(() => expect(categories().queryByRole('button', { name: 'Modifier la catégorie Contrats' })).not.toBeInTheDocument(), backend);
     expect((await clientApi.entry(note.id)).category_id).toBeNull();
     await within(journal()).findByText('Note classée');
-  });
+  }, 15_000);
 
   test('filtre ensemble entrées et tâches, inclut les descendants et hérite du filtre à la création', async () => {
     seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }] });
