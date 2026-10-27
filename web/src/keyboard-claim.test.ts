@@ -38,6 +38,32 @@ describe('déclaration du clavier aux champs WorkLogs', () => {
     expect(claim).toHaveBeenCalledTimes(1);
   });
 
+  test('recliquer un champ déjà actif réclame le clavier natif sans déplacer le focus DOM', () => {
+    document.body.innerHTML = '<input id="name"><button id="action">Action</button>'
+      + '<div contenteditable="true"><p id="paragraph">Texte</p><span id="fixed" contenteditable="false">Figé</span></div>';
+    const field = document.getElementById('name')!;
+    const claim = vi.fn();
+    const stop = claimKeyboardOnFocus(claim);
+    field.focus();
+    claim.mockClear();
+
+    // Le focus DOM n'a pas bougé alors qu'une vue native a pu reprendre le clavier.
+    field.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(claim).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(field);
+    document.getElementById('paragraph')!.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(claim).toHaveBeenCalledTimes(2);
+    document.getElementById('fixed')!.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    document.getElementById('action')!.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(claim).toHaveBeenCalledTimes(2);
+
+    stop();
+    field.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    field.blur();
+    field.focus();
+    expect(claim).toHaveBeenCalledTimes(2);
+  });
+
   test('ne s’abonne à rien hors desktop', () => {
     document.body.innerHTML = '<input id="a">';
     // Sans pontage, la PWA et le navigateur ne paient aucun écouteur.
