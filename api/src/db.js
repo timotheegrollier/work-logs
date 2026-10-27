@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
+import { TASK_CATEGORY_MIGRATION, inheritTaskCategories } from './task-categories.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -339,6 +340,15 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   db.exec(LOCAL_SCHEMA);
   db.exec('PRAGMA foreign_keys = ON;');
   if (withSeed) seed(db);
+  if (!db.prepare('SELECT 1 FROM local_settings WHERE key=?').get(TASK_CATEGORY_MIGRATION)) {
+    const time = nowISO();
+    db.exec('BEGIN');
+    try {
+      inheritTaskCategories(db, time);
+      db.prepare('INSERT INTO local_settings (key,value,updated_at) VALUES (?,?,?)').run(TASK_CATEGORY_MIGRATION, '1', time);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); db.close(); throw error; }
+  }
   return db;
 }
 
