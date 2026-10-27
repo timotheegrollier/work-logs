@@ -1,5 +1,45 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-27 — catégories en une fenêtre, saisie retrouvée, héritage des tâches
+
+**PR #21 fusionnée** sur `master` (`b6bb9e4`, arbre identique à la branche, CI verte) avant ce
+lot, qui part en **v0.60.0** avec elle : la 0.60.0 préparée par la PR n'avait jamais été taguée.
+Repris d'un lot codex non commité (héritage, `pointerdown`, premier bandeau compact), puis
+terminé. Pourquoi : décision **§48**. Aucune dépendance ajoutée.
+
+- **Champs qui ne répondent plus (desktop)** : un champ gardait le focus DOM pendant que la
+  vue Google tenait le clavier ; recliquer ce champ ne produisait aucun `focusin`. Cause
+  reproduite sous Electron/Xvfb (`webContents.isFocused()` reste `false`, test rouge sans le
+  correctif) ; `keyboard-claim.ts` réclame aussi le clavier sur `pointerdown`. Un seul
+  parcours Electron couvre l'ouverture par bouton (focus par programme) et le reclic.
+- **Catégories : un bouton, une fenêtre.** Plus de rangée sous les projets : le bouton
+  **Catégories** vit dans le bandeau, entre les pastilles et « Gérer », et ouvre la fenêtre
+  des projets (§35) — filtre, regroupement et rangement réunis, formulaire en tête, Entrée /
+  Échap, focus rendu. Le bouton montre la catégorie filtrée dans sa couleur ; icône seule sur
+  téléphone tant qu'aucun filtre n'est posé. `CategoryBar.tsx` réécrit (`ProjectBar` reçoit
+  le bouton en `children`) ; l'ancien CSS `.category-bar`/`.category-manager` est supprimé.
+- **Héritage** : lier une entrée classée, ou classer une entrée déjà liée, remplit les tâches
+  libres du même projet quand leurs documents n'ont qu'une catégorie (SQLite et PWA,
+  rattrapage unique de l'existant). **Corrigé en plus** : pendant l'édition d'une tâche, lier
+  un document laissait le sélecteur sur « Sans catégorie » et « Enregistrer » effaçait
+  l'héritage ; le formulaire suit maintenant le classement reçu tant qu'on n'y a pas touché.
+- **Interface allégée** : pied de carte et ✕ des documents au survol (place réservée),
+  compteur 📎 en double retiré, documents liés sur une ligne ; Imprimer / Archiver /
+  Supprimer groupés, sélecteurs de l'entrée à la largeur de leur choix ; pastilles du bandeau
+  à 40 px sur tablette tactile ; fenêtres projets/catégories pleine hauteur en paysage.
+- **Bandeau mobile** : la rangée des pastilles, plus étroite, a révélé un conflit latent —
+  l'aimantation du défilement (`scroll-snap`) laissait le projet choisi à moitié hors champ
+  (parcours mobile rouge en CI). Aimantation retirée, parcours vert.
+- **Tests** : 2 gestes App neufs (héritage pendant l'édition, choix manuel prioritaire), tests
+  catégories réécrits pour la fenêtre, 5 parcours navigateur (dont héritage sur la carte et
+  tablette tactile), parcours Electron fusionné. Captures inspectées clair/sombre à 1440,
+  1100, 844 × 390, 800, 412 et 360 px. Attentes serveur du parcours de rangement portées à
+  5 s : une seconde ne suffisait pas sous la charge de la recette complète.
+
+Validation : recette `./scripts/check.sh` complète et CI de la
+[PR #23](https://github.com/timotheegrollier/work-logs/pull/23) vertes avant fusion ;
+décomptes et publication relevés ci-dessous après le tag.
+
 ## Reprise de la PR #21 — 2026-10-27
 
 Branche rebasée sur `master` v0.59.0, arbre de l'intégration conservé et ancien bump

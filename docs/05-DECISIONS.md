@@ -1993,3 +1993,77 @@ historique git repart de ce lot.
 **Rouvrir si** une action révélée au survol est manquée à l'usage (la rendre visible, pas
 un menu) ; si la page centrale paraît trop proche des panneaux en thème sombre (`--paper`
 est la seule valeur à bouger).
+
+---
+
+## 48. Ranger sans encombrer l'écran et garder la saisie — 2026-10-27
+
+**Demande.** « J'ai encore des bugs de champs de texte qui ne fonctionnent plus et ne répondent
+plus dans les catégories et je trouve l'interface un peu chargée : améliore grandement l'UI/UX
+et le responsive. Je veux aussi que les tâches sélectionnent automatiquement leur catégorie
+lorsque les entrées associées en possèdent déjà. »
+
+**Saisie desktop (la cause, mesurée).** Un champ WorkLogs peut garder le focus DOM pendant
+que la vue Google détient le clavier natif : on tape dans le nom de catégorie, on clique dans
+le document Google, on revient cliquer le même champ — aucun `focusin` ne se produit, le
+correctif du §14 ne réclamait donc rien et les frappes partaient dans Google. Reproduit sous
+Electron/Xvfb : `webContents.isFocused()` reste à `false` après le clic (test rouge sans le
+correctif). `keyboard-claim.ts` écoute maintenant aussi `pointerdown`, en capture, sur les
+champs et contenus éditables ; hors desktop, aucun écouteur. Le même parcours vérifie le
+chemin du bouton (« ＋ Catégorie », focus posé par programme) : celui-là marchait déjà par
+`focusin`. Une frappe Playwright seule ne prouverait rien (elle court-circuite le clavier natif) :
+le test lit `isFocused()` des deux `webContents` avant et après le vrai clic.
+
+**Catégories : un bouton, une fenêtre.** Le bandeau des catégories (une rangée de plus sous
+les projets, puis un sélecteur, une case et un panneau dépliable qui poussait le contenu) est
+remplacé par **un seul bouton dans le bandeau des projets**, entre les pastilles et « Gérer ».
+Il ouvre la même fenêtre que la gestion des projets (§35) : sous le bouton sur desktop,
+feuille du bas sur téléphone, pleine hauteur en paysage. Elle réunit filtre (Toutes, Sans
+catégorie, l'arbre avec couleurs et compteurs), regroupement et rangement ; choisir un filtre
+la referme, et le bouton affiche alors la catégorie dans sa couleur (son nom accessible dit
+le chemin complet). Formulaire en tête, liste seule qui défile, retrait par la profondeur au
+lieu des « ↳ » ; Entrée enregistre, Échap ferme le formulaire puis la fenêtre, le focus
+revient au bouton d'origine. Actions ＋ ✎ ✕ au survol à la souris, cibles de 44 px au doigt.
+Sur téléphone, le bouton n'est qu'une icône tant qu'aucun filtre n'est posé : le bandeau collé
+reste sur une rangée. Gain : une rangée sur desktop comme sur mobile, et plus rien ne bouge
+sous la souris quand on range. **Coût mesuré** : la rangée des pastilles, plus étroite sur
+téléphone, a révélé un conflit latent — l'aimantation du défilement (`scroll-snap`, §35)
+ramenait la rangée sur un point d'accroche juste après le défilement qui montre le projet
+choisi, laissé à moitié hors champ (bord droit à 279 px pour une rangée finissant à 249).
+L'aimantation est retirée ; le parcours mobile du bandeau, rouge en CI, repasse au vert.
+
+**Écarté.** Le premier lot de cette reprise gardait un sélecteur natif permanent, une case
+« Regrouper » et un panneau « Gérer » déplié dans le flux : toujours une rangée, deux
+« Gérer » empilés sur mobile, un contenu poussé vers le bas. Un menu dans le `<select>`
+(« Gérer… » comme dernière option) : les flèches du clavier l'auraient déclenché.
+
+**Cartes et éditeur allégés.** Le pied des cartes (＋ Documents, ＋ Entrée liée, ✨ IA) et le
+✕ d'un document lié suivent la règle de ★ et ✕ (§47) : au survol ou au clavier, place
+réservée, toujours visibles au doigt. Le compteur « 📎 N » des étiquettes et l'intitulé
+« 📎 N documents » répétaient la liste qu'ils annonçaient : retirés ; chaque document tient
+sur une ligne, origine et date dans l'infobulle. Dans l'éditeur, Imprimer, Archiver et
+Supprimer sont groupés (un retour à la ligne ne les sépare plus) et, colonnes côte à côte,
+les sélecteurs prennent la largeur de leur choix (`field-sizing: content`), pas celle du
+plus long chemin de catégorie. Tablette tactile : pastilles du bandeau à 40 px.
+
+**Classement automatique.** Au lien ou au classement d'une entrée associée, une tâche libre
+reprend l'unique catégorie présente parmi ses entrées du même projet. Une tâche classée garde
+son choix, même si un document lié ensuite porte une autre catégorie ; plusieurs catégories
+distinctes restent ambiguës pour une tâche libre. Aucun projet n'est changé implicitement.
+Le rattrapage initial ne joue qu'une fois : les choix « Sans catégorie » ultérieurs restent
+intacts au redémarrage. Marqueur local, sans table ni version IndexedDB supplémentaire.
+SQLite groupe mutation et héritage dans une transaction ; la PWA les sérialise et inscrit
+chaque tâche persistée dans l'outbox avant notification ou reprise après erreur.
+**Pendant l'édition d'une tâche**, le formulaire retient le classement reçu sur lequel repose
+son choix (`category_base`) : lier un document qui apporte une catégorie met le sélecteur à
+jour tant qu'on n'y a pas touché — sinon « Enregistrer » renvoyait « Sans catégorie » et
+effaçait l'héritage (test rouge avant, vert après) ; un choix fait à la main l'emporte.
+
+**Validation.** Cas nominaux, choix existants, ambiguïtés, autres projets et reprise de
+migration testés dans les deux backends ; gestes App (dont les deux cas du formulaire),
+parcours navigateur desktop/mobile/tablette tactile, parcours Electron du clavier, captures
+clair/sombre à 1440, 1100, 844 × 390, 412 et 360 px. Aucune dépendance ajoutée. Comptages
+validés dans `00-HANDOVER.md`.
+
+**Rouvrir si** le filtre par catégorie sert plusieurs fois par minute : un sélecteur natif à
+côté du bouton coûterait une largeur de pastille, pas une rangée.

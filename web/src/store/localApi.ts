@@ -25,6 +25,8 @@ import { buildGoogleUpdate, documentBody, documentTabs, selectDocumentTab } from
 import { buildPreservingUpdate, importGoogleDocument } from '../../../api/src/google-preserve.js';
 // @ts-expect-error — idem : réconciliation locale/distance, sans `node:sqlite`.
 import { mergeGoogleChanges } from '../../../api/src/google-merge.js';
+// @ts-expect-error — résolution pure partagée avec l'API, sans dépendance Node.
+import { TASK_CATEGORY_MIGRATION, inheritedTaskCategory } from '../../../api/src/task-categories.js';
 import { readRelay } from '../relay-settings';
 import { beginWebLogin, builtinWebClientId, clearWebClient, disconnectWeb, downloadDriveBinary, webGoogleRequest, webGoogleStatus } from './google-web';
 
@@ -48,7 +50,7 @@ function pwaGoogleStatus(): GoogleStatus {
     account: status.account, expired: status.expired,
   };
 }
-import { createIndexedDbDatabase, createMemoryDatabase, type Database } from './storage';
+import { createIndexedDbDatabase, createMemoryDatabase, type Database, type Table } from './storage';
 
 /**
  * Backend local du navigateur (PWA, `VITE_PWA=1`) : même interface `Api` que le
@@ -140,22 +142,49 @@ function localWrite<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 let backend: Database | null = null;
-let seeded = false;
+let initialization: Promise<void> | null = null;
+
+type TaskCategoryTables = { tasks: Table<TaskRow>; entries: Table<EntryRow>; links: Table<LinkRow> };
+
+async function inheritLocalTaskCategories(tables: TaskCategoryTables, time: string, scope: { taskId?: string; entryId?: string } = {}): Promise<void> {
+  const allTasks = await tables.tasks.all();
+  const allLinks = await tables.links.all();
+  const entries = new Map((await tables.entries.all()).map((entry) => [entry.id, entry]));
+  for (const task of allTasks) {
+    if (task.category_id || (scope.taskId && task.id !== scope.taskId)) continue;
+    const links = allLinks.filter((link) => link.task_id === task.id);
+    if (scope.entryId && !links.some((link) => link.entry_id === scope.entryId)) continue;
+    const documents = links.flatMap((link) => entries.get(link.entry_id) ? [entries.get(link.entry_id)!] : []);
+    const categoryId = inheritedTaskCategory(task, documents) as string | null;
+    if (!categoryId) continue;
+    await tables.tasks.put({ ...task, category_id: categoryId, updated_at: time });
+    track('tasks', task.id, false);
+  }
+}
+
+async function initializeDatabase(database: Database): Promise<void> {
+  await seed(database);
+  let migrate = true;
+  try { migrate = localStorage.getItem(TASK_CATEGORY_MIGRATION) !== '1'; } catch { /* Stockage des préférences indisponible. */ }
+  if (!migrate) return;
+  await inheritLocalTaskCategories({
+    tasks: database.table<TaskRow>('tasks'), entries: database.table<EntryRow>('entries'), links: database.table<LinkRow>('task_entries'),
+  }, nowISO());
+  try { localStorage.setItem(TASK_CATEGORY_MIGRATION, '1'); } catch { /* Les données restent conservées dans le backend. */ }
+}
 
 async function tables() {
-  backend ??= typeof indexedDB === 'undefined' ? createMemoryDatabase() : createIndexedDbDatabase();
-  if (!seeded) {
-    await seed(backend);
-    seeded = true;
-  }
+  const database = backend ??= typeof indexedDB === 'undefined' ? createMemoryDatabase() : createIndexedDbDatabase();
+  const ready = initialization ??= initializeDatabase(database);
+  try { await ready; } catch (error) { if (initialization === ready) initialization = null; throw error; }
   return {
-    projects: backend.table<ProjectRow>('projects'),
-    categories: backend.table<CategoryRow>('categories'),
-    entries: backend.table<EntryRow>('entries'),
-    tasks: backend.table<TaskRow>('tasks'),
-    links: backend.table<LinkRow>('task_entries'),
-    attachments: backend.table<AttachmentRow>('attachments'),
-    google: backend.table<GoogleRow>('google_documents'),
+    projects: database.table<ProjectRow>('projects'),
+    categories: database.table<CategoryRow>('categories'),
+    entries: database.table<EntryRow>('entries'),
+    tasks: database.table<TaskRow>('tasks'),
+    links: database.table<LinkRow>('task_entries'),
+    attachments: database.table<AttachmentRow>('attachments'),
+    google: database.table<GoogleRow>('google_documents'),
   };
 }
 
@@ -199,7 +228,7 @@ async function categoryValues(body: Record<string, unknown>, current?: CategoryR
 /** Tests : substitue un backend frais (l'amorçage rejoue automatiquement). */
 export function setLocalDatabase(next: Database | null): void {
   backend = next;
-  seeded = false;
+  initialization = null;
 }
 
 // ---------------------------------------------------------------- file d'envoi
@@ -236,13 +265,13 @@ function writeOutbox(outbox: LocalOutbox): void {
   }
 }
 
-function track(kind: keyof LocalOutbox, id: string): void {
+function track(kind: keyof LocalOutbox, id: string, notify = true): void {
   const outbox = readLocalOutbox();
   if (!(outbox[kind] ?? []).includes(id)) {
     (outbox[kind] ??= []).push(id);
     writeOutbox(outbox);
   }
-  notifyLocalChange();
+  if (notify) notifyLocalChange();
 }
 
 function untrack(kind: keyof LocalOutbox, id: string): void {
@@ -799,7 +828,8 @@ export const localApi: Api = {
   },
 
   updateEntry: async (id, body) => {
-    const { entries, projects } = await tables();
+    const t = await tables();
+    const { entries, projects } = t;
     const current = await fullEntry(id);
     const patch = (body ?? {}) as Record<string, unknown>;
     const title = pick(patch, 'title', current.title, (v) => str(v));
@@ -815,13 +845,19 @@ export const localApi: Api = {
     const archived = pick(patch, 'archived', row.archived ?? 0, (v) => (v ? 1 : 0));
     const kind: 'note' | 'procedure' = pick(patch, 'kind', row.kind ?? 'note', (v) => kindOf(v, row.kind ?? 'note'))
       ?? fail('type de document invalide (note ou procédure attendu)');
+    const categoryId = await categoryForPatch(patch, current, projectId);
+    const time = nowISO();
     await entries.put({
       ...row, title,
       content_md: rich ? documentText(rich) : pick(patch, 'content_md', current.content_md, (v) => (typeof v === 'string' ? v : current.content_md)),
-      entry_date: date, project_id: projectId, category_id: await categoryForPatch(patch, current, projectId), archived, kind, updated_at: nowISO(),
+      entry_date: date, project_id: projectId, category_id: categoryId, archived, kind, updated_at: time,
       content_json: rich ? JSON.stringify(rich) : null,
     });
-    track('entries', id);
+    track('entries', id, false);
+    try {
+      // Une tentative précédente peut avoir persisté l'entrée avant l'échec d'une tâche.
+      if (patch['category_id'] !== undefined || patch['project_id'] !== undefined) await inheritLocalTaskCategories(t, time, { entryId: id });
+    } finally { notifyLocalChange(); }
     return fullEntry(id);
   },
 
@@ -991,15 +1027,19 @@ export const localApi: Api = {
   },
 
   linkTaskDocument: async (taskId, entryId) => {
-    const { tasks, entries, links } = await tables();
+    const t = await tables();
+    const { tasks, entries, links } = t;
     const task = (await tasks.get(taskId)) ?? fail('tâche introuvable');
     if (!(await entries.get(entryId))) fail('entrée introuvable');
     const existing = await links.get(linkId(taskId, entryId));
-    if (existing) return { task_id: existing.task_id, entry_id: existing.entry_id };
-    const association = { id: linkId(taskId, entryId), task_id: taskId, entry_id: entryId, created_at: nowISO() };
-    await links.put(association);
-    if (task.status === 'done') await archiveTaskDocuments(taskId);
-    track('links', association.id);
+    const association = existing ?? { id: linkId(taskId, entryId), task_id: taskId, entry_id: entryId, created_at: nowISO() };
+    if (!existing) await links.put(association);
+    track('links', association.id, false);
+    try {
+      // Un lien déjà persisté doit permettre de reprendre un héritage interrompu.
+      await inheritLocalTaskCategories(t, nowISO(), { taskId });
+      if (task.status === 'done') await archiveTaskDocuments(taskId);
+    } finally { notifyLocalChange(); }
     return { task_id: taskId, entry_id: entryId };
   },
 

@@ -40,20 +40,29 @@ const row = (db: typeof api.db, sql: string, ...args: unknown[]) =>
   db.prepare(sql).get(...args) as Record<string, unknown>;
 
 describe('catégories et sous-catégories', () => {
-  const categories = () => within(screen.getByRole('region', { name: 'Catégories' }));
+  // Requêtes DOM directes : un getByRole sur toute l'application, à chaque geste, coûtait des secondes sous charge.
+  const trigger = () => document.querySelector<HTMLButtonElement>('.category-trigger')!;
+  /** La fenêtre des catégories, ouverte depuis le bandeau des projets si besoin. */
+  const categories = () => {
+    if (trigger().getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger());
+    return within(document.querySelector<HTMLElement>('.category-sheet')!);
+  };
+  const showCategory = async (name: string) => fireEvent.click(await categories().findByRole('button', { name }));
   const createCategory = (name: string, parent_id?: string) => clientApi.createCategory({ name, project_id: 'p', parent_id });
 
   test('crée une catégorie et sa sous-catégorie puis les renomme, regroupe et supprime sans perdre les notes', async () => {
+    // Chaque attente couvre un aller-retour serveur et la relecture de l'état : sous charge, plus d'une seconde.
+    const backend = { timeout: 5000 };
     seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }] });
     render(<App />);
     await screen.findByRole('button', { name: 'Chantier' });
     fireEvent.click(categories().getByRole('button', { name: '＋ Catégorie' }));
     fireEvent.change(categories().getByLabelText('Nom de la catégorie'), { target: { value: 'Préparation' } });
     fireEvent.click(categories().getByRole('button', { name: 'Enregistrer la catégorie' }));
-    fireEvent.click(await categories().findByRole('button', { name: 'Ajouter une sous-catégorie à Préparation' }));
+    fireEvent.click(await categories().findByRole('button', { name: 'Ajouter une sous-catégorie à Préparation' }, backend));
     fireEvent.change(categories().getByLabelText('Nom de la catégorie'), { target: { value: 'Devis' } });
     fireEvent.click(categories().getByRole('button', { name: 'Enregistrer la catégorie' }));
-    await categories().findByRole('button', { name: 'Modifier la catégorie Devis' });
+    await categories().findByRole('button', { name: 'Modifier la catégorie Devis' }, backend);
     const parent = row(api.db, 'SELECT * FROM categories WHERE name=?', 'Préparation');
     const child = row(api.db, 'SELECT * FROM categories WHERE name=?', 'Devis');
     expect(child.parent_id).toBe(parent.id);
@@ -62,13 +71,13 @@ describe('catégories et sous-catégories', () => {
     fireEvent.change(categories().getByLabelText('Nom de la catégorie'), { target: { value: 'Contrats' } });
     fireEvent.change(categories().getByLabelText('Catégorie parente'), { target: { value: '' } });
     fireEvent.click(categories().getByRole('button', { name: 'Enregistrer la catégorie' }));
-    await categories().findByRole('button', { name: 'Modifier la catégorie Contrats' });
+    await categories().findByRole('button', { name: 'Modifier la catégorie Contrats' }, backend);
     expect(row(api.db, 'SELECT * FROM categories WHERE id=?', child.id).parent_id).toBeNull();
     fireEvent.click(categories().getByRole('button', { name: 'Supprimer la catégorie Contrats' }));
-    await waitFor(() => expect(categories().queryByRole('button', { name: 'Modifier la catégorie Contrats' })).not.toBeInTheDocument());
+    await waitFor(() => expect(categories().queryByRole('button', { name: 'Modifier la catégorie Contrats' })).not.toBeInTheDocument(), backend);
     expect((await clientApi.entry(note.id)).category_id).toBeNull();
     await within(journal()).findByText('Note classée');
-  });
+  }, 15_000);
 
   test('filtre ensemble entrées et tâches, inclut les descendants et hérite du filtre à la création', async () => {
     seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }] });
@@ -79,8 +88,9 @@ describe('catégories et sous-catégories', () => {
     await clientApi.createTask({ title: 'Signer devis', project_id: 'p', category_id: child.id });
     await clientApi.createTask({ title: 'Tâche libre', project_id: 'p' });
     render(<App />);
-    fireEvent.click(await categories().findByRole('button', { name: 'Afficher la catégorie Préparation' }));
+    await showCategory('Afficher la catégorie Préparation');
     await waitFor(() => expect(within(journal()).queryByText('Note libre')).not.toBeInTheDocument());
+    expect(trigger()).toHaveAccessibleName('Catégories : Préparation');
     expect(within(journal()).getByText('Note devis')).toBeInTheDocument();
     expect(within(board()).getByRole('button', { name: 'Signer devis' })).toBeInTheDocument();
     expect(within(board()).queryByRole('button', { name: 'Tâche libre' })).not.toBeInTheDocument();
@@ -90,7 +100,7 @@ describe('catégories et sous-catégories', () => {
     expect(row(api.db, 'SELECT * FROM tasks WHERE title=?', 'Nouvel objectif')).toMatchObject({ project_id: 'p', category_id: parent.id });
     fireEvent.click(within(journal()).getByRole('button', { name: 'Nouvelle entrée' }));
     await waitFor(() => expect(screen.getByLabelText('Catégorie de l’entrée')).toHaveValue(parent.id));
-    fireEvent.click(categories().getByRole('button', { name: 'Sans catégorie' }));
+    await showCategory('Sans catégorie');
     await within(journal()).findByText('Note libre');
     expect(within(journal()).queryByText('Note devis')).not.toBeInTheDocument();
     expect(within(board()).getByRole('button', { name: 'Tâche libre' })).toBeInTheDocument();
@@ -111,6 +121,59 @@ describe('catégories et sous-catégories', () => {
     await within(board()).findByRole('heading', { name: /Chantier · Préparation/ });
     fireEvent.change(screen.getByLabelText('Projet de l’entrée'), { target: { value: '' } });
     await waitFor(() => expect(row(api.db, 'SELECT category_id FROM entries WHERE id=?', 'e').category_id).toBeNull());
+  });
+
+  test('lier une entrée déjà classée choisit sa catégorie pour la tâche et la garde visible sous le filtre', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }], entries: [{ id: 'e', title: 'Devis à signer', project_id: 'p' }], tasks: [{ id: 't', title: 'Relire le devis', project_id: 'p' }] });
+    const category = await createCategory('Préparation');
+    await clientApi.updateEntry('e', { category_id: category.id });
+    render(<App />);
+    const card = (await within(board()).findByRole('button', { name: 'Relire le devis' })).closest('.card') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: 'Lier des documents' }));
+    fireEvent.click(await within(card).findByRole('checkbox', { name: 'Lier Devis à signer à Relire le devis' }));
+    fireEvent.click(within(card).getByRole('button', { name: /Relier la sélection/ }));
+    await within(card).findByText('Préparation');
+    expect(row(api.db, 'SELECT category_id FROM tasks WHERE id=?', 't').category_id).toBe(category.id);
+    await showCategory('Afficher la catégorie Préparation');
+    await within(journal()).findByText('Devis à signer');
+    expect(within(board()).getByRole('button', { name: 'Relire le devis' })).toBeInTheDocument();
+    fireEvent.click(within(board()).getByRole('button', { name: 'Relire le devis' }));
+    expect(screen.getByLabelText('Catégorie de la tâche')).toHaveValue(category.id);
+  });
+
+  test('pendant l’édition d’une tâche, lier une entrée classée sélectionne sa catégorie et « Enregistrer » la garde', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }], entries: [{ id: 'e', title: 'Devis à signer', project_id: 'p' }], tasks: [{ id: 't', title: 'Relire le devis', project_id: 'p' }] });
+    const category = await createCategory('Préparation');
+    await clientApi.updateEntry('e', { category_id: category.id });
+    render(<App />);
+    fireEvent.click(await within(board()).findByRole('button', { name: 'Relire le devis' }));
+    expect(screen.getByLabelText('Catégorie de la tâche')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Titre de la tâche'), { target: { value: 'Relire et signer le devis' } });
+    fireEvent.click(within(board()).getByRole('button', { name: 'Lier des documents' }));
+    fireEvent.click(await within(board()).findByRole('checkbox', { name: 'Lier Devis à signer à Relire le devis' }));
+    fireEvent.click(within(board()).getByRole('button', { name: /Relier la sélection/ }));
+    await waitFor(() => expect(screen.getByLabelText('Catégorie de la tâche')).toHaveValue(category.id));
+    expect(screen.getByLabelText('Titre de la tâche')).toHaveValue('Relire et signer le devis');
+    fireEvent.click(within(board()).getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(row(api.db, 'SELECT title, category_id FROM tasks WHERE id=?', 't')).toMatchObject({ title: 'Relire et signer le devis', category_id: category.id }));
+  });
+
+  test('un choix de catégorie en cours d’édition l’emporte sur celle qu’un document lié apporte', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }], entries: [{ id: 'e', title: 'Devis à signer', project_id: 'p' }], tasks: [{ id: 't', title: 'Relire le devis', project_id: 'p' }] });
+    const inherited = await createCategory('Préparation');
+    const chosen = await createCategory('Livraison');
+    await clientApi.updateEntry('e', { category_id: inherited.id });
+    render(<App />);
+    fireEvent.click(await within(board()).findByRole('button', { name: 'Relire le devis' }));
+    fireEvent.change(screen.getByLabelText('Catégorie de la tâche'), { target: { value: chosen.id } });
+    fireEvent.click(within(board()).getByRole('button', { name: 'Lier des documents' }));
+    fireEvent.click(await within(board()).findByRole('checkbox', { name: 'Lier Devis à signer à Relire le devis' }));
+    fireEvent.click(within(board()).getByRole('button', { name: /Relier la sélection/ }));
+    await waitFor(() => expect(row(api.db, 'SELECT category_id FROM tasks WHERE id=?', 't').category_id).toBe(inherited.id));
+    await within(board()).findByRole('button', { name: 'Ouvrir Devis à signer' });
+    expect(screen.getByLabelText('Catégorie de la tâche')).toHaveValue(chosen.id);
+    fireEvent.click(within(board()).getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(row(api.db, 'SELECT category_id FROM tasks WHERE id=?', 't').category_id).toBe(chosen.id));
   });
 
   test('un reclassement distant actualise projet et catégorie ensemble en gardant le texte saisi', async () => {
@@ -190,9 +253,9 @@ describe('catégories et sous-catégories', () => {
     vi.spyOn(clientApi, 'updateEntry').mockImplementation(async (id, body) => { await pending; return original(id, body); });
     fireEvent.change(screen.getByLabelText('Titre de l’entrée'), { target: { value: 'Brouillon' } });
     fireEvent.click(within(filters()).getByRole('button', { name: /^Projet Q/ }));
-    fireEvent.click(categories().getByRole('button', { name: 'Afficher la catégorie Préparation' }));
+    await showCategory('Afficher la catégorie Préparation');
     await act(async () => { release(); await pending; });
-    await waitFor(() => expect(categories().getByRole('button', { name: 'Afficher la catégorie Préparation' })).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(trigger()).toHaveAccessibleName('Catégories : Préparation'));
     expect(within(filters()).getByRole('button', { name: /^Projet P/ })).toHaveAttribute('aria-pressed', 'true');
     expect(category.project_id).toBe('p');
   });
@@ -208,8 +271,8 @@ describe('catégories et sous-catégories', () => {
     localStorage.setItem('worklogs-entry', 'e1');
     render(<App />);
     await screen.findByDisplayValue('Onglet un');
-    fireEvent.click(categories().getByRole('button', { name: 'Afficher la catégorie Source' }));
-    await waitFor(() => expect(categories().getByRole('button', { name: 'Afficher la catégorie Source' })).toHaveAttribute('aria-pressed', 'true'));
+    await showCategory('Afficher la catégorie Source');
+    await waitFor(() => expect(trigger()).toHaveAccessibleName('Catégories : Source'));
     fireEvent.change(screen.getByLabelText('Catégorie de l’entrée'), { target: { value: destination.id } });
     await act(async () => { await flushPendingSaves(); });
     await screen.findByDisplayValue('Onglet deux');
@@ -697,8 +760,7 @@ describe('écrire une entrée', () => {
     await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
     expect(await within(editor()).findByText('Tâche créée et liée à cette entrée.')).toBeVisible();
     const card = (await within(board()).findByRole('button', { name: 'Contexte de réunion' })).closest('.card') as HTMLElement;
-    expect(within(card).getByRole('button', { name: 'Ouvrir Contexte de réunion' })).toBeInTheDocument();
-    expect(within(card).getByText('local')).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Ouvrir Contexte de réunion' })).toHaveAttribute('title', expect.stringContaining('Contexte de réunion — local'));
   });
 
   test('lie l’entrée ouverte à une tâche existante, sans en créer', async () => {
@@ -1425,7 +1487,7 @@ describe('écrire une entrée', () => {
 
     await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
     const card = (await within(board()).findByRole('button', { name: 'Contexte Google' })).closest('.card') as HTMLElement;
-    expect(within(card).getByText('Google')).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Ouvrir Contexte Google' })).toHaveAttribute('title', expect.stringContaining('Contexte Google — Google'));
   });
 
   test('supprime une entrée et ouvre la suivante', async () => {
@@ -2093,8 +2155,8 @@ describe('organiser les tâches', () => {
     await user.click(within(card).getByRole('button', { name: /Relier la sélection/ }));
 
     await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
-    expect(await within(board()).findByRole('button', { name: 'Ouvrir Note locale' })).toBeInTheDocument();
-    expect(board().textContent).toMatch(/local ·/);
+    // Une ligne par document : l'origine et la date passent dans l'infobulle.
+    expect(await within(board()).findByRole('button', { name: 'Ouvrir Note locale' })).toHaveAttribute('title', expect.stringContaining('Note locale — local ·'));
     await user.click(within(board()).getByRole('button', { name: 'Ouvrir Note locale' }));
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Note locale'));
 
@@ -2120,8 +2182,9 @@ describe('organiser les tâches', () => {
     await user.click(within(card).getByRole('button', { name: /Relier la sélection/ }));
 
     await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
-    expect(await within(board()).findByRole('button', { name: 'Ouvrir Note Google' })).toBeInTheDocument();
-    expect(board().textContent).toMatch(/Google ·/);
+    const opener = await within(board()).findByRole('button', { name: 'Ouvrir Note Google' });
+    expect(opener).toHaveAttribute('title', expect.stringContaining('Note Google — Google ·'));
+    expect(opener.previousElementSibling).toHaveClass('is-google');
   });
 
   test('lie plusieurs documents d’un coup, avec recherche', async () => {
@@ -2149,7 +2212,6 @@ describe('organiser les tâches', () => {
     await user.click(within(card).getByRole('button', { name: 'Relier la sélection (2)' }));
 
     await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(2));
-    expect(await within(card).findByText('📎 2 documents')).toBeInTheDocument();
     expect(await within(card).findByRole('button', { name: 'Ouvrir Devis atelier' })).toBeInTheDocument();
     expect(await within(card).findByRole('button', { name: 'Ouvrir Note interne' })).toBeInTheDocument();
   });
@@ -2182,7 +2244,7 @@ describe('organiser les tâches', () => {
 
     const card = (await within(board()).findByText('Tâche finie')).closest('.card') as HTMLElement;
     // Replié par défaut : le compteur reste visible, le document est masqué.
-    expect(within(card).getByText('📎 1 document')).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Afficher l’historique des documents de Tâche finie' })).toHaveTextContent('Historique · 1 document');
     expect(within(card).queryByRole('button', { name: 'Ouvrir Document archivé' })).not.toBeInTheDocument();
 
     await user.click(within(card).getByRole('button', { name: 'Afficher l’historique des documents de Tâche finie' }));

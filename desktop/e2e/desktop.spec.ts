@@ -588,3 +588,42 @@ test('Google intégré : claimKeyboard() depuis un champ rend le clavier aux cha
   await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit('focus'));
   await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
 });
+
+// La vue Google tient le clavier natif ; on ouvre le formulaire de catégorie par ses
+// boutons, sans cliquer le champ : le focus posé par programme doit rendre le clavier.
+// Puis Google le reprend alors que le champ garde le focus DOM : aucun nouveau focusin
+// ne viendra, c'est le clic sur ce même champ qui doit le réclamer (pointerdown).
+test('Google intégré : le champ catégorie retrouve le clavier, ouvert par bouton puis recliqué', async () => {
+  await application!.evaluate(({ session }) => session.fromPartition('persist:google-docs').protocol.handle('https', () => new Response(
+    '<div contenteditable="true" role="textbox">Document natif</div>', { headers: { 'content-type': 'text/html' } },
+  )));
+  const keyboard = () => application!.evaluate(({ BrowserWindow, webContents }) => {
+    const google = webContents.getAllWebContents().find(w => w.getURL().includes('/document/d/'));
+    return { worklogs: BrowserWindow.getAllWindows()[0].webContents.isFocused(), google: Boolean(google?.isFocused()) };
+  });
+  const focusGoogle = () => application!.evaluate(({ webContents }) => {
+    webContents.getAllWebContents().find(w => w.getURL().includes('/document/d/category-focus/'))!.focus();
+  });
+  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!
+    .open({ documentId: 'category-focus', tabId: '', token: 'category-focus', bounds: { x: 600, y: 500, width: 300, height: 200 } }));
+  await expect.poll(() => application!.context().pages().some(p => p.url().includes('/document/d/category-focus/'))).toBe(true);
+  await focusGoogle();
+  await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
+
+  await page.getByRole('button', { name: /^Catégories/ }).click();
+  await page.getByRole('dialog', { name: /^Catégories/ }).getByRole('button', { name: '＋ Catégorie', exact: true }).click();
+  const field = page.getByLabel('Nom de la catégorie', { exact: true });
+  await expect(field).toBeFocused();
+  await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
+  await field.fill('Classement');
+
+  await focusGoogle();
+  await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
+  // Le DOM garde le même champ ; isFocused ci-dessus vérifie qui reçoit le vrai clavier.
+  expect(await field.evaluate((element) => document.activeElement === element)).toBe(true);
+  await field.click();
+  await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
+  await field.press('End');
+  await field.pressSequentially(' retrouvé');
+  await expect(field).toHaveValue('Classement retrouvé');
+});

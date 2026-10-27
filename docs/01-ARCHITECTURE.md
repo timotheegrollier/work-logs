@@ -1,6 +1,6 @@
 # 🏗️ WorkLogs — architecture
 
-> Application desktop **publiée** (0.6.12) : [dossier technique](06-DESKTOP-CICD.md).
+> Application desktop **publiée** : [dossier technique](06-DESKTOP-CICD.md).
 > Les ports fixes décrits ensuite concernent le web ; le desktop écoute sur un port éphémère.
 
 ## Application desktop
@@ -86,6 +86,12 @@ google_documents(entry_id → entries ON DELETE CASCADE PRIMARY KEY,
 - Supprimer un projet **détache** entrées et tâches (`SET NULL`), il ne les perd pas.
 - Supprimer une entrée supprime ses pièces jointes, ses associations de tâches, les lignes
   `google_documents` associées et les fichiers disque. Cela ne supprime jamais le fichier Google.
+- Une tâche sans catégorie hérite du classement unique de ses entrées liées du même projet,
+  au lien ou au reclassement d'une entrée. Un classement existant est conservé. La résolution
+  vit dans `api/src/task-categories.js` ; SQLite inclut l'héritage dans la transaction de la
+  mutation. Le miroir PWA sérialise les écritures et inscrit les tâches dans sa boîte d'envoi
+  avant notification. Le remplissage de l'existant est unique : marqueur
+  `worklogs-task-document-categories-v1` dans `local_settings` ou localStorage, sans nouveau schéma.
 
 `content_json` est une colonne TEXT nullable contenant le document riche sérialisé.
 La migration est additive ; les entrées Markdown gardent NULL. Pour un document riche,
@@ -143,7 +149,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | Méthode | Route | Effet |
 |---|---|---|
 | GET | `/api/health` | `{ok, ts}` |
-| GET | `/api/state?q=&project_id=` | **tout l'écran en un appel** : projets, entrées (extrait seul, avec `kind`), tâches avec `documents`, pièces jointes des procédures du filtre, compteurs |
+| GET | `/api/state?q=&project_id=&category_id=` | **tout l'écran en un appel** : projets, catégories, entrées (extrait seul, avec `kind`), tâches avec `documents`, pièces jointes des procédures du filtre, compteurs ; catégorie et descendants ou `__none__` |
 | GET | `/api/entries/:id` | l'entrée complète + ses pièces jointes |
 | POST · PUT · DELETE | `/api/entries[/:id]` | créer · modifier · supprimer |
 | POST | `/api/entries/:id/task` | crée une tâche `todo` et la lie atomiquement à l’entrée |
@@ -155,7 +161,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET | `/api/google/documents/:id/tabs` | onglets, imbrication et compatibilité d’édition |
 | POST | `/api/entries/:id/google/push` · `pull` | envoyer ou recharger avec contrôle de révision/brouillon |
 | POST · PUT · DELETE | `/api/tasks[/:id]` | créer · modifier · supprimer |
-| POST · DELETE | `/api/tasks/:id/documents/:entryId` | associer ou retirer une entrée (locale ou Google) |
+| POST · DELETE | `/api/tasks/:id/documents/:entryId` | associer ou retirer une entrée (locale ou Google) ; à l'ajout, remplir la catégorie non ambiguë d'une tâche libre du même projet |
 | PATCH | `/api/tasks/:id/move` | `{status, position}` puis renumérotation |
 | POST · PUT · DELETE | `/api/projects[/:id]` | créer · renommer/recolorer · supprimer |
 | POST · PUT · DELETE | `/api/categories[/:id]` | créer · renommer/recolorer/reparent · supprimer en remontant contenu et enfants dans le parent |

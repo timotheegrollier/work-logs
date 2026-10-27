@@ -9,8 +9,9 @@
  * tranché — on le lui accorde. Un clic dans le document Google ne produit aucun
  * `focusin` ici (autre `webContents`), donc jamais de vol à l'envers.
  *
- * `focusin` est capturant : un champ dans une boîte de dialogue ou une vue Google
- * masquée compte aussi, et c'est exactement là que le défaut mordait.
+ * `focusin` couvre le clavier ; `pointerdown` couvre aussi un champ déjà actif
+ * dans le DOM. Une vue native peut lui avoir repris le clavier entre-temps :
+ * recliquer ce champ ne produit alors aucun nouveau `focusin`.
  */
 
 const EDITABLE = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
@@ -28,12 +29,16 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * Déclare le clavier à chaque fois qu'un champ WorkLogs prend le focus.
+ * Déclare le clavier quand un champ prend le focus ou reçoit un clic/toucher.
  * Sans pontage desktop (PWA, navigateur) : ne fait rien et ne s'abonne à rien.
  */
 export function claimKeyboardOnFocus(claim?: () => void): () => void {
   if (!claim) return () => {};
-  const listener = (event: FocusEvent) => { if (isEditableTarget(event.target)) claim(); };
+  const listener = (event: Event) => { if (isEditableTarget(event.target)) claim(); };
   document.addEventListener('focusin', listener, true);
-  return () => document.removeEventListener('focusin', listener, true);
+  document.addEventListener('pointerdown', listener, true);
+  return () => {
+    document.removeEventListener('focusin', listener, true);
+    document.removeEventListener('pointerdown', listener, true);
+  };
 }

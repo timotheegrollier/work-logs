@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { api, type Project } from '../lib';
 
@@ -16,11 +16,14 @@ export function ProjectBar({
   selected,
   onSelect,
   onChanged,
+  children,
 }: {
   projects: Project[];
   selected: string;
   onSelect: (id: string) => void;
   onChanged: () => void;
+  /** Le filtre de catégorie, entre les pastilles et « Gérer ». */
+  children?: ReactNode;
 }) {
   const [managing, setManaging] = useState(false);
   const [edges, setEdges] = useState({ start: false, end: false });
@@ -97,6 +100,8 @@ export function ProjectBar({
           </button>
         ))}
       </div>
+
+      {children}
 
       <button
         ref={trigger}

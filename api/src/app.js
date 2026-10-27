@@ -10,6 +10,7 @@ import { googleLink, registerGoogleRoutes } from './google-routes.js';
 import { registerSharedRoutes } from './shared-routes.js';
 import { attachmentHeader, inlineHeader } from './disposition.js';
 import { categoryFor, nextCategory, categoryDescendants, registerCategoryRoutes } from './categories.js';
+import { inheritTaskCategories } from './task-categories.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
 export const PRIORITIES = ['low', 'normal', 'high'];
@@ -263,20 +264,26 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     if (rich !== null) validateDocument(rich);
     if (cur.content_json && rich === null) return bad(res, 'la conversion d’un document riche en Markdown n’est pas prise en charge');
 
-    db.prepare(
-      'UPDATE entries SET title=?, content_md=?, entry_date=?, project_id=?, archived=?, kind=?, updated_at=?, content_json=?, category_id=? WHERE id=?'
-    ).run(
-      title,
-      rich ? documentText(rich) : pick(b, 'content_md', cur.content_md, (v) => (typeof v === 'string' ? v : cur.content_md)),
-      date,
-      projectId,
-      archived,
-      kind,
-      nowISO(),
-      rich ? JSON.stringify(rich) : null,
-      categoryId,
-      cur.id
-    );
+    const time = nowISO();
+    db.exec('BEGIN');
+    try {
+      db.prepare(
+        'UPDATE entries SET title=?, content_md=?, entry_date=?, project_id=?, archived=?, kind=?, updated_at=?, content_json=?, category_id=? WHERE id=?'
+      ).run(
+        title,
+        rich ? documentText(rich) : pick(b, 'content_md', cur.content_md, (v) => (typeof v === 'string' ? v : cur.content_md)),
+        date,
+        projectId,
+        archived,
+        kind,
+        time,
+        rich ? JSON.stringify(rich) : null,
+        categoryId,
+        cur.id
+      );
+      if (categoryId !== cur.category_id || projectId !== cur.project_id) inheritTaskCategories(db, time, { entryId: cur.id });
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
     res.json(getEntry(cur.id));
   });
 
@@ -489,6 +496,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
         association.entry_id,
         association.created_at
       );
+      inheritTaskCategories(db, association.created_at, { taskId: task.id });
       if (task.status === 'done') archiveTaskDocuments(db, task.id, association.created_at);
       db.exec('COMMIT');
     } catch (error) {
