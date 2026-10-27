@@ -13,8 +13,9 @@ import { groupByCategory } from '../categories';
 import { CategoryBadge, CategoryPicker } from './CategoryPicker';
 
 const DRAG_TYPE = 'text/plain';
-type TaskEditForm = { title: string; due_date: string; priority: Priority; category_id: string };
-const taskForm = (task: Task): TaskEditForm => ({ title: task.title, due_date: task.due_date ?? '', priority: task.priority ?? 'normal', category_id: task.category_id || '' });
+/** `category_base` : le classement reçu sur lequel repose le choix affiché. */
+type TaskEditForm = { title: string; due_date: string; priority: Priority; category_id: string; category_base: string };
+const taskForm = (task: Task): TaskEditForm => ({ title: task.title, due_date: task.due_date ?? '', priority: task.priority ?? 'normal', category_id: task.category_id || '', category_base: task.category_id || '' });
 
 /** Mémoïsé : la recherche de l'en-tête se redessine à chaque frappe, pas les cartes. */
 export const TaskBoard = memo(function TaskBoard({
@@ -234,8 +235,14 @@ function TaskCard({
       setEditError('');
       return;
     }
-    setForm((current) => current.category_id && !categories.some((category) => category.id === current.category_id && category.project_id === task.project_id)
-      ? { ...current, category_id: task.category_id || '' } : current);
+    const remote = task.category_id || '';
+    setForm((current) => {
+      // Classement reçu pendant l'édition (document lié qui le donne, autre appareil) :
+      // il remplace le choix affiché tant qu'on n'y a pas touché, sinon « Enregistrer » l'effacerait.
+      if (current.category_base !== remote) return { ...current, category_base: remote, category_id: current.category_id === current.category_base ? remote : current.category_id };
+      return current.category_id && !categories.some((category) => category.id === current.category_id && category.project_id === task.project_id)
+        ? { ...current, category_id: remote } : current;
+    });
   }, [editing, form.category_id, task.category_id, task.project_id, categories]);
   const [linking, setLinking] = useState(false);
   const [filter, setFilter] = useState('');
