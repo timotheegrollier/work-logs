@@ -642,20 +642,20 @@ export default function App() {
           selected={projectId}
           onSelect={(id) => void switchProject(id)}
           onChanged={reload}
-        />
+        >
+          <CategoryBar
+            key={projectId}
+            categories={state?.categories ?? []}
+            projects={state?.projects ?? []}
+            projectId={projectId}
+            selected={categoryId}
+            grouped={groupedCategories}
+            onSelect={(id) => void switchCategory(id).catch((e) => setError((e as Error).message))}
+            onGrouped={setGroupedCategories}
+            onChanged={reload}
+          />
+        </ProjectBar>
       </div>
-
-      <CategoryBar
-        key={projectId}
-        categories={state?.categories ?? []}
-        projects={state?.projects ?? []}
-        projectId={projectId}
-        selected={categoryId}
-        grouped={groupedCategories}
-        onSelect={(id) => void switchCategory(id).catch((e) => setError((e as Error).message))}
-        onGrouped={setGroupedCategories}
-        onChanged={reload}
-      />
 
       {isGoogleDocument && <div className="workspace-switch no-print"><span>Document Google · {siblingTabs.length} onglet{siblingTabs.length > 1 ? 's' : ''}</span>
         <button aria-expanded={showDocumentTasks} aria-controls="workspace-tasks" onClick={() => setShowDocumentTasks(!showDocumentTasks)}>{showDocumentTasks ? 'Masquer les tâches' : 'Afficher les tâches'}</button>

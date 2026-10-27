@@ -261,61 +261,215 @@ button:disabled {
   color: var(--muted);
 }
 
-/* Catégories : classement commun aux listes, sous le bandeau des projets. */
-.category-bar {
-  flex: none;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-  max-height: 34vh;
-  overflow: auto;
+/* Catégories : un bouton dans le bandeau des projets. Filtre, regroupement et
+   rangement s'ouvrent dans la même feuille que la gestion des projets (§35, §48). */
+.category-trigger {
+  gap: 6px;
+  max-width: 260px;
 }
-.category-toolbar, .category-filters, .category-group-toggle, .category-node,
-.category-filter, .category-project h2, .category-badge {
+.category-trigger svg {
+  flex: none;
+}
+.category-trigger-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.category-sheet-project {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+.category-sheet-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 0 16px 12px;
+}
+.category-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.category-group-toggle input {
+  margin: 0;
+  width: 15px;
+  height: 15px;
+}
+.category-add {
+  align-self: flex-start;
+  margin: 0 16px 12px;
+  font-size: 13px;
+}
+.category-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin: 0 16px 12px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.category-form select,
+.category-form-actions {
+  grid-column: 1 / -1;
+}
+.category-form input,
+.category-form select {
+  min-width: 0;
+  background: var(--surface);
+}
+.category-form input[type='color'] {
+  width: 42px;
+  height: 100%;
+  padding: 2px;
+  border-radius: 8px;
+}
+.category-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.category-sheet .project-sheet-body > .error {
+  margin: 0 16px 12px;
+  font-size: 12.5px;
+}
+/* La liste seule défile ; filtres, création et formulaire restent en tête. */
+.category-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 8px 10px;
+  border-top: 1px solid var(--line-soft);
+}
+.category-list h3 {
   display: flex;
   align-items: center;
   gap: 7px;
+  margin: 10px 8px 4px;
+  color: var(--muted);
+  font-size: 12px;
 }
-.category-toolbar { flex-wrap: wrap; }
-.category-toolbar strong { font-size: 13px; }
-.category-filters { flex-wrap: wrap; }
-.category-group-toggle { color: var(--muted); font-size: 12px; cursor: pointer; }
-.category-projects { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 7px; }
-.category-project { min-width: 200px; max-width: 100%; }
-.category-project h2 { margin: 0 0 3px; color: var(--muted); font-size: 12px; }
-.category-tree { list-style: none; padding: 0; margin: 0; }
-.category-node { border-radius: 7px; gap: 2px; }
-.category-node.is-selected { background: var(--accent-soft); }
-.category-node.is-selected .category-filter { color: var(--accent); }
-.category-indent { color: var(--muted); white-space: pre; font-size: 12px; }
-.category-filter { text-align: left; padding: 4px 6px; min-width: 0; flex: 1; }
-.category-filter:hover { background: var(--surface-2); }
-.category-name { overflow-wrap: anywhere; font-size: 13px; }
-.category-count { color: var(--muted); font-size: 11px; margin-left: auto; white-space: nowrap; }
-.category-node .icon { padding: 6px; flex: none; }
-.category-hint { color: var(--muted); font-size: 12px; margin: 5px 0 0; }
-.category-form { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
-.category-form label { display: flex; flex-direction: column; gap: 3px; min-width: 0; max-width: 100%; font-size: 12px; color: var(--muted); }
-.category-form label:first-child { flex: 1; min-width: 160px; }
-.category-form select { max-width: 100%; }
-.category-form input[type='color'] { width: 42px; height: 36px; padding: 2px; border: 1px solid var(--line); background: var(--surface-2); border-radius: 7px; }
-.category-badge { width: fit-content; max-width: 100%; color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; margin: 4px 0; }
+.category-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.category-node {
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+}
+.category-node:hover,
+.category-node:focus-within {
+  background: var(--surface-2);
+}
+.category-node.is-selected {
+  background: var(--accent-soft);
+}
+/* Le retrait dit la profondeur : plus de flèches ↳ à lire. */
+.category-filter {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px calc(10px + var(--depth, 0) * 16px);
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.category-node.is-selected .category-filter {
+  color: var(--accent);
+  font-weight: 600;
+}
+.category-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13.5px;
+}
+.category-count {
+  display: block;
+  color: var(--faint);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.category-node-actions {
+  flex: none;
+  display: flex;
+}
+.category-node-actions .icon {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+.category-node-actions .category-delete:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+/* Pointeur fin : actions au survol ou au clavier, comme ★ et ✕ des cartes (§47). */
+@media (hover: hover) and (pointer: fine) {
+  .category-node-actions {
+    opacity: 0;
+  }
+  .category-node:hover .category-node-actions,
+  .category-node:focus-within .category-node-actions {
+    opacity: 1;
+  }
+}
+.category-badge { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; margin: 4px 0; }
 .category-badge .dot { width: 6px; height: 6px; }
 .category-group-title { color: var(--accent); font-size: 12px; line-height: 1.5; margin: 12px 0 6px; overflow-wrap: anywhere; }
 .category-item-group { min-width: 0; }
 .task-category-group { list-style: none; }
 .task-category-items { list-style: none; padding: 0; margin: 0; }
-@media (max-width: 700px) {
-  .category-bar { padding: 8px 12px; max-height: none; }
-  .category-toolbar { gap: 8px; }
-  .category-toolbar .grow { display: none; }
-  .category-filters { width: 100%; order: 2; }
-  .category-group-toggle { margin-left: auto; }
-  .category-projects { display: block; max-height: min(40vh, 300px); overflow: auto; }
-  .category-project { margin-bottom: 8px; }
-  .category-filter { display: grid; grid-template-columns: 8px minmax(0, 1fr); min-height: 44px; gap: 3px 7px; }
-  .category-count { grid-column: 2; margin-left: 0; }
-  .category-node .icon { min-width: 36px; min-height: 44px; }
+/* Doigt ou téléphone : cibles de 44 px, champs en 16 px (pas de zoom à la saisie). */
+@media (max-width: 600px), (pointer: coarse) {
+  .category-group-toggle {
+    min-height: 44px;
+    font-size: 14px;
+  }
+  .category-add,
+  .category-form input,
+  .category-form select,
+  .category-form button {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .category-filter {
+    min-height: 48px;
+  }
+  .category-node-actions .icon {
+    width: 44px;
+    height: 44px;
+  }
+  /* Tablette tactile : le bandeau garde des cibles au doigt, comme sur téléphone. */
+  .project-strip .chip,
+  .project-strip .manage-btn {
+    height: 40px;
+  }
+}
+/* Téléphone : le bouton tient dans le bandeau collé ; son nom ne s'affiche que filtré. */
+@media (max-width: 600px) {
+  .category-trigger {
+    max-width: 34vw;
+  }
+  .category-trigger:not(.is-on) .category-trigger-label {
+    display: none;
+  }
 }
 
 /* ------------------------------------------------------------ ossature */
@@ -1548,6 +1702,11 @@ button:disabled {
   color: var(--danger);
   background: var(--danger-soft);
 }
+.editor-actions {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: auto;
+}
 .editor-meta input,
 .editor-meta select {
   font-size: 12.5px;
@@ -1558,6 +1717,14 @@ button:disabled {
 .editor-meta input:hover,
 .editor-meta select:hover {
   border-color: var(--line);
+}
+/* Colonnes côte à côte : un sélecteur prend la largeur de son choix, pas celle du plus
+   long chemin de catégorie ; la rangée tient ainsi sur moins de lignes. */
+@media (min-width: 901px) {
+  .editor-meta select {
+    field-sizing: content;
+    max-width: 100%;
+  }
 }
 .modes {
   display: inline-flex;
@@ -2903,7 +3070,6 @@ div.google-preserved {
 /* Étiquettes des cartes : une teinte, pas de cadre ; seul l'écart (retard,
    priorité haute) prend une couleur. */
 .due,
-.docs-count,
 .priority {
   display: inline-flex;
   align-items: center;
@@ -2972,16 +3138,8 @@ div.google-preserved {
 }
 .task-documents {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
-  padding-top: 8px;
-  border-top: 1px solid var(--line-soft);
-}
-.task-documents-title {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
 }
 .history-toggle {
   width: 100%;
@@ -3012,7 +3170,7 @@ div.google-preserved {
   background: var(--surface-2);
   border: 1px solid transparent;
   border-radius: 8px;
-  padding: 5px 5px 5px 8px;
+  padding: 3px 3px 3px 6px;
 }
 .task-document:hover {
   border-color: var(--line);
@@ -3049,8 +3207,8 @@ div.google-preserved {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 600;
-  font-size: 13px;
+  font-weight: 500;
+  font-size: 12.5px;
 }
 .task-document-open:hover .task-document-title {
   color: var(--accent);
@@ -3165,18 +3323,33 @@ div.google-preserved {
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
-  margin: -2px -6px -4px;
+  margin: -4px -6px -6px;
 }
 .card-link {
   font-size: 12px;
   font-weight: 550;
   color: var(--muted);
-  padding: 4px 8px;
+  padding: 3px 8px;
   border-radius: 7px;
 }
 .card-link:hover:not(:disabled) {
   color: var(--accent);
   background: var(--accent-soft);
+}
+/* Pointeur fin : les actions d'une carte et le retrait d'un document se montrent au
+   survol ou au clavier, comme ★ et ✕ (§47) ; leur place reste réservée, rien ne saute. */
+@media (hover: hover) and (pointer: fine) {
+  .card .card-links,
+  .task-document .icon {
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+  .card:hover .card-links,
+  .card:focus-within .card-links,
+  .task-document:hover .icon,
+  .task-document:focus-within .icon {
+    opacity: 1;
+  }
 }
 /* « Trouver la doc » : une ligne par document ; sur une carte étroite, les boutons passent dessous. */
 .doc-found {
@@ -5063,13 +5236,19 @@ div.google-preserved {
     flex: 1;
     min-height: 34px;
   }
-  /* Imprimer, Archiver, Supprimer : une rangée à parts égales. */
+  /* Imprimer, Archiver, Supprimer (et les actions du partage) : une rangée à parts égales. */
   .editor-meta .grow {
     flex-basis: 100%;
     height: 0;
   }
+  .editor-actions {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
   .editor-meta .grow ~ .ghost,
-  .editor-meta .grow ~ .danger {
+  .editor-meta .grow ~ .danger,
+  .editor-actions > .ghost,
+  .editor-actions > .danger {
     flex: 1 1 0;
     min-height: 40px;
     padding-inline: 6px;
@@ -5354,5 +5533,14 @@ div.google-preserved {
   }
   @page {
     margin: 18mm;
+  }
+}
+
+/* Téléphone en paysage : la gestion des projets et des catégories prend la hauteur de
+   l'écran au lieu de tomber sous son bouton, où il ne restait qu'une ligne de liste. */
+@media screen and (min-width: 601px) and (max-width: 900px) and (max-height: 500px) {
+  .project-sheet {
+    inset: 8px max(12px, env(safe-area-inset-right, 0px)) auto auto;
+    max-height: calc(100dvh - 16px);
   }
 }

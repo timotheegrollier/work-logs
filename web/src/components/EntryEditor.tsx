@@ -874,21 +874,23 @@ export function EntryEditor({
           </button>
         )}
 
-        <span className="grow" />
-        <button className="ghost" onClick={() => nativeGoogle ? void window.worklogsDesktop?.googleDocs?.print() : window.print()}>
-          Imprimer
-        </button>
-        <button className="ghost" disabled={syncing} onClick={() => void toggleArchive()}>
-          {archived ? 'Désarchiver' : 'Archiver'}
-        </button>
-        <button
-          className="danger"
-          disabled={syncing}
-          onClick={remove}
-          title={googleSync ? 'Retire la copie locale (le fichier Google distant est conservé)' : 'Supprime définitivement l’entrée et ses fichiers'}
-        >
-          Supprimer
-        </button>
+        {/* Groupées : un retour à la ligne ne sépare plus Imprimer de ses voisines. */}
+        <span className="editor-actions">
+          <button className="ghost" onClick={() => nativeGoogle ? void window.worklogsDesktop?.googleDocs?.print() : window.print()}>
+            Imprimer
+          </button>
+          <button className="ghost" disabled={syncing} onClick={() => void toggleArchive()}>
+            {archived ? 'Désarchiver' : 'Archiver'}
+          </button>
+          <button
+            className="danger"
+            disabled={syncing}
+            onClick={remove}
+            title={googleSync ? 'Retire la copie locale (le fichier Google distant est conservé)' : 'Supprime définitivement l’entrée et ses fichiers'}
+          >
+            Supprimer
+          </button>
+        </span>
       </div>
 
       </DetailsWrapper>
