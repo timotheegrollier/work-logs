@@ -1,10 +1,13 @@
 // WorkLogs — service worker PWA, généré au build (`scripts/emit-sw.mjs`).
-// `0.59.0` est remplacé par la version du paquet racine : un
+// `0.60.0` est remplacé par la version du paquet racine : un
 // déploiement change le nom du cache, l'ancienne coquille est purgée et la
 // mise à jour est transparente au rechargement suivant.
-const VERSION = '0.59.0';
+const VERSION = '0.60.0';
 const CACHE = `worklogs-${VERSION}`;
-const CORE = ['./', './index.html', './manifest.webmanifest'];
+// Fichiers du build, listés par `emit-sw.mjs` : les morceaux chargés à la demande
+// (éditeur riche, dossier partagé, Drive) sont là hors ligne dès l'installation.
+const ASSETS = ["./assets/FileViewer-BgYuMUM6.js","./assets/GoogleDocuments-B0kvp2ry.js","./assets/GoogleDrive-C9LMWeX5.js","./assets/RichEditor-g6It_yDx.js","./assets/SharedFileEditor-Y-ZibKh0.js","./assets/dist-CLxTT1RZ.js","./assets/docx-preview-BC7d32VR.js","./assets/index-BJvOGPT2.css","./assets/index-BosLtK4i.js"];
+const CORE = ['./', './index.html', './manifest.webmanifest', ...ASSETS];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
