@@ -1254,11 +1254,15 @@ describe('écrire une entrée', () => {
     expect(row(api.db, "SELECT COUNT(*) n FROM entries WHERE kind='procedure'").n).toBe(0);
 
     await user.clear(within(draft).getByLabelText('Titre de la procédure'));
+    expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('');
     await user.type(within(draft).getByLabelText('Titre de la procédure'), 'Relancer la pompe du bassin 3');
+    expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Relancer la pompe du bassin 3');
     await user.click(within(draft).getByRole('button', { name: 'Créer la procédure' }));
 
     // Ouverte au centre, en lecture, avec ses étapes.
-    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Relancer la pompe du bassin 3'));
+    await waitFor(() => expect(within(editor()).getByLabelText('Titre de l’entrée')).toHaveValue('Relancer la pompe du bassin 3'));
+    // Le titre précède le morceau de l'éditeur riche chargé à la demande.
+    await within(editor()).findByRole('textbox', { name: 'Contenu du document' });
     expect(screen.getByRole('button', { name: 'Lire' })).toHaveAttribute('aria-pressed', 'true');
     expect(documentContent()).toHaveAttribute('aria-readonly', 'true');
     expect(documentContent().querySelectorAll('ol > li')).toHaveLength(2);
@@ -1271,7 +1275,7 @@ describe('écrire une entrée', () => {
     expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1);
     // Elle rejoint la colonne Procédures, jamais le journal.
     expect(within(journal()).queryByText('Relancer la pompe du bassin 3')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Procédures' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Procédures' })).toHaveAttribute('aria-pressed', 'true'));
     expect(await within(screen.getByRole('region', { name: 'Procédures du projet' })).findByText('Relancer la pompe du bassin 3')).toBeInTheDocument();
   });
 

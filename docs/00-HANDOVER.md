@@ -8,7 +8,11 @@ texte renvoyait le couple projet/catégorie inchangé après un reclassement dis
 `EntryEditor` n'envoie désormais ce couple que pour un changement local de classement.
 Un test bloque l'envoi, reclasse l'entrée puis libère la sauvegarde : rouge avant,
 vert après, sans retry ni délai arbitraire. Les 9 gestes catégories passent.
-Recette complète et contrôles GitHub à terminer avant fusion.
+Le parcours de création d'une procédure vérifie sa saisie intermédiaire, attend le
+chargement effectif de l'éditeur riche et utilise la colonne Procédures déjà ouverte.
+La première recette locale a échoué sur ce parcours (titre dupliqué après clear/type) ;
+le parcours ciblé passe avec ces observations. Ne pas présenter cela comme une correction
+prouvée d'un bug de saisie. Recette complète et contrôles GitHub à terminer avant fusion.
 
 ## Intégration de la PR #21 — 2026-10-26 — version 0.60.0 préparée
 
