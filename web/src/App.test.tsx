@@ -128,6 +128,35 @@ describe('catégories et sous-catégories', () => {
     expect(await clientApi.entry('e')).toMatchObject({ title: 'Texte en cours', project_id: 'q', category_id: destination.id });
   });
 
+  test('une sauvegarde de texte en vol ne réécrit pas le classement changé à distance', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Projet P' }, { id: 'q', name: 'Projet Q' }], entries: [{ id: 'e', title: 'Note initiale', project_id: 'p' }] });
+    const destination = await clientApi.createCategory({ name: 'Destination', project_id: 'q' });
+    render(<App />);
+    const title = await screen.findByDisplayValue('Note initiale');
+    let started!: () => void;
+    let release!: () => void;
+    const sending = new Promise<void>((resolve) => { started = resolve; });
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const original = clientApi.updateEntry;
+    vi.spyOn(clientApi, 'updateEntry').mockImplementation(async (id, body) => {
+      started();
+      await pending;
+      return original(id, body);
+    });
+    fireEvent.change(title, { target: { value: 'Texte en cours' } });
+    const saving = flushPendingSaves();
+    await sending;
+    try {
+      await original('e', { project_id: 'q', category_id: destination.id });
+    } finally {
+      release();
+    }
+    await act(async () => { await saving; });
+    await waitFor(() => expect(screen.getByLabelText('Projet de l’entrée')).toHaveValue('q'));
+    expect(title).toHaveValue('Texte en cours');
+    expect(await clientApi.entry('e')).toMatchObject({ title: 'Texte en cours', project_id: 'q', category_id: destination.id });
+  });
+
   test('une réponse de création de catégorie tardive ne recharge pas le projet quitté', async () => {
     seedData(api.db, { projects: [{ id: 'p', name: 'Projet P' }, { id: 'q', name: 'Projet Q' }], entries: [{ id: 'ep', title: 'Note P', project_id: 'p' }, { id: 'eq', title: 'Note Q', project_id: 'q' }] });
     let release!: () => void;

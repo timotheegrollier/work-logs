@@ -131,8 +131,16 @@ export function EntryEditor({
   // champ) et le reste du brouillon s'enregistre. Le refuser laissait, une fois
   // l'entrée quittée, un brouillon en échec que la fermeture rejouait sans fin.
   const [savedTitle, setSavedTitle] = useState(entry.title);
-  const [autosave] = useState(() => new Autosave<typeof draft>(async ({ title, ...body }) => {
-    await api.updateEntry(entry.id, { ...body, ...(title.trim() ? { title } : {}), project_id: body.project_id || null, category_id: body.category_id || null });
+  const serverClassification = useRef({ project: entry.project_id || '', category: entry.category_id || '' });
+  const [autosave] = useState(() => new Autosave<typeof draft>(async ({ title, project_id, category_id, ...body }) => {
+    // Une frappe n'est pas un choix de classement : ne pas renvoyer un ancien
+    // couple projet/catégorie si celui-ci a changé pendant l'envoi du texte.
+    const classification = serverClassification.current;
+    const changedClassification = project_id !== classification.project || category_id !== classification.category;
+    await api.updateEntry(entry.id, {
+      ...body, ...(title.trim() ? { title } : {}),
+      ...(changedClassification ? { project_id: project_id || null, category_id: category_id || null } : {}),
+    });
     if (title.trim()) setSavedTitle(title);
     changedRef.current();
   }));
@@ -151,7 +159,6 @@ export function EntryEditor({
 
   // Une suppression ou un reclassement distant doit aussi actualiser le prochain
   // brouillon envoyé. Une sélection locale encore en cours garde la priorité.
-  const serverClassification = useRef({ project: entry.project_id || '', category: entry.category_id || '' });
   useEffect(() => {
     const nextProject = entry.project_id || '';
     const nextCategory = entry.category_id || '';

@@ -1,5 +1,15 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Reprise de la PR #21 — 2026-10-27
+
+Branche rebasée sur `master` v0.59.0, arbre de l'intégration conservé et ancien bump
+0.59.0 remplacé par 0.60.0. La CI rouge révélait une course réelle : une sauvegarde de
+texte renvoyait le couple projet/catégorie inchangé après un reclassement distant.
+`EntryEditor` n'envoie désormais ce couple que pour un changement local de classement.
+Un test bloque l'envoi, reclasse l'entrée puis libère la sauvegarde : rouge avant,
+vert après, sans retry ni délai arbitraire. Les 9 gestes catégories passent.
+Recette complète et contrôles GitHub à terminer avant fusion.
+
 ## Intégration de la PR #21 — 2026-10-26 — version 0.60.0 préparée
 
 La refonte `ui/design-refresh` est reprise sur le `master` publié en v0.59.0 : catégories,
