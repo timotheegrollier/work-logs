@@ -188,15 +188,20 @@ Cette carte décrit le déblocage initial ; les fonctionnalités ajoutées ensui
   changement de version cible avec `apt-cache showpkg <paquet>` et préférer une dépendance
   alternative explicite (`nouveau-nom | ancien-nom`) plutôt que de se fier à la résolution par
   défaut d'apt.
-- **Focus clavier après un dialogue natif (piste, non prouvée)** : signalé le 2026-09-14 —
-  le champ « Nouvelle tâche » refuse parfois le curseur, et seul un redémarrage débloque.
-  Rien ne recouvre le champ (vérifié par `document.elementFromPoint` et par l'inventaire des
-  éléments positionnés : aucun), le composant n'est jamais démonté. Le symptôme décrit — clic
-  sans curseur, insensible au clic ailleurs — désigne le focus clavier au niveau fenêtre.
-  Les 10 `showMessageBoxSync` ne restauraient aucun focus ; ils passent maintenant par `ask()`,
-  et `window.on('focus')` redonne la main au contenu. **Non validé** : sous Playwright,
-  `window.focus()` lui-même reste sans effet — l'environnement automatisé ne gère pas le focus
-  X11, et les frappes injectées court-circuitent cette couche. Seul un usage réel tranchera.
+- **Clavier desktop et focus DOM** (complément du 27/10/2026) : les dialogues de
+  l'application passent par `ask()` qui rend le focus au contenu web. Une vue Google peut
+  aussi garder le clavier natif alors qu'un champ WorkLogs conserve le focus DOM : le
+  champ de nom de catégorie est reproduit dans cet état sous Electron/Xvfb. Reclique dessus
+  sans changer de champ : aucun `focusin` ne se produit, et l'ancien correctif ne reprend
+  pas le clavier. `keyboard-claim.ts` écoute maintenant `pointerdown` en capture sur les
+  champs et contenus éditables, en plus de `focusin` ; le pont desktop rend le clavier
+  sans déplacer la sélection. Les boutons et zones non éditables ne le réclament pas ;
+  aucun écouteur hors desktop. Le test Electron vérifie **`webContents.isFocused()`** de
+  WorkLogs et Google avant/après le vrai clic : une simple frappe Playwright court-circuite
+  cette frontière et ne prouverait pas le correctif (rouge sans `pointerdown`, vert avec).
+  Le même parcours ouvre d'abord le formulaire par ses boutons, sans cliquer le champ : le
+  focus posé par programme rend déjà le clavier par `focusin`. Un test unitaire couvre le
+  clic dans le même champ, l'éditeur riche imbriqué et le nettoyage des deux écouteurs.
 - **Recette « titres 4–6 » instable (ouverte)** : après `page.reload()`, l'éditeur de
   document est parfois absent — une autre entrée s'ouvre. **1 échec sur 80** sur poste de
   développement, nettement plus sur les agents CI. Deux correctifs ont été mesurés puis

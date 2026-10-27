@@ -74,12 +74,25 @@ Les poignées disparaissent lorsque les panneaux sont empilés ou masqués.
 
 ### Catégories et sous-catégories
 
-Sous les projets, **＋ Catégorie** crée un classement dans le projet choisi. Le bouton
-**＋** d'une catégorie ajoute une sous-catégorie ; **✎** permet de renommer, choisir une
-couleur ou la ranger dans une autre catégorie du même projet. Dans **Tout**, chaque arbre
-est présenté sous le nom de son projet.
+Au bout des pastilles de projets, le bouton **Catégories** (l'étiquette) ouvre une fenêtre
+par-dessus le contenu — sous le bouton sur ordinateur, depuis le bas sur téléphone — qui
+réunit tout le classement, sans rangée de plus à l'écran :
 
-Cliquer sur une catégorie filtre ensemble le journal, les tâches et les procédures,
+- **filtrer** : **Toutes les catégories**, **Sans catégorie**, ou une catégorie de l'arbre ;
+  le choix referme la fenêtre et le bouton du bandeau affiche la catégorie filtrée, dans sa
+  couleur ;
+- **Regrouper par catégorie** ;
+- **ranger** : **＋ Catégorie** crée un classement, **＋** ajoute une sous-catégorie, **✎**
+  renomme, recolore ou change de parent dans le même projet, **✕** supprime. À la souris, ces
+  boutons apparaissent au survol d'une ligne (ou au clavier). Chaque ligne compte ses entrées
+  et ses tâches ouvertes, sous-catégories comprises. Dans **Tout**, les arbres sont présentés
+  par projet et le formulaire demande le projet.
+
+Le formulaire reste en tête, même quand l'arbre est long. **Entrée** enregistre ; **Échap**
+annule le formulaire, puis ferme la fenêtre au second appui, et le focus revient au bouton
+d'où l'on venait.
+
+Choisir une catégorie filtre ensemble le journal, les tâches et les procédures,
 **sous-catégories comprises**. La recherche et les vues rapides des tâches restent
 cumulables. **Toutes les catégories** enlève ce filtre ; **Sans catégorie** retrouve ce qui
 reste à ranger. Changer de projet lève le filtre de catégorie.
@@ -89,6 +102,14 @@ classer les éléments existants. Leur chemin apparaît sur les cartes. Une nouv
 procédure ou tâche reprend la catégorie filtrée ; une création liée reprend celle de sa
 source. **Regrouper par catégorie** rassemble les listes par chemin de catégorie ; les
 tâches gardent leurs colonnes À faire / En cours / Terminé et leur glisser-déposer.
+
+Lier une entrée déjà classée à une tâche sans catégorie remplit aussi la catégorie de la
+tâche, si elle appartient au même projet. Classer une entrée déjà liée fait de même.
+Une tâche déjà classée garde son choix ; plusieurs catégories différentes parmi ses
+entrées liées laissent une tâche libre sans catégorie. Pendant l'édition d'une tâche, le
+sélecteur **Catégorie de la tâche** se met à jour dès que le document est lié ; un choix fait
+à la main dans ce sélecteur reste prioritaire. Au premier démarrage de cette version, les
+anciennes associations non ambiguës sont également rattrapées une seule fois.
 
 Supprimer une catégorie demande confirmation : son contenu et ses sous-catégories remontent
 dans son parent, ou deviennent sans catégorie à la racine. Les notes et tâches sont conservées.
@@ -175,8 +196,12 @@ rendu approximatif.
 - **Modifier** : cliquer sur le titre ouvre le nom, l'échéance et la priorité. `Entrée` valide, `Échap` annule.
 - **Priorité** : chaque carte affiche sa pastille — Basse, Normale ou Haute (▲ rouge). Elle ne réordonne pas la colonne : l'ordre reste celui du glisser-déposer.
 - **★** met la tâche en avant (liseré ambré à gauche), indépendamment de sa priorité. Sur
-  un écran avec souris, ★ et ✕ n'apparaissent qu'au survol de la carte (ou au clavier) ;
-  l'épingle posée reste toujours visible. Au doigt, les deux boutons restent affichés.
+  un écran avec souris, ★ et ✕, le pied de carte (**＋ Documents**, **＋ Entrée liée**,
+  **✨ IA**) et le ✕ qui retire un document lié n'apparaissent qu'au survol de la carte (ou au
+  clavier) ; leur place reste réservée, rien ne bouge. L'épingle posée reste toujours visible.
+  Au doigt, tout reste affiché.
+- Les documents liés tiennent sur une ligne chacun ; leur origine (locale ou Google) et leur
+  date sont dans l'infobulle.
 - Une échéance dépassée s'affiche en rouge, et le compteur « en retard » apparaît en haut.
 - **Vues rapides** : sous « Nouvelle tâche… », des pastilles comptent ce qui réclame
   l'attention — **En retard**, **Aujourd'hui** (échéance du jour), **En cours**, **Épinglées**,

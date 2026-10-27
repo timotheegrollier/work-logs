@@ -140,7 +140,8 @@ Tout est dans `web/src/styles.css`, découpé en sections commentées.
 | Envie | Où |
 |---|---|
 | Couleurs, contraste | les deux blocs `:root[data-theme='dark'|'light']` en tête — ne jamais écrire une couleur en dur ailleurs |
-| Largeur des colonnes | `.columns { grid-template-columns: … }` |
+| Largeur des colonnes | `.columns` en flex, variables des poignées et bornes de chaque panneau |
+| Catégories | bloc « Catégories » : bouton `.category-trigger` dans le bandeau des projets, fenêtre `.category-sheet` qui reprend `.project-sheet` (sous le bouton, feuille du bas sur téléphone, pleine hauteur en paysage), cibles tactiles 44 px |
 | Typographie du document | section `.prose` (taille, interligne, titres, tableaux, code) |
 | Rendu imprimé | le bloc `@media print` en fin de fichier |
 

@@ -1,8 +1,8 @@
 # 🛠️ WorkLogs — guide développeur
 
-> **Desktop inclus :** `check.sh` enchaîne aussi les types desktop, ses 16 tests serveur et
-> ses 5 parcours Electron — **165 tests au total**, tous verts. Les décomptes par étage plus
-> bas ne couvrent que le socle web. Sans affichage, Xvfb est nécessaire (`check.sh` bascule
+> **Desktop inclus :** `check.sh` enchaîne types, tests API/front/desktop/scripts/Worker/relais,
+> build, parcours navigateur et Electron. Les derniers décomptes validés sont dans
+> [00-HANDOVER.md](00-HANDOVER.md). Sans affichage, Xvfb est nécessaire (`check.sh` bascule
 > tout seul) ; `rpm` (Ubuntu/Mint) ou `rpm-build` (Fedora) est requis pour construire les RPM.
 > `npm run desktop` lance l'application. Publication : [07-RELEASES.md](07-RELEASES.md).
 
@@ -19,11 +19,11 @@ Variables d'environnement : `PORT`, `DATA_DIR`, `DB_PATH`, `UPLOAD_DIR`.
 ## Tester
 
 ```bash
-npm test              # API + front (~20 s)
-npm run test:api      # node:test, 60 tests
-npm run test:web      # vitest, 52 tests
+npm test              # API + front
+npm run test:api      # node:test
+npm run test:web      # vitest
 npm run test:web -- --watch
-npm run test:e2e      # build + playwright, 12 parcours navigateur
+npm run test:e2e      # build + parcours navigateur Playwright
 ./scripts/check.sh    # tout : types, tests, build, navigateur
 ```
 
