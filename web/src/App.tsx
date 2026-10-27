@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './styles.css';
 import { api, emptyDocument, taskViewMatch, todayISO, type AppState, type Entry, type GoogleStatus, type GoogleSyncStatus, type TaskView } from './lib';
@@ -12,13 +12,10 @@ import { TaskBoard } from './components/TaskBoard';
 import { ProjectBar } from './components/ProjectBar';
 import { CategoryBar } from './components/CategoryBar';
 import { categoryDescendants, UNCATEGORIZED } from './categories';
-import { GoogleDrive } from './components/GoogleDrive';
 import { AiSettings } from './components/AiSettings';
 import { AccountMenu } from './components/AccountMenu';
-import { GoogleDocuments } from './components/GoogleDocuments';
 import { ColumnResizer } from './components/ColumnResizer';
 import { SharedFolder } from './components/SharedFolder';
-import { SharedFileEditor } from './components/SharedFileEditor';
 import { SharedSettings } from './components/SharedSettings';
 import { RelaySettings } from './components/RelaySettings';
 import { readRelay } from './relay-settings';
@@ -27,12 +24,20 @@ import { flushPendingSaves, hasPendingSaves } from './autosave';
 
 const isPwa = import.meta.env.VITE_PWA === '1';
 
+// Chargés à la demande : le dossier partagé (Word, Excel, tableur) et Google Drive
+// pèsent lourd et ne servent pas à chaque ouverture. Le service worker les
+// précache quand même (`emit-sw.mjs`) : la PWA les a hors ligne.
+const SharedFileEditor = lazy(() => import('./components/SharedFileEditor').then((m) => ({ default: m.SharedFileEditor })));
+const GoogleDocuments = lazy(() => import('./components/GoogleDocuments').then((m) => ({ default: m.GoogleDocuments })));
+const GoogleDrive = lazy(() => import('./components/GoogleDrive').then((m) => ({ default: m.GoogleDrive })));
+const loading = <p className="empty">Chargement…</p>;
+
 export default function App() {
   const [state, setState] = useState<AppState | null>(null);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
-  const [projectId, setProjectId] = useState(readProject);
+  const [projectId, setProjectId] = usePersisted(PROJECT_KEY, (stored) => stored || '');
   const [categoryId, setCategoryId] = useState('');
   const [groupedCategories, setGroupedCategories] = useState(false);
   const currentFilters = useRef({ query, projectId, categoryId });
@@ -42,11 +47,11 @@ export default function App() {
   // document qu'on éditait, au lieu de retomber sur « le plus récent ». C'est
   // aussi ce qui rend les recettes déterministes — elles pariaient jusqu'ici sur
   // l'ordre des entrées après un rechargement.
-  const [selectedId, setSelectedId] = useState<string | null>(readSelected);
+  const [selectedId, setSelectedId] = usePersisted<string | null>(SELECTED_KEY, (stored) => stored, orForget);
   // Fichier du dossier partagé ouvert au centre, à la place de l'entrée (§25).
   // Desktop et dev seulement : la PWA n'atteint pas un partage SMB.
   // PWA : le dossier partagé passe par le relais du bureau, s'il est réglé.
-  const [sharedPath, setSharedPath] = useState<string | null>(() => (isPwa && !readRelay() ? null : readSharedPath()));
+  const [sharedPath, setSharedPath] = usePersisted<string | null>(SHARED_KEY, (stored) => (isPwa && !readRelay() ? null : stored), orForget);
   const [sharedRevision, setSharedRevision] = useState(0);
   const bumpShared = useCallback(() => setSharedRevision((n) => n + 1), []);
   const [entry, setEntry] = useState<Entry | null>(null);
@@ -58,16 +63,16 @@ export default function App() {
   const [taskView, setTaskView] = useState<TaskView | null>(null);
   const documentRef = useRef<string | undefined>(undefined);
   documentRef.current = entry?.google_sync?.document_id;
-  const [theme, setTheme] = useState(readTheme);
-  const [colLeft, setColLeft] = useState(readColLeft);
-  const [colRight, setColRight] = useState(readColRight);
-  const [colProcedures, setColProcedures] = useState(readColProcedures);
-  const [showLeft, setShowLeft] = useState(() => readPanel('worklogs-show-left'));
-  const [showCenter, setShowCenter] = useState(() => readPanel('worklogs-show-center'));
-  const [showRight, setShowRight] = useState(() => readPanel('worklogs-show-right'));
+  const [theme, setTheme] = usePersisted('worklogs-theme', (stored) => (stored === 'light' ? 'light' : 'dark'));
+  const [colLeft, setColLeft] = usePersisted('worklogs-col-left', readWidth(290));
+  const [colRight, setColRight] = usePersisted('worklogs-col-right', readWidth(320));
+  const [colProcedures, setColProcedures] = usePersisted(COL_PROC_KEY, readWidth(320, PROC_MIN));
+  const [showLeft, setShowLeft] = usePersisted('worklogs-show-left', readPanel(), writePanel);
+  const [showCenter, setShowCenter] = usePersisted('worklogs-show-center', readPanel(), writePanel);
+  const [showRight, setShowRight] = usePersisted('worklogs-show-right', readPanel(), writePanel);
   // Procédures : masqué par défaut pour ne pas rétrécir l'éditeur d'office ;
   // un clic suffit, l'état est retenu comme les autres panneaux.
-  const [showProcedures, setShowProcedures] = useState(() => readPanel('worklogs-show-procedures', false));
+  const [showProcedures, setShowProcedures] = usePersisted('worklogs-show-procedures', readPanel(false), writePanel);
   const [showSettings, setShowSettings] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   // Compte Google au niveau de l'app : le menu de l'en-tête le montre partout.
@@ -114,20 +119,6 @@ export default function App() {
   const selectedRef = useRef<string | null>(null);
   const reloadSequence = useRef(0);
   selectedRef.current = selectedId;
-
-  useEffect(() => {
-    if (selectedId) localStorage.setItem(SELECTED_KEY, selectedId);
-    else localStorage.removeItem(SELECTED_KEY);
-  }, [selectedId]);
-
-  useEffect(() => {
-    localStorage.setItem(PROJECT_KEY, projectId);
-  }, [projectId]);
-
-  useEffect(() => {
-    if (sharedPath) localStorage.setItem(SHARED_KEY, sharedPath);
-    else localStorage.removeItem(SHARED_KEY);
-  }, [sharedPath]);
 
   /**
    * Un geste vers une entrée referme le fichier partagé. Avec un brouillon non
@@ -239,33 +230,13 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem('worklogs-theme', theme);
   }, [theme]);
 
   useEffect(() => {
     document.documentElement.style.setProperty('--col-left', `${colLeft}px`);
     document.documentElement.style.setProperty('--col-right', `${colRight}px`);
-    localStorage.setItem('worklogs-col-left', String(colLeft));
-    localStorage.setItem('worklogs-col-right', String(colRight));
     document.documentElement.style.setProperty('--col-procedures', `${colProcedures}px`);
-    localStorage.setItem(COL_PROC_KEY, String(colProcedures));
   }, [colLeft, colRight, colProcedures]);
-
-  useEffect(() => {
-    localStorage.setItem('worklogs-show-left', showLeft ? '1' : '0');
-  }, [showLeft]);
-
-  useEffect(() => {
-    localStorage.setItem('worklogs-show-center', showCenter ? '1' : '0');
-  }, [showCenter]);
-
-  useEffect(() => {
-    localStorage.setItem('worklogs-show-right', showRight ? '1' : '0');
-  }, [showRight]);
-
-  useEffect(() => {
-    localStorage.setItem('worklogs-show-procedures', showProcedures ? '1' : '0');
-  }, [showProcedures]);
 
   // Une procédure affichée au centre montre d'où elle vient : la colonne Procédures se
   // déplie, une fois par procédure (la refermer ensuite tient). Archivée, elle n'y est pas.
@@ -374,14 +345,18 @@ export default function App() {
     };
   }, [selectedId]);
 
-  const createEntry = async (rich = false) => {
+  // Les trois colonnes latérales sont mémoïsées : taper dans la recherche ne les
+  // redessine pas. Leurs gestes sont donc des fonctions stables, d'où `useCallback`.
+  const creationProjectId = projectId || state?.categories?.find((category) => category.id === categoryId)?.project_id || null;
+  const creationCategoryId = categoryId && categoryId !== UNCATEGORIZED ? categoryId : null;
+  const createEntry = useCallback(async (rich = false) => {
     // Un fichier partagé ouvert avec un brouillon non envoyé : la question d'abord.
     if (!(await requestLeave())) return;
     const created = await api.createEntry({
       title: 'Sans titre',
       entry_date: todayISO(),
-      project_id: projectId || state?.categories?.find((category) => category.id === categoryId)?.project_id || null,
-      category_id: categoryId && categoryId !== UNCATEGORIZED ? categoryId : null,
+      project_id: creationProjectId,
+      category_id: creationCategoryId,
       ...(rich ? { content_json: emptyDocument() } : {}),
     });
     setSearch('');
@@ -392,18 +367,19 @@ export default function App() {
     setEntry({ ...created, attachments: [] });
     revealEditor();
     reload();
-  };
+  }, [creationProjectId, creationCategoryId, reload, setSelectedId, setSharedPath, setShowCenter]);
+  const createDocument = useCallback(() => void createEntry(true), [createEntry]);
 
   // Les procédures vivent dans leur propre sidebar, jamais dans le journal ;
   // archivées, elles restent dans les archives du journal pour être restaurées.
-  const journalEntries = (state?.entries ?? []).filter((e) => e.kind !== 'procedure' || e.archived);
-  const createProcedure = async () => {
+  const journalEntries = useMemo(() => (state?.entries ?? []).filter((e) => e.kind !== 'procedure' || e.archived), [state?.entries]);
+  const createProcedure = useCallback(async () => {
     if (!(await requestLeave())) return;
     const created = await api.createEntry({
       title: 'Sans titre',
       entry_date: todayISO(),
-      project_id: projectId || state?.categories?.find((category) => category.id === categoryId)?.project_id || null,
-      category_id: categoryId && categoryId !== UNCATEGORIZED ? categoryId : null,
+      project_id: creationProjectId,
+      category_id: creationCategoryId,
       kind: 'procedure',
       content_json: emptyDocument(),
     });
@@ -415,7 +391,39 @@ export default function App() {
     setEntry({ ...created, attachments: [] });
     revealEditor();
     reload();
-  };
+  }, [creationProjectId, creationCategoryId, reload, setSelectedId, setSharedPath, setShowCenter]);
+  // Ouvrir depuis le journal ou la colonne Procédures ; « Modifier » passe en Écrire.
+  const selectFromList = useCallback((id: string) => {
+    setFreshEntry(false);
+    selectEntry(id);
+    setShowCenter(true);
+  }, [selectEntry, setShowCenter]);
+  const editProcedure = useCallback((id: string) => {
+    selectFromList(id);
+    setProcedureEdit((current) => ({ id, sequence: current.sequence + 1 }));
+  }, [selectFromList]);
+  const procedureDeleted = useCallback((id: string) => {
+    if (selectedRef.current === id) {
+      selectedRef.current = null;
+      setSelectedId(null);
+      setEntry(null);
+    }
+    void reload();
+  }, [reload, setSelectedId]);
+  const sharedProcedures = useMemo(
+    () => (state?.entries ?? []).filter((entry) => entry.kind === 'procedure' && !entry.archived).map((entry) => ({ id: entry.id, title: entry.title })),
+    [state?.entries],
+  );
+  const sharedDeleted = useCallback((path: string) => {
+    // Un fichier, ou un dossier et tout ce qu'il contenait.
+    if (sharedPath && (sharedPath === path || sharedPath.startsWith(path + '/'))) setSharedPath(null);
+    bumpShared();
+  }, [bumpShared, setSharedPath, sharedPath]);
+  const sharedRenamed = useCallback((from: string, to: string) => {
+    // Le fichier ouvert suit son dossier (rien n'y était en route : le renommage aurait été refusé).
+    if (sharedPath?.startsWith(from + '/')) setSharedPath(to + sharedPath.slice(from.length));
+    bumpShared();
+  }, [bumpShared, setSharedPath, sharedPath]);
 
   // Même geste dans les deux backends : le distant renvoie le JSON du serveur,
   // le local construit le blob depuis IndexedDB (PWA hors-ligne comprise).
@@ -435,9 +443,10 @@ export default function App() {
     }
   };
 
-  const siblingTabs = (entry?.google_sync?.tabs || state?.entries.filter(e => e.google_document_id === entry?.google_sync?.document_id && e.google_document_id) || [])
+  const googleSync = entry?.google_sync;
+  const siblingTabs = useMemo(() => (googleSync?.tabs || state?.entries.filter(e => e.google_document_id === googleSync?.document_id && e.google_document_id) || [])
     .map(tab => ({ ...tab, ...state?.entries.find(e => e.id === tab.id) }))
-    .sort((a, b) => (a.google_tab_order ?? 0) - (b.google_tab_order ?? 0));
+    .sort((a, b) => (a.google_tab_order ?? 0) - (b.google_tab_order ?? 0)), [googleSync, state?.entries]);
   const isGoogleDocument = Boolean(entry?.google_sync);
   // Session Google active (pas expirée) : la synchro automatique tourne.
   const autoSynced = Boolean(google?.connected && !google.expired);
@@ -601,13 +610,13 @@ export default function App() {
           title={theme === 'dark' ? 'Passer en thème clair' : 'Passer en thème sombre'}
           onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
         >
-          {theme === 'dark' ? '☀' : '☾'}
+          {theme === 'dark' ? <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.1" /><path d="M8 1.6v1.7M8 12.7v1.7M1.6 8h1.7M12.7 8h1.7M3.5 3.5l1.2 1.2M11.3 11.3l1.2 1.2M3.5 12.5l1.2-1.2M11.3 4.7l1.2-1.2" /></svg> : <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true"><path d="M13.6 9.9A5.6 5.6 0 0 1 6.1 2.4a5.6 5.6 0 1 0 7.5 7.5z" /></svg>}
         </button>
         {/* Connecté à Google, la synchro automatique garde déjà une copie à jour
             sur Drive : l'export manuel n'a plus sa place dans l'en-tête. */}
         {!autoSynced && (
           <button className="ghost export-btn" type="button" aria-label="Exporter" title="Télécharger toute la base en JSON" onClick={() => void exportJson()}>
-            <span className="export-icon" aria-hidden="true">⤓</span>
+            <svg className="export-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.8 7.4 8 10.6l3.2-3.2M3 13.5h10" /></svg>
             <span className="export-label">Exporter</span>
           </button>
         )}
@@ -659,13 +668,9 @@ export default function App() {
             entries={journalEntries}
             projects={state?.projects ?? []}
             selectedId={sharedPath ? null : selectedId}
-            onSelect={(id) => {
-              setFreshEntry(false);
-              selectEntry(id);
-              setShowCenter(true);
-            }}
-            onCreate={() => void createEntry()}
-            onCreateDocument={() => void createEntry(true)}
+            onSelect={selectFromList}
+            onCreate={createEntry}
+            onCreateDocument={createDocument}
             searching={query !== ''}
           />
         </aside>
@@ -674,14 +679,16 @@ export default function App() {
 
         <main id="workspace-editor" className="center">
           {sharedPath ? (
-            <SharedFileEditor
-              key={sharedPath}
-              path={sharedPath}
-              projectId={projectId || null}
-              onOpenPath={(path) => void openShared(path)}
-              onChanged={bumpShared}
-              onClose={() => setSharedPath(null)}
-            />
+            <Suspense fallback={loading}>
+              <SharedFileEditor
+                key={sharedPath}
+                path={sharedPath}
+                projectId={projectId || null}
+                onOpenPath={openShared}
+                onChanged={bumpShared}
+                onClose={() => setSharedPath(null)}
+              />
+            </Suspense>
           ) : entry && state ? (
             <EntryEditor
               categories={state.categories ?? []}
@@ -725,7 +732,7 @@ export default function App() {
             view={taskView}
             onView={setTaskView}
             onOpenDocument={openDocument}
-            onOpenShared={(path) => void openShared(path)}
+            onOpenShared={openShared}
             onProcedureCreated={openCreatedProcedure}
             onChanged={reload}
           />
@@ -750,49 +757,25 @@ export default function App() {
             projects={state?.projects ?? []}
             projectId={projectId}
             selectedId={sharedPath ? null : selectedId}
-            onSelect={(id) => {
-              setFreshEntry(false);
-              selectEntry(id);
-              setShowCenter(true);
-            }}
-            onEdit={(id) => {
-              setFreshEntry(false);
-              selectEntry(id);
-              setShowCenter(true);
-              setProcedureEdit((current) => ({ id, sequence: current.sequence + 1 }));
-            }}
-            onCreate={() => void createProcedure()}
+            onSelect={selectFromList}
+            onEdit={editProcedure}
+            onCreate={createProcedure}
             onChanged={reload}
-            onDeleted={(id) => {
-              if (selectedRef.current === id) {
-                selectedRef.current = null;
-                setSelectedId(null);
-                setEntry(null);
-              }
-              void reload();
-            }}
+            onDeleted={procedureDeleted}
           />
           {/* PWA : absente tant que le relais n'est pas réglé (le statut dit « indisponible »). */}
           <SharedFolder
             active={showProcedures}
             projectId={projectId}
             projects={state?.projects ?? []}
-            procedures={(state?.entries ?? []).filter((entry) => entry.kind === 'procedure' && !entry.archived).map((entry) => ({ id: entry.id, title: entry.title }))}
+            procedures={sharedProcedures}
             selectedPath={sharedPath}
             revision={sharedRevision}
-            onOpen={(path) => void openShared(path)}
-            onDeleted={(path) => {
-              // Un fichier, ou un dossier et tout ce qu'il contenait.
-              if (sharedPath && (sharedPath === path || sharedPath.startsWith(path + '/'))) setSharedPath(null);
-              bumpShared();
-            }}
-            onRenamed={(from, to) => {
-              // Le fichier ouvert suit son dossier (rien n'y était en route : le renommage aurait été refusé).
-              if (sharedPath?.startsWith(from + '/')) setSharedPath(to + sharedPath.slice(from.length));
-              bumpShared();
-            }}
+            onOpen={openShared}
+            onDeleted={sharedDeleted}
+            onRenamed={sharedRenamed}
             onProjectsChanged={reload}
-            onLocalChanged={() => void reload()}
+            onLocalChanged={reload}
           />
         </aside>
       </div>
@@ -815,7 +798,9 @@ export default function App() {
             </button>
           </div>
           <div className="settings-content">
-            <GoogleDrive onRestored={reload} onOpen={openDriveEntry} onDocuments={() => { setShowSettings(false); setShowDocuments(true); }} />
+            <Suspense fallback={loading}>
+              <GoogleDrive onRestored={reload} onOpen={openDriveEntry} onDocuments={() => { setShowSettings(false); setShowDocuments(true); }} />
+            </Suspense>
             <AiSettings projects={state?.projects ?? []} />
             {isPwa && <RelaySettings onChange={() => setSharedRevision((n) => n + 1)} />}
             <SharedSettings key={`nom-${sharedRevision}`} />
@@ -886,12 +871,14 @@ export default function App() {
         </dialog>
       ), document.body)}
       {showDocuments && (
-        <GoogleDocuments
-          projects={state?.projects ?? []}
-          onClose={() => setShowDocuments(false)}
-          onOpen={openDriveEntry}
-          onChanged={reload}
-        />
+        <Suspense fallback={loading}>
+          <GoogleDocuments
+            projects={state?.projects ?? []}
+            onClose={() => setShowDocuments(false)}
+            onOpen={openDriveEntry}
+            onChanged={reload}
+          />
+        </Suspense>
       )}
     </div>
   );
@@ -900,50 +887,34 @@ export default function App() {
 const SELECTED_KEY = 'worklogs-entry';
 const PROJECT_KEY = 'worklogs-project';
 const SHARED_KEY = 'worklogs-shared-path';
-
-function readSharedPath() {
-  if (typeof localStorage === 'undefined') return null;
-  return localStorage.getItem(SHARED_KEY);
-}
-
-function readSelected() {
-  if (typeof localStorage === 'undefined') return null;
-  return localStorage.getItem(SELECTED_KEY);
-}
-
-function readProject() {
-  if (typeof localStorage === 'undefined') return '';
-  return localStorage.getItem(PROJECT_KEY) || '';
-}
-
-function readTheme() {
-  if (typeof localStorage === 'undefined') return 'dark';
-  return localStorage.getItem('worklogs-theme') === 'light' ? 'light' : 'dark';
-}
-
-const COL_LS_KEY = 'worklogs-col-left';
-const COL_RS_KEY = 'worklogs-col-right';
 const COL_PROC_KEY = 'worklogs-col-procedures';
 /** En dessous, les boutons d'une procédure ne tiennent plus sur leur ligne. */
 const PROC_MIN = 260;
 
-function readColLeft() {
-  if (typeof localStorage === 'undefined') return 290;
-  const v = Number(localStorage.getItem(COL_LS_KEY));
-  return Number.isFinite(v) && v >= 120 && v <= 600 ? v : 290;
+/**
+ * État retenu dans `localStorage` sous `key` : `read` l'interprète (et le borne),
+ * `write` le sérialise — `null` retire la clé. Mêmes clés et mêmes valeurs
+ * qu'avant : les recettes et l'application desktop les lisent telles quelles.
+ */
+function usePersisted<T>(key: string, read: (stored: string | null) => T, write: (value: T) => string | null = String) {
+  const [value, setValue] = useState(() => read(typeof localStorage === 'undefined' ? null : localStorage.getItem(key)));
+  useEffect(() => {
+    const stored = write(value);
+    if (stored === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, stored);
+  }, [key, value, write]);
+  return [value, setValue] as const;
 }
-
-function readColRight() {
-  if (typeof localStorage === 'undefined') return 320;
-  const v = Number(localStorage.getItem(COL_RS_KEY));
-  return Number.isFinite(v) && v >= 120 && v <= 600 ? v : 320;
-}
-
-function readColProcedures() {
-  if (typeof localStorage === 'undefined') return 320;
-  const v = Number(localStorage.getItem(COL_PROC_KEY));
-  return Number.isFinite(v) && v >= PROC_MIN && v <= 600 ? v : 320;
-}
+/** Une valeur vide ne s'enregistre pas : la clé est oubliée. */
+const orForget = (value: string | null) => value || null;
+/** Largeur de colonne en pixels, dans ses bornes ; sinon la largeur par défaut. */
+const readWidth = (fallback: number, min = 120) => (stored: string | null) => {
+  const v = Number(stored);
+  return Number.isFinite(v) && v >= min && v <= 600 ? v : fallback;
+};
+/** Panneau visible par défaut ; `'0'` enregistré le replie durablement. */
+const readPanel = (fallback = true) => (stored: string | null) => (stored === null ? fallback : stored !== '0');
+const writePanel = (shown: boolean) => (shown ? '1' : '0');
 
 /**
  * Cartes empilées (≤ 900 px) : ouvrir ou créer une entrée amène à la carte
@@ -955,11 +926,4 @@ function revealEditor() {
   const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
   // Après le rendu : la carte vient peut-être d'être réaffichée.
   requestAnimationFrame(() => document.getElementById('workspace-editor')?.scrollIntoView?.({ block: 'start', behavior }));
-}
-
-/** Panneau visible par défaut ; `'0'` enregistré le replie durablement. */
-function readPanel(key: string, fallback = true) {
-  if (typeof localStorage === 'undefined') return fallback;
-  const stored = localStorage.getItem(key);
-  return stored === null ? fallback : stored !== '0';
 }

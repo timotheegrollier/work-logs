@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { api, COLUMNS, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type RichDocument, type Status } from '../lib';
 import { completeNote, draftProcedure, extractEntryActions, parseChecklist, proofreadEntry, readAiSettings, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
@@ -7,16 +7,20 @@ import { insertCodeFence, renderMarkdown, toggleChecklistItem } from '../markdow
 import { markdownToRich, richToMarkdown } from '../rich-markdown';
 import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-download';
 import { Autosave } from '../autosave';
-import { RichEditor } from './RichEditor';
 import { DocumentTabs } from './DocumentTabs';
 import { GoogleDocsEditor } from './GoogleDocsEditor';
-import { FileViewer } from './FileViewer';
 import { ProcedureDraft } from './ProcedureDraft';
 import { AiContextDetails } from './AiContextDetails';
 import { AiMenu } from './AiMenu';
 import { AiRefinement } from './AiRefinement';
 
 import { CategoryPicker } from './CategoryPicker';
+
+// Chargés à la demande : l'éditeur riche (Tiptap) est le plus gros morceau du
+// paquet, l'aperçu Word ne sert qu'au premier fichier consulté.
+const RichEditor = lazy(() => import('./RichEditor').then((m) => ({ default: m.RichEditor })));
+const FileViewer = lazy(() => import('./FileViewer').then((m) => ({ default: m.FileViewer })));
+const loading = <p className="empty">Chargement…</p>;
 
 type SaveState = 'saved' | 'dirty' | 'saving' | 'error';
 const LABELS: Record<SaveState, string> = {
@@ -127,8 +131,16 @@ export function EntryEditor({
   // champ) et le reste du brouillon s'enregistre. Le refuser laissait, une fois
   // l'entrée quittée, un brouillon en échec que la fermeture rejouait sans fin.
   const [savedTitle, setSavedTitle] = useState(entry.title);
-  const [autosave] = useState(() => new Autosave<typeof draft>(async ({ title, ...body }) => {
-    await api.updateEntry(entry.id, { ...body, ...(title.trim() ? { title } : {}), project_id: body.project_id || null, category_id: body.category_id || null });
+  const serverClassification = useRef({ project: entry.project_id || '', category: entry.category_id || '' });
+  const [autosave] = useState(() => new Autosave<typeof draft>(async ({ title, project_id, category_id, ...body }) => {
+    // Une frappe n'est pas un choix de classement : ne pas renvoyer un ancien
+    // couple projet/catégorie si celui-ci a changé pendant l'envoi du texte.
+    const classification = serverClassification.current;
+    const changedClassification = project_id !== classification.project || category_id !== classification.category;
+    await api.updateEntry(entry.id, {
+      ...body, ...(title.trim() ? { title } : {}),
+      ...(changedClassification ? { project_id: project_id || null, category_id: category_id || null } : {}),
+    });
     if (title.trim()) setSavedTitle(title);
     changedRef.current();
   }));
@@ -147,7 +159,6 @@ export function EntryEditor({
 
   // Une suppression ou un reclassement distant doit aussi actualiser le prochain
   // brouillon envoyé. Une sélection locale encore en cours garde la priorité.
-  const serverClassification = useRef({ project: entry.project_id || '', category: entry.category_id || '' });
   useEffect(() => {
     const nextProject = entry.project_id || '';
     const nextCategory = entry.category_id || '';
@@ -1115,7 +1126,7 @@ export function EntryEditor({
         </p>
       )}
       {Boolean(googleSync?.preserved_elements) && <p className="google-preservation no-print">{integratedGoogle ? <>Cette copie locale conserve les éléments Google. <button className="ghost" disabled={syncing} onClick={() => void openIntegratedGoogle()}>Modifier les menus déroulants, pastilles et suggestions dans WorkLogs</button></> : <>Les éléments Google signalés restent conservés à l’envoi. Pour modifier un menu déroulant, une image ou une suggestion, <a href={googleUrl} target="_blank" rel="noopener noreferrer">ouvre cet onglet dans Google Docs</a>.</>}</p>}
-      {draft.content_json ? <RichEditor key={richVersion} disabled={syncing} readOnly={hasModes && !writing} googleLinked={Boolean(googleSync)} entryId={entry.id} content={draft.content_json} onChange={(content_json) => update({ content_json })} /> : <div className={'sheet' + (writing ? ' is-split' : '')}>
+      {draft.content_json ? <Suspense fallback={loading}><RichEditor key={richVersion} disabled={syncing} readOnly={hasModes && !writing} googleLinked={Boolean(googleSync)} entryId={entry.id} content={draft.content_json} onChange={(content_json) => update({ content_json })} /></Suspense> : <div className={'sheet' + (writing ? ' is-split' : '')}>
         {writing && (
           <textarea
             ref={sourceRef}
@@ -1196,7 +1207,7 @@ export function EntryEditor({
         ))}
         {driveNotice && <p className="drive-success" role="status">{driveNotice}</p>}
       </div>}
-      {previewing && <FileViewer key={previewing.id + (previewing.driveFileId || '')} file={previewing} onClose={() => setPreviewing(null)} onFetch={() => previewing && void fetchFromDrive(previewing)} fetching={fetchingId === previewing.id} />}
+      {previewing && <Suspense fallback={null}><FileViewer key={previewing.id + (previewing.driveFileId || '')} file={previewing} onClose={() => setPreviewing(null)} onFetch={() => previewing && void fetchFromDrive(previewing)} fetching={fetchingId === previewing.id} /></Suspense>}
     </section>
   );
 }

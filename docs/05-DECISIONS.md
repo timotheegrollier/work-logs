@@ -1921,3 +1921,75 @@ Aucune dépendance, aucun onglet ajouté.
 PWA et gestes intégrés ; parcours navigateur desktop/mobile. Bilan de la recette complète
 dans `00-HANDOVER.md`.
 
+---
+
+## 47. Le carnet de bord : une page au centre, des outils sur les côtés — 2026-10-23
+
+**La demande.** « Améliore grandement le design, l'UI, le layout et l'UX ainsi que le
+responsive afin que tout reste beau, ergonomique et intuitif ; fais aussi une passe de refactor
+et optimise les performances en gardant le code propre. » Constaté avant de coder (captures
+à 1440, 1100, 800, 412 et 844 × 390 px, jeu de données réaliste dans `.design/`) : tout
+portait un cadre de la même force — champs, pastilles, boutons, cartes, badges — l'œil n'avait
+nulle part où se poser ; le centre ressemblait à un formulaire (titre dans un cadre, réglages
+et « Supprimer » en rouge plein à chaque ouverture) ; chaque procédure affichait trois
+boutons dont un « Supprimer » rouge ; à 1 100 px, un bloc de code à longue ligne **élargissait
+la page hors de sa colonne** (piste de grille `1fr` dont le minimum est le contenu) ; les
+statistiques de l'en-tête n'apparaissaient qu'à partir de 1 560 px, jamais dans la fenêtre
+desktop par défaut (1 440) ; `.columns` cumulait une quarantaine de règles de grille, une
+par combinaison de panneaux (journal, écriture, tâches, procédures, document Google avec ou
+sans tâches).
+
+**Décisions.**
+- **Une identité, tirée du logo** : la page crème et le marque-page ambré. Le centre est
+  une page (`--paper`, entre le fond et les panneaux ; un soupçon de crème en thème clair),
+  les côtés sont des outils, plus denses. L'**ambre** (`--mark`) ne sert qu'à deux signaux :
+  le nœud d'**aujourd'hui** sur le fil du journal et le liseré des tâches **épinglées**. Le
+  fil du journal reste la seule signature (§24) ; il est juste plus affirmé (nœud ambré,
+  liseré de la couleur du projet sur la ligne ouverte).
+- **Les traits disent la structure, pas la décoration** : seuls les panneaux, les champs et
+  les cartes gardent un filet (`--line`, `--line-soft`) ; pastilles, badges et étiquettes
+  sont une teinte sans cadre. Trois familles de boutons seulement : l'aplat accent
+  (`.task-primary`), le cadre discret (`.ghost`) et le symbole (`.icon`). **Supprimer** est
+  du texte rouge dont le fond ne s'allume qu'au survol. Sur les cartes de tâche, ★ et ✕
+  **apparaissent au survol ou au clavier** ; l'épingle posée reste visible (c'est un état) ;
+  au doigt (`hover: none`), tout reste visible. Les actions d'une procédure (Modifier,
+  Supprimer, ＋ Fichier) sont du texte discret, une procédure par ligne.
+- **Une seule famille de caractères** (la pile système humaniste), un seul monospace
+  (`--font-mono`, qui remplace huit piles écrites à la main) ; les chiffres sont
+  tabulaires partout. Pas de police embarquée (§24 tient : zéro dépendance).
+- **Les colonnes sont une rangée flexible** (`display: flex`) : chaque panneau a sa largeur
+  (`flex-basis` = la poignée, `min-width` = la borne), le centre prend le reste, un panneau
+  replié disparaît avec sa poignée. Les quarante règles de grille deviennent une dizaine, et
+  toute combinaison future est gratuite. La poignée des procédures chevauche la bordure de
+  la colonne (`margin: 0 -4px`), comme avant. Les pistes de la feuille Markdown passent en
+  `minmax(0, 1fr)` et `.prose` en `min-width: 0` : le débordement d'un bloc de code est
+  corrigé.
+- **L'en-tête s'allège** (icônes SVG en ligne, boutons sans cadre, recherche en champ plein,
+  version en texte) et les **statistiques reviennent dès 1 300 px**. Sur tablette
+  (640–900 px), les trois colonnes de tâches sont **côte à côte** ; sur téléphone, les icônes
+  de l'en-tête sont des cibles de 44 px sur fond léger. Le reste du mobile (§16, §35) ne bouge
+  pas : mêmes points de rupture, mêmes barres, mêmes cibles.
+- **Performances.** Le paquet est **découpé** : l'éditeur riche (Tiptap/ProseMirror, 444 Ko),
+  les éditeurs du dossier partagé (Word, Excel, CSV, 126 Ko), Google Drive et ses documents,
+  l'aperçu de fichier se chargent à la demande (`React.lazy`) ; le premier chargement passe
+  de 1 110 à 471 Ko (350 → 148 Ko compressés). Le service worker **précache tous les
+  morceaux du build** (`emit-sw.mjs` injecte la liste), la PWA les a donc hors ligne. Les
+  trois colonnes latérales sont mémoïsées et leurs gestes stables : taper dans la recherche
+  ne redessine plus le journal, les cartes ni les procédures ; la saisie « Nouvelle tâche »
+  vit dans son propre composant ; le contexte IA d'une carte n'est calculé qu'au clic.
+  `App.tsx` retient ses réglages par un seul `usePersisted` (mêmes clés, mêmes valeurs).
+
+**Écartés.** Un empattement pour le document et un fond crème général (le lieu commun des
+pages générées, et une police de plus à embarquer) ; déplacer les statistiques hors de
+l'en-tête (§33 en a fait des liens vers les vues) ; un tiroir ou un hamburger (§16) ; un
+mode « compact » (§1).
+
+**Ce que ça coûte.** Sur desktop, ★ et ✕ d'une carte demandent un survol ou le clavier
+(les noms accessibles ne changent pas ; Playwright clique un élément à `opacity: 0`). Sur la
+PWA, la première ouverture d'un document riche après une mise à jour télécharge son morceau
+(précaché dès l'installation du service worker suivant). `styles.css` est réécrit : son
+historique git repart de ce lot.
+
+**Rouvrir si** une action révélée au survol est manquée à l'usage (la rendre visible, pas
+un menu) ; si la page centrale paraît trop proche des panneaux en thème sombre (`--paper`
+est la seule valeur à bouger).

@@ -160,6 +160,10 @@ test.describe('catégories mobile', () => {
     await categories(page).getByRole('button', { name: `Modifier la catégorie ${leaf.name}`, exact: true }).click();
     await expect(categories(page).getByLabel('Nom de la catégorie')).toBeVisible();
     await expect(categories(page).getByLabel('Catégorie parente')).toHaveValue(child.id);
+    const parentBounds = await categories(page).getByLabel('Catégorie parente').boundingBox();
+    expect(parentBounds).not.toBeNull();
+    expect(parentBounds!.x).toBeGreaterThanOrEqual(0);
+    expect(parentBounds!.x + parentBounds!.width).toBeLessThanOrEqual(412);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await categories(page).getByRole('button', { name: 'Annuler', exact: true }).click();
     await categories(page).scrollIntoViewIfNeeded();

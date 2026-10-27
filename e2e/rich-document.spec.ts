@@ -200,11 +200,29 @@ test('citations, code, séparateur et retraits de listes', async ({ page }) => {
   await page.getByRole('button', { name: 'Code en ligne' }).click();
   await expect(content.locator('p code')).toHaveText('Une citation');
   await page.getByRole('button', { name: 'Effacer la mise en forme' }).click();
+  // End déplace le curseur DOM ; ProseMirror lit ce déplacement lors du vrai
+  // selectionchange. Enter envoyé dans le même frame garderait AllSelection et
+  // remplacerait la citation. S'abonner avant End, sans délai ni retry.
+  const caret = await content.evaluateHandle(editor => ({
+    changed: new Promise<void>(resolve => {
+      const onSelection = () => {
+        const selection = window.getSelection();
+        if (!selection?.isCollapsed || !editor.contains(selection.focusNode)) return;
+        document.removeEventListener('selectionchange', onSelection);
+        resolve();
+      };
+      document.addEventListener('selectionchange', onSelection);
+    }),
+  }));
   await content.press('End');
+  await caret.evaluate(({ changed }) => changed);
+  await caret.dispose();
   await content.press('Enter');
   await page.keyboard.type('Deuxième');
+  await expect(content.locator('p').filter({ hasText: /\S/ })).toHaveText(['Une citation', 'Deuxième']);
   await content.press('Control+a');
   await page.getByRole('button', { name: 'Liste à puces' }).click();
+  await expect(content.locator('li p').filter({ hasText: /\S/ })).toHaveText(['Une citation', 'Deuxième']);
   await content.locator('li p').filter({ hasText: 'Deuxième' }).click();
   await page.keyboard.press('End');
   await page.getByRole('button', { name: 'Augmenter le retrait de liste' }).click();

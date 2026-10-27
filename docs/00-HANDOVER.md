@@ -1,5 +1,50 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Reprise de la PR #21 — 2026-10-27
+
+Branche rebasée sur `master` v0.59.0, arbre de l'intégration conservé et ancien bump
+0.59.0 remplacé par 0.60.0. La CI rouge révélait une course réelle : une sauvegarde de
+texte renvoyait le couple projet/catégorie inchangé après un reclassement distant.
+`EntryEditor` n'envoie désormais ce couple que pour un changement local de classement.
+Un test bloque l'envoi, reclasse l'entrée puis libère la sauvegarde : rouge avant,
+vert après, sans retry ni délai arbitraire. Les 9 gestes catégories passent.
+Le parcours de création d'une procédure vérifie sa saisie intermédiaire, attend le
+chargement effectif de l'éditeur riche et utilise la colonne Procédures déjà ouverte.
+La première recette locale a échoué sur ce parcours (titre dupliqué après clear/type) ;
+les observations ont ensuite localisé la perte dès l'effacement, en CI. Reproduction
+déterministe : une saisie native dans le layout du parent précède les effets passifs de
+montage ; l'effet qui recopiait le titre suggéré écrasait cette saisie. `ProcedureDraft`
+associe désormais la correction à sa proposition, sans copie différée. Test rouge avant,
+vert après ; une nouvelle proposition réinitialise bien le titre, même si son titre
+suggéré est identique. Deux tests de composant et trois parcours App ciblés verts.
+
+Le parcours navigateur des retraits a révélé une autre course de recette : `End`, puis
+`Enter` en moins d'un frame, avant le vrai `selectionchange` lu par ProseMirror, remplaçait
+la citation sélectionnée. Sonde DOM/ProseMirror à l'appui, sans callback de focus différé.
+La recette s'abonne maintenant avant `End`, attend cet événement et vérifie les deux
+paragraphes avant de tester les retraits ; parcours ciblé vert sans délai ni retry.
+L'éditeur n'a pas été modifié pour cette course de sélection. Les 656 tests front (dont
+un échec attendu préexistant) sont verts ; la CI du précédent arbre a également validé
+la recette complète et les paquets Mint/Fedora. Derniers contrôles à terminer avant fusion.
+
+## Intégration de la PR #21 — 2026-10-26 — version 0.60.0 préparée
+
+La refonte `ui/design-refresh` est reprise sur le `master` publié en v0.59.0 : catégories,
+sous-catégories, filtres, regroupements et correctifs de rafraîchissement sont conservés avec
+la mise en page flex, les colonnes mémoïsées et les éditeurs chargés à la demande.
+La décision de design devient **§47** ; le **§46** reste celui des catégories déjà publiées.
+Le service worker précache les morceaux JavaScript/CSS du build tout en gardant IndexedDB
+version 2, le magasin `categories` et les aperçus de pièces jointes. Le test d'installation
+vérifie que les éditeurs chargés à la demande sont bien dans le précache.
+
+La version 0.59.0 proposée à l'origine par cette PR est déjà publiée : l'intégration prépare
+**0.60.0**, sans nouvelle dépendance. Le formulaire de catégorie est borné à la largeur
+disponible, même avec un chemin long ; le parcours mobile contrôle aussi la position du
+sélecteur, au-delà du seul débordement de page.
+Validation de l’arbre fusionné : `VITEST_MAX_WORKERS=1 ./scripts/check.sh` en local et
+[contrôles de la PR #21](https://github.com/timotheegrollier/work-logs/pull/21/checks).
+Typecheck, 10 tests App ciblés et 32 tests scripts validés ; les comptages du 23/10
+ci-dessous décrivent la branche avant cette intégration.
 
 ## Lot du 2026-10-26 — catégories et sous-catégories par projet
 
@@ -76,6 +121,50 @@ client qui réécrit une entrée/tâche ne conserve pas son `category_id` (même
 Un test existant « nouveau dossier »
 a dépassé son attente UI d'1 s sous campagnes parallèles ; il utilise maintenant le délai
 borné `partage` déjà prévu pour les opérations du partage, sans retry.
+
+## Lot du 2026-10-23 — refonte visuelle, colonnes en flex, paquet découpé
+
+Branche `ui/design-refresh` (copie de travail `.claude/worktrees/design-refresh`, partie de
+`origin/master` à v0.58.0). Demande : « améliorer grandement le design, l'UI, le layout, l'UX
+et le responsive ; refactor et performances, code propre ». Pourquoi et quoi : `05-DECISIONS.md`
+§47. Aucune dépendance, route ou migration ajoutée ; aucun nom accessible ni mot de
+l'interface changé.
+- **Design** (`web/src/styles.css`, réécrit, 5 300 lignes contre 3 400 — tout est aéré et
+  commenté) : jetons `--paper`, `--mark`, `--line-soft`, `--faint`, `--font-ui`, `--font-mono` ;
+  page au centre, outils sur les côtés ; fil du journal à nœud ambré ; pastilles et badges sans
+  cadre ; « Supprimer » en texte ; ★ et ✕ des cartes au survol ; procédures en lignes ;
+  en-tête allégé (SVG en ligne dans `App.tsx` et `AccountMenu.tsx`), statistiques dès 1 300 px ;
+  tâches sur trois colonnes de 640 à 900 px. Captures avant/après dans `.design/shots/`
+  (hors git), données de démonstration par `.design/seed.mjs`, script `.design/run.sh`.
+- **Layout** : `.columns` en flex (une dizaine de règles au lieu de quarante) ; débordement
+  d'un bloc de code à longue ligne corrigé (`minmax(0, 1fr)`, `.prose { min-width: 0 }`).
+- **Performances** : `React.lazy` pour `RichEditor`, `SharedFileEditor`, `GoogleDrive`,
+  `GoogleDocuments`, `FileViewer` (premier chargement 1 110 → 471 Ko) ; le service worker
+  précache les morceaux (`scripts/pwa-sw.mjs`, `renderSw(template, version, assets)`,
+  `scripts/emit-sw.mjs`, `web/src/sw-template.js`) ; `EntryList`, `TaskBoard`, `ProcedureList`
+  mémoïsés, gestes stables dans `App.tsx`, `QuickAdd` à part, contexte IA d'une carte calculé
+  au clic, `usePersisted` pour les réglages retenus.
+- **Tests** : aucun ajouté ni modifié côté front (les 634 passent tels quels, lazy compris),
+  `scripts/pwa-sw.test.mjs` +1 (liste des fichiers précachés). Les parcours Playwright de
+  mise en page (`sidebar-widths`, `procedure-layout`, `mobile-header`, `scroll-overlap`,
+  `project-strip`, `pwa`, `google-documents`) valident la nouvelle feuille.
+- **Validation historique de la branche du 23/10** : `./scripts/check.sh` vert, sandbox désactivé et `env -u DISPLAY` pour
+  qu'Electron tourne dans Xvfb : **256 API** (+1 ignoré), **634 front** (+1 échec attendu),
+  48 desktop unitaires, 30 scripts, 11 Worker, 11 relais, **70 navigateur**, **15 desktop**
+  (+1 ignoré, « fenêtre maximisée », pas de gestionnaire de fenêtres) — **1 075 tests**.
+  Le port 8443 était pris par un autre processus de la machine : les parcours navigateur et
+  Electron ont été rejoués sur un port libre (`WORKLOGS_E2E_PORT`), mêmes résultats.
+
+### À vérifier par Timo
+
+1. Dans l'application desktop, en sombre puis en clair : le centre se lit-il bien comme une
+   page, les côtés comme des outils ? Le nœud ambré d'aujourd'hui et le liseré des tâches
+   épinglées sont-ils assez visibles sans crier ?
+2. Sur une carte de tâche : ★ et ✕ apparaissent au survol ; est-ce naturel ou préférer les
+   garder toujours visibles (§47, « Rouvrir si ») ?
+3. Sur le téléphone (PWA) : la première ouverture d'une procédure après la mise à jour
+   affiche brièvement « Chargement… » ; puis hors ligne, tout s'ouvre encore ?
+
 
 ## Lot du 2026-10-22 — un changement de projet n'ouvre jamais une archive
 

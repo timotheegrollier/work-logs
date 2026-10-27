@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { memo, useState, type CSSProperties } from 'react';
 import { dayLabel, groupByDay, groupTabs, plainText, todayISO, type Category, type EntrySummary, type JournalItem, type Project } from '../lib';
-
 import { groupByCategory } from '../categories';
 import { CategoryBadge } from './CategoryPicker';
 
-export function EntryList({
+/** Mémoïsé : l'en-tête (recherche) se redessine à chaque frappe, pas le journal. */
+export const EntryList = memo(function EntryList({
   entries,
   projects,
   categories = [],
@@ -36,7 +36,7 @@ export function EntryList({
 
   return (
     <section className="journal" aria-label="Journal">
-      <button className="new-entry" onClick={onCreate}>
+      <button className="new-entry" onClick={() => onCreate()}>
         <span aria-hidden="true">＋</span> Nouvelle entrée
       </button>
       <button className="ghost new-document" onClick={onCreateDocument}>＋ Nouveau document</button>
@@ -61,7 +61,7 @@ export function EntryList({
       )}
     </section>
   );
-}
+});
 
 
 function EntryGroups({ entries, projects, categories, grouped, ...props }: {
@@ -100,17 +100,19 @@ function DayGroups({
   onSelect: (id: string) => void;
   dimmed?: boolean;
 }) {
+  const byId = new Map(items.map((item) => [item.entry.id, item]));
   return (
     <ol className="days">
       {groupByDay(items.map(item => item.entry)).map(([date, ofDay]) => (
         <li key={date} className={date === todayISO() ? 'is-today' : undefined}>
           <h2 className="day">{dayLabel(date)}</h2>
           <ul>
-            {ofDay.map(representative => items.find(item => item.entry.id === representative.id)!).map(({ entry, title, tabs }) => (
+            {ofDay.map((representative) => byId.get(representative.id)!).map(({ entry, title, tabs }) => (
               <li key={entry.id}>
                 <button
                   className={'entry' + (tabs.some((t) => t.id === selectedId) || entry.id === selectedId ? ' is-selected' : '') + (dimmed ? ' is-archived' : '')}
                   aria-current={entry.id === selectedId || tabs.some(t => t.id === selectedId) ? 'true' : undefined}
+                  style={{ '--project': colors.get(entry.project_id ?? '') } as CSSProperties}
                   onClick={() => onSelect(tabs.find(t => t.id === selectedId)?.id || entry.id)}
                 >
                   <span className="entry-title">

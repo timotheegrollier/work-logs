@@ -27,7 +27,10 @@ export function ProcedureDraft({
   onCreated: (procedure: Entry) => void;
   onClose: () => void;
 }) {
-  const [title, setTitle] = useState(draft.title);
+  // Une nouvelle proposition renouvelle son titre dès le rendu. Une copie dans
+  // useEffect pouvait se jouer après la première saisie et la remplacer.
+  const [editedTitle, setEditedTitle] = useState({ draft, value: draft.title });
+  const title = editedTitle.draft === draft ? editedTitle.value : draft.title;
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const mounted = useRef(true);
@@ -35,8 +38,6 @@ export function ProcedureDraft({
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
-  // Rafraîchir apporte un nouveau titre avec le nouveau texte.
-  useEffect(() => setTitle(draft.title), [draft]);
   const html = useMemo(() => renderMarkdown(draft.markdown), [draft.markdown]);
 
   const create = async () => {
@@ -75,7 +76,7 @@ export function ProcedureDraft({
       {draft.truncated && <small>Source longue : l’IA n’en a lu que le début.</small>}
       <label>
         Titre de la procédure
-        <input aria-label="Titre de la procédure" value={title} disabled={creating} onChange={(event) => setTitle(event.target.value)} />
+        <input aria-label="Titre de la procédure" value={title} disabled={creating} onChange={(event) => setEditedTitle({ draft, value: event.target.value })} />
       </label>
       <article className="prose" dangerouslySetInnerHTML={{ __html: html }} />
       <AiRefinement busy={busy || creating} onRefine={onRefresh} />
