@@ -1,5 +1,15 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-28 — largeur des champs d'entrée liée (v0.60.1 préparée)
+
+Dans une carte de tâche, le formulaire « Entrée liée » suit la largeur réelle de la
+colonne : titre et sous-tâches occupent l'espace disponible, les actions passent à la
+ligne et la grille des cartes peut rétrécir. Le parcours navigateur mesure les champs
+après redimensionnement et repli des panneaux, ainsi que sur mobile, en conservant le
+texte saisi, y compris après une suggestion IA. `./scripts/check.sh` vert : 282 API,
+669 front (dont un échec attendu), 48 desktop unitaires, 32 scripts, 11 Worker,
+11 relais, 77 navigateur et 17 desktop e2e. Aucune dépendance ajoutée.
+
 ## Lot du 2026-10-27 — catégories en une fenêtre, saisie retrouvée, héritage des tâches
 
 **PR #21 fusionnée** sur `master` (`b6bb9e4`, arbre identique à la branche, CI verte) avant ce

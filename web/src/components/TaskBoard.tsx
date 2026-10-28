@@ -489,7 +489,7 @@ function TaskCard({
 
   const entryCreator = creatingEntry ? (
     <form
-      className="task-creator"
+      className="task-creator linked-entry-creator"
       aria-label={`Créer une entrée liée à ${task.title}`}
       onSubmit={(event) => { event.preventDefault(); void createEntry(); }}
     >
