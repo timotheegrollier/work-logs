@@ -1801,6 +1801,37 @@ button:disabled {
   min-height: 88px;
   resize: vertical;
 }
+/* La carte peut être bien plus étroite que la fenêtre lorsque plusieurs panneaux
+   sont ouverts. Les champs et les actions suivent la largeur de la carte. */
+.linked-entry-creator {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
+}
+.linked-entry-creator .task-creator-wide {
+  min-width: 0;
+}
+.linked-entry-creator textarea {
+  width: 100%;
+}
+.linked-entry-creator .subtasks-head {
+  flex-wrap: wrap;
+}
+.linked-entry-creator .subtasks-head > span {
+  min-width: 0;
+}
+.linked-entry-creator .subtasks-head button {
+  max-width: 100%;
+}
+.linked-entry-creator .task-creator-actions {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.linked-entry-creator .task-creator-actions button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .subtasks-head {
   display: flex;
   align-items: center;
@@ -1988,6 +2019,16 @@ button:disabled {
   width: 100%;
   min-width: 0;
   font-size: 13px;
+}
+.linked-entry-creator .ai-refinement-input {
+  flex-wrap: wrap;
+}
+.linked-entry-creator .ai-refinement-input input {
+  flex: 1 1 120px;
+}
+.linked-entry-creator .ai-refinement-input button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .ai-refinement .task-creator-actions {
   flex-wrap: wrap;
@@ -2962,6 +3003,7 @@ div.google-preserved {
   margin: 0;
   padding: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 .column + .column {
