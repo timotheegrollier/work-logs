@@ -6,7 +6,7 @@ const VERSION = '0.60.1';
 const CACHE = `worklogs-${VERSION}`;
 // Fichiers du build, listés par `emit-sw.mjs` : les morceaux chargés à la demande
 // (éditeur riche, dossier partagé, Drive) sont là hors ligne dès l'installation.
-const ASSETS = ["./assets/FileViewer-BZbrqx-b.js","./assets/GoogleDocuments-BkeImqXh.js","./assets/GoogleDrive-BWE-EUJP.js","./assets/RichEditor-DMmTtj_g.js","./assets/SharedFileEditor-Da5uUM4F.js","./assets/dist-EBj8K1oe.js","./assets/docx-preview-BIgYb1kc.js","./assets/index-C9VPJB1N.js","./assets/index-VsqOvTtl.css"];
+const ASSETS = ["./assets/FileViewer-DELbm_35.js","./assets/GoogleDocuments-Bj0tcLsh.js","./assets/GoogleDrive-CzgX1wbE.js","./assets/RichEditor-3mQ_XaBr.js","./assets/SharedFileEditor-Cr-q_lDX.js","./assets/dist-Dog0Es5b.js","./assets/docx-preview-qPRnf1eV.js","./assets/index-DUvAq4Ww.js","./assets/index-VsqOvTtl.css"];
 const CORE = ['./', './index.html', './manifest.webmanifest', ...ASSETS];
 
 self.addEventListener('install', (event) => {
