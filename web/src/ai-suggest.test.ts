@@ -570,7 +570,7 @@ describe('mise en page', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
     expect(body.messages[1].content).toBe('Profil : Dev\nTitre : Réunion\n\nTexte :\non a decidé');
-    expect(body.max_tokens).toBe(1200);
+    expect(body.max_tokens).toBe(8000);
   });
 
   test('vide, trop long ou sans clé : aucun appel réseau', async () => {
@@ -639,7 +639,7 @@ describe('procédures', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
     expect(body.messages[1].content).toBe('Profil : Pisciculteur\nProcédure : Changer le filtre\nProjet : Ferme\nDéjà écrit :\nBassin 3.');
-    expect(body.max_tokens).toBe(1500);
+    expect(body.max_tokens).toBe(8000);
   });
 
   test('sans titre ni contenu, trop longue ou sans clé : aucun appel réseau', async () => {
@@ -688,7 +688,7 @@ describe('note complétée', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
     expect(body.messages[1].content).toBe('Profil : Pisciculteur\nNote : Panne de la pompe\nTâches liées : Réparer la pompe\nDéjà écrit :\n- pompe arrêtée');
-    expect(body.max_tokens).toBe(1500);
+    expect(body.max_tokens).toBe(8000);
     // Un `# …` déjà en tête de la note est son contenu, pas un titre en doublon : il reste.
     vi.stubGlobal('fetch', vi.fn(async () => aiResponse('# Contexte\n\nLa pompe s’est arrêtée.')));
     await expect(completeNote(settings, 'Panne', { context: { text: '# Contexte\n\n- pompe arrêtée' } })).resolves.toBe('# Contexte\n\nLa pompe s’est arrêtée.');
@@ -781,9 +781,19 @@ describe('procédure tirée d’une entrée ou d’une tâche', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
     expect(body.messages[1].content).toBe('Profil : Pisciculteur\nEntrée du journal : Panne\nContenu :\nCoupé.');
-    expect(body.max_tokens).toBe(1500);
+    expect(body.max_tokens).toBe(8000);
     vi.stubGlobal('fetch', vi.fn(async () => aiResponse('# Relancer la pompe')));
     await expect(draftProcedure(settings, { origin: 'entry', title: 'Panne', text: 'Coupé.' })).rejects.toThrow(/illisible/);
+  });
+
+  test('une réponse coupée par la limite de jetons est refusée, sans autre modèle essayé', async () => {
+    // Cas réel : la réflexion du modèle avait mangé le budget, la procédure s'arrêtait à « Accéder à ».
+    const cut = { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '# Se connecter aux nœuds\n\n## Étapes\n\n1. Activer le VPN.\n2. Accéder à' }, finish_reason: 'length' }] }) } as Response;
+    const fetch = vi.fn(async () => cut);
+    vi.stubGlobal('fetch', fetch);
+    await expect(draftProcedure({ ...settings, endpoint: DEFAULT_AI_ENDPOINT }, { origin: 'entry', title: 'Nœuds', text: 'WireGuard puis SSH.' }))
+      .rejects.toThrow('Réponse IA coupée avant la fin');
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   test('ni titre ni contenu, ou sans clé : aucun appel réseau', async () => {

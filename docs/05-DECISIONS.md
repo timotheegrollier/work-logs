@@ -539,6 +539,15 @@ L'ancien défaut **exact** (`3.5-flash-lite`), enregistré avec la clé par les 
 relu comme le nouveau : sans ça, le changement ne toucherait personne. Tout autre choix
 enregistré reste intact (pas de migration silencieuse d'un choix réel).
 
+**Révisé le 2026-10-29 : 8 000 jetons pour les textes, et une réponse coupée est refusée.**
+Une procédure tirée d'une entrée s'arrêtait au milieu d'une étape (« Accéder à ») : mise
+en page, procédures et notes partaient avec 1 200–1 500 jetons pour un texte court, et la
+réflexion de `gemini-3-flash-preview` s'y décompte. Le budget devient un plafond fixe,
+`DOCUMENT_MAX_TOKENS` = 8 000, la valeur déjà envoyée pour les longs textes : aucun
+fournisseur n'est exclu de plus. Et `finish_reason: "length"` rend « Réponse IA coupée
+avant la fin » au lieu d'un texte tronqué présenté comme complet. Pas de modèle suivant
+dans ce cas : il aurait le même budget (une réponse **vide** passe toujours au suivant).
+
 ## 16. L'en-tête mobile se réorganise, sans hamburger — 2026-09-18
 
 **Le besoin.** Sur un Pixel 9a (412 px), la barre entassait logo, version, recherche,

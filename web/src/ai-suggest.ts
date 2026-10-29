@@ -68,6 +68,12 @@ const AI_TIMEOUT_MS = 30_000;
  * garde de toute façon huit lignes au plus.
  */
 const SUGGEST_MAX_TOKENS = 1024;
+/**
+ * Mise en page, procédures et notes : un plafond, pas une cible. La réflexion s'y
+ * décompte aussi — à 1 500 jetons, une procédure tirée d'une entrée revenait coupée
+ * au milieu d'une étape. 8 000 partait déjà pour les longs textes.
+ */
+const DOCUMENT_MAX_TOKENS = 8000;
 const MAX_SUGGESTIONS = 8;
 
 const LS_ENDPOINT = 'worklogs-ai-endpoint';
@@ -460,8 +466,12 @@ async function postOnce(
         : `Service IA indisponible (${res.status}) : réessaie plus tard.`
     );
   }
-  const content = await res.json().catch(() => null).then((body) => body?.choices?.[0]?.message?.content);
+  const choice = await res.json().catch(() => null).then((body) => body?.choices?.[0]);
+  const content = choice?.message?.content;
   if (typeof content !== 'string' || !content.trim()) throw new AiTryNext('Réponse IA illisible : réessaie.');
+  // Budget de jetons épuisé : la rendre ferait passer une réponse coupée pour complète.
+  // Pas de modèle suivant : il aurait le même budget.
+  if (choice.finish_reason === 'length') throw new AiError('Réponse IA coupée avant la fin : réessaie, ou raccourcis le texte.');
   return content;
 }
 
@@ -572,7 +582,7 @@ export async function proofreadEntry(
   const prompt = refinePrompt(buildProofreadPrompt(title, text, settings.profile, options.procedure, options.format, options.context), options.refinement);
   const cleaned = cleanProofreadMarkdown(
     await postChatCompletions(settings, 'la mise en page', prompt.system, prompt.user,
-      Math.min(8000, Math.max(1200, Math.ceil(text.length / 2))), options.timeoutMs ?? AI_TIMEOUT_MS)
+      DOCUMENT_MAX_TOKENS, options.timeoutMs ?? AI_TIMEOUT_MS)
   );
   if (!cleaned) throw new AiError('Réponse IA illisible : réessaie.');
   return cleaned;
@@ -644,7 +654,7 @@ export async function suggestProcedure(
   }
   const prompt = refinePrompt(buildProcedurePrompt(title, options.context, settings.profile), options.refinement);
   return documentBody(await postChatCompletions(settings, 'les suggestions de procédure', prompt.system, prompt.user,
-    Math.min(8000, Math.max(1500, Math.ceil(text.length / 2) + 1000)), options.timeoutMs ?? AI_TIMEOUT_MS));
+    DOCUMENT_MAX_TOKENS, options.timeoutMs ?? AI_TIMEOUT_MS));
 }
 
 /** Ce que l'IA sait d'une note : son projet, ses tâches liées, ses fichiers, ce qui est déjà écrit. */
@@ -696,7 +706,7 @@ export async function completeNote(
   }
   const prompt = refinePrompt(buildCompleteNotePrompt(title, options.context, settings.profile), options.refinement);
   return documentBody(await postChatCompletions(settings, 'la complétion de la note', prompt.system, prompt.user,
-    Math.min(8000, Math.max(1500, Math.ceil(text.length / 2) + 1000)), options.timeoutMs ?? AI_TIMEOUT_MS), text);
+    DOCUMENT_MAX_TOKENS, options.timeoutMs ?? AI_TIMEOUT_MS), text);
 }
 
 /** Au-delà, la source est coupée : l'IA n'en lit que le début, et la relecture le dit. */
@@ -833,7 +843,7 @@ export async function draftProcedure(
     }),
   }, settings.profile), options.refinement);
   const reply = await postChatCompletions(settings, 'la création de procédure', prompt.system, prompt.user,
-    Math.min(8000, Math.max(1500, Math.ceil(prompt.user.length / 2) + 1000)), options.timeoutMs ?? AI_TIMEOUT_MS);
+    DOCUMENT_MAX_TOKENS, options.timeoutMs ?? AI_TIMEOUT_MS);
   const drafted = parseDraftedProcedure(reply, source.title);
   if (!drafted.markdown) throw new AiError('Réponse IA illisible : réessaie.');
   return { ...drafted, truncated: prompt.truncated };

@@ -1,5 +1,14 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Correctif du 2026-10-29 — procédure tirée d'une entrée coupée en route
+
+La réponse de l'IA s'arrêtait au milieu d'une étape : le modèle par défaut décompte sa
+réflexion des 1 500 jetons accordés. Mise en page, procédures et notes ont maintenant
+8 000 jetons (`DOCUMENT_MAX_TOKENS`), et une réponse coupée par la limite est refusée avec
+un message au lieu d'être proposée comme complète. Pourquoi : `05-DECISIONS.md` §17.
+Tests : budgets et réponse `finish_reason: "length"` dans `ai-suggest.test.ts`. Pas
+encore vérifié sur un appel réel.
+
 ## Lot du 2026-10-29 — téléphone : une vue à la fois (§53), publié en v0.63.0
 
 Sur téléphone (≤ 600 px, ou ≤ 900 × 500 px en paysage), la **barre du bas navigue** : Journal,
