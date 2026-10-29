@@ -123,7 +123,7 @@ export const TaskBoard = memo(function TaskBoard({
               onDragLeave={() => setOver((c) => (c === column.id ? null : c))}
               onDrop={(e) => drop(e, column.id, Number.MAX_SAFE_INTEGER)}
             >
-              <h2>
+              <h2 aria-label={column.id === 'done' ? column.label : undefined}>
                 {column.id === 'done' ? (
                   <button
                     className="completed-toggle"

@@ -132,7 +132,11 @@ test('cocher une tâche la barre et la range dans Terminé', async ({ page }) =>
   await board(page).getByLabel('Terminer À cocher').click();
 
   const done = board(page).locator('.column', { has: page.getByRole('heading', { name: /Terminé/ }) });
-  await expect(done.locator('.card', { hasText: 'À cocher' })).toHaveClass(/is-done/);
+  const completedCard = done.locator('.card', { hasText: 'À cocher' });
+  await expect(completedCard).toBeHidden();
+  await done.getByRole('button', { name: 'Afficher les tâches terminées (1)' }).click();
+  await expect(completedCard).toBeVisible();
+  await expect(completedCard).toHaveClass(/is-done/);
 });
 
 test('joindre un fichier à une entrée puis le récupérer', async ({ page }) => {
