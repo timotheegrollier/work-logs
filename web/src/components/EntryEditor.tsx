@@ -664,6 +664,15 @@ export function EntryEditor({
       });
       const freshLinked = state.tasks.filter((task) => task.documents.some((document) => document.id === entry.id));
       const existing = new Set([...linkedTasks.map((task) => actionTitleKey(task.title)), ...freshLinked.map((task) => actionTitleKey(task.title)), ...createdActionTitles.current]);
+      const selected = proposal.items
+        .map((action, index) => ({ action, index }))
+        .filter(({ action }) => action.selected && !action.created && action.title.trim() && !existing.has(actionTitleKey(action.title)));
+      const urgency = { high: 0, normal: 1, low: 2 };
+      const inProgressIndex = selected
+        .slice()
+        .sort((a, b) => urgency[a.action.priority ?? 'normal'] - urgency[b.action.priority ?? 'normal']
+          || (a.action.due_date ?? '9999-12-31').localeCompare(b.action.due_date ?? '9999-12-31')
+          || a.index - b.index)[0]?.index;
       for (const [index, action] of proposal.items.entries()) {
         if (!action.selected || action.created || !action.title.trim()) continue;
         if (!mounted.current) return;
@@ -676,7 +685,12 @@ export function EntryEditor({
           continue;
         }
         try {
-          await api.createTaskFromEntry(entry.id, { title: action.title.trim(), due_date: action.due_date || null, priority: action.priority ?? 'normal' });
+          await api.createTaskFromEntry(entry.id, {
+            title: action.title.trim(),
+            due_date: action.due_date || null,
+            priority: action.priority ?? 'normal',
+            ...(index === inProgressIndex && { status: 'doing' }),
+          });
           createdActionTitles.current.add(key);
           existing.add(key);
           created += 1;

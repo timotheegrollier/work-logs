@@ -252,6 +252,25 @@ describe('tâches', () => {
     assert.deepEqual(counts(), before);
   });
 
+  test('crée une tâche liée directement dans la colonne demandée et refuse un statut invalide', async () => {
+    const entry = await make.entry(api, { title: 'Intervention urgente' });
+    const created = await api.post(`/api/entries/${entry.id}/task`, {
+      title: 'Purger la pompe',
+      status: 'doing',
+      due_date: '2026-11-02',
+      priority: 'high',
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.status, 'doing');
+    assert.equal(created.body.position, 0);
+    assert.equal(created.body.priority, 'high');
+    assert.equal(created.body.due_date, '2026-11-02');
+    const invalid = await api.post(`/api/entries/${entry.id}/task`, { title: 'Mauvais statut', status: 'in_progress' });
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.body.error, 'statut invalide');
+    assert.equal(api.db.prepare("SELECT COUNT(*) n FROM tasks WHERE title='Mauvais statut'").get().n, 0);
+  });
+
   test('crée une tâche liée depuis un onglet Google et valide son échéance', async () => {
     const entry = await make.entry(api, { title: 'Onglet à planifier' });
     api.db.prepare(`INSERT INTO google_documents

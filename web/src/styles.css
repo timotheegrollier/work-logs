@@ -2996,6 +2996,21 @@ div.google-preserved {
   color: var(--muted);
   padding: 2px 4px;
 }
+.completed-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.completed-toggle:hover,
+.completed-toggle:focus-visible {
+  color: var(--text);
+}
 .column .count {
   font-weight: 650;
 }
@@ -3006,6 +3021,9 @@ div.google-preserved {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+}
+.column ul[hidden] {
+  display: none;
 }
 .column + .column {
   margin-top: 6px;

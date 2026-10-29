@@ -1,5 +1,15 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-29 — priorité des tâches IA et tâches terminées repliées
+
+Lors de la création de plusieurs tâches suggérées, la tâche sélectionnée la plus urgente
+est placée en « En cours » : priorité haute avant normale puis basse, échéance la plus
+proche à priorité égale ; les autres restent « À faire ». Le choix se fait après relecture,
+sur les tâches effectivement cochées et pas encore créées. Dans la barre latérale, les tâches
+terminées sont repliées par défaut et se déplient/se replient avec un bouton accessible.
+Route API et miroir PWA compatibles avec le statut par défaut existant. Tests : endpoint,
+PWA, sélection IA et panneau Tâches.
+
 ## Lot du 2026-10-29 — contexte IA, priorités et échéances proposées
 
 Le contexte IA utilise aussi le brouillon courant pour classer localement les sources et

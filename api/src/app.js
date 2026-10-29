@@ -346,15 +346,17 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     if (dueDate && !DATE_RE.test(dueDate)) return bad(res, 'échéance invalide (AAAA-MM-JJ attendu)');
     const priority = priorityOf(b.priority);
     if (!priority) return bad(res, 'priorité invalide (basse, normale ou haute attendue)');
+    const status = b.status === undefined ? 'todo' : str(b.status);
+    if (!STATUSES.includes(status)) return bad(res, 'statut invalide');
 
     const id = uid('tk_');
     const time = nowISO();
-    const position = db.prepare('SELECT COALESCE(MAX(position),-1)+1 p FROM tasks WHERE status=?').get('todo').p;
+    const position = db.prepare('SELECT COALESCE(MAX(position),-1)+1 p FROM tasks WHERE status=?').get(status).p;
     db.exec('BEGIN');
     try {
       db.prepare(
         'INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
-      ).run(id, title, 'todo', dueDate, 0, position, priority, source.project_id, time, time, source.category_id);
+      ).run(id, title, status, dueDate, 0, position, priority, source.project_id, time, time, source.category_id);
       db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run(id, source.id, time);
       db.exec('COMMIT');
     } catch (error) {

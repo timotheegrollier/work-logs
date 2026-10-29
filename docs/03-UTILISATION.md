@@ -214,6 +214,7 @@ rendu approximatif.
   ouvrent le panneau Tâches sur la vue correspondante. Ces compteurs portent sur toute la
   base ; si le projet filtré ou la recherche en cachent une partie, ils sont levés.
 - **Créer une tâche liée** depuis l’entrée ouverte préremplit son titre et permet d’ajouter une échéance. La tâche apparaît directement dans le panneau de droite avec cette entrée comme contexte. Dans une note locale, **✨ IA › Suggérer des tâches avec l’IA** propose aussi des tâches à partir du brouillon ; elles restent à relire avant création (voir « Assistance IA »).
+- Dans le panneau **Tâches**, la colonne des tâches terminées est repliée au départ. **Afficher les tâches terminées** la déplie ; **Masquer les tâches terminées** la replie sans les supprimer.
 - **Relier un document** ouvre la liste des entrées disponibles. Choisir une entrée locale ou un onglet Google puis cliquer sur **Relier** ; chaque document lié reste visible sur la carte avec son origine.
 - Cliquer sur le titre d'un document lié l'ouvre au centre. Le bouton ✕ retire seulement l'association, sans supprimer le document. Une même entrée peut fournir le contexte de plusieurs tâches.
 - **✨ IA › Créer une procédure** (pied de carte) fait rédiger par l'IA une procédure à partir de la tâche et de ses documents liés, à relire avant de la créer — voir « Procédures ».
@@ -290,6 +291,9 @@ date estimée avant création. Une création partiellement réussie garde les t�
 pour permettre de réessayer les autres. Modifier le titre, le contenu ou la date de la note,
 son projet ou les sources choisies demande de relancer la proposition. La suggestion requiert
 une note non vide et ne lit pas les documents Google ni le contenu des pièces jointes.
+À la création, parmi les tâches sélectionnées qui restent à créer, la plus prioritaire passe
+en **En cours** ; en cas d'égalité, l'échéance la plus proche départage. Les autres sont
+créées en **À faire**.
 
 ## Projets
 

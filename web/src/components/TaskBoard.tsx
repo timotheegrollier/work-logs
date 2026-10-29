@@ -51,6 +51,7 @@ export const TaskBoard = memo(function TaskBoard({
 }) {
   const [over, setOver] = useState<Status | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [showCompleted, setShowCompleted] = useState(false);
   const editingRef = useRef(editing);
   editingRef.current = editing;
   // Le brouillon survit au passage de la carte dans un autre groupe (suppression
@@ -123,9 +124,26 @@ export const TaskBoard = memo(function TaskBoard({
               onDrop={(e) => drop(e, column.id, Number.MAX_SAFE_INTEGER)}
             >
               <h2>
-                {column.label} <span className="count">{shown.length}</span>
+                {column.id === 'done' ? (
+                  <button
+                    className="completed-toggle"
+                    type="button"
+                    aria-label={`${showCompleted ? 'Masquer' : 'Afficher'} les tâches terminées (${shown.length})`}
+                    aria-expanded={showCompleted}
+                    aria-controls="completed-task-list"
+                    onClick={() => setShowCompleted((shown) => !shown)}
+                  >
+                    {showCompleted ? 'Masquer' : 'Afficher'} les tâches terminées
+                    <span className="count">{shown.length}</span>
+                  </button>
+                ) : (
+                  <>{column.label} <span className="count">{shown.length}</span></>
+                )}
               </h2>
-              <ul>
+              <ul
+                id={column.id === 'done' ? 'completed-task-list' : undefined}
+                hidden={column.id === 'done' && !showCompleted}
+              >
                 {(grouped ? groupByCategory(shown, categories, projects) : [{ id: '', label: '', items: shown }]).map((group) => {
                   const cards = group.items.map((task) => (
                     <li key={task.id}>

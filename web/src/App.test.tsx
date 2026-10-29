@@ -1363,6 +1363,7 @@ describe('écrire une entrée', () => {
     }
     render(<App />);
 
+    await user.click(await within(board()).findByRole('button', { name: 'Afficher les tâches terminées (1)' }));
     const card = (await within(board()).findByText('Changer le filtre')).closest('.card') as HTMLElement;
     await user.click(await aiAction('Créer une procédure', card, 'Assistance IA de la tâche'));
     const draft = await within(card).findByRole('form', { name: 'Procédure rédigée' });
@@ -1849,6 +1850,23 @@ describe('retrouver son travail', () => {
 });
 
 describe('organiser les tâches', () => {
+  test('les tâches terminées sont repliées par défaut et se masquent à nouveau', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { tasks: [{ id: 'tk_done', title: 'Tâche terminée', status: 'done' }] });
+    render(<App />);
+
+    const show = await within(board()).findByRole('button', { name: 'Afficher les tâches terminées (1)' });
+    expect(show).toHaveAttribute('aria-expanded', 'false');
+    expect(within(board()).queryByRole('button', { name: 'Tâche terminée' })).not.toBeInTheDocument();
+
+    await user.click(show);
+    expect(await within(board()).findByRole('button', { name: 'Tâche terminée' })).toBeInTheDocument();
+    const hide = within(board()).getByRole('button', { name: 'Masquer les tâches terminées (1)' });
+    expect(hide).toHaveAttribute('aria-expanded', 'true');
+    await user.click(hide);
+    expect(within(board()).queryByRole('button', { name: 'Tâche terminée' })).not.toBeInTheDocument();
+  });
+
   test('ajoute une tâche à la volée avec Entrée', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -2018,6 +2036,8 @@ describe('organiser les tâches', () => {
 
       // Recliquer la vue active la lève, comme une pastille de projet.
       await user.click(within(views()).getByRole('button', { name: "Aujourd'hui 1" }));
+      expect(titles()).toHaveLength(6);
+      await user.click(within(board()).getByRole('button', { name: 'Afficher les tâches terminées (1)' }));
       expect(titles()).toHaveLength(7);
       await user.click(within(views()).getByRole('button', { name: 'En cours 1' }));
       await user.click(within(views()).getByRole('button', { name: 'Toutes' }));
@@ -2243,6 +2263,7 @@ describe('organiser les tâches', () => {
     api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_1', 'en_doc', new Date().toISOString());
     render(<App />);
 
+    await user.click(await within(board()).findByRole('button', { name: 'Afficher les tâches terminées (1)' }));
     const card = (await within(board()).findByText('Tâche finie')).closest('.card') as HTMLElement;
     // Replié par défaut : le compteur reste visible, le document est masqué.
     expect(within(card).getByRole('button', { name: 'Afficher l’historique des documents de Tâche finie' })).toHaveTextContent('Historique · 1 document');
@@ -4346,11 +4367,32 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     fireEvent.change(within(proposal).getByLabelText('Échéance de l’action 1'), { target: { value: '2026-11-01' } });
     fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
     await within(proposal).findByText('1 tâche créée et liée à cette note.');
-    const created = row(api.db, "SELECT id,project_id,priority,due_date FROM tasks WHERE title='Contrôler le moteur du bassin'");
-    expect(created).toMatchObject({ project_id: 'pr_bassin', priority: 'high', due_date: '2026-11-01' });
+    const created = row(api.db, "SELECT id,project_id,priority,due_date,status FROM tasks WHERE title='Contrôler le moteur du bassin'");
+    expect(created).toMatchObject({ project_id: 'pr_bassin', priority: 'high', due_date: '2026-11-01', status: 'doing' });
     expect(row(api.db, 'SELECT entry_id FROM task_entries WHERE task_id=?', created.id).entry_id).toBe('en_note');
     expect(row(api.db, "SELECT count(*) AS n FROM tasks WHERE title='Vérifier la ventilation'").n).toBe(0);
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Le moteur surchauffe.');
+  });
+
+  test('met la tâche suggérée la plus urgente et à échéance la plus proche en cours', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, {
+      entries: [{ id: 'en_note', title: 'Panne', content_md: 'La pompe chauffe.' }],
+    });
+    mockAiSuggest(JSON.stringify([
+      { title: 'Urgente plus tard', priority: 'high', due_date: '2026-11-10', evidence: 'La pompe chauffe.' },
+      { title: 'Urgente bientôt', priority: 'high', due_date: '2026-11-04', evidence: 'La pompe chauffe.' },
+      { title: 'Normale aujourd’hui', priority: 'normal', due_date: '2026-11-01', evidence: 'La pompe chauffe.' },
+    ]));
+    render(<App />);
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
+    const proposal = await screen.findByRole('region', { name: 'Tâches suggérées' });
+    fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
+    await within(proposal).findByText('3 tâches créées et liées à cette note.');
+
+    expect(row(api.db, "SELECT status FROM tasks WHERE title='Urgente bientôt'").status).toBe('doing');
+    expect(row(api.db, "SELECT status FROM tasks WHERE title='Urgente plus tard'").status).toBe('todo');
+    expect(row(api.db, "SELECT status FROM tasks WHERE title='Normale aujourd’hui'").status).toBe('todo');
   });
 
   test('changer le titre après une suggestion empêche de créer des tâches périmées', async () => {

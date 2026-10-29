@@ -2153,3 +2153,15 @@ Le bouton « Suggérer des tâches avec l’IA » rejoint le menu **✨ IA** ; l
 comme les suites déduites, et conserve la relecture, les extraits exacts, la sélection,
 la validation avant création et la reprise après création partielle. Aucune migration ni
 dépendance ; le comportement est testé dans l'interface et le parcours mobile.
+
+---
+
+## 52. Démarrer la tâche suggérée la plus urgente et replier les terminées — 2026-10-29
+
+Lors de la création d'une sélection IA, WorkLogs place sa tâche de plus haute priorité en
+« En cours » ; à priorité égale, l'échéance la plus proche départage, puis l'ordre de la
+proposition. Les autres tâches restent « À faire ». Le calcul se base sur les champs relus
+et modifiés par l'utilisateur, et ignore les tâches déjà liées lors d'une reprise partielle.
+La colonne « Terminé » du panneau Tâches est repliée par défaut ; son bouton accessible
+permet de l'afficher ou la masquer. La création liée accepte un statut facultatif, avec
+« À faire » comme défaut pour les anciens clients. Aucun changement de schéma.

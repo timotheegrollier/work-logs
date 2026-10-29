@@ -219,6 +219,14 @@ describe('tâches', () => {
     expect((await localApi.state()).tasks).toEqual(before);
   });
 
+  test('création liée dans la colonne en cours', async () => {
+    const entry = await localApi.createEntry({ title: 'Intervention urgente' });
+    const task = await localApi.createTaskFromEntry(entry.id, { title: 'Purger la pompe', status: 'doing', priority: 'high' });
+    expect(task).toMatchObject({ status: 'doing', priority: 'high' });
+    await expect(localApi.createTaskFromEntry(entry.id, { title: 'Statut invalide', status: 'in_progress' as never }))
+      .rejects.toThrow('statut invalide');
+  });
+
   test('création depuis une tâche, avec projet, contenu et lien repris', async () => {
     const id = await projectId();
     const task = await localApi.createTask({ title: 'Dossier', project_id: id });

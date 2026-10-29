@@ -924,11 +924,13 @@ export const localApi: Api = {
     if (dueDate && !DATE_RE.test(dueDate)) fail('échéance invalide (AAAA-MM-JJ attendu)');
     const priority = priorityOf(body?.priority);
     if (!priority) fail('priorité invalide (basse, normale ou haute attendue)');
+    const status = body?.status ?? 'todo';
+    if (!STATUSES.includes(status)) fail('statut invalide');
     const id = uid('tk_');
     const time = nowISO();
-    const position = Math.max(-1, ...(await tasks.all()).filter((task) => task.status === 'todo').map((task) => task.position)) + 1;
+    const position = Math.max(-1, ...(await tasks.all()).filter((task) => task.status === status).map((task) => task.position)) + 1;
     await tasks.put({
-      id, title, status: 'todo', due_date: dueDate, pinned: 0, position,
+      id, title, status, due_date: dueDate, pinned: 0, position,
       priority: priority as TaskRow['priority'], project_id: source.project_id, category_id: source.category_id ?? null, created_at: time, updated_at: time,
     });
     await links.put({ id: linkId(id, source.id), task_id: id, entry_id: source.id, created_at: time });

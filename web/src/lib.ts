@@ -501,7 +501,7 @@ export const remoteApi = {
   updateEntry: (id: string, body: Partial<Entry>) => send<Entry>('PUT', `/api/entries/${id}`, body),
   deleteEntry: (id: string) => send<{ ok: true }>('DELETE', `/api/entries/${id}`),
   copyEntry: (id: string) => send<Entry>('POST', `/api/entries/${id}/copy`),
-  createTaskFromEntry: (entryId: string, body?: { title?: string; due_date?: string | null; priority?: Priority }) =>
+  createTaskFromEntry: (entryId: string, body?: { title?: string; due_date?: string | null; priority?: Priority; status?: Status }) =>
     send<Task>('POST', `/api/entries/${entryId}/task`, body),
   createEntryFromTask: (taskId: string, body?: { title?: string; content_md?: string }) =>
     send<Entry>('POST', `/api/tasks/${taskId}/entry`, body),
