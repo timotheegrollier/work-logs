@@ -14,8 +14,8 @@ import { CategoryBadge, CategoryPicker } from './CategoryPicker';
 
 const DRAG_TYPE = 'text/plain';
 /** `category_base` : le classement reçu sur lequel repose le choix affiché. */
-type TaskEditForm = { title: string; due_date: string; priority: Priority; category_id: string; category_base: string };
-const taskForm = (task: Task): TaskEditForm => ({ title: task.title, due_date: task.due_date ?? '', priority: task.priority ?? 'normal', category_id: task.category_id || '', category_base: task.category_id || '' });
+type TaskEditForm = { title: string; due_date: string; priority: Priority; status: Status; status_base: Status; category_id: string; category_base: string };
+const taskForm = (task: Task): TaskEditForm => ({ title: task.title, due_date: task.due_date ?? '', priority: task.priority ?? 'normal', status: task.status, status_base: task.status, category_id: task.category_id || '', category_base: task.category_id || '' });
 
 /** Mémoïsé : la recherche de l'en-tête se redessine à chaque frappe, pas les cartes. */
 export const TaskBoard = memo(function TaskBoard({
@@ -308,7 +308,14 @@ function TaskCard({
     setEditSaving(true);
     setEditError('');
     try {
-      await patch({ title: form.title.trim(), due_date: form.due_date || null, priority: form.priority, category_id: form.category_id || null });
+      await api.updateTask(task.id, { title: form.title.trim(), due_date: form.due_date || null, priority: form.priority, category_id: form.category_id || null });
+      // Au doigt ou au clavier, pas de glisser-déposer : la carte va au bas de sa nouvelle colonne.
+      // Seulement si le choix a changé ici : un déplacement fait ailleurs pendant l'édition tient.
+      try {
+        if (form.status !== form.status_base) await api.moveTask(task.id, form.status, Number.MAX_SAFE_INTEGER);
+      } finally {
+        onChanged();
+      }
       onEditDone();
     } catch (e) {
       setEditError((e as Error).message);
@@ -806,6 +813,21 @@ function TaskCard({
           value={form.due_date}
           onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
         />
+        <label className="priority-field">
+          Statut
+          <select
+            aria-label="Statut"
+            disabled={editSaving}
+            value={form.status}
+            onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as Status }))}
+          >
+            {COLUMNS.map((column) => (
+              <option key={column.id} value={column.id}>
+                {column.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="priority-field">
           Priorité
           <select

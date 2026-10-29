@@ -50,7 +50,7 @@ async function saveCategory(page: Page, name: string) {
 test.describe('catégories desktop', () => {
   test.use({ viewport: { width: 1440, height: 1000 } });
 
-  test('arborescence, classement, groupes, déplacement et suppression sans perdre le brouillon', async ({ page, request }) => {
+  test('arborescence, classement, groupes, déplacement et suppression sans perdre le brouillon', async ({ page, request }, testInfo) => {
     const project = await create(request, 'projects', { name: `${PREFIX} desktop`, color: '#0ea5e9' });
     const note = await create(request, 'entries', { title: 'Bilan installation', project_id: project.id, content_md: 'Serveur prêt.' });
     await create(request, 'entries', { title: 'Note non classée', project_id: project.id });
@@ -118,7 +118,7 @@ test.describe('catégories desktop', () => {
       { id: secondTarget.id, status: 'doing', position: targetPosition + 1 },
     ]);
     await expect(card('Préparer déploiement').locator('.category-badge')).toHaveText('Préparation / Déploiement');
-    await page.screenshot({ path: '/tmp/worklogs-categories-desktop.png', fullPage: true, animations: 'disabled' });
+    await page.screenshot({ path: testInfo.outputPath('worklogs-categories-desktop.png'), fullPage: true, animations: 'disabled' });
 
     // Déplacer le groupe modifie ses chemins sans changer les associations.
     await (await categories(page)).getByRole('button', { name: 'Modifier la catégorie Déploiement', exact: true }).click();
@@ -175,7 +175,7 @@ test.describe('catégories desktop', () => {
 test.describe('catégories mobile', () => {
   test.use({ viewport: { width: 412, height: 860 }, hasTouch: true });
 
-  test('les chemins longs, filtres et réglages restent accessibles sans débordement', async ({ page, request }) => {
+  test('les chemins longs, filtres et réglages restent accessibles sans débordement', async ({ page, request }, testInfo) => {
     const project = await create(request, 'projects', { name: `${PREFIX} mobile`, color: '#8b5cf6' });
     const parent = await create(request, 'categories', { name: 'Infrastructure et services du bâtiment principal', project_id: project.id });
     const child = await create(request, 'categories', { name: 'Déploiement des postes du service administratif', project_id: project.id, parent_id: parent.id });
@@ -190,6 +190,8 @@ test.describe('catégories mobile', () => {
     await (await categories(page)).getByLabel('Regrouper par catégorie').check();
     await sheet(page).getByRole('button', { name: 'Fermer', exact: true }).click();
     await expect(journal(page).getByRole('button', { name: /Compte rendu de la prochaine intervention/ })).toBeVisible();
+    // Téléphone : une vue à la fois (§53), les tâches sont à un geste.
+    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true }).click();
     await expect(board(page).getByRole('button', { name: 'Valider les postes administratifs', exact: true })).toBeVisible();
     expect(await noOverflow(page)).toBe(true);
 
@@ -202,13 +204,13 @@ test.describe('catégories mobile', () => {
     expect(parentBounds!.x).toBeGreaterThanOrEqual(0);
     expect(parentBounds!.x + parentBounds!.width).toBeLessThanOrEqual(412);
     expect(await noOverflow(page)).toBe(true);
-    await page.screenshot({ path: '/tmp/worklogs-categories-mobile.png', animations: 'disabled' });
+    await page.screenshot({ path: testInfo.outputPath('worklogs-categories-mobile.png'), animations: 'disabled' });
     await sheet(page).getByRole('button', { name: 'Annuler', exact: true }).click();
     await expect(sheet(page).getByLabel('Nom de la catégorie')).toHaveCount(0);
   });
 });
 
-test('catégories : un bouton dans le bandeau, une fenêtre pour filtrer et ranger, au clavier et sur petits écrans', async ({ page, request }) => {
+test('catégories : un bouton dans le bandeau, une fenêtre pour filtrer et ranger, au clavier et sur petits écrans', async ({ page, request }, testInfo) => {
   const project = await create(request, 'projects', { name: `${PREFIX} compact`, color: '#0ea5e9' });
   const root = await create(request, 'categories', { name: 'Infrastructure et services du bâtiment principal', project_id: project.id });
   const branches = await Promise.all(Array.from({ length: 18 }, (_, index) => create(request, 'categories', {
@@ -273,9 +275,9 @@ test('catégories : un bouton dans le bandeau, une fenêtre pour filtrer et rang
     for (const viewport of [{ width: 1440, height: 1000 }, { width: 412, height: 860 }, { width: 844, height: 390 }]) {
       await page.setViewportSize(viewport);
       await page.locator('.app').evaluate((el) => el.scrollTo(0, 0));
-      await page.screenshot({ path: `/tmp/worklogs-ui-${theme}-${viewport.width}x${viewport.height}.png`, animations: 'disabled' });
+      await page.screenshot({ path: testInfo.outputPath(`worklogs-ui-${theme}-${viewport.width}x${viewport.height}.png`), animations: 'disabled' });
       await trigger(page).click();
-      await page.screenshot({ path: `/tmp/worklogs-ui-${theme}-${viewport.width}x${viewport.height}-categories.png`, animations: 'disabled' });
+      await page.screenshot({ path: testInfo.outputPath(`worklogs-ui-${theme}-${viewport.width}x${viewport.height}-categories.png`), animations: 'disabled' });
       await page.keyboard.press('Escape');
       await expect(sheet(page)).toBeHidden();
     }
@@ -285,7 +287,7 @@ test('catégories : un bouton dans le bandeau, une fenêtre pour filtrer et rang
 test.describe('catégories tablette tactile', () => {
   test.use({ viewport: { width: 800, height: 900 }, hasTouch: true });
 
-  test('cibles tactiles et formulaire lisible sans débordement à 800 px', async ({ page, request }) => {
+  test('cibles tactiles et formulaire lisible sans débordement à 800 px', async ({ page, request }, testInfo) => {
     const project = await create(request, 'projects', { name: `${PREFIX} tablette`, color: '#8b5cf6' });
     const category = await create(request, 'categories', { name: 'Infrastructure et services du bâtiment principal', project_id: project.id });
     await chooseProject(page, project.name);
@@ -308,7 +310,7 @@ test.describe('catégories tablette tactile', () => {
     }
     await expect(name).toHaveCSS('font-size', '16px');
     expect(await noOverflow(page)).toBe(true);
-    await page.screenshot({ path: '/tmp/worklogs-ui-tablet-touch-form.png', animations: 'disabled' });
+    await page.screenshot({ path: testInfo.outputPath('worklogs-ui-tablet-touch-form.png'), animations: 'disabled' });
     await name.press('Enter');
     await expect(bar.getByRole('button', { name: 'Modifier la catégorie Infrastructure renommée sur tablette', exact: true })).toBeAttached();
   });

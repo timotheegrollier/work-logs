@@ -64,6 +64,8 @@ test('les champs de l’entrée liée suivent la largeur de leur panneau', async
     await page.getByRole('button', { name: 'Journal', exact: true }).click();
     await fieldsFit(form);
     await page.setViewportSize({ width: 412, height: 900 });
+    // Téléphone : une vue à la fois (§53), la carte est dans Tâches.
+    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true }).click();
     await fieldsFit(form);
     await expect(field).toHaveValue('Sous-tâche à vérifier');
   } finally {

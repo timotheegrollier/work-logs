@@ -1981,6 +1981,44 @@ describe('organiser les tâches', () => {
     expect(within(board()).queryByText('Normale')).not.toBeInTheDocument();
   });
 
+  test('change le statut d’une tâche sans glisser-déposer : elle finit en bas de sa colonne', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { tasks: [{ id: 'tk_1', title: 'À démarrer' }, { id: 'tk_2', title: 'Déjà commencée', status: 'doing' }] });
+    render(<App />);
+
+    await user.click(await within(board()).findByRole('button', { name: 'À démarrer' }));
+    expect(screen.getByLabelText('Statut')).toHaveValue('todo');
+    await user.selectOptions(screen.getByLabelText('Statut'), 'doing');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }));
+
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_1').status).toBe('doing'));
+    const position = (id: string) => Number(row(api.db, 'SELECT position FROM tasks WHERE id=?', id).position);
+    expect(position('tk_1')).toBeGreaterThan(position('tk_2'));
+    const doing = (await within(board()).findByRole('heading', { name: /En cours/ })).closest('.column') as HTMLElement;
+    await waitFor(() => expect(within(doing).getAllByRole('button', { name: /^(À démarrer|Déjà commencée)$/ }).map((b) => b.textContent)).toEqual(['Déjà commencée', 'À démarrer']));
+  });
+
+  test('un déplacement fait ailleurs pendant l’édition tient : « Enregistrer » ne remet pas l’ancien statut', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { tasks: [{ id: 'tk_1', title: 'Partagée' }] });
+    render(<App />);
+
+    await user.click(await within(board()).findByRole('button', { name: 'Partagée' }));
+    // L'autre appareil la passe en cours pendant que le formulaire est ouvert ; l'écran
+    // le reçoit à la relecture suivante (ici, l'ajout d'une autre tâche).
+    api.db.prepare("UPDATE tasks SET status='doing' WHERE id=?").run('tk_1');
+    await user.type(screen.getByLabelText('Nouvelle tâche'), 'Autre{Enter}');
+    const doing = (await within(board()).findByRole('heading', { name: /En cours/ })).closest('.column') as HTMLElement;
+    await waitFor(() => expect(within(doing).getByLabelText('Titre de la tâche')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Titre de la tâche'), { target: { value: 'Partagée renommée' } });
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }));
+
+    // Formulaire refermé : l'enregistrement (et un éventuel déplacement) est terminé.
+    await waitFor(() => expect(screen.queryByLabelText('Titre de la tâche')).not.toBeInTheDocument());
+    expect(row(api.db, 'SELECT title FROM tasks WHERE id=?', 'tk_1').title).toBe('Partagée renommée');
+    expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_1').status).toBe('doing');
+  });
+
   test('signale une échéance dépassée', async () => {
     const hier = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
     seedData(api.db, { tasks: [{ id: 'tk_1', title: 'Facture oubliée', due_date: hier }] });
@@ -2502,12 +2540,13 @@ describe('projets', () => {
   });
 });
 
-describe('cartes empilées (mobile, tablette)', () => {
+describe('cartes empilées (tablette) et vues du téléphone', () => {
   /** Simule la largeur d'écran et relève les cartes amenées à l'écran. */
-  function stackedScreen(stacked: boolean) {
+  function stackedScreen(stacked: boolean, phone = false) {
     const shown: string[] = [];
     vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query.includes('max-width: 900px') ? stacked : false,
+      // `PHONE` (App.tsx) est la seule requête qui parle de hauteur.
+      matches: query.includes('max-height: 500px') ? phone : query.includes('max-width: 900px') ? stacked : false,
       media: query,
       addEventListener() {},
       removeEventListener() {},
@@ -2555,6 +2594,69 @@ describe('cartes empilées (mobile, tablette)', () => {
     expect(await screen.findByDisplayValue('Plus ancienne')).toBeInTheDocument();
     await new Promise((resolve) => requestAnimationFrame(resolve));
     expect(shown).not.toContain('workspace-editor');
+  });
+
+  // jsdom n'applique pas la feuille de style : on lit les classes qui décident des panneaux.
+  const columns = () => document.querySelector('.columns') as HTMLElement;
+  const nav = (name: string) => within(screen.getByRole('group', { name: 'Panneaux latéraux' })).getByRole('button', { name });
+
+  test('téléphone : une vue à la fois, ouvrir une entrée passe à l’écriture, le retour ramène au journal', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Récente' }, { id: 'en_2', title: 'Plus ancienne', date: '2026-01-05' }] });
+    stackedScreen(true, true);
+    render(<App />);
+
+    await within(journal()).findByText('Plus ancienne');
+    expect(columns()).not.toHaveClass('hide-left');
+    expect(columns()).toHaveClass('hide-center', 'hide-right');
+    expect(nav('Journal')).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(within(journal()).getByText('Plus ancienne'));
+    expect(await screen.findByDisplayValue('Plus ancienne')).toBeInTheDocument();
+    expect(columns()).toHaveClass('hide-left', 'hide-right');
+    expect(columns()).not.toHaveClass('hide-center');
+    expect(nav('Écriture')).toHaveAttribute('aria-pressed', 'true');
+    expect(nav('Journal')).toHaveAttribute('aria-pressed', 'false');
+
+    // Le geste retour d'Android : une marche d'historique, rien d'autre.
+    act(() => window.history.back());
+    await waitFor(() => expect(columns()).not.toHaveClass('hide-left'));
+    expect(columns()).toHaveClass('hide-center');
+
+    // La barre choisit sans rien replier pour le desktop.
+    await user.click(nav('Procédures'));
+    expect(columns()).toHaveClass('show-procedures', 'hide-left', 'hide-center', 'hide-right');
+    await user.click(nav('Tâches'));
+    expect(columns()).not.toHaveClass('hide-right');
+    expect(columns()).not.toHaveClass('show-procedures');
+    expect(localStorage.getItem('worklogs-show-left')).not.toBe('0');
+    expect(localStorage.getItem('worklogs-show-right')).not.toBe('0');
+  });
+
+  test('téléphone : les réglages de l’entrée se replient derrière leur résumé', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }], entries: [{ id: 'en_1', title: 'Compte rendu', project_id: 'p' }] });
+    stackedScreen(true, true);
+    render(<App />);
+
+    await user.click(await within(journal()).findByText('Compte rendu'));
+    const toggle = await screen.findByRole('button', { name: 'Réglages de l’entrée' });
+    expect(toggle).toHaveTextContent("aujourd'hui · Chantier");
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(document.querySelector('.editor-meta')).toHaveClass('is-folded');
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(document.querySelector('.editor-meta')).not.toHaveClass('is-folded');
+  });
+
+  test('hors téléphone, pas de résumé : les réglages restent dépliés', async () => {
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Compte rendu' }] });
+    stackedScreen(true);
+    render(<App />);
+
+    expect(await screen.findByDisplayValue('Compte rendu')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Réglages de l’entrée' })).not.toBeInTheDocument();
+    expect(document.querySelector('.editor-meta')).not.toHaveClass('is-folded');
   });
 });
 
@@ -3383,6 +3485,9 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     await waitFor(() => expect(within(sharedEditor()).getByText('Brouillon sur cet ordinateur')).toBeInTheDocument(), partage);
     fireEvent.click(await within(journal()).findByText('Compte rendu'));
     const question = await screen.findByRole('dialog', { name: 'Tes modifications ne sont pas sur le partage' });
+    // Hors de l'écriture : la question se voit même quand celle-ci n'est pas à l'écran
+    // (autre vue sur téléphone, panneau replié sur desktop).
+    expect(question.closest('#workspace-editor')).toBeNull();
     fireEvent.click(within(question).getByRole('button', { name: 'Envoyer sur le partage' }));
     expect(await screen.findByRole('region', { name: 'Entrée' }, partage)).toBeInTheDocument();
     expect(await read('notes.md')).toBe('v1\nenvoyé\n');

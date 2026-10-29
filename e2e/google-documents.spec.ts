@@ -95,6 +95,8 @@ test('Google Docs : onglets nombreux, édition autour des objets et dans les cel
   await expect(content.locator('td').last()).toContainText('Budget : 12 400 €');
   await page.getByRole('button', { name: 'Changer de thème' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
+  // Téléphone : une vue à la fois (§53), le document est dans Écriture.
+  await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Écriture', exact: true }).click();
   await expect(leftHandle).toBeHidden();
   await expect(rightHandle).toBeHidden();
   await expect(page.getByRole('tab', { name: /Vue d’ensemble/ })).toBeVisible();

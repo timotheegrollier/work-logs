@@ -1,5 +1,24 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-29 — téléphone : une vue à la fois (§53)
+
+Sur téléphone (≤ 600 px, ou ≤ 900 × 500 px en paysage), la **barre du bas navigue** : Journal,
+Écriture, Tâches ou Procédures, une seule vue à l'écran, de bord à bord. Avant, elle repliait
+des cartes d'une page de 4 000 px (toucher « Tâches » faisait disparaître les tâches). Ouvrir
+une entrée, une procédure, un document de tâche ou un fichier du partage passe à Écriture ;
+chaque vue retrouve sa position ; le **retour d'Android** ramène au journal (une marche
+d'historique, rien d'autre). En-tête sur une rangée, barre à icônes, réglages de l'entrée
+repliés derrière leur résumé, vues rapides des tâches sur une rangée, et **Statut** dans le
+formulaire d'une tâche (avancer sans glisser-déposer, au doigt comme au clavier). Desktop et
+tablette inchangés. Aucune dépendance ajoutée. Pourquoi et ce qui a été écarté : §53 ;
+usage : `03-UTILISATION.md` « Sur téléphone : une vue à la fois ». Captures 412, 360 et
+844 × 390, sombre et clair, dans `.design/shots/` de la copie de travail.
+`./scripts/check.sh` vert : 284 API (dont 1 ignoré), 695 front (dont 1 échec attendu), 48 desktop
+unitaires, 32 scripts, 11 Worker, 11 relais, 78 navigateur et 17 desktop e2e (dont 1 ignoré sans
+gestionnaire de fenêtres) — 1176 tests. Parcours mobiles réécrits vue par vue (`mobile-header`,
+`pwa`, `scroll-overlap`, `procedure-layout`, catégories, IA, Google, largeur des champs) ; les
+captures de `categories.spec.ts` vont dans le dossier du test au lieu de `/tmp`.
+
 ## Lot du 2026-10-29 — priorité des tâches IA et tâches terminées repliées
 
 Lors de la création de plusieurs tâches suggérées, la tâche sélectionnée la plus urgente

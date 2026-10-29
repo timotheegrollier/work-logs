@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import './styles.css';
 import { api, emptyDocument, taskViewMatch, todayISO, type AppState, type Entry, type GoogleStatus, type GoogleSyncStatus, type TaskView } from './lib';
@@ -119,6 +119,51 @@ export default function App() {
   const selectedRef = useRef<string | null>(null);
   const reloadSequence = useRef(0);
   selectedRef.current = selectedId;
+
+  // Téléphone : un panneau à la fois, choisi par la barre du bas (§53). Le journal est
+  // l'accueil ; chaque vue retrouve où on l'avait laissée. Non retenu au redémarrage.
+  const phone = useSyncExternalStore(onPhoneChange, isPhone);
+  const [phoneView, setPhoneView] = useState<PhoneView>('journal');
+  const phoneViewRef = useRef(phoneView);
+  phoneViewRef.current = phoneView;
+  const pageRef = useRef<HTMLDivElement>(null);
+  const scrollMemory = useRef<Partial<Record<PhoneView, number>>>({});
+  const goTo = useCallback((next: PhoneView, fromTop = false) => {
+    const page = pageRef.current;
+    if (next !== phoneViewRef.current) scrollMemory.current[phoneViewRef.current] = page?.scrollTop ?? 0;
+    else if (fromTop) page?.scrollTo?.(0, 0);
+    if (fromTop) scrollMemory.current[next] = 0;
+    setPhoneView(next);
+  }, []);
+  useLayoutEffect(() => {
+    if (phone) pageRef.current?.scrollTo?.(0, scrollMemory.current[phoneView] ?? 0);
+  }, [phone, phoneView]);
+  // Hors du journal, une marche dans l'historique : le retour d'Android ramène au
+  // journal au lieu de fermer l'application. Rechargée hors du journal, la marche
+  // d'avant ne mène plus à cette page : on l'oublie.
+  useEffect(() => {
+    if (history.state?.[VIEW_STEP]) history.replaceState(null, '');
+    const back = () => { if (!history.state?.[VIEW_STEP]) goTo('journal'); };
+    window.addEventListener('popstate', back);
+    return () => window.removeEventListener('popstate', back);
+  }, [goTo]);
+  useEffect(() => {
+    if (!phone) return;
+    const stepped = Boolean(history.state?.[VIEW_STEP]);
+    if (phoneView !== 'journal' && !stepped) history.pushState({ [VIEW_STEP]: true }, '');
+    if (phoneView === 'journal' && stepped) history.back();
+  }, [phone, phoneView]);
+  /**
+   * Ouvrir ou créer amène à l'écriture : sur téléphone, sa vue, par le haut ; cartes
+   * empilées (tablette), on y fait défiler ; colonnes côte à côte, rien à faire.
+   */
+  const revealEditor = useCallback(() => {
+    if (isPhone()) return goTo('editor', true);
+    if (!window.matchMedia?.('(max-width: 900px)').matches) return;
+    const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    // Après le rendu : la carte vient peut-être d'être réaffichée.
+    requestAnimationFrame(() => document.getElementById('workspace-editor')?.scrollIntoView?.({ block: 'start', behavior }));
+  }, [goTo]);
 
   /**
    * Un geste vers une entrée referme le fichier partagé. Avec un brouillon non
@@ -450,6 +495,19 @@ export default function App() {
   const isGoogleDocument = Boolean(entry?.google_sync);
   // Session Google active (pas expirée) : la synchro automatique tourne.
   const autoSynced = Boolean(google?.connected && !google.expired);
+  // Mêmes interrupteurs partout ; sur téléphone, ils choisissent la vue au lieu de replier.
+  const panels: { view: PhoneView; label: string; id: string; shown: boolean; toggle: Dispatch<SetStateAction<boolean>>; what: string; icon: ReactNode }[] = [
+    { view: 'journal', label: 'Journal', id: 'workspace-journal', shown: phone ? phoneView === 'journal' : showLeft, toggle: setShowLeft, what: 'le journal',
+      icon: <><path d="M7 4v16" /><circle cx="7" cy="7.5" r="2.2" /><circle cx="7" cy="16.5" r="2.2" /><path d="M12.5 7.5H20M12.5 16.5H20" /></> },
+    { view: 'editor', label: 'Écriture', id: 'workspace-editor', shown: phone ? phoneView === 'editor' : showCenter, toggle: setShowCenter, what: 'l’écriture',
+      icon: <><path d="M5 19.5h3.5L19 9a2.3 2.3 0 0 0-3.3-3.3L5 16.2z" /><path d="m14 7.5 3.3 3.3" /></> },
+    { view: 'tasks', label: 'Tâches', id: 'workspace-tasks', shown: phone ? phoneView === 'tasks' : showRight, toggle: setShowRight, what: 'les tâches',
+      icon: <><rect x="4.5" y="4.5" width="15" height="15" rx="4" /><path d="m8.6 12.2 2.4 2.4 4.6-4.8" /></> },
+    { view: 'procedures', label: 'Procédures', id: 'workspace-procedures', shown: phone ? phoneView === 'procedures' : showProcedures, toggle: setShowProcedures, what: 'les procédures',
+      icon: <><path d="M6 4.5h12v15H7.7A1.7 1.7 0 0 1 6 17.8z" /><path d="M6 17.8a1.7 1.7 0 0 1 1.7-1.7H18M9.5 8.5h5" /></> },
+  ];
+  const [showJournal, showEditor, showBoard, showProcedureBar] = panels.map((panel) => panel.shown);
+  const documentTasks = phone ? phoneView === 'tasks' : showDocumentTasks;
 
   const stats = state?.stats;
 
@@ -516,7 +574,7 @@ export default function App() {
   }, [showSettings]);
 
   return (
-    <div className="app">
+    <div className="app" ref={pageRef}>
       <UpdateBar />
       <header className="head no-print">
         <h1 className="logo">
@@ -535,7 +593,7 @@ export default function App() {
           className="search"
           type="search"
           aria-label="Rechercher"
-          placeholder="Rechercher dans tout…"
+          placeholder={phone ? 'Rechercher…' : 'Rechercher dans tout…'}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -563,46 +621,20 @@ export default function App() {
           </p>
         )}
         <div className="panel-toggles no-print" role="group" aria-label="Panneaux latéraux">
-          <button
-            type="button"
-            className={'panel-toggle' + (showLeft ? ' is-on' : '')}
-            aria-pressed={showLeft}
-            aria-controls="workspace-journal"
-            title={showLeft ? 'Masquer le journal' : 'Afficher le journal'}
-            onClick={() => setShowLeft((v) => !v)}
-          >
-            Journal
-          </button>
-          <button
-            type="button"
-            className={'panel-toggle' + (showCenter ? ' is-on' : '')}
-            aria-pressed={showCenter}
-            aria-controls="workspace-editor"
-            title={showCenter ? 'Masquer l’écriture' : 'Afficher l’écriture'}
-            onClick={() => setShowCenter((v) => !v)}
-          >
-            Écriture
-          </button>
-          <button
-            type="button"
-            className={'panel-toggle' + (showRight ? ' is-on' : '')}
-            aria-pressed={showRight}
-            aria-controls="workspace-tasks"
-            title={showRight ? 'Masquer les tâches' : 'Afficher les tâches'}
-            onClick={() => setShowRight((v) => !v)}
-          >
-            Tâches
-          </button>
-          <button
-            type="button"
-            className={'panel-toggle' + (showProcedures ? ' is-on' : '')}
-            aria-pressed={showProcedures}
-            aria-controls="workspace-procedures"
-            title={showProcedures ? 'Masquer les procédures' : 'Afficher les procédures'}
-            onClick={() => setShowProcedures((v) => !v)}
-          >
-            Procédures
-          </button>
+          {panels.map((panel) => (
+            <button
+              key={panel.view}
+              type="button"
+              className={'panel-toggle' + (panel.shown ? ' is-on' : '')}
+              aria-pressed={panel.shown}
+              aria-controls={panel.id}
+              title={phone ? undefined : `${panel.shown ? 'Masquer' : 'Afficher'} ${panel.what}`}
+              onClick={() => (phone ? goTo(panel.view) : panel.toggle((v) => !v))}
+            >
+              <svg className="panel-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{panel.icon}</svg>
+              {panel.label}
+            </button>
+          ))}
         </div>
         <button
           className="ghost theme-btn"
@@ -660,7 +692,7 @@ export default function App() {
       {isGoogleDocument && <div className="workspace-switch no-print"><span>Document Google · {siblingTabs.length} onglet{siblingTabs.length > 1 ? 's' : ''}</span>
         <button aria-expanded={showDocumentTasks} aria-controls="workspace-tasks" onClick={() => setShowDocumentTasks(!showDocumentTasks)}>{showDocumentTasks ? 'Masquer les tâches' : 'Afficher les tâches'}</button>
       </div>}
-      <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showDocumentTasks ? ' with-tasks' : '') + (showLeft ? '' : ' hide-left') + (showCenter ? '' : ' hide-center') + (showRight ? '' : ' hide-right') + (showProcedures ? ' show-procedures' : '')}>
+      <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (documentTasks ? ' with-tasks' : '') + (showJournal ? '' : ' hide-left') + (showEditor ? '' : ' hide-center') + (showBoard ? '' : ' hide-right') + (showProcedureBar ? ' show-procedures' : '')}>
         <aside id="workspace-journal" className="left no-print">
           <EntryList
             categories={state?.categories ?? []}
@@ -702,6 +734,7 @@ export default function App() {
                 .map((task) => ({ id: task.id, title: task.title, status: task.status }))}
               tasks={state.tasks.map((task) => ({ id: task.id, title: task.title, status: task.status }))}
               autoFocusTitle={freshEntry}
+              compact={phone}
               editRequest={procedureEdit.id === entry.id ? procedureEdit.sequence : 0}
               onChanged={reload}
               onTaskCreated={reload}
@@ -713,7 +746,7 @@ export default function App() {
             />
           ) : (
             <section className="editor placeholder">
-              <p>Choisis une entrée à gauche, ou crée-en une nouvelle.</p>
+              <p>Choisis une entrée dans le journal, ou crée-en une nouvelle.</p>
             </section>
           )}
         </main>
@@ -765,7 +798,7 @@ export default function App() {
           />
           {/* PWA : absente tant que le relais n'est pas réglé (le statut dit « indisponible »). */}
           <SharedFolder
-            active={showProcedures}
+            active={showProcedureBar}
             projectId={projectId}
             projects={state?.projects ?? []}
             procedures={sharedProcedures}
@@ -916,14 +949,14 @@ const readWidth = (fallback: number, min = 120) => (stored: string | null) => {
 const readPanel = (fallback = true) => (stored: string | null) => (stored === null ? fallback : stored !== '0');
 const writePanel = (shown: boolean) => (shown ? '1' : '0');
 
-/**
- * Cartes empilées (≤ 900 px) : ouvrir ou créer une entrée amène à la carte
- * Écriture, au lieu de la laisser sous un journal qu'il fallait faire défiler.
- * Sur desktop, les colonnes sont côte à côte : rien à faire.
- */
-function revealEditor() {
-  if (!window.matchMedia?.('(max-width: 900px)').matches) return;
-  const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-  // Après le rendu : la carte vient peut-être d'être réaffichée.
-  requestAnimationFrame(() => document.getElementById('workspace-editor')?.scrollIntoView?.({ block: 'start', behavior }));
-}
+/** Téléphone, en portrait comme en paysage : les mêmes requêtes que `styles.css` (§53). */
+const PHONE = '(max-width: 600px), (max-width: 900px) and (max-height: 500px)';
+type PhoneView = 'journal' | 'editor' | 'tasks' | 'procedures';
+const isPhone = () => Boolean(window.matchMedia?.(PHONE).matches);
+const onPhoneChange = (notify: () => void) => {
+  const query = window.matchMedia?.(PHONE);
+  query?.addEventListener('change', notify);
+  return () => query?.removeEventListener('change', notify);
+};
+/** Marque l'entrée d'historique laissée en quittant le journal sur téléphone. */
+const VIEW_STEP = 'worklogsView';

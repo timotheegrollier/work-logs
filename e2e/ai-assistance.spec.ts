@@ -84,6 +84,8 @@ test('IA sur mobile : suggère des tâches sourcées, ne crée que la sélection
       ]) } }] } });
     });
     await page.goto('/');
+    // Téléphone : une vue à la fois (§53), la note est dans Écriture.
+    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Écriture', exact: true }).click();
     await page.getByRole('button', { name: 'Assistance IA', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Suggérer des tâches avec l’IA', exact: true }).click();
     const proposal = page.getByRole('region', { name: 'Tâches suggérées', exact: true });
@@ -122,6 +124,7 @@ test('IA sur mobile : trie les tâches suggérées, permet de corriger priorité
       ]) } }] } });
     });
     await page.goto('/');
+    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Écriture', exact: true }).click();
     await page.getByRole('button', { name: 'Assistance IA', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Suggérer des tâches avec l’IA', exact: true }).click();
     const proposal = page.getByRole('region', { name: 'Tâches suggérées', exact: true });
