@@ -1,12 +1,12 @@
 // WorkLogs — service worker PWA, généré au build (`scripts/emit-sw.mjs`).
-// `0.61.0` est remplacé par la version du paquet racine : un
+// `0.62.0` est remplacé par la version du paquet racine : un
 // déploiement change le nom du cache, l'ancienne coquille est purgée et la
 // mise à jour est transparente au rechargement suivant.
-const VERSION = '0.61.0';
+const VERSION = '0.62.0';
 const CACHE = `worklogs-${VERSION}`;
 // Fichiers du build, listés par `emit-sw.mjs` : les morceaux chargés à la demande
 // (éditeur riche, dossier partagé, Drive) sont là hors ligne dès l'installation.
-const ASSETS = ["./assets/FileViewer-DdYRKWaj.js","./assets/GoogleDocuments-DSextg_S.js","./assets/GoogleDrive-Cxs2hQ5s.js","./assets/RichEditor-CDwdjQXp.js","./assets/SharedFileEditor-BgdjDCr7.js","./assets/dist-Cuca1Tq8.js","./assets/docx-preview-C9w6ESs6.js","./assets/index-BCRm0sFl.js","./assets/index-BxuLiRfd.css"];
+const ASSETS = ["./assets/FileViewer-BQFYUVK2.js","./assets/GoogleDocuments-D7-Fp0EN.js","./assets/GoogleDrive-C1dSsPug.js","./assets/RichEditor-Bpz5Nf9n.js","./assets/SharedFileEditor-BBGhLHUM.js","./assets/dist-Bq35XwQ-.js","./assets/docx-preview-7-bhzzai.js","./assets/index-BxuLiRfd.css","./assets/index-CxLP2w1d.js"];
 const CORE = ['./', './index.html', './manifest.webmanifest', ...ASSETS];
 
 self.addEventListener('install', (event) => {
