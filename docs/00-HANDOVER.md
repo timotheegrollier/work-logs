@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Lot du 2026-10-29 — téléphone : une vue à la fois (§53)
+## Lot du 2026-10-29 — téléphone : une vue à la fois (§53), publié en v0.63.0
 
 Sur téléphone (≤ 600 px, ou ≤ 900 × 500 px en paysage), la **barre du bas navigue** : Journal,
 Écriture, Tâches ou Procédures, une seule vue à l'écran, de bord à bord. Avant, elle repliait
@@ -13,9 +13,14 @@ formulaire d'une tâche (avancer sans glisser-déposer, au doigt comme au clavie
 tablette inchangés. Aucune dépendance ajoutée. Pourquoi et ce qui a été écarté : §53 ;
 usage : `03-UTILISATION.md` « Sur téléphone : une vue à la fois ». Captures 412, 360 et
 844 × 390, sombre et clair, dans `.design/shots/` de la copie de travail.
-`./scripts/check.sh` vert : 284 API (dont 1 ignoré), 695 front (dont 1 échec attendu), 48 desktop
+PR #25 fusionnée (CI verte), puis **v0.63.0** publiée : elle emporte aussi les tâches IA priorisées
+et la colonne Terminé repliée (§52). Une relecture indépendante a trouvé deux défauts, corrigés
+avec un test rouge puis vert : la question d'un brouillon du partage restait cachée dans Écriture
+quand une autre vue était à l'écran (elle passe dans `body`), et « Enregistrer » remettait l'ancien
+statut d'une tâche déplacée ailleurs pendant l'édition (`status_base`).
+`./scripts/check.sh` vert : 284 API (dont 1 ignoré), 696 front (dont 1 échec attendu), 48 desktop
 unitaires, 32 scripts, 11 Worker, 11 relais, 78 navigateur et 17 desktop e2e (dont 1 ignoré sans
-gestionnaire de fenêtres) — 1176 tests. Parcours mobiles réécrits vue par vue (`mobile-header`,
+gestionnaire de fenêtres) — 1177 tests. Parcours mobiles réécrits vue par vue (`mobile-header`,
 `pwa`, `scroll-overlap`, `procedure-layout`, catégories, IA, Google, largeur des champs) ; les
 captures de `categories.spec.ts` vont dans le dossier du test au lieu de `/tmp`.
 
