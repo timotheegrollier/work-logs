@@ -68,7 +68,7 @@ test('IA sur une tâche : lit les documents liés, affine et retire une source',
   }
 });
 
-test('IA sur mobile : extrait des actions sourcées, ne crée que la sélection et garde la note', async ({ page, request }) => {
+test('IA sur mobile : suggère des tâches sourcées, ne crée que la sélection et garde la note', async ({ page, request }) => {
   const project = await post(request, '/api/projects', { name: 'Maintenance IA' });
   const source = 'À faire : Appeler le fournisseur le 2026-10-30.\n\nPréparer le devis.';
   try {
@@ -85,8 +85,8 @@ test('IA sur mobile : extrait des actions sourcées, ne crée que la sélection 
     });
     await page.goto('/');
     await page.getByRole('button', { name: 'Assistance IA', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Extraire les actions', exact: true }).click();
-    const proposal = page.getByRole('region', { name: 'Actions proposées', exact: true });
+    await page.getByRole('menuitem', { name: 'Suggérer des tâches avec l’IA', exact: true }).click();
+    const proposal = page.getByRole('region', { name: 'Tâches suggérées', exact: true });
     await expect(proposal.getByLabel('Titre de l’action 1')).toHaveValue('Appeler le fournisseur');
     await expect(proposal.getByLabel('Échéance de l’action 1')).toHaveValue('2026-10-30');
     await proposal.getByRole('checkbox', { name: 'Créer l’action Préparer le devis', exact: true }).uncheck();
@@ -99,6 +99,50 @@ test('IA sur mobile : extrait des actions sourcées, ne crée que la sélection 
     expect(tasks).toHaveLength(1);
     expect(tasks[0].due_date).toBe('2026-10-30');
     expect(tasks[0].documents.map((document: { id: string }) => document.id)).toContain(note.id);
+    expect((await (await request.get(`/api/entries/${note.id}`)).json()).content_md).toBe(source);
+  } finally {
+    await cleanProject(page, request, project.id);
+  }
+});
+
+test('IA sur mobile : trie les tâches suggérées, permet de corriger priorité et échéance puis les crée', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Planification IA mobile' });
+  const source = 'Purger la pompe avant le 2026-11-03.\nAppeler le fournisseur le 2026-11-05.\nRanger les outils.';
+  try {
+    const note = await post(request, '/api/entries', { title: 'Intervention IA mobile', project_id: project.id, content_md: source });
+    await configure(page, project.id, note.id);
+    await page.setViewportSize({ width: 412, height: 915 });
+    await page.route('**/chat/completions', async (route) => {
+      const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
+      if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+      return route.fulfill({ headers, json: { choices: [{ message: { content: JSON.stringify([
+        { title: 'Ranger les outils', priority: 'low', due_date: null, evidence: 'Ranger les outils.' },
+        { title: 'Appeler le fournisseur', priority: 'normal', due_date: '2026-11-05', evidence: 'Appeler le fournisseur le 2026-11-05.' },
+        { title: 'Purger la pompe', priority: 'high', due_date: '2026-11-03', evidence: 'Purger la pompe avant le 2026-11-03.' },
+      ]) } }] } });
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Assistance IA', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Suggérer des tâches avec l’IA', exact: true }).click();
+    const proposal = page.getByRole('region', { name: 'Tâches suggérées', exact: true });
+    await expect(proposal.getByLabel('Titre de l’action 1')).toHaveValue('Purger la pompe');
+    await expect(proposal.getByLabel('Titre de l’action 2')).toHaveValue('Appeler le fournisseur');
+    await expect(proposal.getByLabel('Titre de l’action 3')).toHaveValue('Ranger les outils');
+    await expect(proposal.getByLabel('Priorité de l’action 1')).toHaveValue('high');
+    await expect(proposal.getByLabel('Échéance de l’action 1')).toHaveValue('2026-11-03');
+    await proposal.getByLabel('Échéance de l’action 2').fill('2026-11-06');
+    await proposal.getByLabel('Priorité de l’action 2').selectOption('low');
+    await proposal.getByRole('checkbox', { name: 'Créer l’action Ranger les outils', exact: true }).uncheck();
+    await proposal.scrollIntoViewIfNeeded();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    await proposal.getByRole('button', { name: 'Créer les tâches sélectionnées', exact: true }).click();
+    await expect(proposal.getByText('2 tâches créées et liées à cette note.', { exact: true })).toBeVisible();
+    const state = await (await request.get('/api/state')).json();
+    const tasks = state.tasks.filter((task: { project_id: string }) => task.project_id === project.id);
+    expect(tasks).toHaveLength(2);
+    expect(tasks.find((task: { title: string }) => task.title === 'Purger la pompe')).toMatchObject({ priority: 'high', due_date: '2026-11-03' });
+    expect(tasks.find((task: { title: string }) => task.title === 'Appeler le fournisseur')).toMatchObject({ priority: 'low', due_date: '2026-11-06' });
+    for (const task of tasks) expect(task.documents.map((document: { id: string }) => document.id)).toContain(note.id);
     expect((await (await request.get(`/api/entries/${note.id}`)).json()).content_md).toBe(source);
   } finally {
     await cleanProject(page, request, project.id);

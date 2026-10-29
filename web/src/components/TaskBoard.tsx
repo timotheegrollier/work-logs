@@ -336,10 +336,11 @@ function TaskCard({
     setCreatingEntry(true);
   };
 
-  const contextForTask = async (version: number, title = task.title) => {
+  const contextForTask = async (version: number, title = task.title, text = '') => {
     const context = await loadAiContext({
       projectId: task.project_id,
       title,
+      text,
       taskId: task.id,
       linkedDocumentIds: linkedDocuments.map((document) => document.id),
     });
@@ -356,7 +357,7 @@ function TaskCard({
     try {
       const settings = readAiSettings();
       if (!settings.key) throw new Error('Colle ta clé IA dans ⚙ Paramètres pour activer les suggestions.');
-      const context = selectedAiContext(await contextForTask(version, entryTitle.trim() || task.title), excludedSourceIds);
+      const context = selectedAiContext(await contextForTask(version, entryTitle.trim() || task.title, entrySubtasks), excludedSourceIds);
       const raw = await suggestSubtasks(settings, entryTitle.trim() || task.title, {
         context: { ...context, linkedDocuments: linkedDocuments
           .filter((document) => !excludedSourceIds.includes(document.id))
@@ -427,7 +428,7 @@ function TaskCard({
       // ne les répètent pas. Le sélecteur montre aussi les sources intégrales.
       const supplementary = { ...context, sources: context.sources?.filter((source) => !sourceIds.has(source.id)) };
       if (contextVersion.current !== version) return;
-      setAiContext({ ...context, sources: [
+      setAiContext({ ...fullContext, sources: [
         ...documents.flatMap((document) => !document.google ? [{ id: document.id, title: document.title, text: document.text, kind: document.kind }] : []),
         ...(fullContext.sources?.filter((source) => !sourceIds.has(source.id)) ?? []),
       ] });

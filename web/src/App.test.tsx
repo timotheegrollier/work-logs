@@ -984,8 +984,9 @@ describe('écrire une entrée', () => {
     await user.click(trigger);
     const menu = screen.getByRole('menu', { name: 'Assistance IA' });
     expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(
-      ['Compléter', 'Mettre en page', 'Suggérer des sous-tâches', 'Extraire les actions', 'Créer une procédure'],
+      ['Compléter', 'Mettre en page', 'Suggérer des sous-tâches', 'Suggérer des tâches avec l’IA', 'Créer une procédure'],
     );
+    expect(screen.queryByRole('button', { name: 'Suggérer des tâches avec l’IA' })).not.toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Compléter' })).toHaveFocus();
     await user.keyboard('{ArrowUp}');
     expect(within(menu).getByRole('menuitem', { name: 'Créer une procédure' })).toHaveFocus();
@@ -4321,23 +4322,32 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
       entries: [{ id: 'en_note', title: 'Panne', content_md: 'Ancien texte.', project_id: 'pr_bassin' }],
     });
     mockAiSuggest(JSON.stringify([
-      { title: 'Contrôler le moteur', due_date: null, evidence: 'Le moteur surchauffe.' },
-      { title: 'Vérifier la ventilation', due_date: null, evidence: 'Le moteur surchauffe.' },
+      { title: 'Vérifier la ventilation', priority: 'low', due_date: '2026-11-05', evidence: 'Le moteur surchauffe.' },
+      { title: 'Contrôler le moteur', priority: 'high', due_date: '2026-10-30', evidence: 'Le moteur surchauffe.', planning_reason: 'Surchauffe : intervention rapide suggérée.' },
     ]));
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Écrire' }));
     fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Le moteur surchauffe.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Suggérer des tâches avec l’IA' }));
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
     const proposal = await screen.findByRole('region', { name: 'Tâches suggérées' });
-    expect(within(proposal).getByText(/Certaines tâches sont déduites du contexte/)).toBeInTheDocument();
+    expect(within(proposal).getByText(/Priorités et échéances sont des propositions à vérifier/)).toBeInTheDocument();
+    expect(within(proposal).getByLabelText('Titre de l’action 1')).toHaveValue('Contrôler le moteur');
+    expect(within(proposal).getByLabelText('Priorité de l’action 1')).toHaveValue('high');
+    expect(within(proposal).getByLabelText('Priorité de l’action 2')).toHaveValue('low');
+    expect(within(proposal).getByLabelText('Échéance de l’action 1')).toHaveValue('2026-10-30');
+    expect(within(proposal).getByText('Surchauffe : intervention rapide suggérée.')).toBeInTheDocument();
     expect(JSON.stringify(aiBodies.at(-1))).toContain('Le moteur surchauffe.');
     expect(within(proposal).getAllByText('Le moteur surchauffe.', { selector: 'blockquote' })).toHaveLength(2);
     fireEvent.click(within(proposal).getByRole('checkbox', { name: 'Créer l’action Vérifier la ventilation' }));
     fireEvent.change(within(proposal).getByLabelText('Titre de l’action 1'), { target: { value: 'Contrôler le moteur du bassin' } });
+    fireEvent.change(within(proposal).getByLabelText('Priorité de l’action 1'), { target: { value: 'normal' } });
+    expect(within(proposal).getByLabelText('Priorité de l’action 1')).toHaveValue('normal');
+    fireEvent.change(within(proposal).getByLabelText('Priorité de l’action 1'), { target: { value: 'high' } });
+    fireEvent.change(within(proposal).getByLabelText('Échéance de l’action 1'), { target: { value: '2026-11-01' } });
     fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
     await within(proposal).findByText('1 tâche créée et liée à cette note.');
-    const created = row(api.db, "SELECT id,project_id FROM tasks WHERE title='Contrôler le moteur du bassin'");
-    expect(created.project_id).toBe('pr_bassin');
+    const created = row(api.db, "SELECT id,project_id,priority,due_date FROM tasks WHERE title='Contrôler le moteur du bassin'");
+    expect(created).toMatchObject({ project_id: 'pr_bassin', priority: 'high', due_date: '2026-11-01' });
     expect(row(api.db, 'SELECT entry_id FROM task_entries WHERE task_id=?', created.id).entry_id).toBe('en_note');
     expect(row(api.db, "SELECT count(*) AS n FROM tasks WHERE title='Vérifier la ventilation'").n).toBe(0);
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Le moteur surchauffe.');
@@ -4348,9 +4358,22 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Panne', content_md: 'La pompe chauffe.' }] });
     mockAiSuggest(JSON.stringify([{ title: 'Contrôler la pompe', due_date: null, evidence: 'La pompe chauffe.' }]));
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Suggérer des tâches avec l’IA' }));
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
     const proposal = await screen.findByRole('region', { name: 'Tâches suggérées' });
     fireEvent.change(screen.getByLabelText('Titre de l’entrée'), { target: { value: 'Autre panne' } });
+    fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('a changé depuis la suggestion');
+    expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(0);
+  });
+
+  test('modifier la date de la note invalide les échéances suggérées', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Panne', content_md: 'La pompe chauffe.' }] });
+    mockAiSuggest(JSON.stringify([{ title: 'Contrôler la pompe', priority: 'high', due_date: '2026-11-01', evidence: 'La pompe chauffe.' }]));
+    render(<App />);
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
+    const proposal = await screen.findByRole('region', { name: 'Tâches suggérées' });
+    fireEvent.change(screen.getByLabelText('Date de l’entrée'), { target: { value: '2026-10-20' } });
     fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('a changé depuis la suggestion');
     expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(0);
@@ -4368,7 +4391,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
       return diverted(input, init);
     }));
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Suggérer des tâches avec l’IA' }));
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
     await waitFor(() => expect(finish).toBeTypeOf('function'));
     fireEvent.change(screen.getByLabelText('Titre de l’entrée'), { target: { value: 'Autre panne' } });
     await act(async () => { finish?.(); });
@@ -4388,13 +4411,13 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     });
     mockAiSuggest(JSON.stringify([{ title: 'Contrôler le moteur', due_date: null, evidence: 'Le moteur chauffe.' }]));
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Suggérer des tâches avec l’IA' }));
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
     await screen.findByRole('region', { name: 'Tâches suggérées' });
     expect(JSON.stringify(aiBodies.at(-1))).toContain('Instruction complémentaire privée.');
     fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Procédure : Purger la pompe' }));
     expect(screen.queryByRole('region', { name: 'Tâches suggérées' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Suggérer des tâches avec l’IA' }));
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
     await screen.findByRole('region', { name: 'Tâches suggérées' });
     expect(JSON.stringify(aiBodies.at(-1))).not.toContain('Instruction complémentaire privée.');
   });
@@ -4419,7 +4442,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
       return actualCreate(...args);
     });
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Suggérer des tâches avec l’IA' }));
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
     const proposal = await screen.findByRole('region', { name: 'Tâches suggérées' });
     fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
     await waitFor(() => expect(release).toBeTypeOf('function'));
@@ -4432,7 +4455,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     expect(row(api.db, "SELECT count(*) AS n FROM tasks WHERE title='Vérifier la ventilation'").n).toBe(0);
   });
 
-  test('extrait des actions sélectionnables, modifiables et créées dans le projet avec leur note source', async () => {
+  test('suggère des tâches explicites sélectionnables, modifiables et liées à leur note source', async () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     const text = 'Vérifier la pompe le 2026-11-01.\nAppeler le fournisseur.\nEnvoyer le devis.';
     seedData(api.db, {
@@ -4449,8 +4472,8 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     render(<App />);
     // Le démarrage lit d'abord le journal puis le document sélectionné.
     await within(journal()).findByText('Compte rendu');
-    fireEvent.click(await aiAction('Extraire les actions'));
-    const proposal = await screen.findByRole('region', { name: 'Actions proposées' });
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
+    const proposal = await screen.findByRole('region', { name: 'Tâches suggérées' });
     expect(within(proposal).getAllByRole('checkbox')).toHaveLength(2);
     expect(within(proposal).getByText('Vérifier la pompe le 2026-11-01.')).toBeInTheDocument();
     expect(within(proposal).getByLabelText('Échéance de l’action 1')).toHaveValue('2026-11-01');
@@ -4478,8 +4501,8 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
       .mockImplementationOnce(actualCreate)
       .mockRejectedValueOnce(new Error('Enregistrement temporairement indisponible.'));
     render(<App />);
-    fireEvent.click(await aiAction('Extraire les actions'));
-    const proposal = await screen.findByRole('region', { name: 'Actions proposées' });
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
+    const proposal = await screen.findByRole('region', { name: 'Tâches suggérées' });
     fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Enregistrement temporairement indisponible');
     expect(within(proposal).getByRole('checkbox', { name: 'Créer l’action Appeler le client' })).toBeDisabled();
@@ -4492,17 +4515,17 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     expect(row(api.db, 'SELECT count(*) AS n FROM task_entries').n).toBe(2);
   });
 
-  test('modifier la note après extraction bloque la création des actions devenues anciennes', async () => {
+  test('modifier la note après suggestion bloque la création des tâches devenues anciennes', async () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Appeler le client.' }] });
     mockAiSuggest(JSON.stringify([{ title: 'Appeler le client', due_date: null, evidence: 'Appeler le client.' }]));
     render(<App />);
-    fireEvent.click(await aiAction('Extraire les actions'));
-    await screen.findByRole('region', { name: 'Actions proposées' });
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
+    await screen.findByRole('region', { name: 'Tâches suggérées' });
     fireEvent.click(screen.getByRole('button', { name: 'Écrire' }));
     fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Le client a été appelé.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Créer les tâches sélectionnées' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('a changé depuis l’extraction');
+    expect(await screen.findByRole('alert')).toHaveTextContent('a changé depuis la suggestion');
     expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(0);
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Le client a été appelé.');
   });
@@ -4513,9 +4536,9 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'La pompe a été réparée.' }] }] }), 'en_note');
     mockAiSuggest('[]');
     render(<App />);
-    fireEvent.click(await aiAction('Extraire les actions'));
-    const proposal = await screen.findByRole('region', { name: 'Actions proposées' });
-    expect(within(proposal).getByText('Aucune nouvelle action à créer dans cette note.')).toBeInTheDocument();
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
+    const proposal = await screen.findByRole('region', { name: 'Tâches suggérées' });
+    expect(within(proposal).getByText('Aucune nouvelle tâche suggérée pour cette note.')).toBeInTheDocument();
     expect(within(proposal).queryByRole('button', { name: 'Créer les tâches sélectionnées' })).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     const sent = (aiBodies.at(-1) as { messages: { content: string }[] }).messages.map((message) => message.content).join('\n');
@@ -4603,10 +4626,10 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Autre note');
   });
 
-  test('sans clé, extraire explique le réglage requis avant de charger le contexte', async () => {
+  test('sans clé, suggérer des tâches explique le réglage requis avant de charger le contexte', async () => {
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Appeler le client.' }] });
     render(<App />);
-    const button = await aiAction('Extraire les actions');
+    const button = await aiAction('Suggérer des tâches avec l’IA');
     const state = vi.spyOn(clientApi, 'state');
     const readEntry = vi.spyOn(clientApi, 'entry');
     fireEvent.click(button);
@@ -4667,7 +4690,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
 
   test.each([
     { feature: 'les sous-tâches', button: 'Suggérer des sous-tâches', reply: 'Purger la pompe' },
-    { feature: 'les actions', button: 'Extraire les actions', reply: JSON.stringify([{ title: 'Appeler le client', due_date: null, evidence: 'Appeler le client.' }]) },
+    { feature: 'les tâches suggérées', button: 'Suggérer des tâches avec l’IA', reply: JSON.stringify([{ title: 'Appeler le client', due_date: null, evidence: 'Appeler le client.' }]) },
   ])('retirer une source pendant la réponse invalide aussi $feature', async ({ button, reply }) => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     seedData(api.db, {
@@ -4691,7 +4714,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     await act(async () => { finish?.(); });
     expect(await aiAction(button)).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Retirer la suggestion' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Actions proposées' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Tâches suggérées' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Écrire' }));
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Appeler le client.');
   });
@@ -4706,8 +4729,8 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
       throw new Error('Réponse perdue après enregistrement.');
     });
     render(<App />);
-    fireEvent.click(await aiAction('Extraire les actions'));
-    const proposal = await screen.findByRole('region', { name: 'Actions proposées' });
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
+    const proposal = await screen.findByRole('region', { name: 'Tâches suggérées' });
     fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Réponse perdue après enregistrement');
     expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(1);
@@ -4744,5 +4767,63 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     expect(await aiAction('Suggérer des sous-tâches')).toBeEnabled();
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Vérifier la pompe.\n- [ ] Purger la pompe');
     expect(screen.queryByRole('button', { name: 'Retirer la suggestion' })).not.toBeInTheDocument();
+  });
+
+  test('le texte saisi dans une note au titre générique retrouve une procédure pertinente pour l’IA', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, {
+      projects: [{ id: 'pr_bassin', name: 'Bassin' }, { id: 'pr_autre', name: 'Autre' }],
+      entries: [
+        { id: 'en_note', title: 'Compte rendu', content_md: 'Brouillon précédent.', project_id: 'pr_bassin' },
+        { id: 'en_proc', title: 'Entretien de la pompe', content_md: 'Purger le filtre avant le redémarrage.', project_id: 'pr_bassin', kind: 'procedure' },
+        { id: 'en_secret', title: 'Pompe confidentielle', content_md: 'Texte hors projet.', project_id: 'pr_autre', kind: 'procedure' },
+      ],
+    });
+    mockAiSuggest('Le moteur de la pompe chauffe.');
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Écrire' }));
+    fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Le moteur de la pompe chauffe.' } });
+    fireEvent.click(await aiAction('Mettre en page'));
+    await screen.findByRole('region', { name: 'Mise en page proposée' });
+    const sent = JSON.stringify(aiBodies.at(-1));
+    expect(sent).toContain('Le moteur de la pompe chauffe.');
+    expect(sent).toContain('Purger le filtre avant le redémarrage.');
+    expect(sent).not.toContain('Texte hors projet.');
+    fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
+    expect(screen.getByText(/Vocabulaire du projet :/)).toHaveTextContent('entretien');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Procédure : Entretien de la pompe' }));
+    expect(screen.queryByText(/Vocabulaire du projet :.*entretien/)).not.toBeInTheDocument();
+    fireEvent.click(await aiAction('Mettre en page'));
+    await screen.findByRole('region', { name: 'Mise en page proposée' });
+    expect(JSON.stringify(aiBodies.at(-1))).not.toContain('Purger le filtre avant le redémarrage.');
+    expect(JSON.stringify(aiBodies.at(-1))).not.toContain('entretien');
+  });
+
+  test('le contexte des suggestions inclut la priorité et l’échéance des tâches pertinentes', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, {
+      projects: [{ id: 'pr_bassin', name: 'Bassin' }, { id: 'pr_autre', name: 'Autre' }],
+      entries: [{ id: 'en_note', title: 'Pompe', content_md: 'La pompe fuit.', project_id: 'pr_bassin' }],
+      tasks: [
+        { id: 'tk_voisine', title: 'Réparer la pompe', project_id: 'pr_bassin', due_date: '2026-11-01' },
+        { id: 'tk_sans_rapport', title: 'Commander des fournitures', project_id: 'pr_bassin', due_date: '2026-12-01' },
+        { id: 'tk_autre', title: 'Pompe secrète', project_id: 'pr_autre', due_date: '2026-11-02' },
+        { id: 'tk_fini', title: 'Pompe terminée', project_id: 'pr_bassin', status: 'done', due_date: '2026-11-03' },
+      ],
+    });
+    api.db.prepare("UPDATE tasks SET priority='high' WHERE id='tk_voisine'").run();
+    mockAiSuggest('[]');
+    render(<App />);
+    fireEvent.click(await aiAction('Suggérer des tâches avec l’IA'));
+    await screen.findByRole('region', { name: 'Tâches suggérées' });
+    const sent = JSON.stringify(aiBodies.at(-1));
+    expect(sent).toContain('Réparer la pompe — priorité haute ; échéance 2026-11-01');
+    expect(sent).toContain('Commander des fournitures');
+    expect(sent).not.toContain('2026-12-01');
+    expect(sent).not.toContain('Pompe secrète');
+    expect(sent).not.toContain('Pompe terminée');
+    fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
+    expect(screen.getByText('Réparer la pompe — priorité haute ; échéance 2026-11-01')).toBeInTheDocument();
+    expect(screen.getByText(/Tâches en cours :/)).toHaveTextContent('Commander des fournitures');
   });
 });

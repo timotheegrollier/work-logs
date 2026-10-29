@@ -2065,7 +2065,7 @@ button:disabled {
 }
 .ai-action-fields {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(135px, 0.35fr);
+  grid-template-columns: minmax(0, 1fr) minmax(100px, 0.3fr) minmax(135px, 0.4fr);
   gap: 8px;
 }
 .ai-action-fields label {
@@ -2074,7 +2074,8 @@ button:disabled {
   font-size: 12px;
   color: var(--muted);
 }
-.ai-action-fields input {
+.ai-action-fields input,
+.ai-action-fields select {
   min-width: 0;
   width: 100%;
   font-size: 13px;

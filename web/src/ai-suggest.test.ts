@@ -197,22 +197,82 @@ describe('extraction des actions explicites', () => {
 });
 
 describe('suggestions de tâches issues de la note', () => {
-  test('propose une déduction ancrée dans le brouillon, avec contexte et sans échéance inventée', async () => {
+  test('transmet seulement aux suggestions les priorités et échéances enregistrées des tâches voisines', async () => {
+    const text = 'La pompe fuit.';
+    const fetch = vi.fn(async () => aiResponse('[]'));
+    vi.stubGlobal('fetch', fetch);
+    const context = {
+      relatedTasks: ['Réparer la pompe'],
+      relatedTaskPlanning: [{ title: 'Réparer la pompe', priority: 'high' as const, due_date: '2026-10-31' }],
+    };
+    await suggestEntryTasks(settings, 'Note', text, { context, today: '2026-10-29' });
+    let body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.messages[1].content).toContain('Réparer la pompe — priorité haute ; échéance 2026-10-31');
+    expect(body.messages[0].content).toContain('sans supposer la charge ni la disponibilité');
+    fetch.mockClear();
+    await extractEntryActions(settings, 'Note', text, { context });
+    body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.messages[1].content).toContain('Réparer la pompe');
+    expect(body.messages[1].content).not.toContain('2026-10-31');
+    expect(body.messages[1].content).not.toContain('priorité haute');
+  });
+
+  test('propose une déduction ancrée dans le brouillon avec une échéance à vérifier', async () => {
     const text = 'La pompe perd de la pression depuis hier.';
     const fetch = vi.fn(async () => aiResponse(JSON.stringify([
-      { title: 'Contrôler la pompe', evidence: text, due_date: '2026-11-01' },
+      { title: 'Contrôler la pompe', evidence: text, due_date: '2026-11-01', priority: 'high', planning_reason: 'Perte de pression : contrôle rapide proposé.' },
       { title: 'Changer le filtre', evidence: 'Filtre usé', due_date: null },
       { title: 'CONTROLER LA POMPE', evidence: text, due_date: null },
     ])));
     vi.stubGlobal('fetch', fetch);
     await expect(suggestEntryTasks(settings, 'Bassin', text, {
-      context: { project: 'Ferme', projectBrief: 'Maintenance du bassin' },
-    })).resolves.toEqual([{ title: 'Contrôler la pompe', evidence: text, due_date: null }]);
+      context: { project: 'Ferme', projectBrief: 'Maintenance du bassin' }, today: '2026-10-29', entryDate: '2026-10-28',
+    })).resolves.toEqual([{ title: 'Contrôler la pompe', evidence: text, due_date: '2026-11-01', priority: 'high', planning_reason: 'Perte de pression : contrôle rapide proposé.' }]);
     const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
     expect(body.messages[0].content).toContain('raisonnablement déduites');
     expect(body.messages[0].content).toContain('suggestions à vérifier');
     expect(body.messages[1].content).toContain(text);
     expect(body.messages[1].content).toContain('Maintenance du bassin');
+    expect(body.messages[1].content).toContain('Date actuelle locale : 2026-10-29');
+    expect(body.messages[1].content).toContain('Date de la note : 2026-10-28');
+    expect(body.messages[0].content).toContain('une date relative dans une note ancienne');
+  });
+
+  test('classe les priorités avec repli normal et rejette les dates invalides', async () => {
+    const text = 'Moteur chaud et ventilation à contrôler.';
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse(JSON.stringify([
+      { title: 'Nettoyer', priority: 'low', due_date: '2026-02-30', evidence: text },
+      { title: 'Observer', priority: 'urgente', due_date: '2026-11-02', evidence: text },
+      { title: 'Vérifier', priority: 'high', due_date: '2026-10-30', evidence: text },
+      { title: 'Tester', priority: 'high', due_date: null, evidence: text },
+    ]))));
+    expect(await suggestEntryTasks(settings, 'Moteur', text, { today: '2026-10-29' })).toEqual([
+      { title: 'Vérifier', priority: 'high', due_date: '2026-10-30', evidence: text },
+      { title: 'Tester', priority: 'high', due_date: null, evidence: text },
+      { title: 'Observer', priority: 'normal', due_date: '2026-11-02', evidence: text },
+      { title: 'Nettoyer', priority: 'low', due_date: null, evidence: text },
+    ]);
+  });
+
+  test('applique la limite après le classement même si le modèle renvoie trop de tâches', async () => {
+    const text = 'Maintenance du moteur.';
+    const actions = Array.from({ length: 9 }, (_, index) => ({ title: `Action ${index}`, priority: index === 8 ? 'high' : 'low', due_date: null, evidence: text }));
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse(JSON.stringify(actions))));
+    const result = await suggestEntryTasks(settings, 'Note', text);
+    expect(result).toHaveLength(8);
+    expect(result[0]).toMatchObject({ title: 'Action 8', priority: 'high' });
+  });
+
+  test('priorise aussi les actions extraites sans inventer leur échéance', async () => {
+    const text = 'Appeler le client. Vérifier la panne.';
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse(JSON.stringify([
+      { title: 'Appeler', priority: 'low', due_date: null, evidence: 'Appeler le client.' },
+      { title: 'Vérifier', priority: 'high', due_date: '2026-11-02', evidence: 'Vérifier la panne.' },
+    ]))));
+    expect(await extractEntryActions(settings, 'Note', text)).toEqual([
+      { title: 'Vérifier', priority: 'high', due_date: null, evidence: 'Vérifier la panne.' },
+      { title: 'Appeler', priority: 'low', due_date: null, evidence: 'Appeler le client.' },
+    ]);
   });
 
   test('écarte une tâche déjà liée et une case terminée ; une réponse vide reste possible', async () => {

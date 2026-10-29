@@ -108,7 +108,7 @@ export function saveAiSettings(settings: AiSettings): void {
   }
 }
 
-import type { EntrySummary, Project, Task } from './lib';
+import type { EntrySummary, Priority, Project, Task } from './lib';
 
 /** Repères partagés par les gestes IA, limités au projet et aux sources choisies. */
 export interface AiWorkContext {
@@ -118,10 +118,14 @@ export interface AiWorkContext {
   sources?: { id: string; title: string; text: string; kind: 'note' | 'procedure' }[];
   /** Titres des tâches voisines en cours, pour ne pas proposer de doublons. */
   relatedTasks?: string[];
+  /** Priorité et échéance enregistrées de tâches voisines, utilisées seulement pour suggérer des tâches. */
+  relatedTaskPlanning?: { title: string; priority: Priority; due_date: string | null }[];
   /** Titres des notes récentes du projet, pour coller au travail en cours. */
   recentNotes?: string[];
   /** Mots du métier présents dans les titres du même projet. */
   vocabulary?: string[];
+  /** Données locales pour recalculer le vocabulaire après exclusion d'une source ; jamais envoyées au fournisseur. */
+  vocabularyInputs?: { tasks: string[]; entries: { id: string; title: string }[] };
 }
 
 /** Une proposition peut être affinée en gardant sa source et ses règles. */
@@ -840,6 +844,24 @@ export interface ExtractedAction {
   title: string;
   due_date: string | null;
   evidence: string;
+  /** La priorité est une proposition, pas une certitude. */
+  priority?: Priority;
+  /** Brève justification fournie par le modèle pour faciliter la relecture. */
+  planning_reason?: string;
+}
+
+type EntryActionOptions = { context?: SuggestContext; refinement?: AiRefinement; timeoutMs?: number; entryDate?: string; today?: string };
+
+function validDueDate(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : null;
+}
+
+/** Date locale, sans décalage UTC autour de minuit. */
+function localToday(): string {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function normalizedActionTitle(title: string): string {
@@ -850,8 +872,7 @@ function normalizedActionTitle(title: string): string {
 function literalDueDate(value: unknown, evidence: string): string | null {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)
     || !new RegExp(`(?:^|[^0-9])${value}(?:$|[^0-9])`).test(evidence)) return null;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : null;
+  return validDueDate(value);
 }
 
 /**
@@ -863,7 +884,7 @@ async function proposeEntryActions(
   settings: AiSettings,
   title: string,
   text: string,
-  options: { context?: SuggestContext; refinement?: AiRefinement; timeoutMs?: number } = {}
+  options: EntryActionOptions = {}
 ): Promise<ExtractedAction[]> {
   const source = text.trim();
   if (!source) throw new AiError('Rien à extraire : l’entrée est vide.');
@@ -876,6 +897,12 @@ async function proposeEntryActions(
   const sections: string[] = [];
   if (settings.profile.trim()) sections.push(`Profil : ${settings.profile.trim()}`);
   sections.push(`Titre de la note : ${title.trim()}`, ...workContextSections(context));
+  if (mode === 'suggest') {
+    sections.push(`Date actuelle locale : ${validDueDate(options.today) ?? localToday()}`);
+    if (validDueDate(options.entryDate)) sections.push(`Date de la note : ${options.entryDate}`);
+    const planning = (context.relatedTaskPlanning ?? []).slice(0, MAX_CONTEXT_ITEMS);
+    if (planning.length) sections.push(`Tâches voisines en cours (priorités et échéances enregistrées, sans information sur la disponibilité) :\n${planning.map((task) => `- ${truncate(task.title, MAX_TITLE_LENGTH)} — priorité ${task.priority === 'high' ? 'haute' : task.priority === 'low' ? 'basse' : 'normale'} ; échéance ${validDueDate(task.due_date) ?? 'non fixée'}`).join('\n')}`);
+  }
   if (excludedTitles.length > 0) sections.push(`Actions déjà terminées ou tâches déjà liées, à exclure :\n${excludedTitles.map((item) => `- ${item}`).join('\n')}`);
   sections.push(mode === 'extract'
     ? `Texte source de la note (seule source des actions et des échéances) :\n${source}`
@@ -885,11 +912,13 @@ async function proposeEntryActions(
 ${REFERENCE_RULE}
 Extrais seulement les actions explicitement encore à faire dans le texte source de la note. Ne déduis aucune action utile, implicite ou habituelle. Un fait rapporté, une action accomplie, une case cochée ou une tâche déjà liée ne sont jamais une action à créer. Les cases non cochées restent extractibles.
 Le contexte de projet et les documents de référence servent uniquement à comprendre le vocabulaire : ils ne fournissent aucune action ni échéance. La proposition précédente n'est pas une source non plus.
-Réponds uniquement avec un tableau JSON de ${MAX_SUGGESTIONS} objets au plus, sans enveloppe ni commentaire. Chaque objet a exactement les champs « title » (titre court de l'action en français), « due_date » (date au format YYYY-MM-DD ou null) et « evidence » (court extrait recopié à l'identique du texte source qui dit l'action à faire).
+Réponds uniquement avec un tableau JSON de ${MAX_SUGGESTIONS} objets au plus, sans enveloppe ni commentaire. Chaque objet a exactement les champs « title » (titre court de l'action en français), « due_date » (date au format YYYY-MM-DD ou null), « priority » (high, normal ou low) et « evidence » (court extrait recopié à l'identique du texte source qui dit l'action à faire).
+Classe la priorité selon l’urgence et l’impact indiqués ; sans indice clair, choisis normal.
 Une échéance n'est permise que si sa date YYYY-MM-DD est écrite littéralement dans ce même extrait. Ne convertis jamais une date relative (« demain », « vendredi ») ou un autre format : mets null. N'invente aucun détail. S'il n'y a aucune action explicite à extraire, réponds [].` : `Tu aides l'utilisateur à suggérer des tâches utiles à partir d'une note de son journal WorkLogs.
 ${REFERENCE_RULE}
-Propose des tâches concrètes encore pertinentes, explicitement mentionnées ou raisonnablement déduites du texte source de la note. Les déductions sont des suggestions à vérifier, jamais des faits accomplis ou des engagements certains. N'invente ni résultat, ni personne, ni valeur, ni date. Ne propose pas une action déjà terminée ou une tâche déjà liée. Le contexte éclaire le texte, mais ne constitue pas à lui seul une raison de créer une tâche.
-Réponds uniquement avec un tableau JSON de ${MAX_SUGGESTIONS} objets au plus, sans enveloppe ni commentaire. Chaque objet a exactement « title » (titre court en français), « due_date » (date YYYY-MM-DD littéralement présente dans l'extrait ou null) et « evidence » (court extrait recopié à l'identique du texte source qui motive la suggestion). Sans suggestion ancrée dans la note, réponds [].`,
+Propose des tâches concrètes encore pertinentes, explicitement mentionnées ou raisonnablement déduites du texte source de la note. Les déductions sont des suggestions à vérifier, jamais des faits accomplis ou des engagements certains. N'invente ni résultat, ni personne, ni valeur. Ne propose pas une action déjà terminée ou une tâche déjà liée. Le contexte éclaire le texte, mais ne constitue pas à lui seul une raison de créer une tâche.
+Réponds uniquement avec un tableau JSON de ${MAX_SUGGESTIONS} objets au plus, sans enveloppe ni commentaire. Chaque objet a exactement « title » (titre court en français), « priority » (high, normal ou low), « due_date » (date YYYY-MM-DD ou null), « planning_reason » (courte explication en français de la priorité et de l'échéance) et « evidence » (court extrait recopié à l'identique du texte source qui motive la suggestion).
+Propose une priorité selon l'impact et l'urgence du contexte : high si réellement urgent ou important, low si secondaire, normal si incertain. Les priorités et échéances des tâches voisines éclairent la hiérarchisation, sans supposer la charge ni la disponibilité de l'utilisateur. Propose une échéance réaliste en tenant compte de la date actuelle, de la date de la note et de l'ordre des tâches. Respecte toute date explicite pertinente ; une date relative dans une note ancienne ne signifie pas forcément à partir d'aujourd'hui. Si aucun délai raisonnable ne peut être justifié, mets null plutôt qu'une date arbitraire. Distingue dans l'explication une date explicitement donnée d'une estimation à confirmer. Les priorités et échéances sont des suggestions, jamais des engagements certains. Sans suggestion ancrée dans la note, réponds [].`,
     user: sections.join('\n\n'),
   }, options.refinement);
   const reply = await postChatCompletions(settings, mode === 'extract' ? 'l’extraction des actions' : 'la suggestion de tâches', prompt.system, prompt.user, 3072, options.timeoutMs ?? AI_TIMEOUT_MS);
@@ -913,16 +942,22 @@ Réponds uniquement avec un tableau JSON de ${MAX_SUGGESTIONS} objets au plus, s
     const normalizedEvidence = normalizedActionTitle(evidence);
     if (doneTitles.some((done) => normalizedEvidence.includes(done))) continue;
     seen.add(normalizedTitle);
-    actions.push({ title: actionTitle, due_date: literalDueDate(item.due_date, evidence), evidence });
-    if (actions.length >= MAX_SUGGESTIONS) break;
+    const priority: Priority | undefined = item.priority === 'high' || item.priority === 'normal' || item.priority === 'low' ? item.priority : mode === 'suggest' ? 'normal' : undefined;
+    const reason = typeof item.planning_reason === 'string' ? item.planning_reason.trim().replace(/\s+/g, ' ').slice(0, 300) : '';
+    actions.push({ title: actionTitle, due_date: mode === 'suggest' ? validDueDate(item.due_date) : literalDueDate(item.due_date, evidence), evidence,
+      ...(priority && { priority }), ...(mode === 'suggest' && reason && { planning_reason: reason }) });
+    // Certains modèles dépassent le nombre demandé : on classe avant de limiter,
+    // tout en bornant le traitement d’une réponse inattendue.
+    if (actions.length >= MAX_SUGGESTIONS * 4) break;
   }
-  return actions;
+  const rank = { high: 0, normal: 1, low: 2 };
+  return actions.sort((a, b) => rank[a.priority ?? 'normal'] - rank[b.priority ?? 'normal']).slice(0, MAX_SUGGESTIONS);
 }
 
 /** Actions explicitement présentes dans la note, à relire avant création. */
 export async function extractEntryActions(
   settings: AiSettings, title: string, text: string,
-  options: { context?: SuggestContext; refinement?: AiRefinement; timeoutMs?: number } = {}
+  options: EntryActionOptions = {}
 ): Promise<ExtractedAction[]> {
   return proposeEntryActions('extract', settings, title, text, options);
 }
@@ -930,7 +965,7 @@ export async function extractEntryActions(
 /** Tâches suggérées à partir du contexte de la note, ancrées dans un extrait à relire. */
 export async function suggestEntryTasks(
   settings: AiSettings, title: string, text: string,
-  options: { context?: SuggestContext; refinement?: AiRefinement; timeoutMs?: number } = {}
+  options: EntryActionOptions = {}
 ): Promise<ExtractedAction[]> {
   return proposeEntryActions('suggest', settings, title, text, options);
 }

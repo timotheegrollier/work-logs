@@ -1,11 +1,27 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-29 — contexte IA, priorités et échéances proposées
+
+Le contexte IA utilise aussi le brouillon courant pour classer localement les sources et
+tâches pertinentes du même projet ; les sources exclues ne contribuent plus au vocabulaire.
+Les actions extraites et les tâches suggérées sont présentées par priorité, modifiable avant
+création. La suggestion peut proposer une échéance estimée à relire, en tenant compte des
+dates du jour et de la note ; jusqu'à cinq tâches ouvertes pertinentes du même projet avec
+priorité et échéance sont transmises et visibles, sans supposer la disponibilité. L'extraction
+conserve sa règle de date littérale. L'API et la
+PWA créent la tâche liée avec la priorité choisie et gardent le défaut « normale » pour les
+anciens clients. Détails : `05-DECISIONS.md` §50 ; usage et recette : `03-UTILISATION.md` et
+`04-RECETTES.md` §14. Aucune dépendance ni migration. Recettes initiale isolée et finale
+`./scripts/check.sh` vertes : 283 API, 687 front (et 1 échec attendu), 48 desktop unitaires,
+32 scripts, 11 Worker, 11 relais, 78 navigateur et 17 desktop e2e. Le parcours mobile
+couvre le classement, la correction et la création des tâches, ainsi que la largeur à 412 px.
+
 ## Lot du 2026-10-29 — suggestions de tâches depuis une note
 
-Depuis une note locale en cours d'édition, **✨ Suggérer des tâches avec l’IA** propose
-des actions explicites ou raisonnablement déduites, chacune accompagnée d'un extrait exact
-de la note. Sélection et correction avant création de tâches liées ; l'extraction des seules
-actions explicites reste disponible. Contexte, échéances et invalidation des propositions :
+Depuis **✨ IA › Suggérer des tâches avec l’IA** dans une note locale en cours d'édition,
+l'IA propose des actions explicites ou raisonnablement déduites, chacune accompagnée d'un
+extrait exact de la note. Sélection et correction avant création de tâches liées ; cette
+action unique remplace l'ancien bouton distinct d'extraction. Contexte, échéances et invalidation des propositions :
 `05-DECISIONS.md` §49 ; usage et recette réelle : `03-UTILISATION.md` et `04-RECETTES.md`
 §14. Aucune dépendance ni migration ajoutée. Recettes initiale (HEAD isolé) et finale
 `./scripts/check.sh` vertes : 282 API, 675 front (et 1 échec attendu), 48 desktop unitaires,

@@ -6,6 +6,10 @@ const PROJECT_CONTEXTS_KEY = 'worklogs-ai-project-contexts';
 const MAX_PROJECT_BRIEF = 2000;
 const MAX_SOURCES = 3;
 const MAX_SOURCE_TEXT = 2000;
+// La recherche est locale, mais un brouillon très long ne doit pas dominer le
+// titre ni rendre le classement coûteux. On garde aussi la fin du document.
+const MAX_QUERY_TEXT = 12000;
+const MAX_QUERY_WORDS = 80;
 const STOPWORDS = new Set(
   'le la les de des du un une et est en dans pour avec sur par au aux ce cette ces ses son ton ta tes mes que qui quoi dont ou comme tout tous toute toutes plus moins aussi bien faire fait font etre ete avoir leur leurs notre nos votre vos mais donc car ni si elle il ils elles nous vous je tu on ne pas encore entre vers chez sans sous apres avant pendant depuis contre autre autres tel telle tels telles cela ceci note notes procedure procedures creer nouvelle nouveau mettre jour'.split(' ')
 );
@@ -82,6 +86,8 @@ function relevantExcerpt(text: string, keywords: Set<string>): string {
 export interface LoadAiContextOptions {
   projectId: string | null;
   title: string;
+  /** Brouillon courant : sert localement à retrouver les sources pertinentes. */
+  text?: string;
   entryId?: string;
   taskId?: string;
   linkedDocumentIds?: string[];
@@ -111,11 +117,21 @@ export async function loadAiContext(options: LoadAiContextOptions): Promise<AiWo
   const eligible = [...byId.values()].filter((summary) =>
     summary.project_id === options.projectId && summary.id !== options.entryId && !summary.archived
     && !summary.google_document_id && !summary.google_tab_id);
-  const keywords = words(options.title);
+  const titleWords = words(options.title);
+  const rawText = options.text ?? '';
+  const queryText = rawText.length > MAX_QUERY_TEXT
+    ? rawText.slice(0, MAX_QUERY_TEXT / 2) + '\n' + rawText.slice(-MAX_QUERY_TEXT / 2)
+    : rawText;
+  const allTextWords = [...words(queryText)].filter((word) => !titleWords.has(word));
+  const textWords = new Set(allTextWords.length > MAX_QUERY_WORDS
+    ? [...allTextWords.slice(0, MAX_QUERY_WORDS / 2), ...allTextWords.slice(-MAX_QUERY_WORDS / 2)]
+    : allTextWords);
+  const keywords = new Set([...titleWords, ...textWords]);
   const candidates = eligible.map((summary) => ({
     summary,
     linked: linkedIds.has(summary.id),
-    score: 3 * matches(summary.title, keywords) + matches(summary.excerpt || '', keywords),
+    score: 3 * matches(summary.title, titleWords) + matches(summary.excerpt || '', titleWords)
+      + 2 * matches(summary.title, textWords) + matches(summary.excerpt || '', textWords),
   })).filter((item) => item.linked || item.score > 0)
     .sort((a, b) => Number(b.linked) - Number(a.linked)
       || b.score - a.score
@@ -135,26 +151,50 @@ export async function loadAiContext(options: LoadAiContextOptions): Promise<AiWo
       throw new Error(`Impossible de lire « ${summary.title} » pour le contexte IA. Réessaie avant de lancer l’assistance.`);
     }
   }));
-  const openTasks = projectTasks.filter((task) => task.id !== options.taskId && task.status !== 'done');
+  const rankedOpenTasks = projectTasks.filter((task) => task.id !== options.taskId && task.status !== 'done')
+    .map((task, index) => ({ task, index, score: 3 * matches(task.title, titleWords) + matches(task.title, textWords) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+  const openTasks = rankedOpenTasks.map(({ task }) => task);
+  const relatedTaskTitles = compactTitles(openTasks.map((task) => task.title));
+  const planningTitles = compactTitles(rankedOpenTasks.filter(({ score }) => score > 0).map(({ task }) => task.title));
+  const relatedTaskPlanning = planningTitles.flatMap((title) => {
+    const task = openTasks.find((candidate) => compactTitles([candidate.title])[0] === title);
+    if (!task) return [];
+    const date = task.due_date && /^\d{4}-\d{2}-\d{2}$/.test(task.due_date) ? new Date(`${task.due_date}T00:00:00Z`) : null;
+    return [{ title, priority: task.priority === 'high' || task.priority === 'low' ? task.priority : 'normal' as const,
+      due_date: date && !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === task.due_date ? task.due_date : null }];
+  });
+  const vocabularyInputs = {
+    tasks: projectTasks.map((task) => task.title),
+    entries: eligible.map((entry) => ({ id: entry.id, title: entry.title })),
+  };
   return {
     project: state.projects.find((project) => project.id === options.projectId)?.name,
     projectBrief: readProjectAiBrief(options.projectId),
     sources,
-    relatedTasks: compactTitles(openTasks.map((task) => task.title)),
+    relatedTasks: relatedTaskTitles,
+    relatedTaskPlanning,
     recentNotes: compactTitles(sources.filter((source) => source.kind === 'note').map((source) => source.title)),
-    vocabulary: recurringVocabulary([...projectTasks.map((task) => task.title), ...eligible.map((entry) => entry.title)]),
+    vocabulary: recurringVocabulary([...vocabularyInputs.tasks, ...vocabularyInputs.entries.map((entry) => entry.title)]),
+    vocabularyInputs,
   };
 }
 
 /** Une exclusion retire également le titre de la note des indications annexes. */
 export function selectedAiContext(context: AiWorkContext, excludedIds: string[]): AiWorkContext {
   const excluded = new Set(excludedIds);
+  // Les titres nécessaires au calcul restent dans le contexte local, jamais
+  // dans l'objet prêt à transmettre au client IA.
+  const { vocabularyInputs, ...selected } = context;
   const sources = context.sources?.filter((source) => !excluded.has(source.id));
   const removedTitles = new Set(context.sources?.filter((source) => excluded.has(source.id)).map((source) => source.title));
   const keptTitles = new Set(sources?.map((source) => source.title));
   return {
-    ...context,
+    ...selected,
     sources,
     recentNotes: context.recentNotes?.filter((title) => !removedTitles.has(title) || keptTitles.has(title)),
+    vocabulary: vocabularyInputs
+      ? recurringVocabulary([...vocabularyInputs.tasks, ...vocabularyInputs.entries.filter((entry) => !excluded.has(entry.id)).map((entry) => entry.title)])
+      : context.vocabulary,
   };
 }

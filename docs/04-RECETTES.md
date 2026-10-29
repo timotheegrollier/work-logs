@@ -267,18 +267,22 @@ confondre « le modèle répond » et « la proposition aide ».
 | Note d'un autre projet au titre identique | Son contenu ne part pas. |
 | Document Google lié | Seul son titre peut servir de source principale à une procédure. |
 | Information utile en fin d'un document retenu | L'extrait ne se limite pas au début. |
+| Titre générique, texte précis en cours | Les documents du même projet correspondant au texte sont retenus ; celui d'un autre projet ne part pas. |
+| Tâches voisines pertinentes | Les tâches du projet liées au sujet sont présentées avant les tâches sans rapport. Pour suggérer des tâches, cinq au plus partent avec priorité et échéance enregistrées, visibles dans le contexte ; aucune disponibilité n'est déduite. |
 | Fiche projet avec une contrainte métier | La proposition respecte cette contrainte. |
-| Source décochée puis nouvelle demande | Ni extrait ni ancienne proposition dérivée n'est réenvoyé. |
+| Source décochée puis nouvelle demande | Ni extrait, titre spécifique ni ancienne proposition dérivée n'est réenvoyé par les sources ou leur vocabulaire. |
 | « Plus court » sur une correction | Réduit la longueur sans changer commandes, valeurs ou sens. |
 | « Pour un collègue » sur une procédure | Rend les étapes compréhensibles sans inventer de configuration. |
 | Note relatant seulement du travail terminé | Aucune action proposée à créer. |
-| Checklist avec cases cochées et non cochées | Seules les actions restantes sont extractibles. |
+| Checklist avec cases cochées et non cochées | Les cases terminées sont écartées ; les actions restantes peuvent être suggérées. |
 | Action déjà liée à la note | Aucune nouvelle tâche identique. |
-| Note décrivant un problème sans action écrite | « Suggérer des tâches » peut proposer une suite raisonnable, avec un extrait exact de la note à vérifier ; « Extraire les actions » ne doit pas l'inventer. |
+| Note décrivant des actions ou un problème sans action écrite | « ✨ IA › Suggérer des tâches avec l’IA » propose les actions écrites et peut déduire une suite raisonnable, toujours avec un extrait exact de la note à vérifier. |
 | Suggestions déduites, doublons et action terminée | Les déductions sont présentées à relire ; pas de tâche créée sans sélection, ni de doublon simple avec une tâche liée ou une case terminée. |
-| Échéance explicite `2026-10-30` | Date reprise ; « demain » laisse une échéance vide. |
+| Échéance explicite ou estimée | Une date explicite peut être reprise ; une date estimée doit être justifiée et reste à confirmer, corriger ou effacer avant création. |
+| Note avec urgence et actions secondaires | Suggestions ordonnées haute, normale puis basse ; priorité modifiable et conservée après création, sans modifier l'ordre manuel des autres tâches. |
+| Suggestions avec date relative ou délai estimé | Date actuelle et date de la note prises en compte ; estimation expliquée, à confirmer, corriger ou effacer avant création. Sans indice suffisant, absence d'échéance acceptable. |
 | Création partiellement refusée ou réponse perdue | Réessayer ne recrée pas les tâches déjà liées. |
-| Titre, texte ou projet changé pendant la demande | Les frappes restent et la réponse obsolète n'est pas appliquée ; relancer avant de créer. |
+| Titre, texte, date de note ou projet changé pendant la demande | Les frappes restent et la réponse obsolète n'est pas appliquée ; relancer avant de créer. |
 | Source décochée après proposition ou pendant la création | La proposition est invalidée ; les tâches restantes ne sont pas créées sur l'ancien contexte. |
 | « ✨ Compléter » sur un titre et trois points | Chaque point développé ; « à préciser » là où l'information manque, rien d'inventé. |
 | « ✨ Compléter » avec commande, valeur et case cochée | Commande et valeur à l'identique, case toujours cochée, rien de prévu présenté comme fait. |

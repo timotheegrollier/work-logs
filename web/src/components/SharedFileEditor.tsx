@@ -536,7 +536,7 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
       if (!settings.key) throw new Error(`Colle ta clé IA dans ⚙ Paramètres pour activer ${mode === 'layout' ? 'la mise en page' : 'les suggestions de procédure'}.`);
       // « Tout » n'est pas un projet : seul un projet explicitement sélectionné
       // apporte des notes locales à un fichier du partage.
-      const loadedContext = projectId ? await loadAiContext({ projectId, title }) : {};
+      const loadedContext = projectId ? await loadAiContext({ projectId, title, text: request.text }) : {};
       if (contextVersion.current !== selection) return;
       setAiContext(loadedContext);
       const context = selectedAiContext(loadedContext, excludedSourceIds);

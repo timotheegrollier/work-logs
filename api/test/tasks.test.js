@@ -230,8 +230,26 @@ describe('tâches', () => {
     assert.equal(created.body.title, 'Préparer le comité');
     assert.equal(created.body.project_id, project.id);
     assert.equal(created.body.due_date, '2026-09-20');
+    assert.equal(created.body.priority, 'normal');
     assert.deepEqual(created.body.documents.map((document) => document.id), [entry.id]);
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=? AND entry_id=?').get(created.body.id, entry.id).n, 1);
+  });
+
+  test('crée une tâche liée avec sa priorité et refuse une priorité invalide sans écriture', async () => {
+    const entry = await make.entry(api, { title: 'Maintenance' });
+    for (const priority of ['high', 'low']) {
+      const result = await api.post(`/api/entries/${entry.id}/task`, { title: `Tâche ${priority}`, priority });
+      assert.equal(result.status, 201);
+      assert.equal(result.body.priority, priority);
+      assert.deepEqual(result.body.documents.map((document) => document.id), [entry.id]);
+      assert.equal(api.db.prepare('SELECT priority FROM tasks WHERE id=?').get(result.body.id).priority, priority);
+    }
+    const counts = () => [api.db.prepare('SELECT count(*) n FROM tasks').get().n, api.db.prepare('SELECT count(*) n FROM task_entries').get().n];
+    const before = counts();
+    const invalid = await api.post(`/api/entries/${entry.id}/task`, { title: 'Invalide', priority: 'urgente' });
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.body.error, 'priorité invalide (basse, normale ou haute attendue)');
+    assert.deepEqual(counts(), before);
   });
 
   test('crée une tâche liée depuis un onglet Google et valide son échéance', async () => {

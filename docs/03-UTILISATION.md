@@ -213,7 +213,7 @@ rendu approximatif.
 - Sur grand écran, « N en cours » et « N en retard » de l'en-tête sont cliquables : ils
   ouvrent le panneau Tâches sur la vue correspondante. Ces compteurs portent sur toute la
   base ; si le projet filtré ou la recherche en cachent une partie, ils sont levés.
-- **Créer une tâche liée** depuis l’entrée ouverte préremplit son titre et permet d’ajouter une échéance. La tâche apparaît directement dans le panneau de droite avec cette entrée comme contexte. Dans une note locale, **✨ Suggérer des tâches avec l’IA** propose aussi des tâches à partir du brouillon ; elles restent à relire avant création (voir « Assistance IA »).
+- **Créer une tâche liée** depuis l’entrée ouverte préremplit son titre et permet d’ajouter une échéance. La tâche apparaît directement dans le panneau de droite avec cette entrée comme contexte. Dans une note locale, **✨ IA › Suggérer des tâches avec l’IA** propose aussi des tâches à partir du brouillon ; elles restent à relire avant création (voir « Assistance IA »).
 - **Relier un document** ouvre la liste des entrées disponibles. Choisir une entrée locale ou un onglet Google puis cliquer sur **Relier** ; chaque document lié reste visible sur la carte avec son origine.
 - Cliquer sur le titre d'un document lié l'ouvre au centre. Le bouton ✕ retire seulement l'association, sans supprimer le document. Une même entrée peut fournir le contexte de plusieurs tâches.
 - **✨ IA › Créer une procédure** (pied de carte) fait rédiger par l'IA une procédure à partir de la tâche et de ses documents liés, à relire avant de la créer — voir « Procédures ».
@@ -226,8 +226,9 @@ facultativement, le **Contexte IA du projet** : objectif, environnement, contrai
 termes utiles. Chaque fiche est conservée **sur cet appareil uniquement**.
 
 Un clic d'assistance lit aussi des documents locaux du même projet : documents liés
-d'abord, puis notes et procédures dont le titre ou l'extrait correspond au sujet.
-Au plus trois extraits de 2 000 caractères accompagnent la demande. Le contenu des
+d'abord, puis notes et procédures dont le titre ou l'extrait correspond au sujet et au
+texte en cours. Les tâches voisines pertinentes sont privilégiées. Cette recherche est
+locale ; au plus trois extraits de 2 000 caractères accompagnent la demande. Le contenu des
 documents Google et des pièces jointes n'est pas transmis. Pour tirer une procédure
 d'une tâche, ses cinq documents liés restent les sources principales, même d'un autre projet.
 Dans le partage, le contexte local accompagne le fichier seulement si un projet est
@@ -239,12 +240,13 @@ Il n'apparaît que si une action est possible (jamais sur un document Google). L
 s'ouvre au clic ou au clavier (flèches, Entrée, Échap) ; pendant la demande, le bouton
 affiche l'attente (« Rédaction… », « Mise en page… »). Le survol d'une action dit ce qui
 part au service IA. **✨ Suggérer** du formulaire « ＋ Entrée liée » reste à côté de
-sa zone de sous-tâches, qu'il remplit ; **✨ Suggérer des tâches avec l’IA** se trouve
-aussi près de la création d'une tâche liée dans l'entrée.
+sa zone de sous-tâches, qu'il remplit. Dans une note, la suggestion de tâches est
+rangée dans ce même menu **✨ IA**.
 
 **Contexte utilisé par l'IA** apparaît après la première demande : déplier pour lire
 les extraits et décocher une source pour les demandes suivantes. Une modification de
-sélection retire les propositions en attente issues de l'ancienne sélection.
+sélection retire les propositions en attente issues de l'ancienne sélection. Une source
+décochée ne contribue plus non plus au vocabulaire calculé depuis son titre.
 
 **✨ IA › Compléter** rédige le document ouvert à partir de son titre et de ce qui est déjà
 écrit : quelques points clés suffisent, l'IA en fait la note complète (phrases courtes ;
@@ -269,24 +271,25 @@ demandent une nouvelle version, avec le texte d'origine et le brouillon précéd
 Corrections, notes et procédures restent à relire avant application ; dans le partage,
 appliquer ne crée qu'un brouillon local, à envoyer avec **Enregistrer sur le partage**.
 
-**✨ IA › Extraire les actions**, dans une note locale Markdown ou riche, propose les actions
-encore à faire avec un extrait justificatif. Cocher les actions à conserver, ajuster leur
-titre ou leur échéance si nécessaire, puis **Créer les tâches sélectionnées**. Chaque tâche
-est liée à la note et reprend son projet ; la note est conservée. Seules les dates écrites
-explicitement au format `YYYY-MM-DD` dans le passage cité deviennent automatiquement des
-échéances : « demain » ou « vendredi » laisse le champ vide. Une création partiellement
-réussie garde les tâches déjà créées pour permettre de réessayer les autres.
-
-**✨ Suggérer des tâches avec l’IA**, dans la même note, peut aussi proposer des tâches
-raisonnablement déduites de son contenu, même si elles n'y sont pas formulées comme des
-actions. Le titre, le brouillon et le contexte du projet partent au service IA configuré ;
-un extrait exact de la note accompagne chaque suggestion pour aider à la juger. Ces déductions
-ne sont ni des faits accomplis ni des engagements : vérifier les propositions avant de
-sélectionner et créer les tâches liées. L'extraction reste disponible pour ne rechercher que
-les actions explicitement écrites. Les mêmes règles d'échéance et de reprise après échec
-s'appliquent ; modifier le titre ou le contenu de la note, son projet ou les sources choisies
-demande de relancer la proposition. La suggestion requiert une note non vide et ne lit pas
-les documents Google ni le contenu des pièces jointes.
+**✨ IA › Suggérer des tâches avec l’IA**, dans une note locale Markdown ou riche, propose
+les actions écrites dans la note et peut aussi déduire une suite raisonnable. Le titre,
+le brouillon et le contexte du projet partent au service IA configuré ; chaque proposition
+est accompagnée d'un extrait exact de la note. Les déductions ne sont ni des faits accomplis
+ni des engagements : vérifier les propositions avant de sélectionner et créer les tâches
+liées. Chaque tâche reprend le projet et reste liée à la note, qui est conservée. L'IA propose
+une priorité haute, normale ou basse :
+les propositions sont présentées dans cet ordre et restent modifiables. Elle peut aussi
+suggérer une échéance, même estimée, avec une courte explication ; la date actuelle locale et
+la date de la note l'aident à interpréter le contexte. Pour cette suggestion, jusqu'à cinq
+tâches ouvertes pertinentes du même projet accompagnent aussi la demande avec leur priorité
+et leur échéance enregistrées ; elles sont visibles dans **Contexte utilisé par l'IA**. Elles
+n'indiquent pas la disponibilité de l'utilisateur. Vérifier et corriger les dates, ou les
+effacer : une estimation n'est pas un engagement. Sans priorité reconnue, « normale » est
+retenue. Une échéance peut être explicite ou estimée ; vérifier, corriger ou effacer toute
+date estimée avant création. Une création partiellement réussie garde les tâches déjà créées
+pour permettre de réessayer les autres. Modifier le titre, le contenu ou la date de la note,
+son projet ou les sources choisies demande de relancer la proposition. La suggestion requiert
+une note non vide et ne lit pas les documents Google ni le contenu des pièces jointes.
 
 ## Projets
 

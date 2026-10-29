@@ -199,10 +199,24 @@ describe('tâches', () => {
     const id = await projectId();
     const entry = await localApi.createEntry({ title: 'Contexte', project_id: id });
     const task = await localApi.createTaskFromEntry(entry.id, { due_date: '2026-09-20' });
-    expect(task).toMatchObject({ title: 'Contexte', project_id: id, due_date: '2026-09-20' });
+    expect(task).toMatchObject({ title: 'Contexte', project_id: id, due_date: '2026-09-20', priority: 'normal' });
     expect(task.documents.map((d) => d.id)).toEqual([entry.id]);
     await expect(localApi.createTaskFromEntry('en_x')).rejects.toThrow('entrée introuvable');
     expect(await localApi.deleteTask(task.id)).toEqual({ ok: true });
+  });
+
+  test('création liée : priorité conservée et valeur invalide refusée sans écriture', async () => {
+    const entry = await localApi.createEntry({ title: 'Maintenance' });
+    for (const priority of ['high', 'low'] as const) {
+      const task = await localApi.createTaskFromEntry(entry.id, { title: `Tâche ${priority}`, priority });
+      expect(task.priority).toBe(priority);
+      expect(task.documents.map((document) => document.id)).toEqual([entry.id]);
+      expect((await localApi.state()).tasks.find((item) => item.id === task.id)?.priority).toBe(priority);
+    }
+    const before = (await localApi.state()).tasks;
+    await expect(localApi.createTaskFromEntry(entry.id, { title: 'Invalide', priority: 'urgente' as never }))
+      .rejects.toThrow('priorité invalide (basse, normale ou haute attendue)');
+    expect((await localApi.state()).tasks).toEqual(before);
   });
 
   test('création depuis une tâche, avec projet, contenu et lien repris', async () => {

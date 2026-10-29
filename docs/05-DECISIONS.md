@@ -2097,3 +2097,59 @@ pièces jointes n'est pas transmis, comme aux §17 et §23. Aucune dépendance n
 **Limite.** Les contrôles vérifient l'ancrage textuel et les doublons simples ; ils ne
 prouvent pas qu'une déduction du modèle est utile ou correcte. La relecture humaine reste
 nécessaire et la pertinence se juge avec une clé réelle selon `04-RECETTES.md` §14.
+Les priorités et estimations d'échéances ont évolué ensuite : voir §50.
+
+
+---
+
+## 50. Contexte IA et planification des tâches suggérées — 2026-10-29
+
+**Demande.** Améliorer les fonctions IA et leur contexte, classer les tâches générées par
+priorité et leur proposer des échéances.
+
+**Contexte.** La sélection locale des documents et des tâches voisines utilise le titre et
+le texte courant : les mots du titre gardent plus de poids, les documents liés restent
+prioritaires, et les correspondances pertinentes du même projet remontent. La requête est
+bornée, en conservant début et fin du brouillon. Les exclusions de sources retirent aussi
+leur contribution au vocabulaire ; les données intermédiaires nécessaires au recalcul restent
+locales. Les documents Google, pièces jointes, autres projets et sources exclues ne sont pas
+transmis par cette recherche. Même sélection de sources et plafonds (§41), relecture avant
+application, changement de projet et frappes conservées.
+
+**Planification.** Pour la suggestion et l'extraction depuis une note, l'IA propose les
+priorités déjà prises en charge (`high`, `normal`, `low`). La liste de relecture les trie
+de haute à basse de façon stable ; une valeur absente ou inconnue devient normale. Le titre,
+la priorité et la date restent modifiables ; seules les lignes sélectionnées sont créées et
+liées. L'ordre manuel des tâches existantes n'est pas modifié. Une explication concise peut
+accompagner la planification des suggestions ; elle n'est pas une preuve de sa justesse.
+
+Pour « Suggérer des tâches », la date locale du jour et la date de la note sont envoyées afin
+de proposer, si elle peut être justifiée, une date valide explicite ou estimée. Au plus cinq
+tâches ouvertes pertinentes du même projet, leurs priorités et échéances enregistrées sont
+également transmises et visibles dans le contexte ; aucune disponibilité ni charge n'en est
+déduite. Les autres gestes IA ne reçoivent pas ces détails de planification. Les dates et
+priorités sont des hypothèses révisables, jamais des engagements ; un champ vide reste possible.
+La proposition unique depuis une note inclut les actions écrites et les tâches raisonnablement
+déduites ; elle remplace l'ancien geste séparé d'extraction. Une réponse IA reste ancrée dans un
+extrait exact de la note, et les doublons simples ainsi que les actions terminées sont écartés.
+Les échéances explicites ou estimées sont à relire. La date de la note entre dans les
+vérifications d'obsolescence, en plus du titre, du contenu, du projet et des sources. En cas de
+création partielle, les réussites restent acquises et ne sont pas rejouées.
+
+La route transactionnelle de création liée et son miroir PWA acceptent désormais la priorité,
+avec validation serveur et défaut « normale » compatible avec les anciens clients. Aucune
+nouvelle dépendance ni migration. Les tests automatiques simulent le service IA : ils vérifient
+les garde-fous, pas la pertinence des estimations en situation réelle. La recette §14 reste à
+juger avec une clé réelle.
+
+**Validation.** Recettes initiale isolée et finale `./scripts/check.sh` vertes, avec parcours mobile de planification ; détails dans `00-HANDOVER.md`.
+
+---
+
+## 51. Une seule action IA pour créer des tâches depuis une note — 2026-10-29
+
+Le bouton « Suggérer des tâches avec l’IA » rejoint le menu **✨ IA** ; l'ancien bouton
+« Extraire les actions » est supprimé. La suggestion unique couvre les actions explicites
+comme les suites déduites, et conserve la relecture, les extraits exacts, la sélection,
+la validation avant création et la reprise après création partielle. Aucune migration ni
+dépendance ; le comportement est testé dans l'interface et le parcours mobile.
