@@ -8,6 +8,7 @@ const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const LOGIN_SCOPE = [SCOPE, 'openid', 'email', 'profile'].join(' ');
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
+const ABOUT_URL = 'https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress,photoLink)';
 const CLIENT_ID = /^[\w.-]+\.apps\.googleusercontent\.com$/;
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 
@@ -80,11 +81,13 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
     connected: !!tokens, account: tokens?.account || null,
     pending: !!pending, error, selectedIds: selected, secureStorage: protectedStorage() });
   /** Nom et e-mail du compte, pour l'affichage seulement ; un échec n'empêche pas Drive. */
-  async function account(accessToken) {
+  async function account(accessToken, pick) {
     try {
-      const response = await fetchImpl(USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` }, redirect: 'error', signal: AbortSignal.timeout(10_000) });
+      // Le jeton du Picker n'a que drive.file : userinfo le refuse, Drive connaît aussi le compte.
+      const response = await fetchImpl(pick ? ABOUT_URL : USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` }, redirect: 'error', signal: AbortSignal.timeout(10_000) });
       if (!response.ok) return null;
-      const info = await response.json();
+      const body = await response.json();
+      const info = pick ? { email: body.user?.emailAddress, name: body.user?.displayName, picture: body.user?.photoLink } : body;
       if (typeof info.email !== 'string' || !info.email) return null;
       return { email: info.email.slice(0, 320), name: typeof info.name === 'string' ? info.name.slice(0, 200) : '',
         picture: typeof info.picture === 'string' && /^https:\/\/[\w.-]+\.googleusercontent\.com\//.test(info.picture) ? info.picture.slice(0, 2000) : '' };
@@ -185,7 +188,7 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
           if (currentGeneration !== generation) throw fail('Connexion Google annulée.');
           // Ne pas réutiliser le refresh token d'un autre compte sélectionné.
           selected = (url.searchParams.get('picked_file_ids') || '').split(',').filter(id => /^[\w-]{1,200}$/.test(id));
-          tokens = { ...next, selected_ids: selected, account: await account(next.access_token) }; persist();
+          tokens = { ...next, selected_ids: selected, account: await account(next.access_token, pick) }; persist();
           res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }).end('Google Drive est connecté. Tu peux fermer cette page et revenir dans WorkLogs.');
         } catch (e) {
           if (currentGeneration === generation) error = e.message || 'Connexion Google impossible.';
@@ -204,7 +207,10 @@ export function createGoogleClient({ profileDir, secureStorage, openExternal, fe
         // select_account : « Changer de compte » propose toujours le choix du compte.
         access_type: 'offline', prompt: 'select_account consent', state, code_challenge_method: 'S256',
         code_challenge: createHash('sha256').update(verifier).digest('base64url') };
-      if (pick) Object.assign(params, { trigger_onepick: 'true', mimetypes: 'application/vnd.google-apps.document' });
+      // Picker desktop : drive.file seul, sans autre scope, et prompt=consent (exigé par Google).
+      // login_hint : choisir des fichiers ne bascule pas en douce la synchro sur un autre compte.
+      if (pick) Object.assign(params, { scope: SCOPE, prompt: 'consent', ...(tokens?.account?.email ? { login_hint: tokens.account.email } : {}),
+        trigger_onepick: 'true', allow_multiple: 'true', mimetypes: 'application/vnd.google-apps.document' });
       url.search = new URLSearchParams(params).toString();
       try { await openExternal(url.href); } catch { cancel(); throw fail('Impossible d’ouvrir le navigateur pour la connexion Google.'); }
       return status();

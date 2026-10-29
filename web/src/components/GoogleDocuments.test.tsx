@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { GoogleDocuments } from './GoogleDocuments';
-import { api, ApiError, type Entry, type Project } from '../lib';
+import { api, ApiError, type Entry, type GoogleStatus, type Project } from '../lib';
 
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -28,6 +28,17 @@ test('ouvre un document dans WorkLogs sans explorer ses onglets, puis se ferme',
   expect(open).toHaveBeenCalledWith('doc-1');
   expect(props.onClose).toHaveBeenCalled();
   expect(scan).not.toHaveBeenCalled();
+});
+
+test('« Autoriser d’autres documents » ouvre le sélecteur de fichiers Google', async () => {
+  vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [] });
+  const connect = vi.spyOn(api, 'connectGoogle').mockResolvedValue({} as GoogleStatus);
+  show();
+  const button = await screen.findByRole('button', { name: 'Autoriser d’autres documents' });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+  expect(await screen.findByText('Choisis les documents dans ton navigateur, puis Actualiser.')).toBeVisible();
+  expect(connect).toHaveBeenCalledWith(true);
 });
 
 test('range un document dans un projet, en créant d’abord sa copie locale si besoin', async () => {

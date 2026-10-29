@@ -19,6 +19,7 @@ function fixture({ backend = 'gnome_libsecret', token = {}, response = 200, defa
       calls.push({ url, options });
       if (url.endsWith('/token')) return Response.json({ access_token: 'test-access', refresh_token: 'test-refresh', expires_in: 3600, scope, ...token });
       if (url.endsWith('/userinfo') && response === 200) return Response.json({ email: 'timo@example.com', name: 'Timo', picture: defaultClient ? 'https://lh3.googleusercontent.com/a/photo' : 'https://x' });
+      if (url.includes('/drive/v3/about?') && response === 200) return Response.json({ user: { emailAddress: 'timo@example.com', displayName: 'Timo', photoLink: 'https://lh3.googleusercontent.com/a/drive' } });
       return Response.json({ ok: true }, { status: response });
     },
     defaultClient,
@@ -67,6 +68,26 @@ test('OAuth desktop : navigateur système, PKCE, état contrôlé et jetons hors
     assert.deepEqual(restored.status().selectedIds, [], 'ne retrouve aucune sélection quand le premier clic ne lance pas le Picker');
     restored.close();
     await assert.rejects(f.client.request('https://example.com'), /non autorisée/);
+  } finally { f.close(); }
+});
+
+test('choisir des documents : Picker en drive.file seul, plusieurs à la fois, sur le compte déjà connecté', async () => {
+  const f = fixture();
+  try {
+    await f.authorize();
+    assert.equal(await f.authorize({ pick: true, pickedFileId: 'doc-partage,doc-suivi' }), 200);
+    const opened = f.url();
+    // Règle du Picker desktop : drive.file ne se combine avec aucun autre scope.
+    assert.equal(opened.searchParams.get('scope'), scope);
+    assert.equal(opened.searchParams.get('prompt'), 'consent');
+    assert.equal(opened.searchParams.get('login_hint'), 'timo@example.com');
+    assert.equal(opened.searchParams.get('trigger_onepick'), 'true');
+    assert.equal(opened.searchParams.get('allow_multiple'), 'true');
+    assert.deepEqual(f.client.status().selectedIds, ['doc-partage', 'doc-suivi']);
+    // Sans openid, userinfo refuserait ce jeton : le compte affiché vient de Drive.
+    assert.equal(f.calls.filter(c => c.url.endsWith('/userinfo')).length, 1);
+    assert.deepEqual(f.client.status().account, { email: 'timo@example.com', name: 'Timo', picture: 'https://lh3.googleusercontent.com/a/drive' });
+    assert.equal(f.calls.find(c => c.url.includes('/drive/v3/about?')).options.headers.Authorization, 'Bearer test-access');
   } finally { f.close(); }
 });
 
