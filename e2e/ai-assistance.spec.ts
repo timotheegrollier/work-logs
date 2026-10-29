@@ -195,3 +195,36 @@ test('IA dans le partage : affine avec le contexte du projet puis applique en br
     fs.rmSync(file, { force: true });
   }
 });
+
+test('IA sur mobile : « Arrêter » apparaît à l’écran au bout de la rangée et coupe la demande', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Arrêt IA mobile' });
+  try {
+    const note = await post(request, '/api/entries', { title: 'Réunion fournisseur', project_id: project.id, content_md: '- prix des cartouches\n- délai de livraison' });
+    await configure(page, project.id, note.id);
+    await page.setViewportSize({ width: 412, height: 915 });
+    let requests = 0;
+    await page.route('**/chat/completions', async (route) => {
+      const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
+      if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+      // Jamais de réponse : seule la coupure termine la demande.
+      requests += 1;
+    });
+    await page.goto('/');
+    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Écriture', exact: true }).click();
+    await page.getByRole('button', { name: 'Assistance IA', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Compléter', exact: true }).click();
+    // La rangée d'actions défile sans barre : « Arrêter » naîtrait hors de l'écran.
+    const stop = page.getByRole('button', { name: 'Arrêter la demande IA' });
+    await expect(stop).toBeInViewport({ ratio: 1 });
+    await expect.poll(() => requests).toBe(1);
+    // Le compteur de secondes élargit le bouton en attente : « Arrêter » reste à l'écran.
+    await expect(page.getByRole('button', { name: 'Rédaction…' })).toContainText('3 s');
+    await expect(stop).toBeInViewport({ ratio: 1 });
+    await stop.click();
+    await expect(page.getByRole('button', { name: 'Assistance IA', exact: true })).toBeFocused();
+    await expect(stop).toHaveCount(0);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  } finally {
+    await cleanProject(page, request, project.id);
+  }
+});

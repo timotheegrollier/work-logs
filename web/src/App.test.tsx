@@ -5002,4 +5002,79 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     expect(screen.getByText('Réparer la pompe — priorité haute ; échéance 2026-11-01')).toBeInTheDocument();
     expect(screen.getByText(/Tâches en cours :/)).toHaveTextContent('Commander des fournitures');
   });
+
+  // Service IA qui ne répond qu'aux appels prévus : les autres attendent qu'on les coupe.
+  const hangingAi = (answer: (call: number) => string | null = () => null) => {
+    const signals: AbortSignal[] = [];
+    const diverted = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).includes('chat/completions')) return diverted(input, init);
+      const signal = init!.signal!;
+      signals.push(signal);
+      const content = answer(signals.length);
+      if (content !== null) return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) } as Response;
+      return new Promise<Response>((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
+    }));
+    return signals;
+  };
+
+  test('« Arrêter » coupe la demande en cours d’une note : ni attente, ni message d’erreur, le focus revient au menu', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Réunion', content_md: 'Points notés.' }] });
+    const signals = hangingAi();
+    render(<App />);
+    fireEvent.click(await aiAction('Compléter'));
+    const stop = await screen.findByRole('button', { name: 'Arrêter la demande IA' });
+    expect(screen.getByRole('button', { name: 'Rédaction…' })).toBeInTheDocument();
+    // L'attente se voit là où la note proposée va venir, et s'annonce.
+    expect(screen.getByText('L’IA rédige la note…').closest('[role="status"]')).toBeInTheDocument();
+    // Coupée en vol, pas seulement avant le départ.
+    await waitFor(() => expect(signals).toHaveLength(1));
+    await user.click(stop);
+    const trigger = await screen.findByRole('button', { name: 'Assistance IA' });
+    expect(trigger).toHaveFocus();
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Arrêter la demande IA' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Note proposée' })).not.toBeInTheDocument();
+    expect(screen.queryByText('L’IA rédige la note…')).not.toBeInTheDocument();
+    expect(await aiAction('Compléter')).toBeEnabled();
+  });
+
+  test('« Arrêter » dans une carte : sous-tâches, recherche de doc et procédure rafraîchie, coupées sans erreur', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { tasks: [{ id: 'tk_filtre', title: 'Changer le filtre' }] });
+    const signals = hangingAi((call) => (call === 3 ? '# Remplacer le filtre\n\n1. Couper l’eau.' : null));
+    render(<App />);
+    const card = (await within(board()).findByText('Changer le filtre')).closest('.card') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: 'Créer une entrée liée' }));
+    fireEvent.click(within(card).getByRole('button', { name: '✨ Suggérer' }));
+    await waitFor(() => expect(signals).toHaveLength(1));
+    fireEvent.click(within(card).getByRole('button', { name: 'Arrêter la demande IA' }));
+    expect(await within(card).findByRole('button', { name: '✨ Suggérer' })).toBeEnabled();
+    fireEvent.click(within(card).getByRole('button', { name: 'Annuler' }));
+
+    fireEvent.click(await aiAction('Trouver la doc', card, 'Assistance IA de la tâche'));
+    expect(await within(card).findByRole('button', { name: 'Recherche…' })).toBeInTheDocument();
+    await waitFor(() => expect(signals).toHaveLength(2));
+    fireEvent.click(within(card).getByRole('button', { name: 'Arrêter la demande IA' }));
+    expect(await within(card).findByRole('button', { name: 'Assistance IA de la tâche' })).toBeInTheDocument();
+    expect(within(card).queryByRole('region', { name: 'Documents trouvés' })).not.toBeInTheDocument();
+
+    // Le pied de carte et son menu sont masqués sous une proposition : elle porte son propre « Arrêter ».
+    fireEvent.click(await aiAction('Créer une procédure', card, 'Assistance IA de la tâche'));
+    const draft = await within(card).findByRole('form', { name: 'Procédure rédigée' });
+    fireEvent.click(within(draft).getByRole('button', { name: 'Rafraîchir' }));
+    await waitFor(() => expect(signals).toHaveLength(4));
+    expect(draft).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(within(draft).getByRole('button', { name: 'Arrêter la demande IA' }));
+    expect(await within(draft).findByRole('button', { name: 'Rafraîchir' })).toBeEnabled();
+    expect(draft).toHaveAttribute('aria-busy', 'false');
+    expect(within(draft).getByRole('button', { name: 'Ignorer' })).toBeEnabled();
+    expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Remplacer le filtre');
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, true, false, true]);
+    expect(within(card).queryByRole('alert')).not.toBeInTheDocument();
+  });
 });

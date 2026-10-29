@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { api, COLUMNS, PRIORITIES, dayLabel, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type Priority, type RichDocument, type Status } from '../lib';
-import { completeNote, draftProcedure, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
+import { AiCancelled, completeNote, draftProcedure, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
 import { insertCodeFence, renderMarkdown, toggleChecklistItem } from '../markdown';
 import { markdownToRich, richToMarkdown } from '../rich-markdown';
@@ -11,7 +11,7 @@ import { DocumentTabs } from './DocumentTabs';
 import { GoogleDocsEditor } from './GoogleDocsEditor';
 import { ProcedureDraft } from './ProcedureDraft';
 import { AiContextDetails } from './AiContextDetails';
-import { AiMenu } from './AiMenu';
+import { AiMenu, AiPending } from './AiMenu';
 import { AiRefinement } from './AiRefinement';
 
 import { CategoryPicker } from './CategoryPicker';
@@ -127,7 +127,9 @@ export function EntryEditor({
   draftRef.current = draft;
   const projectVersion = useRef(0);
   const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  // Quitter l'entrée coupe aussi la demande IA en vol : sa réponse ne servirait plus.
+  const aiRequest = useRef<AbortController | null>(null);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; aiRequest.current?.abort(); }; }, []);
   const sameProject = (projectId: string) => mounted.current && draftRef.current.project_id === projectId;
   const changedRef = useRef(onChanged);
   changedRef.current = onChanged;
@@ -376,7 +378,8 @@ export function EntryEditor({
   const settingsForAi = (feature: string) => {
     const settings = readAiSettings();
     if (!settings.key) throw new Error(`Colle ta clé IA dans ⚙ Paramètres pour activer ${feature}.`);
-    return settings;
+    aiRequest.current = new AbortController();
+    return { ...settings, signal: aiRequest.current.signal };
   };
   const contextForAi = async (current: typeof draft, version: number, contextVersion: number, showTaskPlanning = false) => {
     const context = await loadAiContext({ projectId: current.project_id || null, title: current.title, text: current.content_json ? richToMarkdown(current.content_json) : current.content_md, entryId: entry.id });
@@ -438,7 +441,7 @@ export function EntryEditor({
       suggestedContextVersion.current = contextVersion;
       setSuggestedBlock(block);
     } catch (e) {
-      if (sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
+      if (!(e instanceof AiCancelled) && sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
     } finally {
       if (mounted.current) setSuggesting(false);
     }
@@ -511,7 +514,7 @@ export function EntryEditor({
           });
       if (sameProject(current.project_id) && projectVersion.current === version && aiContextVersion.current === contextVersion) setAiProposal({ mode, snapshot, projectId: current.project_id, version, source, title, fixed });
     } catch (e) {
-      if (sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
+      if (!(e instanceof AiCancelled) && sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
     } finally {
       if (mounted.current) setAiBusy(null);
     }
@@ -578,7 +581,7 @@ export function EntryEditor({
       });
       if (sameProject(current.project_id) && projectVersion.current === version && aiContextVersion.current === contextVersion) setProcedureDraft(drafted);
     } catch (e) {
-      if (sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
+      if (!(e instanceof AiCancelled) && sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
     } finally {
       if (mounted.current) setDrafting(false);
     }
@@ -637,7 +640,7 @@ export function EntryEditor({
       }).map((action) => ({ ...action, selected: true, created: false }));
       setActionsProposal({ snapshot, title: current.title, entryDate: current.entry_date, projectId: current.project_id, version, contextVersion, items });
     } catch (e) {
-      if (sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
+      if (!(e instanceof AiCancelled) && sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
     } finally {
       if (mounted.current) setProposingTasks(false);
     }
@@ -993,6 +996,7 @@ export function EntryEditor({
         <AiMenu
           label="Assistance IA"
           busy={suggesting || proposingTasks ? 'Suggestion…' : aiBusy === 'layout' ? 'Mise en page…' : aiBusy || drafting ? 'Rédaction…' : null}
+          onCancel={() => aiRequest.current?.abort()}
         >
           {(isProcedure ? aiAvailable : canDraftProcedure) && (
             <button
@@ -1068,22 +1072,27 @@ export function EntryEditor({
       {aiContext && <AiContextDetails context={aiContext} excludedIds={excludedAiSources} showTaskPlanning={showAiTaskPlanning} onExcludedChange={excludeAiSources} />}
       {error && <p role="alert" className="error no-print">{error}</p>}
       {error && googleHelp && <a className="no-print" href={googleHelp} target="_blank" rel="noopener noreferrer">Activer l’API dans Google Cloud</a>}
+      {/* Première demande : l'attente s'affiche là où la proposition va venir. */}
+      {aiBusy && !aiProposal ? <AiPending label={aiBusy === 'layout' ? 'L’IA met le texte en page…' : aiBusy === 'note' ? 'L’IA rédige la note…' : 'L’IA rédige la procédure…'} />
+        : drafting && !procedureDraft ? <AiPending label="L’IA rédige la procédure…" />
+          : proposingTasks && !actionsProposal ? <AiPending label="L’IA cherche les tâches à proposer…" />
+            : suggesting && !suggestedBlock ? <AiPending label="L’IA suggère des sous-tâches…" /> : null}
       {suggestedBlock && suggestedContextVersion.current === aiContextVersion.current && <div className="proofread-preview no-print" role="region" aria-label="Affiner les sous-tâches suggérées">
         <strong>Sous-tâches suggérées</strong>
         <AiRefinement busy={aiWorking || syncing} onRefine={(instruction) => void suggestForEntry(instruction)} />
       </div>}
-      {aiProposal && (aiProposal.mode === 'note' ? canDraftProcedure : aiAvailable) && <div className="proofread-preview no-print" role="region" aria-label={aiProposal.mode === 'layout' ? 'Mise en page proposée' : aiProposal.mode === 'note' ? 'Note proposée' : 'Procédure proposée'}>
+      {aiProposal && (aiProposal.mode === 'note' ? canDraftProcedure : aiAvailable) && <div className="proofread-preview no-print" role="region" aria-busy={aiBusy !== null} aria-label={aiProposal.mode === 'layout' ? 'Mise en page proposée' : aiProposal.mode === 'note' ? 'Note proposée' : 'Procédure proposée'}>
         <strong>{aiProposal.mode === 'layout' ? 'Mise en page proposée' : aiProposal.mode === 'note' ? 'Note proposée' : 'Procédure proposée'} — relis avant d’appliquer</strong>
         {draft.content_json && <small>Titres, listes, gras, liens, images et tableaux sont gardés ; surlignage, couleurs et alignements sont remis à plat.</small>}
         <article className="prose" dangerouslySetInnerHTML={{ __html: aiProposalHtml }} />
         <AiRefinement busy={aiWorking || syncing} onRefine={(instruction) => void requestAi(aiProposal.mode, instruction)} />
         <div className="task-creator-actions">
           <button className="task-primary" type="button" disabled={aiWorking || syncing} onClick={applyAi}>{aiProposal.mode === 'layout' ? 'Appliquer la mise en page' : aiProposal.mode === 'note' ? 'Appliquer la note' : 'Appliquer la procédure'}</button>
-          <button className="ghost" type="button" disabled={aiWorking || syncing} onClick={() => void requestAi(aiProposal.mode)}>{aiBusy ? (aiBusy === 'layout' ? 'Mise en page…' : 'Rédaction…') : 'Rafraîchir'}</button>
+          <button className={'ghost' + (aiBusy ? ' ai-busy' : '')} type="button" disabled={aiWorking || syncing} onClick={() => void requestAi(aiProposal.mode)}>{aiBusy ? (aiBusy === 'layout' ? 'Mise en page…' : 'Rédaction…') : 'Rafraîchir'}</button>
           <button className="ghost" type="button" disabled={aiWorking} onClick={() => setAiProposal(null)}>Ignorer</button>
         </div>
       </div>}
-      {actionsProposal && canDraftProcedure && <div className="proofread-preview ai-actions-proposal no-print" role="region" aria-label="Tâches suggérées">
+      {actionsProposal && canDraftProcedure && <div className="proofread-preview ai-actions-proposal no-print" role="region" aria-busy={proposingTasks} aria-label="Tâches suggérées">
         <strong>Tâches suggérées — choisis les tâches à créer</strong>
         <small>Priorités et échéances sont des propositions à vérifier ; certaines tâches sont déduites du contexte. Chaque tâche sera liée à cette note, dans son projet. La note est conservée.</small>
         {actionsProposal.items.length === 0 ? <p>Aucune nouvelle tâche suggérée pour cette note.</p> : <ul className="ai-action-list">

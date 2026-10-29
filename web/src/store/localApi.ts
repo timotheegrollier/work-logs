@@ -73,6 +73,18 @@ const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 /** Même format que `api/src/backup.js` (`BACKUP_VERSION`), non importable ici. */
 const BACKUP_VERSION = 2;
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+/** Comparaison de recherche sans accents ni capitales, comme `fold` côté serveur. */
+const foldSearch = (text: string): string => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+/** Titre + texte repliés d'une note, recalculés seulement quand elle change. */
+const foldedEntries = new Map<string, { source: string; folded: string }>();
+const foldedEntry = (entry: { id: string; title: string; content_md: string }): string => {
+  const source = `${entry.title}\n${entry.content_md}`;
+  const cached = foldedEntries.get(entry.id);
+  if (cached?.source === source) return cached.folded;
+  const folded = foldSearch(source);
+  foldedEntries.set(entry.id, { source, folded });
+  return folded;
+};
 const orNull = (v: unknown): string | null => (str(v) === '' ? null : str(v));
 const pick = <T>(body: Record<string, unknown>, key: string, current: T, transform: (v: unknown) => unknown = (v) => v): T =>
   (body[key] === undefined ? current : transform(body[key])) as T;
@@ -742,11 +754,11 @@ export const localApi: Api = {
     const allLinks = await links.all();
     const allAttachments = await attachments.all();
     const googleByEntry = new Map((await google.all()).map((row) => [row.entry_id, row]));
-    const needle = q.trim().toLowerCase();
+    const needle = foldSearch(q.trim());
     const matching = allEntries
       .filter((entry) => (!projectId || entry.project_id === projectId) && matchesCategory(entry))
-      // SQLite `LIKE` est insensible à la casse (ASCII) : on compare en minuscules.
-      .filter((entry) => !needle || entry.title.toLowerCase().includes(needle) || entry.content_md.toLowerCase().includes(needle))
+      // Comme le serveur (§57) : sans accents ni capitales, texte replié gardé par note.
+      .filter((entry) => !needle || foldedEntry(entry).includes(needle))
       .sort((a, b) => cmp(b.entry_date, a.entry_date) || cmp(b.updated_at, a.updated_at));
     const counts = new Map<string, number>();
     for (const file of allAttachments) counts.set(file.entry_id, (counts.get(file.entry_id) ?? 0) + 1);
@@ -766,7 +778,7 @@ export const localApi: Api = {
     });
     const matchingTasks = allTasks
       .filter((task) => (!projectId || task.project_id === projectId) && matchesCategory(task))
-      .filter((task) => !needle || task.title.toLowerCase().includes(needle))
+      .filter((task) => !needle || foldSearch(task.title).includes(needle))
       .sort((a, b) => a.position - b.position || cmp(b.updated_at, a.updated_at) || cmp(a.id, b.id))
       .map((task) => ({ ...task, documents: taskDocuments(task.id, allEntries, allLinks, googleByEntry) }));
     const allProjects = (await projects.all()).sort((a, b) => cmp(a.name, b.name));

@@ -93,6 +93,16 @@ test('Google Docs : onglets nombreux, édition autour des objets et dans les cel
   await expect(content.locator('td').last()).toHaveText('12 400 €');
   await page.getByRole('tab', { name: /Vue d’ensemble/ }).click();
   await expect(content.locator('td').last()).toContainText('Budget : 12 400 €');
+  // Écriture rétrécie par les deux panneaux, fenêtre inchangée : les onglets passent au-dessus de la page.
+  await page.getByRole('button', { name: 'Afficher les tâches' }).click();
+  await leftHandle.press('End');
+  await rightHandle.press('End');
+  const tabsBox = (await page.getByRole('complementary', { name: 'Navigation du document' }).boundingBox())!;
+  const pageBox = (await page.getByRole('tabpanel').boundingBox())!;
+  expect(pageBox.y).toBeGreaterThanOrEqual(tabsBox.y + tabsBox.height);
+  expect(Math.abs(pageBox.width - tabsBox.width)).toBeLessThan(1);
+  expect(await page.locator('#workspace-editor').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Masquer les tâches' }).click();
   await page.getByRole('button', { name: 'Changer de thème' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   // Téléphone : une vue à la fois (§53), le document est dans Écriture.

@@ -14,6 +14,8 @@ export interface AiSettings {
   key: string;
   /** Contexte de travail écrit une fois (ex. solo dev en pisciculture), joint à chaque appel. */
   profile: string;
+  /** « Arrêter » : coupe la demande en vol, chaîne de secours comprise. Jamais enregistré. */
+  signal?: AbortSignal;
 }
 
 export const DEFAULT_AI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai';
@@ -327,6 +329,13 @@ export function taskSuggestContext(
 
 export class AiError extends Error {}
 
+/** Demande arrêtée par l'utilisateur : rien à signaler, aucun autre modèle à essayer. */
+export class AiCancelled extends AiError {
+  constructor() {
+    super('Demande IA arrêtée.');
+  }
+}
+
 /**
  * Le dernier secours qui a répondu passe en tête pendant dix minutes : seul le
  * premier appel attend que le modèle choisi, s'il traîne, épuise sa tranche. Passé
@@ -380,10 +389,20 @@ async function postChatCompletions(
 ): Promise<string> {
   const key = settings.key.trim();
   if (!key) throw new AiError(`Colle ta clé IA dans ⚙ Paramètres pour activer ${feature}.`);
+  // Arrêtée avant, pendant ou juste après un essai : ni réponse rendue, ni modèle suivant.
+  const stopped = () => {
+    if (settings.signal?.aborted) throw new AiCancelled();
+  };
   const model = settings.model.trim();
   // Un autre fournisseur n'a pas ces modèles : un seul essai, le sien.
   if (!/^https:\/\/generativelanguage\.googleapis\.com\//.test(settings.endpoint.trim())) {
-    return postOnce(settings, model, key, system, user, maxTokens, timeoutMs);
+    stopped();
+    const content = await postOnce(settings, model, key, system, user, maxTokens, timeoutMs).catch((e: unknown) => {
+      stopped();
+      throw e;
+    });
+    stopped();
+    return content;
   }
   // Chaque modèle au plus une fois, dans un budget total borné : pas une boucle.
   // Un 503 répond en ~0,5 s, un essai raté coûte donc peu ; seul un modèle qui
@@ -396,10 +415,12 @@ async function postChatCompletions(
   let last: AiTryNext | null = null;
   let allOverloaded = true;
   for (const candidate of candidates) {
+    stopped();
     const remaining = deadline - Date.now();
     if (remaining < Math.min(2000, slice / 2)) break;
     try {
       const content = await postOnce(settings, candidate, key, system, user, maxTokens, Math.min(remaining, slice));
+      stopped();
       preferred = candidate === model ? null : { chosen: model, model: candidate, until: Date.now() + PREFERRED_MS };
       return content;
     } catch (e) {
@@ -409,6 +430,7 @@ async function postChatCompletions(
       allOverloaded &&= e.overloaded;
     }
   }
+  stopped();
   if (!last || allOverloaded) throw new AiError(OVERLOADED_MESSAGE);
   throw new AiError(last.message);
 }
@@ -424,6 +446,8 @@ async function postOnce(
 ): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const stop = () => controller.abort();
+  settings.signal?.addEventListener('abort', stop);
   let res: Response;
   try {
     res = await fetch(`${settings.endpoint.trim().replace(/\/+$/, '')}/chat/completions`, {
@@ -441,11 +465,13 @@ async function postOnce(
       signal: controller.signal,
     });
   } catch {
+    if (settings.signal?.aborted) throw new AiCancelled();
     // Délai dépassé ≠ hors ligne : le message « injoignable » accusait à tort la connexion.
     if (controller.signal.aborted) throw new AiTryNext(OVERLOADED_MESSAGE, true);
     throw new AiError('IA injoignable : hors ligne ou endpoint incorrect.');
   } finally {
     clearTimeout(timer);
+    settings.signal?.removeEventListener('abort', stop);
   }
   if (res.status === 503 || res.status === 502 || res.status === 504 || res.status === 500) {
     throw new AiTryNext(OVERLOADED_MESSAGE, true);
@@ -879,6 +905,26 @@ function normalizedActionTitle(title: string): string {
     .replace(/[\p{P}\p{S}]/gu, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Le tableau JSON demandé, même quand le modèle l'entoure d'une phrase ou d'une clôture
+ * de code (« Voici les tâches : ```json […] ``` »). Un objet qui l'enveloppe reste refusé.
+ */
+function jsonArray(reply: string): unknown[] | null {
+  const text = reply.trim();
+  const fenced = /```(?:json)?[ \t]*\n?([\s\S]*?)```/i.exec(text)?.[1] ?? '';
+  const start = text.indexOf('[');
+  const inline = start >= 0 && !text.slice(0, start).includes('{') ? text.slice(start, text.lastIndexOf(']') + 1) : '';
+  for (const candidate of [text, fenced, inline]) {
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // Candidat suivant.
+    }
+  }
+  return null;
+}
+
 function literalDueDate(value: unknown, evidence: string): string | null {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)
     || !new RegExp(`(?:^|[^0-9])${value}(?:$|[^0-9])`).test(evidence)) return null;
@@ -932,17 +978,13 @@ Propose une priorité selon l'impact et l'urgence du contexte : high si réellem
     user: sections.join('\n\n'),
   }, options.refinement);
   const reply = await postChatCompletions(settings, mode === 'extract' ? 'l’extraction des actions' : 'la suggestion de tâches', prompt.system, prompt.user, 3072, options.timeoutMs ?? AI_TIMEOUT_MS);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(reply.trim().replace(/^```(?:json)?[ \t]*\n([\s\S]*?)\n```$/i, '$1'));
-  } catch {
-    throw new AiError('Réponse IA illisible : les actions doivent être un tableau JSON. Réessaie.');
-  }
-  if (!Array.isArray(parsed)) throw new AiError('Réponse IA illisible : les actions doivent être un tableau JSON. Réessaie.');
+  const parsed = jsonArray(reply);
+  if (!parsed) throw new AiError('Réponse IA illisible : les actions doivent être un tableau JSON. Réessaie.');
   const seen = new Set(excludedTitles.map(normalizedActionTitle));
   const doneTitles = completed.map((item) => normalizedActionTitle(item.text)).filter(Boolean);
   const actions: ExtractedAction[] = [];
-  for (const item of parsed) {
+  // Chaque champ est vérifié ici : le tableau vient du modèle, pas d'un type sûr.
+  for (const item of parsed as Record<string, unknown>[]) {
     if (!item || typeof item !== 'object' || typeof item.title !== 'string' || typeof item.evidence !== 'string') continue;
     const actionTitle = item.title.trim().replace(/\s+/g, ' ');
     const evidence = item.evidence.trim();
@@ -1023,13 +1065,8 @@ export async function suggestSearchTerms(
 ): Promise<string[]> {
   const prompt = buildSearchTermsPrompt(input, { ...input, profile: settings.profile });
   const reply = await postChatCompletions(settings, 'la recherche de documentation', prompt.system, prompt.user, SUGGEST_MAX_TOKENS, options.timeoutMs ?? AI_TIMEOUT_MS);
-  let parsed: unknown = null;
-  try {
-    parsed = JSON.parse(reply.trim().replace(/^```(?:json)?[ \t]*\n([\s\S]*?)\n```$/i, '$1'));
-  } catch {
-    // Illisible : traité plus bas comme une réponse sans terme.
-  }
-  const terms = (Array.isArray(parsed) ? parsed : [])
+  // Illisible : traité plus bas comme une réponse sans terme.
+  const terms = (jsonArray(reply) ?? [])
     .filter((item): item is string => typeof item === 'string')
     .map((item) => item.trim().replace(/\s+/g, ' '))
     .filter((term) => term.length >= 2);

@@ -16,6 +16,7 @@ export function ProcedureDraft({
   projectId,
   busy,
   onRefresh,
+  onCancel,
   onCreated,
   onClose,
 }: {
@@ -24,6 +25,8 @@ export function ProcedureDraft({
   /** Une nouvelle rédaction est en cours (Rafraîchir). */
   busy: boolean;
   onRefresh: (instruction?: string) => void;
+  /** Arrêter la rédaction en cours, là où le menu ✨ IA n'est pas à l'écran (carte de tâche). */
+  onCancel?: () => void;
   onCreated: (procedure: Entry) => void;
   onClose: () => void;
 }) {
@@ -66,6 +69,7 @@ export function ProcedureDraft({
     <form
       className="proofread-preview procedure-draft no-print"
       aria-label="Procédure rédigée"
+      aria-busy={busy}
       onSubmit={(event) => {
         event.preventDefault();
         void create();
@@ -84,9 +88,10 @@ export function ProcedureDraft({
         <button className="task-primary" type="submit" disabled={creating || busy || !title.trim()}>
           {creating ? 'Création…' : 'Créer la procédure'}
         </button>
-        <button className="ghost" type="button" disabled={creating || busy} onClick={() => onRefresh()}>
+        <button className={'ghost' + (busy ? ' ai-busy' : '')} type="button" disabled={creating || busy} onClick={() => onRefresh()}>
           {busy ? 'Rédaction…' : 'Rafraîchir'}
         </button>
+        {busy && onCancel && <button className="ghost" type="button" aria-label="Arrêter la demande IA" onClick={onCancel}>Arrêter</button>}
         {/* Pendant une rédaction, fermer ne l'arrêterait pas : sa réponse rouvrirait le panneau. */}
         <button className="ghost" type="button" disabled={creating || busy} onClick={onClose}>
           Ignorer

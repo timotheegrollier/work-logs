@@ -122,6 +122,8 @@ shared_files(rel_path PRIMARY KEY, base_hash, seen_hash, seen_size, seen_mtime_m
 shared_versions(id PRIMARY KEY, rel_path, hash, size, origin, state, author, created_at)
                                                          -- origin : base|mine|theirs|restored|merged
 shared_dirs(rel_dir PRIMARY KEY, entries_json, listed_at) -- dernière liste vue (arbre hors ligne)
+entry_search(entry_id PRIMARY KEY, text)                 -- titre + texte sans accents ni capitales (§57)
+                                                         -- effacé par déclencheur à chaque titre/texte changé
 -- Le dossier relié à un projet n'est plus ici : `projects.shared_dir` (adresse complète,
 -- synchronisée par Drive). `shared_project_folders` ne sert plus qu'à reprendre les anciens liens.
 ```

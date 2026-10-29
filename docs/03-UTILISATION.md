@@ -43,7 +43,7 @@ Une seule page, trois zones, jamais de navigation.
 | **Centre — Écriture** | écrire l'entrée ouverte, la relire, l'imprimer, y joindre des fichiers |
 | **Droite — Tâches** | ajouter, avancer, terminer, relier les documents de contexte |
 
-En haut : la recherche, le résumé de la semaine, les interrupteurs de panneaux, le thème
+En haut : la recherche (sans accents ni capitales : « procedure » trouve « Procédure »), le résumé de la semaine, les interrupteurs de panneaux, le thème
 clair/sombre, l'export (masqué une fois connecté à Google : la synchro automatique garde
 déjà une copie sur Drive) et le menu du compte.
 
@@ -132,7 +132,8 @@ synchronisation Drive. Les anciennes sauvegardes reviennent sans catégorie.
 ## Écrire une entrée
 
 1. **+ Nouvelle entrée** — elle est créée à la date du jour, le curseur est dans le titre.
-2. Taper le titre, puis basculer sur **Écrire** : le texte à gauche, l'aperçu à droite.
+2. Taper le titre, puis basculer sur **Écrire** : le texte à gauche, l'aperçu à droite (colonne
+   étroite : le texte seul, **Lire** montre l'aperçu). La zone grandit avec le texte.
 3. **Rien à enregistrer** : ça part tout seul après une seconde d'arrêt. L'indicateur en haut
    à droite passe de « Modifications en cours… » à « Enregistré ». `Ctrl+S` force l'envoi.
 4. **Lire** repasse en pleine largeur pour relire sans le code Markdown.
@@ -254,10 +255,14 @@ Les actions IA sont rangées sous un seul bouton, **✨ IA**, au bout de la rang
 d'une note, d'une procédure ou d'un fichier du partage, et au pied de chaque carte de tâche.
 Il n'apparaît que si une action est possible (jamais sur un document Google). Le menu
 s'ouvre au clic ou au clavier (flèches, Entrée, Échap) ; pendant la demande, le bouton
-affiche l'attente (« Rédaction… », « Mise en page… »). Le survol d'une action dit ce qui
-part au service IA. **✨ Suggérer** du formulaire « ＋ Entrée liée » reste à côté de
-sa zone de sous-tâches, qu'il remplit. Dans une note, la suggestion de tâches est
-rangée dans ce même menu **✨ IA**.
+affiche l'attente (« ✨ Rédaction… », animé, avec les secondes passé trois), une place « L'IA
+rédige… » montre où la proposition va venir (une proposition rafraîchie s'estompe), et **Arrêter**, juste à côté, la coupe
+aussitôt : rien n'est appliqué, aucun autre modèle n'est essayé, et l'on peut relancer. Dans
+une carte de tâche, le formulaire « ＋ Entrée liée » et la procédure proposée portent leur
+propre **Arrêter**. Quitter la note ou le fichier coupe aussi la demande en cours. Le survol
+d'une action dit ce qui part au service IA. **✨ Suggérer** du formulaire « ＋ Entrée liée »
+reste à côté de sa zone de sous-tâches, qu'il remplit. Dans une note, la suggestion de
+tâches est rangée dans ce même menu **✨ IA**.
 
 **Contexte utilisé par l'IA** apparaît après la première demande : déplier pour lire
 les extraits et décocher une source pour les demandes suivantes. Une modification de
