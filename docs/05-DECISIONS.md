@@ -109,6 +109,10 @@ La recherche et le filtre projet compensent ; c'est le prix accepté.
 **Quand la rouvrir.** Si la colonne de gauche devient inutilisable en usage réel. La réponse
 serait alors un regroupement par mois repliable — **pas** un onglet.
 
+**Rouverte sur téléphone (2026-10-29, §53).** Les trois zones empilées faisaient une page de
+4 000 px : sur téléphone seulement, la barre du bas montre une zone à la fois. Le desktop et
+la tablette gardent l'écran unique.
+
 ---
 
 ## 2. Ce qui a été retiré en V2, et pourquoi
@@ -2165,3 +2169,59 @@ et modifiés par l'utilisateur, et ignore les tâches déjà liées lors d'une r
 La colonne « Terminé » du panneau Tâches est repliée par défaut ; son bouton accessible
 permet de l'afficher ou la masquer. La création liée accepte un statut facultatif, avec
 « À faire » comme défaut pour les anciens clients. Aucun changement de schéma.
+
+---
+
+## 53. Téléphone : une vue à la fois, choisie par la barre du bas — 2026-10-29
+
+**Demande.** « Améliore grandement le design et l'UI/UX de la PWA afin que tout soit bien
+plus ergonomique et intuitif sur mobile […] quitte à s'éloigner du design desktop. »
+
+**Constat (captures à 412 × 860, jeu de démonstration de `.design/`).** Le téléphone empilait
+journal, écriture, tâches et procédures en **une page de 4 000 px**. La barre du bas
+ressemblait à la navigation d'une application mais **repliait** des cartes : toucher
+« Tâches » faisait disparaître les tâches ; toucher « Procédures » ajoutait une carte tout en
+bas, hors de vue, sans que rien ne bouge à l'écran. Atteindre les tâches depuis une entrée
+demandait de faire défiler tout le texte ; revenir au journal, de tout remonter, et le geste
+retour d'Android fermait l'application. L'éditeur posait six rangées de réglages (~330 px)
+avant la première ligne de texte. Sans glisser-déposer au doigt, une tâche ne pouvait pas
+passer « En cours ».
+
+**Décisions (téléphone seulement : ≤ 600 px, ou ≤ 900 × 500 px en paysage).**
+- **Une vue à la fois.** La barre du bas choisit Journal, Écriture, Tâches ou Procédures ;
+  un seul panneau est à l'écran, de bord à bord (plus de carte dans la carte ni d'intitulé :
+  la barre dit où l'on est). Le journal est l'accueil. Mêmes boutons qu'en desktop, mêmes noms
+  accessibles : `aria-pressed` dit la vue affichée. Les préférences de panneaux du desktop
+  (`worklogs-show-*`) ne sont pas touchées, la vue n'est pas retenue au redémarrage.
+- **Ouvrir, c'est y aller** : `revealEditor`, qui faisait défiler jusqu'à la carte Écriture,
+  passe à la vue Écriture, par le haut. Chaque vue **retrouve sa position** de défilement.
+- **Retour d'Android.** Quitter le journal laisse une seule marche dans l'historique
+  (`history.pushState`, marquée `worklogsView`) : retour ramène au journal ; revenir au journal
+  par la barre la consomme. Rechargée hors du journal, la marque est oubliée. Pas d'URL, pas de
+  routeur (§1) : une marche, rien d'autre.
+- **En-tête sur une rangée** (logo, recherche, thème, export, compte), qui s'efface en
+  descendant ; la barre du bas prend des icônes (le fil du journal, un stylo, une case, un
+  livre) au-dessus de leur nom, l'icône active sur une pastille. En paysage, la même barre en
+  rangée de 46 px, et l'en-tête défile lui aussi (390 px de haut).
+- **Écriture** : date, projet, catégorie, Imprimer, Archiver et Supprimer se replient derrière
+  une ligne qui les résume (« aujourd'hui · Chantier », `EntryEditor` `compact`) ; Écrire / Lire,
+  la tâche liée et ✨ IA restent visibles. Le texte commence ~200 px plus haut. L'état
+  d'enregistrement passe sous le titre, qu'il coupait.
+- **Tâches** : vues rapides sur une rangée qui défile d'un bord à l'autre ; le formulaire
+  d'une tâche gagne **Statut** (À faire, En cours, Terminé ; la carte va au bas de sa colonne,
+  comme un dépôt en fin de colonne). Il sert aussi au clavier sur desktop.
+- **Page d'écriture** : sur téléphone, le fond de la page (`--paper`) va jusqu'à la barre,
+  même pour un texte court (`.app:has(> .columns:not(.hide-center))`).
+
+**Écartés.** Refaire l'identité (posée au §47, la demande porte sur l'ergonomie) ; des gestes
+de balayage entre vues (ils se battraient avec les rangées qui défilent au doigt) ; un bouton
+flottant de création (chaque vue commence par sa création) ; une marche d'historique par
+changement de vue (le retour traverserait chaque onglet touché) ; changer la tablette en
+portrait (601–900 px), qui garde ses cartes empilées.
+
+**Ce que ça coûte.** Sur téléphone, on ne voit plus deux zones à la fois (une tâche et sa
+note) : un geste de la barre. Les parcours mobiles qui supposaient la page empilée ont été
+réécrits vue par vue. La recherche reste en tête de page, pas dans le bandeau collé (§35).
+
+**Rouvrir si** une vue doit montrer une autre zone en même temps (la note d'une tâche, par
+exemple) : la réponse serait une feuille du bas, pas le retour à la page empilée.

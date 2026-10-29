@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { api, COLUMNS, PRIORITIES, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type Priority, type RichDocument, type Status } from '../lib';
+import { api, COLUMNS, PRIORITIES, dayLabel, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type Priority, type RichDocument, type Status } from '../lib';
 import { completeNote, draftProcedure, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
 import { insertCodeFence, renderMarkdown, toggleChecklistItem } from '../markdown';
@@ -57,6 +57,7 @@ export function EntryEditor({
   onProcedureCreated,
   autoFocusTitle = false,
   editRequest = 0,
+  compact = false,
 }: {
   tabs?: EntrySummary[];
   onSelectTab?: (id: string) => void;
@@ -73,6 +74,8 @@ export function EntryEditor({
   onProcedureCreated?: (procedure: Entry) => void;
   autoFocusTitle?: boolean;
   editRequest?: number;
+  /** Téléphone : date, projet, catégorie et actions se replient derrière leur résumé (§53). */
+  compact?: boolean;
 }) {
   const [draft, setDraft] = useState({
     title: entry.title,
@@ -89,6 +92,7 @@ export function EntryEditor({
   const [driveNotice, setDriveNotice] = useState('');
   // L'archivage est une action explicite, hors enregistrement automatique.
   const [archived, setArchived] = useState(entry.archived ?? 0);
+  const [metaOpen, setMetaOpen] = useState(false);
   const [save, setSave] = useState<SaveState>('saved');
   const saveRef = useRef(save);
   saveRef.current = save;
@@ -831,7 +835,12 @@ export function EntryEditor({
         <span className={'save save-' + save}>{LABELS[save]}</span>
       </div>
 
-      <div className="editor-meta no-print">
+      <div className={'editor-meta no-print' + (compact && !googleSync && !metaOpen ? ' is-folded' : '')}>
+        {compact && !googleSync && (
+          <button type="button" className="meta-toggle" aria-expanded={metaOpen} aria-label="Réglages de l’entrée" onClick={() => setMetaOpen((open) => !open)}>
+            <span>{[dayLabel(draft.entry_date), projects.find((p) => p.id === draft.project_id)?.name, categories.find((c) => c.id === draft.category_id)?.name].filter(Boolean).join(' · ')}</span>
+          </button>
+        )}
         <input
           type="date"
           aria-label="Date de l’entrée"

@@ -45,21 +45,34 @@ Une seule page, trois zones, jamais de navigation.
 
 En haut : la recherche, le résumé de la semaine, les interrupteurs de panneaux, le thème
 clair/sombre, l'export (masqué une fois connecté à Google : la synchro automatique garde
-déjà une copie sur Drive) et le menu du compte. Sur téléphone, les interrupteurs de
-panneaux passent dans une barre fixée en bas de l'écran, à portée de pouce.
-
-En paysage sur les petits écrans, cette barre devient horizontale et compacte pour
-laisser plus de place au contenu, sans réduire les boutons sous 44 px.
-
-Sur téléphone, l'écran est **une seule page** : la marque et la recherche s'effacent en
-descendant, la rangée des projets reste collée en haut, la barre des panneaux en bas.
-Ouvrir une entrée (depuis le journal, une procédure, une tâche ou le dossier partagé)
-amène directement à la carte **Écriture**.
+déjà une copie sur Drive) et le menu du compte.
 
 Les boutons **Journal** et **Tâches** de l'en-tête replient les panneaux latéraux
 pour ne garder que ce qui sert (l'écriture en grand, par exemple) ; l'état est
-retenu au redémarrage. Sur téléphone, c'est ce qui rend chaque zone utilisable
-plein écran.
+retenu au redémarrage.
+
+### Sur téléphone : une vue à la fois
+
+Sur téléphone (et en paysage), WorkLogs se comporte comme une application : la **barre du
+bas** mène à **Journal**, **Écriture**, **Tâches** ou **Procédures**, et une seule vue occupe
+l'écran. Le journal est l'accueil.
+
+- **Ouvrir, c'est y aller** : une entrée du journal, une procédure, un document de tâche ou
+  un fichier du dossier partagé s'ouvre dans **Écriture**, par le haut. Créer une entrée aussi.
+- **Retour** (geste ou bouton d'Android) : ramène au journal au lieu de fermer l'application.
+- Chaque vue **retrouve l'endroit où on l'avait laissée** : revenir au journal après avoir
+  lu une entrée ancienne remet la liste là où elle était.
+- L'en-tête tient sur une rangée (logo, recherche, thème, compte) et s'efface en descendant ;
+  la rangée des projets reste collée en haut.
+- Dans **Écriture**, la date, le projet, la catégorie, Imprimer, Archiver et Supprimer sont
+  repliés derrière une ligne qui les résume (« aujourd'hui · Chantier ») : la toucher les
+  déplie. Écrire / Lire, la tâche liée et ✨ IA restent sous le titre.
+- Dans **Tâches**, les vues rapides (En retard, Aujourd'hui…) tiennent sur une rangée qui
+  défile au doigt. Pour faire avancer une tâche sans glisser-déposer, touche son titre et
+  choisis son **Statut**.
+
+La vue n'est pas retenue au redémarrage. Les choix de panneaux faits sur ordinateur ne
+changent pas.
 
 Entre 640 et 900 px (tablette), les trois colonnes de tâches sont côte à côte dans la
 carte Tâches ; en dessous, elles s'empilent.
@@ -191,7 +204,9 @@ rendu approximatif.
 
 - **Ajouter** : taper dans « Nouvelle tâche… » puis `Entrée`. Si un projet est filtré, la tâche
   lui est rattachée automatiquement.
-- **Avancer** : glisser la carte d'une colonne à l'autre (À faire → En cours → Terminé).
+- **Avancer** : glisser la carte d'une colonne à l'autre (À faire → En cours → Terminé), ou,
+  sans souris (téléphone, clavier), cliquer son titre et choisir son **Statut** : la carte va
+  au bas de sa nouvelle colonne.
 - **Terminer** : cocher la case. Le titre se barre et la carte rejoint Terminé.
 - **Modifier** : cliquer sur le titre ouvre le nom, l'échéance et la priorité. `Entrée` valide, `Échap` annule.
 - **Priorité** : chaque carte affiche sa pastille — Basse, Normale ou Haute (▲ rouge). Elle ne réordonne pas la colonne : l'ordre reste celui du glisser-déposer.

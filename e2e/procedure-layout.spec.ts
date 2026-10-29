@@ -60,7 +60,7 @@ for (const mode of ['local', 'google', 'google-tasks'] as const) {
     await expect(page.getByRole('textbox', { name: 'Contenu du document' })).toBeVisible();
     if (mode === 'google-tasks') await page.getByRole('button', { name: 'Afficher les tâches', exact: true }).click();
 
-    for (const width of [1440, 1024, 412]) {
+    for (const width of [1440, 1024]) {
       await page.setViewportSize({ width, height: 1000 });
       // Les huit combinaisons des trois autres panneaux : une assertion de
       // visibilité seule ne détectait pas une sidebar de seulement huit pixels.
@@ -93,23 +93,42 @@ for (const mode of ['local', 'google', 'google-tasks'] as const) {
             expect(control.x).toBeGreaterThanOrEqual(dimensions.sidebar.x);
             expect(control.right).toBeLessThanOrEqual(dimensions.sidebar.right);
           }
-          if (width > 900) {
-            expect(dimensions.sidebar.right).toBeCloseTo(dimensions.columns.right, 0);
-            for (const panel of dimensions.panels.slice(0, -1)) {
-              expect(panel.right).toBeLessThanOrEqual(dimensions.sidebar.x + 1);
-            }
-            if (visible[1]) expect((await page.locator('#workspace-editor').boundingBox())!.width).toBeGreaterThanOrEqual(320);
-          } else {
-            for (let index = 1; index < dimensions.panels.length; index++) {
-              expect(dimensions.panels[index].y).toBeGreaterThanOrEqual(dimensions.panels[index - 1].bottom);
-            }
+          expect(dimensions.sidebar.right).toBeCloseTo(dimensions.columns.right, 0);
+          for (const panel of dimensions.panels.slice(0, -1)) {
+            expect(panel.right).toBeLessThanOrEqual(dimensions.sidebar.x + 1);
           }
-          if ((width === 1440 && mask === 7) || (width === 412 && mask === 0)) {
+          if (visible[1]) expect((await page.locator('#workspace-editor').boundingBox())!.width).toBeGreaterThanOrEqual(320);
+          if (width === 1440 && mask === 7) {
             await page.screenshot({ path: testInfo.outputPath(`procedures-${mode}-${width}.png`), fullPage: true });
           }
         });
       }
     }
+    // Téléphone : une vue à la fois (§53), choisie par la barre du bas ; les tâches d'un
+    // document Google y ont leur vue, sans « Afficher les tâches ».
+    await page.setViewportSize({ width: 412, height: 1000 });
+    for (const [name, id] of [['Journal', 'journal'], ['Écriture', 'editor'], ['Tâches', 'tasks'], ['Procédures', 'procedures']]) {
+      await test.step(`412px, vue ${name}`, async () => {
+        await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name, exact: true }).click();
+        for (const other of ['journal', 'editor', 'tasks', 'procedures']) {
+          await expect(page.locator(`#workspace-${other}`))[other === id ? 'toBeVisible' : 'toBeHidden']();
+        }
+        const fits = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+        expect(fits).toBe(true);
+      });
+    }
+    const phone = await sidebar.evaluate((procedures) => ({
+      sidebar: procedures.getBoundingClientRect().toJSON(),
+      fits: procedures.scrollWidth <= procedures.clientWidth,
+      controls: [...procedures.querySelectorAll('button, a, label.file-button')].map((control) => control.getBoundingClientRect().toJSON()),
+    }));
+    expect(phone.fits).toBe(true);
+    expect(phone.sidebar.width).toBeCloseTo(412, 0);
+    for (const control of phone.controls) {
+      expect(control.x).toBeGreaterThanOrEqual(phone.sidebar.x);
+      expect(control.right).toBeLessThanOrEqual(phone.sidebar.right);
+    }
+    await page.screenshot({ path: testInfo.outputPath(`procedures-${mode}-412.png`), fullPage: true });
     // Même le nom de fichier sans espaces et les actions du dialogue tiennent
     // sur mobile lorsque le document s'ouvre depuis la sidebar.
     await sidebar.getByRole('button', { name: /^Consulter / }).click();

@@ -639,6 +639,10 @@ button:disabled {
   background: var(--accent);
   opacity: 1;
 }
+/* Les icônes ne servent qu'à la barre du bas du téléphone. */
+.panel-icon {
+  display: none;
+}
 
 /* Paramètres › Affichage : largeurs de colonnes au pixel près. */
 .display-settings {
@@ -4951,130 +4955,6 @@ div.google-preserved {
   }
 }
 @media (max-width: 600px) {
-  /* Mobile : en-tête aéré en deux lignes — marque et icônes, recherche —
-     au lieu d'une rangée unique où tout se marchait dessus. Aucun JS, juste du placement. */
-  .head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto auto;
-    grid-template-areas:
-      'logo theme export settings'
-      'search search search search';
-    gap: 8px 6px;
-    padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px;
-  }
-  .head .logo {
-    grid-area: logo;
-    min-width: 0;
-    font-size: 16px;
-  }
-  /* La pastille de version ne sert qu'en desktop (vérification manuelle). */
-  .head .logo .version {
-    display: none;
-  }
-  /* 16 px : sous ce seuil, le navigateur mobile zoome sur le champ. */
-  .head input.search {
-    grid-area: search;
-    width: 100%;
-    min-height: 44px;
-    margin: 0;
-    font-size: 16px;
-    border-color: var(--line-soft);
-  }
-  .head .grow {
-    display: none;
-  }
-  /* Icônes de l'en-tête : des cibles de 44 px, rondes, sur un fond léger. */
-  .head .theme-btn,
-  .head .export-btn,
-  .head .account-menu .settings-btn {
-    min-width: 44px;
-    min-height: 44px;
-    border-radius: 12px;
-    background: var(--surface-2);
-    color: var(--text);
-  }
-  .head .theme-btn {
-    grid-area: theme;
-    width: 44px;
-  }
-  .head .export-btn {
-    grid-area: export;
-    padding: 0;
-    justify-content: center;
-  }
-  .head .export-btn .export-label {
-    display: none;
-  }
-  .head .account-menu {
-    grid-area: settings;
-  }
-  .head .settings-btn {
-    grid-area: settings;
-    padding: 0;
-    justify-content: center;
-  }
-  .head .settings-btn.has-account {
-    padding: 0 10px 0 6px;
-  }
-  .head .settings-btn .settings-label {
-    display: none;
-  }
-  .head .settings-btn .settings-icon {
-    display: inline-flex;
-  }
-  /* Panneaux : barre du bas, sous le pouce, comme la navigation d'une app
-     Android. Ce sont toujours des interrupteurs (aria-pressed), pas des onglets :
-     plusieurs cartes peuvent rester affichées à la fois. */
-  .head .panel-toggles {
-    position: fixed;
-    inset: auto 0 0 0;
-    z-index: 30;
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 4px;
-    height: auto;
-    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
-    border: 0;
-    border-top: 1px solid var(--line);
-    border-radius: 0;
-    background: color-mix(in srgb, var(--surface) 94%, transparent);
-    backdrop-filter: blur(12px);
-  }
-  .panel-toggle {
-    flex-direction: column;
-    justify-content: center;
-    gap: 5px;
-    min-height: 50px;
-    padding: 4px 2px;
-    font-size: 12.5px;
-    border-radius: 12px;
-  }
-  .panel-toggle::before {
-    width: 22px;
-    height: 4px;
-    border-radius: 99px;
-    background: currentColor;
-    opacity: 0.3;
-  }
-  .panel-toggle.is-on {
-    background: var(--accent-soft);
-    box-shadow: none;
-  }
-  .panel-toggle.is-on::before {
-    background: var(--accent);
-    opacity: 1;
-  }
-  .update-progress-label {
-    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
-  }
-  /* Marge basse pour la navigation gestuelle des PWA. */
-  .columns {
-    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
-  }
-  /* Le menu « ✨ IA » ouvert ne finit pas sous la barre du bas. */
-  .ai-menu-popover {
-    scroll-margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
-  }
   /* Bandeau projets : une rangée de 56 px au lieu de deux (~110 px) — les
      pastilles défilent sous le pouce, « Gérer » reste au bout, toujours visible.
      Cibles de 40 px, comme le reste du contenu. */
@@ -5187,59 +5067,183 @@ div.google-preserved {
   }
 }
 
-/* ---------------------------------------------- mobile : une seule page (≤ 600 px)
-   Placé en fin de feuille : ces règles l'emportent sur les réglages ≤ 900 px.
-   La page entière défile — la marque et la recherche s'effacent en descendant,
-   le bandeau projets reste collé en haut, la barre des panneaux en bas. Rien
-   d'autre ne colle : aucun élément ne passe devant le contenu qui défile. */
-@media (max-width: 600px) {
+/* ------------------------------------------ téléphone : une vue à la fois (§53)
+   Portrait (≤ 600 px) comme paysage (≤ 900 × 500 px), mêmes requêtes que `PHONE`
+   dans App.tsx. La barre du bas choisit la vue, comme dans une application : un seul
+   panneau est à l'écran (`hide-*`, `show-procedures`, `with-tasks`), de bord à bord.
+   La page entière défile : l'en-tête part en descendant, le bandeau projets reste collé
+   en haut, la barre en bas. Rien d'autre ne colle, rien ne passe devant le contenu (§35).
+   Placé en fin de feuille : ces règles l'emportent sur les réglages ≤ 900 px. */
+@media (max-width: 600px), (max-width: 900px) and (max-height: 500px) {
   :root {
     --strip-h: 57px;
+    --nav-h: 66px;
   }
   .app {
     display: block;
     overflow-y: auto;
     overscroll-behavior-y: contain;
   }
+  /* La page d'écriture descend jusqu'à la barre, même quand le texte est court. */
+  .app:has(> .columns:not(.hide-center)) {
+    background: var(--paper);
+  }
+
+  /* En-tête : une rangée — le logo, la recherche, les icônes. La marque se lit sur
+     l'icône de l'application, la version dans Paramètres. */
+  .head {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    min-height: 0;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px));
+  }
+  .head .logo {
+    flex: none;
+    gap: 0;
+    font-size: 0;
+  }
+  .head .logo svg {
+    width: 30px;
+    height: 30px;
+  }
+  .head .logo .version,
+  .head .grow {
+    display: none;
+  }
+  /* 16 px : sous ce seuil, le navigateur mobile zoome sur le champ. */
+  .head input.search {
+    order: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 44px;
+    margin: 0 0 0 4px;
+    font-size: 16px;
+    border-color: var(--line-soft);
+  }
+  /* Icônes de l'en-tête : des cibles de 44 px sur un fond léger. */
+  .head .theme-btn,
+  .head .export-btn,
+  .head .account-menu .settings-btn {
+    flex: none;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 12px;
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .head .settings-btn.has-account {
+    padding: 0 7px;
+  }
+  .head .export-btn .export-label,
+  .head .settings-btn .settings-label {
+    display: none;
+  }
+  .head .settings-btn .settings-icon {
+    display: inline-flex;
+  }
+
+  /* La barre du bas : quatre destinations, l'icône sur son nom, sous le pouce. */
+  .head .panel-toggles {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    height: auto;
+    padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    background: var(--surface);
+  }
+  .panel-toggle {
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    min-height: var(--nav-h);
+    padding: 0 2px;
+    border-radius: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .panel-toggle::before {
+    display: none;
+  }
+  .panel-icon {
+    display: block;
+    flex: none;
+    box-sizing: content-box;
+    padding: 4px 18px;
+    border-radius: 99px;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .panel-toggle.is-on {
+    background: none;
+    box-shadow: none;
+    color: var(--text);
+  }
+  .panel-toggle.is-on .panel-icon {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .update-progress-label {
+    bottom: calc(var(--nav-h) + 10px + env(safe-area-inset-bottom, 0px));
+  }
+  /* Le menu « ✨ IA » ouvert ne finit pas sous la barre du bas. */
+  .ai-menu-popover {
+    scroll-margin-bottom: calc(var(--nav-h) + 14px + env(safe-area-inset-bottom, 0px));
+  }
+
   .project-strip {
     position: sticky;
     top: 0;
     z-index: 15;
   }
+  .workspace-switch {
+    display: none;
+  }
   .columns,
   .columns.is-document,
   .columns.is-document.with-tasks {
+    display: block;
     overflow: visible;
-    padding: 10px 10px calc(84px + env(safe-area-inset-bottom, 0px));
+    padding: 0 0 calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
   }
+  /* La vue est l'écran : plus de carte dans la carte, ni d'intitulé — la barre du
+     bas dit déjà où l'on est. */
   .left,
   .center,
   .right,
   .procedures-bar,
-  .columns.show-procedures > .procedures-bar {
-    padding: 14px 12px;
-    margin: 0 0 10px;
+  .columns.show-procedures > .procedures-bar,
+  .columns.is-document > .left,
+  .columns.is-document.with-tasks:not(.show-procedures) > .left,
+  .columns.is-document.with-tasks:not(.show-procedures) > .center,
+  .columns.is-document.with-tasks:not(.show-procedures) > .right {
+    height: auto;
+    max-height: none;
+    margin: 0;
+    padding: 14px max(16px, env(safe-area-inset-right, 0px)) 28px max(16px, env(safe-area-inset-left, 0px));
+    border: 0;
+    border-radius: 0;
+    background: none;
   }
-  /* Intitulés des cartes : un vrai titre de section, pas une étiquette. */
+  .left {
+    --panel-bg: var(--bg);
+  }
   .left::before,
   .center::before,
   .right::before {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-  }
-  /* Journal et Tâches espacent déjà leurs enfants (gap) ; l'écriture non. */
-  .center::before {
-    margin-bottom: 14px;
+    content: none;
   }
   .procedures-head {
     font-size: 16px;
     font-weight: 700;
-  }
-  /* Ouvrir une entrée y amène : le titre s'arrête sous le bandeau projets. */
-  .center {
-    scroll-margin-top: calc(var(--strip-h) + 10px);
   }
 
   /* Journal : les deux créations côte à côte, une rangée au lieu de deux. */
@@ -5270,13 +5274,74 @@ div.google-preserved {
     margin-top: 14px;
   }
 
-  /* Écriture : la carte suffit comme cadre, le texte commence plus haut. */
+  /* Écriture : le titre, Écrire / Lire et le résumé des réglages, puis le texte. */
   .center > .editor {
     padding: 0;
     gap: 12px;
   }
+  /* L'état d'enregistrement passe sous le titre : à côté, il le coupait. */
+  .editor-bar {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+  .editor-bar .save {
+    flex-basis: 100%;
+    font-size: 11.5px;
+  }
   .editor-meta {
     gap: 8px;
+  }
+  .editor-meta.is-folded > :not(.modes, .meta-toggle, [aria-label='Bloc de code']) {
+    display: none;
+  }
+  .editor-meta .modes {
+    order: -2;
+    flex: none;
+  }
+  .editor-meta .modes button {
+    min-width: 70px;
+    min-height: 36px;
+  }
+  /* Base à 50 % : déplié, la date passe à la ligne au lieu d'écraser le résumé. */
+  .meta-toggle {
+    order: -1;
+    flex: 1 1 50%;
+    min-width: 0;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 0 4px 0 8px;
+    border: 0;
+    color: var(--muted);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .meta-toggle > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .meta-toggle::after {
+    content: '';
+    flex: none;
+    width: 7px;
+    height: 7px;
+    margin: -4px 4px 0 2px;
+    border: solid currentColor;
+    border-width: 0 1.6px 1.6px 0;
+    transform: rotate(45deg);
+    transition: transform 0.15s ease;
+  }
+  /* Sans Écrire / Lire (document riche), le résumé se lit à gauche, comme le reste. */
+  .editor-meta:not(:has(> .modes)) > .meta-toggle {
+    justify-content: flex-start;
+    padding-left: 0;
+  }
+  .meta-toggle[aria-expanded='true']::after {
+    margin-top: 4px;
+    transform: rotate(-135deg);
   }
   .editor-meta input[type='date'] {
     flex: none;
@@ -5287,13 +5352,6 @@ div.google-preserved {
     flex: 1 1 140px;
     min-height: 40px;
     border-color: var(--line-soft);
-  }
-  .editor-meta .modes {
-    flex: 1 1 auto;
-  }
-  .editor-meta .modes button {
-    flex: 1;
-    min-height: 34px;
   }
   /* Imprimer, Archiver, Supprimer (et les actions du partage) : une rangée à parts égales. */
   .editor-meta .grow {
@@ -5313,8 +5371,9 @@ div.google-preserved {
     padding-inline: 6px;
     border-color: var(--line-soft);
   }
-  /* Tâche liée et IA : une rangée qui défile au lieu de quatre lignes. */
-  .entry-task-action:not(:has(> :not(.ghost))) {
+  /* Tâche liée et IA : une rangée qui défile au lieu de quatre lignes (un formulaire
+     ou un message ouvert reprend toute la largeur). */
+  .entry-task-action:not(:has(> :not(.ghost, .ai-menu))) {
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
@@ -5357,9 +5416,19 @@ div.google-preserved {
     min-height: 36px;
   }
 
-  /* Tâches : un seul cadre (la carte), les colonnes deviennent des sections. */
+  /* Tâches : les vues rapides sur une rangée qui défile d'un bord à l'autre. */
   .board {
     gap: 18px;
+  }
+  .task-views {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: -4px -16px 0;
+    padding: 2px 16px;
+  }
+  .task-views::-webkit-scrollbar {
+    display: none;
   }
   .right .column h2 {
     margin: 0 0 8px;
@@ -5369,7 +5438,8 @@ div.google-preserved {
     min-width: 32px;
     min-height: 32px;
   }
-
+}
+@media (max-width: 600px) {
   /* Dialogues (paramètres, documents Google) : même feuille que les projets. */
   .settings-dialog,
   .drive-dialog {
@@ -5396,96 +5466,19 @@ div.google-preserved {
     animation: none;
   }
 }
-
-/* Paysage sur téléphone : l'en-tête se resserre, la barre du bas passe en rangée. */
+/* Paysage sur téléphone : 390 px de haut, la barre passe en rangée (l'icône à côté
+   de son nom) et rend 20 px au contenu. */
 @media screen and (max-width: 900px) and (max-height: 500px) {
-  .head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto auto;
-    grid-template-areas:
-      'logo theme export settings'
-      'search search search search';
-    gap: 6px;
-    padding: max(4px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 4px max(12px, env(safe-area-inset-left, 0px));
-    backdrop-filter: none;
+  :root {
+    --nav-h: 46px;
   }
-  .head .logo {
-    grid-area: logo;
-    min-width: 0;
-  }
-  .head input.search {
-    grid-area: search;
-    width: 100%;
-    min-height: 44px;
-    margin: 0;
-    font-size: 16px;
-  }
-  .head .grow {
-    display: none;
-  }
-  .head .theme-btn,
-  .head .export-btn,
-  .head .settings-btn {
-    min-width: 44px;
-    min-height: 44px;
-  }
-  .head .theme-btn {
-    grid-area: theme;
-  }
-  .head .export-btn {
-    grid-area: export;
-    padding: 0;
-    justify-content: center;
-  }
-  .head .export-btn .export-label,
-  .head .settings-btn .settings-label {
-    display: none;
-  }
-  .head .settings-btn .settings-icon {
-    display: inline-flex;
-  }
-  .head .account-menu {
-    grid-area: settings;
-  }
-  .head .settings-btn {
-    grid-area: settings;
-    padding: 0;
-    justify-content: center;
-  }
-  .head .panel-toggles {
-    position: fixed;
-    inset: auto 0 0;
-    z-index: 30;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 4px;
-    height: auto;
-    padding: 3px 8px calc(3px + env(safe-area-inset-bottom, 0px));
-    border: 0;
-    border-top: 1px solid var(--line);
-    border-radius: 0;
-    background: color-mix(in srgb, var(--surface) 94%, transparent);
-    backdrop-filter: blur(12px);
-  }
-  .head .panel-toggle {
+  .panel-toggle {
     flex-direction: row;
-    justify-content: center;
     gap: 8px;
-    min-height: 44px;
-    padding: 0 4px;
     font-size: 13px;
   }
-  .head .panel-toggle::before {
-    display: none;
-  }
-  .update-progress-label {
-    bottom: calc(58px + env(safe-area-inset-bottom, 0px));
-  }
-  .columns {
-    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
-  }
-  .ai-menu-popover {
-    scroll-margin-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  .panel-icon {
+    padding: 3px 12px;
   }
 }
 

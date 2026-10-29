@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api, formatSize, type SharedFile, type SharedSendResult, type SharedVersion } from '../lib';
 import { Autosave } from '../autosave';
 import { proofreadEntry, readAiSettings, suggestProcedure, type AiWorkContext } from '../ai-suggest';
@@ -784,7 +785,9 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
         )}
       </details>
 
-      {leaving && (
+      {/* Dans `body` : la question doit se voir même quand l'écriture est repliée ou,
+          sur téléphone, quand une autre vue est à l'écran (§53). */}
+      {leaving && createPortal((
         <div className="shared-leave-backdrop no-print">
           <div className="shared-leave" role="dialog" aria-modal="true" aria-labelledby="shared-leave-title">
             <h2 id="shared-leave-title">Tes modifications ne sont pas sur le partage</h2>
@@ -796,7 +799,7 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </section>
   );
 }

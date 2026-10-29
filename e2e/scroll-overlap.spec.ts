@@ -93,6 +93,7 @@ test.describe('mobile', () => {
 
   test('tâches : saisie et intitulés suivent la page, rien ne reste collé sur les cartes', async ({ page }) => {
     await page.goto('/');
+    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true }).click();
     const board = page.getByRole('region', { name: 'Tâches' });
     await expect(board.getByText('Contrôle 14 du parc')).toBeAttached();
     const app = page.locator('.app');
@@ -118,6 +119,7 @@ test.describe('mobile', () => {
     try {
       await page.addInitScript(() => localStorage.setItem('worklogs-shared-path', 'défilement.docx'));
       await page.goto('/');
+      await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Écriture', exact: true }).click();
       const editor = page.getByRole('region', { name: 'Fichier partagé' });
       const toolbar = editor.locator('.docx-toolbar');
       await expect(toolbar).toBeVisible();
