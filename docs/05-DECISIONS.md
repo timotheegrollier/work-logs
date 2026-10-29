@@ -1739,6 +1739,12 @@ pas d'indiquer ce qui devait changer.
   L'utilisateur sélectionne et peut corriger avant création par la route transactionnelle
   existante `POST /api/entries/:id/task`. Les liens existants sont relus avant une
   nouvelle tentative ; les créations réussies ne sont pas rejouées.
+  (2026-10-29) Le tableau se **lit** avec tolérance — prose ou bloc de code autour,
+  enveloppe `{"actions": […]}` — mais chaque action reste validée comme ci-dessus. Même
+  lecture pour « ✨ Trouver la doc ». Extraction et suggestion de tâches passent à
+  `DOCUMENT_MAX_TOKENS` (8 000) : priorité, explication et extrait par tâche, plus la
+  réflexion du modèle, pouvaient dépasser 3 072 jetons. Motif : refus « les actions
+  doivent être un tableau JSON » sur une vraie suggestion, réponse non conservée.
 - Les frappes pendant une suggestion sont conservées. Un changement de projet, de
   contenu source ou de sélection est vérifié avant application/création ; une réponse
   tardive ne rouvre pas le document quitté.

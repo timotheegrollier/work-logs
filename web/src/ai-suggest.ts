@@ -69,7 +69,7 @@ const AI_TIMEOUT_MS = 30_000;
  */
 const SUGGEST_MAX_TOKENS = 1024;
 /**
- * Mise en page, procédures et notes : un plafond, pas une cible. La réflexion s'y
+ * Mise en page, procédures, notes et tâches tirées d'une note : un plafond, pas une cible. La réflexion s'y
  * décompte aussi — à 1 500 jetons, une procédure tirée d'une entrée revenait coupée
  * au milieu d'une étape. 8 000 partait déjà pour les longs textes.
  */
@@ -886,6 +886,31 @@ function literalDueDate(value: unknown, evidence: string): string | null {
 }
 
 /**
+ * Tableau JSON d'une réponse IA, ou null. Malgré la consigne, les modèles l'entourent
+ * parfois de prose ou d'un bloc de code, ou l'enveloppent (`{"actions": […]}`) : on
+ * garde le tableau. Typé `any[]` comme `Array.isArray` : l'appelant revérifie chaque élément.
+ */
+function parseJsonArray(reply: string): any[] | null {
+  const text = reply.trim();
+  const start = text.indexOf('[');
+  // Le texte brut d'abord : un extrait cité peut lui-même contenir un bloc de code.
+  const candidates = [text, /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(text)?.[1] ?? ''];
+  if (start >= 0) candidates.push(text.slice(start, text.lastIndexOf(']') + 1));
+  for (const candidate of candidates) {
+    let value: unknown;
+    try {
+      value = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    if (Array.isArray(value)) return value;
+    const arrays = value && typeof value === 'object' ? Object.values(value).filter(Array.isArray) : [];
+    if (arrays.length === 1) return arrays[0];
+  }
+  return null;
+}
+
+/**
  * Les propositions restent ancrées dans la note ; le contexte en éclaire les mots.
  * Aucun enregistrement ici : l'utilisateur choisit les tâches à créer.
  */
@@ -931,14 +956,10 @@ Réponds uniquement avec un tableau JSON de ${MAX_SUGGESTIONS} objets au plus, s
 Propose une priorité selon l'impact et l'urgence du contexte : high si réellement urgent ou important, low si secondaire, normal si incertain. Les priorités et échéances des tâches voisines éclairent la hiérarchisation, sans supposer la charge ni la disponibilité de l'utilisateur. Propose une échéance réaliste en tenant compte de la date actuelle, de la date de la note et de l'ordre des tâches. Respecte toute date explicite pertinente ; une date relative dans une note ancienne ne signifie pas forcément à partir d'aujourd'hui. Si aucun délai raisonnable ne peut être justifié, mets null plutôt qu'une date arbitraire. Distingue dans l'explication une date explicitement donnée d'une estimation à confirmer. Les priorités et échéances sont des suggestions, jamais des engagements certains. Sans suggestion ancrée dans la note, réponds [].`,
     user: sections.join('\n\n'),
   }, options.refinement);
-  const reply = await postChatCompletions(settings, mode === 'extract' ? 'l’extraction des actions' : 'la suggestion de tâches', prompt.system, prompt.user, 3072, options.timeoutMs ?? AI_TIMEOUT_MS);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(reply.trim().replace(/^```(?:json)?[ \t]*\n([\s\S]*?)\n```$/i, '$1'));
-  } catch {
-    throw new AiError('Réponse IA illisible : les actions doivent être un tableau JSON. Réessaie.');
-  }
-  if (!Array.isArray(parsed)) throw new AiError('Réponse IA illisible : les actions doivent être un tableau JSON. Réessaie.');
+  // Priorité, explication et extrait par tâche, plus la réflexion : 3 072 jetons pouvaient couper le tableau.
+  const reply = await postChatCompletions(settings, mode === 'extract' ? 'l’extraction des actions' : 'la suggestion de tâches', prompt.system, prompt.user, DOCUMENT_MAX_TOKENS, options.timeoutMs ?? AI_TIMEOUT_MS);
+  const parsed = parseJsonArray(reply);
+  if (!parsed) throw new AiError('Réponse IA illisible : les actions doivent être un tableau JSON. Réessaie.');
   const seen = new Set(excludedTitles.map(normalizedActionTitle));
   const doneTitles = completed.map((item) => normalizedActionTitle(item.text)).filter(Boolean);
   const actions: ExtractedAction[] = [];
@@ -1023,13 +1044,8 @@ export async function suggestSearchTerms(
 ): Promise<string[]> {
   const prompt = buildSearchTermsPrompt(input, { ...input, profile: settings.profile });
   const reply = await postChatCompletions(settings, 'la recherche de documentation', prompt.system, prompt.user, SUGGEST_MAX_TOKENS, options.timeoutMs ?? AI_TIMEOUT_MS);
-  let parsed: unknown = null;
-  try {
-    parsed = JSON.parse(reply.trim().replace(/^```(?:json)?[ \t]*\n([\s\S]*?)\n```$/i, '$1'));
-  } catch {
-    // Illisible : traité plus bas comme une réponse sans terme.
-  }
-  const terms = (Array.isArray(parsed) ? parsed : [])
+  // Illisible : traité plus bas comme une réponse sans terme.
+  const terms = (parseJsonArray(reply) ?? [])
     .filter((item): item is string => typeof item === 'string')
     .map((item) => item.trim().replace(/\s+/g, ' '))
     .filter((term) => term.length >= 2);
