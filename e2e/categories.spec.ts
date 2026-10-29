@@ -38,6 +38,14 @@ test.afterEach(async ({ request }) => {
 async function chooseProject(page: Page, name: string) {
   await page.goto('/');
   await expect(journal(page)).toBeVisible();
+  // Téléphone : le projet se choisit dans la liste qu'ouvre le bouton du bandeau (§54).
+  const switcher = page.getByRole('button', { name: /^Projet : / });
+  if (await switcher.isVisible()) {
+    await switcher.click();
+    await page.getByRole('list', { name: 'Choisir un projet' }).getByRole('button', { name: new RegExp('^' + name) }).click();
+    await expect(page.getByRole('button', { name: `Projet : ${name}` })).toBeVisible();
+    return;
+  }
   await page.getByRole('group', { name: 'Filtrer par projet' }).getByRole('button', { name: new RegExp('^' + name) }).click();
 }
 

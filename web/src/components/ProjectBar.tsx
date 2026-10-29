@@ -10,22 +10,27 @@ const FILTER_FROM = 8;
  * Les pastilles défilent (molette comprise) ; la gestion s'ouvre par-dessus —
  * fenêtre sous le bouton sur desktop, feuille montant du bas sur mobile —
  * au lieu de déplier une liste qui poussait les colonnes hors de l'écran.
+ * Sur téléphone (`compact`), un seul bouton nomme le projet courant et ouvre la
+ * liste complète, où un toucher choisit (§54).
  */
 export function ProjectBar({
   projects,
   selected,
   onSelect,
   onChanged,
+  compact = false,
   children,
 }: {
   projects: Project[];
   selected: string;
   onSelect: (id: string) => void;
   onChanged: () => void;
+  compact?: boolean;
   /** Le filtre de catégorie, entre les pastilles et « Gérer ». */
   children?: ReactNode;
 }) {
-  const [managing, setManaging] = useState(false);
+  const [sheet, setSheet] = useState<'pick' | 'manage' | null>(null);
+  const current = projects.find((project) => project.id === selected);
   const [edges, setEdges] = useState({ start: false, end: false });
   const rail = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -57,14 +62,29 @@ export function ProjectBar({
 
   // Le focus revient au bouton une fois la fenêtre retirée : tant qu'elle est
   // ouverte, le reste de la page est inerte et refuserait le focus.
-  const wasManaging = useRef(false);
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (wasManaging.current && !managing) trigger.current?.focus();
-    wasManaging.current = managing;
-  }, [managing]);
+    if (wasOpen.current && !sheet) trigger.current?.focus();
+    wasOpen.current = sheet !== null;
+  }, [sheet]);
 
   return (
     <nav className="projects" aria-label="Projets">
+      {compact ? (
+        <button
+          ref={trigger}
+          type="button"
+          className={'project-switcher' + (current ? ' is-on' : '')}
+          style={current ? ({ '--project': current.color } as CSSProperties) : undefined}
+          aria-label={`Projet : ${current?.name ?? 'Tous les projets'}`}
+          aria-haspopup="dialog"
+          aria-expanded={sheet !== null}
+          onClick={() => setSheet('pick')}
+        >
+          <span className="dot" aria-hidden="true" />
+          <span className="project-switcher-name">{current?.name ?? 'Tous les projets'}</span>
+        </button>
+      ) : (
       <div
         ref={rail}
         className={'chips' + (edges.start ? ' fade-start' : '') + (edges.end ? ' fade-end' : '')}
@@ -100,18 +120,19 @@ export function ProjectBar({
           </button>
         ))}
       </div>
+      )}
 
       {children}
 
-      <button
+      {!compact && <button
         ref={trigger}
         type="button"
-        className={'manage-btn' + (managing ? ' is-on' : '')}
+        className={'manage-btn' + (sheet ? ' is-on' : '')}
         aria-label="Gérer les projets"
         aria-haspopup="dialog"
-        aria-expanded={managing}
+        aria-expanded={sheet !== null}
         title="Créer, renommer, recolorer ou supprimer des projets"
-        onClick={() => setManaging(true)}
+        onClick={() => setSheet('manage')}
       >
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M10.6 2.6a1.6 1.6 0 0 1 2.3 2.3L5.6 12.2 2.5 13l.8-3.1z" />
@@ -120,16 +141,17 @@ export function ProjectBar({
         <span>
           Gérer<span className="manage-more"> les projets</span>
         </span>
-      </button>
+      </button>}
 
-      {managing && (
+      {sheet && (
         <ProjectManager
           projects={projects}
           selected={selected}
+          picking={sheet === 'pick'}
           anchor={trigger}
           onSelect={onSelect}
           onChanged={onChanged}
-          onClose={() => setManaging(false)}
+          onClose={() => setSheet(null)}
         />
       )}
     </nav>
@@ -139,6 +161,7 @@ export function ProjectBar({
 function ProjectManager({
   projects,
   selected,
+  picking = false,
   anchor,
   onSelect,
   onChanged,
@@ -146,6 +169,8 @@ function ProjectManager({
 }: {
   projects: Project[];
   selected: string;
+  /** Ouverte pour choisir (téléphone) : une liste à toucher, « Gérer les projets » en pied. */
+  picking?: boolean;
   anchor: RefObject<HTMLButtonElement | null>;
   onSelect: (id: string) => void;
   onChanged: () => void;
@@ -156,6 +181,7 @@ function ProjectManager({
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('');
+  const [choosing, setChoosing] = useState(picking);
 
   useLayoutEffect(() => {
     const el = dialog.current;
@@ -173,11 +199,12 @@ function ProjectManager({
     if (!el.open) {
       try { el.showModal(); } catch { el.setAttribute('open', ''); }
     }
-    // Clavier physique : on écrit le nom tout de suite. Écran tactile : pas de
-    // clavier virtuel qui surgit et masque la liste qu'on venait ouvrir.
-    if (window.matchMedia?.('(pointer: fine)').matches) field.current?.focus();
+    // Choisir : le focus sur le projet courant. Gérer au clavier physique : on écrit le
+    // nom tout de suite ; écran tactile : pas de clavier qui masque la liste ouverte.
+    if (picking) el.querySelector<HTMLElement>('.project-choice[aria-pressed="true"]')?.focus();
+    else if (window.matchMedia?.('(pointer: fine)').matches) field.current?.focus();
     return () => window.removeEventListener('resize', place);
-  }, [anchor]);
+  }, [anchor, picking]);
 
   // Le bouton n'est plus désactivé : grisé et sans explication, il se lisait
   // comme « cassé » — surtout quand il ne reste aucun projet et que le panneau
@@ -211,6 +238,10 @@ function ProjectManager({
 
   const query = filter.trim().toLocaleLowerCase('fr');
   const shown = query ? projects.filter((project) => project.name.toLocaleLowerCase('fr').includes(query)) : projects;
+  const choose = (id: string) => {
+    onSelect(id);
+    onClose();
+  };
 
   return createPortal(
     <dialog
@@ -237,7 +268,7 @@ function ProjectManager({
           </button>
         </div>
 
-        <div className="add-project">
+        {!choosing && <div className="add-project">
           <input
             ref={field}
             aria-label="Nom du nouveau projet"
@@ -253,7 +284,7 @@ function ProjectManager({
           <button className="task-primary" type="button" onClick={create}>
             Créer
           </button>
-        </div>
+        </div>}
         {error && <p className="error">{error}</p>}
 
         {projects.length >= FILTER_FROM && (
@@ -264,17 +295,59 @@ function ProjectManager({
             placeholder={`Retrouver un projet parmi ${projects.length}…`}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
+            enterKeyHint={choosing ? 'go' : undefined}
             onKeyDown={(e) => {
               // Échap vide d'abord le champ ; un second Échap ferme la fenêtre.
               if (e.key === 'Escape' && filter) {
                 e.preventDefault();
                 setFilter('');
               }
+              // Pour choisir, Entrée prend le premier projet trouvé. Sans preventDefault, la
+              // touche finissait sur le bouton qui reprend le focus et rouvrait la liste.
+              if (e.key === 'Enter' && choosing && query && shown[0]) {
+                e.preventDefault();
+                choose(shown[0].id);
+              }
             }}
           />
         )}
 
-        {projects.length === 0 ? (
+        {choosing ? (
+          <>
+            {shown.length === 0 ? (
+              <p className="empty">Aucun projet ne s’appelle « {filter.trim()} ».</p>
+            ) : (
+              <ul className="project-choices" aria-label="Choisir un projet">
+                {!query && (
+                  <li>
+                    <button type="button" className="project-choice is-all" aria-pressed={selected === ''} onClick={() => choose('')}>
+                      <span className="dot" aria-hidden="true" />
+                      <span className="project-choice-name">Tous les projets</span>
+                    </button>
+                  </li>
+                )}
+                {shown.map((project) => (
+                  <li key={project.id}>
+                    <button
+                      type="button"
+                      className="project-choice"
+                      style={{ '--project': project.color } as CSSProperties}
+                      aria-pressed={selected === project.id}
+                      onClick={() => choose(project.id)}
+                    >
+                      <span className="dot" aria-hidden="true" />
+                      <span className="project-choice-name">{project.name}</span>
+                      {project.open_tasks > 0 && <span className="count">{project.open_tasks}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button className="ghost project-manage" type="button" onClick={() => setChoosing(false)}>
+              Gérer les projets
+            </button>
+          </>
+        ) : projects.length === 0 ? (
           <p className="empty">Aucun projet. Donne-lui un nom ci-dessus pour le créer.</p>
         ) : shown.length === 0 ? (
           <p className="empty">Aucun projet ne s’appelle « {filter.trim()} ».</p>

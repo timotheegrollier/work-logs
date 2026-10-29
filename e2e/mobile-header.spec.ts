@@ -144,7 +144,8 @@ test('bandeau projets : global, sans débordement, utilisable dans chaque vue', 
   // Sous l'en-tête, au-dessus des vues : ni dans le journal, ni dedans.
   const strip = page.locator('.project-strip');
   await expect(strip).toBeVisible();
-  const filters = page.getByRole('group', { name: 'Filtrer par projet' });
+  // Téléphone : un bouton qui nomme le projet courant (§54), pas une rangée à faire défiler.
+  const filters = page.getByRole('button', { name: /^Projet : / });
   await expect(filters).toBeVisible();
   expect(await page.locator('#workspace-journal .projects').count()).toBe(0);
   const headBox = (await page.locator('header.head').boundingBox())!;
@@ -172,8 +173,7 @@ test('mobile : la marque s’efface en descendant, le bandeau projets reste coll
     await expect.poll(async () => (await page.locator('header.head').boundingBox())!.y).toBeLessThan(-headHeight + 1);
     // …le filtre des projets, lui, reste à portée en haut de l'écran.
     expect((await strip.boundingBox())!.y).toBeCloseTo(0, 0);
-    await expect(page.getByRole('group', { name: 'Filtrer par projet' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Gérer les projets' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Projet : / })).toBeVisible();
 
     // Seul le bandeau colle : les jours défilent avec leurs entrées
     // (`scroll-overlap.spec.ts` vérifie que rien ne passe devant la liste).
