@@ -9,17 +9,9 @@
 // détenir. Ce relais l'ajoute, et rien d'autre : deux échanges autorisés, la
 // seule PWA comme origine et comme retour, rien de stocké ni de journalisé.
 // Déploiement et vérification : docs/08-GOOGLE-DOCS.md « Relais de jetons ».
-//
-// `POST /relay-key` (§29) : la clé qui chiffre, dans le Drive du compte, l'accès au
-// relais du dossier partagé. Elle n'est stockée nulle part : HMAC du secret et de
-// l'identifiant Google du compte, rendue à la seule PWA connectée à ce compte avec
-// le client intégré. Le fichier Drive seul ne suffit donc pas à lire le code.
 // Seul `default` est exporté : workerd prend tout autre export pour un point d'entrée.
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const GOOGLE_TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo';
-/** Séparation de domaine : cette clé ne sert qu'à l'accès au relais, version 1. */
-const RELAY_KEY_INFO = 'worklogs-relais-v1:';
 /**
  * Origines autorisées : la PWA servie par ce Worker (option B, même URL que le
  * relais), l'ancienne PWA GitHub Pages (transition) et le serveur Vite en dev.
@@ -42,7 +34,7 @@ function cors(origin) {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'POST',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
@@ -77,36 +69,6 @@ function tokenParams(form) {
   return null;
 }
 
-function base64url(bytes) {
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-/**
- * Clé du compte : le jeton d'accès présenté est vérifié par Google (`tokeninfo`) —
- * émis pour le client intégré (`GOOGLE_CLIENT_ID`), encore valide. La clé dépend du
- * compte (`sub`) : un autre compte, même connecté à la PWA, obtient une autre clé.
- */
-async function relayKey(request, env, origin) {
-  if (!env.GOOGLE_CLIENT_SECRET || !CLIENT_ID.test(env.GOOGLE_CLIENT_ID ?? '')) return reply({ error: 'relay_not_configured' }, 500, origin);
-  const token = /^Bearer ([\w.~+/-]{10,4096}=*)$/.exec(request.headers.get('Authorization') ?? '')?.[1];
-  if (!token) return reply({ error: 'unauthorized' }, 401, origin);
-  let info;
-  try {
-    const google = await fetch(`${GOOGLE_TOKENINFO_URL}?access_token=${encodeURIComponent(token)}`);
-    if (!google.ok) return reply({ error: 'unauthorized' }, 401, origin);
-    info = await google.json();
-  } catch {
-    return reply({ error: 'google_unreachable' }, 502, origin);
-  }
-  if (info?.aud !== env.GOOGLE_CLIENT_ID || typeof info.sub !== 'string' || !info.sub || !(Number(info.expires_in) > 0)) {
-    return reply({ error: 'unauthorized' }, 401, origin);
-  }
-  const encoder = new TextEncoder();
-  const hmac = await crypto.subtle.importKey('raw', encoder.encode(env.GOOGLE_CLIENT_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const key = new Uint8Array(await crypto.subtle.sign('HMAC', hmac, encoder.encode(RELAY_KEY_INFO + info.sub)));
-  return reply({ key: base64url(key) }, 200, origin);
-}
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -119,7 +81,6 @@ export default {
     const origin = request.headers.get('Origin') ?? '';
     if (!ORIGINS.includes(origin)) return reply({ error: 'forbidden_origin' }, 403);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(origin) });
-    if (request.method === 'POST' && url.pathname === '/relay-key') return relayKey(request, env, origin);
     if (request.method !== 'POST' || url.pathname !== '/token') return reply({ error: 'not_found' }, 404, origin);
     if (!env.GOOGLE_CLIENT_SECRET) return reply({ error: 'relay_not_configured' }, 500, origin);
     const text = await request.text();

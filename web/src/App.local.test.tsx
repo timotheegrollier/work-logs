@@ -168,13 +168,12 @@ describe('dossier partagé dans la PWA', () => {
     const relais = { timeout: 10_000 };
     const [fs, os, path] = await Promise.all([import('node:fs'), import('node:os'), import('node:path')]);
     // @ts-expect-error — relay.js est du JavaScript pur de l'API, chargé par Node.
-    const { startRelay, newToken } = await import('../../api/src/relay.js');
+    const { startRelay } = await import('../../api/src/relay.js');
     const share = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-relais-'));
     const data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-relais-data-'));
     fs.mkdirSync(path.join(share, '2. TSE'));
     fs.writeFileSync(path.join(share, '2. TSE', 'Redémarrage.md'), '# Redémarrage\n');
-    const token = newToken();
-    const relay = startRelay({ root: share, token, origins: [], dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)' });
+    const relay = startRelay({ root: share, origins: [], dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)' });
     await new Promise((resolve) => relay.server.once('listening', resolve));
     try {
       localStorage.setItem('worklogs-show-procedures', '1');
@@ -187,11 +186,10 @@ describe('dossier partagé dans la PWA', () => {
       await user.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
       const dialog = within(await screen.findByRole('dialog', { name: 'Paramètres' }));
       const settings = within(dialog.getByRole('region', { name: 'Dossier partagé du TSE' }));
-      // Collés, comme l'adresse et le code donnés à l'installation du relais.
+      // Collée, comme l'adresse donnée à l'installation du relais : pas de code (§55).
+      expect(settings.queryByLabelText('Code d’accès du relais')).not.toBeInTheDocument();
       await user.click(settings.getByLabelText('Adresse du relais'));
       await user.paste(`http://127.0.0.1:${relay.server.address().port}`);
-      await user.click(settings.getByLabelText('Code d’accès du relais'));
-      await user.paste(token);
       await user.click(settings.getByRole('button', { name: 'Enregistrer' }));
       expect(await settings.findByText(/^Relié au dossier partagé/, undefined, relais)).toBeInTheDocument();
       await user.click(dialog.getByRole('button', { name: 'Fermer' }));
@@ -214,17 +212,16 @@ describe('dossier partagé dans la PWA', () => {
     }
   }, 30_000);
 
-  // Vrai relais, comme ci-dessus ; Google (Drive et la clé du Worker) simulé.
-  test('accès perdu sur le téléphone : il revient du compte Google, où il n’est gardé que chiffré', async () => {
+  // Vrai relais, comme ci-dessus ; Google Drive simulé.
+  test('adresse perdue sur le téléphone : elle revient du compte Google, seule la connexion Google suffit', async () => {
     const relais = { timeout: 10_000 };
     const [fs, os, path] = await Promise.all([import('node:fs'), import('node:os'), import('node:path')]);
     // @ts-expect-error — relay.js est du JavaScript pur de l'API, chargé par Node.
-    const { startRelay, newToken } = await import('../../api/src/relay.js');
+    const { startRelay } = await import('../../api/src/relay.js');
     const share = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-relais-'));
     const data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-relais-data-'));
     fs.mkdirSync(path.join(share, '2. TSE'));
-    const token = newToken();
-    const relay = startRelay({ root: share, token, origins: [], dataDir: data, host: '127.0.0.1', port: 0 });
+    const relay = startRelay({ root: share, origins: [], dataDir: data, host: '127.0.0.1', port: 0 });
     await new Promise((resolve) => relay.server.once('listening', resolve));
     const address = `http://127.0.0.1:${relay.server.address().port}`;
     vi.stubEnv('VITE_GOOGLE_CLIENT_ID', FAKE_CLIENT);
@@ -242,13 +239,10 @@ describe('dossier partagé dans la PWA', () => {
       const settings = within(dialog.getByRole('region', { name: 'Dossier partagé du TSE' }));
       await user.click(settings.getByLabelText('Adresse du relais'));
       await user.paste(address);
-      await user.click(settings.getByLabelText('Code d’accès du relais'));
-      await user.paste(token);
       await user.click(settings.getByRole('button', { name: 'Enregistrer' }));
-      expect(await settings.findByText(/Copie chiffrée gardée dans ton compte Google\.$/, undefined, relais)).toBeInTheDocument();
+      expect(await settings.findByText(/Adresse gardée dans ton compte Google/, undefined, relais)).toBeInTheDocument();
       const [copy] = drive.relayFiles();
-      expect(copy.text).not.toContain(token);
-      expect(copy.text).not.toContain('127.0.0.1');
+      expect(JSON.parse(copy.text)).toMatchObject({ url: address });
       first.unmount();
 
       // Le téléphone a perdu le réglage ; la PWA rouverte, le compte Google le ramène.
@@ -256,7 +250,7 @@ describe('dossier partagé dans la PWA', () => {
       checkRelayAgain();
       render(<App />);
       expect(await screen.findByRole('list', { name: 'Contenu du dossier partagé' }, relais)).toBeInTheDocument();
-      expect(JSON.parse(localStorage.getItem('worklogs-relais') ?? '{}')).toMatchObject({ url: address, token });
+      expect(JSON.parse(localStorage.getItem('worklogs-relais') ?? '{}')).toMatchObject({ url: address });
     } finally {
       vi.unstubAllGlobals();
       vi.stubEnv('VITE_GOOGLE_CLIENT_ID', '');
@@ -272,19 +266,18 @@ describe('dossier partagé dans la PWA', () => {
     const relais = { timeout: 10_000 };
     const [fs, os, path] = await Promise.all([import('node:fs'), import('node:os'), import('node:path')]);
     // @ts-expect-error — relay.js est du JavaScript pur de l'API, chargé par Node.
-    const { startRelay, newToken } = await import('../../api/src/relay.js');
+    const { startRelay } = await import('../../api/src/relay.js');
     const share = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-lien-'));
     const data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-lien-data-'));
     fs.mkdirSync(path.join(share, '2. TSE'));
     fs.writeFileSync(path.join(share, '2. TSE', 'Redémarrage.md'), '# x');
     fs.writeFileSync(path.join(share, 'autre.md'), 'y');
-    const token = newToken();
     const address = '\\\\172.16.1.20\\D\\Global\\00. PROCEDURE';
-    const relay = startRelay({ root: share, token, origins: [], dataDir: data, host: '127.0.0.1', port: 0, address });
+    const relay = startRelay({ root: share, origins: [], dataDir: data, host: '127.0.0.1', port: 0, address });
     await new Promise((resolve) => relay.server.once('listening', resolve));
     try {
       localStorage.setItem('worklogs-show-procedures', '1');
-      localStorage.setItem('worklogs-relais', JSON.stringify({ url: `http://127.0.0.1:${relay.server.address().port}`, token }));
+      localStorage.setItem('worklogs-relais', JSON.stringify({ url: `http://127.0.0.1:${relay.server.address().port}` }));
       const project = await localApi.createProject({ name: 'TSE' });
       const user = userEvent.setup();
       render(<App />);
@@ -302,22 +295,20 @@ describe('dossier partagé dans la PWA', () => {
     }
   }, 30_000);
 
-  // Le relais exige un en-tête `Authorization` qu'une `<iframe>` n'envoie pas : sur la PWA,
-  // pas de visionneuse PDF (elle afficherait un refus), l'explication et le téléchargement (§34).
+  // Sur la PWA, pas de visionneuse PDF : l'explication et le téléchargement (§34).
   test('par le relais, un PDF du partage garde son téléchargement, sans visionneuse', async () => {
     const relais = { timeout: 10_000 };
     const [fs, os, path] = await Promise.all([import('node:fs'), import('node:os'), import('node:path')]);
     // @ts-expect-error — relay.js est du JavaScript pur de l'API, chargé par Node.
-    const { startRelay, newToken } = await import('../../api/src/relay.js');
+    const { startRelay } = await import('../../api/src/relay.js');
     const share = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-pdf-'));
     const data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-pwa-pdf-data-'));
     fs.writeFileSync(path.join(share, 'plan.pdf'), '%PDF-1.4\n%%EOF\n');
-    const token = newToken();
-    const relay = startRelay({ root: share, token, origins: [], dataDir: data, host: '127.0.0.1', port: 0 });
+    const relay = startRelay({ root: share, origins: [], dataDir: data, host: '127.0.0.1', port: 0 });
     await new Promise((resolve) => relay.server.once('listening', resolve));
     try {
       localStorage.setItem('worklogs-show-procedures', '1');
-      localStorage.setItem('worklogs-relais', JSON.stringify({ url: `http://127.0.0.1:${relay.server.address().port}`, token }));
+      localStorage.setItem('worklogs-relais', JSON.stringify({ url: `http://127.0.0.1:${relay.server.address().port}` }));
       const user = userEvent.setup();
       render(<App />);
       const tree = within(await screen.findByRole('list', { name: 'Contenu du dossier partagé' }, relais));

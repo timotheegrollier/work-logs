@@ -202,8 +202,8 @@ saisie) + `xlsx-formula.ts` (syntaxe, traduction, dépendances) (Excel, §27), `
 `procedureFileBytes` : une procédure locale envoyée vers le partage en docx/md/txt — §36).
 
 Sur la PWA, les mêmes routes sont servies par le **relais** (`api/src/relay.js`, VM du bureau,
-Tailscale, code d'accès, CORS limité à la PWA — §29, `docs/09-RELAIS.md`) ; le front y passe
-par `sharedClient(base, auth)`, réglé dans Paramètres (`web/src/relay-settings.ts`).
+Tailscale sans code d'accès, CORS et `Origin` limités à la PWA — §29, §55, `docs/09-RELAIS.md`) ;
+le front y passe par `sharedClient(base)`, réglé dans Paramètres (`web/src/relay-settings.ts`).
 
 Les routes `/api/shared/*` ne répondent qu'à cet ordinateur (`localOnly`) et ne fixent jamais
 le chemin du partage (dialogue natif desktop ou `WORKLOGS_SHARED_ROOT`). Elles passent par

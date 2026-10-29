@@ -1,4 +1,4 @@
-import { afterEach, describe, test } from 'node:test';
+import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './worker.mjs';
 
@@ -132,70 +132,4 @@ test('secret absent ou Google injoignable : erreur explicite, jamais de plantage
   const garbled = await post(EXCHANGE);
   assert.equal(garbled.status, 503);
   assert.deepEqual(await garbled.json(), { error: 'invalid_google_response' });
-});
-
-describe('clé de l’accès au relais (/relay-key)', () => {
-  const KEY_ENV = { ...ENV, GOOGLE_CLIENT_ID: CLIENT };
-  /** Google `tokeninfo` simulé : un jeton par compte, celui d'un autre client, un expiré. */
-  function stubTokeninfo() {
-    const calls = [];
-    const known = {
-      'ya29.compte-timo': { aud: CLIENT, sub: '1001', expires_in: '3500' },
-      'ya29.autre-compte': { aud: CLIENT, sub: '2002', expires_in: '3500' },
-      'ya29.autre-client': { aud: '999-zzz.apps.googleusercontent.com', sub: '1001', expires_in: '3500' },
-      'ya29.expire': { aud: CLIENT, sub: '1001', expires_in: '0' },
-    };
-    globalThis.fetch = async (url) => {
-      calls.push(String(url));
-      const token = new URL(String(url)).searchParams.get('access_token');
-      return known[token] ? Response.json(known[token]) : Response.json({ error: 'invalid_token' }, { status: 400 });
-    };
-    return calls;
-  }
-  const askKey = (token, { origin = PWA, env = KEY_ENV } = {}) => worker.fetch(new Request('https://relais.test/relay-key', {
-    method: 'POST',
-    headers: { Origin: origin, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  }), env);
-
-  test('jeton du client intégré vérifié par Google : une clé de 32 octets, stable, propre au compte', async () => {
-    const calls = stubTokeninfo();
-    const first = await askKey('ya29.compte-timo');
-    assert.equal(first.status, 200);
-    assert.equal(first.headers.get('Access-Control-Allow-Origin'), PWA);
-    assert.equal(first.headers.get('Cache-Control'), 'no-store');
-    const { key } = await first.json();
-    assert.equal(Buffer.from(key, 'base64url').length, 32);
-    assert.deepEqual(await (await askKey('ya29.compte-timo')).json(), { key }, 'même compte, même clé : le fichier se relit');
-    const other = (await (await askKey('ya29.autre-compte')).json()).key;
-    assert.notEqual(other, key, 'un autre compte ne lit pas la copie de celui-ci');
-    assert.equal(calls[0], 'https://oauth2.googleapis.com/tokeninfo?access_token=ya29.compte-timo');
-    // Le secret change : la clé aussi (la copie Drive est alors à refaire, une fois).
-    const rotated = await (await askKey('ya29.compte-timo', { env: { ...KEY_ENV, GOOGLE_CLIENT_SECRET: 'nouveau' } })).json();
-    assert.notEqual(rotated.key, key);
-  });
-
-  test('refusée sans jeton valide du client intégré, ni hors de la PWA', async () => {
-    const calls = stubTokeninfo();
-    for (const token of ['', 'ya29.autre-client', 'ya29.expire', 'ya29.inconnu']) {
-      const response = await askKey(token);
-      assert.equal(response.status, 401, token || 'sans jeton');
-      assert.deepEqual(await response.json(), { error: 'unauthorized' });
-    }
-    assert.equal(calls.length, 3, 'sans jeton, Google n’est même pas appelé');
-    const pirate = await askKey('ya29.compte-timo', { origin: 'https://pirate.example' });
-    assert.equal(pirate.status, 403);
-    const unconfigured = await askKey('ya29.compte-timo', { env: ENV });
-    assert.equal(unconfigured.status, 500);
-    assert.deepEqual(await unconfigured.json(), { error: 'relay_not_configured' });
-    globalThis.fetch = async () => {
-      throw new TypeError('réseau coupé');
-    };
-    assert.equal((await askKey('ya29.compte-timo')).status, 502);
-  });
-
-  test('préflight : l’en-tête Authorization est accepté pour la PWA', async () => {
-    const preflight = await worker.fetch(new Request('https://relais.test/relay-key', { method: 'OPTIONS', headers: { Origin: PWA } }), KEY_ENV);
-    assert.equal(preflight.status, 204);
-    assert.match(preflight.headers.get('Access-Control-Allow-Headers'), /Authorization/);
-  });
 });

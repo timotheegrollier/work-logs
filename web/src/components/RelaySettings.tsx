@@ -4,13 +4,13 @@ import { normalizeRelayUrl, readRelay, saveRelay } from '../relay-settings';
 import { syncRelayVault } from '../store/relay-drive';
 import { checkRelayAgain } from '../store/sync-web';
 
-/** La copie chiffrée du compte Google suit ce téléphone ; ce qu'on en dit à la suite du message. */
+/** La copie du compte Google suit ce téléphone ; ce qu'on en dit à la suite du message. */
 async function followInGoogle(forgotten: boolean): Promise<string> {
   try {
     const result = await syncRelayVault();
     if (result === 'unavailable') return forgotten ? '' : 'Il reste sur ce téléphone seulement : connecte ton compte Google pour le retrouver tout seul.';
     if (forgotten) return result === 'removed' ? 'Retiré aussi du compte Google.' : '';
-    return 'Copie chiffrée gardée dans ton compte Google.';
+    return 'Adresse gardée dans ton compte Google : elle revient toute seule à la connexion.';
   } catch {
     checkRelayAgain();
     return forgotten
@@ -21,13 +21,12 @@ async function followInGoogle(forgotten: boolean): Promise<string> {
 
 /**
  * PWA › Paramètres › Dossier partagé du TSE : l'adresse du relais (la VM du
- * bureau, jointe par Tailscale) et son code d'accès, donnés à l'installation du
- * relais. Enregistrer vérifie aussitôt que le relais répond.
+ * bureau, jointe par Tailscale), donnée à l'installation du relais. Pas de code :
+ * le réseau Tailscale suffit (§55). Enregistrer vérifie aussitôt que le relais répond.
  */
 export function RelaySettings({ onChange }: { onChange: () => void }) {
   const saved = readRelay();
   const [url, setUrl] = useState(saved?.url ?? '');
-  const [token, setToken] = useState(saved?.token ?? '');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -40,12 +39,8 @@ export function RelaySettings({ onChange }: { onChange: () => void }) {
       setMessage((e as Error).message);
       return;
     }
-    if (token.trim().length < 32) {
-      setMessage('Code d’accès incomplet : copie-le en entier.');
-      return;
-    }
     setBusy(true);
-    saveRelay({ url: address, token: token.trim() });
+    saveRelay({ url: address });
     setUrl(address);
     try {
       const status = await api.sharedStatus();
@@ -64,7 +59,6 @@ export function RelaySettings({ onChange }: { onChange: () => void }) {
   const forget = async () => {
     saveRelay(null);
     setUrl('');
-    setToken('');
     setMessage('Relais oublié sur ce téléphone.');
     onChange();
     setBusy(true);
@@ -80,20 +74,16 @@ export function RelaySettings({ onChange }: { onChange: () => void }) {
     <section className="display-settings" aria-label="Dossier partagé du TSE">
       <h3>Dossier partagé du TSE</h3>
       <p className="ai-hint">
-        Les procédures du serveur, par le relais du bureau (joint par Tailscale). L’adresse et le code
-        sont donnés à l’installation du relais ; ils sont gardés sur ce téléphone et, chiffrés, dans ton
-        compte Google : ils reviennent tout seuls à la connexion.
+        Les procédures du serveur, par le relais du bureau, joint par Tailscale : pas de code, il suffit
+        que Tailscale soit allumé. L’adresse est gardée sur ce téléphone et dans ton compte Google : elle
+        revient toute seule à la connexion.
       </p>
       <label className="relay-field">
         Adresse du relais
         <input aria-label="Adresse du relais" placeholder="https://relais.exemple.ts.net" value={url} spellCheck={false} autoComplete="off" onChange={(event) => setUrl(event.target.value)} />
       </label>
-      <label className="relay-field">
-        Code d’accès
-        <input aria-label="Code d’accès du relais" type="password" value={token} spellCheck={false} autoComplete="off" onChange={(event) => setToken(event.target.value)} />
-      </label>
       <div className="shared-project-link">
-        <button className="task-primary" type="button" disabled={busy || !url.trim() || !token.trim()} onClick={() => void save()}>Enregistrer</button>
+        <button className="task-primary" type="button" disabled={busy || !url.trim()} onClick={() => void save()}>Enregistrer</button>
         {saved && <button className="ghost" type="button" disabled={busy} onClick={() => void forget()}>Oublier ce relais</button>}
       </div>
       {message && <p className="ai-hint" role="status">{message}</p>}

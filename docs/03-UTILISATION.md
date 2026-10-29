@@ -536,9 +536,10 @@ WorkLogs (ils ignorent les verrous des autres applications). Rien n'est perdu po
 si un collègue enregistre avant toi, ton envoi te demande quoi faire.
 
 **Sur le téléphone (PWA)**, le dossier des procédures passe par le **relais du bureau** (la VM,
-jointe par Tailscale) : Paramètres › Dossier partagé du TSE, adresse et code d'accès du relais
+jointe par Tailscale) : Paramètres › Dossier partagé du TSE, l'adresse du relais, sans code
 (installation : `docs/09-RELAIS.md`). Ensuite tout est pareil : lire, modifier, créer,
-envoyer, conflits. Tailscale doit être allumé sur le téléphone.
+envoyer, conflits. Tailscale doit être allumé sur le téléphone. L'adresse est gardée dans le
+compte Google : connecté, un téléphone qui l'a perdue la retrouve tout seul.
 
 ## Retrouver
 

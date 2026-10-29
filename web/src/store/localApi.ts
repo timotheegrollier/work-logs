@@ -92,7 +92,7 @@ const SHARED_DESKTOP_ONLY = 'Dossier partagé : règle le relais dans Paramètre
 /** Le relais du dossier partagé réglé sur ce téléphone, ou `null`. */
 function relayClient() {
   const settings = readRelay();
-  return settings ? sharedClient(settings.url, () => ({ Authorization: `Bearer ${settings.token}` })) : null;
+  return settings ? sharedClient(settings.url) : null;
 }
 const relay = () => relayClient() ?? fail(SHARED_DESKTOP_ONLY);
 const fail = (message: string): never => {
