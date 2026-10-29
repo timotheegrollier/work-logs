@@ -327,10 +327,15 @@ Supprimer une entrée Google dans WorkLogs ne supprime jamais le fichier Google 
 seulement sa copie locale, y compris si le fichier est déjà absent ou dans la corbeille Drive.
 
 Les pastilles tiennent sur **une seule rangée**, quel que soit le nombre de projets : elle
-défile au doigt, au pavé tactile ou à la molette, et la pastille du projet filtré prend sa
-couleur.
+défile au pavé tactile ou à la molette, et la pastille du projet filtré prend sa couleur.
 
-**Gérer les projets** (au bout de la rangée, « Gérer » sur téléphone) ouvre une fenêtre
+**Sur téléphone**, la rangée laisse place à un seul bouton qui nomme le projet courant dans sa
+couleur (« Tous les projets » sans filtre). Le toucher ouvre, depuis le bas, la **liste de tous
+les projets** avec leurs tâches ouvertes : toucher un nom le choisit et referme la liste.
+**Retrouver un projet** (dès huit projets) filtre au fil des lettres ; Entrée prend le premier
+trouvé. **Gérer les projets**, au pied de la liste, passe à la gestion décrite ci-dessous.
+
+**Gérer les projets** (au bout de la rangée ; au pied de la liste sur téléphone) ouvre une fenêtre
 par-dessus l'écran — sous le bouton sur ordinateur, depuis le bas sur téléphone — pour en
 créer, les renommer (Entrée valide, Échap annule), changer leur couleur, les supprimer. Au-delà
 de sept projets, **Retrouver un projet** filtre la liste. Supprimer un projet ne supprime

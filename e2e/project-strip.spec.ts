@@ -34,66 +34,68 @@ const noHorizontalScroll = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
 test.describe('mobile', () => {
-  // Pixel 9a : 412 px de large CSS.
+  // Pixel 9a : 412 px de large CSS. La rangée n'y montrait qu'une pastille et demie :
+  // un bouton nomme le projet courant et ouvre la liste complète (§54).
   test.use({ viewport: { width: 412, height: 860 }, hasTouch: true });
 
-  test('bandeau : une rangée, gestion en feuille du bas, filtre et création OK', async ({ page }) => {
+  test('téléphone : un bouton nomme le projet, la liste complète choisit, la gestion est au pied', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
-    const strip = page.locator('.project-strip');
-    const rail = page.getByRole('group', { name: 'Filtrer par projet' });
-    const manage = page.getByRole('button', { name: 'Gérer les projets' });
-    await expect(rail.getByRole('button', { name: 'Vidéosurveillance' })).toBeAttached();
-
-    // Une seule rangée de 56 px, quinze projets ou pas ; les pastilles défilent.
+    const switcher = page.getByRole('button', { name: 'Projet : Tous les projets' });
+    await expect(switcher).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Filtrer par projet' })).toHaveCount(0);
     const stripBox = await box(page, '.project-strip');
     expect(stripBox.height).toBeLessThanOrEqual(64);
-    expect(await rail.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
-    // « Gérer » au bout de la rangée, cible tactile, sur la même ligne.
-    const manageBox = (await manage.boundingBox())!;
-    const railBox = (await rail.boundingBox())!;
-    expect(manageBox.height).toBeGreaterThanOrEqual(40);
-    expect(Math.abs(manageBox.y - railBox.y)).toBeLessThan(6);
-    expect(manageBox.x + manageBox.width).toBeLessThanOrEqual(stripBox.x + stripBox.width);
+    expect((await switcher.boundingBox())!.width).toBeGreaterThan(stripBox.width * 0.7);
     expect(await noHorizontalScroll(page)).toBe(true);
 
-    // La gestion monte du bas et ne déplace rien derrière elle.
+    // La liste monte du bas, ne déplace rien derrière elle et montre tous les projets.
     const columnsTop = (await box(page, '.columns')).y;
-    await manage.click();
+    await switcher.click();
     const sheet = page.getByRole('dialog', { name: /^Projets/ });
     await expect(sheet).toBeVisible();
-    await expect(manage).toHaveAttribute('aria-expanded', 'true');
-    // Mesurée une fois posée : elle monte du bas en 0,22 s.
     await sheet.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
     const sheetBox = (await sheet.boundingBox())!;
     expect(sheetBox.width).toBeCloseTo(412, 0);
     expect(sheetBox.y + sheetBox.height).toBeCloseTo(860, 0);
     expect(sheetBox.height).toBeLessThan(860 * 0.9);
     expect((await box(page, '.columns')).y).toBeCloseTo(columnsTop, 0);
-    // Seule la liste défile ; création et recherche restent en tête.
-    const list = sheet.getByRole('list', { name: 'Projets existants' });
-    expect(await list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
-    await sheet.getByLabel('Retrouver un projet').fill('veeam');
-    await expect(sheet.getByLabel('Nom de Sauvegardes Veeam')).toBeVisible();
-    await expect(sheet.getByLabel('Nom de Messagerie')).toBeHidden();
-    // Cibles tactiles dans la feuille.
-    expect((await sheet.getByLabel('Supprimer Sauvegardes Veeam').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    const choices = sheet.getByRole('list', { name: 'Choisir un projet' });
+    for (const name of NAMES) await expect(choices.getByRole('button', { name: new RegExp('^' + name) })).toBeAttached();
+    await expect(choices.getByRole('button', { name: 'Tous les projets' })).toHaveAttribute('aria-pressed', 'true');
+    expect(await choices.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    expect((await choices.getByRole('button', { name: /^Active Directory/ }).boundingBox())!.height).toBeGreaterThanOrEqual(48);
+    // Toucher un nom choisit : aucun champ de renommage dans cette liste.
+    await expect(sheet.getByLabel('Nom de Messagerie')).toHaveCount(0);
 
+    // Retrouver au clavier : quelques lettres, Entrée prend le premier trouvé.
+    await sheet.getByLabel('Retrouver un projet').fill('veeam');
+    await expect(choices.getByRole('button')).toHaveCount(1);
+    await sheet.getByLabel('Retrouver un projet').press('Enter');
+    await expect(sheet).toBeHidden();
+    const veeam = page.getByRole('button', { name: 'Projet : Sauvegardes Veeam' });
+    await expect(veeam).toBeFocused();
+
+    // Rouverte, elle montre le projet en cours, coché.
+    await veeam.click();
+    const current = choices.getByRole('button', { name: /^Sauvegardes Veeam/ });
+    await expect(current).toHaveAttribute('aria-pressed', 'true');
+    await expect(current).toBeInViewport();
+
+    // Gérer : au pied de la liste, la gestion connue, dans la même feuille.
+    await sheet.getByRole('button', { name: 'Gérer les projets' }).click();
     await sheet.getByLabel('Nom du nouveau projet').fill('Chantier');
     await sheet.getByRole('button', { name: 'Créer' }).click();
     await expect(sheet.getByLabel('Nom de Chantier')).toBeVisible();
+    expect((await sheet.getByLabel('Supprimer Sauvegardes Veeam').boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await sheet.getByRole('button', { name: 'Fermer' }).click();
     await expect(sheet).toBeHidden();
-    await expect(manage).toBeFocused();
+    await expect(veeam).toBeFocused();
 
-    // Le nouveau projet se choisit dans la rangée, et le filtre actif reste en vue.
-    const chantier = rail.getByRole('button', { name: 'Chantier', exact: true });
-    await chantier.click();
-    await expect(chantier).toHaveAttribute('aria-pressed', 'true');
-    const chipBox = (await chantier.boundingBox())!;
-    const railAfter = (await rail.boundingBox())!;
-    expect(chipBox.x).toBeGreaterThanOrEqual(railAfter.x - 1);
-    expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(railAfter.x + railAfter.width + 1);
+    // Le nouveau projet se choisit d'un toucher.
+    await veeam.click();
+    await choices.getByRole('button', { name: /^Chantier/ }).click();
+    await expect(page.getByRole('button', { name: 'Projet : Chantier' })).toBeVisible();
     expect(await noHorizontalScroll(page)).toBe(true);
   });
 });

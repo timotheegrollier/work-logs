@@ -674,6 +674,7 @@ export default function App() {
           selected={projectId}
           onSelect={(id) => void switchProject(id)}
           onChanged={reload}
+          compact={phone}
         >
           <CategoryBar
             key={projectId}

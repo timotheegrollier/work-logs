@@ -2633,6 +2633,35 @@ describe('cartes empilées (tablette) et vues du téléphone', () => {
     expect(localStorage.getItem('worklogs-show-right')).not.toBe('0');
   });
 
+  test('téléphone : un bouton nomme le projet courant, la liste complète choisit d’un toucher', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Beta' }] });
+    stackedScreen(true, true);
+    render(<App />);
+
+    // Plus de rangée de pastilles à faire défiler : un bouton, le projet en toutes lettres.
+    const switcher = await screen.findByRole('button', { name: 'Projet : Tous les projets' });
+    expect(screen.queryByRole('group', { name: 'Filtrer par projet' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gérer les projets' })).not.toBeInTheDocument();
+
+    await user.click(switcher);
+    const sheet = await screen.findByRole('dialog', { name: /Projets/ });
+    const choices = within(sheet).getByRole('list', { name: 'Choisir un projet' });
+    expect(within(choices).getByRole('button', { name: 'Tous les projets' })).toHaveAttribute('aria-pressed', 'true');
+    // Toucher un nom choisit, il ne lance pas un renommage.
+    expect(within(sheet).queryByLabelText('Nom de Beta')).not.toBeInTheDocument();
+    await user.click(within(choices).getByRole('button', { name: 'Beta' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Projets/ })).not.toBeInTheDocument());
+    expect(await screen.findByRole('button', { name: 'Projet : Beta' })).toHaveFocus();
+    expect(localStorage.getItem('worklogs-project')).toBe('pr_b');
+
+    // Gérer est un autre geste, au pied de la liste : la gestion connue, dans la même feuille.
+    await user.click(screen.getByRole('button', { name: 'Projet : Beta' }));
+    await user.click(within(await screen.findByRole('dialog', { name: /Projets/ })).getByRole('button', { name: 'Gérer les projets' }));
+    expect(screen.getByLabelText('Nom du nouveau projet')).toBeInTheDocument();
+    expect(screen.getByLabelText('Nom de Alpha')).toBeInTheDocument();
+  });
+
   test('téléphone : les réglages de l’entrée se replient derrière leur résumé', async () => {
     const user = userEvent.setup();
     seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }], entries: [{ id: 'en_1', title: 'Compte rendu', project_id: 'p' }] });

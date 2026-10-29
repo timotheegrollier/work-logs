@@ -1,5 +1,18 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-29 — téléphone : choisir un projet dans la liste (§54)
+
+Sur téléphone, la rangée de pastilles (une et demie visible à 412 px) laisse place à un bouton
+qui nomme le projet courant dans sa couleur ; il ouvre, depuis le bas, la liste de tous les
+projets : toucher choisit et referme, **Retrouver un projet** filtre (Entrée prend le premier),
+**Gérer les projets** en pied de liste montre la gestion connue. Avant, le seul endroit où tous
+les projets se voyaient (« Gérer ») ouvrait le renommage au toucher. Desktop et tablette
+inchangés ; aucune dépendance. Captures 412 et 844 × 390, sombre et clair (`.design/shots/s1-*`).
+Tests : geste App (téléphone simulé), parcours `project-strip` mobile réécrit, `mobile-header`
+et catégories mobiles choisissent par la liste. `./scripts/check.sh` vert : 284 API, 697 front
+(dont 1 échec attendu), 48 desktop unitaires, 32 scripts, 11 Worker, 11 relais, 78 navigateur et
+17 desktop e2e — 1178 tests ; 698 front une fois rebasé sur le correctif IA (#26).
+
 ## Correctif du 2026-10-29 — procédure tirée d'une entrée coupée en route
 
 La réponse de l'IA s'arrêtait au milieu d'une étape : le modèle par défaut décompte sa

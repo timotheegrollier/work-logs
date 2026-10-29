@@ -2234,3 +2234,38 @@ réécrits vue par vue. La recherche reste en tête de page, pas dans le bandeau
 
 **Rouvrir si** une vue doit montrer une autre zone en même temps (la note d'une tâche, par
 exemple) : la réponse serait une feuille du bas, pas le retour à la page empilée.
+
+---
+
+## 54. Téléphone : choisir un projet dans la liste, plus dans une rangée — 2026-10-29
+
+**Demande.** « Je trouve la navigation entre les différents projets encore un peu compliquée
+sur mon Pixel : trouve une solution UI/UX mobile parfaitement adaptée. »
+
+**Constat (412 × 860, quinze projets).** La rangée du bandeau (§35) ne montrait que « Tout » et
+une pastille et demie : trouver un projet demandait de balayer de côté plusieurs écrans de
+pastilles aux noms coupés. « Gérer », le seul endroit où tous les projets se voyaient, était un
+piège : toucher un nom y ouvrait le **renommage** (et le clavier), pas le projet.
+
+**Décisions (téléphone seulement, mêmes requêtes que §53).**
+- **Un bouton nomme le projet courant**, en toutes lettres et dans sa couleur, à la place de la
+  rangée (`ProjectBar` `compact`) ; « Tous les projets » sans filtre, avec un anneau au lieu
+  d'une couleur. Les catégories gardent leur bouton à côté.
+- Il ouvre **la liste de tous les projets** dans la feuille du bas existante (§35) : une ligne de
+  52 px par projet, ses tâches ouvertes, le projet en cours coché et pris par le focus. Toucher
+  **choisit et referme** ; **Retrouver un projet** dès huit projets, Entrée prend le premier
+  trouvé.
+- **Choisir et gérer sont deux gestes** : « Gérer les projets », en pied de liste, montre la
+  gestion inchangée dans la même feuille. Le focus revient au bouton du bandeau.
+- Desktop et tablette gardent la rangée : à la souris et sur grand écran, un clic suffit.
+
+**Écartés.** Balayer le contenu pour passer au projet voisin (invisible, et en conflit avec les
+rangées qui défilent au doigt) ; garder la rangée en plus du bouton (deux façons de faire la même
+chose, et toujours une pastille et demie) ; des projets « récents » en tête (l'ordre alphabétique
+se retient, la recherche fait le reste).
+
+**Ce que ça coûte.** Deux touchers au lieu d'un pour un projet déjà visible dans l'ancienne
+rangée (au plus le premier ou le deuxième). Les parcours mobiles choisissent par la liste.
+
+**Rouvrir si** l'usage montre des allers-retours constants entre deux projets : un raccourci
+« projet précédent » dans la liste, pas le retour de la rangée.
