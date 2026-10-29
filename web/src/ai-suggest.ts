@@ -855,10 +855,11 @@ function literalDueDate(value: unknown, evidence: string): string | null {
 }
 
 /**
- * Extraction seule : le contexte éclaire les mots, les actions viennent de la
- * note. Aucun enregistrement ici ; l'utilisateur choisit les tâches à créer.
+ * Les propositions restent ancrées dans la note ; le contexte en éclaire les mots.
+ * Aucun enregistrement ici : l'utilisateur choisit les tâches à créer.
  */
-export async function extractEntryActions(
+async function proposeEntryActions(
+  mode: 'extract' | 'suggest',
   settings: AiSettings,
   title: string,
   text: string,
@@ -867,7 +868,7 @@ export async function extractEntryActions(
   const source = text.trim();
   if (!source) throw new AiError('Rien à extraire : l’entrée est vide.');
   if (source.length > MAX_PROOFREAD_CHARS) {
-    throw new AiError(`Texte trop long pour extraire les actions (${source.length} caractères, ${MAX_PROOFREAD_CHARS} maximum).`);
+    throw new AiError(`Texte trop long pour ${mode === 'extract' ? 'extraire les actions' : 'suggérer des tâches'} (${source.length} caractères, ${MAX_PROOFREAD_CHARS} maximum).`);
   }
   const context = options.context ?? {};
   const completed = [...parseChecklist(source), ...(context.existingSubtasks ?? [])].filter((item) => item.done);
@@ -876,17 +877,22 @@ export async function extractEntryActions(
   if (settings.profile.trim()) sections.push(`Profil : ${settings.profile.trim()}`);
   sections.push(`Titre de la note : ${title.trim()}`, ...workContextSections(context));
   if (excludedTitles.length > 0) sections.push(`Actions déjà terminées ou tâches déjà liées, à exclure :\n${excludedTitles.map((item) => `- ${item}`).join('\n')}`);
-  sections.push(`Texte source de la note (seule source des actions et des échéances) :\n${source}`);
+  sections.push(mode === 'extract'
+    ? `Texte source de la note (seule source des actions et des échéances) :\n${source}`
+    : `Texte source de la note (ancrage des suggestions) :\n${source}`);
   const prompt = refinePrompt({
-    system: `Tu extrais les actions de la note de l'utilisateur dans WorkLogs, son journal de travail personnel.
+    system: mode === 'extract' ? `Tu extrais les actions de la note de l'utilisateur dans WorkLogs, son journal de travail personnel.
 ${REFERENCE_RULE}
 Extrais seulement les actions explicitement encore à faire dans le texte source de la note. Ne déduis aucune action utile, implicite ou habituelle. Un fait rapporté, une action accomplie, une case cochée ou une tâche déjà liée ne sont jamais une action à créer. Les cases non cochées restent extractibles.
 Le contexte de projet et les documents de référence servent uniquement à comprendre le vocabulaire : ils ne fournissent aucune action ni échéance. La proposition précédente n'est pas une source non plus.
 Réponds uniquement avec un tableau JSON de ${MAX_SUGGESTIONS} objets au plus, sans enveloppe ni commentaire. Chaque objet a exactement les champs « title » (titre court de l'action en français), « due_date » (date au format YYYY-MM-DD ou null) et « evidence » (court extrait recopié à l'identique du texte source qui dit l'action à faire).
-Une échéance n'est permise que si sa date YYYY-MM-DD est écrite littéralement dans ce même extrait. Ne convertis jamais une date relative (« demain », « vendredi ») ou un autre format : mets null. N'invente aucun détail. S'il n'y a aucune action explicite à extraire, réponds [].`,
+Une échéance n'est permise que si sa date YYYY-MM-DD est écrite littéralement dans ce même extrait. Ne convertis jamais une date relative (« demain », « vendredi ») ou un autre format : mets null. N'invente aucun détail. S'il n'y a aucune action explicite à extraire, réponds [].` : `Tu aides l'utilisateur à suggérer des tâches utiles à partir d'une note de son journal WorkLogs.
+${REFERENCE_RULE}
+Propose des tâches concrètes encore pertinentes, explicitement mentionnées ou raisonnablement déduites du texte source de la note. Les déductions sont des suggestions à vérifier, jamais des faits accomplis ou des engagements certains. N'invente ni résultat, ni personne, ni valeur, ni date. Ne propose pas une action déjà terminée ou une tâche déjà liée. Le contexte éclaire le texte, mais ne constitue pas à lui seul une raison de créer une tâche.
+Réponds uniquement avec un tableau JSON de ${MAX_SUGGESTIONS} objets au plus, sans enveloppe ni commentaire. Chaque objet a exactement « title » (titre court en français), « due_date » (date YYYY-MM-DD littéralement présente dans l'extrait ou null) et « evidence » (court extrait recopié à l'identique du texte source qui motive la suggestion). Sans suggestion ancrée dans la note, réponds [].`,
     user: sections.join('\n\n'),
   }, options.refinement);
-  const reply = await postChatCompletions(settings, 'l’extraction des actions', prompt.system, prompt.user, 3072, options.timeoutMs ?? AI_TIMEOUT_MS);
+  const reply = await postChatCompletions(settings, mode === 'extract' ? 'l’extraction des actions' : 'la suggestion de tâches', prompt.system, prompt.user, 3072, options.timeoutMs ?? AI_TIMEOUT_MS);
   let parsed: unknown;
   try {
     parsed = JSON.parse(reply.trim().replace(/^```(?:json)?[ \t]*\n([\s\S]*?)\n```$/i, '$1'));
@@ -911,6 +917,22 @@ Une échéance n'est permise que si sa date YYYY-MM-DD est écrite littéralemen
     if (actions.length >= MAX_SUGGESTIONS) break;
   }
   return actions;
+}
+
+/** Actions explicitement présentes dans la note, à relire avant création. */
+export async function extractEntryActions(
+  settings: AiSettings, title: string, text: string,
+  options: { context?: SuggestContext; refinement?: AiRefinement; timeoutMs?: number } = {}
+): Promise<ExtractedAction[]> {
+  return proposeEntryActions('extract', settings, title, text, options);
+}
+
+/** Tâches suggérées à partir du contexte de la note, ancrées dans un extrait à relire. */
+export async function suggestEntryTasks(
+  settings: AiSettings, title: string, text: string,
+  options: { context?: SuggestContext; refinement?: AiRefinement; timeoutMs?: number } = {}
+): Promise<ExtractedAction[]> {
+  return proposeEntryActions('suggest', settings, title, text, options);
 }
 
 /** Chaque mot est une recherche de plus dans le partage : six suffisent à couvrir synonymes et objets. */

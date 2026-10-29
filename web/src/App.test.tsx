@@ -4314,6 +4314,124 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
 });
 
 describe('IA dans les notes : contexte, affinement et actions', () => {
+  test('suggère des tâches depuis le brouillon en cours et crée seulement la sélection liée', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, {
+      projects: [{ id: 'pr_bassin', name: 'Bassin' }],
+      entries: [{ id: 'en_note', title: 'Panne', content_md: 'Ancien texte.', project_id: 'pr_bassin' }],
+    });
+    mockAiSuggest(JSON.stringify([
+      { title: 'Contrôler le moteur', due_date: null, evidence: 'Le moteur surchauffe.' },
+      { title: 'Vérifier la ventilation', due_date: null, evidence: 'Le moteur surchauffe.' },
+    ]));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Écrire' }));
+    fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Le moteur surchauffe.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Suggérer des tâches avec l’IA' }));
+    const proposal = await screen.findByRole('region', { name: 'Tâches suggérées' });
+    expect(within(proposal).getByText(/Certaines tâches sont déduites du contexte/)).toBeInTheDocument();
+    expect(JSON.stringify(aiBodies.at(-1))).toContain('Le moteur surchauffe.');
+    expect(within(proposal).getAllByText('Le moteur surchauffe.', { selector: 'blockquote' })).toHaveLength(2);
+    fireEvent.click(within(proposal).getByRole('checkbox', { name: 'Créer l’action Vérifier la ventilation' }));
+    fireEvent.change(within(proposal).getByLabelText('Titre de l’action 1'), { target: { value: 'Contrôler le moteur du bassin' } });
+    fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
+    await within(proposal).findByText('1 tâche créée et liée à cette note.');
+    const created = row(api.db, "SELECT id,project_id FROM tasks WHERE title='Contrôler le moteur du bassin'");
+    expect(created.project_id).toBe('pr_bassin');
+    expect(row(api.db, 'SELECT entry_id FROM task_entries WHERE task_id=?', created.id).entry_id).toBe('en_note');
+    expect(row(api.db, "SELECT count(*) AS n FROM tasks WHERE title='Vérifier la ventilation'").n).toBe(0);
+    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Le moteur surchauffe.');
+  });
+
+  test('changer le titre après une suggestion empêche de créer des tâches périmées', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Panne', content_md: 'La pompe chauffe.' }] });
+    mockAiSuggest(JSON.stringify([{ title: 'Contrôler la pompe', due_date: null, evidence: 'La pompe chauffe.' }]));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggérer des tâches avec l’IA' }));
+    const proposal = await screen.findByRole('region', { name: 'Tâches suggérées' });
+    fireEvent.change(screen.getByLabelText('Titre de l’entrée'), { target: { value: 'Autre panne' } });
+    fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('a changé depuis la suggestion');
+    expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(0);
+  });
+
+  test('changer le titre pendant la suggestion écarte la réponse périmée', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Panne', content_md: 'La pompe chauffe.' }] });
+    const diverted = globalThis.fetch;
+    let finish: (() => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('chat/completions')) return new Promise<Response>((resolve) => {
+        finish = () => resolve({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify([{ title: 'Contrôler la pompe', due_date: null, evidence: 'La pompe chauffe.' }]) } }] }) } as Response);
+      });
+      return diverted(input, init);
+    }));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggérer des tâches avec l’IA' }));
+    await waitFor(() => expect(finish).toBeTypeOf('function'));
+    fireEvent.change(screen.getByLabelText('Titre de l’entrée'), { target: { value: 'Autre panne' } });
+    await act(async () => { finish?.(); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('La note a changé pendant la demande');
+    expect(screen.queryByRole('region', { name: 'Tâches suggérées' })).not.toBeInTheDocument();
+    expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(0);
+  });
+
+  test('retirer une source ferme les tâches suggérées et exclut la source du nouvel appel', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, {
+      projects: [{ id: 'pr_bassin', name: 'Bassin' }],
+      entries: [
+        { id: 'en_note', title: 'Pompe', content_md: 'Le moteur chauffe.', project_id: 'pr_bassin' },
+        { id: 'en_proc', title: 'Purger la pompe', content_md: 'Instruction complémentaire privée.', project_id: 'pr_bassin', kind: 'procedure' },
+      ],
+    });
+    mockAiSuggest(JSON.stringify([{ title: 'Contrôler le moteur', due_date: null, evidence: 'Le moteur chauffe.' }]));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggérer des tâches avec l’IA' }));
+    await screen.findByRole('region', { name: 'Tâches suggérées' });
+    expect(JSON.stringify(aiBodies.at(-1))).toContain('Instruction complémentaire privée.');
+    fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Procédure : Purger la pompe' }));
+    expect(screen.queryByRole('region', { name: 'Tâches suggérées' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Suggérer des tâches avec l’IA' }));
+    await screen.findByRole('region', { name: 'Tâches suggérées' });
+    expect(JSON.stringify(aiBodies.at(-1))).not.toContain('Instruction complémentaire privée.');
+  });
+
+  test('retirer une source pendant la création arrête les tâches restantes', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, {
+      projects: [{ id: 'pr_bassin', name: 'Bassin' }],
+      entries: [
+        { id: 'en_note', title: 'Pompe', content_md: 'Le moteur chauffe.', project_id: 'pr_bassin' },
+        { id: 'en_proc', title: 'Purger la pompe', content_md: 'Vérifier le moteur.', project_id: 'pr_bassin', kind: 'procedure' },
+      ],
+    });
+    mockAiSuggest(JSON.stringify([
+      { title: 'Contrôler le moteur', due_date: null, evidence: 'Le moteur chauffe.' },
+      { title: 'Vérifier la ventilation', due_date: null, evidence: 'Le moteur chauffe.' },
+    ]));
+    const actualCreate = clientApi.createTaskFromEntry;
+    let release: (() => void) | undefined;
+    const create = vi.spyOn(clientApi, 'createTaskFromEntry').mockImplementationOnce(async (...args) => {
+      await new Promise<void>((resolve) => { release = resolve; });
+      return actualCreate(...args);
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggérer des tâches avec l’IA' }));
+    const proposal = await screen.findByRole('region', { name: 'Tâches suggérées' });
+    fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
+    await waitFor(() => expect(release).toBeTypeOf('function'));
+    fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Procédure : Purger la pompe' }));
+    await act(async () => { release?.(); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('les tâches restantes n’ont pas été créées');
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(1);
+    expect(row(api.db, "SELECT count(*) AS n FROM tasks WHERE title='Vérifier la ventilation'").n).toBe(0);
+  });
+
   test('extrait des actions sélectionnables, modifiables et créées dans le projet avec leur note source', async () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     const text = 'Vérifier la pompe le 2026-11-01.\nAppeler le fournisseur.\nEnvoyer le devis.';

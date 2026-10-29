@@ -213,7 +213,7 @@ rendu approximatif.
 - Sur grand écran, « N en cours » et « N en retard » de l'en-tête sont cliquables : ils
   ouvrent le panneau Tâches sur la vue correspondante. Ces compteurs portent sur toute la
   base ; si le projet filtré ou la recherche en cachent une partie, ils sont levés.
-- **Créer une tâche liée** depuis l’entrée ouverte préremplit son titre et permet d’ajouter une échéance. La tâche apparaît directement dans le panneau de droite avec cette entrée comme contexte.
+- **Créer une tâche liée** depuis l’entrée ouverte préremplit son titre et permet d’ajouter une échéance. La tâche apparaît directement dans le panneau de droite avec cette entrée comme contexte. Dans une note locale, **✨ Suggérer des tâches avec l’IA** propose aussi des tâches à partir du brouillon ; elles restent à relire avant création (voir « Assistance IA »).
 - **Relier un document** ouvre la liste des entrées disponibles. Choisir une entrée locale ou un onglet Google puis cliquer sur **Relier** ; chaque document lié reste visible sur la carte avec son origine.
 - Cliquer sur le titre d'un document lié l'ouvre au centre. Le bouton ✕ retire seulement l'association, sans supprimer le document. Une même entrée peut fournir le contexte de plusieurs tâches.
 - **✨ IA › Créer une procédure** (pied de carte) fait rédiger par l'IA une procédure à partir de la tâche et de ses documents liés, à relire avant de la créer — voir « Procédures ».
@@ -238,8 +238,9 @@ d'une note, d'une procédure ou d'un fichier du partage, et au pied de chaque ca
 Il n'apparaît que si une action est possible (jamais sur un document Google). Le menu
 s'ouvre au clic ou au clavier (flèches, Entrée, Échap) ; pendant la demande, le bouton
 affiche l'attente (« Rédaction… », « Mise en page… »). Le survol d'une action dit ce qui
-part au service IA. Seul **✨ Suggérer** du formulaire « ＋ Entrée liée » reste à côté de
-sa zone de sous-tâches, qu'il remplit.
+part au service IA. **✨ Suggérer** du formulaire « ＋ Entrée liée » reste à côté de
+sa zone de sous-tâches, qu'il remplit ; **✨ Suggérer des tâches avec l’IA** se trouve
+aussi près de la création d'une tâche liée dans l'entrée.
 
 **Contexte utilisé par l'IA** apparaît après la première demande : déplier pour lire
 les extraits et décocher une source pour les demandes suivantes. Une modification de
@@ -275,6 +276,17 @@ est liée à la note et reprend son projet ; la note est conservée. Seules les 
 explicitement au format `YYYY-MM-DD` dans le passage cité deviennent automatiquement des
 échéances : « demain » ou « vendredi » laisse le champ vide. Une création partiellement
 réussie garde les tâches déjà créées pour permettre de réessayer les autres.
+
+**✨ Suggérer des tâches avec l’IA**, dans la même note, peut aussi proposer des tâches
+raisonnablement déduites de son contenu, même si elles n'y sont pas formulées comme des
+actions. Le titre, le brouillon et le contexte du projet partent au service IA configuré ;
+un extrait exact de la note accompagne chaque suggestion pour aider à la juger. Ces déductions
+ne sont ni des faits accomplis ni des engagements : vérifier les propositions avant de
+sélectionner et créer les tâches liées. L'extraction reste disponible pour ne rechercher que
+les actions explicitement écrites. Les mêmes règles d'échéance et de reprise après échec
+s'appliquent ; modifier le titre ou le contenu de la note, son projet ou les sources choisies
+demande de relancer la proposition. La suggestion requiert une note non vide et ne lit pas
+les documents Google ni le contenu des pièces jointes.
 
 ## Projets
 

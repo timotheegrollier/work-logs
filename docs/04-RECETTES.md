@@ -274,9 +274,12 @@ confondre « le modèle répond » et « la proposition aide ».
 | Note relatant seulement du travail terminé | Aucune action proposée à créer. |
 | Checklist avec cases cochées et non cochées | Seules les actions restantes sont extractibles. |
 | Action déjà liée à la note | Aucune nouvelle tâche identique. |
+| Note décrivant un problème sans action écrite | « Suggérer des tâches » peut proposer une suite raisonnable, avec un extrait exact de la note à vérifier ; « Extraire les actions » ne doit pas l'inventer. |
+| Suggestions déduites, doublons et action terminée | Les déductions sont présentées à relire ; pas de tâche créée sans sélection, ni de doublon simple avec une tâche liée ou une case terminée. |
 | Échéance explicite `2026-10-30` | Date reprise ; « demain » laisse une échéance vide. |
 | Création partiellement refusée ou réponse perdue | Réessayer ne recrée pas les tâches déjà liées. |
-| Texte/projet changé pendant la demande | Les frappes restent et la réponse obsolète n'est pas appliquée. |
+| Titre, texte ou projet changé pendant la demande | Les frappes restent et la réponse obsolète n'est pas appliquée ; relancer avant de créer. |
+| Source décochée après proposition ou pendant la création | La proposition est invalidée ; les tâches restantes ne sont pas créées sur l'ancien contexte. |
 | « ✨ Compléter » sur un titre et trois points | Chaque point développé ; « à préciser » là où l'information manque, rien d'inventé. |
 | « ✨ Compléter » avec commande, valeur et case cochée | Commande et valeur à l'identique, case toujours cochée, rien de prévu présenté comme fait. |
 

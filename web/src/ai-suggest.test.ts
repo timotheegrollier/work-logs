@@ -12,6 +12,7 @@ import {
   completeNote,
   draftProcedure,
   extractEntryActions,
+  suggestEntryTasks,
   MAX_PROOFREAD_CHARS,
   parseChecklist,
   parseDraftedProcedure,
@@ -191,6 +192,41 @@ describe('extraction des actions explicites', () => {
     await expect(extractEntryActions(settings, 'N', '   ')).rejects.toThrow(/vide/);
     await expect(extractEntryActions(settings, 'N', 'a'.repeat(MAX_PROOFREAD_CHARS + 1))).rejects.toThrow(/trop long/);
     await expect(extractEntryActions({ ...settings, key: '' }, 'N', 'À faire.')).rejects.toThrow(/Paramètres/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('suggestions de tâches issues de la note', () => {
+  test('propose une déduction ancrée dans le brouillon, avec contexte et sans échéance inventée', async () => {
+    const text = 'La pompe perd de la pression depuis hier.';
+    const fetch = vi.fn(async () => aiResponse(JSON.stringify([
+      { title: 'Contrôler la pompe', evidence: text, due_date: '2026-11-01' },
+      { title: 'Changer le filtre', evidence: 'Filtre usé', due_date: null },
+      { title: 'CONTROLER LA POMPE', evidence: text, due_date: null },
+    ])));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestEntryTasks(settings, 'Bassin', text, {
+      context: { project: 'Ferme', projectBrief: 'Maintenance du bassin' },
+    })).resolves.toEqual([{ title: 'Contrôler la pompe', evidence: text, due_date: null }]);
+    const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.messages[0].content).toContain('raisonnablement déduites');
+    expect(body.messages[0].content).toContain('suggestions à vérifier');
+    expect(body.messages[1].content).toContain(text);
+    expect(body.messages[1].content).toContain('Maintenance du bassin');
+  });
+
+  test('écarte une tâche déjà liée et une case terminée ; une réponse vide reste possible', async () => {
+    const text = '- [x] Réparer la pompe.\nLa pompe fonctionne.';
+    const fetch = vi.fn(async () => aiResponse(JSON.stringify([
+      { title: 'Vérifier la pompe', evidence: 'La pompe fonctionne.', due_date: null },
+      { title: 'Contrôler la réparation', evidence: '- [x] Réparer la pompe.', due_date: null },
+    ])));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestEntryTasks(settings, 'Note', text, { context: { linkedTasks: ['Vérifier la pompe'] } })).resolves.toEqual([]);
+    fetch.mockImplementation(async () => aiResponse('[]'));
+    await expect(suggestEntryTasks(settings, 'Note', text)).resolves.toEqual([]);
+    fetch.mockClear();
+    await expect(suggestEntryTasks(settings, 'Note', '')).rejects.toThrow(/vide/);
     expect(fetch).not.toHaveBeenCalled();
   });
 });

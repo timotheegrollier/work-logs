@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { api, COLUMNS, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type RichDocument, type Status } from '../lib';
-import { completeNote, draftProcedure, extractEntryActions, parseChecklist, proofreadEntry, readAiSettings, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
+import { completeNote, draftProcedure, extractEntryActions, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
 import { insertCodeFence, renderMarkdown, toggleChecklistItem } from '../markdown';
 import { markdownToRich, richToMarkdown } from '../rich-markdown';
@@ -366,6 +366,7 @@ export function EntryEditor({
     setExcludedAiSources(ids);
     setAiProposal(null);
     setProcedureDraft(null);
+    setActionsProposal(null);
   };
   const settingsForAi = (feature: string) => {
     const settings = readAiSettings();
@@ -577,8 +578,9 @@ export function EntryEditor({
     }
   };
   const [extracting, setExtracting] = useState(false);
+  const [taskProposalMode, setTaskProposalMode] = useState<'extract' | 'suggest'>('extract');
   const [actionsCreating, setActionsCreating] = useState(false);
-  const [actionsProposal, setActionsProposal] = useState<{ snapshot: string; projectId: string; version: number; items: ActionChoice[] } | null>(null);
+  const [actionsProposal, setActionsProposal] = useState<{ mode: 'extract' | 'suggest'; snapshot: string; title: string; projectId: string; version: number; contextVersion: number; items: ActionChoice[] } | null>(null);
   const [actionsMessage, setActionsMessage] = useState('');
   const createdActionTitles = useRef(new Set<string>());
   const aiWorking = suggesting || aiBusy !== null || drafting || extracting || actionsCreating;
@@ -593,16 +595,17 @@ export function EntryEditor({
     setActionsProposal(null);
     setActionsMessage('');
   }, [draft.project_id]);
-  const extractActions = async () => {
+  const proposeTasks = async (mode: 'extract' | 'suggest') => {
     if (aiWorking || syncing || !canDraftProcedure) return;
     const projectId = draftRef.current.project_id;
     const version = projectVersion.current;
     const contextVersion = aiContextVersion.current;
+    setTaskProposalMode(mode);
     setExtracting(true);
     setError('');
     setActionsMessage('');
     try {
-      const settings = settingsForAi('l’extraction d’actions');
+      const settings = settingsForAi(mode === 'extract' ? 'l’extraction d’actions' : 'les suggestions de tâches');
       await autosave.flush();
       if (!mounted.current) return;
       const current = draftRef.current;
@@ -610,7 +613,8 @@ export function EntryEditor({
       const source = current.content_json ? richToMarkdown(current.content_json) : current.content_md;
       const context = await contextForAi(current, version, contextVersion);
       if (!context) return;
-      const extracted = await extractEntryActions(settings, current.title, source, {
+      const request = mode === 'extract' ? extractEntryActions : suggestEntryTasks;
+      const extracted = await request(settings, current.title, source, {
         context: {
           ...context,
           linkedTasks: linkedTasks.map((task) => task.title),
@@ -619,7 +623,7 @@ export function EntryEditor({
         },
       });
       if (!sameProject(current.project_id) || projectVersion.current !== version || aiContextVersion.current !== contextVersion) return;
-      if (contentSnapshot(draftRef.current) !== snapshot) throw new Error('La note a changé pendant l’extraction : relance-la pour utiliser le texte actuel.');
+      if (contentSnapshot(draftRef.current) !== snapshot || draftRef.current.title !== current.title) throw new Error('La note a changé pendant la demande : relance-la pour utiliser le texte actuel.');
       const existing = new Set([...linkedTasks.map((task) => actionTitleKey(task.title)), ...createdActionTitles.current]);
       const items = extracted.filter((action) => {
         const key = actionTitleKey(action.title);
@@ -627,7 +631,7 @@ export function EntryEditor({
         existing.add(key);
         return true;
       }).map((action) => ({ ...action, selected: true, created: false }));
-      setActionsProposal({ snapshot, projectId: current.project_id, version, items });
+      setActionsProposal({ mode, snapshot, title: current.title, projectId: current.project_id, version, contextVersion, items });
     } catch (e) {
       if (sameProject(projectId) && projectVersion.current === version && aiContextVersion.current === contextVersion) setError((e as Error).message);
     } finally {
@@ -640,9 +644,9 @@ export function EntryEditor({
   const createSelectedActions = async () => {
     if (!actionsProposal || aiWorking) return;
     const proposal = actionsProposal;
-    const sourceIsCurrent = () => sameProject(proposal.projectId) && projectVersion.current === proposal.version && contentSnapshot(draftRef.current) === proposal.snapshot;
+    const sourceIsCurrent = () => sameProject(proposal.projectId) && projectVersion.current === proposal.version && aiContextVersion.current === proposal.contextVersion && contentSnapshot(draftRef.current) === proposal.snapshot && draftRef.current.title === proposal.title;
     if (!sourceIsCurrent()) {
-      setError('La note ou son projet a changé depuis l’extraction : relance-la avant de créer les tâches.');
+      setError(`La note ou son projet a changé depuis ${proposal.mode === 'extract' ? 'l’extraction' : 'la suggestion'}, ou les sources ont changé : relance la demande avant de créer les tâches.`);
       return;
     }
     setActionsCreating(true);
@@ -663,7 +667,7 @@ export function EntryEditor({
       for (const [index, action] of proposal.items.entries()) {
         if (!action.selected || action.created || !action.title.trim()) continue;
         if (!mounted.current) return;
-        if (!sourceIsCurrent()) throw new Error('La note ou son projet a changé : les tâches restantes n’ont pas été créées. Relance l’extraction.');
+        if (!sourceIsCurrent()) throw new Error('La note, son projet ou les sources ont changé : les tâches restantes n’ont pas été créées. Relance la proposition.');
         const key = actionTitleKey(action.title);
         if (existing.has(key)) {
           createdActionTitles.current.add(key);
@@ -903,6 +907,7 @@ export function EntryEditor({
             <button className="ghost" type="button" disabled={taskCreating} onClick={() => setTaskCreator(false)}>Annuler</button>
           </div>
         </form>}
+        {canDraftProcedure && <button className="ghost" type="button" disabled={aiWorking || syncing || !aiText.trim()} title="Envoie le brouillon et le contexte du projet au service IA configuré en Paramètres ; les tâches restent à relire avant leur création" onClick={() => void proposeTasks('suggest')}><span aria-hidden="true">✨ </span>Suggérer des tâches avec l’IA</button>}
         {taskMessage && <p className="task-message" role="status">{taskMessage}</p>}
         {!linkingTasks ? (
           <button className="ghost" type="button" disabled={syncing} onClick={startTaskLinking}><span aria-hidden="true">＋ </span>Lier une tâche existante</button>
@@ -965,7 +970,7 @@ export function EntryEditor({
         )}
         <AiMenu
           label="Assistance IA"
-          busy={suggesting ? 'Suggestion…' : aiBusy === 'layout' ? 'Mise en page…' : aiBusy || drafting ? 'Rédaction…' : extracting ? 'Extraction…' : null}
+          busy={suggesting ? 'Suggestion…' : aiBusy === 'layout' ? 'Mise en page…' : aiBusy || drafting ? 'Rédaction…' : extracting ? taskProposalMode === 'suggest' ? 'Suggestion…' : 'Extraction…' : null}
         >
           {(isProcedure ? aiAvailable : canDraftProcedure) && (
             <button
@@ -1008,7 +1013,7 @@ export function EntryEditor({
               type="button"
               disabled={aiWorking || syncing || !aiText.trim()}
               title="Envoie la note et le contexte du projet au service IA configuré en Paramètres ; choisis les actions à créer comme tâches liées après relecture"
-              onClick={() => void extractActions()}
+              onClick={() => void proposeTasks('extract')}
             >
               Extraire les actions
             </button>
@@ -1056,10 +1061,10 @@ export function EntryEditor({
           <button className="ghost" type="button" disabled={aiWorking} onClick={() => setAiProposal(null)}>Ignorer</button>
         </div>
       </div>}
-      {actionsProposal && canDraftProcedure && <div className="proofread-preview ai-actions-proposal no-print" role="region" aria-label="Actions proposées">
-        <strong>Actions proposées — choisis les tâches à créer</strong>
-        <small>Chaque tâche sera liée à cette note, dans son projet. La note est conservée.</small>
-        {actionsProposal.items.length === 0 ? <p>Aucune nouvelle action à créer dans cette note.</p> : <ul className="ai-action-list">
+      {actionsProposal && canDraftProcedure && <div className="proofread-preview ai-actions-proposal no-print" role="region" aria-label={actionsProposal.mode === 'suggest' ? 'Tâches suggérées' : 'Actions proposées'}>
+        <strong>{actionsProposal.mode === 'suggest' ? 'Tâches suggérées' : 'Actions proposées'} — choisis les tâches à créer</strong>
+        <small>{actionsProposal.mode === 'suggest' ? 'Certaines tâches sont déduites du contexte : vérifie-les avant de les créer. ' : ''}Chaque tâche sera liée à cette note, dans son projet. La note est conservée.</small>
+        {actionsProposal.items.length === 0 ? <p>{actionsProposal.mode === 'suggest' ? 'Aucune nouvelle tâche suggérée pour cette note.' : 'Aucune nouvelle action à créer dans cette note.'}</p> : <ul className="ai-action-list">
           {actionsProposal.items.map((action, index) => <li className="ai-action-row" key={index}>
             <label>
               <input
@@ -1080,8 +1085,8 @@ export function EntryEditor({
         </ul>}
         <div className="task-creator-actions">
           {actionsProposal.items.length > 0 && <button className="task-primary" type="button" disabled={aiWorking || !actionsProposal.items.some((action) => action.selected && !action.created && action.title.trim())} onClick={() => void createSelectedActions()}>{actionsCreating ? 'Création…' : 'Créer les tâches sélectionnées'}</button>}
-          <button className="ghost" type="button" disabled={aiWorking || syncing} onClick={() => void extractActions()}>Relancer l’extraction</button>
-          <button className="ghost" type="button" disabled={actionsCreating || extracting} onClick={() => setActionsProposal(null)}>Fermer les actions</button>
+          <button className="ghost" type="button" disabled={aiWorking || syncing} onClick={() => void proposeTasks(actionsProposal.mode)}>{actionsProposal.mode === 'suggest' ? 'Relancer la suggestion' : 'Relancer l’extraction'}</button>
+          <button className="ghost" type="button" disabled={actionsCreating || extracting} onClick={() => setActionsProposal(null)}>{actionsProposal.mode === 'suggest' ? 'Fermer les tâches suggérées' : 'Fermer les actions'}</button>
         </div>
         {actionsMessage && <p role="status" className="task-message">{actionsMessage}</p>}
       </div>}

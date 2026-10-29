@@ -1,5 +1,18 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-29 — suggestions de tâches depuis une note
+
+Depuis une note locale en cours d'édition, **✨ Suggérer des tâches avec l’IA** propose
+des actions explicites ou raisonnablement déduites, chacune accompagnée d'un extrait exact
+de la note. Sélection et correction avant création de tâches liées ; l'extraction des seules
+actions explicites reste disponible. Contexte, échéances et invalidation des propositions :
+`05-DECISIONS.md` §49 ; usage et recette réelle : `03-UTILISATION.md` et `04-RECETTES.md`
+§14. Aucune dépendance ni migration ajoutée. Recettes initiale (HEAD isolé) et finale
+`./scripts/check.sh` vertes : 282 API, 675 front (et 1 échec attendu), 48 desktop unitaires,
+32 scripts, 11 Worker, 11 relais, 77 navigateur et 17 desktop e2e. Une première recette
+finale, concurrente aux tests desktop de référence, a vu deux attentes front expirer
+(Google et catégories) ; les deux tests ciblés puis la recette séquentielle sont verts.
+
 ## Lot du 2026-10-28 — largeur des champs d'entrée liée (v0.60.1 préparée)
 
 Dans une carte de tâche, le formulaire « Entrée liée » suit la largeur réelle de la

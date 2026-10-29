@@ -2067,3 +2067,33 @@ validés dans `00-HANDOVER.md`.
 
 **Rouvrir si** le filtre par catégorie sert plusieurs fois par minute : un sélecteur natif à
 côté du bouton coûterait une largeur de pastille, pas une rangée.
+
+---
+
+## 49. Suggérer des tâches depuis le brouillon d'une note — 2026-10-29
+
+**Demande.** Améliorer l'assistance IA et créer des tâches directement depuis une entrée
+en cours d'édition, à partir de son contexte. L'extraction du §41 ne retient que des actions
+explicitement écrites : elle ne répond pas au besoin de suggérer une suite à un problème
+décrit sans action formulée.
+
+**Choix.** Dans une note locale Markdown ou riche non vide, **✨ Suggérer des tâches avec
+l’IA** est accessible près de la création de tâche liée. L'IA peut proposer des tâches
+raisonnablement déduites de la note, en utilisant le contexte du projet pour la comprendre.
+Chaque proposition doit citer un extrait exact du texte source ; le contexte complémentaire
+ne suffit pas à justifier une tâche. Ces propositions sont des hypothèses à vérifier, pas
+des faits ou engagements. L'extraction explicite reste distincte et conserve ses règles.
+
+Le panneau commun permet de sélectionner, corriger titre et échéance, puis créer les tâches
+liées à la note. Huit propositions au plus ; réponse structurée et extraits vérifiés,
+doublons simples et cases terminées écartés. Une date n'est préremplie que si elle est
+valide et écrite littéralement au format `YYYY-MM-DD` dans l'extrait cité. Les tâches déjà
+liées sont relues avant création : un échec partiel ou une réponse perdue ne rejoue pas les
+réussites. Une modification du titre, du contenu, du projet ou des sources sélectionnées
+invalide la proposition ; ces conditions sont aussi contrôlées avant chaque création.
+La note et les frappes en cours restent conservées. Le contenu des documents Google et des
+pièces jointes n'est pas transmis, comme aux §17 et §23. Aucune dépendance ni migration.
+
+**Limite.** Les contrôles vérifient l'ancrage textuel et les doublons simples ; ils ne
+prouvent pas qu'une déduction du modèle est utile ou correcte. La relecture humaine reste
+nécessaire et la pertinence se juge avec une clé réelle selon `04-RECETTES.md` §14.
