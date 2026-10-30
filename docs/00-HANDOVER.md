@@ -1,5 +1,14 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Recette DOCX avant la v0.65.0 — 2026-10-30
+
+La CI du bump a inséré le texte au point du clic dans le test du document Word partagé.
+Le test déplaçait ensuite la sélection DOM et frappait avant sa prise en compte possible par
+ProseMirror : une sonde locale a mesuré sa position encore à 32 pour une cible à 42. Le parcours
+attend désormais cette synchronisation et vérifie le texte à l’écran avant Ctrl+S, en gardant
+les assertions XML et de mise en forme, sans délai arbitraire ni retry. Cette mesure ne prouve
+pas à elle seule l’ordre exact des événements sur la CI. Aucun code produit modifié.
+
 ## Lot du 2026-10-30 — « Tout » en liste rangée, priorités IA, vue d'ensemble des projets (§60), prévu pour v0.65.0
 
 Demande : « la vue tâches avec tous les projets est illisible ; une liste que l'IA range et

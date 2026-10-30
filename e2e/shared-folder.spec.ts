@@ -125,15 +125,30 @@ test('document Word : taper dans un paragraphe puis Ctrl+S ne réécrit que lui,
   const editor = await openShared(page, 'procédure.docx');
   const content = editor.getByRole('textbox', { name: 'Contenu du document Word' });
   await content.getByText('chaque lundi.').click();
-  await content.getByText('chaque lundi.').evaluate(element => {
+  const selection = await content.getByText('chaque lundi.').evaluate(element => {
+    const paragraph = element.closest('p')!;
+    const root = paragraph.closest('[contenteditable="true"]') as HTMLElement & {
+      editor: { view: { posAtDOM: (node: Node, offset: number) => number }; state: { selection: { from: number } } };
+    };
+    const expected = root.editor.view.posAtDOM(paragraph, paragraph.childNodes.length);
     const range = document.createRange();
-    range.selectNodeContents(element.closest('p')!);
+    range.selectNodeContents(paragraph);
     range.collapse(false);
     const selection = window.getSelection()!;
     selection.removeAllRanges();
     selection.addRange(range);
+    return expected;
   });
+  // La sélection DOM change immédiatement, mais ProseMirror ne l'adopte qu'au
+  // selectionchange natif. Frapper avant cette synchronisation peut réutiliser
+  // la position du clic au milieu du texte (constaté sur la CI 0.65.0).
+  await expect.poll(() => content.evaluate(element => {
+    const root = element as HTMLElement & { editor: { state: { selection: { from: number; to: number } } } };
+    const { from, to } = root.editor.state.selection;
+    return from === to ? from : -1;
+  })).toBe(selection);
   await page.keyboard.type(' Puis rincer.');
+  await expect(content.locator('p').filter({ hasText: 'Laver le filtre' })).toHaveText('Laver le filtre chaque lundi. Puis rincer.');
   await expect(editor.getByText('Tu as la main')).toBeVisible();
   await expect(editor.getByText('Brouillon sur cet ordinateur')).toBeVisible();
   await page.keyboard.press('Control+s');
