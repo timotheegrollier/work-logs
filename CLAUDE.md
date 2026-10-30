@@ -31,11 +31,11 @@ au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + V
 
 - **Aucune fonctionnalité sans test.** Route API → test dans `api/test/`. Geste utilisateur →
   test dans `web/src/App.test.tsx`, ou dans `e2e/` si ça dépend d'un vrai navigateur.
-- **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 285 tests API, 705 tests front
-  (dont un échec attendu), 48 tests desktop (serveur/OAuth/mise à jour/vue Google/dossier partagé),
-  32 tests des scripts de release, 11 tests du relais Google, 11 tests de la mise à jour du relais
+- **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 285 tests API, 707 tests front
+  (dont un échec attendu), 49 tests desktop (serveur/OAuth/mise à jour/vue Google/dossier partagé),
+  32 tests des scripts de release, 8 tests du relais Google, 11 tests de la mise à jour du relais
   de la VM, build, 83 parcours navigateur et 17 parcours de l'application desktop — **1192 tests**
-  (après v0.63.0), et finit par `CHECK OK`.
+  (v0.64.0), et finit par `CHECK OK`.
 - **Rien de nouveau sans accord** : ni dépendance, ni onglet, ni mode. La valeur de cette
   application est qu'elle tient sur un écran.
 

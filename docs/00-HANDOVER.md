@@ -1,6 +1,20 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Lot du 2026-10-29 — recherche sans accents (§58) et IA qu'on voit travailler (§59), non publié
+## Publication v0.64.0 — 2026-10-30
+
+PR #31 (Picker Google), #28 (relais sans code) et #29 (champs, IA, recherche) fusionnées, CI
+verte sur chacune, puis **v0.64.0** publiée ; elle emporte aussi #26, #27 et #30. Toutes trois
+partaient de la même base : décisions de #29 renumérotées §56 à §59 (le §55 est celui de #28) ;
+#29 et #30 avaient chacune leur lecture du « tableau JSON », seule celle de #30
+(`parseJsonArray`, qui accepte aussi un objet enveloppant) est gardée et le test de #29 suit ;
+un renvoi §54 de `styles.css` que #28 avait passé en §55 est revenu à §54.
+`./scripts/check.sh` vert sur l'arbre fusionné : 285 API, 707 front (dont 1 échec attendu),
+49 desktop unitaires, 32 scripts, 8 Worker, 11 relais, 83 navigateur et 17 desktop e2e — 1192
+tests. PWA Cloudflare en 0.64.0 (`sw.js`), `/token` configuré. **Pas vérifié** : la version du
+relais de la VM (Tailscale arrêté sur le poste de publication). `/etc/worklogs-relais/code`
+reste sur la VM jusqu'à la v0.65.0 : un retour arrière vers la v0.63.0 en a encore besoin (§55).
+
+## Lot du 2026-10-29 — recherche sans accents (§58) et IA qu'on voit travailler (§59), publié en v0.64.0
 
 - **Recherche sans accents ni capitales** (« procedure » trouve « Procédure », recherche de
   l'en-tête comme « ✨ Trouver la doc ») : table de la machine `entry_search` (titre + texte
@@ -20,7 +34,7 @@ sombre et 412 px vérifiées. `./scripts/check.sh` vert après rebase sur `maste
 705 front (dont l'échec attendu), 48 desktop unitaires, 32 scripts, 11 Worker, 11 relais,
 83 navigateur et 17 desktop e2e — 1 192 tests.
 
-## Lot du 2026-10-29 — IA : « Arrêter » une demande, réponses JSON tolérées (§57), non publié
+## Lot du 2026-10-29 — IA : « Arrêter » une demande, réponses JSON tolérées (§57), publié en v0.64.0
 
 Demande : « Améliore encore les fonctionnalités d'IA ». Aucune dépendance, route ni migration.
 - **Arrêter** une demande IA en cours : à côté du bouton en attente des trois menus ✨ IA (note
@@ -45,7 +59,7 @@ carte et 412 px vérifiées.
 `./scripts/check.sh` vert : 284 API, 701 front (dont l'échec attendu), 48 desktop unitaires,
 32 scripts, 11 Worker, 11 relais, 83 navigateur et 17 desktop e2e — 1 187 tests.
 
-## Lot du 2026-10-29 — champs de texte à la hauteur de leur texte et à la largeur de leur colonne (§56), non publié
+## Lot du 2026-10-29 — champs de texte à la hauteur de leur texte et à la largeur de leur colonne (§56), publié en v0.64.0
 
 Demande : la zone d'écriture ne grandissait pas avec le texte, et tous les champs doivent suivre un
 panneau ou une fenêtre redimensionnés. CSS seul (`styles.css`), aucune dépendance. Pourquoi et ce
@@ -74,7 +88,7 @@ mode **Écrire** sur A4 ne sort que le titre et un intitulé « Écriture » —
 `.center::before`). **Lire** imprime bien. Le parcours « à l'impression » ne le voit pas : il
 émule l'impression à 1 280 px de large.
 
-## Correctif du 2026-10-29 — autoriser un document Google (partagé ou non)
+## Correctif du 2026-10-29 — autoriser un document Google (partagé ou non), publié en v0.64.0
 
 Aucun nouveau document ne pouvait être autorisé depuis le 22/09 : **Autoriser d'autres
 documents** (fenêtre Documents Google) relançait la connexion sans Picker (`pick` oublié), et
@@ -92,7 +106,7 @@ avec le vrai Picker Google** : il faut un compte et un navigateur.
 (« un reclassement distant… », « crée une catégorie et sa sous-catégorie… ») pendant la
 vérification d'une autre copie de travail (charge 5 à 7) ; seuls, 3 fois sur 3 chacun.
 
-## Lot du 2026-10-29 — relais sans code, adresse gardée dans le compte Google (§55)
+## Lot du 2026-10-29 — relais sans code, adresse gardée dans le compte Google (§55), publié en v0.64.0
 
 La PWA du téléphone ne joignait plus le relais du dossier partagé. Constaté : relais en v0.63.0,
 `tailscale serve`, partage monté, Worker et PWA déployés répondaient ; Helium et Brave (PC)
@@ -114,7 +128,7 @@ vers la v0.63.0 en a encore besoin).
 32 scripts, 8 Worker (les 3 de `/relay-key` retirés), 11 relais, 78 navigateur et 17 desktop
 e2e — 1174 tests.
 
-## Lot du 2026-10-29 — téléphone : choisir un projet dans la liste (§54)
+## Lot du 2026-10-29 — téléphone : choisir un projet dans la liste (§54), publié en v0.64.0
 
 Sur téléphone, la rangée de pastilles (une et demie visible à 412 px) laisse place à un bouton
 qui nomme le projet courant dans sa couleur ; il ouvre, depuis le bas, la liste de tous les
