@@ -2654,3 +2654,24 @@ les deux ont des rôles différents. Le panneau Tâches reste automatiquement re
 un document Google, avec son bouton existant ; ses dimensions et le mode téléphone ne
 changent pas. Les avertissements sur les éléments Google conservés et toutes les
 commandes Drive restent présents. Rien n'est changé au pont natif ni au compte Google.
+
+
+---
+
+## 63. Une vue des tâches utilisable sans panneau, et un ordre conseillé avec contexte — 2026-10-30
+
+La vue d’ensemble s’ouvre depuis l’en-tête, même si Tâches ou Procédures sont masqués ;
+elle attend le retour de l’état global et la sauvegarde du document courant. Elle présente
+par défaut les tâches à faire, avec filtres En cours et Toutes, création rapide avec projet,
+affectation à un projet et passage en cours. Le schéma d’avancement reste accessible.
+
+Une action IA distincte prépare d’abord localement le contexte des tâches ouvertes : champs,
+repères du projet et extraits de documents locaux explicitement liés. Ces sources sont listées,
+consultables et excluables avant l’envoi ; les pièces jointes et documents Google sont omis.
+L’utilisateur choisit le périmètre et, au-delà de 60 tâches, un sous-ensemble explicite.
+Les extraits sont bornés à trois documents par tâche, 40 documents et 600 caractères chacun.
+La réponse classe les tâches et donne une justification et un conseil ; les réponses partielles
+sont signalées. Aucun statut, ordre ni priorité n’est écrit automatiquement. Les propositions
+sont invalidées lorsque les données de la vue changent. La limite existante de 500 tâches de
+`/api/state` est annoncée et l’analyse est bloquée si des tâches ouvertes ne sont pas chargées,
+au lieu d’afficher un conseil incomplet comme global. Aucun nouveau service ni dépendance.

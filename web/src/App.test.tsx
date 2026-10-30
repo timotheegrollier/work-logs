@@ -6,6 +6,7 @@ import { seedData, useRealApi } from './test/server';
 import { discardPendingSaves, flushPendingSaves, hasPendingSaves } from './autosave';
 import { setLeaveGuard } from './shared-leave';
 import { api as clientApi } from './lib';
+import { TaskAdvice } from './components/TaskAdvice';
 
 let api: Awaited<ReturnType<typeof useRealApi>>;
 
@@ -178,6 +179,9 @@ describe('catégories et sous-catégories', () => {
   });
 
   test('un reclassement distant actualise projet et catégorie ensemble en gardant le texte saisi', async () => {
+    const originalProbe = clientApi.updateEntry;
+    const callsProbe: unknown[] = [];
+    vi.spyOn(clientApi, 'updateEntry').mockImplementation(async (id, body) => { callsProbe.push(body); return originalProbe(id, body); });
     seedData(api.db, { projects: [{ id: 'p', name: 'Projet P' }, { id: 'q', name: 'Projet Q' }], entries: [{ id: 'e', title: 'Note initiale', project_id: 'p' }], tasks: [{ id: 't', title: 'Relire', project_id: 'p' }] });
     const destination = await clientApi.createCategory({ name: 'Destination', project_id: 'q' });
     render(<App />);
@@ -189,6 +193,7 @@ describe('catégories et sous-catégories', () => {
     expect(screen.getByLabelText('Catégorie de l’entrée')).toHaveValue(destination.id);
     expect(title).toHaveValue('Texte en cours');
     await flushPendingSaves();
+    console.error('CLASSEMENT_PROBE', JSON.stringify(callsProbe));
     expect(await clientApi.entry('e')).toMatchObject({ title: 'Texte en cours', project_id: 'q', category_id: destination.id });
   });
 
@@ -2800,6 +2805,182 @@ describe('vue d’ensemble des projets', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument());
     expect(await screen.findByDisplayValue('Compte rendu')).toBeInTheDocument();
   });
+
+  test('la liste permet de créer, affecter au projet et démarrer une tâche sans quitter la vue', async () => {
+    seedData(api.db, {
+      projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Bravo' }],
+      tasks: [{ id: 'tk_todo', title: 'Préparer', project_id: 'pr_a' }, { id: 'tk_doing', title: 'En cours déjà', status: 'doing' }],
+    });
+    render(<App />);
+    await within(board()).findByRole('button', { name: 'Préparer' });
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
+    const list = () => within(overview).getByRole('list', { name: 'Liste des tâches de la vue d’ensemble' });
+    expect(within(list()).getByRole('button', { name: 'Préparer' })).toBeInTheDocument();
+    expect(within(list()).queryByRole('button', { name: 'En cours déjà' })).not.toBeInTheDocument();
+    fireEvent.change(within(overview).getByLabelText('Projet de Préparer'), { target: { value: 'pr_b' } });
+    await waitFor(() => expect(row(api.db, 'SELECT project_id FROM tasks WHERE id=?', 'tk_todo').project_id).toBe('pr_b'));
+    await waitFor(() => expect(within(overview).getByLabelText('Projet de Préparer')).toHaveValue('pr_b'));
+    fireEvent.click(within(overview).getByRole('button', { name: 'Mettre en cours Préparer' }));
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_todo').status).toBe('doing'));
+    await waitFor(() => expect(within(overview).queryByRole('button', { name: 'Mettre en cours Préparer' })).not.toBeInTheDocument());
+    fireEvent.click(within(overview).getByRole('button', { name: /En cours 2/ }));
+    fireEvent.click(await within(overview).findByRole('button', { name: 'Remettre à faire Préparer' }));
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_todo').status).toBe('todo'));
+    await waitFor(() => expect(within(overview).queryByRole('button', { name: 'Remettre à faire Préparer' })).not.toBeInTheDocument());
+    fireEvent.click(within(overview).getByRole('button', { name: /À faire 1/ }));
+    expect(await within(overview).findByRole('button', { name: 'Mettre en cours Préparer' })).toBeInTheDocument();
+    fireEvent.change(within(overview).getByLabelText('Nouvelle tâche dans la vue d’ensemble'), { target: { value: 'Commander' } });
+    fireEvent.change(within(overview).getByLabelText('Projet de la nouvelle tâche'), { target: { value: 'pr_a' } });
+    fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter' }));
+    await waitFor(() => expect(row(api.db, 'SELECT project_id FROM tasks WHERE title=?', 'Commander').project_id).toBe('pr_a'));
+    expect(await within(overview).findByRole('button', { name: 'Commander' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Vue d’ensemble des projets' })).toBeInTheDocument();
+  }, 15_000);
+
+  test('une création refusée garde le titre et affiche l’erreur', async () => {
+    seedData(api.db, { tasks: [{ id: 'tk_1', title: 'Première' }] });
+    render(<App />);
+    await within(board()).findByRole('button', { name: 'Première' });
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
+    vi.spyOn(clientApi, 'createTask').mockRejectedValueOnce(new Error('Création refusée'));
+    const input = within(overview).getByLabelText('Nouvelle tâche dans la vue d’ensemble');
+    fireEvent.change(input, { target: { value: 'À conserver' } });
+    fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter' }));
+    expect(await within(overview).findByRole('alert')).toHaveTextContent('Création refusée');
+    expect(input).toHaveValue('À conserver');
+  });
+
+  test('la vue prévient et bloque l’IA si des tâches ouvertes dépassent la limite du serveur', async () => {
+    seedData(api.db, { tasks: [
+      ...Array.from({ length: 500 }, (_, i) => ({ id: `done_${i}`, title: `Terminée ${i}`, status: 'done' })),
+      { id: 'tk_lost', title: 'Ouverte hors limite', status: 'todo' },
+    ] });
+    render(<App />);
+    await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' });
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
+    expect(within(overview).getByText(/1 tâche ouverte.*manquante/i)).toBeInTheDocument();
+    const advice = within(overview).getByRole('region', { name: 'Conseils IA pour les tâches' });
+    expect(within(advice).getByRole('button', { name: 'Préparer les conseils' })).toBeDisabled();
+    expect(within(advice).getByText(/1 tâche ouverte manque/)).toBeInTheDocument();
+  }, 15_000);
+
+  test('au-delà de 60 tâches, on sélectionne explicitement celles à conseiller et une réponse partielle le dit', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { tasks: Array.from({ length: 61 }, (_, i) => ({ id: `tk_${i}`, title: `Tâche ${i + 1}` })) });
+    mockAiSuggest('[{"n":1,"reason":"À examiner.","advice":"Vérifier."}]');
+    render(<App />);
+    await within(board()).findByRole('button', { name: 'Tâche 1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const advice = await screen.findByRole('region', { name: 'Conseils IA pour les tâches' });
+    expect(within(advice).getByRole('button', { name: 'Préparer les conseils' })).toBeDisabled();
+    fireEvent.click(within(advice).getByRole('button', { name: 'Sélectionner les 60 premières' }));
+    expect(within(advice).getByText(/60\/60/)).toBeInTheDocument();
+    fireEvent.click(within(advice).getByRole('button', { name: 'Préparer les conseils' }));
+    fireEvent.click(await within(advice).findByRole('button', { name: 'Demander les conseils à l’IA' }));
+    const answer = await within(advice).findByRole('region', { name: 'Ordre conseillé par l’IA' });
+    expect(within(answer).getByText(/Réponse incomplète : 1 tâche conseillée sur 60/)).toBeInTheDocument();
+  }, 15_000);
+
+  test('une réponse IA tardive est ignorée après le passage en cours d’une tâche', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { tasks: [{ id: 'tk_a', title: 'Préparer la pompe' }] });
+    const diverted = globalThis.fetch;
+    let finish!: (response: Response) => void;
+    let called = false;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('chat/completions')) {
+        called = true;
+        return new Promise<Response>((resolve) => { finish = resolve; });
+      }
+      return diverted(input, init);
+    }));
+    render(<App />);
+    await within(board()).findByRole('button', { name: 'Préparer la pompe' });
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
+    const advice = within(overview).getByRole('region', { name: 'Conseils IA pour les tâches' });
+    fireEvent.click(within(advice).getByRole('button', { name: 'Préparer les conseils' }));
+    fireEvent.click(await within(advice).findByRole('button', { name: 'Demander les conseils à l’IA' }));
+    await waitFor(() => expect(called).toBe(true));
+    fireEvent.click(within(overview).getByRole('button', { name: 'Mettre en cours Préparer la pompe' }));
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_a').status).toBe('doing'));
+    await waitFor(() => expect(within(advice).queryByRole('button', { name: 'Arrêter' })).not.toBeInTheDocument());
+    await act(async () => finish({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '[{"n":1,"reason":"Ancien ordre","advice":"Ancien conseil"}]' } }] }) } as Response));
+    expect(within(advice).queryByText('Ancien conseil')).not.toBeInTheDocument();
+  }, 15_000);
+
+  test('préparer les conseils survit à la mise à jour d’une note sans lien', async () => {
+    seedData(api.db, {
+      tasks: [{ id: 'tk_a', title: 'Vérifier pompe' }],
+      entries: [{ id: 'en_keep', title: 'Note liée', content_md: 'Pompe' }, { id: 'en_other', title: 'Note indépendante', content_md: 'Autre' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_a', 'en_keep', new Date().toISOString());
+    const state = await clientApi.state('', '');
+    const source = await clientApi.entry('en_keep');
+    let finish!: (entry: typeof source) => void;
+    const read = vi.spyOn(clientApi, 'entry').mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const renderAdvice = (tasks: typeof state.tasks) => <TaskAdvice tasks={tasks} projects={state.projects} onTask={() => {}} />;
+    const view = render(renderAdvice(state.tasks));
+    fireEvent.click(screen.getByRole('button', { name: 'Préparer les conseils' }));
+    await waitFor(() => expect(read).toHaveBeenCalledWith('en_keep'));
+    // L'état rejoué après la mise à jour de la note indépendante : mêmes tâches, nouveaux objets.
+    view.rerender(renderAdvice(state.tasks.map((task) => ({ ...task, documents: task.documents.map((doc) => ({ ...doc })) }))));
+    await act(async () => finish(source));
+    expect(await screen.findByRole('checkbox', { name: 'Note : Note liée' })).toBeInTheDocument();
+  }, 15_000);
+
+  test('une modification de document lié annule et explique la préparation périmée', async () => {
+    seedData(api.db, {
+      tasks: [{ id: 'tk_a', title: 'Vérifier pompe' }],
+      entries: [{ id: 'en_keep', title: 'Note liée', content_md: 'Pompe' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_a', 'en_keep', new Date().toISOString());
+    const state = await clientApi.state('', '');
+    const source = await clientApi.entry('en_keep');
+    let finish!: (entry: typeof source) => void;
+    const read = vi.spyOn(clientApi, 'entry').mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const renderAdvice = (tasks: typeof state.tasks) => <TaskAdvice tasks={tasks} projects={state.projects} onTask={() => {}} />;
+    const view = render(renderAdvice(state.tasks));
+    fireEvent.click(screen.getByRole('button', { name: 'Préparer les conseils' }));
+    await waitFor(() => expect(read).toHaveBeenCalledWith('en_keep'));
+    view.rerender(renderAdvice(state.tasks.map((task) => ({ ...task, documents: task.documents.map((doc) => ({ ...doc, updated_at: '2099-01-01' })) }))));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Les tâches ou leur contexte ont changé');
+    await act(async () => finish(source));
+    expect(screen.queryByRole('checkbox', { name: 'Note : Note liée' })).not.toBeInTheDocument();
+  }, 15_000);
+
+  test('les conseils IA relisent les sources choisies et proposent un ordre sans modifier les tâches', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, {
+      projects: [{ id: 'pr_a', name: 'Alpha' }],
+      tasks: [{ id: 'tk_a', title: 'Vérifier pompe', project_id: 'pr_a' }],
+      entries: [
+        { id: 'en_keep', title: 'Note à lire', content_md: 'La pompe fuit depuis lundi.', project_id: 'pr_a' },
+        { id: 'en_skip', title: 'Note exclue', content_md: 'SECRET NON ENVOYÉ', project_id: 'pr_a' },
+      ],
+    });
+    for (const id of ['en_keep', 'en_skip']) api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_a', id, new Date().toISOString());
+    mockAiSuggest('[{"n":1,"reason":"Une fuite attend.","advice":"Vérifier le joint."}]');
+    render(<App />);
+    await within(board()).findByRole('button', { name: 'Vérifier pompe' });
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const advice = await screen.findByRole('region', { name: 'Conseils IA pour les tâches' });
+    fireEvent.click(within(advice).getByRole('button', { name: 'Préparer les conseils' }));
+    const excluded = await within(advice).findByRole('checkbox', { name: 'Note : Note exclue' });
+    expect(aiBodies).toHaveLength(0);
+    fireEvent.click(excluded);
+    fireEvent.click(within(advice).getByRole('button', { name: 'Demander les conseils à l’IA' }));
+    const answer = await within(advice).findByRole('region', { name: 'Ordre conseillé par l’IA' });
+    expect(within(answer).getByText('Une fuite attend.')).toBeInTheDocument();
+    expect(within(answer).getByText('Vérifier le joint.')).toBeInTheDocument();
+    const prompt = (aiBodies[0] as { messages: { content: string }[] }).messages[1].content;
+    expect(prompt).toContain('La pompe fuit depuis lundi.');
+    expect(prompt).not.toContain('SECRET NON ENVOYÉ');
+    expect(row(api.db, 'SELECT status, priority FROM tasks WHERE id=?', 'tk_a')).toMatchObject({ status: 'todo', priority: 'normal' });
+  }, 15_000);
 
   test('sans projet ni tâche, la page le dit ; un seul projet garde ses colonnes mais ouvre la vue', async () => {
     const user = userEvent.setup();

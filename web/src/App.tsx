@@ -10,6 +10,7 @@ import { Logo } from './components/Logo';
 import { UpdateBar } from './components/UpdateBar';
 import { TaskBoard } from './components/TaskBoard';
 import { ProjectOverview } from './components/ProjectOverview';
+import { TaskAdvice } from './components/TaskAdvice';
 import { ProjectBar } from './components/ProjectBar';
 import { CategoryBar } from './components/CategoryBar';
 import { categoryDescendants, UNCATEGORIZED } from './categories';
@@ -35,6 +36,9 @@ const loading = <p className="empty">Chargement…</p>;
 
 export default function App() {
   const [state, setState] = useState<AppState | null>(null);
+  // Les données affichées peuvent encore appartenir à l'ancien filtre pendant le
+  // rechargement. La vue globale ne doit jamais proposer d'action sur cet état.
+  const [stateScope, setStateScope] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
@@ -209,11 +213,17 @@ export default function App() {
   const openOverview = useCallback(async () => {
     const navigation = ++navigationSequence.current;
     if (!(await requestLeave())) return;
-    await flushPendingSaves().catch(() => {});
+    try {
+      await flushPendingSaves();
+    } catch (e) {
+      if (navigation === navigationSequence.current) setError((e as Error).message || 'Impossible d’enregistrer le brouillon.');
+      return;
+    }
     if (navigation !== navigationSequence.current) return;
     setProjectId('');
     setCategoryId('');
     setSearch('');
+    setQuery('');
     setOverview(true);
     setShowCenter(true);
     revealEditor();
@@ -321,10 +331,17 @@ export default function App() {
 
   // Une procédure affichée au centre montre d'où elle vient : la colonne Procédures se
   // déplie, une fois par procédure (la refermer ensuite tient). Archivée, elle n'y est pas.
-  const openProcedureId = showCenter && !sharedPath && entry?.kind === 'procedure' && !entry.archived ? entry.id : null;
+  const openProcedureId = !sharedPath && entry?.kind === 'procedure' && !entry.archived ? entry.id : null;
+  const lastRevealedProcedure = useRef<string | null>(null);
   useEffect(() => {
-    if (openProcedureId) setShowProcedures(true);
-  }, [openProcedureId]);
+    if (!openProcedureId) {
+      lastRevealedProcedure.current = null;
+      return;
+    }
+    if (!showCenter || overview || lastRevealedProcedure.current === openProcedureId) return;
+    lastRevealedProcedure.current = openProcedureId;
+    setShowProcedures(true);
+  }, [openProcedureId, overview, showCenter]);
 
   // La recherche attend une pause de frappe avant d'interroger l'API.
   useEffect(() => {
@@ -343,6 +360,7 @@ export default function App() {
       const next = await api.state(query, projectId, categoryId);
       if (sequence !== reloadSequence.current || !isCurrent()) return;
       setState(next);
+      setStateScope(JSON.stringify([query, projectId, categoryId]));
       setError('');
       // Une tâche terminée peut archiver l'entrée actuellement ouverte :
       // actualiser seulement ses métadonnées évite d'écraser un brouillon local.
@@ -381,6 +399,7 @@ export default function App() {
       setEntry(null);
       setFreshEntry(false);
     }
+    if (next) setOverview(false);
     setCategoryId(next);
   };
 
@@ -600,7 +619,12 @@ export default function App() {
       if (!allowed) return;
       setEntry(opened);
       const sequence = ++reloadSequence.current;
-      void api.state('', project).then(next => { if (sequence === reloadSequence.current) setState(next); }).catch(() => {});
+      void api.state('', project).then(next => {
+        if (sequence === reloadSequence.current) {
+          setState(next);
+          setStateScope(JSON.stringify(['', project, '']));
+        }
+      }).catch(() => {});
     });
   }, [openEntry]);
 
@@ -611,6 +635,25 @@ export default function App() {
     try { dialog.showModal(); }
     catch { dialog.setAttribute('open', ''); }
   }, [showSettings]);
+
+  // /api/state plafonne les tâches : celles qui manquent sont annoncées, pas devinées.
+  const missingOpen = state ? Math.max(0, state.stats.tasks.todo + state.stats.tasks.doing - state.tasks.filter((task) => task.status !== 'done').length) : 0;
+
+  const overviewTrigger = (
+    <button
+      className={'ghost overview-trigger' + (overview && showEditor ? ' is-on' : '')}
+      type="button"
+      aria-label="Vue d’ensemble des tâches"
+      aria-controls="workspace-editor"
+      aria-pressed={overview && showEditor}
+      title="Vue d’ensemble des tâches et des projets"
+      onClick={() => overview && showEditor ? setOverview(false) : void openOverview()}
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 19h16M6 16V9m6 7V5m6 11v-5" /><circle cx="6" cy="7" r="1.5" /><circle cx="12" cy="3.5" r="1.5" /><circle cx="18" cy="9" r="1.5" /></svg>
+      <span className="overview-trigger-label">Vue d’ensemble</span>
+      <span className="overview-trigger-short" aria-hidden="true">Vue</span>
+    </button>
+  );
 
   return (
     <div className="app" ref={pageRef}>
@@ -634,7 +677,10 @@ export default function App() {
           aria-label="Rechercher"
           placeholder={phone ? 'Rechercher…' : 'Rechercher dans tout…'}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            if (e.target.value.trim()) setOverview(false);
+          }}
         />
         <span className="grow" />
         {stats && (
@@ -659,6 +705,7 @@ export default function App() {
             )}
           </p>
         )}
+        {!phone && overviewTrigger}
         <div className="panel-toggles no-print" role="group" aria-label="Panneaux latéraux">
           {panels.map((panel) => (
             <button
@@ -727,6 +774,7 @@ export default function App() {
             onChanged={reload}
           />
         </ProjectBar>
+        {phone && overviewTrigger}
       </div>
 
       {isGoogleDocument && <div className="workspace-switch no-print"><span>Document Google · {siblingTabs.length} onglet{siblingTabs.length > 1 ? 's' : ''}</span>
@@ -750,7 +798,7 @@ export default function App() {
         <ColumnResizer side="left" panelId="workspace-journal" value={colLeft} onChange={setColLeft} />
 
         <main id="workspace-editor" className="center">
-          {overview && state ? (
+          {overview && state && !query && !projectId && !categoryId && stateScope === JSON.stringify(['', '', '']) ? (
             <ProjectOverview
               projects={state.projects}
               tasks={state.tasks}
@@ -758,7 +806,13 @@ export default function App() {
               onProject={(id) => void switchProject(id)}
               onTask={revealTask}
               onClose={() => setOverview(false)}
+              onChanged={reload}
+              missingOpen={missingOpen}
+              missingTasks={Math.max(0, state.stats.tasks.todo + state.stats.tasks.doing + state.stats.tasks.done - state.tasks.length)}
+              advice={<TaskAdvice tasks={state.tasks} projects={state.projects} onTask={revealTask} missingOpen={missingOpen} />}
             />
+          ) : overview ? (
+            <section className="editor placeholder" aria-live="polite">Chargement de la vue d’ensemble…</section>
           ) : sharedPath ? (
             <Suspense fallback={loading}>
               <SharedFileEditor

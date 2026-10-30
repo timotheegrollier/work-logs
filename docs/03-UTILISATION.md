@@ -229,15 +229,24 @@ rendu approximatif.
   proposée » en pointillés et sa raison. **Appliquer** enregistre les seules priorités qui
   changent ; **Ignorer**, changer de projet ou de catégorie n'écrit rien ; **Arrêter** coupe
   la demande. L'IA ne touche ni statut, ni échéance, ni épingle, ni ordre à la main.
-- **Vue d'ensemble** (bouton en tête du panneau) ouvre au centre, à la place de l'entrée,
-  l'avancement de chaque projet, à la manière d'un git dont l'historique est replié : une voie
-  par projet dans sa couleur, une pastille qui compte les terminées, un nœud par tâche ouverte
-  (douze au plus, puis « +N ») — plein pour celle en cours, creux pour À faire, bord rouge en
-  retard, anneau ambré si épinglée —, « En cours : … » sous le trait, la barre d'avancement et
-  « 4/10 · 40 % », la dernière note sous le nom. L'ouvrir lève projet, catégorie et recherche.
-  Cliquer un nom filtre ce projet ; cliquer un nœud mène à sa carte dans le panneau Tâches ;
-  **Fermer**, ouvrir une entrée ou choisir un projet rendent le centre. Sur téléphone, elle
-  s'ouvre dans la vue Écriture et un nœud ramène aux Tâches. Rien n'est retenu au redémarrage.
+- **Vue d’ensemble des tâches** : le bouton en haut de l’écran ouvre la vue au centre,
+  même si les panneaux Tâches et Procédures sont repliés. La liste affiche d’abord les tâches
+  **À faire** ; les boutons **En cours** et **Toutes** changent le filtre. Choisir un projet
+  directement sur une ligne affecte la tâche à ce projet (une catégorie devenue incompatible
+  est retirée) ; **▶ En cours** la démarre et **Remettre à faire** la remet dans À faire.
+  Le formulaire ajoute une tâche et choisit son projet sans quitter la vue. Le schéma
+  d’avancement reste dessous ; cliquer un nœud ouvre la carte habituelle.
+- **✨ Ordre et conseils IA**, dans la vue d’ensemble : choisir tous les projets ou un projet,
+  puis **Préparer les conseils**. WorkLogs lit localement les documents liés et montre leurs
+  extraits ; décocher ceux à exclure, puis **Demander les conseils à l’IA**. Le service reçoit
+  les champs des tâches sélectionnées, le profil et les repères des projets et les extraits
+  cochés, jusqu’à trois documents par tâche, 40 documents et 600 caractères par extrait.
+  Les pièces jointes et documents Google ne sont pas lus ; les omissions sont annoncées.
+  L’ordre et les conseils sont à relire : aucune tâche n’est modifiée. Au-delà de 60 tâches,
+  sélectionner celles à analyser. Si la réponse est partielle, elle le dit. Sur desktop,
+  l’API fournit au plus 500 tâches : la vue signale les éléments manquants et refuse de
+  présenter une analyse incomplète comme globale. Le filtre de projet de l’analyse permet
+  de travailler sur un seul projet sans fermer la vue.
 - **Terminer** : cocher la case. Le titre se barre et la carte rejoint Terminé.
 - **Modifier** : cliquer sur le titre ouvre le nom, l'échéance et la priorité. `Entrée` valide, `Échap` annule.
 - **Priorité** : chaque carte affiche sa pastille — Basse, Normale ou Haute (▲ rouge). Elle ne réordonne pas la colonne : l'ordre reste celui du glisser-déposer.

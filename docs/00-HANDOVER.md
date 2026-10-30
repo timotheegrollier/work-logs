@@ -1,5 +1,19 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## v0.66.0 — 2026-10-30 — vue d’ensemble des tâches et conseils IA (§63)
+
+Un bouton en haut de l’écran ouvre la vue d’ensemble sans déplier Tâches ni Procédures.
+Elle attend l’état global et le succès des sauvegardes ; recherche/catégorie la ferment.
+La liste montre d’abord À faire, avec filtres, création à la volée, affectation à un projet
+et passage en cours ou retour à faire. Le graphe d’avancement reste en dessous.
+
+« Ordre et conseils IA » prépare les extraits des documents locaux explicitement liés,
+à consulter et exclure avant l’envoi ; projet ou sous-ensemble sélectionnable, 60 tâches,
+40 sources, trois par tâche, 600 caractères par extrait. Les documents Google et pièces
+jointes ne sont pas lus ; omissions et réponses incomplètes sont signalées. L’IA ne modifie
+rien. Si les 500 tâches de `/api/state` masquent des tâches ouvertes, la vue le signale et
+bloque l’analyse. Aucun nouveau service, schéma ou dépendance.
+
 ## Recette DOCX avant la v0.65.0 — 2026-10-30
 
 La CI du bump a inséré le texte au point du clic dans le test du document Word partagé.

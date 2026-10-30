@@ -405,6 +405,16 @@ test('Google intégré : outils dans le canevas, isolation, dimensions et copie 
   await googlePage.getByLabel('Statut du projet').selectOption('En cours');
   await expect(googlePage.locator('body')).toHaveAttribute('data-saved', 'yes');
   await googlePage.getByRole('textbox').fill('Édition native dans WorkLogs');
+  // La vue d'ensemble doit rester accessible depuis un Google natif, sans fermer
+  // sa page ni perdre la saisie en cours.
+  const overview = page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true });
+  await overview.click();
+  await expect(page.getByRole('region', { name: 'Vue d’ensemble des projets' })).toBeVisible();
+  await expect(page.getByLabel('Éditeur Google Docs intégré')).toBeHidden();
+  expect(googlePage.isClosed()).toBe(false);
+  await overview.click();
+  await expect(page.getByLabel('Éditeur Google Docs intégré')).toBeVisible();
+  await expect(googlePage.getByRole('textbox')).toHaveText('Édition native dans WorkLogs');
   await page.getByRole('button', { name: /Comment ça marche/ }).click();
   expect(googlePage.isClosed()).toBe(false);
   await page.getByRole('button', { name: /Google intégré/ }).click();
