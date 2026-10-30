@@ -1087,7 +1087,7 @@ button:disabled {
   color: var(--danger);
   background: var(--danger-soft);
 }
-/* Téléphone (§55) : le projet courant en toutes lettres, dans sa couleur ; il ouvre la
+/* Téléphone (§54) : le projet courant en toutes lettres, dans sa couleur ; il ouvre la
    liste complète, où un toucher choisit. Gérer est un autre geste, en pied de liste. */
 .project-switcher {
   --project: var(--muted);

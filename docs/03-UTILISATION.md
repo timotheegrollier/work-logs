@@ -574,6 +574,9 @@ tâche ou projet garde sa version la plus récente, et une suppression se propag
 **Documents Google** (menu du compte) : la liste des documents autorisés pour WorkLogs,
 avec pour chacun **Ouvrir**, un choix de **projet**, et 🗑 (**corbeille Google Drive**,
 récupérable 30 jours ; la copie dans WorkLogs est retirée). On y crée aussi un Google Docs.
+Un document qui n'y est pas encore — partagé avec toi, ou créé hors de WorkLogs : **Autoriser
+d'autres documents** ouvre le sélecteur Google dans le navigateur ; choisis-en un ou plusieurs,
+puis **Actualiser**.
 **Ouvrir** bascule le filtre sur le projet du document, comme une carte de tâche ; le journal
 et le document affiché parlent alors du même projet.
 

@@ -232,7 +232,9 @@ la connexion, les sauvegardes, les pièces jointes et la boîte mobile.
 **« Se connecter avec Google »** suffit : les clients OAuth du projet WorkLogs sont
 intégrés au build, plus rien à importer ni à coller. La connexion reste **facultative**
 (sans elle, tout reste sur l'appareil). L'app demande en plus `openid email profile`,
-uniquement pour afficher « Connecté : Nom · e-mail ».
+uniquement pour afficher « Connecté : Nom · e-mail ». **Jamais pour le Picker** desktop, que
+Google n'ouvre qu'en `drive.file` seul : le compte y est relu par Drive (`about.get`) —
+décision §19.
 
 | | Desktop | PWA |
 |---|---|---|
@@ -337,7 +339,9 @@ invisible aux tests Node).
    Google**. Ce fichier identifie le client desktop ; ce n’est pas un compte de service.
 6. **Connecter Google Drive** ouvre le navigateur système. Autoriser suffit : revenir dans
    WorkLogs finalise la connexion sans imposer de document. **Choisir des documents dans
-   Drive** lance ensuite le Picker dans le navigateur et accorde l’accès aux fichiers choisis.
+   Drive** (Paramètres) ou **Autoriser d’autres documents** (fenêtre Documents Google) lance
+   ensuite le Picker dans le navigateur, plusieurs documents à la fois, et accorde l’accès
+   aux fichiers choisis.
 
 Le [flux OAuth desktop](https://developers.google.com/identity/protocols/oauth2/native-app)
 utilise PKCE et un retour HTTP sur `127.0.0.1` à port éphémère. Google interdit les

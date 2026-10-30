@@ -619,6 +619,18 @@ code + PKCE, avec le secret envoyé uniquement à Google si le client l'exige.
 `…googleusercontent.com` sont retenues, chargées en `referrerPolicy="no-referrer"`, avec
 l'initiale sur une pastille si l'image échoue.
 
+**Sauf pour le Picker (corrigé le 2026-10-29).** Le Picker desktop n'accepte que `drive.file`,
+« qui ne peut être combiné avec aucun autre scope », et `prompt=consent`
+([guide Google](https://developers.google.com/workspace/drive/picker/guides/overview-desktop)).
+Depuis le 22/09, « Choisir des documents dans Drive » le demandait avec `openid email profile`,
+et « Autoriser d'autres documents » (fenêtre Documents Google) n'ouvrait plus de Picker du tout
+(`pick` oublié). Constat du 29/10 : aucun document autorisé dans le profil de Timo depuis le
+16/09, et un document partagé avec son compte impossible à ajouter. Le Picker demande maintenant
+`drive.file` seul, avec `login_hint` du compte connecté (choisir un fichier ne doit pas faire
+passer la synchro sur un autre compte en douce) ; `userinfo` refusant ce jeton, le compte
+affiché est relu par Drive (`about.get`, accepté avec `drive.file`). **Ne pas** remettre
+`openid email profile` sur le Picker.
+
 **Rouvrir si** Google refuse durablement les jetons de renouvellement pour les clients Web
 publics, ou si un serveur WorkLogs hébergé apparaît (il pourrait gérer le renouvellement
 côté serveur).
@@ -1743,6 +1755,12 @@ pas d'indiquer ce qui devait changer.
   L'utilisateur sélectionne et peut corriger avant création par la route transactionnelle
   existante `POST /api/entries/:id/task`. Les liens existants sont relus avant une
   nouvelle tentative ; les créations réussies ne sont pas rejouées.
+  (2026-10-29) Le tableau se **lit** avec tolérance — prose ou bloc de code autour,
+  enveloppe `{"actions": […]}` — mais chaque action reste validée comme ci-dessus. Même
+  lecture pour « ✨ Trouver la doc ». Extraction et suggestion de tâches passent à
+  `DOCUMENT_MAX_TOKENS` (8 000) : priorité, explication et extrait par tâche, plus la
+  réflexion du modèle, pouvaient dépasser 3 072 jetons. Motif : refus « les actions
+  doivent être un tableau JSON » sur une vraie suggestion, réponse non conservée.
 - Les frappes pendant une suggestion sont conservées. Un changement de projet, de
   contenu source ou de sélection est vérifié avant application/création ; une réponse
   tardive ne rouvre pas le document quitté.
