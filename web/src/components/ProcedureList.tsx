@@ -5,6 +5,7 @@ import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-down
 
 import { groupByCategory } from '../categories';
 import { CategoryBadge } from './CategoryPicker';
+import { FileIcon } from './FileIcon';
 
 // L'aperçu (Word compris) ne se charge qu'au premier fichier consulté.
 const FileViewer = lazy(() => import('./FileViewer').then((m) => ({ default: m.FileViewer })));
@@ -199,6 +200,7 @@ export const ProcedureList = memo(function ProcedureList({
                         aria-label={`Consulter ${file.filename}`}
                         onClick={() => { setFetchError(''); setPreviewing(file); }}
                       >
+                        <FileIcon name={file.filename} />
                         {file.filename}
                       </button>
                       <a

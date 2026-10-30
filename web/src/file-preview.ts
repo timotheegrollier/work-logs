@@ -16,7 +16,7 @@ const TEXT_EXT = [
 // plutôt que d'afficher du charabia, et on laisse le téléchargement.
 const SHEET_EXT = ['xlsx', 'xls', 'ods', 'xlsm', 'numbers'];
 
-const extensionOf = (filename: string): string => {
+export const extensionOf = (filename: string): string => {
   const match = /\.([^.\\/]+)$/.exec(filename.trim().toLowerCase());
   return match ? match[1] : '';
 };
@@ -32,6 +32,23 @@ export function previewKind(file: { filename: string; mime?: string }): PreviewK
   if (TEXT_EXT.includes(ext) || mime.startsWith('text/')) return 'text';
   return 'other';
 }
+
+/** Famille d'un fichier pour son pictogramme (`FileIcon`), d'après sa seule extension. */
+export type FileFamily = 'word' | 'excel' | 'powerpoint' | 'pdf' | 'image' | 'text' | 'archive' | 'other';
+
+// Le texte d'abord : les familles suivantes priment (un CSV est un tableau, pas une note).
+const FAMILY_EXT: [FileFamily, string[]][] = [
+  ['text', TEXT_EXT],
+  ['word', ['docx', 'doc', 'odt', 'rtf']],
+  ['excel', [...SHEET_EXT, 'csv', 'tsv']],
+  ['powerpoint', ['pptx', 'ppt', 'odp']],
+  ['pdf', ['pdf']],
+  ['image', [...IMAGE_EXT, 'svg', 'heic', 'tif', 'tiff']],
+  ['archive', ['zip', '7z', 'rar', 'gz', 'tgz', 'tar']],
+];
+const FAMILIES = new Map(FAMILY_EXT.flatMap(([family, exts]) => exts.map((ext) => [ext, family] as const)));
+
+export const fileFamily = (filename: string): FileFamily => FAMILIES.get(extensionOf(filename)) ?? 'other';
 
 /**
  * Ce sont bien les octets d'un PDF : l'en-tête `%PDF-` dans le premier Ko (la

@@ -1,5 +1,40 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-30 — « Tout » en liste rangée, priorités IA, vue d'ensemble des projets (§60), prévu pour v0.65.0
+
+Demande : « la vue tâches avec tous les projets est illisible ; une liste que l'IA range et
+priorise ; marquer une tâche en cours ; un nouveau panneau d'ensemble schématique, façon git ».
+Aucune dépendance, aucune route API, aucune migration : tout vient de `GET /api/state` et des
+champs `status`, `priority`, `position` existants ; le miroir PWA est inchangé.
+- **« Tout » avec plusieurs projets** : une seule liste « À faire · En cours » rangée (en cours,
+  retards, épinglées, priorité, échéance, puis l'ordre des colonnes — `overviewOrder`,
+  `lib.ts`), projet et « En cours » sur chaque carte, Terminé repliée ; pas de glisser-déposer
+  dans cette liste. Un projet choisi, ou un seul projet : les colonnes, comme avant.
+- **▶ Mettre en cours / Remettre à faire** sur chaque carte ouverte, visible au repos ; la
+  carte va au bas de sa nouvelle colonne (`moveTask`, comme le select Statut).
+- **✨ IA › Prioriser les tâches** (menu du panneau) : `prioritizeTasks` (`ai-suggest.ts`)
+  envoie les champs enregistrés des tâches ouvertes, numérotées, et les repères des projets —
+  jamais un contenu, soixante tâches au plus — et rend une priorité et une raison par tâche ;
+  relecture sur les cartes (« Haute proposée », raison), **Appliquer** écrit les seules
+  priorités changées, **Ignorer**, **Arrêter**. L'IA ne touche ni statut, ni échéance, ni ordre.
+- **Vue d'ensemble** au centre (`components/ProjectOverview.tsx`, `projectProgress`) : une voie
+  par projet, pastille des terminées, un nœud par tâche ouverte (12 au plus, « +N »), tête de
+  branche pleine pour celle en cours, retard en rouge, épingle en ambre, « En cours : … »,
+  barre et « 4/10 · 40 % », dernière note ; un nom filtre le projet, un nœud mène à sa carte,
+  Fermer ou toute ouverture au centre la referme. Sur téléphone : vue Écriture.
+- Conception par un panel (trois propositions, trois juges) : les juges préféraient garder les
+  colonnes sous « Tout » (§2, §33) ; la liste rangée est le choix explicite de Timo, consigné
+  au §60 avec ce qui a été greffé des autres propositions.
+
+Tests : `lib.test.ts` (tri, avancement), `ai-suggest.test.ts` (consigne numérotée, validation,
+plafond), `App.test.tsx` (▶ et pastille projet ; liste rangée et proposition IA appliquée ou
+ignorée ; vue d'ensemble : voies, nœud → carte, nom → projet, Fermer, fermeture par une entrée ;
+téléphone), `e2e/overview.spec.ts` (largeur desktop et téléphone, nœud → carte), parcours de
+glisser-déposer réécrits sur un projet filtré. Captures 1 440 px clair et sombre et 375 px
+vérifiées sur un jeu de 6 projets / 45 tâches. `./scripts/check.sh` vert après réunion des trois lots : 285 API, 731 front réussis
+(dont 1 échec attendu en plus), 49 desktop unitaires, 32 scripts, 8 Worker, 11 relais,
+85 navigateur et 17 desktop e2e.
+
 ## Correctif du 2026-10-30 — un refus du dossier partagé reste affiché
 
 Écrit le 2026-10-08 dans une copie de travail (`lucid-sutherland`) et jamais commité ; retrouvé
@@ -16,6 +51,35 @@ focus, premier chargement encore en route — souvent avant d'avoir été lu.
 - **Tests** (`App.test.tsx`, +2, rouges sans le correctif, vérifié sur master) : un refus, puis
   `focus` relu jusqu'au bout — le refus reste, « Annuler » l'efface ; une recherche échouée dite
   dans ses résultats, effacée par la suivante.
+
+## Lot du 2026-10-30 — un pictogramme par type de fichier dans la colonne Procédures (§61), prévu pour v0.65.0
+
+Demande : intégrer proprement les dossiers et fichiers du TSE avec les procédures locales, une
+icône par type, l'emplacement local/distant toujours visible, navigation et ouverture intactes.
+Aucune dépendance, route ni migration ; pourquoi et ce qui a été écarté : §61.
+- `FileIcon` (`web/src/components/FileIcon.tsx`) : page teintée au coin plié + sigle du format,
+  ou dossier à onglet (ouvert/fermé), en CSS seul, teintes du thème par `color-mix`. Rendu dans
+  l'arbre et la recherche du partage, les pièces jointes des procédures (colonne et centre), le
+  titre de l'aperçu et celui du fichier partagé. Décoratif : aucun `aria-label` ne change.
+- `fileFamily` (`file-preview.ts`) classe sur l'extension : word, excel (CSV compris),
+  powerpoint, pdf, image, text, archive, other.
+- Le résumé « Dossier partagé » prend le style du titre « Procédures » ; les lignes de pièces
+  jointes locales passent à 13 px comme l'arbre ; les noms de dossiers s'abrègent (infobulle).
+- Correctif au passage : le chemin d'un résultat de recherche s'affichait retourné
+  (« PROCEDURE .00 ») à cause de `direction: rtl` ; isolé dans `<bdi dir="ltr">`.
+
+Tests : `file-preview.test.ts` (famille), trois gestes étendus dans `App.test.tsx` (pictogramme
+dans l'arbre, dossier ouvert, chemin isolé, pièce jointe locale avec sa pastille). Captures
+clair/sombre/recherche/centre/aperçu/412 px comparées avant et après.
+
+## Lot du 2026-10-30 — présentation des documents Google (§62), prévu pour v0.65.0
+
+La vue Google intégrée et la copie locale partagent la même présentation du titre et de
+la barre d'état ; la copie reprend le cadre et la barre de mise en forme des documents
+riches WorkLogs. La navigation d'onglets est resserrée et les pièces jointes suivent la
+largeur disponible. Les commandes Google, les éléments conservés et le repli des tâches
+restent accessibles. Aucune dépendance ajoutée. Pourquoi : `05-DECISIONS.md` §62.
+Validation finale intégrée : `./scripts/check.sh` vert, navigateur et Electron compris.
 
 ## Publication v0.64.0 — 2026-10-30
 

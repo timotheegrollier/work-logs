@@ -14,6 +14,7 @@ import { toBase64 } from '../docx-preview';
 import { bannerFor, idleExpired, lockBlocks, lockForgotten, lockMessage } from '../shared-session';
 import { requestLeave, setLeaveGuard } from '../shared-leave';
 import { TextFileEditor } from './TextFileEditor';
+import { FileIcon } from './FileIcon';
 import { CsvFileEditor } from './CsvFileEditor';
 import { DocxFileEditor } from './DocxFileEditor';
 import { XlsxFileEditor } from './XlsxFileEditor';
@@ -623,7 +624,7 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
       <div className="editor-bar no-print">
         <div className="shared-title">
           <span className="document-eyebrow">Dossier partagé{parentOf(path) ? ` · ${parentOf(path)}` : ''}</span>
-          <h1>{name}</h1>
+          <h1><FileIcon name={name} />{name}</h1>
         </div>
         {held && <span className="shared-held" title="Ton verrou est posé : LibreOffice et les autres WorkLogs voient que tu modifies ce fichier.">Tu as la main</span>}
         <span className={'save ' + (sending || save === 'saving' ? 'save-saving' : save === 'error' ? 'save-error' : hasDraft ? 'save-dirty' : 'save-saved')}>{status}</span>

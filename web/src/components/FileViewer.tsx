@@ -3,6 +3,7 @@ import { api, formatSize, type Attachment } from '../lib';
 import { downloadAttachment, driveViewUrl, openAttachmentWith } from '../attachment-download';
 import { previewKind, previewNotice } from '../file-preview';
 import { DocxView } from './DocxView';
+import { FileIcon } from './FileIcon';
 
 /**
  * Aperçu intégré d'une pièce jointe : image, PDF ou texte s'affichent dans un
@@ -73,7 +74,7 @@ export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { f
     >
       <div className="viewer-heading">
         <div className="viewer-title">
-          <strong>{file.filename}</strong>
+          <strong><FileIcon name={file.filename} />{file.filename}</strong>
           <small>{formatSize(file.size)}</small>
         </div>
         <div className="viewer-actions">

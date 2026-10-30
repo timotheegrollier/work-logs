@@ -2496,3 +2496,161 @@ proposition, rien pour dire depuis combien de temps, alors qu'un modèle saturé
 **Écartés.** Une barre de progression (l'API ne dit pas où en est la réponse : ce serait un
 leurre) ; la réponse affichée mot à mot (streaming : autre protocole, et la proposition doit de
 toute façon être relue entière avant application).
+
+---
+
+## 60. « Tout » en liste rangée, priorités proposées par l'IA, vue d'ensemble des projets au centre — 2026-10-30
+
+**Demande.** « Améliore la vue tâches lorsque tous les projets sont sélectionnés : elle est
+encore illisible car trop chargée. Trouve une meilleure solution pour visualiser la vue
+d'ensemble ; je veux une liste des tâches qui peut ranger/prioriser automatiquement les tâches
+grâce à l'IA. On doit pouvoir marquer des tâches en cours et visualiser proprement l'avancement
+des projets dans un nouveau panneau qui servira de vue d'ensemble schématique, un peu à la
+manière d'un git. »
+
+**Constat (jeu de 6 projets, 45 tâches, captures à 1 440 px).** Sous « Tout », le panneau
+empilait « À faire 20 », « En cours 4 » puis Terminé : vingt cartes de six projets dans l'ordre
+entrelacé des positions, sans nom de projet, les retards dispersés. Passer une tâche « en
+cours » demandait un glisser-déposer ou le formulaire.
+
+**Décisions.**
+- **« Tout » avec plusieurs projets : une seule liste rangée** « À faire · En cours » — en cours
+  d'abord, puis les retards, les épinglées, la priorité, l'échéance la plus proche, enfin
+  l'ordre des colonnes (`overviewOrder`). Chaque carte dit son projet (pastille à sa couleur)
+  et « En cours » quand c'est le cas ; Terminé reste repliée dessous. Pas de glisser-déposer
+  dans cette liste : l'ordre y est calculé. Un projet choisi — ou un seul projet dans la
+  base — garde ses trois colonnes et leur ordre à la main. §2 et §33 sont rouverts **pour
+  cette liste seulement**, sur une demande d'usage explicite (« une liste qui range ») et dans
+  le cas que §33 prévoyait (voir les retards de tous les projets).
+- **▶ Mettre en cours** sur chaque carte ouverte, avant ★ : un clic met la tâche en cours (au
+  bas de sa colonne, comme le select Statut), recliquer la remet à faire — elle perd donc sa
+  place dans À faire. Visible au repos (§47 : un geste quotidien ne se cherche pas au survol),
+  allumé à l'encre quand la tâche est en cours. Une tâche terminée n'a pas de ▶ : la case la
+  rouvre d'abord.
+- **✨ IA › Prioriser les tâches** (menu du panneau, §44) : les champs enregistrés des tâches
+  ouvertes du filtre — titre, projet, statut, priorité, échéance, épingle, nombre de documents,
+  date de création, numérotées — et les repères IA des projets partent au service réglé en
+  Paramètres ; jamais un contenu. Le modèle rend une priorité et une raison par tâche
+  (`prioritizeTasks`), soixante tâches au plus (refus au-delà, sans appel). La proposition se
+  relit sur place : pastille en pointillés « Haute proposée » et raison sous la carte, liste
+  rangée selon les priorités proposées (le rang de l'IA départage) ; **Appliquer** écrit les
+  seules priorités qui changent (`PUT /api/tasks/:id`, miroir PWA tel quel), **Ignorer** ou tout
+  changement de filtre n'écrit rien, **Arrêter** coupe la demande. L'IA ne touche ni statut, ni
+  échéance, ni épingle, ni positions : l'ordre de la liste reste une règle lisible, et les
+  colonnes d'un projet gardent leur ordre à la main.
+- **Vue d'ensemble au centre**, à la place de l'entrée (comme un fichier du partage ; §47 : la
+  page est la seule zone assez large), ouverte par « Vue d'ensemble » dans le panneau Tâches —
+  qui lève projet, catégorie et recherche, comme les compteurs de l'en-tête — et refermée par
+  Fermer, par le choix d'un projet ou par tout ce qui ouvre autre chose au centre. Une voie par
+  projet dans l'ordre du bandeau (puis « Sans projet ») : le fil du journal couché, à la manière
+  d'un git dont l'historique est replié — une pastille compte les terminées, un nœud par tâche
+  ouverte (douze au plus, puis « +N »), plein avec un halo pour celle en cours (la tête de la
+  branche), creux pour À faire, bord rouge en retard, anneau ambré si épinglée ; sous le trait
+  « En cours : titre · titre », à droite la barre d'avancement et « 4/10 · 40 % », sous le nom
+  la dernière note (« note hier », ambre si aujourd'hui). Le nom d'un projet le filtre ; un nœud
+  mène à sa carte dans le panneau Tâches (vue rapide levée, focus sur le titre), où ▶ fait le
+  reste. Rien n'est retenu au redémarrage ; HTML et CSS seuls, jetons des deux thèmes,
+  impression avec le centre. Sur téléphone, la page s'ouvre dans la vue Écriture et un nœud
+  ramène aux Tâches.
+
+**Écartés.** Un cinquième interrupteur de panneau ou une colonne de plus (le centre a déjà
+320 px au minimum ; sur téléphone la barre a quatre destinations, §53) ; la vue d'ensemble dans
+le panneau Tâches lui-même (320 px : des branches sans nœud, posées sur la liste jugée
+chargée) ; un graphe vertical type `git log --graph` (un nœud par tâche terminée, des milliers
+de pixels de haut, des croisements à calculer en SVG) et une frise par échéance (la plupart des
+tâches n'en ont pas) ; faire écrire l'**ordre** par l'IA (`moveTask` par tâche : N appels qui
+renumérotent une colonne globale, autant d'entrées d'outbox sur la PWA, et un sous-ensemble
+filtré qui passerait en tête des colonnes des autres projets) ; un tri de l'IA dans les colonnes
+d'un projet.
+
+**Ce que ça coûte.** Sous « Tout », plus de rangement à la main : on filtre le projet.
+« Remettre à faire » renvoie la carte au bas de À faire. Sous une vue rapide, ▶ peut faire
+sortir la carte de la vue (« En cours » puis « Remettre à faire »). La vue d'ensemble compte
+sur les 500 tâches au plus que sert `/api/state`. La dernière note de chaque projet est calculée
+sur les 500 entrées au plus renvoyées par cette route ; un projet dont les notes sont toutes
+plus anciennes peut donc apparaître sans activité.
+
+**Rouvrir si** la liste de « Tout » réclame un ordre à la main (un rang par tâche, persistant,
+serait le prix) ; si la vue d'ensemble doit s'ouvrir sans le panneau Tâches (un lien dans les
+compteurs de l'en-tête) ; si ▶ visible au repos gêne.
+
+Conception : trois propositions indépendantes notées par trois juges (fidélité aux décisions,
+usage, risque). Les juges préféraient garder les colonnes sous « Tout » ; la liste rangée est
+le choix du propriétaire. La page au centre vient de deux propositions, la pastille des
+terminées, la ligne « En cours : … », la dernière note et le nœud qui mène à sa carte de la
+troisième.
+
+## 61. Un pictogramme par type de fichier, du partage comme des procédures locales — 2026-10-30
+
+**La demande.** « Améliore l'affichage des procédures/dossiers récupérés depuis le serveur
+distant afin de l'intégrer proprement avec les procédures locales, avec une jolie icône selon
+le type de fichier et quand même l'emplacement local/distant ; la navigation dans les dossiers
+et l'ouverture des différents types doivent être améliorées ou au moins rester intactes. »
+
+**Avant.** Dans la colonne Procédures, les pièces jointes des procédures locales et l'arbre du
+dossier partagé (§25) étaient deux listes de noms nus, de tailles différentes ; seul le nom
+disait le type, et un fichier que WorkLogs n'ouvre pas lui-même était simplement grisé. Le
+résumé « Dossier partagé » avait le style discret des « Archives » du journal, pas celui du
+titre « Procédures » dont il est le pair. Dans les résultats de recherche, le chemin abrégé
+par le début (`direction: rtl`) retournait les segments neutres : « PROCEDURE .00 ».
+
+**Les choix.**
+- **Un pictogramme, pas une bibliothèque d'icônes** : `FileIcon` dessine en CSS une page au
+  coin plié portant le sigle du format (W, X, P, PDF, IMG, ZIP, CSV, MD, TXT… sinon l'extension
+  en trois lettres), ou un dossier à onglet, ouvert ou fermé. Teintes dérivées du thème
+  (`--accent`, `--ok`, `--danger`, `--mark`, `--muted`, mélangées par `color-mix`) : lisible
+  en clair comme en sombre, aucune couleur en dur, aucune dépendance, aucune image.
+- **Le même pictogramme partout où un fichier est nommé** : arbre et recherche du partage,
+  pièces jointes des procédures (colonne) et de l'entrée (centre), titre de l'aperçu, titre du
+  fichier partagé au centre. Décoratif (`aria-hidden`) : les `aria-label` des boutons — la
+  prise des tests — ne changent pas, et un lecteur d'écran n'entend pas « PDF » deux fois.
+- **Le classement se fait sur l'extension seule** (`fileFamily`, à côté de `previewKind`) : le
+  nom est tout ce que la liste du partage connaît sans lire le fichier (§25, §43). Un CSV est
+  rangé avec les tableaux, pas avec le texte, parce qu'il s'ouvre dans la grille.
+- **L'emplacement reste dit** comme avant : pastille « local seul » / « ☁ Drive » sur une pièce
+  jointe, section « Dossier partagé » (désormais titrée comme « Procédures », pastille d'état à
+  droite), sur-titre « Dossier partagé · dossier » au centre, « Partage » dans les documents
+  trouvés d'une tâche.
+- **Les lignes locales rejoignent celles de l'arbre** (13 px, même rayon) ; les noms de dossiers
+  s'abrègent d'une ellipse comme ceux des fichiers, le nom entier en infobulle.
+- **Le chemin d'un résultat de recherche est isolé** (`<bdi dir="ltr">`) : l'ellipse reste au
+  début, le texte se lit à l'endroit.
+- **Navigation et ouverture inchangées** : déplier, révéler, ouvrir au centre (texte, CSV, Word,
+  Excel, PDF, image, autre) et l'aperçu des pièces jointes gardent leur code ; les tests
+  existants les couvrent toujours.
+
+**Écartés.** Des emoji (rendu inégal entre Linux, Android et le thème sombre, et déjà pris
+pour les pastilles d'état 🔒 ⚠ ✎) ; des icônes SVG par format (plus de code pour le même sens,
+et une « marque » Word ou Excel que WorkLogs n'a pas à reproduire) ; une pastille « TSE » sur
+chaque ligne de l'arbre (la section la dit déjà, ce serait du bruit) ; fondre les deux listes
+en une seule (une procédure locale est une entrée, un fichier du partage un fichier d'équipe :
+leurs actions diffèrent, §25) ; un fil d'Ariane ou une vue « dossier courant » (l'arbre déplié
+suffit, personne ne l'a demandé).
+
+**Validation.** Test pur de `fileFamily` ; trois gestes d'`App.test.tsx` étendus (pictogramme
+dans l'arbre et sur une pièce jointe locale avec sa pastille d'emplacement, dossier ouvert,
+chemin isolé dans la recherche) ; captures clair, sombre, recherche, centre, aperçu et 412 px
+comparées avant/après.
+
+**Rouvrir si** un format courant du TSE tombe trop souvent dans « autre » (ajouter son
+extension à `FAMILY_EXT`, pas une icône), ou si le sigle à 7 px est illisible sur un écran
+réel : passer la page à 20 × 24 px avant d'imaginer autre chose.
+
+## 62. Présentation cohérente des documents Google — 2026-10-30
+
+**Demande.** Uniformiser et améliorer la présentation des documents Google sans perdre
+les fonctions de Google Drive.
+
+**Décisions.** La vue intégrée et la copie locale partagent les mêmes marges, titre et
+carte d'état. Les commandes d'envoi, d'actualisation, d'ouverture dans l'éditeur Google
+et de copie sont regroupées dans la carte de synchronisation ; en natif, rechargement
+et retour à la copie utilisent la même présentation. La copie locale reprend la taille,
+le cadre et les boutons de l'éditeur riche WorkLogs. Les onglets et leur titre restent
+visibles, mais moins espacés ; les pièces jointes suivent toute la largeur. La barre de
+mise en forme de la copie reste collée sur grand écran et dans le flux sur téléphone.
+
+Le titre Google reste distinct du titre local éditable dans « Détails du document » :
+les deux ont des rôles différents. Le panneau Tâches reste automatiquement replié sur
+un document Google, avec son bouton existant ; ses dimensions et le mode téléphone ne
+changent pas. Les avertissements sur les éléments Google conservés et toutes les
+commandes Drive restent présents. Rien n'est changé au pont natif ni au compte Google.

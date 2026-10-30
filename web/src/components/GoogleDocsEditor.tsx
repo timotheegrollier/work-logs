@@ -58,8 +58,8 @@ export function GoogleDocsEditor({ documentId, tabId, onLocalCopy }: {
     finally { setLeaving(false); }
   };
   return <div className="google-native" aria-label="Éditeur Google Docs intégré">
-    <div className="google-native-bar no-print">
-      <div role={state.phase === 'error' ? 'alert' : 'status'}><strong>Google Docs dans WorkLogs</strong><span>{state.message}</span></div>
+    <div className="google-sync no-print" aria-label="État de l’éditeur Google">
+      <div className="sync-status" role={state.phase === 'error' ? 'alert' : 'status'}><strong>Google Docs dans WorkLogs</strong><span>{state.message}</span></div>
       <button className="ghost" disabled={leaving} onClick={() => void window.worklogsDesktop?.googleDocs?.reload(token)}>Recharger l’éditeur</button>
       <button className="ghost" disabled={leaving} onClick={() => void leave()}>{leaving ? 'Actualisation…' : 'Copie locale'}</button>
     </div>

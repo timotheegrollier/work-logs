@@ -1502,11 +1502,15 @@ button:disabled {
 }
 .procedure-file-open {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   min-width: 0;
   min-height: 30px;
-  padding: 5px 6px;
+  padding: 4px 6px;
+  border-radius: 7px;
   text-align: left;
-  font-size: 12px;
+  font-size: 13px;
   overflow-wrap: anywhere;
   color: var(--text);
 }
@@ -1526,6 +1530,83 @@ button:disabled {
 }
 .procedure-files .picker-source {
   flex: none;
+}
+
+/* Pictogramme du type de fichier (`FileIcon`) : une page teintée au coin plié, le sigle du
+   format dessus ; un dossier ambré à onglet. Teintes tirées du thème, jamais écrites en dur. */
+.file-icon {
+  --file-color: var(--muted);
+  position: relative;
+  flex: none;
+  display: inline-grid;
+  align-items: end;
+  justify-items: center;
+  width: 18px;
+  height: 22px;
+  padding-bottom: 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--file-color) 15%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--file-color) 40%, transparent);
+  color: var(--file-color);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  vertical-align: -5px;
+  clip-path: polygon(0 0, 62% 0, 100% 28%, 100% 100%, 0 100%);
+}
+.file-icon::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 38%;
+  height: 28%;
+  background: color-mix(in srgb, var(--file-color) 40%, transparent);
+  clip-path: polygon(0 0, 0 100%, 100% 100%);
+}
+.file-icon.is-word { --file-color: var(--accent); }
+.file-icon.is-excel { --file-color: var(--ok); }
+.file-icon.is-pdf { --file-color: var(--danger); }
+.file-icon.is-powerpoint { --file-color: color-mix(in srgb, var(--danger) 50%, var(--mark)); }
+.file-icon.is-image { --file-color: color-mix(in srgb, var(--accent) 40%, var(--ok)); }
+.file-icon.is-archive { --file-color: var(--mark); }
+.file-icon.is-other { --file-color: var(--faint); }
+.file-icon.is-folder {
+  --file-color: var(--mark);
+  height: 15px;
+  padding: 0;
+  border-radius: 2px 3px 3px 3px;
+  clip-path: none;
+  background: color-mix(in srgb, var(--file-color) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--file-color) 50%, transparent);
+}
+.file-icon.is-folder::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: 0;
+  width: 8px;
+  height: 4px;
+  border-radius: 2px 2px 0 0;
+  background: color-mix(in srgb, var(--file-color) 50%, transparent);
+}
+.file-icon.is-folder::after {
+  content: none;
+}
+.file-icon.is-folder.is-open {
+  background: color-mix(in srgb, var(--file-color) 36%, transparent);
+}
+/* Dans un titre : plus grand, décalé du nom. */
+.viewer-title .file-icon,
+.shared-title .file-icon {
+  margin-right: 8px;
+}
+.shared-title .file-icon {
+  width: 22px;
+  height: 27px;
+  font-size: 8.5px;
+  vertical-align: -4px;
 }
 
 /* Drive dans la barre latérale et dans Paramètres. */
@@ -1732,7 +1813,8 @@ button:disabled {
   color: var(--muted);
   margin-right: auto;
 }
-.google-sync button {
+.google-sync button,
+.google-sync a {
   font-size: 12px;
 }
 
@@ -2682,14 +2764,15 @@ button:disabled {
 }
 .google-editor {
   max-width: none;
-  padding: 24px 28px 40px;
-  gap: 16px;
+  padding: 16px 20px 40px;
+  gap: 10px;
 }
 .document-heading {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 20px;
+  gap: 8px 20px;
 }
 .document-heading > div {
   min-width: 0;
@@ -2700,7 +2783,7 @@ button:disabled {
   font-weight: 600;
 }
 .document-heading h1 {
-  font-size: 25px;
+  font-size: 22px;
   line-height: 1.25;
   margin: 4px 0 0;
   overflow-wrap: anywhere;
@@ -2733,7 +2816,7 @@ button:disabled {
   display: grid;
   grid-template-columns: 190px minmax(0, 1fr);
   align-items: start;
-  gap: 24px;
+  gap: 18px;
 }
 .document-navigation {
   min-width: 0;
@@ -2746,7 +2829,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 8px 0 14px;
+  margin: 4px 0 10px;
   font-size: 13px;
 }
 .document-navigation-heading > span {
@@ -2775,7 +2858,7 @@ button:disabled {
   gap: 8px;
   width: 100%;
   text-align: left;
-  padding: 10px;
+  padding: 8px 10px;
   border: 1px solid transparent;
   border-radius: 8px;
   color: var(--muted);
@@ -2825,7 +2908,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 4px 0 18px;
+  margin: 4px 0 10px;
 }
 .document-page-heading h2 {
   margin: 0;
@@ -2841,11 +2924,19 @@ button:disabled {
   font-size: 10px;
 }
 .google-editor .google-sync {
-  padding: 12px 14px;
+  padding: 8px 10px;
   background: var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: 10px;
   gap: 10px;
+}
+.google-editor .google-sync > button,
+.google-editor .google-sync > a,
+.document-heading > button,
+.document-heading > a {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .sync-status {
   display: grid;
@@ -2892,24 +2983,8 @@ button:disabled {
   position: sticky;
   top: 0;
   z-index: 3;
-  box-shadow: var(--shadow);
-  padding: 8px;
-  gap: 6px;
-  border-radius: 10px;
-}
-.google-editor .rich-toolbar button,
-.google-editor .rich-toolbar select {
-  min-height: 29px;
-}
-.google-editor .rich-content {
-  margin-top: 18px;
-  min-height: 65vh;
-  padding: clamp(24px, 3vw, 52px);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
 }
 .google-editor .files {
-  padding-left: 214px;
   font-size: 12px;
 }
 .google-preservation {
@@ -2965,11 +3040,7 @@ div.google-preserved {
 .editor.has-google-native {
   height: 100%;
   min-height: 0;
-  padding: 16px;
-  gap: 10px;
-}
-.has-google-native .document-heading h1 {
-  font-size: 22px;
+  padding-bottom: 16px;
 }
 .has-google-native .document-details {
   flex: none;
@@ -2981,24 +3052,9 @@ div.google-preserved {
   min-height: 250px;
   gap: 8px;
 }
-.google-native-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 12px;
-}
-.google-native-bar > div {
-  flex: 1;
-  min-width: 200px;
-}
-.google-native-bar strong,
-.google-native-bar span {
-  display: block;
-}
-.google-native-bar span {
-  color: var(--muted);
-  margin-top: 4px;
+.google-native .sync-status {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 .google-native-host {
   flex: 1;
@@ -3291,6 +3347,90 @@ div.google-preserved {
 .pin.is-on {
   opacity: 1;
   color: var(--mark);
+}
+/* « Mettre en cours » : un état, comme l'épingle ; posé, il reste visible à l'encre. Au repos,
+   il se devine (§47 : un geste quotidien ne doit pas se chercher au survol) ; ★ et ✕ restent cachés. */
+.card-top-actions .icon.doing {
+  opacity: 0.35;
+  font-size: 11px;
+}
+.card:hover .card-top-actions .icon.doing,
+.card:focus-within .card-top-actions .icon.doing,
+.card-top-actions .icon.doing.is-on {
+  opacity: 1;
+}
+@media (hover: none) {
+  .card-top-actions .icon.doing { opacity: 1; }
+}
+.doing.is-on {
+  color: var(--accent);
+}
+/* Le projet d'une carte quand « Tout » les mêle : une pastille à sa couleur, sans cadre. */
+.card-project {
+  --project: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--project) 12%, var(--surface-2));
+  border-radius: 99px;
+  padding: 2px 8px 2px 6px;
+}
+.card-project .dot {
+  background: var(--project);
+}
+/* « En cours » dans la liste de « Tout », où aucune colonne ne le dit : à l'encre. */
+.status-doing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 99px;
+  padding: 2px 8px 2px 6px;
+}
+.status-doing .dot {
+  background: var(--accent);
+}
+/* Priorité proposée par l'IA : la même pastille, en pointillés tant qu'elle n'est pas écrite. */
+.priority.is-proposed {
+  border: 1px dashed currentColor;
+  background: transparent;
+}
+.ai-reason {
+  margin: -2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+/* Outils du panneau : ✨ IA et la vue d'ensemble, sur une rangée ; la proposition dessous. */
+.board-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* « Vue d'ensemble » ouverte au centre : le bouton le dit, comme un interrupteur de panneau. */
+.board-tools .ghost.is-on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+.ai-proposal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 12.5px;
+}
+.ai-proposal span {
+  flex: 1 1 120px;
 }
 .card.is-editing {
   gap: 8px;
@@ -4084,6 +4224,16 @@ div.google-preserved {
 }
 .shared-folder summary {
   flex-wrap: wrap;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 650;
+}
+.shared-chevron {
+  flex: none;
+  width: 10px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--muted);
 }
 .shared-reach {
   margin-left: auto;
@@ -4938,9 +5088,6 @@ div.google-preserved {
   }
 }
 @media (max-width: 1200px) {
-  .google-editor {
-    padding: 20px;
-  }
   .document-workspace.has-tabs {
     grid-template-columns: 165px minmax(0, 1fr);
     gap: 18px;
@@ -4963,9 +5110,6 @@ div.google-preserved {
   }
   .columns.is-document.with-tasks:not(.show-procedures) > .column-resizer-right {
     display: none;
-  }
-  .google-editor .files {
-    padding-left: 0;
   }
 }
 @media (max-width: 1180px) {
@@ -5009,9 +5153,6 @@ div.google-preserved {
   }
   .document-navigation-hint {
     display: none;
-  }
-  .google-editor .files {
-    padding-left: 0;
   }
 }
 /* Écran étroit mais pas mobile : l'export et les témoins passent en icône seule,
@@ -5161,9 +5302,6 @@ div.google-preserved {
   .sync-status {
     flex-basis: 100%;
   }
-  .google-editor .rich-content {
-    padding: 20px;
-  }
 }
 /* Tablette (601–900 px) : les trois colonnes de tâches côte à côte, la carte
    Tâches ne devient pas une liste sans fin. */
@@ -5171,6 +5309,9 @@ div.google-preserved {
   .board-lists {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
+  }
+  .board-lists.is-overview {
+    grid-template-columns: minmax(0, 1fr);
   }
   .column + .column {
     margin-top: 0;
@@ -5816,5 +5957,257 @@ div.google-preserved {
   .project-sheet {
     inset: 8px max(12px, env(safe-area-inset-right, 0px)) auto auto;
     max-height: calc(100dvh - 16px);
+  }
+}
+
+/* ------------------------------------------------------------ vue d'ensemble des projets
+   Au centre, à la place de l'entrée : une voie par projet, le fil du journal couché. Les
+   terminées sont l'historique replié (une pastille qui les compte, comme un git qui élide
+   le passé), chaque tâche ouverte un nœud sur le trait ; celle en cours est pleine, c'est
+   la tête de la branche. Rien que des jetons : les deux thèmes suivent. */
+.overview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  margin-bottom: 18px;
+}
+.overview-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.overview-head .ai-hint {
+  margin: 0;
+  flex: 1 1 240px;
+}
+.overview-head .late {
+  color: var(--danger);
+}
+.lanes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.lane {
+  --project: var(--accent);
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr) 150px;
+  grid-template-areas: 'name track progress' 'name heads progress';
+  column-gap: 14px;
+  row-gap: 4px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--surface);
+  break-inside: avoid;
+}
+.lane-id {
+  grid-area: name;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.lane-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+}
+.lane-name .dot {
+  width: 10px;
+  height: 10px;
+  background: var(--project);
+}
+button.lane-name:hover {
+  color: var(--accent);
+}
+.lane-name.is-static {
+  color: var(--muted);
+}
+.lane-activity {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.lane-activity.is-today {
+  color: var(--mark);
+}
+/* Le trait de la branche, sous les nœuds. */
+.lane-track {
+  grid-area: track;
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-height: 26px;
+}
+.lane-track::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rule);
+}
+.lane-done {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 7px;
+  margin-right: 4px;
+  border-radius: 99px;
+  background: var(--project);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+/* Un nœud : cible de 24 px, cercle de 14 px dessiné dedans. */
+.lane-node {
+  position: relative;
+  z-index: 1;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.lane-node::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid var(--project);
+  background: var(--surface);
+  transition: transform 0.12s ease;
+}
+.lane-node.is-doing::before {
+  background: var(--project);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--project) 28%, transparent);
+}
+.lane-node.is-late::before {
+  border-color: var(--danger);
+}
+.lane-node.is-doing.is-late::before {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+.lane-node.is-pinned::before {
+  box-shadow: 0 0 0 2px var(--mark);
+}
+.lane-node:hover::before,
+.lane-node:focus-visible::before {
+  transform: scale(1.3);
+}
+.lane-more {
+  position: relative;
+  z-index: 1;
+  padding: 0 6px;
+  background: var(--surface);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.lane-heads {
+  grid-area: heads;
+  margin: 0;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lane-heads b {
+  color: var(--text);
+  font-weight: 600;
+}
+.lane-empty {
+  color: var(--faint);
+}
+.lane-complete {
+  color: var(--ok);
+}
+.lane-progress {
+  grid-area: progress;
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+}
+.lane-bar {
+  display: block;
+  width: 100%;
+  height: 6px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--project) 16%, transparent);
+  overflow: hidden;
+}
+.lane-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--project);
+  transition: width 0.3s ease;
+}
+.lane-ratio {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Centre étroit (panneaux larges, tablette) : le nom au-dessus, l'avancement à droite. */
+@container (max-width: 640px) {
+  .lane {
+    grid-template-columns: minmax(0, 1fr) 120px;
+    grid-template-areas: 'name progress' 'track track' 'heads heads';
+  }
+}
+/* Téléphone : une colonne, la barre alignée à gauche. */
+@media (max-width: 600px) {
+  .lane {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'name' 'track' 'heads' 'progress';
+  }
+  .lane-progress {
+    justify-items: start;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lane-bar > span,
+  .lane-node::before {
+    transition: none;
+  }
+}
+@media print {
+  .lane {
+    border-color: #ccc;
+    background: #fff;
+  }
+  .lane-track::before,
+  .lane-done,
+  .lane-node::before,
+  .lane-bar,
+  .lane-bar > span {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 }

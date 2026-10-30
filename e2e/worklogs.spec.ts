@@ -94,7 +94,12 @@ test('le Markdown est vraiment mis en page', async ({ page }) => {
   expect(bullet).toBe('none');
 });
 
-test('une carte se déplace d’une colonne à l’autre au glisser-déposer', async ({ page }) => {
+test('une carte se déplace d’une colonne à l’autre au glisser-déposer', async ({ page, request }) => {
+  // Les colonnes et leur glisser-déposer sont ceux d'un projet : « Tout » montre une liste rangée.
+  await request.post('/api/projects', { data: { name: 'Chantier glisser', color: '#2f9e6f' } });
+  await page.reload();
+  await page.getByRole('group', { name: 'Filtrer par projet' }).getByRole('button', { name: /Chantier glisser/ }).click();
+  await expect(board(page).getByRole('heading', { name: /^En cours/ })).toBeVisible();
   await page.getByLabel('Nouvelle tâche').fill('Carte à glisser');
   await page.getByLabel('Nouvelle tâche').press('Enter');
 

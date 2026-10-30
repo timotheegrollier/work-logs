@@ -610,6 +610,67 @@ export const TASK_VIEWS: { id: TaskView; label: string; icon?: string; hint: str
 ];
 export const taskViewMatch = (view: TaskView) => TASK_VIEWS.find((candidate) => candidate.id === view)!.match;
 
+/**
+ * Ordre de la liste de « Tout » : ce qu'on fait (en cours), ce qui est en retard, ce qu'on a
+ * épinglé, puis la priorité, l'échéance la plus proche et enfin l'ordre des colonnes. Une
+ * proposition IA ouverte prend la place de la priorité enregistrée et son rang départage
+ * avant l'échéance.
+ */
+const PRIORITY_RANK: Record<Priority, number> = { high: 0, normal: 1, low: 2 };
+export function overviewOrder(tasks: Task[], proposal?: Map<string, { priority: Priority; rank: number }>, today = todayISO()): Task[] {
+  return [...tasks].sort((a, b) => {
+    const pa = proposal?.get(a.id);
+    const pb = proposal?.get(b.id);
+    return Number(b.status === 'doing') - Number(a.status === 'doing')
+      || Number(isOverdue(b, today)) - Number(isOverdue(a, today))
+      || b.pinned - a.pinned
+      || PRIORITY_RANK[pa?.priority ?? a.priority] - PRIORITY_RANK[pb?.priority ?? b.priority]
+      || (pa && pb ? pa.rank - pb.rank : pa ? -1 : pb ? 1 : 0)
+      || (a.due_date ?? '9').localeCompare(b.due_date ?? '9')
+      || a.position - b.position;
+  });
+}
+
+/**
+ * Avancement d'un projet pour la vue d'ensemble : une branche dont les terminées sont l'historique replié.
+ * shortcut: compté sur les 500 tâches au plus que sert /api/state ; au-delà, ajouter un `done_tasks` à la sous-requête des projets.
+ */
+export interface ProjectProgress {
+  /** `null` : les tâches sans projet. */
+  project: Project | null;
+  /** Les tâches ouvertes, dans l'ordre de la liste de « Tout » (en cours en tête). */
+  open: Task[];
+  done: number;
+  doing: number;
+  todo: number;
+  late: number;
+  /** Date de la note la plus récente du projet (les procédures ne sont pas une activité), ou null. */
+  lastEntry: string | null;
+}
+export function projectProgress(
+  projects: Project[],
+  tasks: Task[],
+  entries: Pick<EntrySummary, 'project_id' | 'entry_date' | 'kind'>[],
+  today = todayISO()
+): ProjectProgress[] {
+  const lanes: (Project | null)[] = [...projects, ...(tasks.some((task) => !task.project_id) ? [null] : [])];
+  return lanes.map((project) => {
+    const id = project?.id ?? null;
+    const own = tasks.filter((task) => (task.project_id ?? null) === id);
+    const open = overviewOrder(own.filter((task) => task.status !== 'done'), undefined, today);
+    const dates = entries.filter((entry) => (entry.project_id ?? null) === id && entry.kind !== 'procedure').map((entry) => entry.entry_date);
+    return {
+      project,
+      open,
+      done: own.length - open.length,
+      doing: open.filter((task) => task.status === 'doing').length,
+      todo: open.filter((task) => task.status === 'todo').length,
+      late: own.filter((task) => isOverdue(task, today)).length,
+      lastEntry: dates.length ? dates.reduce((latest, date) => (date > latest ? date : latest)) : null,
+    };
+  });
+}
+
 /** Retire le balisage Markdown pour afficher un extrait lisible sur une ligne. */
 export function plainText(markdown: string): string {
   return markdown

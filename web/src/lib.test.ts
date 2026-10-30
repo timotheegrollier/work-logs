@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { dayLabel, formatSize, groupByDay, groupTabs, isOverdue, plainText, subtasksMd, type EntrySummary, type Task } from './lib';
+import { dayLabel, formatSize, groupByDay, groupTabs, isOverdue, overviewOrder, plainText, projectProgress, subtasksMd, type EntrySummary, type Project, type Task } from './lib';
 
 const task = (over: Partial<Task>): Task => ({
   id: 'tk_1',
@@ -166,5 +166,79 @@ describe('subtasksMd', () => {
 
   test('sans sous-tâche, pas de contenu prérempli', () => {
     expect(subtasksMd('  \n ')).toBe('');
+  });
+});
+
+describe('projectProgress', () => {
+  const task = (id: string, extra: Partial<Task>): Task =>
+    ({ id, title: id, status: 'todo', due_date: null, pinned: 0, position: 0, priority: 'normal', project_id: 'p', created_at: '2026-10-01', updated_at: '2026-10-01', documents: [], ...extra });
+  const project = (id: string): Project => ({ id, name: id, color: '#000', created_at: '2026-01-01', entries: 0, open_tasks: 0 });
+
+  test('une voie par projet dans l’ordre du bandeau, puis les sans-projet s’il y en a ; les ouvertes rangées, les terminées comptées', () => {
+    const tasks = [
+      task('todo2', { position: 2 }),
+      task('todo1', { position: 1, due_date: '2026-10-29' }),
+      task('doing', { status: 'doing', due_date: '2026-10-30' }),
+      task('doneB', { status: 'done', updated_at: '2026-10-20' }),
+      task('doneA', { status: 'done', updated_at: '2026-10-10' }),
+      task('free', { project_id: null, due_date: '2026-01-01' }),
+    ];
+    const entries = [
+      { project_id: 'p', entry_date: '2026-10-12', kind: 'note' as const },
+      { project_id: 'p', entry_date: '2026-10-28', kind: 'procedure' as const },
+      { project_id: 'p', entry_date: '2026-10-25', kind: 'note' as const },
+    ];
+    const lanes = projectProgress([project('p'), project('q')], tasks, entries, '2026-10-30');
+    expect(lanes.map((lane) => lane.project?.id ?? null)).toEqual(['p', 'q', null]);
+    expect(lanes[0].open.map((item) => item.id)).toEqual(['doing', 'todo1', 'todo2']);
+    expect(lanes[0]).toMatchObject({ done: 2, doing: 1, todo: 2, late: 1, lastEntry: '2026-10-25' });
+    expect(lanes[1]).toMatchObject({ open: [], done: 0, doing: 0, todo: 0, late: 0, lastEntry: null });
+    expect(lanes[2]).toMatchObject({ project: null, done: 0, todo: 1, late: 1 });
+  });
+
+  test('sans tâche libre, pas de voie « sans projet »', () => {
+    expect(projectProgress([project('p')], [task('a', {})], [])).toHaveLength(1);
+  });
+});
+
+describe('overviewOrder', () => {
+  const task = (id: string, extra: Partial<Task>): Task =>
+    ({ id, title: id, status: 'todo', due_date: null, pinned: 0, position: 0, priority: 'normal', project_id: 'p', created_at: '2026-10-01', updated_at: '2026-10-01', documents: [], ...extra });
+
+  test('en cours, en retard, épinglées, priorité, échéance proche, puis l’ordre des colonnes', () => {
+    const tasks = [
+      task('late-normal', { position: 5, due_date: '2026-10-01' }),
+      task('high-no-due', { position: 4, priority: 'high' }),
+      task('pinned-low', { position: 3, priority: 'low', pinned: 1 }),
+      task('doing-low', { position: 9, status: 'doing', priority: 'low' }),
+      task('high-due', { position: 6, priority: 'high', due_date: '2026-11-02' }),
+      task('normal-first', { position: 1 }),
+      task('normal-second', { position: 2 }),
+    ];
+    expect(overviewOrder(tasks, undefined, '2026-10-30').map((item) => item.id)).toEqual(['doing-low', 'late-normal', 'pinned-low', 'high-due', 'high-no-due', 'normal-first', 'normal-second']);
+    expect(tasks[0].id).toBe('late-normal');
+  });
+
+  test('une proposition IA ouverte remplace la priorité et son rang départage avant l’échéance', () => {
+    const tasks = [task('a', { position: 1, due_date: '2026-10-01' }), task('b', { position: 2, priority: 'high' }), task('c', { position: 3 })];
+    const proposal = new Map([
+      ['a', { priority: 'low' as const, rank: 0 }],
+      ['b', { priority: 'normal' as const, rank: 2 }],
+      ['c', { priority: 'normal' as const, rank: 1 }],
+    ]);
+    expect(overviewOrder(tasks, proposal, '2026-09-01').map((item) => item.id)).toEqual(['c', 'b', 'a']);
+  });
+
+  test('une réponse IA partielle garde un ordre cohérent quel que soit l’ordre initial', () => {
+    const a = task('a', { due_date: '2026-12-01' });
+    const b = task('b', { due_date: '2026-11-01' });
+    const c = task('c', { due_date: '2026-10-01' });
+    const proposal = new Map([
+      ['a', { priority: 'normal' as const, rank: 0 }],
+      ['c', { priority: 'normal' as const, rank: 1 }],
+    ]);
+    for (const tasks of [[a, b, c], [a, c, b], [b, a, c], [b, c, a], [c, a, b], [c, b, a]]) {
+      expect(overviewOrder(tasks, proposal, '2026-09-01').map((item) => item.id)).toEqual(['a', 'c', 'b']);
+    }
   });
 });

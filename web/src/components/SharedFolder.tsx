@@ -7,6 +7,7 @@ import { fileNameProblem, NEW_FILE_TYPES, newFileBytes, PROCEDURE_EXPORT_TYPES, 
 import { followDir, linkFor, localDir } from '../shared-links';
 import { richToMarkdown } from '../rich-markdown';
 import { flushPendingSaves } from '../autosave';
+import { FileIcon } from './FileIcon';
 
 const OPEN_KEY = 'worklogs-shared-open';
 const POLL_MS = 30_000;
@@ -589,7 +590,9 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
                     aria-label={`Dossier ${entry.name}`}
                     onClick={() => toggleDir(entry.path)}
                   >
-                    <span aria-hidden="true">{expanded.has(entry.path) ? '▾' : '▸'}</span> {entry.name}
+                    <span className="shared-chevron" aria-hidden="true">{expanded.has(entry.path) ? '▾' : '▸'}</span>
+                    <FileIcon folder open={expanded.has(entry.path)} />
+                    <span className="shared-file-name" title={entry.name}>{entry.name}</span>
                   </button>
                   {linking && project ? (
                     <button className="ghost shared-link-here" disabled={busy} aria-label={`Relier ${project.name} au dossier ${entry.path}`} onClick={() => void link(entry.path)}>
@@ -833,8 +836,8 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
                         <li key={result.path}>
                           {result.type === 'dir' ? (
                             <button className="shared-dir shared-search-hit" aria-label={`Afficher le dossier ${result.path}`} onClick={() => reveal(result.path)}>
-                              <span className="shared-file-name"><span aria-hidden="true">▸</span> {result.name}</span>
-                              <span className="shared-search-where">{result.dir || status.label}</span>
+                              <span className="shared-file-name"><FileIcon folder /> {result.name}</span>
+                              <span className="shared-search-where"><bdi dir="ltr">{result.dir || status.label}</bdi></span>
                             </button>
                           ) : (
                             <button
@@ -842,8 +845,8 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
                               aria-label={`Ouvrir ${result.path}`}
                               onClick={() => onOpen(result.path)}
                             >
-                              <span className="shared-file-name">{result.name}</span>
-                              <span className="shared-search-where">{result.dir || status.label}</span>
+                              <span className="shared-file-name"><FileIcon name={result.name} /> {result.name}</span>
+                              <span className="shared-search-where"><bdi dir="ltr">{result.dir || status.label}</bdi></span>
                             </button>
                           )}
                         </li>
@@ -897,7 +900,8 @@ function FileRow({ entry, selected, disabled, onOpen, onDelete }: { entry: Share
         disabled={entry.unavailable}
         onClick={() => onOpen(entry.path)}
       >
-        <span className="shared-file-name">{entry.name}</span>
+        <FileIcon name={entry.name} />
+        <span className="shared-file-name" title={entry.name}>{entry.name}</span>
         {badges.map((badge) => <span key={badge.icon} className="shared-badge" title={badge.label} aria-hidden="true">{badge.icon}</span>)}
       </button>
       <button

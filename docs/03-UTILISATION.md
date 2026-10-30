@@ -14,6 +14,10 @@ onglet est retenu au redémarrage. **Afficher les tâches** rouvre le panneau la
 Le texte et les cellules se modifient dans WorkLogs. **Enregistrer sur Drive** envoie
 les changements ; la sauvegarde sur cet appareil reste automatique. **Actualiser**
 recharge l’onglet Google après confirmation. Le menu **•••** garde une copie locale.
+Ces commandes et l'ouverture dans Google Docs sont regroupées près de l'état de
+synchronisation. Dans l'éditeur Google intégré au desktop, la même zone contient
+**Recharger l’éditeur** et **Copie locale** ; depuis cette copie, **Modifier dans
+WorkLogs** rouvre l'éditeur complet après envoi du brouillon si nécessaire.
 Titre local, projet, date, impression et suppression sont dans **Détails du document**.
 
 Les éléments natifs signalés restent conservés. **Ouvrir dans Google Docs** accède au
@@ -40,7 +44,7 @@ Une seule page, trois zones, jamais de navigation.
 | Zone | Ce qu'on y fait |
 |---|---|
 | **Gauche — Journal** | filtrer par projet, créer une entrée, retrouver les précédentes (groupées par jour), ouvrir la gestion Google Drive |
-| **Centre — Écriture** | écrire l'entrée ouverte, la relire, l'imprimer, y joindre des fichiers |
+| **Centre — Écriture** | écrire l'entrée ouverte, la relire, l'imprimer, y joindre des fichiers ; ou lire la **vue d'ensemble** des projets |
 | **Droite — Tâches** | ajouter, avancer, terminer, relier les documents de contexte |
 
 En haut : la recherche (sans accents ni capitales : « procedure » trouve « Procédure »), le résumé de la semaine, les interrupteurs de panneaux, le thème
@@ -208,6 +212,32 @@ rendu approximatif.
 - **Avancer** : glisser la carte d'une colonne à l'autre (À faire → En cours → Terminé), ou,
   sans souris (téléphone, clavier), cliquer son titre et choisir son **Statut** : la carte va
   au bas de sa nouvelle colonne.
+- **▶ Mettre en cours** : le bouton avant ★ met la tâche en cours d'un clic (elle va au bas
+  de la colonne En cours) ; allumé, il dit qu'elle y est, et recliquer la remet à faire — au
+  bas de À faire, pas à sa place d'avant. Une tâche terminée n'a pas de ▶ : la case la rouvre.
+- **« Tout » avec plusieurs projets** : le panneau ne montre plus trois colonnes mêlées mais
+  **une seule liste rangée** « À faire · En cours » — en cours d'abord, puis les retards, les
+  épinglées, la priorité, l'échéance la plus proche, enfin l'ordre des colonnes. Chaque carte
+  dit son projet dans sa couleur et « En cours » quand c'est le cas ; Terminé reste repliée
+  dessous. Pas de glisser-déposer dans cette liste : pour ranger à la main, filtrer le projet
+  (ses colonnes reviennent).
+- **✨ IA › Prioriser les tâches** (menu en tête du panneau) envoie au service IA réglé dans
+  ⚙ Paramètres les tâches ouvertes du filtre — titre, projet, statut, priorité, échéance,
+  épingle, nombre de documents liés, date de création — et les repères IA des projets, jamais
+  un contenu, soixante tâches au plus. Il propose une priorité et une raison par tâche : la
+  liste se range selon les priorités proposées, chaque carte concernée porte « ✨ Haute
+  proposée » en pointillés et sa raison. **Appliquer** enregistre les seules priorités qui
+  changent ; **Ignorer**, changer de projet ou de catégorie n'écrit rien ; **Arrêter** coupe
+  la demande. L'IA ne touche ni statut, ni échéance, ni épingle, ni ordre à la main.
+- **Vue d'ensemble** (bouton en tête du panneau) ouvre au centre, à la place de l'entrée,
+  l'avancement de chaque projet, à la manière d'un git dont l'historique est replié : une voie
+  par projet dans sa couleur, une pastille qui compte les terminées, un nœud par tâche ouverte
+  (douze au plus, puis « +N ») — plein pour celle en cours, creux pour À faire, bord rouge en
+  retard, anneau ambré si épinglée —, « En cours : … » sous le trait, la barre d'avancement et
+  « 4/10 · 40 % », la dernière note sous le nom. L'ouvrir lève projet, catégorie et recherche.
+  Cliquer un nom filtre ce projet ; cliquer un nœud mène à sa carte dans le panneau Tâches ;
+  **Fermer**, ouvrir une entrée ou choisir un projet rendent le centre. Sur téléphone, elle
+  s'ouvre dans la vue Écriture et un nœud ramène aux Tâches. Rien n'est retenu au redémarrage.
 - **Terminer** : cocher la case. Le titre se barre et la carte rejoint Terminé.
 - **Modifier** : cliquer sur le titre ouvre le nom, l'échéance et la priorité. `Entrée` valide, `Échap` annule.
 - **Priorité** : chaque carte affiche sa pastille — Basse, Normale ou Haute (▲ rouge). Elle ne réordonne pas la colonne : l'ordre reste celui du glisser-déposer.
@@ -355,7 +385,9 @@ mêmes fichiers, mêmes sauvegardes), simplement aiguillé ici par son type.
 **Nouvelle procédure** en crée une déjà rattachée au projet filtré ; chaque ligne
 a son **＋ Fichier** pour joindre sans ouvrir l'éditeur ; cliquer son titre
 l'ouvre au centre **en lecture**, **Modifier** l'ouvre **en écriture** ; cliquer un
-fichier le télécharge. Sans filtre, toutes les
+fichier ouvre son aperçu, où **Télécharger** reste disponible. Chaque fichier porte le
+pictogramme de son type (W, X, PDF, IMG…) et une pastille qui dit où il est (`local seul`,
+`☁ Drive`). Sans filtre, toutes les
 procédures s'y retrouvent, pastille projet à l'appui. Les procédures ne
 figurent **pas** dans le journal (seulement dans ses archives une fois archivées,
 pour pouvoir les restaurer). Comme les autres panneaux, la sidebar est toujours
@@ -398,7 +430,8 @@ sur lui, et depuis une tâche, seul son titre part.
 ## Dossier partagé (le dossier du TSE)
 
 Sous les procédures, la section **Dossier partagé** montre le dossier de l'équipe, celui du
-TSE. Sur le desktop, tape son **adresse comme sous Windows** — `\\serveur\partage` (ou
+TSE, en arbre : dossiers à onglet, fichiers avec le même pictogramme de type que les pièces
+jointes ; un fichier que WorkLogs n'ouvre pas lui-même reste grisé. Sur le desktop, tape son **adresse comme sous Windows** — `\\serveur\partage` (ou
 `smb://serveur/partage`, éventuellement suivie d'un sous-dossier) — puis **Se connecter** :
 WorkLogs le monte comme le gestionnaire de fichiers (Nemo). S'il faut un mot de passe, c'est
 la fenêtre « Authentification requise » de Nemo qui le demande (choisis « Se souvenir pour

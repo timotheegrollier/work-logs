@@ -15,6 +15,7 @@ import { AiMenu, AiPending } from './AiMenu';
 import { AiRefinement } from './AiRefinement';
 
 import { CategoryPicker } from './CategoryPicker';
+import { FileIcon } from './FileIcon';
 
 // Chargés à la demande : l'éditeur riche (Tiptap) est le plus gros morceau du
 // paquet, l'aperçu Word ne sert qu'au premier fichier consulté.
@@ -819,7 +820,7 @@ export function EntryEditor({
       )}
       {googleSync && <div className="document-heading no-print">
         <div><span className="document-eyebrow">Google Docs</span><h1>{googleSync.document_title || draft.title}</h1></div>
-        {integratedGoogle ? !nativeGoogle && <button className="sync-primary" disabled={syncing} onClick={() => void openIntegratedGoogle()}>{googleSync.dirty ? 'Envoyer le brouillon et ouvrir l’éditeur complet' : 'Modifier dans WorkLogs'}</button> : <a className="ghost" href={googleUrl} target="_blank" rel="noopener noreferrer">Ouvrir dans Google Docs ↗</a>}
+        {!draft.content_json && (integratedGoogle ? !nativeGoogle && <button className="sync-primary" disabled={syncing} onClick={() => void openIntegratedGoogle()}>{googleSync.dirty ? 'Envoyer le brouillon et ouvrir l’éditeur complet' : 'Modifier dans WorkLogs'}</button> : <a className="ghost" href={googleUrl} target="_blank" rel="noopener noreferrer">Ouvrir dans Google Docs ↗</a>)}
       </div>}
       {/* Document Google : titre et réglages repliés sous le vrai titre Google.
           Entrée locale : pas de dépliant — un <details> sans <summary> affichait
@@ -1146,6 +1147,7 @@ export function EntryEditor({
         <button className="sync-primary" disabled={syncing} onClick={() => void synchronize()}>{googleSync ? 'Enregistrer sur Drive' : 'Synchroniser avec Drive'}</button>
         {googleSync && <>
           <button className="ghost" aria-label="Recharger depuis Google" disabled={syncing} onClick={() => void synchronize(true)}>Actualiser</button>
+          {integratedGoogle ? <button className="ghost" disabled={syncing} onClick={() => void openIntegratedGoogle()}>{googleSync.dirty ? 'Envoyer le brouillon et ouvrir l’éditeur complet' : 'Modifier dans WorkLogs'}</button> : <a className="ghost" href={googleUrl} target="_blank" rel="noopener noreferrer">Ouvrir dans Google Docs ↗</a>}
           <details className="document-actions"><summary aria-label="Autres actions du document">•••</summary><div>
             <button className="ghost" disabled={syncing} onClick={() => void keepCopy()}>Garder une copie locale</button>
           </div></details>
@@ -1204,6 +1206,7 @@ export function EntryEditor({
         </label>
         {attachments.map((file) => (
           <span className="file" key={file.id}>
+            <FileIcon name={file.filename} />
             <a
               href={api.fileUrl(file.stored)}
               onClick={(event) => {

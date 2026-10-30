@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import App from './App';
 import { seedData, useRealApi } from './test/server';
 import { discardPendingSaves, flushPendingSaves, hasPendingSaves } from './autosave';
+import { setLeaveGuard } from './shared-leave';
 import { api as clientApi } from './lib';
 
 let api: Awaited<ReturnType<typeof useRealApi>>;
@@ -1850,6 +1851,178 @@ describe('retrouver son travail', () => {
 });
 
 describe('organiser les tâches', () => {
+  test('renommer un projet écarte les priorités calculées avec son ancien nom', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Avant' }], tasks: [{ id: 'tk_1', title: 'Devis', project_id: 'pr_a' }] });
+    mockAiSuggest('[{"n":1,"priority":"high"}]');
+    render(<App />);
+    await within(board()).findByRole('button', { name: 'Devis' });
+    fireEvent.click(await aiAction('Prioriser les tâches', board(), 'Assistance IA des tâches'));
+    expect(await within(board()).findByRole('region', { name: 'Priorités proposées par l’IA' })).toBeInTheDocument();
+    const dialog = await openProjects();
+    const name = dialog.getByLabelText('Nom de Avant');
+    await user.clear(name);
+    await user.type(name, 'Après{Enter}');
+    await waitFor(() => expect(row(api.db, 'SELECT name FROM projects WHERE id=?', 'pr_a').name).toBe('Après'));
+    await waitFor(() => expect(within(board()).queryByRole('region', { name: 'Priorités proposées par l’IA' })).not.toBeInTheDocument());
+    expect(row(api.db, 'SELECT priority FROM tasks WHERE id=?', 'tk_1').priority).toBe('normal');
+  });
+
+  test('une proposition IA est écartée si une tâche change avant son application', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { tasks: [{ id: 'tk_1', title: 'Relancer le devis' }] });
+    mockAiSuggest('[{"n":1,"priority":"high","reason":"À relancer"}]');
+    render(<App />);
+    await within(board()).findByRole('button', { name: 'Relancer le devis' });
+    fireEvent.click(await aiAction('Prioriser les tâches', board(), 'Assistance IA des tâches'));
+    expect(await within(board()).findByRole('region', { name: 'Priorités proposées par l’IA' })).toBeInTheDocument();
+    await user.click(within(board()).getByRole('button', { name: 'Mettre en cours Relancer le devis' }));
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_1').status).toBe('doing'));
+    await waitFor(() => expect(within(board()).queryByRole('region', { name: 'Priorités proposées par l’IA' })).not.toBeInTheDocument());
+    expect(row(api.db, 'SELECT priority FROM tasks WHERE id=?', 'tk_1').priority).toBe('normal');
+  });
+
+  test('la liste regroupée indique toujours les tâches en cours', async () => {
+    seedData(api.db, {
+      projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Beta' }],
+      tasks: [{ id: 'tk_1', title: 'Relancer le devis', project_id: 'pr_a', status: 'doing' }],
+    });
+    render(<App />);
+    await within(board()).findByRole('button', { name: 'Relancer le devis' });
+    fireEvent.click(document.querySelector<HTMLButtonElement>('.category-trigger')!);
+    fireEvent.click(screen.getByLabelText('Regrouper par catégorie'));
+    await within(board()).findByRole('heading', { name: /Alpha · Sans catégorie/ });
+    const groupedCard = within(board()).getByRole('button', { name: 'Relancer le devis' }).closest('.card') as HTMLElement;
+    expect(within(groupedCard).getByTitle('En cours')).toHaveTextContent('En cours');
+  });
+
+  test('la priorisation respecte la vue rapide et abandonne une réponse après changement de filtre', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, {
+      projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Beta' }],
+      tasks: [
+        { id: 'tk_doing', title: 'Travail en cours', project_id: 'pr_a', status: 'doing' },
+        { id: 'tk_todo', title: 'Travail à faire', project_id: 'pr_b' },
+      ],
+    });
+    const diverted = globalThis.fetch;
+    let finish!: (response: Response) => void;
+    let sent = '';
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('chat/completions')) {
+        sent = (JSON.parse(init!.body as string) as { messages: { content: string }[] }).messages[1].content;
+        return new Promise<Response>((resolve) => { finish = resolve; });
+      }
+      return diverted(input, init);
+    }));
+    render(<App />);
+    const views = await within(board()).findByRole('group', { name: 'Filtrer les tâches' });
+    await user.click(within(views).getByRole('button', { name: 'En cours 1' }));
+    fireEvent.click(await aiAction('Prioriser les tâches', board(), 'Assistance IA des tâches'));
+    await waitFor(() => expect(sent).toContain('Travail en cours'));
+    expect(sent).not.toContain('Travail à faire');
+    await user.click(within(views).getByRole('button', { name: 'Toutes' }));
+    await act(async () => finish({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '[{"n":1,"priority":"high"}]' } }] }) } as Response));
+    await waitFor(() => expect(within(board()).queryByRole('button', { name: 'Priorisation…' })).not.toBeInTheDocument());
+    expect(within(board()).queryByRole('region', { name: 'Priorités proposées par l’IA' })).not.toBeInTheDocument();
+  });
+
+  test('« Tout » range les tâches ouvertes en une liste ; ✨ IA › Prioriser propose, relit, applique ou ignore', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, {
+      projects: [{ id: 'pr_a', name: 'Pisciculture' }, { id: 'pr_b', name: 'Site web' }],
+      tasks: [
+        { id: 'tk_photos', title: 'Photos des bassins', project_id: 'pr_b' },
+        { id: 'tk_filtre', title: 'Changer le filtre', project_id: 'pr_a', due_date: '2026-11-20' },
+        { id: 'tk_tarifs', title: 'Page tarifs', project_id: 'pr_b', status: 'doing' },
+        { id: 'tk_fini', title: 'Déjà fait', project_id: 'pr_a', status: 'done' },
+      ],
+    });
+    // Numérotées dans l'ordre envoyé : 1 Page tarifs (en cours), 2 Changer le filtre (échéance), 3 Photos.
+    mockAiSuggest(JSON.stringify([
+      { n: 3, priority: 'high', reason: 'Bloque la page tarifs.' },
+      { n: 2, priority: 'low', reason: 'Échéance lointaine.' },
+      { n: 1, priority: 'normal', reason: '' },
+    ]));
+    render(<App />);
+
+    // Une seule liste : en cours d'abord, puis l'échéance la plus proche avant les sans-échéance ; Terminé reste à part.
+    const titles = () => within(board()).getAllByRole('button', { name: /^(Photos des bassins|Changer le filtre|Page tarifs|Déjà fait)$/ }).map((button) => button.textContent);
+    await within(board()).findByRole('heading', { name: 'À faire · En cours 3' });
+    expect(titles()).toEqual(['Page tarifs', 'Changer le filtre', 'Photos des bassins']);
+    expect(within(board()).getByRole('heading', { name: 'Terminé' })).toBeInTheDocument();
+    expect(within(board()).queryByRole('heading', { name: /^En cours/ })).not.toBeInTheDocument();
+
+    fireEvent.click(await aiAction('Prioriser les tâches', board(), 'Assistance IA des tâches'));
+    const proposal = await within(board()).findByRole('region', { name: 'Priorités proposées par l’IA' });
+    expect(proposal).toHaveTextContent('2 priorités à changer');
+    // Les champs enregistrés partent, jamais la tâche terminée.
+    const sent = (aiBodies[0] as { messages: { content: string }[] }).messages[1].content;
+    expect(sent).toContain('3 · Photos des bassins · Site web · à faire · normale · sans échéance');
+    expect(sent).toContain('1 · Page tarifs · Site web · en cours');
+    expect(sent).not.toContain('Déjà fait');
+    // La liste suit la proposition : priorité proposée, puis le rang de l'IA.
+    expect(titles()).toEqual(['Page tarifs', 'Photos des bassins', 'Changer le filtre']);
+    const photos = within(board()).getByRole('button', { name: 'Photos des bassins' }).closest('.card') as HTMLElement;
+    expect(within(photos).getByText('Haute proposée')).toBeInTheDocument();
+    expect(within(photos).getByText('Bloque la page tarifs.')).toBeInTheDocument();
+    expect(row(api.db, 'SELECT priority FROM tasks WHERE id=?', 'tk_photos').priority).toBe('normal');
+
+    await user.click(within(proposal).getByRole('button', { name: 'Appliquer' }));
+    await waitFor(() => expect(row(api.db, 'SELECT priority FROM tasks WHERE id=?', 'tk_photos').priority).toBe('high'));
+    await waitFor(() => expect(row(api.db, 'SELECT priority FROM tasks WHERE id=?', 'tk_filtre').priority).toBe('low'));
+    expect(row(api.db, 'SELECT priority FROM tasks WHERE id=?', 'tk_tarifs').priority).toBe('normal');
+    await waitFor(() => expect(within(board()).queryByRole('region', { name: 'Priorités proposées par l’IA' })).not.toBeInTheDocument());
+    expect(await within(photos).findByText('Haute')).toBeInTheDocument();
+    expect(within(photos).queryByText('Bloque la page tarifs.')).not.toBeInTheDocument();
+
+    // Ignorer n'écrit rien.
+    mockAiSuggest(JSON.stringify([{ n: 2, priority: 'low', reason: 'Peut attendre.' }]));
+    fireEvent.click(await aiAction('Prioriser les tâches', board(), 'Assistance IA des tâches'));
+    const again = await within(board()).findByRole('region', { name: 'Priorités proposées par l’IA' });
+    expect(await within(photos).findByText('Basse proposée')).toBeInTheDocument();
+    await user.click(within(again).getByRole('button', { name: 'Ignorer' }));
+    expect(within(board()).queryByRole('region', { name: 'Priorités proposées par l’IA' })).not.toBeInTheDocument();
+    expect(row(api.db, 'SELECT priority FROM tasks WHERE id=?', 'tk_photos').priority).toBe('high');
+
+    // Un projet choisi retrouve ses colonnes.
+    await user.click(within(filters()).getByRole('button', { name: /Pisciculture/ }));
+    await within(board()).findByRole('heading', { name: 'En cours 0' });
+    expect(within(board()).getByRole('heading', { name: 'À faire 1' })).toBeInTheDocument();
+  });
+
+  test('« Mettre en cours » d’un clic, puis « Remettre à faire » ; la carte dit son projet quand tous sont affichés', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      projects: [{ id: 'pr_a', name: 'Pisciculture', color: '#2f9e6f' }, { id: 'pr_b', name: 'Site web' }],
+      tasks: [{ id: 'tk_1', title: 'Commander les alevins', project_id: 'pr_a' }, { id: 'tk_2', title: 'Photos des bassins', project_id: 'pr_b', status: 'doing' }],
+    });
+    render(<App />);
+
+    const start = await within(board()).findByRole('button', { name: 'Mettre en cours Commander les alevins' });
+    expect(start).toHaveAttribute('aria-pressed', 'false');
+    const card = start.closest('.card') as HTMLElement;
+    expect(within(card).getByTitle('Projet Pisciculture')).toHaveTextContent('Pisciculture');
+    await user.click(start);
+    await waitFor(() => expect(row(api.db, 'SELECT status, position FROM tasks WHERE id=?', 'tk_1')).toMatchObject({ status: 'doing', position: 1 }));
+    const back = await within(board()).findByRole('button', { name: 'Remettre à faire Commander les alevins' });
+    expect(back).toHaveAttribute('aria-pressed', 'true');
+    await user.click(back);
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_1').status).toBe('todo'));
+    // Une tâche terminée ne se met pas en cours : la case la rouvre d'abord.
+    await user.click(within(board()).getByRole('checkbox', { name: 'Terminer Photos des bassins' }));
+    await waitFor(() => expect(within(board()).queryByRole('button', { name: /Photos des bassins$/ })).not.toBeInTheDocument());
+
+    // Projet filtré : l’étiquette du projet n’apprend plus rien.
+    await user.click(within(filters()).getByRole('button', { name: /Pisciculture/ }));
+    await waitFor(() => expect(within(board()).queryByTitle('Projet Pisciculture')).not.toBeInTheDocument());
+    expect(within(board()).getByRole('button', { name: 'Commander les alevins' })).toBeInTheDocument();
+  });
+
   test('les tâches terminées sont repliées par défaut et se masquent à nouveau', async () => {
     const user = userEvent.setup();
     seedData(api.db, { tasks: [{ id: 'tk_done', title: 'Tâche terminée', status: 'done' }] });
@@ -2125,15 +2298,19 @@ describe('organiser les tâches', () => {
 
     test('déposer sur une carte d’une vue la place dans la colonne entière', async () => {
       seedData(api.db, {
+        projects: [{ id: 'pr_a', name: 'Alpha' }],
         tasks: [
-          { id: 'tk_a', title: 'Tâche ordinaire' },
-          { id: 'tk_b', title: 'Tâche en retard', due_date: hier() },
-          { id: 'tk_c', title: 'Tâche en cours en retard', status: 'doing', due_date: hier() },
+          { id: 'tk_a', title: 'Tâche ordinaire', project_id: 'pr_a' },
+          { id: 'tk_b', title: 'Tâche en retard', due_date: hier(), project_id: 'pr_a' },
+          { id: 'tk_c', title: 'Tâche en cours en retard', status: 'doing', due_date: hier(), project_id: 'pr_a' },
         ],
       });
       render(<App />);
 
-      fireEvent.click(await within(board()).findByRole('button', { name: 'En retard 2' }));
+      // Le glisser-déposer est celui des colonnes d'un projet.
+      fireEvent.click(await within(filters()).findByRole('button', { name: /Alpha/ }));
+      await within(board()).findByRole('heading', { name: 'À faire 2' });
+      fireEvent.click(within(board()).getByRole('button', { name: 'En retard 2' }));
       const dataTransfer = { data: {} as Record<string, string>, setData(k: string, v: string) { this.data[k] = v; }, getData(k: string) { return this.data[k]; } };
       fireEvent.dragStart(within(board()).getByText('Tâche en cours en retard').closest('.card')!, { dataTransfer });
       fireEvent.drop(within(board()).getByText('Tâche en retard').closest('.card')!, { dataTransfer });
@@ -2185,10 +2362,13 @@ describe('organiser les tâches', () => {
   });
 
   test('déplace une carte d’une colonne à l’autre par glisser-déposer', async () => {
-    seedData(api.db, { tasks: [{ id: 'tk_1', title: 'À déplacer' }] });
+    // Les colonnes et leur glisser-déposer sont ceux d'un projet ; « Tout » montre une liste.
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha' }], tasks: [{ id: 'tk_1', title: 'À déplacer', project_id: 'pr_a' }] });
     render(<App />);
+    fireEvent.click(await within(filters()).findByRole('button', { name: /Alpha/ }));
+    await within(board()).findByRole('heading', { name: 'À faire 1' });
 
-    const card = (await within(board()).findByText('À déplacer')).closest('.card')!;
+    const card = within(board()).getByText('À déplacer').closest('.card')!;
     const dataTransfer = { data: {} as Record<string, string>, setData(k: string, v: string) { this.data[k] = v; }, getData(k: string) { return this.data[k]; } };
 
     fireEvent.dragStart(card, { dataTransfer });
@@ -2540,6 +2720,99 @@ describe('projets', () => {
   });
 });
 
+describe('vue d’ensemble des projets', () => {
+  const hier = () => new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  const page = () => screen.getByRole('region', { name: 'Vue d’ensemble des projets' });
+  const toggle = () => within(board()).getByRole('button', { name: 'Vue d’ensemble' });
+
+  test('une entrée choisie pendant l’attente de la vue d’ensemble reste au centre', async () => {
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Première entrée' }, { id: 'en_2', title: 'Entrée choisie' }] });
+    render(<App />);
+    await within(journal()).findByText('Entrée choisie');
+    let finish!: (ok: boolean) => void;
+    let calls = 0;
+    const removeGuard = setLeaveGuard(() => ++calls === 1 ? new Promise<boolean>((resolve) => { finish = resolve; }) : Promise.resolve(true));
+    try {
+      fireEvent.click(toggle());
+      await waitFor(() => expect(calls).toBe(1));
+      fireEvent.click(within(journal()).getByText('Entrée choisie'));
+      await waitFor(() => expect(calls).toBe(2));
+      expect(await screen.findByDisplayValue('Entrée choisie')).toBeInTheDocument();
+      await act(async () => finish(true));
+      expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument();
+      expect(screen.getByDisplayValue('Entrée choisie')).toBeInTheDocument();
+    } finally {
+      removeGuard();
+    }
+  });
+
+  test('une voie par projet au centre : terminées comptées, nœuds des ouvertes ; un nom filtre, un nœud mène à la carte, Fermer rend l’entrée', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Bravo' }],
+      entries: [{ id: 'en_1', title: 'Compte rendu', project_id: 'pr_a', date: hier() }],
+      tasks: [
+        { id: 'tk_done', title: 'Faite', status: 'done', project_id: 'pr_a' },
+        { id: 'tk_doing', title: 'Préparer le devis', status: 'doing', project_id: 'pr_a' },
+        { id: 'tk_late', title: 'Relancer', due_date: hier(), project_id: 'pr_a' },
+        { id: 'tk_pin', title: 'Appeler', pinned: 1, project_id: 'pr_a' },
+        { id: 'tk_free', title: 'Libre', project_id: null },
+      ],
+    });
+    render(<App />);
+    await screen.findByDisplayValue('Compte rendu');
+    await user.click(toggle());
+
+    expect(await screen.findByRole('region', { name: 'Vue d’ensemble des projets' })).toBeInTheDocument();
+    expect(toggle()).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('region', { name: 'Entrée' })).not.toBeInTheDocument();
+    expect(within(page()).getByText(/2 projets · 4 tâches ouvertes · 1 terminée/)).toHaveTextContent('1 en retard');
+    const alpha = within(page()).getByRole('listitem', { name: 'Alpha : 1 terminée sur 4, 1 en cours, 2 à faire' });
+    expect(within(alpha).getByTitle('1 terminée')).toHaveTextContent('1');
+    expect(within(alpha).getByText('1/4 · 25 %')).toBeInTheDocument();
+    expect(within(alpha).getByText('note hier')).toBeInTheDocument();
+    expect(within(alpha).getByText('Préparer le devis')).toBeInTheDocument();
+    expect(within(alpha).getByRole('button', { name: 'Préparer le devis — en cours' })).toHaveClass('is-doing');
+    expect(within(alpha).getByRole('button', { name: 'Relancer — à faire · en retard de 1 jour' })).toHaveClass('is-late');
+    expect(within(alpha).getByRole('button', { name: 'Appeler — à faire · épinglée' })).toHaveClass('is-pinned');
+    expect(within(page()).getByRole('listitem', { name: 'Bravo : 0 terminée sur 0, 0 en cours, 0 à faire' })).toHaveTextContent('Aucune tâche');
+    expect(within(page()).getByRole('listitem', { name: 'Sans projet : 0 terminée sur 1, 0 en cours, 1 à faire' })).toHaveTextContent('Rien en cours');
+
+    // Un nœud mène à sa carte dans le panneau Tâches.
+    await user.click(within(alpha).getByRole('button', { name: 'Relancer — à faire · en retard de 1 jour' }));
+    await waitFor(() => expect(document.activeElement).toBe(within(board()).getByRole('button', { name: 'Relancer' })));
+
+    // Un nom filtre le projet et referme la vue ; depuis un projet, « Vue d’ensemble » lève le filtre.
+    await user.click(within(alpha).getByRole('button', { name: 'Filtrer sur Alpha' }));
+    await waitFor(() => expect(within(filters()).getByRole('button', { name: /Alpha/ })).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument();
+    await user.click(toggle());
+    await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
+    await waitFor(() => expect(within(filters()).getByRole('button', { name: 'Tout' })).toHaveAttribute('aria-pressed', 'true'));
+
+    // Fermer rend l'entrée telle quelle ; ouvrir une entrée referme aussi.
+    await user.click(screen.getByRole('button', { name: 'Fermer la vue d’ensemble' }));
+    expect(await screen.findByDisplayValue('Compte rendu')).toBeInTheDocument();
+    expect(toggle()).toHaveAttribute('aria-pressed', 'false');
+    await user.click(toggle());
+    await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
+    await user.click(within(journal()).getByText('Compte rendu'));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument());
+    expect(await screen.findByDisplayValue('Compte rendu')).toBeInTheDocument();
+  });
+
+  test('sans projet ni tâche, la page le dit ; un seul projet garde ses colonnes mais ouvre la vue', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha' }] });
+    render(<App />);
+    await within(board()).findByRole('heading', { name: 'À faire 0' });
+    await user.click(toggle());
+    const alpha = await within(await screen.findByRole('region', { name: 'Vue d’ensemble des projets' })).findByRole('listitem', { name: /^Alpha/ });
+    expect(alpha).toHaveTextContent('Aucune tâche');
+    expect(within(board()).getByRole('heading', { name: 'En cours 0' })).toBeInTheDocument();
+  });
+});
+
 describe('cartes empilées (tablette) et vues du téléphone', () => {
   /** Simule la largeur d'écran et relève les cartes amenées à l'écran. */
   function stackedScreen(stacked: boolean, phone = false) {
@@ -2598,6 +2871,23 @@ describe('cartes empilées (tablette) et vues du téléphone', () => {
 
   // jsdom n'applique pas la feuille de style : on lit les classes qui décident des panneaux.
   const columns = () => document.querySelector('.columns') as HTMLElement;
+
+  test('téléphone : « Vue d’ensemble » passe à la vue Écriture, un nœud ramène aux tâches', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Bravo' }], tasks: [{ id: 'tk_1', title: 'Relancer', project_id: 'pr_a' }] });
+    stackedScreen(true, true);
+    render(<App />);
+    const nav = (name: string) => within(screen.getByRole('group', { name: 'Panneaux latéraux' })).getByRole('button', { name });
+    await user.click(await within(board()).findByRole('button', { name: 'Vue d’ensemble' }));
+
+    expect(await screen.findByRole('region', { name: 'Vue d’ensemble des projets' })).toBeInTheDocument();
+    expect(nav('Écriture')).toHaveAttribute('aria-pressed', 'true');
+    expect(columns()).not.toHaveClass('hide-center');
+
+    await user.click(screen.getByRole('button', { name: 'Relancer — à faire' }));
+    expect(nav('Tâches')).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(document.activeElement).toBe(within(board()).getByRole('button', { name: 'Relancer' })));
+  });
   const nav = (name: string) => within(screen.getByRole('group', { name: 'Panneaux latéraux' })).getByRole('button', { name });
 
   test('téléphone : une vue à la fois, ouvrir une entrée passe à l’écriture, le retour ramène au journal', async () => {
@@ -2979,6 +3269,10 @@ describe('panneau Procédures', () => {
     render(<App />);
     const panel = await openPanel(user);
     const files = await within(panel).findByRole('list', { name: 'Pièces jointes de Dallage' });
+    // Même pictogramme que dans l'arbre du partage ; l'emplacement reste dit par la pastille.
+    expect(within(files).getByRole('button', { name: 'Consulter devis.pdf' }).querySelector('.file-icon.is-pdf')).toHaveTextContent('PDF');
+    expect(within(files).getAllByText('local seul')).toHaveLength(1);
+    expect(within(files).getByText('☁ Drive')).toBeInTheDocument();
 
     vi.mocked(window.confirm).mockReturnValueOnce(false);
     await user.click(within(files).getByRole('button', { name: 'Supprimer plan.pdf' }));
@@ -3253,6 +3547,26 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     fs.rmSync(share, { recursive: true, force: true });
   });
 
+  test('un fichier choisi pendant l’attente de la vue d’ensemble reste au centre', async () => {
+    await write('choisi.md', '# Fichier choisi');
+    render(<App />);
+    const file = await (await tree()).findByRole('button', { name: /^Ouvrir choisi\.md/ }, partage);
+    let finish!: (ok: boolean) => void;
+    let calls = 0;
+    const removeGuard = setLeaveGuard(() => ++calls === 1 ? new Promise<boolean>((resolve) => { finish = resolve; }) : Promise.resolve(true));
+    try {
+      fireEvent.click(await within(board()).findByRole('button', { name: 'Vue d’ensemble' }));
+      await waitFor(() => expect(calls).toBe(1));
+      fireEvent.click(file);
+      await screen.findByRole('region', { name: 'Fichier partagé' }, partage);
+      await act(async () => finish(true));
+      expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument();
+      expect(sharedEditor()).toBeInTheDocument();
+    } finally {
+      removeGuard();
+    }
+  });
+
   test('colonne Procédures masquée : aucune lecture du partage', async () => {
     localStorage.setItem('worklogs-show-procedures', '0');
     const spy = vi.spyOn(clientApi, 'sharedStatus');
@@ -3309,6 +3623,9 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     // Grisé dans l'arbre = WorkLogs ne l'ouvre pas lui-même : plus le cas d'un PDF.
     expect(await screen.findByRole('button', { name: /^Ouvrir notice pompe\.pdf/ })).not.toHaveClass('is-foreign');
     expect(screen.getByRole('button', { name: /^Ouvrir archive\.zip/ })).toHaveClass('is-foreign');
+    // Le type se lit au pictogramme (décoratif : le nom du bouton ne change pas).
+    expect(screen.getByRole('button', { name: /^Ouvrir notice pompe\.pdf/ }).querySelector('.file-icon.is-pdf')).toHaveTextContent('PDF');
+    expect(screen.getByRole('button', { name: /^Ouvrir archive\.zip/ }).querySelector('.file-icon.is-archive')).toHaveTextContent('ZIP');
 
     const editorRegion = await openFromTree('notice pompe.pdf');
     const frame = await within(editorRegion).findByTitle('Aperçu de notice pompe.pdf');
@@ -3416,7 +3733,11 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     fireEvent.change(field, { target: { value: 'procedure' } });
     const results = await screen.findByRole('region', { name: 'Résultats de la recherche' });
     expect(await within(results).findByText('2 résultats.', undefined, partage)).toBeInTheDocument();
-    fireEvent.click(within(results).getByRole('button', { name: 'Ouvrir Global/MURGAT INGENIERIE/00. PROCEDURE/Procédure filtration.md' }));
+    const hit = within(results).getByRole('button', { name: 'Ouvrir Global/MURGAT INGENIERIE/00. PROCEDURE/Procédure filtration.md' });
+    expect(hit.querySelector('.file-icon.is-text')).toHaveTextContent('MD');
+    // Le chemin s'abrège par le début (direction droite-à-gauche) sans que « 00. » se retourne : il est isolé.
+    expect(within(hit).getByText('Global/MURGAT INGENIERIE/00. PROCEDURE', { selector: 'bdi' })).toHaveAttribute('dir', 'ltr');
+    fireEvent.click(hit);
     const editorRegion = await screen.findByRole('region', { name: 'Fichier partagé' });
     expect(await within(editorRegion).findByLabelText('Contenu de Procédure filtration.md', undefined, partage)).toHaveValue('# Filtration\n');
 
@@ -3424,6 +3745,8 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     expect(field).toHaveValue('');
     expect(await screen.findByRole('list', { name: 'Contenu de Global/MURGAT INGENIERIE/00. PROCEDURE' }, partage)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Dossier 00. PROCEDURE' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Dossier 00. PROCEDURE' }).querySelector('.file-icon.is-folder')).toHaveClass('is-open');
+    expect(screen.getByRole('button', { name: 'Dossier Global' }).querySelector('.file-icon.is-folder')).toHaveClass('is-open');
   });
 
   test('une recherche échouée le dit dans ses résultats ; la suivante l’efface', async () => {

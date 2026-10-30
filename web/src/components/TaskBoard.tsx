@@ -1,6 +1,6 @@
-import { memo, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { COLUMNS, PRIORITIES, TASK_VIEWS, api, dayLabel, isOverdue, priorityLabel, subtasksMd, todayISO, type Category, type Entry, type EntrySummary, type Priority, type Project, type Status, type Task, type TaskView } from '../lib';
-import { AiCancelled, draftProcedure, MAX_SOURCE_DOCUMENTS, readAiSettings, suggestSearchTerms, suggestSubtasks, taskSuggestContext, type AiWorkContext, type DraftedProcedure } from '../ai-suggest';
+import { memo, useEffect, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
+import { COLUMNS, PRIORITIES, TASK_VIEWS, api, dayLabel, isOverdue, overviewOrder, priorityLabel, subtasksMd, todayISO, type Category, type Entry, type EntrySummary, type Priority, type Project, type Status, type Task, type TaskView } from '../lib';
+import { AiCancelled, draftProcedure, MAX_SOURCE_DOCUMENTS, prioritizeTasks, readAiSettings, suggestSearchTerms, suggestSubtasks, taskSuggestContext, type AiWorkContext, type DraftedProcedure, type TaskPriorityProposal } from '../ai-suggest';
 import { loadAiContext, readProjectAiBrief, selectedAiContext } from '../ai-context';
 import { findDocuments, type FoundDocument } from '../doc-finder';
 import { richToMarkdown } from '../rich-markdown';
@@ -25,6 +25,7 @@ export const TaskBoard = memo(function TaskBoard({
   projects,
   categories = [],
   categoryId = '',
+  search = '',
   grouped = false,
   view,
   onView,
@@ -32,6 +33,8 @@ export const TaskBoard = memo(function TaskBoard({
   onOpenShared,
   onProcedureCreated,
   onChanged,
+  onOverview,
+  overviewOpen = false,
 }: {
   tasks: Task[];
   entries: EntrySummary[];
@@ -39,6 +42,7 @@ export const TaskBoard = memo(function TaskBoard({
   projects: Project[];
   categories?: Category[];
   categoryId?: string;
+  search?: string;
   grouped?: boolean;
   view: TaskView | null;
   onView: (view: TaskView | null) => void;
@@ -48,8 +52,11 @@ export const TaskBoard = memo(function TaskBoard({
   /** Procédure tirée d'une tâche par l'IA, créée : l'app l'ouvre. */
   onProcedureCreated: (procedure: Entry) => void;
   onChanged: () => void;
+  /** Ouvre la vue d'ensemble des projets au centre ; `overviewOpen` : elle y est déjà. */
+  onOverview?: () => void;
+  overviewOpen?: boolean;
 }) {
-  const [over, setOver] = useState<Status | null>(null);
+  const [over, setOver] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const editingRef = useRef(editing);
@@ -64,6 +71,76 @@ export const TaskBoard = memo(function TaskBoard({
   // Une vue vide n'apprend rien : elle s'efface, sauf celle qu'on regarde.
   const views = TASK_VIEWS.filter((candidate) => counts.get(candidate.id)! > 0 || candidate.id === view);
 
+  // « Tout » avec plusieurs projets : les trois colonnes mêlaient les projets en une pile
+  // illisible. Une seule liste des tâches ouvertes, rangée (en cours, retards, épinglées,
+  // priorité, échéance), chaque carte disant son projet ; Terminé reste repliée dessous.
+  // Projet choisi, ou un seul projet : les colonnes et leur glisser-déposer.
+  const overview = !projectId && projects.length > 1;
+  // Priorités proposées par l'IA, par tâche, avec leur rang : relues ici, écrites à « Appliquer ».
+  const [proposal, setProposal] = useState<Map<string, TaskPriorityProposal & { rank: number }> | null>(null);
+  const [prioritizing, setPrioritizing] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [prioritizeError, setPrioritizeError] = useState('');
+  const aiRequest = useRef<AbortController | null>(null);
+  const open = tasks.filter((task) => task.status !== 'done' && (!active || active.match(task, today)));
+  // Les champs transmis sont la base de la proposition : une modification reçue depuis
+  // l'interface ou un autre appareil la rend périmée, même si le filtre n'a pas changé.
+  const taskSnapshot = JSON.stringify(open.map((task) => [task.id, task.title, task.status, task.priority, task.due_date, task.pinned, task.created_at, task.project_id, projects.find((project) => project.id === task.project_id)?.name, task.documents?.length ?? 0]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
+  useEffect(() => () => aiRequest.current?.abort(), []);
+  // Un autre filtre ou des tâches modifiées : la proposition ne les concerne plus.
+  useEffect(() => {
+    aiRequest.current?.abort();
+    setProposal(null);
+  }, [projectId, categoryId, search, view, taskSnapshot]);
+  useEffect(() => { setPrioritizeError(''); }, [projectId, categoryId, search, view]);
+  const stopAi = () => aiRequest.current?.abort();
+  const changes = proposal ? open.filter((task) => proposal.get(task.id) && proposal.get(task.id)!.priority !== task.priority).length : 0;
+  const prioritize = async () => {
+    if (prioritizing) return;
+    setPrioritizing(true);
+    setPrioritizeError('');
+    try {
+      const request = new AbortController();
+      aiRequest.current = request;
+      const proposed = await prioritizeTasks({ ...readAiSettings(), signal: request.signal }, overviewOrder(open).map((task) => ({
+        id: task.id, title: task.title, status: task.status, priority: task.priority, due_date: task.due_date, pinned: task.pinned, created_at: task.created_at,
+        project: projects.find((project) => project.id === task.project_id)?.name,
+        projectId: task.project_id ?? undefined,
+        projectBrief: readProjectAiBrief(task.project_id),
+        documents: task.documents?.length ?? 0,
+      })));
+      if (!request.signal.aborted) setProposal(new Map(proposed.map((item, rank) => [item.id, { ...item, rank }])));
+    } catch (e) {
+      if (!(e instanceof AiCancelled)) setPrioritizeError((e as Error).message);
+    } finally {
+      setPrioritizing(false);
+    }
+  };
+  const applyProposal = async () => {
+    if (!proposal || applying) return;
+    setApplying(true);
+    setPrioritizeError('');
+    try {
+      for (const task of open) {
+        const item = proposal.get(task.id);
+        if (item && item.priority !== task.priority) await api.updateTask(task.id, { priority: item.priority });
+      }
+      setProposal(null);
+      onChanged();
+    } catch (e) {
+      setPrioritizeError((e as Error).message);
+      // Des écritures précédentes peuvent avoir réussi avant l'échec d'une autre.
+      onChanged();
+    } finally {
+      setApplying(false);
+    }
+  };
+  const lanes: { id: string; label: string; status: Status | null; tasks: Task[] }[] = overview
+    ? [
+      { id: 'open', label: 'À faire · En cours', status: null, tasks: overviewOrder(open, proposal ?? undefined) },
+      { id: 'done', label: 'Terminé', status: 'done', tasks: tasks.filter((task) => task.status === 'done') },
+    ]
+    : COLUMNS.map((column) => ({ id: column.id, label: column.label, status: column.id, tasks: tasks.filter((task) => task.status === column.id) }));
 
   const drop = async (event: React.DragEvent, status: Status, position: number) => {
     event.preventDefault();
@@ -101,30 +178,62 @@ export const TaskBoard = memo(function TaskBoard({
             ))}
           </div>
         )}
+
+        <div className="board-tools">
+          <AiMenu label="Assistance IA des tâches" busy={prioritizing ? 'Priorisation…' : null} onCancel={stopAi}>
+            <button
+              role="menuitem"
+              type="button"
+              disabled={prioritizing || open.length === 0}
+              title="Envoie au service IA configuré en Paramètres les titres, projets, statuts, priorités, échéances, épingles, dates de création et nombres de documents des tâches ouvertes, ainsi que le profil et les repères IA des projets ; jamais le contenu des documents. Propose une priorité et sa raison par tâche, à relire avant d’appliquer."
+              onClick={() => void prioritize()}
+            >
+              Prioriser les tâches
+            </button>
+          </AiMenu>
+          {onOverview && (
+            <button className={'ghost' + (overviewOpen ? ' is-on' : '')} type="button" aria-pressed={overviewOpen} title="L’avancement de chaque projet, au centre" onClick={onOverview}>
+              Vue d’ensemble
+            </button>
+          )}
+        </div>
+        {prioritizeError && <p className="error" role="alert">{prioritizeError}</p>}
+        {proposal && (
+          <div className="ai-proposal" role="region" aria-label="Priorités proposées par l’IA">
+            <span>{changes === 0 ? 'L’IA confirme les priorités actuelles.' : `${changes} priorité${changes > 1 ? 's' : ''} à changer`}</span>
+            <button className="task-primary" type="button" disabled={applying || changes === 0} onClick={() => void applyProposal()}>
+              {applying ? 'Application…' : 'Appliquer'}
+            </button>
+            <button className="ghost" type="button" disabled={applying} onClick={() => setProposal(null)}>
+              Ignorer
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Seule la liste défile : saisie et vues restent en tête, sans jamais passer
           devant les cartes (elles étaient collantes, et les cartes défilaient dessous). */}
-      <div className="board-lists">
+      <div className={'board-lists' + (overview ? ' is-overview' : '')}>
         {active && counts.get(active.id) === 0 && <p className="empty">{active.empty}</p>}
-        {COLUMNS.map((column) => {
-          const inColumn = tasks.filter((t) => t.status === column.id);
-          const shown = active ? inColumn.filter((task) => active.match(task, today)) : inColumn;
+        {lanes.map((lane) => {
+          const shown = active ? lane.tasks.filter((task) => active.match(task, today)) : lane.tasks;
           // Une vue ne garde que les colonnes où elle trouve quelque chose.
           if (active && shown.length === 0) return null;
+          // La liste de « Tout » mêle deux statuts : rien ne s'y dépose.
+          const target = lane.status;
           return (
             <div
-              key={column.id}
-              className={'column' + (over === column.id ? ' is-over' : '')}
-              onDragOver={(e) => {
+              key={lane.id}
+              className={'column' + (over === lane.id ? ' is-over' : '')}
+              onDragOver={target ? (e) => {
                 e.preventDefault();
-                setOver(column.id);
-              }}
-              onDragLeave={() => setOver((c) => (c === column.id ? null : c))}
-              onDrop={(e) => drop(e, column.id, Number.MAX_SAFE_INTEGER)}
+                setOver(lane.id);
+              } : undefined}
+              onDragLeave={target ? () => setOver((c) => (c === lane.id ? null : c)) : undefined}
+              onDrop={target ? (e) => drop(e, target, Number.MAX_SAFE_INTEGER) : undefined}
             >
-              <h2 aria-label={column.id === 'done' ? column.label : undefined}>
-                {column.id === 'done' ? (
+              <h2 aria-label={lane.id === 'done' ? lane.label : undefined}>
+                {lane.id === 'done' ? (
                   <button
                     className="completed-toggle"
                     type="button"
@@ -137,22 +246,27 @@ export const TaskBoard = memo(function TaskBoard({
                     <span className="count">{shown.length}</span>
                   </button>
                 ) : (
-                  <>{column.label} <span className="count">{shown.length}</span></>
+                  <>{lane.label} <span className="count">{shown.length}</span></>
                 )}
               </h2>
               <ul
-                id={column.id === 'done' ? 'completed-task-list' : undefined}
-                hidden={column.id === 'done' && !showCompleted}
+                id={lane.id === 'done' ? 'completed-task-list' : undefined}
+                hidden={lane.id === 'done' && !showCompleted}
               >
                 {(grouped ? groupByCategory(shown, categories, projects) : [{ id: '', label: '', items: shown }]).map((group) => {
                   const cards = group.items.map((task) => (
-                    <li key={task.id}>
+                    <li key={task.id} id={'task-' + task.id}>
                       <TaskCard
                         task={task}
                         tasks={tasks}
                         entries={entries}
                         projects={projects}
                         categories={categories}
+                        // Groupées, les cartes sont déjà sous un titre « Projet · Catégorie ».
+                        showProject={overview && !grouped}
+                        showStatus={overview}
+                        proposal={proposal?.get(task.id)}
+                        draggable={!overview}
                         editing={editing === task.id}
                         form={editing === task.id && editingForm ? editingForm : taskForm(task)}
                         onFormChange={(next) => { if (editingRef.current === task.id) setEditingForm((current) => typeof next === 'function' ? next(current || taskForm(task)) : next); }}
@@ -163,7 +277,7 @@ export const TaskBoard = memo(function TaskBoard({
                         onProcedureCreated={onProcedureCreated}
                         onChanged={onChanged}
                         // Position dans la colonne entière : filtres et groupes cachent des voisines.
-                        onDrop={(e) => drop(e, column.id, task.position)}
+                        onDrop={target ? (e) => drop(e, target, task.position) : undefined}
                       />
                     </li>
                   ));
@@ -176,7 +290,7 @@ export const TaskBoard = memo(function TaskBoard({
                 })}
 
               </ul>
-              {inColumn.length === 0 && <p className="empty-column">Déposer ici</p>}
+              {lane.tasks.length === 0 && <p className="empty-column">{target ? 'Déposer ici' : 'Aucune tâche ouverte.'}</p>}
             </div>
           );
         })}
@@ -216,6 +330,10 @@ function TaskCard({
   entries,
   projects,
   categories,
+  showProject = false,
+  showStatus = false,
+  proposal,
+  draggable = true,
   editing,
   form,
   onFormChange: setForm,
@@ -234,6 +352,12 @@ function TaskCard({
   entries: EntrySummary[];
   projects: Project[];
   categories: Category[];
+  /** Tous les projets affichés : la carte porte le sien et dit « En cours » (aucune colonne ne le dit). */
+  showProject?: boolean;
+  showStatus?: boolean;
+  /** Priorité proposée par l'IA et sa raison, tant que la proposition est ouverte. */
+  proposal?: { priority: Priority; reason: string };
+  draggable?: boolean;
   editing: boolean;
   form: TaskEditForm;
   onFormChange: Dispatch<SetStateAction<TaskEditForm>>;
@@ -244,7 +368,7 @@ function TaskCard({
   onOpenShared: (path: string) => void;
   onProcedureCreated: (procedure: Entry) => void;
   onChanged: () => void;
-  onDrop: (event: React.DragEvent) => void;
+  onDrop?: (event: React.DragEvent) => void;
 }) {
   const [editError, setEditError] = useState('');
   const [editSaving, setEditSaving] = useState(false);
@@ -525,6 +649,7 @@ function TaskCard({
     }
   };
   const projectName = (id: string | null) => projects.find((project) => project.id === id)?.name;
+  const project = projects.find((candidate) => candidate.id === task.project_id);
 
   const entryCreator = creatingEntry ? (
     <form
@@ -877,8 +1002,8 @@ function TaskCard({
   return (
     <div
       className={'card' + (task.pinned ? ' is-pinned' : '') + (done ? ' is-done' : '')}
-      draggable
-      onDragStart={(e) => e.dataTransfer.setData(DRAG_TYPE, task.id)}
+      draggable={draggable}
+      onDragStart={draggable ? (e) => e.dataTransfer.setData(DRAG_TYPE, task.id) : undefined}
       onDrop={onDrop}
     >
       <div className="card-top">
@@ -893,6 +1018,19 @@ function TaskCard({
           {task.title}
         </button>
         <span className="card-top-actions">
+          {/* Sans glisser-déposer : un clic met en cours ou remet à faire, la carte va au bas de sa colonne (comme « Statut »). */}
+          {!done && (
+            <button
+              className={'icon doing' + (task.status === 'doing' ? ' is-on' : '')}
+              type="button"
+              aria-label={task.status === 'doing' ? `Remettre à faire ${task.title}` : `Mettre en cours ${task.title}`}
+              aria-pressed={task.status === 'doing'}
+              title={task.status === 'doing' ? 'Remettre à faire' : 'Mettre en cours'}
+              onClick={async () => { await api.moveTask(task.id, task.status === 'doing' ? 'todo' : 'doing', Number.MAX_SAFE_INTEGER); onChanged(); }}
+            >
+              ▶
+            </button>
+          )}
           <button
             className={'icon pin' + (task.pinned ? ' is-on' : '')}
             type="button"
@@ -919,6 +1057,19 @@ function TaskCard({
         </span>
       </div>
       <div className="card-meta">
+        {/* « Tout » mêle les projets : chaque carte dit le sien, dans sa couleur. */}
+        {showProject && project && (
+          <span className="card-project" style={{ '--project': project.color } as CSSProperties} title={`Projet ${project.name}`}>
+            <span className="dot" aria-hidden="true" />
+            {project.name}
+          </span>
+        )}
+        {showStatus && task.status === 'doing' && (
+          <span className="status-doing" title="En cours">
+            <span className="dot" aria-hidden="true" />
+            En cours
+          </span>
+        )}
         <CategoryBadge categories={categories} categoryId={task.category_id} />
         {/* « Normale » sur chaque carte n'apprenait rien : seul l'écart se signale. */}
         {task.priority && task.priority !== 'normal' && (
@@ -936,7 +1087,14 @@ function TaskCard({
             {dayLabel(task.due_date)}
           </span>
         )}
+        {proposal && proposal.priority !== task.priority && (
+          <span className={'priority is-proposed is-' + proposal.priority} title="Priorité proposée par l’IA, écrite à « Appliquer »">
+            <span aria-hidden="true">✨ </span>
+            {priorityLabel(proposal.priority)} proposée
+          </span>
+        )}
       </div>
+      {proposal?.reason && <p className="ai-reason">{proposal.reason}</p>}
       {documentControls}
       {entryCreator}
       {aiContext && !creatingEntry && <AiContextDetails context={aiContext} excludedIds={excludedSourceIds} onExcludedChange={excludeSources} />}

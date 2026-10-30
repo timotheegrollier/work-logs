@@ -14,6 +14,8 @@ import {
   draftProcedure,
   extractEntryActions,
   suggestEntryTasks,
+  prioritizeTasks,
+  type PrioritizableTask,
   MAX_PROOFREAD_CHARS,
   parseChecklist,
   parseDraftedProcedure,
@@ -1061,5 +1063,86 @@ describe('tableau JSON entouré de texte', () => {
     }
     fetch.mockImplementationOnce(async () => aiResponse('Voici les mots :\n["imprimante", "pilote"]'));
     await expect(suggestSearchTerms(settings, { title: 'T' })).resolves.toEqual(['imprimante', 'pilote']);
+  });
+});
+
+describe('priorités de la liste des tâches', () => {
+  const task = (id: string, extra: Partial<PrioritizableTask> = {}): PrioritizableTask =>
+    ({ id, title: `Tâche ${id}`, status: 'todo', priority: 'normal', due_date: null, pinned: 0, created_at: '2026-10-01T08:00:00.000Z', ...extra });
+  const requestBody = (fetch: ReturnType<typeof vi.fn>) => JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+
+  test('envoie les champs enregistrés des tâches ouvertes et les repères de chaque projet une fois, jamais les terminées', async () => {
+    const fetch = vi.fn(async () => aiResponse('[{"n":1,"priority":"high","reason":"En retard."}]'));
+    vi.stubGlobal('fetch', fetch);
+    const tasks = [
+      task('a', { title: 'Commander les alevins', project: 'Ferme', projectBrief: 'Pisciculture en eau douce', due_date: '2026-10-28', pinned: 1, documents: 2, status: 'doing', priority: 'high' }),
+      task('b', { project: 'Ferme', projectBrief: 'Pisciculture en eau douce', priority: 'low' }),
+      task('c', { title: 'Déjà finie', status: 'done' }),
+    ];
+    await prioritizeTasks({ ...settings, profile: 'Dev solo' }, tasks, { today: '2026-10-30' });
+    const body = requestBody(fetch);
+    expect(body.messages[0].content).toContain('Réserve high à un tiers des tâches au plus');
+    expect(body.messages[1].content).toContain('Profil : Dev solo');
+    expect(body.messages[1].content).toContain('Date du jour : 2026-10-30');
+    expect(body.messages[1].content).toContain('1 · Commander les alevins · Ferme · en cours · haute · 2026-10-28 · épinglée · 2 document(s) · 2026-10-01');
+    expect(body.messages[1].content).toContain('2 · Tâche b · Ferme · à faire · basse · sans échéance · non épinglée · 0 document(s)');
+    expect(body.messages[1].content).not.toContain('\na · ');
+    expect(body.messages[1].content.split('Repères du projet « Ferme »')).toHaveLength(2);
+    expect(body.messages[1].content).not.toContain('Déjà finie');
+    expect(body.max_tokens).toBe(8000);
+  });
+
+  test('des projets homonymes transmettent chacun leurs repères aux bonnes tâches sans envoyer leurs identifiants', async () => {
+    const fetch = vi.fn(async () => aiResponse('[{"n":1,"priority":"high"}]'));
+    vi.stubGlobal('fetch', fetch);
+    await prioritizeTasks(settings, [
+      task('a', { project: 'Atelier', projectId: 'pr_secret_a', projectBrief: 'Maintenance des pompes' }),
+      task('b', { project: 'Atelier', projectId: 'pr_secret_b', projectBrief: 'Logiciel de facturation' }),
+      task('c', { project: 'Atelier', projectId: 'pr_secret_a', projectBrief: 'Maintenance des pompes' }),
+    ]);
+    const prompt = requestBody(fetch).messages[1].content as string;
+    expect(prompt).toContain('Repères du projet « [projet 1] Atelier » : Maintenance des pompes');
+    expect(prompt).toContain('Repères du projet « [projet 2] Atelier » : Logiciel de facturation');
+    expect(prompt).toContain('1 · Tâche a · [projet 1] Atelier ·');
+    expect(prompt).toContain('2 · Tâche b · [projet 2] Atelier ·');
+    expect(prompt).toContain('3 · Tâche c · [projet 1] Atelier ·');
+    expect(prompt.split('Maintenance des pompes')).toHaveLength(2);
+    expect(prompt).not.toContain('pr_secret_');
+  });
+
+  test('rend les priorités dans l’ordre proposé ; numéros inconnus, doublons et priorités invalides sont ignorés, la raison bornée', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse(JSON.stringify([
+      { n: 2, priority: 'high', reason: '  En retard\n depuis  hier ' },
+      { n: 9, priority: 'high', reason: 'Inconnue' },
+      { n: '1', priority: 'urgente', reason: 'Niveau inconnu' },
+      { n: '1', priority: 'low', reason: 'x'.repeat(300) },
+      { n: 2, priority: 'low' },
+      { n: 3, priority: 'normal' },
+      'pas un objet',
+    ]))));
+    await expect(prioritizeTasks(settings, [task('a'), task('b'), task('c', { status: 'done' })])).resolves.toEqual([
+      { id: 'b', priority: 'high', reason: 'En retard depuis hier' },
+      { id: 'a', priority: 'low', reason: 'x'.repeat(160) },
+    ]);
+  });
+
+  test('sans tâche ouverte rien ne part ; réponse illisible ou sans tâche reconnue signalée', async () => {
+    const fetch = vi.fn(async () => aiResponse('bonjour'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(prioritizeTasks(settings, [task('a', { status: 'done' })])).rejects.toThrow(/Aucune tâche ouverte/);
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(prioritizeTasks(settings, [task('a')])).rejects.toThrow(/illisible/);
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse('[{"n":7,"priority":"high"}]')));
+    await expect(prioritizeTasks(settings, [task('a')])).rejects.toThrow(/aucune tâche reconnue/);
+  });
+
+  test('au-delà de soixante tâches ouvertes, refus sans appel ; soixante partent', async () => {
+    const fetch = vi.fn(async () => aiResponse('[{"n":60,"priority":"low","reason":""}]'));
+    vi.stubGlobal('fetch', fetch);
+    const tasks = Array.from({ length: 61 }, (_, index) => task(`t${index}`));
+    await expect(prioritizeTasks(settings, tasks)).rejects.toThrow(/Trop de tâches à prioriser \(61, 60 au plus\)/);
+    expect(fetch).not.toHaveBeenCalled();
+    await expect(prioritizeTasks(settings, tasks.slice(1))).resolves.toEqual([{ id: 't60', priority: 'low', reason: '' }]);
+    expect(requestBody(fetch).messages[1].content).toContain('\n60 · Tâche t60 · ');
   });
 });

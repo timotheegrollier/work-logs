@@ -116,7 +116,7 @@ export function saveAiSettings(settings: AiSettings): void {
   }
 }
 
-import type { EntrySummary, Priority, Project, Task } from './lib';
+import type { EntrySummary, Priority, Project, Status, Task } from './lib';
 
 /** Repères partagés par les gestes IA, limités au projet et aux sources choisies. */
 export interface AiWorkContext {
@@ -1079,4 +1079,113 @@ export async function suggestSearchTerms(
   const unique = terms.filter((term, index) => terms.findIndex((other) => foldTerm(other) === foldTerm(term)) === index);
   if (unique.length === 0) throw new AiError('Réponse IA illisible : réessaie.');
   return unique.slice(0, MAX_SEARCH_TERMS);
+}
+
+// ---------------------------------------------------------------- priorités de la liste des tâches
+/** Ce que l'IA sait d'une tâche pour la classer : ses champs enregistrés, jamais un contenu. */
+export interface PrioritizableTask {
+  id: string;
+  title: string;
+  status: Status;
+  priority: Priority;
+  due_date: string | null;
+  pinned: 0 | 1;
+  created_at: string;
+  /** Nom du projet, quand elle en a un. */
+  project?: string;
+  /** Identifiant local, pour distinguer des projets homonymes ; jamais envoyé. */
+  projectId?: string;
+  /** Repères IA du projet (Paramètres), joints une fois par projet. */
+  projectBrief?: string;
+  /** Documents liés : une tâche documentée est souvent engagée. */
+  documents?: number;
+}
+export interface TaskPriorityProposal {
+  id: string;
+  priority: Priority;
+  /** Une phrase du modèle, à lire avant d'appliquer ; vide si elle manque. */
+  reason: string;
+}
+/** Au-delà, la réponse coûte plus qu'elle n'aide : on refuse avant tout appel. */
+export const MAX_PRIORITIZED_TASKS = 60;
+const MAX_REASON_LENGTH = 160;
+const PRIORITY_WORDS: Record<Priority, string> = { high: 'haute', normal: 'normale', low: 'basse' };
+
+export function buildPrioritizePrompt(tasks: PrioritizableTask[], options: { profile?: string; today?: string } = {}): { system: string; user: string } {
+  const sections: string[] = [];
+  if (options.profile?.trim()) sections.push(`Profil : ${options.profile.trim()}`);
+  sections.push(`Date du jour : ${validDueDate(options.today) ?? localToday()}`);
+  // Les noms ne sont pas uniques : si deux coïncident (y compris après troncature),
+  // numéroter les projets pour associer les bons repères sans envoyer les identifiants.
+  const projectKey = (task: PrioritizableTask) => task.projectId ? `id:${task.projectId}` : `name:${task.project}`;
+  const projects = new Map<string, { name: string; brief?: string }>();
+  for (const task of tasks) {
+    if (!task.project) continue;
+    const key = projectKey(task);
+    const project = projects.get(key);
+    if (!project) projects.set(key, { name: truncate(task.project, 60), brief: task.projectBrief?.trim() || undefined });
+    else if (!project.brief && task.projectBrief?.trim()) project.brief = task.projectBrief;
+  }
+  const counts = new Map<string, number>();
+  for (const project of projects.values()) counts.set(project.name, (counts.get(project.name) ?? 0) + 1);
+  const ambiguous = [...counts.values()].some((count) => count > 1);
+  const labels = new Map<string, string>();
+  let ordinal = 0;
+  for (const [key, project] of projects) {
+    ordinal += 1;
+    const label = ambiguous ? `[projet ${ordinal}] ${project.name}` : project.name;
+    labels.set(key, label);
+    if (project.brief) sections.push(`Repères du projet « ${label} » : ${truncate(project.brief, MAX_PROJECT_BRIEF)}`);
+  }
+  // Numérotées : un modèle recopie mal un identifiant, jamais un petit nombre.
+  sections.push(`Tâches ouvertes (une par ligne : numéro · titre · projet · statut · priorité actuelle · échéance · épingle · documents liés · créée le) :\n${tasks.map((task, index) => [
+    index + 1,
+    truncate(task.title, MAX_TITLE_LENGTH),
+    task.project ? labels.get(projectKey(task)) : 'sans projet',
+    task.status === 'doing' ? 'en cours' : 'à faire',
+    PRIORITY_WORDS[task.priority],
+    task.due_date ?? 'sans échéance',
+    task.pinned ? 'épinglée' : 'non épinglée',
+    `${task.documents ?? 0} document(s)`,
+    task.created_at.slice(0, 10),
+  ].join(' · ')).join('\n')}`);
+  return {
+    system: `Tu classes par priorité les tâches ouvertes de l'utilisateur dans WorkLogs, son journal de travail personnel.
+${REFERENCE_RULE}
+Propose pour chaque tâche une priorité : high (à faire en premier : échéance dépassée ou proche, bloquante, fort impact), normal (à faire sans urgence particulière) ou low (secondaire, peut attendre). Une échéance dépassée ou dans les deux jours vaut high, sauf tâche manifestement mineure ; une tâche épinglée compte comme importante pour l'utilisateur ; une tâche en cours garde au moins normal ; sans échéance ni indice, choisis normal. Réserve high à un tiers des tâches au plus et répartis ton jugement entre les projets sans en favoriser un. Ne crée, ne supprime et ne renomme aucune tâche ; n'invente aucun fait.
+Réponds uniquement avec un tableau JSON, sans enveloppe ni commentaire, classé de la tâche à faire en premier à celle à faire en dernier, une entrée par tâche. Chaque objet a exactement « n » (le numéro de la tâche), « priority » (high, normal ou low) et « reason » (une courte phrase en français, ${MAX_REASON_LENGTH} caractères au plus, qui dit ce qui justifie la priorité : échéance, retard, impact, dépendance).`,
+    user: sections.join('\n\n'),
+  };
+}
+
+/**
+ * Un clic = un appel : les champs enregistrés des tâches ouvertes et les repères de
+ * leurs projets partent, jamais un contenu de note. Rend, dans l'ordre proposé, une
+ * priorité et sa raison par tâche reconnue ; une tâche absente de la réponse garde la sienne.
+ */
+export async function prioritizeTasks(
+  settings: AiSettings,
+  tasks: PrioritizableTask[],
+  options: { timeoutMs?: number; today?: string } = {}
+): Promise<TaskPriorityProposal[]> {
+  const open = tasks.filter((task) => task.status !== 'done');
+  if (open.length === 0) throw new AiError('Aucune tâche ouverte à prioriser.');
+  if (open.length > MAX_PRIORITIZED_TASKS) throw new AiError(`Trop de tâches à prioriser (${open.length}, ${MAX_PRIORITIZED_TASKS} au plus) : filtre une vue rapide ou une catégorie, ou termines-en.`);
+  const prompt = buildPrioritizePrompt(open, { profile: settings.profile, today: options.today });
+  const reply = await postChatCompletions(settings, 'la priorisation des tâches', prompt.system, prompt.user, DOCUMENT_MAX_TOKENS, options.timeoutMs ?? AI_TIMEOUT_MS);
+  const parsed = parseJsonArray(reply);
+  if (!parsed) throw new AiError('Réponse IA illisible : les priorités doivent être un tableau JSON. Réessaie.');
+  const pending = new Map(open.map((task, index) => [index + 1, task.id]));
+  const proposals: TaskPriorityProposal[] = [];
+  // Chaque champ est vérifié ici : le tableau vient du modèle, pas d'un type sûr.
+  for (const item of parsed as Record<string, unknown>[]) {
+    const id = item && typeof item === 'object' ? pending.get(Number(item.n)) : undefined;
+    if (!id) continue;
+    if (item.priority !== 'high' && item.priority !== 'normal' && item.priority !== 'low') continue;
+    pending.delete(Number(item.n));
+    const reason = typeof item.reason === 'string' ? item.reason.trim().replace(/\s+/g, ' ').slice(0, MAX_REASON_LENGTH) : '';
+    proposals.push({ id, priority: item.priority, reason });
+  }
+  if (proposals.length === 0) throw new AiError('Réponse IA illisible : aucune tâche reconnue. Réessaie.');
+  return proposals;
 }

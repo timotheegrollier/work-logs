@@ -30,6 +30,11 @@ test('ouvre automatiquement l’éditeur Google dans WorkLogs et actualise la co
   await waitFor(() => expect(bridge.open).toHaveBeenCalledWith(expect.objectContaining({ documentId: 'doc-1', tabId: 't.2' })));
   expect(screen.queryByRole('textbox', { name: 'Contenu du document' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /Ouvrir dans Google Docs/ })).not.toBeInTheDocument();
+  const nativeStatus = within(screen.getByLabelText('État de l’éditeur Google'));
+  expect(await nativeStatus.findByRole('status')).toHaveTextContent('Connecte ton compte Google');
+  fireEvent.click(nativeStatus.getByRole('button', { name: 'Recharger l’éditeur' }));
+  const opened = bridge.open.mock.calls[0] as unknown as [{ token: string }];
+  expect(bridge.reload).toHaveBeenCalledWith(opened[0].token);
   fireEvent.click(screen.getByRole('button', { name: 'Copie locale' }));
   await waitFor(() => expect(pull).toHaveBeenCalledWith('doc-1', 't.2'));
   expect(await screen.findByRole('textbox', { name: 'Contenu du document' })).toHaveTextContent('Depuis Google');
@@ -48,6 +53,11 @@ test('conserve le brouillon avant l’éditeur complet et bloque l’ouverture s
   push.mockResolvedValue({ ...entry, google_sync: { ...entry.google_sync!, dirty: false } });
   fireEvent.click(screen.getByRole('button', { name: 'Envoyer le brouillon et ouvrir l’éditeur complet' }));
   await waitFor(() => expect(bridge.open).toHaveBeenCalled());
+});
+
+test('un ancien document Google sans contenu riche garde le lien vers son onglet', () => {
+  render(<EntryEditor entry={{ ...entry, content_json: null, google_sync: { ...entry.google_sync!, tab_id: 't.2' } }} projects={[]} onChanged={() => {}} onDeleted={() => {}} />);
+  expect(screen.getByRole('link', { name: /Ouvrir dans Google Docs/ })).toHaveAttribute('href', expect.stringContaining('tab=t.2'));
 });
 
 test('un refus de quitter Google garde son éditeur et ne recharge aucune copie locale', async () => {

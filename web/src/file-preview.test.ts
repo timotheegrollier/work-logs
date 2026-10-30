@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { imageMime, looksLikePdf, previewKind, previewNotice } from './file-preview';
+import { fileFamily, imageMime, looksLikePdf, previewKind, previewNotice } from './file-preview';
 
 describe('classement des pièces jointes pour l’aperçu', () => {
   test('un PDF se reconnaît à ses octets, en-tête dans le premier Ko', () => {
@@ -21,6 +21,20 @@ describe('classement des pièces jointes pour l’aperçu', () => {
     // Du HTML, même dans un fichier nommé « image.png » : ce n'est pas une image.
     expect(imageMime(new TextEncoder().encode('<script>alert(1)</script>'))).toBeNull();
     expect(imageMime(new Uint8Array())).toBeNull();
+  });
+
+  test('la famille d’un fichier, pour son pictogramme : extension seule, sans casse', () => {
+    expect(fileFamily('Fiche technique.docx')).toBe('word');
+    expect(fileFamily('vieux.DOC')).toBe('word');
+    expect(fileFamily('Inventaire.xlsx')).toBe('excel');
+    expect(fileFamily('relevés.csv')).toBe('excel');
+    expect(fileFamily('Présentation.pptx')).toBe('powerpoint');
+    expect(fileFamily('notice pompe.pdf')).toBe('pdf');
+    expect(fileFamily('schéma.png')).toBe('image');
+    expect(fileFamily('consignes.md')).toBe('text');
+    expect(fileFamily('archive.zip')).toBe('archive');
+    expect(fileFamily('inconnu.xyz')).toBe('other');
+    expect(fileFamily('sans extension')).toBe('other');
   });
 
   test('reconnaît images, PDF et texte sur l’extension', () => {

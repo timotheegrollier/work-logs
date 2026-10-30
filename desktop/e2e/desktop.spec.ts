@@ -446,8 +446,21 @@ test('Google intégré : outils dans le canevas, isolation, dimensions et copie 
   // Une navigation interdite ne reçoit ni page locale, ni privilège WorkLogs.
   await googlePage.getByRole('link', { name: 'Interdit' }).click();
   expect(googlePage.url()).toContain('docs.google.com');
+  const headingBefore = (await page.getByRole('heading', { name: 'Google intégré', exact: true }).boundingBox())!;
+  const statusBefore = await page.getByLabel('État de l’éditeur Google').evaluate(element => {
+    const style = getComputedStyle(element);
+    return { padding: style.padding, background: style.backgroundColor, border: style.borderRadius };
+  });
   await page.getByRole('button', { name: 'Copie locale', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Contenu du document' })).toHaveText('Copie actualisée');
+  const headingAfter = (await page.getByRole('heading', { name: 'Google intégré', exact: true }).boundingBox())!;
+  expect(Math.abs(headingAfter.x - headingBefore.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(headingAfter.y - headingBefore.y)).toBeLessThanOrEqual(1);
+  const statusAfter = await page.getByLabel('Synchronisation Google Drive').evaluate(element => {
+    const style = getComputedStyle(element);
+    return { padding: style.padding, background: style.backgroundColor, border: style.borderRadius };
+  });
+  expect(statusAfter).toEqual(statusBefore);
   await expect.poll(() => googlePage.isClosed()).toBe(true);
 });
 

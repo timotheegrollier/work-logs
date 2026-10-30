@@ -48,6 +48,26 @@ test('Google Docs : onglets nombreux, édition autour des objets et dans les cel
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/');
   await expect(page.getByRole('tab')).toHaveCount(8);
+  // La copie Google a le même cadre et la même barre que l'éditeur riche du journal.
+  const richGeometry = await page.locator('.google-editor .rich-content').evaluate(element => {
+    const reference = document.createElement('div');
+    reference.className = 'rich-content';
+    document.querySelector('.center')!.append(reference);
+    const read = (node: Element) => {
+      const style = getComputedStyle(node);
+      return { padding: style.padding, minHeight: style.minHeight, shadow: style.boxShadow };
+    };
+    const result = { actual: read(element), reference: read(reference) };
+    reference.remove();
+    return result;
+  });
+  expect(richGeometry.actual).toEqual(richGeometry.reference);
+  await expect(page.getByRole('heading', { name: 'Projet Atlas', exact: true })).toHaveCSS('font-size', '22px');
+  const sync = page.getByLabel('Synchronisation Google Drive');
+  await expect(sync.getByRole('button', { name: 'Enregistrer sur Drive' })).toBeVisible();
+  await expect(sync.getByRole('button', { name: 'Recharger depuis Google' })).toBeVisible();
+  await expect(sync.getByRole('link', { name: /Ouvrir dans Google Docs/ })).toHaveAttribute('href', /tab=t\.0/);
+  await expect(sync.getByLabel('Autres actions du document')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Tâches' })).toBeHidden();
   const leftHandle = page.getByRole('separator', { name: 'Redimensionner la colonne de gauche' });
   const rightHandle = page.getByRole('separator', { name: 'Redimensionner la colonne de droite' });
@@ -110,6 +130,8 @@ test('Google Docs : onglets nombreux, édition autour des objets et dans les cel
   await expect(leftHandle).toBeHidden();
   await expect(rightHandle).toBeHidden();
   await expect(page.getByRole('tab', { name: /Vue d’ensemble/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Enregistrer sur Drive' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Ouvrir dans Google Docs/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('google-docs-mobile.png'), fullPage: true });
 });

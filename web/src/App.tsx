@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import './styles.css';
-import { api, emptyDocument, taskViewMatch, todayISO, type AppState, type Entry, type GoogleStatus, type GoogleSyncStatus, type TaskView } from './lib';
+import { api, emptyDocument, taskViewMatch, todayISO, type AppState, type Entry, type GoogleStatus, type GoogleSyncStatus, type Task, type TaskView } from './lib';
 import { startWebSync, subscribeWebSync } from './store/sync-web';
 import { EntryList } from './components/EntryList';
 import { ProcedureList } from './components/ProcedureList';
@@ -9,6 +9,7 @@ import { EntryEditor } from './components/EntryEditor';
 import { Logo } from './components/Logo';
 import { UpdateBar } from './components/UpdateBar';
 import { TaskBoard } from './components/TaskBoard';
+import { ProjectOverview } from './components/ProjectOverview';
 import { ProjectBar } from './components/ProjectBar';
 import { CategoryBar } from './components/CategoryBar';
 import { categoryDescendants, UNCATEGORIZED } from './categories';
@@ -61,6 +62,9 @@ export default function App() {
   // Vue rapide de la colonne Tâches (en retard, en cours…) : un filtre d'affichage,
   // pas un mode — non retenu au redémarrage, levé d'un clic sur « Toutes ».
   const [taskView, setTaskView] = useState<TaskView | null>(null);
+  // Vue d'ensemble des projets au centre, à la place de l'entrée : un affichage, pas un
+  // mode (§33) — non retenu au redémarrage, refermé par tout ce qui ouvre autre chose.
+  const [overview, setOverview] = useState(false);
   const documentRef = useRef<string | undefined>(undefined);
   documentRef.current = entry?.google_sync?.document_id;
   const [theme, setTheme] = usePersisted('worklogs-theme', (stored) => (stored === 'light' ? 'light' : 'dark'));
@@ -170,28 +174,57 @@ export default function App() {
    * envoyé, l'éditeur demande d'abord : Envoyer · Garder le brouillon ici · Annuler.
    */
   const selectEntry = useCallback((id: string | null) => {
+    const navigation = ++navigationSequence.current;
     // Aucun fichier partagé ouvert : sélection immédiate, comme avant (les gestes
     // qui enchaînent sur l'entrée — joindre un fichier… — ne doivent pas attendre).
     if (!hasLeaveGuard()) {
       setSharedPath(null);
+      setOverview(false);
       setSelectedId(id);
       revealEditor();
       return;
     }
     void requestLeave().then((ok) => {
-      if (!ok) return;
+      if (!ok || navigation !== navigationSequence.current) return;
       setSharedPath(null);
+      setOverview(false);
       setSelectedId(id);
       revealEditor();
     });
   }, []);
   const openShared = useCallback(async (path: string) => {
+    const navigation = ++navigationSequence.current;
     if (!(await requestLeave())) return;
     await flushPendingSaves().catch(() => {});
+    if (navigation !== navigationSequence.current) return;
     setSharedPath(path);
+    setOverview(false);
     setShowCenter(true);
     revealEditor();
   }, []);
+  /**
+   * La vue d'ensemble porte sur tout : projet, catégorie et recherche sont levés, comme
+   * pour les compteurs de l'en-tête. Même garde de sortie qu'un fichier du partage.
+   */
+  const openOverview = useCallback(async () => {
+    const navigation = ++navigationSequence.current;
+    if (!(await requestLeave())) return;
+    await flushPendingSaves().catch(() => {});
+    if (navigation !== navigationSequence.current) return;
+    setProjectId('');
+    setCategoryId('');
+    setSearch('');
+    setOverview(true);
+    setShowCenter(true);
+    revealEditor();
+  }, []);
+  /** Un nœud de la vue d'ensemble mène à sa carte : le panneau Tâches, sans vue rapide, et le focus sur le titre. */
+  const revealTask = useCallback((task: Task) => {
+    setTaskView(null);
+    setShowRight(true);
+    if (isPhone()) goTo('tasks');
+    requestAnimationFrame(() => document.getElementById('task-' + task.id)?.querySelector<HTMLElement>('.card-title')?.focus());
+  }, [goTo]);
 
   /**
    * Ouvre une entrée au centre, en suivant son projet si `project` est donné.
@@ -208,6 +241,7 @@ export default function App() {
     setFreshEntry(false);
     setShowCenter(true);
     setSharedPath(null);
+    setOverview(false);
     selectedRef.current = id;
     setSelectedId(id);
     revealEditor();
@@ -231,6 +265,8 @@ export default function App() {
     // Un fichier du partage est toujours rattaché à un projet par son dossier :
     // en changer le referme. « Tout » garde le partage entier, donc le fichier.
     if (next && sharedPath) setSharedPath(null);
+    // La vue d'ensemble porte sur tous les projets : en choisir un, c'est aller y travailler.
+    if (next) setOverview(false);
     const openSummary = state?.entries.find((candidate) => candidate.id === selectedRef.current);
     const openProject = openSummary?.project_id
       ?? (entry && entry.id === selectedRef.current ? entry.project_id : null);
@@ -408,6 +444,7 @@ export default function App() {
     setFreshEntry(true);
     setShowCenter(true);
     setSharedPath(null);
+    setOverview(false);
     setSelectedId(created.id);
     setEntry({ ...created, attachments: [] });
     revealEditor();
@@ -432,6 +469,7 @@ export default function App() {
     setFreshEntry(true);
     setShowCenter(true);
     setSharedPath(null);
+    setOverview(false);
     setSelectedId(created.id);
     setEntry({ ...created, attachments: [] });
     revealEditor();
@@ -492,7 +530,8 @@ export default function App() {
   const siblingTabs = useMemo(() => (googleSync?.tabs || state?.entries.filter(e => e.google_document_id === googleSync?.document_id && e.google_document_id) || [])
     .map(tab => ({ ...tab, ...state?.entries.find(e => e.id === tab.id) }))
     .sort((a, b) => (a.google_tab_order ?? 0) - (b.google_tab_order ?? 0)), [googleSync, state?.entries]);
-  const isGoogleDocument = Boolean(entry?.google_sync);
+  // La vue d'ensemble couvre la page Google : le panneau Tâches n'a pas à disparaître.
+  const isGoogleDocument = Boolean(entry?.google_sync) && !overview;
   // Session Google active (pas expirée) : la synchro automatique tourne.
   const autoSynced = Boolean(google?.connected && !google.expired);
   // Mêmes interrupteurs partout ; sur téléphone, ils choisissent la vue au lieu de replier.
@@ -711,7 +750,16 @@ export default function App() {
         <ColumnResizer side="left" panelId="workspace-journal" value={colLeft} onChange={setColLeft} />
 
         <main id="workspace-editor" className="center">
-          {sharedPath ? (
+          {overview && state ? (
+            <ProjectOverview
+              projects={state.projects}
+              tasks={state.tasks}
+              entries={state.entries}
+              onProject={(id) => void switchProject(id)}
+              onTask={revealTask}
+              onClose={() => setOverview(false)}
+            />
+          ) : sharedPath ? (
             <Suspense fallback={loading}>
               <SharedFileEditor
                 key={sharedPath}
@@ -758,6 +806,7 @@ export default function App() {
           <TaskBoard
             categories={state?.categories ?? []}
             categoryId={categoryId}
+            search={search}
             grouped={groupedCategories}
             tasks={state?.tasks ?? []}
             entries={state?.entries ?? []}
@@ -769,6 +818,8 @@ export default function App() {
             onOpenShared={openShared}
             onProcedureCreated={openCreatedProcedure}
             onChanged={reload}
+            onOverview={openOverview}
+            overviewOpen={overview}
           />
         </aside>
 
