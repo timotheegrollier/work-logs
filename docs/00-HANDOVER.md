@@ -1,5 +1,23 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Correctif du 2026-10-29 — autoriser un document Google (partagé ou non)
+
+Aucun nouveau document ne pouvait être autorisé depuis le 22/09 : **Autoriser d'autres
+documents** (fenêtre Documents Google) relançait la connexion sans Picker (`pick` oublié), et
+**Choisir des documents dans Drive** demandait le Picker avec `openid email profile` en plus de
+`drive.file`, combinaison que Google exclut. Le Picker part maintenant en `drive.file` seul,
+`prompt=consent`, `login_hint` du compte connecté, et choisit **plusieurs documents à la fois**
+(`allow_multiple`, demandé par Timo) ; le compte affiché est relu par Drive (`about.get`).
+Pourquoi : `05-DECISIONS.md` §19. Tests : le bouton demande le Picker
+(`GoogleDocuments.test.tsx`), paramètres du Picker, sélection multiple et compte relu par Drive
+(`desktop/test/google.test.mjs`) — rouges tous les deux sans le correctif. **Pas encore vérifié
+avec le vrai Picker Google** : il faut un compte et un navigateur.
+`WORKLOGS_E2E_PORT=8432 ./scripts/check.sh` vert : 284 API, 699 front (dont 1 échec attendu),
+49 desktop unitaires, 32 scripts, 11 Worker, 11 relais, 78 navigateur et 17 desktop e2e —
+1181 tests. Deux passages étaient tombés chacun sur un test de catégories différent d'`App.test.tsx`
+(« un reclassement distant… », « crée une catégorie et sa sous-catégorie… ») pendant la
+vérification d'une autre copie de travail (charge 5 à 7) ; seuls, 3 fois sur 3 chacun.
+
 ## Lot du 2026-10-29 — téléphone : choisir un projet dans la liste (§54)
 
 Sur téléphone, la rangée de pastilles (une et demie visible à 412 px) laisse place à un bouton
