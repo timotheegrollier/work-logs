@@ -1025,6 +1025,12 @@ qu'un dossier **déjà monté**, pas une adresse `smb://`.
     fichiers techniques ne vaut plus que pour les fichiers ; un dossier n'est caché que s'il
     commence par un point ou est un dossier système (`isTechnicalDirName`).
   - Pas faits, faute de demande : renommer un fichier, déplacer (glisser-déposer).
+- **Un refus reste affiché** (corrigé le 2026-10-08) : le message en haut de la section (nom
+  déjà pris, suppression refusée, connexion…) ne s'efface qu'au geste suivant — nouvel essai,
+  Annuler. Relire l'arbre (sondage de 30 s, retour du focus, premier chargement encore en
+  route) l'effaçait avant qu'on ait pu le lire : `loadDir` le vidait encore, reste du lot 1 où
+  l'échec d'une liste s'y écrivait. Rien de ce qui se relit n'y passe plus : un dossier
+  illisible le dit sous sa ligne, une recherche échouée dans ses résultats.
 - Restait de l'idée « procédures ↔ partage » l'IA par le pont Markdown §23 : faite le 2026-10-08 (§30).
 
 **Rouvrir si** Word doit voir le verrou WorkLogs (il faudrait tenir un descripteur Windows :

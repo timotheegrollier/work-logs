@@ -3426,6 +3426,19 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     expect(screen.getByRole('button', { name: 'Dossier 00. PROCEDURE' })).toHaveAttribute('aria-expanded', 'true');
   });
 
+  test('une recherche échouée le dit dans ses résultats ; la suivante l’efface', async () => {
+    await write('notes.md', 'x');
+    vi.spyOn(clientApi, 'searchShared').mockRejectedValueOnce(new Error('Le partage ne répond pas.'));
+    render(<App />);
+    const field = await screen.findByLabelText('Chercher dans le partage', undefined, partage);
+    fireEvent.change(field, { target: { value: 'notes' } });
+    const results = await screen.findByRole('region', { name: 'Résultats de la recherche' });
+    expect(await within(results).findByRole('alert', undefined, partage)).toHaveTextContent('Le partage ne répond pas.');
+    fireEvent.change(field, { target: { value: 'note' } });
+    expect(await within(results).findByText('1 résultat.', undefined, partage)).toBeInTheDocument();
+    expect(screen.queryByText('Le partage ne répond pas.')).not.toBeInTheDocument();
+  });
+
   test('hors ligne : l’arbre reste celui vu en dernier, les fichiers non gardés ici sont signalés', async () => {
     const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
     fs.mkdirSync(path.join(share, 'Global'));
@@ -3760,6 +3773,29 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     fireEvent.click(within(again).getByRole('button', { name: 'Créer' }));
     expect(await screen.findByText('« existant.md » existe déjà dans ce dossier : rien n’a été écrasé. Choisis un autre nom.', undefined, partage)).toBeInTheDocument();
     expect(await read('00. PROCEDURE/existant.md')).toBe('à garder\n');
+  });
+
+  test('un refus reste affiché quand l’arbre se relit ; « Annuler » l’efface', async () => {
+    await write('existant.md', 'à garder\n');
+    render(<App />);
+    await tree();
+    fireEvent.click(screen.getByRole('button', { name: '＋ Nouveau fichier…' }));
+    const form = screen.getByRole('form', { name: 'Nouveau fichier' });
+    fireEvent.change(within(form).getByLabelText('Type de fichier'), { target: { value: 'md' } });
+    fireEvent.change(within(form).getByLabelText('Nom du fichier'), { target: { value: 'existant' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Créer' }));
+    const refusal = '« existant.md » existe déjà dans ce dossier : rien n’a été écrasé. Choisis un autre nom.';
+    expect(await screen.findByText(refusal, undefined, partage)).toBeInTheDocument();
+
+    // Retour au premier plan (comme le sondage) : l'arbre est relu jusqu'au bout, le refus reste.
+    const listed = vi.spyOn(clientApi, 'sharedList');
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await waitFor(() => expect(listed).toHaveBeenCalled(), partage);
+    await act(async () => { await Promise.allSettled(listed.mock.results.map((result) => result.value)); });
+    expect(screen.getByText(refusal)).toBeInTheDocument();
+
+    fireEvent.click(within(form).getByRole('button', { name: 'Annuler' }));
+    expect(screen.queryByText(refusal)).not.toBeInTheDocument();
   });
 
   test('nouveau document Word à la racine : il s’ouvre dans l’éditeur Word, titré de son nom', async () => {
