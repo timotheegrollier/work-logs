@@ -1243,7 +1243,8 @@ serveur Windows (le plus lourd).
 - Relais injoignable (Tailscale éteint, VM arrêtée) : la section reste, « Injoignable », et dit
   quoi vérifier, au lieu de disparaître.
 - Le code d'accès reste sur le téléphone (stockage de la PWA), jamais synchronisé **en clair**.
-  Depuis le 2026-10-21, une copie **chiffrée** vit dans le compte Google (§39).
+  Depuis le 2026-10-21, une copie **chiffrée** vit dans le compte Google (§39). Depuis le
+  2026-10-29, **plus de code** : le réseau Tailscale suffit, l'adresse vit dans le compte (§55).
 
 **Limites assumées.** Hors réseau, rien (pas de copie hors ligne sur le téléphone : les
 brouillons vivent sur le relais) ; un seul compte Windows pour tout ce qui passe par le relais
@@ -1675,6 +1676,9 @@ entre-temps).
 
 **Rouvrir si** le Worker cesse d'être le passage obligé de la connexion Google, ou si le relais
 sort du seul réseau Tailscale.
+
+**Remplacé le 2026-10-29 (§55)** : plus de code, la copie ne garde que l'adresse, en clair ;
+`/relay-key` est retiré du Worker.
 
 ## 40. Changer de projet referme ce qui appartient à l'ancien — 2026-10-21
 
@@ -2287,3 +2291,56 @@ rangée (au plus le premier ou le deuxième). Les parcours mobiles choisissent p
 
 **Rouvrir si** l'usage montre des allers-retours constants entre deux projets : un raccourci
 « projet précédent » dans la liste, pas le retour de la rangée.
+
+## 55. Le relais sans code : le réseau Tailscale suffit, l'adresse revient du compte Google — 2026-10-29
+
+**La demande.** « Ma version PWA mobile n'est plus connectée au relais. Débrouille-toi pour que
+je n'aie pas de code à rentrer, car je ne peux y accéder déjà que via Tailscale, ce qui est
+suffisamment sécurisé, et fais en sorte que l'IP de connexion de Tailscale reste sauvegardée avec
+les données dans le Drive : connecté à mon compte Google, je n'ai qu'à me connecter à Tailscale. »
+Revient sur §29 (la porte d'entrée était un code) et remplace §39 (copie chiffrée du code).
+
+**Constaté.** Le relais tournait (v0.63.0, `tailscale serve` réservé au réseau, partage monté) ; le
+Worker et la PWA déployés répondaient ; Helium et Brave, sur le PC, avaient la bonne adresse et le
+bon code. Mais le relais n'avait plus servi une seule liste de dossier depuis le **2026-10-12**
+(`shared_dirs.listed_at` de sa base) : le téléphone ne passait plus, et la copie chiffrée du §39
+ne l'avait pas réparé. Le téléphone lui-même n'a pas pu être examiné : la cause exacte reste
+inconnue (réglage perdu, code faux, accès au réseau local refusé par Chrome…).
+
+**Les choix.**
+- **Plus de code d'accès.** Le relais n'est joignable que depuis le réseau Tailscale de Timo
+  (`tailscale serve`, jamais `funnel`), qui ne compte que ses appareils. Rien à saisir, rien à
+  perdre, plus de code recopié de travers (vécu dans Brave le 2026-10-08).
+- **Mais un navigateur n'entre que depuis la PWA.** Sans code, n'importe quelle page ouverte sur
+  un appareil du réseau pourrait écrire dans le partage : un formulaire ou un `fetch` « sans CORS »
+  part sans préliminaire, et le relais prend tout corps comme des octets (`push`, `create`). Un
+  navigateur envoie toujours son `Origin` sur une écriture venue d'une autre page (`null` compris),
+  et `Sec-Fetch-Site` sur tout appel : une origine autre que celle de la PWA reçoit 403
+  (`RELAY_FOREIGN_ORIGIN`), une lecture lancée par une autre page aussi (`<img>`, cadre). Sans ces
+  en-têtes : pas un navigateur (curl depuis le réseau) ; l'adresse tapée dans la barre (`none`) passe.
+- **L'adresse revient du compte Google, en clair.** Ce n'est pas un secret (elle est dans ce dépôt,
+  et n'ouvre rien hors du réseau Tailscale) : `WorkLogs/WorkLogs relais.json` la garde telle
+  quelle, avec sa date. Plus de clé à demander au Worker : `/relay-key` est retiré, et la copie
+  suit aussi un client Google personnel. Toujours à part de `WorkLogs backup.json`, que le desktop
+  réécrit sans connaître le relais. Même règle qu'au §39 : une fois par ouverture de la PWA et par
+  connexion, le plus récent gagne ; « Oublier ce relais » met la copie à la corbeille.
+- **Un ancien réglage ne laisse pas fuir son code** : `readRelay` ne rend que l'adresse et la
+  date, la copie Drive ne peut pas l'emporter. L'ancienne copie chiffrée est illisible : la
+  première PWA qui a l'adresse la remplace, une PWA qui n'a rien la met à la corbeille.
+- **Transition.** Le relais accepte encore l'en-tête `Authorization` d'une PWA restée ouverte
+  (ignoré). La PWA est déployée dès `master`, le relais à la release : entre les deux, la nouvelle
+  PWA reçoit 401 de l'ancien relais. `/etc/worklogs-relais/code` n'est plus lu, mais un retour
+  arrière automatique vers la v0.63.0 en aurait besoin : le garder jusqu'à la release suivante.
+
+**Limites assumées.** Tout appareil du réseau Tailscale, et tout programme qui y tourne (`nas`,
+`nuc`, `puppycam`, `raspberrypi`…), peut lire et modifier le dossier des procédures par le relais.
+Les ACL Tailscale peuvent le réserver au téléphone et au PC. Si l'adresse change (VM ou réseau
+renommés), elle se ressaisit une fois.
+
+**Écartés.** Garder le code et réparer la copie chiffrée (cause introuvable sur le téléphone, et
+Timo ne veut plus de code) ; l'adresse dans `WorkLogs backup.json` (le desktop la perdrait à chaque
+synchro) ; une adresse écrite en dur dans la PWA (Drive était demandé, et une autre VM obligerait
+à republier) ; rouvrir la visionneuse PDF de la PWA (§34), possible sans code mais pas demandée.
+
+**Rouvrir si** le réseau Tailscale est partagé avec d'autres personnes, ou si le relais sort du
+seul réseau Tailscale (`funnel`, port ouvert) : un code redevient nécessaire.

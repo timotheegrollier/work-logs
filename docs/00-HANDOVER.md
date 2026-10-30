@@ -18,6 +18,28 @@ avec le vrai Picker Google** : il faut un compte et un navigateur.
 (« un reclassement distant… », « crée une catégorie et sa sous-catégorie… ») pendant la
 vérification d'une autre copie de travail (charge 5 à 7) ; seuls, 3 fois sur 3 chacun.
 
+## Lot du 2026-10-29 — relais sans code, adresse gardée dans le compte Google (§55)
+
+La PWA du téléphone ne joignait plus le relais du dossier partagé. Constaté : relais en v0.63.0,
+`tailscale serve`, partage monté, Worker et PWA déployés répondaient ; Helium et Brave (PC)
+avaient la bonne adresse et le bon code ; mais le relais n'avait plus servi une seule liste de
+dossier depuis le **2026-10-12** (`shared_dirs.listed_at`). Le téléphone n'a pas pu être examiné.
+À la demande de Timo, **plus de code d'accès** : le réseau Tailscale suffit. Le relais refuse
+l'appel d'un navigateur venu d'une autre page que la PWA (`Origin` ou `Sec-Fetch-Site`, 403
+`RELAY_FOREIGN_ORIGIN`) : un site ouvert sur un appareil du réseau ne peut ni écrire dans le
+partage ni le lire. L'adresse est gardée **en clair** dans `WorkLogs/WorkLogs relais.json`
+(Drive du compte) et revient seule à la connexion Google, client personnel compris ;
+`/relay-key` est retiré du Worker ; l'ancienne copie chiffrée (§39) est remplacée par la
+première PWA qui a l'adresse. Paramètres › Dossier partagé du TSE ne demande plus que
+l'adresse. Aucune dépendance ajoutée. Pourquoi et limites : §55 ; installation et dépannage :
+`09-RELAIS.md`.
+À faire sur la VM **après la release suivante** : supprimer `/etc/worklogs-relais/code` et la
+ligne `WORKLOGS_RELAY_TOKEN_FILE` de `/etc/worklogs-relais/env` (un retour arrière automatique
+vers la v0.63.0 en a encore besoin).
+`./scripts/check.sh` vert : 284 API, 696 front (dont 1 échec attendu), 48 desktop unitaires,
+32 scripts, 8 Worker (les 3 de `/relay-key` retirés), 11 relais, 78 navigateur et 17 desktop
+e2e — 1174 tests.
+
 ## Lot du 2026-10-29 — téléphone : choisir un projet dans la liste (§54)
 
 Sur téléphone, la rangée de pastilles (une et demie visible à 412 px) laisse place à un bouton

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createMemoryDatabase } from './storage';
 import { FAKE_CLIENT, FAKE_PROXY, connectGoogle as connect, fakeGoogle } from '../test/fake-google';
 
-const RELAY = { url: 'https://vm.tailnet.ts.net:8443', token: 'c'.repeat(43) };
+const RELAY = { url: 'https://vm.tailnet.ts.net:8443' };
 
 async function load() {
   vi.resetModules();
@@ -26,19 +26,18 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe('accès au relais gardé dans le compte Google', () => {
-  test('enregistré ici, perdu, il revient tout seul ; le fichier Drive ne dit ni l’adresse ni le code', async () => {
+describe('adresse du relais gardée dans le compte Google', () => {
+  test('enregistrée ici, perdue, elle revient toute seule ; un ancien code ne part jamais', async () => {
     const drive = fakeGoogle();
     connect();
     const { vault, settings } = await load();
-    settings.saveRelay(RELAY);
+    // Réglage d'avant le relais sans code : l'adresse et son code, sans date.
+    localStorage.setItem('worklogs-relais', JSON.stringify({ ...RELAY, token: 'c'.repeat(43) }));
     expect(await vault.syncRelayVault()).toBe('saved');
     const [file] = drive.relayFiles();
     expect(file.name).toBe('WorkLogs relais.json');
     expect(file.parents).toHaveLength(1);
-    expect(file.text).not.toContain(RELAY.token);
-    expect(file.text).not.toContain('tailnet');
-    expect(JSON.parse(file.text)).toEqual({ version: 1, iv: expect.any(String), data: expect.any(String) });
+    expect(JSON.parse(file.text)).toEqual({ url: RELAY.url, saved_at: '' });
     // Rien de changé : rien ne repart.
     expect(await vault.syncRelayVault()).toBe('unchanged');
 
@@ -49,24 +48,21 @@ describe('accès au relais gardé dans le compte Google', () => {
     expect(drive.relayFiles()).toHaveLength(1);
   });
 
-  test('copie illisible (clé du Worker changée) : rien ne revient, la copie suivante la remplace', async () => {
+  test('ancienne copie chiffrée (§39) : remplacée par l’adresse, ou retirée si ce téléphone n’a rien', async () => {
+    const sealed = JSON.stringify({ version: 1, iv: 'aXY', data: 'Y2hpZmZyw6k' });
     const drive = fakeGoogle();
     connect();
-    const first = await load();
-    first.settings.saveRelay(RELAY);
-    await first.vault.syncRelayVault();
-    const sealed = drive.relayFiles()[0].text;
-
-    connect('acces-secret-change');
-    localStorage.removeItem('worklogs-relais');
+    drive.files.set('ancien', { type: 'relay', name: 'WorkLogs relais.json', text: sealed, trashed: false });
     const { vault, settings } = await load();
     expect(await vault.syncRelayVault()).toBe('removed');
     expect(settings.readRelay()).toBeNull();
     expect(drive.relayFiles()).toHaveLength(0);
 
+    drive.files.set('ancien-2', { type: 'relay', name: 'WorkLogs relais.json', text: sealed, trashed: false });
     settings.saveRelay(RELAY);
     expect(await vault.syncRelayVault()).toBe('saved');
-    expect(drive.relayFiles()[0].text).not.toBe(sealed);
+    expect(drive.relayFiles()).toHaveLength(1);
+    expect(JSON.parse(drive.files.get('ancien-2')!.text)).toMatchObject(RELAY);
   });
 
   test('« Oublier ce relais » : la copie part à la corbeille, même oubliée hors connexion', async () => {
@@ -101,8 +97,8 @@ describe('accès au relais gardé dans le compte Google', () => {
     const { vault, settings } = await load();
     settings.saveRelay({ ...RELAY, saved_at: '2026-10-20T08:00:00.000Z' });
     await vault.syncRelayVault();
-    // L'autre téléphone a enregistré un nouveau code après : sa copie est la plus récente.
-    const fresh = { ...RELAY, token: 'n'.repeat(43), saved_at: '2026-10-21T08:00:00.000Z' };
+    // L'autre téléphone a enregistré une nouvelle adresse après : sa copie est la plus récente.
+    const fresh = { url: 'https://relais-2.tailnet.ts.net:8443', saved_at: '2026-10-21T08:00:00.000Z' };
     settings.saveRelay(fresh);
     await vault.syncRelayVault();
     settings.saveRelay({ ...RELAY, saved_at: '2026-10-20T08:00:00.000Z' });
@@ -110,19 +106,19 @@ describe('accès au relais gardé dans le compte Google', () => {
     expect(settings.readRelay()).toEqual(fresh);
   });
 
-  test('client Google personnel ou compte déconnecté : rien ne part, rien n’est demandé au Worker', async () => {
+  test('compte déconnecté : rien ne part ; client Google personnel : la copie suit aussi', async () => {
     const drive = fakeGoogle();
     const { vault, settings } = await load();
     settings.saveRelay(RELAY);
     expect(await vault.syncRelayVault()).toBe('unavailable');
+    expect(drive.files.size).toBe(0);
     connect();
     localStorage.setItem('worklogs-google-web-client', '999-perso.apps.googleusercontent.com');
-    expect(await vault.syncRelayVault()).toBe('unavailable');
-    expect(drive.keyCalls).toBe(0);
-    expect(drive.files.size).toBe(0);
+    expect(await vault.syncRelayVault()).toBe('saved');
+    expect(drive.relayFiles()).toHaveLength(1);
   });
 
-  test('la synchro rend l’accès perdu une fois par ouverture et le signale (relayRevision)', async () => {
+  test('la synchro rend l’adresse perdue une fois par ouverture et le signale (relayRevision)', async () => {
     const drive = fakeGoogle();
     connect();
     const first = await load();
@@ -136,9 +132,7 @@ describe('accès au relais gardé dans le compte Google', () => {
     await sync.syncWebNow();
     expect(settings.readRelay()).toMatchObject(RELAY);
     expect(sync.webSyncStatus().relayRevision).toBe(1);
-    const calls = drive.keyCalls;
     await sync.syncWebNow();
-    expect(drive.keyCalls).toBe(calls);
     expect(sync.webSyncStatus().relayRevision).toBe(1);
   });
 });
