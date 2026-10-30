@@ -56,6 +56,11 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
   const [open, setOpen] = useState(readOpen);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [listings, setListings] = useState<Map<string, DirState>>(() => new Map());
+  /**
+   * Refus d'un geste (nom pris, suppression refusée, connexion…) : reste jusqu'au geste
+   * suivant (nouvel essai, Annuler). Relire l'arbre (sondage, focus) ne l'efface pas : un
+   * dossier illisible le dit sous sa ligne, une recherche échouée dans ses résultats.
+   */
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   /** Choix du sous-dossier du projet filtré : chaque dossier de l'arbre propose « Relier ici ». */
@@ -70,6 +75,7 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState<SharedSearch | null>(null);
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
   /** « Nouveau fichier » : type, nom, dossier (la racine ou un dossier déplié de l'arbre). */
   const [creating, setCreating] = useState<{ ext: NewFileType['ext']; name: string; dir: string } | null>(null);
   /** « Nouveau dossier » : nom, et où (la racine ou un dossier déplié). */
@@ -107,7 +113,6 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
     try {
       const listing = await api.sharedList(dir);
       setListings((current) => new Map(current).set(dir, listing));
-      setError('');
       // Partage parti (démonté, réseau) : l'état affiché suit, avec « Se reconnecter ».
       if (listing.offline) void refreshStatus();
     } catch (e) {
@@ -170,13 +175,14 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
   useEffect(() => {
     const words = query.trim();
     setSearch(null);
+    setSearchError('');
     if (words.replace(/\s+/g, '').length < 2) { setSearching(false); return; }
     setSearching(true);
     let alive = true;
     const timer = setTimeout(() => {
       api.searchShared(words, searchRoot).then(
         (found) => { if (alive) { setSearch(found); setSearching(false); } },
-        (e: Error) => { if (alive) { setError(e.message); setSearching(false); } },
+        (e: Error) => { if (alive) { setSearchError(e.message); setSearching(false); } },
       );
     }, SEARCH_DELAY_MS);
     return () => { alive = false; clearTimeout(timer); };
@@ -815,7 +821,7 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
             />
             {query.trim().replace(/\s+/g, '').length >= 2 ? (
               <div className="shared-search-results" role="region" aria-label="Résultats de la recherche">
-                {searching || !search ? <p className="empty">Recherche…</p> : (
+                {searchError ? <p className="error" role="alert">{searchError}</p> : searching || !search ? <p className="empty">Recherche…</p> : (
                   <>
                     <p className="empty">
                       {search.results.length ? `${search.results.length}${search.results.length >= 100 ? '+' : ''} résultat${search.results.length > 1 ? 's' : ''}` : 'Aucun nom ne correspond'}

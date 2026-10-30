@@ -1,5 +1,22 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Correctif du 2026-10-30 — un refus du dossier partagé reste affiché
+
+Écrit le 2026-10-08 dans une copie de travail (`lucid-sutherland`) et jamais commité ; retrouvé
+au ménage de la v0.64.0 et repris tel quel, le défaut étant toujours là. Le refus « … existe déjà
+dans ce dossier » (et tout refus de geste : nouveau fichier ou dossier, supprimer, relier,
+envoyer une procédure) disparaissait dès que l'arbre se relisait — sondage de 30 s, retour du
+focus, premier chargement encore en route — souvent avant d'avoir été lu.
+- **Cause** : `loadDir` (`SharedFolder.tsx`) vidait `error` à chaque liste réussie, reste du
+  lot 1 où l'échec d'une liste s'y écrivait. Ces échecs vivent depuis sous leur dossier
+  (`listings`) ; seule la recherche passait encore par `error`.
+- **Correctif** : `loadDir` ne touche plus `error`, qui ne garde que les refus de gestes et ne
+  s'efface qu'au geste suivant (nouvel essai, Annuler). Une recherche échouée le dit dans ses
+  résultats (`searchError`), effacé par la recherche suivante. Décision §25.
+- **Tests** (`App.test.tsx`, +2, rouges sans le correctif, vérifié sur master) : un refus, puis
+  `focus` relu jusqu'au bout — le refus reste, « Annuler » l'efface ; une recherche échouée dite
+  dans ses résultats, effacée par la suivante.
+
 ## Publication v0.64.0 — 2026-10-30
 
 PR #31 (Picker Google), #28 (relais sans code) et #29 (champs, IA, recherche) fusionnées, CI
