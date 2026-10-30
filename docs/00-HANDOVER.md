@@ -1,5 +1,79 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-10-29 — recherche sans accents (§58) et IA qu'on voit travailler (§59), non publié
+
+- **Recherche sans accents ni capitales** (« procedure » trouve « Procédure », recherche de
+  l'en-tête comme « ✨ Trouver la doc ») : table de la machine `entry_search` (titre + texte
+  repliés), invalidée par deux déclencheurs SQL sans fonction maison, repliée à la demande par
+  `refreshSearch` (`api/src/db.js`) ; titres de tâches par la fonction SQL `fold`. PWA alignée
+  (cache par note). Jamais sauvegardée ni synchronisée. 3 000 notes de 4 Ko : 8–11 ms par
+  recherche, premier repli 410 ms une seule fois.
+- **Génération IA visible** : ✨ qui pulse et reflet sur le bouton en attente, secondes passé 3 s,
+  infobulle passé 15 s ; cadre « L'IA rédige… » (`AiPending`, `role="status"`) à la place de la
+  proposition ; proposition rafraîchie estompée (`aria-busy`) ; `prefers-reduced-motion` respecté.
+  Sur téléphone, « Arrêter » reste à l'écran quand le compteur élargit le bouton (parcours rouge
+  sans ce recalage : 70 % visible).
+
+Tests : API (recherche repliée, modifications directes en base, suppression), PWA, compteur
+(`AiMenu.test.tsx`, horloge simulée), gestes IA étendus, parcours téléphone. Captures clair,
+sombre et 412 px vérifiées. `./scripts/check.sh` vert après rebase sur `master` (#26, #27) : 285 API,
+705 front (dont l'échec attendu), 48 desktop unitaires, 32 scripts, 11 Worker, 11 relais,
+83 navigateur et 17 desktop e2e — 1 192 tests.
+
+## Lot du 2026-10-29 — IA : « Arrêter » une demande, réponses JSON tolérées (§57), non publié
+
+Demande : « Améliore encore les fonctionnalités d'IA ». Aucune dépendance, route ni migration.
+- **Arrêter** une demande IA en cours : à côté du bouton en attente des trois menus ✨ IA (note
+  ou procédure, fichier du partage, carte), et dans « ＋ Entrée liée » et la procédure proposée
+  d'une carte, où le pied de carte et son menu sont masqués. Coupe l'appel en vol et la chaîne
+  de secours (`AiSettings.signal`, `AiCancelled`), sans message ; quitter la note, le fichier
+  ou la carte coupe aussi. Sur téléphone, la rangée d'actions défile pour le montrer.
+- « Suggérer des tâches » et « Trouver la doc » lisent le tableau JSON même entouré d'une phrase
+  ou d'une clôture de code. À la fusion, la lecture de la PR #30 (`parseJsonArray`, §43) a
+  remplacé celle de ce lot : elle accepte en plus un objet qui enveloppe le tableau.
+- Écartée d'abord après mesure (150 à 265 ms par recherche sur 3 000 notes), la recherche sans
+  accents a été faite ensuite avec une table repliée (§58).
+- La réponse coupée par le budget de jetons est corrigée à part (PR #26, révision du §17). Les
+  quatre lots de cette série ont été rebasés ensemble sur `master` après les PR #26 et #27 ;
+  leurs décisions, d'abord numérotées 54 à 57, sont devenues 56 à 59 (le §54 est celui de #27,
+  le §55 celui de #28).
+
+Tests : 3 unitaires (`ai-suggest.test.ts`), 2 gestes (`App.test.tsx` : note ; carte avec
+sous-tâches, recherche et procédure rafraîchie), 1 parcours téléphone (`ai-assistance.spec.ts`,
+rouge sans le défilement de la rangée : « Arrêter » à 0 % dans l'écran). Captures desktop,
+carte et 412 px vérifiées.
+`./scripts/check.sh` vert : 284 API, 701 front (dont l'échec attendu), 48 desktop unitaires,
+32 scripts, 11 Worker, 11 relais, 83 navigateur et 17 desktop e2e — 1 187 tests.
+
+## Lot du 2026-10-29 — champs de texte à la hauteur de leur texte et à la largeur de leur colonne (§56), non publié
+
+Demande : la zone d'écriture ne grandissait pas avec le texte, et tous les champs doivent suivre un
+panneau ou une fenêtre redimensionnés. CSS seul (`styles.css`), aucune dépendance. Pourquoi et ce
+qui a été écarté : §56 ; usage : `03-UTILISATION.md` « Écrire une entrée ».
+- `textarea { field-sizing: content }` : Markdown, sous-tâches d'une entrée liée, fichier texte du
+  partage et champs IA des Paramètres grandissent avec leur texte et se recalculent à la poignée
+  comme à la fenêtre, sans ascenseur dans le champ ; hauteurs au repos identiques (540, 98, 68 px).
+- `.center` devient conteneur : colonne ≤ 540 px, Markdown seul (comme une fenêtre ≤ 1 180 px) ;
+  ≤ 640 px, tâche liée et tâches suggérées en une colonne, onglets Google au-dessus de la page.
+- Panneau Tâches étroit : « Ajouter » passe sous « Nouvelle tâche » (22 px avant) ; la recherche
+  « Lier des documents » reste dans sa carte.
+
+Tests : `e2e/field-sizing.spec.ts` (4 parcours) et les onglets empilés dans
+`google-documents.spec.ts`, rouges sur l'ancien CSS ; chacun des 11 correctifs retiré seul fait
+tomber un test. Audit Playwright de tous les champs visibles (entrée, tâche liée, entrée liée,
+édition et liaison de tâche, partage, CSV, Paramètres, éditeur riche, IA, projets, catégories) à
+1 800, 1 440, 1 100, 800 et 412 px, panneaux par défaut, au maximum et au minimum : plus aucun
+ascenseur dans un champ, plus aucun champ hors de son panneau. Reste, panneau à 120 px (minimum de
+la poignée) : titres de cartes et boutons trop larges, sans rapport avec les champs, non touchés.
+`./scripts/check.sh` vert : 284 API, 696 front (dont l'échec attendu), 48 desktop unitaires,
+32 scripts, 11 Worker, 11 relais, 82 navigateur et 17 desktop e2e — 1 181 tests.
+
+Trouvé en passant, **non corrigé** (préexistant, même résultat sur l'ancien CSS) : imprimer en
+mode **Écrire** sur A4 ne sort que le titre et un intitulé « Écriture » — les `@media` ≤ 1 180 et
+≤ 900 px s'appliquent aussi à la page imprimée (masquent `.sheet.is-split .prose`, ajoutent
+`.center::before`). **Lire** imprime bien. Le parcours « à l'impression » ne le voit pas : il
+émule l'impression à 1 280 px de large.
+
 ## Correctif du 2026-10-29 — autoriser un document Google (partagé ou non)
 
 Aucun nouveau document ne pouvait être autorisé depuis le 22/09 : **Autoriser d'autres

@@ -1,5 +1,6 @@
 import { describe, expect, test, vi, afterEach } from 'vitest';
 import {
+  AiCancelled,
   AiError,
   AI_MODELS,
   buildCompleteNotePrompt,
@@ -1009,5 +1010,56 @@ describe('mots pour retrouver la doc d’une tâche', () => {
     await expect(suggestSearchTerms({ ...settings, key: '' }, { title: 'T' }))
       .rejects.toThrow('Colle ta clé IA dans ⚙ Paramètres pour activer la recherche de documentation.');
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('arrêter une demande', () => {
+  const gemini = { endpoint: DEFAULT_AI_ENDPOINT, model: 'gemini-3.5-flash-lite', key: 'cle-test', profile: '' };
+  const hang = (_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    init.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+  });
+
+  test('« Arrêter » coupe l’appel en vol, sans essayer le modèle suivant de la chaîne', async () => {
+    const fetch = vi.fn(hang);
+    vi.stubGlobal('fetch', fetch);
+    const controller = new AbortController();
+    const pending = completeNote({ ...gemini, signal: controller.signal }, 'Réunion');
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    controller.abort();
+    await expect(pending).rejects.toBeInstanceOf(AiCancelled);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('déjà arrêtée : aucun appel ; réponse arrivée après l’arrêt : jetée, chez tout fournisseur', async () => {
+    const fetch = vi.fn(async () => aiResponse('Relire'));
+    vi.stubGlobal('fetch', fetch);
+    const stopped = new AbortController();
+    stopped.abort();
+    await expect(suggestSubtasks({ ...gemini, signal: stopped.signal }, 'T')).rejects.toBeInstanceOf(AiCancelled);
+    expect(fetch).not.toHaveBeenCalled();
+    for (const base of [gemini, settings]) {
+      const late = new AbortController();
+      fetch.mockImplementationOnce(async () => { late.abort(); return aiResponse('Relire'); });
+      await expect(suggestSubtasks({ ...base, signal: late.signal }, 'T')).rejects.toBeInstanceOf(AiCancelled);
+    }
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('tableau JSON entouré de texte', () => {
+  test('phrase, clôture de code ou les deux autour du tableau : la réponse est lue', async () => {
+    const actions = [{ title: 'Appeler le fournisseur', due_date: null, evidence: 'Appeler le fournisseur.' }];
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    for (const reply of [
+      `Voici les tâches :\n\`\`\`json\n${JSON.stringify(actions)}\n\`\`\``,
+      `\`\`\`json ${JSON.stringify(actions)} \`\`\`\nBonne journée.`,
+      `Voici les tâches : ${JSON.stringify(actions)}`,
+    ]) {
+      fetch.mockImplementationOnce(async () => aiResponse(reply));
+      await expect(suggestEntryTasks(settings, 'N', 'Appeler le fournisseur.')).resolves.toMatchObject([{ title: 'Appeler le fournisseur' }]);
+    }
+    fetch.mockImplementationOnce(async () => aiResponse('Voici les mots :\n["imprimante", "pilote"]'));
+    await expect(suggestSearchTerms(settings, { title: 'T' })).resolves.toEqual(['imprimante', 'pilote']);
   });
 });

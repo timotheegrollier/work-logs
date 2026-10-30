@@ -112,6 +112,11 @@ textarea {
   padding: 6px 10px;
   min-width: 0;
 }
+/* Un texte sur plusieurs lignes prend la hauteur de son contenu, recalculée à la frappe et
+   quand son panneau ou la fenêtre change de largeur, au lieu d'un ascenseur dans le champ. */
+textarea {
+  field-sizing: content;
+}
 input:not([type='checkbox']):not([type='color']):hover,
 select:hover,
 textarea:hover {
@@ -704,11 +709,14 @@ button:disabled {
   flex: 0 1 var(--col-right, 320px);
   min-width: 120px;
 }
+/* Conteneur : élargir un panneau rétrécit l'Écriture sans toucher à la fenêtre, ses
+   formulaires se replient donc sur la largeur de la colonne (`@container`). */
 .center {
   flex: 1 1 320px;
   min-width: 320px;
   overflow-y: auto;
   background: var(--paper);
+  container-type: inline-size;
 }
 .procedures-bar {
   display: none;
@@ -1909,8 +1917,9 @@ button:disabled {
 .task-creator-wide {
   grid-column: 1 / -1;
 }
+/* `rows` ne compte plus avec `field-sizing` : 4 lignes au repos, marges comprises. */
 .task-creator-wide textarea {
-  min-height: 88px;
+  min-height: calc(4lh + 14px);
   resize: vertical;
 }
 /* La carte peut être bien plus étroite que la fenêtre lorsque plusieurs panneaux
@@ -3017,6 +3026,7 @@ div.google-preserved {
    du panneau et seule la liste défile ; cartes empilées (≤ 900 px), tout suit la page. */
 .quick {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 @media (min-width: 901px) {
@@ -3045,8 +3055,9 @@ div.google-preserved {
     padding: 12px 12px 24px;
   }
 }
+/* Panneau étroit : « Ajouter » passe dessous plutôt que d'écraser la saisie. */
 .quick input {
-  flex: 1;
+  flex: 1 1 120px;
   height: 36px;
   border-radius: 9px;
   background: var(--surface);
@@ -3403,6 +3414,7 @@ div.google-preserved {
 }
 .document-linker {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding: 10px;
   background: var(--surface-2);
@@ -3673,11 +3685,75 @@ div.google-preserved {
 .ai-menu {
   position: relative;
   display: inline-flex;
+  gap: 6px;
   margin-left: auto;
 }
 .ai-menu > [aria-expanded='true'],
 .entry-task-action > .ai-menu > [aria-expanded='true'] {
   color: var(--accent);
+}
+/* Génération IA : l'étincelle pulse, un reflet traverse le bouton en attente, et la place de
+   la proposition montre des lignes qui se dessinent. Immobiles si l'on demande moins d'animations. */
+.ai-spark {
+  display: inline-block;
+  margin-right: 5px;
+  animation: ai-spark 1.4s ease-in-out infinite;
+}
+@keyframes ai-spark {
+  0%, 100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  50% { transform: scale(1.3) rotate(15deg); opacity: 0.55; }
+}
+.ai-menu > .is-busy,
+.ai-busy {
+  background-image: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--accent) 24%, transparent) 50%, transparent 70%);
+  background-size: 250% 100%;
+  animation: ai-shimmer 1.8s linear infinite;
+}
+.ai-elapsed {
+  color: var(--muted);
+}
+@keyframes ai-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+.ai-pending {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 13px;
+}
+.ai-pending-lines {
+  display: grid;
+  gap: 7px;
+}
+.ai-pending-lines i {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--line-soft) 25%, color-mix(in srgb, var(--accent) 35%, var(--line-soft)) 50%, var(--line-soft) 75%);
+  background-size: 250% 100%;
+  animation: ai-shimmer 1.8s linear infinite;
+}
+.ai-pending-lines i:nth-child(2) {
+  width: 85%;
+}
+.ai-pending-lines i:nth-child(3) {
+  width: 55%;
+}
+/* Un rafraîchissement en cours : l'ancienne proposition s'efface à moitié. */
+.proofread-preview[aria-busy='true'] > .prose {
+  opacity: 0.45;
+  transition: opacity 0.2s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-spark,
+  .ai-menu > .is-busy,
+  .ai-busy,
+  .ai-pending-lines i {
+    animation: none;
+  }
 }
 .ai-menu-caret {
   margin-left: 4px;
@@ -3908,7 +3984,7 @@ div.google-preserved {
 }
 .ai-settings textarea {
   width: 100%;
-  min-height: 64px;
+  min-height: calc(3lh + 14px);
   resize: vertical;
 }
 /* Numéro de version : redondant avec la pastille de l'en-tête en desktop
@@ -4898,6 +4974,44 @@ div.google-preserved {
   }
   .sheet.is-split .prose {
     display: none;
+  }
+}
+/* Les replis d'un écran étroit, décidés sur la largeur de l'Écriture (voir `.center`). */
+@container (max-width: 540px) {
+  .sheet.is-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sheet.is-split .prose {
+    display: none;
+  }
+}
+@container (max-width: 640px) {
+  .task-creator,
+  .ai-action-fields,
+  .document-workspace.has-tabs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .document-workspace.has-tabs {
+    gap: 16px;
+  }
+  .document-navigation {
+    position: static;
+    padding: 12px;
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .document-navigation-heading {
+    margin: 0 0 8px;
+  }
+  .doc-tabs {
+    max-height: 150px;
+  }
+  .document-navigation-hint {
+    display: none;
+  }
+  .google-editor .files {
+    padding-left: 0;
   }
 }
 /* Écran étroit mais pas mobile : l'export et les témoins passent en icône seule,

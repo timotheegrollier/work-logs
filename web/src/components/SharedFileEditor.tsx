@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, formatSize, type SharedFile, type SharedSendResult, type SharedVersion } from '../lib';
 import { Autosave } from '../autosave';
-import { proofreadEntry, readAiSettings, suggestProcedure, type AiWorkContext } from '../ai-suggest';
+import { AiCancelled, proofreadEntry, readAiSettings, suggestProcedure, type AiWorkContext } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
 import { AiContextDetails } from './AiContextDetails';
-import { AiMenu } from './AiMenu';
+import { AiMenu, AiPending } from './AiMenu';
 import { AiRefinement } from './AiRefinement';
 import { renderMarkdown } from '../markdown';
 import { editorKind, MAX_EDITABLE_TEXT, type FileAiMode, type FileAiProposal, type FileEditorHandle } from '../file-formats';
@@ -505,6 +505,9 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
   const [aiContext, setAiContext] = useState<AiWorkContext | null>(null);
   const [excludedSourceIds, setExcludedSourceIds] = useState<string[]>([]);
   const contextVersion = useRef(0);
+  // « Arrêter », ou fermer le fichier, coupe la demande en vol.
+  const aiRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => aiRequest.current?.abort(), []);
   const excludeSources = (ids: string[]) => {
     contextVersion.current += 1;
     setExcludedSourceIds(ids);
@@ -533,7 +536,8 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
       // Le titre du document s'il en porte un, sinon le nom du fichier.
       const title = request.title || (fileRef.current?.name ?? basename(path)).replace(/\.[^.]+$/, '');
       const format = handle.ai.format;
-      const settings = readAiSettings();
+      aiRequest.current = new AbortController();
+      const settings = { ...readAiSettings(), signal: aiRequest.current.signal };
       if (!settings.key) throw new Error(`Colle ta clé IA dans ⚙ Paramètres pour activer ${mode === 'layout' ? 'la mise en page' : 'les suggestions de procédure'}.`);
       // « Tout » n'est pas un projet : seul un projet explicitement sélectionné
       // apporte des notes locales à un fichier du partage.
@@ -553,7 +557,7 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
       if (contextVersion.current !== selection) return;
       setAiProposal({ mode, snapshot, version, answer, proposal: request.prepare(answer) });
     } catch (e) {
-      setError((e as Error).message);
+      if (!(e instanceof AiCancelled)) setError((e as Error).message);
     } finally {
       setAiBusy(null);
     }
@@ -693,7 +697,7 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
 
       {aiKind && loaded && (
         <div className="entry-task-action no-print">
-          <AiMenu label="Assistance IA" busy={aiBusy === 'procedure' ? 'Rédaction…' : aiBusy === 'layout' ? 'Mise en page…' : null}>
+          <AiMenu label="Assistance IA" busy={aiBusy === 'procedure' ? 'Rédaction…' : aiBusy === 'layout' ? 'Mise en page…' : null} onCancel={() => aiRequest.current?.abort()}>
             <button
               role="menuitem"
               type="button"
@@ -716,8 +720,9 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
         </div>
       )}
       {aiContext && projectId && <AiContextDetails context={aiContext} excludedIds={excludedSourceIds} onExcludedChange={excludeSources} />}
+      {aiBusy && !aiProposal && <AiPending label={aiBusy === 'layout' ? 'L’IA met le fichier en page…' : 'L’IA rédige la procédure…'} />}
       {aiProposal && (
-        <div className="proofread-preview no-print" role="region" aria-label={aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'}>
+        <div className="proofread-preview no-print" role="region" aria-busy={aiBusy !== null} aria-label={aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'}>
           <strong>{aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'} — relis avant d’appliquer</strong>
           {kind === 'docx' && <small>Images, tableaux et champs restent ceux du fichier ; un paragraphe au texte inchangé reste tel quel ; un paragraphe réécrit prend les styles du document, sans souligné ni couleurs.</small>}
           {aiProposal.proposal.warning && <small className="error">{aiProposal.proposal.warning}</small>}
@@ -729,7 +734,7 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
             <button className="task-primary" type="button" disabled={aiBusy !== null || Boolean(readOnly)} onClick={applyAi}>
               {aiProposal.mode === 'layout' ? 'Appliquer la mise en page' : 'Appliquer la procédure'}
             </button>
-            <button className="ghost" type="button" disabled={aiBusy !== null} onClick={() => void requestAi(aiProposal.mode)}>
+            <button className={'ghost' + (aiBusy ? ' ai-busy' : '')} type="button" disabled={aiBusy !== null} onClick={() => void requestAi(aiProposal.mode)}>
               {aiBusy ? (aiBusy === 'layout' ? 'Mise en page…' : 'Rédaction…') : 'Rafraîchir'}
             </button>
             <button className="ghost" type="button" onClick={() => setAiProposal(null)}>Ignorer</button>

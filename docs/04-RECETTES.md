@@ -286,6 +286,7 @@ confondre « le modèle répond » et « la proposition aide ».
 | Source décochée après proposition ou pendant la création | La proposition est invalidée ; les tâches restantes ne sont pas créées sur l'ancien contexte. |
 | « ✨ Compléter » sur un titre et trois points | Chaque point développé ; « à préciser » là où l'information manque, rien d'inventé. |
 | « ✨ Compléter » avec commande, valeur et case cochée | Commande et valeur à l'identique, case toujours cochée, rien de prévu présenté comme fait. |
+| Modèle lent ou saturé, **Arrêter** pendant l'attente | La demande s'arrête aussitôt, sans message d'erreur ni autre modèle essayé ; relancer repart normalement. |
 
 Pour chaque cas, relever : proposition utilisable, corrections nécessaires, détails
 inventés, doublons et temps ressenti. Comparer les mêmes exemples avant/après toute

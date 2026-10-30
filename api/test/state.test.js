@@ -63,6 +63,28 @@ describe('état global et recherche', () => {
     assert.deepEqual(body.tasks.map((t) => t.title), ['Relancer toiture']);
   });
 
+  test('recherche sans accents ni capitales, à jour après une modification par n’importe quel chemin', async () => {
+    const accented = await make.entry(api, { title: 'Procédure ÉLECTRICITÉ', content_md: 'Couper le disjoncteur.' });
+    const plain = await make.entry(api, { title: 'Note', content_md: 'procedure sans accent, Vétérinaire' });
+    await make.entry(api, { title: 'Sans rapport' });
+    await make.task(api, { title: 'Relire la procédure' });
+    const titles = async (q) => (await api.get(`/api/state?q=${encodeURIComponent(q)}`)).body;
+    let body = await titles('procedure');
+    assert.deepEqual(body.entries.map((e) => e.title).sort(), ['Note', 'Procédure ÉLECTRICITÉ']);
+    assert.deepEqual(body.tasks.map((t) => t.title), ['Relire la procédure']);
+    assert.deepEqual((await titles('électricité')).entries.map((e) => e.id), [accented.id]);
+    assert.deepEqual((await titles('VETERINAIRE')).entries.map((e) => e.id), [plain.id]);
+
+    // Modifiée par l'API, puis directement en base (synchronisation, restauration) : jamais périmée.
+    await api.put(`/api/entries/${plain.id}`, { title: 'Note', content_md: 'Pompe du bassin' });
+    assert.deepEqual((await titles('procedure')).entries.map((e) => e.id), [accented.id]);
+    api.db.prepare('UPDATE entries SET content_md=? WHERE id=?').run('Alevins à trier', accented.id);
+    assert.deepEqual((await titles('alevins')).entries.map((e) => e.id), [accented.id]);
+    api.db.prepare('DELETE FROM entries WHERE id=?').run(accented.id);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entry_search WHERE entry_id=?').get(accented.id).n, 0);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entry_search WHERE entry_id=?').get(plain.id).n, 1);
+  });
+
   test('filtre par projet, entrées et tâches ensemble', async () => {
     const a = await make.project(api, 'A');
     const b = await make.project(api, 'B');

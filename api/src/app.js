@@ -3,7 +3,7 @@ import cors from 'cors';
 import multer from 'multer';
 import fs from 'node:fs';
 import path from 'node:path';
-import { uid, nowISO, today, tombstone } from './db.js';
+import { uid, nowISO, today, tombstone, fold, refreshSearch } from './db.js';
 import { decodeEntry, documentText, validateDocument } from './rich-document.js';
 import { buildBackup } from './backup.js';
 import { googleLink, registerGoogleRoutes } from './google-routes.js';
@@ -126,8 +126,9 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const entryWhere = where.map((clause) => clause === '0=1' ? clause : 'entries.' + clause);
     const entryArgs = [...args];
     if (q) {
-      entryWhere.push('(entries.title LIKE ? OR entries.content_md LIKE ?)');
-      entryArgs.push(`%${q}%`, `%${q}%`);
+      refreshSearch(db);
+      entryWhere.push('entries.id IN (SELECT entry_id FROM entry_search WHERE text LIKE ?)');
+      entryArgs.push(`%${fold(q)}%`);
     }
     const entries = db
       .prepare(
@@ -148,8 +149,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const taskWhere = [...where];
     const taskArgs = [...args];
     if (q) {
-      taskWhere.push('title LIKE ?');
-      taskArgs.push(`%${q}%`);
+      taskWhere.push('fold(title) LIKE ?');
+      taskArgs.push(`%${fold(q)}%`);
     }
     const taskDocuments = db.prepare(
       `SELECT te.task_id, e.id, e.title, e.entry_date, e.project_id, e.category_id, e.archived, e.updated_at,

@@ -43,6 +43,19 @@ describe('amorçage et état', () => {
     expect(found.attachments).toBe(0);
     expect(found.google_dirty).toBe(false);
   });
+
+  test('recherche sans accents ni capitales, comme le serveur, et à jour après une modification', async () => {
+    const note = await localApi.createEntry({ title: 'Procédure ÉLECTRICITÉ', content_md: 'Vétérinaire' });
+    await localApi.createTask({ title: 'Relire la procédure' });
+    const found = async (q: string) => (await localApi.state(q)).entries.map((e) => e.title);
+    expect(await found('procedure')).toEqual(['Procédure ÉLECTRICITÉ']);
+    expect(await found('electricite')).toEqual(['Procédure ÉLECTRICITÉ']);
+    expect(await found('VETERINAIRE')).toEqual(['Procédure ÉLECTRICITÉ']);
+    expect((await localApi.state('procedure')).tasks.map((t) => t.title)).toEqual(['Relire la procédure']);
+    await localApi.updateEntry(note.id, { title: 'Pompe', content_md: 'Bassin' });
+    expect(await found('procedure')).toEqual([]);
+    expect(await found('bassin')).toEqual(['Pompe']);
+  });
 });
 
 describe('entrées', () => {

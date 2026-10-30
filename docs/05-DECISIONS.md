@@ -2344,3 +2344,149 @@ synchro) ; une adresse écrite en dur dans la PWA (Drive était demandé, et une
 
 **Rouvrir si** le réseau Tailscale est partagé avec d'autres personnes, ou si le relais sort du
 seul réseau Tailscale (`funnel`, port ouvert) : un code redevient nécessaire.
+
+---
+
+## 56. Les champs de texte suivent leur texte et la largeur de leur colonne — 2026-10-29
+
+**Demande.** « Le resize auto de l'input textarea de la partie écriture ne fonctionne pas […]
+tous les champs de texte doivent se resize quand on resize un panneau ou une fenêtre. »
+
+**Constat (Playwright, avant correctif).** Aucun champ multiligne ne suivait son texte. La zone
+Markdown n'était haute que lorsque l'aperçu voisin l'étirait ; aperçu masqué (≤ 1 180 px), elle
+restait à 60 % de l'écran : 538 px affichés pour 9 380 px de texte, ascenseur dans le champ en
+plus de celui de la colonne. Même chose pour les sous-tâches d'une entrée liée, le fichier texte
+du partage et les champs IA des Paramètres. Et les replis « écran étroit » ne regardaient que la
+fenêtre : journal et tâches élargis, l'Écriture tombait à 320 px avec la mise en page d'un grand
+écran — Markdown et aperçu à ~120 px chacun, titre de la tâche liée à 31 px (la colonne défilait
+en largeur), titre des tâches suggérées à 26 px, page d'un document Google à onglets à 50 px.
+Panneau Tâches au minimum : « Nouvelle tâche » à 22 px, recherche « Lier des documents » hors de
+la fenêtre.
+
+**Décisions.**
+- **`field-sizing: content` sur tout `textarea`** : une règle, aucun JS. Le navigateur recalcule
+  la hauteur à la frappe et à chaque changement de largeur (poignée, Paramètres › Affichage,
+  fenêtre) ; c'est la colonne qui défile et suit le curseur. `rows` ne compte plus : les hauteurs
+  au repos sont écrites en lignes (`calc(4lh + 14px)` pour les sous-tâches, `3lh` pour l'IA),
+  identiques au pixel (98 et 68 px). La zone Markdown garde son minimum de 60 % de l'écran.
+- **`.center` est un conteneur** (`container-type: inline-size`) : les replis se décident aussi sur
+  la largeur de la colonne. ≤ 540 px : Markdown seul, comme une fenêtre ≤ 1 180 px (l'aperçu reste
+  dans Lire) ; ≤ 640 px : tâche liée et tâches suggérées en une colonne, onglets Google au-dessus
+  de la page comme sur tablette. Aux largeurs par défaut rien ne bouge : 540 px est sous la colonne
+  d'une fenêtre de 1 181 px, 640 px équivaut au repli ≤ 680 px de fenêtre déjà en place, et les
+  `@media` restent. Vérifié : `container-type` ne fait pas de la colonne le bloc conteneur des
+  éléments `fixed`/`absolute`, menus et fenêtres ne bougent pas.
+- **Panneau Tâches étroit** : « Ajouter » passe sous « Nouvelle tâche » (`flex-wrap`, base 120 px) ;
+  la grille « Lier des documents » prend `minmax(0, 1fr)` comme les autres formulaires de carte.
+
+**Écartés.** Un redimensionnement en JS (`scrollHeight` + `ResizeObserver`) : plus de code, et
+l'aller-retour `height: auto` fait sauter le défilement de la colonne. Des `@container` sur les
+panneaux latéraux : leurs formulaires sont déjà en une colonne. Les titres de cartes et boutons
+trop larges d'un panneau à 120 px (minimum de la poignée) : rien à voir avec les champs.
+
+**Ce que ça coûte.** Un navigateur sans `field-sizing` (Firefox, ancien Safari) garde l'ancienne
+hauteur fixe avec ascenseur, sans rien casser ; l'application desktop et la PWA (Chromium) l'ont.
+Un champ agrandi à la main par sa poignée garde la hauteur choisie (comportement du navigateur).
+
+**Rouvrir si** la PWA doit servir sous Firefox : un repli JS limité à ce cas.
+
+---
+
+## 57. Arrêter une demande IA, et lire le tableau JSON malgré son emballage — 2026-10-29
+
+**Demande.** « Améliore encore les fonctionnalités d'IA. »
+
+**Constat.**
+- Une demande lancée ne s'arrêtait pas. Modèles gratuits saturés, la chaîne de secours (§17)
+  peut tenir 45 s (1,5 × 30 s) ; pendant ce temps, toutes les actions IA de la note ou de la
+  carte restent grisées, et le menu ✨ IA ouvert ne montre que des actions désactivées.
+  Quitter la note laissait la demande user le quota pour une réponse jetée.
+- « Suggérer des tâches » et « Trouver la doc » n'acceptaient que le tableau JSON seul, ou
+  dans une clôture de code en tout début de réponse : « Voici les tâches : ```json […]``` »
+  donnait « Réponse IA illisible ».
+- La réponse coupée par le budget de jetons (`finish_reason: length`) est corrigée au même
+  moment dans une autre copie de travail (`fix/ia-procedure-coupee`) : ce lot n'y touche pas.
+
+**Décisions.**
+- **« Arrêter »** à côté du bouton en attente (« Rédaction… ») des trois menus ✨ IA : note ou
+  procédure, fichier du partage, carte. Dans une carte, le pied et son menu disparaissent sous
+  un formulaire ou une proposition : « ＋ Entrée liée » et la procédure proposée portent donc
+  leur propre « Arrêter ». Le focus revient au bouton ✨ IA ; sur téléphone, la rangée d'actions
+  défile pour le montrer, jamais la page.
+- **Le signal voyage avec les réglages** (`AiSettings.signal`, jamais enregistré) : aucune
+  fonction de `ai-suggest.ts` ne change de signature. Arrêtée avant, pendant ou juste après un
+  essai, la demande lève `AiCancelled` : ni modèle suivant, ni réponse rendue, et les écrans
+  n'affichent rien, ni erreur ni proposition. Quitter la note, le fichier ou la carte la coupe
+  aussi. Une carte coupe ensemble ses demandes en cours (procédure et recherche peuvent
+  tourner à la fois).
+- **Le tableau JSON est lu malgré son emballage** : phrase avant ou après, clôture de code
+  n'importe où. Fusionné après la PR #30, qui faisait la même chose au même moment : sa lecture
+  (`parseJsonArray`, §43 révisé le 2026-10-29) est seule gardée, et accepte en plus un objet
+  qui enveloppe le tableau (`{"termes": […]}`).
+
+**Écartés.**
+- **La recherche sans accents** (« procedure » ne trouve pas « Procédure », §43 « Rouvrir si »),
+  faite ensuite avec une table repliée, voir §58.
+  Mesuré sur 3 000 notes de 4 Ko : une fonction SQL de repliement coûte ~265 ms par recherche
+  (~150 ms optimisée, 67 ms même vide : tout le texte passe par JavaScript), un motif `GLOB`
+  accentué ~220 ms quand rien ne correspond, contre 3 ms aujourd'hui. Bien le faire demande une
+  colonne repliée ou un index plein texte, donc une migration : à décider à part.
+- **Retoucher les consignes** sans clé réelle pour juger le résultat (`04-RECETTES.md` §14).
+- **`response_format` JSON** du protocole OpenAI : non vérifié sur l'endpoint Gemini sans clé,
+  et un refus du fournisseur casserait la fonction.
+
+**Ce que ça coûte.** Un bouton de plus pendant l'attente. Une réponse arrivée à l'instant même
+de l'arrêt est jetée.
+
+**Rouvrir si** une demande doit survivre à un changement de note : sa réponse devrait alors
+attendre ailleurs que dans l'écran quitté.
+
+---
+
+## 58. Recherche sans accents ni capitales : un texte replié par machine — 2026-10-29
+
+**Demande.** « Tu peux modifier la structure de la base pour faire sans ce coût la recherche
+sans accents » (§57 l'avait écartée : 150 à 265 ms par recherche sur 3 000 notes de 4 Ko).
+
+**Décision.** Une table `entry_search(entry_id, text)` garde titre + texte repliés (`fold` :
+NFD, marques retirées, minuscules), et `GET /api/state?q=` y cherche par `LIKE`. Deux
+déclencheurs l'invalident : titre ou texte changé (`AFTER UPDATE OF title, content_md`), note
+supprimée. Ils ne font que **supprimer** la ligne et n'appellent aucune fonction maison : toute
+écriture (API, synchronisation Drive, restauration, `sqlite3` à la main) reste possible et juste.
+`refreshSearch` replie, avant chaque recherche, les seules notes sans ligne. Les titres de
+tâches, courts, passent par la fonction SQL `fold` déclarée à l'ouverture de la base. La PWA
+replie de même, avec un cache par note.
+
+**Pourquoi une table et pas une colonne.** `entries` part telle quelle dans les sauvegardes
+(`SELECT *`) et la synchronisation : une colonne y fuirait. La table est de la machine, comme
+celles du partage (§25), jamais exportée.
+
+**Mesures (3 000 notes de 4 Ko).** 8 à 11 ms par recherche (3 ms avant, sans accents) ; une
+note modifiée, 14 ms ; le tout premier repli, une seule fois, 410 ms.
+
+**Rouvrir si** la recherche doit trouver des mots plutôt que des morceaux de mots, ou ranger
+par pertinence : un index plein texte (FTS5, `remove_diacritics`) changerait alors le sens.
+
+---
+
+## 59. Voir l'IA travailler — 2026-10-29
+
+**Demande.** « Améliore également l'animation/feedback lors de la génération IA. »
+
+**Avant.** Seul le libellé du bouton changeait (« Rédaction… ») ; rien à la place de la
+proposition, rien pour dire depuis combien de temps, alors qu'un modèle saturé peut mettre 45 s.
+
+**Décisions.**
+- Le bouton ✨ IA en attente : étincelle qui pulse, reflet qui le traverse, secondes passé trois
+  (« ✨ Rédaction… 12 s »), infobulle « Arrêter coupe la demande » passé quinze. Son nom
+  accessible reste le libellé : le compteur n'est pas lu à chaque seconde.
+- À la place de la proposition attendue, un cadre « L'IA rédige la note… » aux lignes qui se
+  dessinent (`AiPending`, `role="status"`, lu une fois). Une proposition qu'on rafraîchit
+  s'estompe (`aria-busy`) ; les boutons en attente (Rafraîchir, ✨ Suggérer) ont le reflet.
+- Sur téléphone, la rangée d'actions défile aussi quand le compteur élargit le bouton :
+  « Arrêter » reste entièrement à l'écran.
+- `prefers-reduced-motion` : tout est immobile, le texte reste.
+
+**Écartés.** Une barre de progression (l'API ne dit pas où en est la réponse : ce serait un
+leurre) ; la réponse affichée mot à mot (streaming : autre protocole, et la proposition doit de
+toute façon être relue entière avant application).

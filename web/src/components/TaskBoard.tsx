@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { COLUMNS, PRIORITIES, TASK_VIEWS, api, dayLabel, isOverdue, priorityLabel, subtasksMd, todayISO, type Category, type Entry, type EntrySummary, type Priority, type Project, type Status, type Task, type TaskView } from '../lib';
-import { draftProcedure, MAX_SOURCE_DOCUMENTS, readAiSettings, suggestSearchTerms, suggestSubtasks, taskSuggestContext, type AiWorkContext, type DraftedProcedure } from '../ai-suggest';
+import { AiCancelled, draftProcedure, MAX_SOURCE_DOCUMENTS, readAiSettings, suggestSearchTerms, suggestSubtasks, taskSuggestContext, type AiWorkContext, type DraftedProcedure } from '../ai-suggest';
 import { loadAiContext, readProjectAiBrief, selectedAiContext } from '../ai-context';
 import { findDocuments, type FoundDocument } from '../doc-finder';
 import { richToMarkdown } from '../rich-markdown';
@@ -361,6 +361,16 @@ function TaskCard({
     setCreatingEntry(true);
   };
 
+  // « Arrêter » coupe les demandes IA de la carte en cours (procédure, recherche, sous-tâches) ;
+  // la suivante repart d'un contrôleur neuf. Une carte qui disparaît coupe les siennes.
+  const aiRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => aiRequest.current?.abort(), []);
+  const aiSettings = () => {
+    if (!aiRequest.current || aiRequest.current.signal.aborted) aiRequest.current = new AbortController();
+    return { ...readAiSettings(), signal: aiRequest.current.signal };
+  };
+  const stopAi = () => aiRequest.current?.abort();
+
   const contextForTask = async (version: number, title = task.title, text = '') => {
     const context = await loadAiContext({
       projectId: task.project_id,
@@ -380,7 +390,7 @@ function TaskCard({
     setSuggesting(true);
     setSuggestError('');
     try {
-      const settings = readAiSettings();
+      const settings = aiSettings();
       if (!settings.key) throw new Error('Colle ta clé IA dans ⚙ Paramètres pour activer les suggestions.');
       const context = selectedAiContext(await contextForTask(version, entryTitle.trim() || task.title, entrySubtasks), excludedSourceIds);
       const raw = await suggestSubtasks(settings, entryTitle.trim() || task.title, {
@@ -394,7 +404,7 @@ function TaskCard({
       setEntrySubtasks(raw);
       setCanRefineCreator(true);
     } catch (e) {
-      setSuggestError((e as Error).message);
+      if (!(e instanceof AiCancelled)) setSuggestError((e as Error).message);
     } finally {
       setSuggesting(false);
     }
@@ -428,7 +438,7 @@ function TaskCard({
     setDrafting(true);
     setDraftError('');
     try {
-      const settings = readAiSettings();
+      const settings = aiSettings();
       if (!settings.key) throw new Error('Colle ta clé IA dans ⚙ Paramètres pour activer la création de procédure.');
       const suggestContext = taskSuggestContext(task, tasks, entries, projects);
       const fullContext = await contextForTask(version);
@@ -469,7 +479,7 @@ function TaskCard({
       });
       if (contextVersion.current === version) setProcedureDraft(proposed);
     } catch (e) {
-      setDraftError((e as Error).message);
+      if (!(e instanceof AiCancelled)) setDraftError((e as Error).message);
     } finally {
       setDrafting(false);
     }
@@ -487,7 +497,8 @@ function TaskCard({
     setFound(null);
     try {
       const suggestContext = taskSuggestContext(task, tasks, entries, projects);
-      const terms = await suggestSearchTerms(readAiSettings(), {
+      const settings = aiSettings();
+      const terms = await suggestSearchTerms(settings, {
         title: task.title,
         status: COLUMNS.find((column) => column.id === task.status)?.label,
         project: suggestContext.project,
@@ -495,9 +506,11 @@ function TaskCard({
         vocabulary: suggestContext.vocabulary,
         linkedDocuments: linkedDocuments.map((document) => document.title),
       });
-      setFound({ terms, ...(await findDocuments(terms, linkedIds)) });
+      const result = await findDocuments(terms, linkedIds);
+      // Arrêtée pendant les recherches : la liste n'est plus attendue.
+      if (!settings.signal.aborted) setFound({ terms, ...result });
     } catch (e) {
-      setFindError((e as Error).message);
+      if (!(e instanceof AiCancelled)) setFindError((e as Error).message);
     } finally {
       setFinding(false);
     }
@@ -551,7 +564,7 @@ function TaskCard({
       {aiContext && <AiContextDetails context={aiContext} excludedIds={excludedSourceIds} onExcludedChange={excludeSources} />}
       <div className="task-creator-actions">
         <button
-          className="ghost"
+          className={'ghost' + (suggesting ? ' ai-busy' : '')}
           type="button"
           disabled={suggesting || entryBusy}
           title="Remplace les sous-tâches par une nouvelle suggestion (envoie le titre et son contexte au service IA configuré en Paramètres)"
@@ -559,6 +572,7 @@ function TaskCard({
         >
           {suggesting ? 'Suggestion…' : '✨ Suggérer'}
         </button>
+        {suggesting && <button className="ghost" type="button" aria-label="Arrêter la demande IA" onClick={stopAi}>Arrêter</button>}
         <button className="task-primary" type="submit" disabled={entryBusy || !entryTitle.trim()}>
           {entryBusy ? 'Création…' : 'Créer et ouvrir'}
         </button>
@@ -580,7 +594,7 @@ function TaskCard({
     </button>
   );
   const aiMenu = (
-    <AiMenu label="Assistance IA de la tâche" className="card-link" busy={drafting ? 'Rédaction…' : finding ? 'Recherche…' : null}>
+    <AiMenu label="Assistance IA de la tâche" className="card-link" busy={drafting ? 'Rédaction…' : finding ? 'Recherche…' : null} onCancel={stopAi}>
       <button
         role="menuitem"
         type="button"
@@ -656,6 +670,7 @@ function TaskCard({
       projectId={task.project_id}
       busy={drafting}
       onRefresh={(instruction) => void draftFromTask(instruction)}
+      onCancel={stopAi}
       onCreated={(procedure) => {
         setProcedureDraft(null);
         onProcedureCreated(procedure);

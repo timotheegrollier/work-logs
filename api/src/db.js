@@ -11,6 +11,8 @@ export const uid = (p = '') =>
   p + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 export const nowISO = () => new Date().toISOString();
 export const today = () => new Date().toISOString().slice(0, 10);
+/** Texte comparé par la recherche : sans accents ni capitales (« procedure » trouve « Procédure »). */
+export const fold = (text) => String(text ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -338,6 +340,15 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   // local seul, sans rien casser pour les lignes existantes.
   if (!columns(db, 'attachments').includes('drive_file_id')) db.exec("ALTER TABLE attachments ADD COLUMN drive_file_id TEXT NOT NULL DEFAULT ''");
   db.exec(LOCAL_SCHEMA);
+  // Recherche sans accents (§58) : titre + texte repliés, propres à cette machine (jamais
+  // sauvegardés ni synchronisés). Un titre ou un texte changé, par n'importe quel chemin,
+  // efface la ligne ; `refreshSearch` replie à nouveau les seules lignes manquantes.
+  db.exec(`CREATE TABLE IF NOT EXISTS entry_search (entry_id TEXT PRIMARY KEY, text TEXT NOT NULL);
+    CREATE TRIGGER IF NOT EXISTS entry_search_stale AFTER UPDATE OF title, content_md ON entries
+      BEGIN DELETE FROM entry_search WHERE entry_id IN (OLD.id, NEW.id); END;
+    CREATE TRIGGER IF NOT EXISTS entry_search_gone AFTER DELETE ON entries
+      BEGIN DELETE FROM entry_search WHERE entry_id = OLD.id; END;`);
+  db.function('fold', { deterministic: true }, fold);
   db.exec('PRAGMA foreign_keys = ON;');
   if (withSeed) seed(db);
   if (!db.prepare('SELECT 1 FROM local_settings WHERE key=?').get(TASK_CATEGORY_MIGRATION)) {
@@ -350,6 +361,21 @@ export function openDb(dbPath, { withSeed = true } = {}) {
     } catch (error) { db.exec('ROLLBACK'); db.close(); throw error; }
   }
   return db;
+}
+
+/** Replie les notes nouvelles ou modifiées depuis la dernière recherche, en une transaction. */
+export function refreshSearch(db) {
+  const stale = db.prepare(`SELECT e.id, e.title, e.content_md FROM entries e
+    LEFT JOIN entry_search s ON s.entry_id = e.id WHERE s.entry_id IS NULL`).all();
+  if (!stale.length) return;
+  const insert = db.prepare('INSERT OR REPLACE INTO entry_search (entry_id, text) VALUES (?, ?)');
+  // Déjà dans une transaction (appel interne) : elle porte aussi ces lignes.
+  const own = !db.isTransaction;
+  if (own) db.exec('BEGIN');
+  try {
+    for (const row of stale) insert.run(row.id, fold(`${row.title}\n${row.content_md}`));
+    if (own) db.exec('COMMIT');
+  } catch (error) { if (own) db.exec('ROLLBACK'); throw error; }
 }
 
 /** Note une suppression pour la synchro (ignoré si la table n'existe pas encore). */
