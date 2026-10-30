@@ -355,11 +355,10 @@ const enc = encodeURIComponent;
 /**
  * Client du dossier partagé. `base` vide : le serveur de cet ordinateur (desktop,
  * dev). Sur la PWA : le **relais** de l'équipe (`api/src/relay.js`, joint par
- * Tailscale), avec son code d'accès dans `auth`. Mêmes routes, mêmes réponses.
+ * Tailscale). Mêmes routes, mêmes réponses.
  */
-export function sharedClient(base: string, auth: () => Record<string, string> = () => ({})) {
-  const call = (path: string, init: RequestInit = {}) =>
-    fetch(base + path, { ...init, headers: { ...auth(), ...((init.headers as Record<string, string> | undefined) ?? {}) } });
+export function sharedClient(base: string) {
+  const call = (path: string, init: RequestInit = {}) => fetch(base + path, init);
   const failure = (res: Response, payload: { error?: string; code?: string } | null) =>
     new ApiError(payload?.error || `Erreur ${res.status}`, payload?.code);
   const json = async <T>(path: string, init?: RequestInit): Promise<T> => {
@@ -525,7 +524,7 @@ export const remoteApi = {
   ...sharedClient(''),
   /**
    * PDF du partage, servi `inline` pour la visionneuse intégrée (desktop). Pas par le relais
-   * de la PWA : une `<iframe>` n'envoie pas son en-tête `Authorization`.
+   * de la PWA : un PDF y garde l'explication et son téléchargement (§34).
    */
   sharedPreviewUrl: (hash: string, name: string): string | null =>
     '/api/shared/preview?hash=' + enc(hash) + '&name=' + enc(name),

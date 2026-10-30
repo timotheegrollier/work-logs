@@ -90,12 +90,6 @@ function tokenProxy(): string {
   return getWebClientId() === '' && builtinWebClientId() !== '' ? builtinTokenProxy() : '';
 }
 
-/** Clé de la copie chiffrée de l'accès au relais (`/relay-key`, même Worker) : client intégré seulement. */
-export function relayKeyUrl(): string {
-  const proxy = tokenProxy();
-  return proxy ? new URL('/relay-key', proxy).href : '';
-}
-
 /** Oublie le client personnel : retour au client intégré, session effacée. */
 export function clearWebClient(): void {
   try {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { newToken, relayConfig, relayVersion, sameToken, startRelay } from '../src/relay.js';
+import { relayConfig, relayVersion, startRelay } from '../src/relay.js';
 
 const PWA = 'https://worklogs-google.cocodexcocoder.workers.dev';
 
@@ -12,14 +12,14 @@ describe('relais du dossier partagé (PWA)', () => {
   let data;
   let relay;
   let base;
-  const token = newToken();
+  // Ce qu'envoie la PWA : son origine, depuis un autre site que le relais.
   const call = (url, { headers = {}, ...init } = {}) =>
-    fetch(base + url, { ...init, headers: { Authorization: `Bearer ${token}`, Origin: PWA, ...headers } });
+    fetch(base + url, { ...init, headers: { Origin: PWA, 'Sec-Fetch-Site': 'cross-site', ...headers } });
 
   beforeEach(async () => {
     share = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-relais-partage-'));
     data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-relais-data-'));
-    relay = startRelay({ root: share, token, origins: [PWA], dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)', label: '00. PROCEDURE' });
+    relay = startRelay({ root: share, origins: [PWA], dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)', label: '00. PROCEDURE' });
     await new Promise((resolve) => relay.server.once('listening', resolve));
     base = `http://127.0.0.1:${relay.server.address().port}`;
   });
@@ -29,11 +29,22 @@ describe('relais du dossier partagé (PWA)', () => {
     fs.rmSync(data, { recursive: true, force: true });
   });
 
-  test('sans le bon code : refusé ; /health répond sans code', async () => {
-    assert.equal((await fetch(base + '/api/shared/status')).status, 401);
-    const wrong = await fetch(base + '/api/shared/status', { headers: { Authorization: 'Bearer faux' } });
-    assert.equal(wrong.status, 401);
-    assert.equal((await wrong.json()).code, 'RELAY_UNAUTHORIZED');
+  test('sans code : le réseau suffit ; une autre page qu’un navigateur ouvre ne passe pas', async () => {
+    assert.equal((await fetch(base + '/api/shared/status')).status, 200, 'curl depuis le réseau Tailscale');
+    // Formulaire ou `fetch` sans CORS d'un autre site : le navigateur dit d'où il vient.
+    for (const origin of ['https://ailleurs.example', 'null']) {
+      const foreign = await fetch(`${base}/api/shared/create?path=${encodeURIComponent('piège.md')}`, {
+        method: 'POST', headers: { Origin: origin, 'Content-Type': 'text/plain' }, body: 'écrit par un autre site',
+      });
+      assert.equal(foreign.status, 403);
+      assert.equal((await foreign.json()).code, 'RELAY_FOREIGN_ORIGIN');
+    }
+    assert.deepEqual(fs.readdirSync(share), [], 'rien d’écrit dans le partage');
+    // Lecture lancée par une autre page (`<img>`, cadre) : refusée aussi ; tapée dans la barre : servie.
+    assert.equal((await fetch(base + '/api/shared/list', { headers: { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'no-cors' } })).status, 403);
+    assert.equal((await fetch(base + '/api/shared/status', { headers: { 'Sec-Fetch-Site': 'none' } })).status, 200);
+    // Une PWA restée ouverte envoie encore son ancien code : ignoré.
+    assert.equal((await call('/api/shared/status', { headers: { Authorization: 'Bearer ancien-code' } })).status, 200);
     assert.deepEqual(await (await fetch(base + '/health')).json(), { ok: true, service: 'worklogs-relais' });
     const status = await (await call('/api/shared/status')).json();
     assert.equal(status.available, true);
@@ -44,7 +55,7 @@ describe('relais du dossier partagé (PWA)', () => {
     // Un nom changé depuis le téléphone survit au redémarrage du relais.
     await call('/api/shared/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: 'T. G. (téléphone)' }) });
     await relay.stop();
-    relay = startRelay({ root: share, token, origins: [PWA], dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)', label: '00. PROCEDURE' });
+    relay = startRelay({ root: share, origins: [PWA], dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)', label: '00. PROCEDURE' });
     await new Promise((resolve) => relay.server.once('listening', resolve));
     base = `http://127.0.0.1:${relay.server.address().port}`;
     assert.equal((await (await call('/api/shared/status')).json()).displayName, 'T. G. (téléphone)');
@@ -102,15 +113,13 @@ describe('relais du dossier partagé (PWA)', () => {
     assert.deepEqual(fs.readdirSync(share), []);
   });
 
-  test('réglages : racine et code obligatoires, origine de la PWA par défaut', () => {
+  test('réglages : racine obligatoire, pas de code, origine de la PWA par défaut', () => {
     assert.throws(() => relayConfig({}), /WORKLOGS_SHARED_ROOT/);
-    assert.throws(() => relayConfig({ WORKLOGS_SHARED_ROOT: share, WORKLOGS_RELAY_TOKEN: 'court', WORKLOGS_RELAY_TOKEN_FILE: path.join(data, 'absent') }), /Code d’accès/);
-    const config = relayConfig({ WORKLOGS_SHARED_ROOT: share, WORKLOGS_RELAY_TOKEN: token });
+    // L'ancien réglage du code (env de la VM) reste lisible sans gêner le démarrage.
+    const config = relayConfig({ WORKLOGS_SHARED_ROOT: share, WORKLOGS_RELAY_TOKEN_FILE: path.join(data, 'absent') });
     assert.deepEqual(config.origins, [PWA]);
     assert.equal(config.host, '127.0.0.1', 'écoute locale : tailscale serve seul est exposé');
-    assert.equal(sameToken(token, token), true);
-    assert.equal(sameToken(token, token.slice(1)), false);
-    assert.equal(sameToken('', token), false);
+    assert.equal('token' in config, false);
   });
 
   test('/health dit la version déployée par la mise à jour automatique (api/VERSION)', async () => {
@@ -119,7 +128,7 @@ describe('relais du dossier partagé (PWA)', () => {
     fs.writeFileSync(file, '0.52.0\n');
     assert.equal(relayVersion(file), '0.52.0');
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-relais-data-'));
-    const deployed = startRelay({ root: share, token, origins: [PWA], dataDir, host: '127.0.0.1', port: 0, version: '0.52.0' });
+    const deployed = startRelay({ root: share, origins: [PWA], dataDir, host: '127.0.0.1', port: 0, version: '0.52.0' });
     try {
       await new Promise((resolve) => deployed.server.once('listening', resolve));
       const health = await (await fetch(`http://127.0.0.1:${deployed.server.address().port}/health`)).json();

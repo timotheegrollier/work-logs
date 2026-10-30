@@ -541,9 +541,10 @@ WorkLogs (ils ignorent les verrous des autres applications). Rien n'est perdu po
 si un collègue enregistre avant toi, ton envoi te demande quoi faire.
 
 **Sur le téléphone (PWA)**, le dossier des procédures passe par le **relais du bureau** (la VM,
-jointe par Tailscale) : Paramètres › Dossier partagé du TSE, adresse et code d'accès du relais
+jointe par Tailscale) : Paramètres › Dossier partagé du TSE, l'adresse du relais, sans code
 (installation : `docs/09-RELAIS.md`). Ensuite tout est pareil : lire, modifier, créer,
-envoyer, conflits. Tailscale doit être allumé sur le téléphone.
+envoyer, conflits. Tailscale doit être allumé sur le téléphone. L'adresse est gardée dans le
+compte Google : connecté, un téléphone qui l'a perdue la retrouve tout seul.
 
 ## Retrouver
 
@@ -578,6 +579,9 @@ tâche ou projet garde sa version la plus récente, et une suppression se propag
 **Documents Google** (menu du compte) : la liste des documents autorisés pour WorkLogs,
 avec pour chacun **Ouvrir**, un choix de **projet**, et 🗑 (**corbeille Google Drive**,
 récupérable 30 jours ; la copie dans WorkLogs est retirée). On y crée aussi un Google Docs.
+Un document qui n'y est pas encore — partagé avec toi, ou créé hors de WorkLogs : **Autoriser
+d'autres documents** ouvre le sélecteur Google dans le navigateur ; choisis-en un ou plusieurs,
+puis **Actualiser**.
 **Ouvrir** bascule le filtre sur le projet du document, comme une carte de tâche ; le journal
 et le document affiché parlent alors du même projet.
 

@@ -8,7 +8,7 @@ HTTPS. Décision : `05-DECISIONS.md` §29.
 
 ```
 téléphone (PWA, https://worklogs-google…workers.dev)
-   │  fetch + « Authorization: Bearer <code> »  (CORS : la seule origine de la PWA)
+   │  fetch, sans code  (CORS : la seule origine de la PWA ; une autre page → 403)
    ▼
 https://<vm>.<tailnet>.ts.net:8443   ← tailscale serve (certificat valide, réseau Tailscale seul)
    ▼
@@ -19,8 +19,9 @@ https://<vm>.<tailnet>.ts.net:8443   ← tailscale serve (certificat valide, ré
 
 Ce qui ne change pas : verrous, envoi gardé, conflits (et « Fusionner »), versions, création
 de fichiers, dossiers (créer, renommer, supprimer), éditeurs Word / Excel / CSV / texte — c'est le même code (`shared-service.js` côté
-relais, les mêmes composants côté PWA). Ce qui change : la porte d'entrée (un code d'accès au
-lieu de « cet ordinateur seulement ») et la base locale (celle du relais, sur la VM).
+relais, les mêmes composants côté PWA). Ce qui change : la porte d'entrée (le réseau Tailscale
+au lieu de « cet ordinateur seulement », sans code d'accès depuis le 2026-10-29, §55) et la base
+locale (celle du relais, sur la VM).
 
 ## Installer (une fois, sur la VM)
 
@@ -35,9 +36,8 @@ Fichiers prêts dans `relay/` : `worklogs-relais.service`, `env.exemple`, `fstab
    puis `sudo nano /etc/worklogs-relais/smb.cred`.
 4. **Montage** : ligne de `fstab.exemple` dans `/etc/fstab`, `sudo mkdir -p /mnt/tse-procedures`,
    `sudo systemctl daemon-reload && sudo mount /mnt/tse-procedures && ls /mnt/tse-procedures`.
-5. **Réglages** : `env.exemple` → `/etc/worklogs-relais/env` (root:worklogs-relais, 0640) ;
-   code d'accès : `node /opt/worklogs-relais/api/src/relay.js --nouveau-code | sudo tee /etc/worklogs-relais/code`,
-   puis `sudo chown root:worklogs-relais /etc/worklogs-relais/code && sudo chmod 640 /etc/worklogs-relais/code`.
+5. **Réglages** : `env.exemple` → `/etc/worklogs-relais/env` (root:worklogs-relais, 0640).
+   Pas de code d'accès : seul le réseau Tailscale joint le relais (étape 7, §55).
 6. **Service** : `worklogs-relais.service` → `/etc/systemd/system/`, `sudo systemctl enable --now worklogs-relais`,
    `curl -s http://127.0.0.1:8420/health`.
 7. **Tailscale** : installer depuis le dépôt officiel (`pkgs.tailscale.com`), `sudo tailscale up`
@@ -131,30 +131,27 @@ racine du partage, 401 sans code ; le script de la VM est celui de la release,
 ## Régler le téléphone
 
 1. Tailscale allumé sur le téléphone (le même réseau que la VM).
-2. WorkLogs (PWA) › Paramètres › **Dossier partagé du TSE** : adresse
-   `https://<vm>.<tailnet>.ts.net:8443`, code d'accès (le contenu de `/etc/worklogs-relais/code`).
-   Pour ne pas le recopier à la main : sur la VM, `sudo qrencode -t ansiutf8 -r /etc/worklogs-relais/code`
-   (le fichier est `root:worklogs-relais` 640 ; `sudo qrencode … < fichier` échoue : la redirection
-   est faite par le shell de l'utilisateur, avant `sudo` — « Permission non accordée », vécu le 2026-10-21),
-   le scanner avec l'appareil photo du téléphone, copier le texte, le coller dans le champ.
-   « Enregistrer » vérifie aussitôt que le relais répond. Si Chrome demande l'accès au réseau
-   local, l'accepter (adresse Tailscale privée).
+2. WorkLogs (PWA) › Paramètres › **Dossier partagé du TSE** : l'adresse
+   `https://worklogs-relais.tail614cd0.ts.net:8443`, rien d'autre (plus de code depuis le
+   2026-10-29, §55). « Enregistrer » vérifie aussitôt que le relais répond. Si Chrome demande
+   l'accès au réseau local, l'accepter (adresse Tailscale privée).
 3. La section « Dossier partagé » apparaît dans la colonne Procédures.
 
-Une fois enregistrés, l'adresse et le code sont aussi gardés **chiffrés** dans le compte Google
-connecté (`WorkLogs/WorkLogs relais.json`, AES-GCM). Si le téléphone les perd (stockage effacé,
-PWA réinstallée), ils reviennent tout seuls à la connexion Google : rien à ressaisir. Le fichier
-Drive seul ne suffit pas à les lire ; la clé est rendue par le Worker au seul compte connecté
-(`/relay-key`, §29 de `05-DECISIONS.md`). « Oublier ce relais » retire aussi la copie du compte.
-Changer de code : en générer un nouveau sur la VM, `sudo systemctl restart worklogs-relais`, le
-ressaisir une fois : la copie du compte suit.
+Une fois enregistrée, l'adresse est aussi gardée dans le compte Google connecté
+(`WorkLogs/WorkLogs relais.json`, en clair : elle n'ouvre rien hors du réseau Tailscale). Si le
+téléphone la perd (stockage effacé, PWA réinstallée), elle revient toute seule à la connexion
+Google : il ne reste qu'à allumer Tailscale. Elle suit de même un autre navigateur connecté au
+même compte (le PC). « Oublier ce relais » retire aussi la copie du compte. L'ancienne copie
+chiffrée (adresse et code, §39) n'est plus lisible : la première PWA qui a l'adresse la remplace,
+une PWA qui n'a rien la met à la corbeille.
 
 ## Quand ça ne marche pas
 
 | Ce qu'on voit | Où regarder |
 |---|---|
 | « Le relais du dossier partagé ne répond pas » | Tailscale allumé sur le téléphone ? `systemctl status worklogs-relais`, `tailscale serve status` sur la VM |
-| « code d’accès absent ou incorrect » | le code du téléphone = `/etc/worklogs-relais/code` ? |
+| « Le relais ne répond pas (Failed to fetch) », Tailscale allumé | Chrome › Paramètres du site de la PWA › accès au réseau local autorisé ? |
+| « appel refusé depuis une autre page que WorkLogs » | l'appel vient d'un autre site que la PWA (`WORKLOGS_RELAY_ORIGINS`) ; curl : sans en-têtes `Origin` ni `Sec-Fetch-Site` |
 | « Non monté » / « Injoignable » | `ls /mnt/tse-procedures` sur la VM ; mot de passe du compte changé → mettre à jour `smb.cred` |
 | Erreur CORS dans la console du téléphone | `WORKLOGS_RELAY_ORIGINS` = l'adresse exacte de la PWA |
 | « Accès refusé » sur un dossier | droits NTFS du compte de `smb.cred` sur ce dossier |

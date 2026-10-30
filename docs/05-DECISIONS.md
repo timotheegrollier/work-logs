@@ -619,6 +619,18 @@ code + PKCE, avec le secret envoyé uniquement à Google si le client l'exige.
 `…googleusercontent.com` sont retenues, chargées en `referrerPolicy="no-referrer"`, avec
 l'initiale sur une pastille si l'image échoue.
 
+**Sauf pour le Picker (corrigé le 2026-10-29).** Le Picker desktop n'accepte que `drive.file`,
+« qui ne peut être combiné avec aucun autre scope », et `prompt=consent`
+([guide Google](https://developers.google.com/workspace/drive/picker/guides/overview-desktop)).
+Depuis le 22/09, « Choisir des documents dans Drive » le demandait avec `openid email profile`,
+et « Autoriser d'autres documents » (fenêtre Documents Google) n'ouvrait plus de Picker du tout
+(`pick` oublié). Constat du 29/10 : aucun document autorisé dans le profil de Timo depuis le
+16/09, et un document partagé avec son compte impossible à ajouter. Le Picker demande maintenant
+`drive.file` seul, avec `login_hint` du compte connecté (choisir un fichier ne doit pas faire
+passer la synchro sur un autre compte en douce) ; `userinfo` refusant ce jeton, le compte
+affiché est relu par Drive (`about.get`, accepté avec `drive.file`). **Ne pas** remettre
+`openid email profile` sur le Picker.
+
 **Rouvrir si** Google refuse durablement les jetons de renouvellement pour les clients Web
 publics, ou si un serveur WorkLogs hébergé apparaît (il pourrait gérer le renouvellement
 côté serveur).
@@ -1231,7 +1243,8 @@ serveur Windows (le plus lourd).
 - Relais injoignable (Tailscale éteint, VM arrêtée) : la section reste, « Injoignable », et dit
   quoi vérifier, au lieu de disparaître.
 - Le code d'accès reste sur le téléphone (stockage de la PWA), jamais synchronisé **en clair**.
-  Depuis le 2026-10-21, une copie **chiffrée** vit dans le compte Google (§39).
+  Depuis le 2026-10-21, une copie **chiffrée** vit dans le compte Google (§39). Depuis le
+  2026-10-29, **plus de code** : le réseau Tailscale suffit, l'adresse vit dans le compte (§55).
 
 **Limites assumées.** Hors réseau, rien (pas de copie hors ligne sur le téléphone : les
 brouillons vivent sur le relais) ; un seul compte Windows pour tout ce qui passe par le relais
@@ -1664,6 +1677,9 @@ entre-temps).
 **Rouvrir si** le Worker cesse d'être le passage obligé de la connexion Google, ou si le relais
 sort du seul réseau Tailscale.
 
+**Remplacé le 2026-10-29 (§55)** : plus de code, la copie ne garde que l'adresse, en clair ;
+`/relay-key` est retiré du Worker.
+
 ## 40. Changer de projet referme ce qui appartient à l'ancien — 2026-10-21
 
 **La demande.** « Quand on change de projet, les documents/fichiers ouverts ou édités dans le
@@ -1739,6 +1755,12 @@ pas d'indiquer ce qui devait changer.
   L'utilisateur sélectionne et peut corriger avant création par la route transactionnelle
   existante `POST /api/entries/:id/task`. Les liens existants sont relus avant une
   nouvelle tentative ; les créations réussies ne sont pas rejouées.
+  (2026-10-29) Le tableau se **lit** avec tolérance — prose ou bloc de code autour,
+  enveloppe `{"actions": […]}` — mais chaque action reste validée comme ci-dessus. Même
+  lecture pour « ✨ Trouver la doc ». Extraction et suggestion de tâches passent à
+  `DOCUMENT_MAX_TOKENS` (8 000) : priorité, explication et extrait par tâche, plus la
+  réflexion du modèle, pouvaient dépasser 3 072 jetons. Motif : refus « les actions
+  doivent être un tableau JSON » sur une vraie suggestion, réponse non conservée.
 - Les frappes pendant une suggestion sont conservées. Un changement de projet, de
   contenu source ou de sélection est vérifié avant application/création ; une réponse
   tardive ne rouvre pas le document quitté.
@@ -2270,9 +2292,62 @@ rangée (au plus le premier ou le deuxième). Les parcours mobiles choisissent p
 **Rouvrir si** l'usage montre des allers-retours constants entre deux projets : un raccourci
 « projet précédent » dans la liste, pas le retour de la rangée.
 
+## 55. Le relais sans code : le réseau Tailscale suffit, l'adresse revient du compte Google — 2026-10-29
+
+**La demande.** « Ma version PWA mobile n'est plus connectée au relais. Débrouille-toi pour que
+je n'aie pas de code à rentrer, car je ne peux y accéder déjà que via Tailscale, ce qui est
+suffisamment sécurisé, et fais en sorte que l'IP de connexion de Tailscale reste sauvegardée avec
+les données dans le Drive : connecté à mon compte Google, je n'ai qu'à me connecter à Tailscale. »
+Revient sur §29 (la porte d'entrée était un code) et remplace §39 (copie chiffrée du code).
+
+**Constaté.** Le relais tournait (v0.63.0, `tailscale serve` réservé au réseau, partage monté) ; le
+Worker et la PWA déployés répondaient ; Helium et Brave, sur le PC, avaient la bonne adresse et le
+bon code. Mais le relais n'avait plus servi une seule liste de dossier depuis le **2026-10-12**
+(`shared_dirs.listed_at` de sa base) : le téléphone ne passait plus, et la copie chiffrée du §39
+ne l'avait pas réparé. Le téléphone lui-même n'a pas pu être examiné : la cause exacte reste
+inconnue (réglage perdu, code faux, accès au réseau local refusé par Chrome…).
+
+**Les choix.**
+- **Plus de code d'accès.** Le relais n'est joignable que depuis le réseau Tailscale de Timo
+  (`tailscale serve`, jamais `funnel`), qui ne compte que ses appareils. Rien à saisir, rien à
+  perdre, plus de code recopié de travers (vécu dans Brave le 2026-10-08).
+- **Mais un navigateur n'entre que depuis la PWA.** Sans code, n'importe quelle page ouverte sur
+  un appareil du réseau pourrait écrire dans le partage : un formulaire ou un `fetch` « sans CORS »
+  part sans préliminaire, et le relais prend tout corps comme des octets (`push`, `create`). Un
+  navigateur envoie toujours son `Origin` sur une écriture venue d'une autre page (`null` compris),
+  et `Sec-Fetch-Site` sur tout appel : une origine autre que celle de la PWA reçoit 403
+  (`RELAY_FOREIGN_ORIGIN`), une lecture lancée par une autre page aussi (`<img>`, cadre). Sans ces
+  en-têtes : pas un navigateur (curl depuis le réseau) ; l'adresse tapée dans la barre (`none`) passe.
+- **L'adresse revient du compte Google, en clair.** Ce n'est pas un secret (elle est dans ce dépôt,
+  et n'ouvre rien hors du réseau Tailscale) : `WorkLogs/WorkLogs relais.json` la garde telle
+  quelle, avec sa date. Plus de clé à demander au Worker : `/relay-key` est retiré, et la copie
+  suit aussi un client Google personnel. Toujours à part de `WorkLogs backup.json`, que le desktop
+  réécrit sans connaître le relais. Même règle qu'au §39 : une fois par ouverture de la PWA et par
+  connexion, le plus récent gagne ; « Oublier ce relais » met la copie à la corbeille.
+- **Un ancien réglage ne laisse pas fuir son code** : `readRelay` ne rend que l'adresse et la
+  date, la copie Drive ne peut pas l'emporter. L'ancienne copie chiffrée est illisible : la
+  première PWA qui a l'adresse la remplace, une PWA qui n'a rien la met à la corbeille.
+- **Transition.** Le relais accepte encore l'en-tête `Authorization` d'une PWA restée ouverte
+  (ignoré). La PWA est déployée dès `master`, le relais à la release : entre les deux, la nouvelle
+  PWA reçoit 401 de l'ancien relais. `/etc/worklogs-relais/code` n'est plus lu, mais un retour
+  arrière automatique vers la v0.63.0 en aurait besoin : le garder jusqu'à la release suivante.
+
+**Limites assumées.** Tout appareil du réseau Tailscale, et tout programme qui y tourne (`nas`,
+`nuc`, `puppycam`, `raspberrypi`…), peut lire et modifier le dossier des procédures par le relais.
+Les ACL Tailscale peuvent le réserver au téléphone et au PC. Si l'adresse change (VM ou réseau
+renommés), elle se ressaisit une fois.
+
+**Écartés.** Garder le code et réparer la copie chiffrée (cause introuvable sur le téléphone, et
+Timo ne veut plus de code) ; l'adresse dans `WorkLogs backup.json` (le desktop la perdrait à chaque
+synchro) ; une adresse écrite en dur dans la PWA (Drive était demandé, et une autre VM obligerait
+à republier) ; rouvrir la visionneuse PDF de la PWA (§34), possible sans code mais pas demandée.
+
+**Rouvrir si** le réseau Tailscale est partagé avec d'autres personnes, ou si le relais sort du
+seul réseau Tailscale (`funnel`, port ouvert) : un code redevient nécessaire.
+
 ---
 
-## 55. Les champs de texte suivent leur texte et la largeur de leur colonne — 2026-10-29
+## 56. Les champs de texte suivent leur texte et la largeur de leur colonne — 2026-10-29
 
 **Demande.** « Le resize auto de l'input textarea de la partie écriture ne fonctionne pas […]
 tous les champs de texte doivent se resize quand on resize un panneau ou une fenêtre. »
@@ -2317,7 +2392,7 @@ Un champ agrandi à la main par sa poignée garde la hauteur choisie (comporteme
 
 ---
 
-## 56. Arrêter une demande IA, et lire le tableau JSON malgré son emballage — 2026-10-29
+## 57. Arrêter une demande IA, et lire le tableau JSON malgré son emballage — 2026-10-29
 
 **Demande.** « Améliore encore les fonctionnalités d'IA. »
 
@@ -2344,13 +2419,14 @@ Un champ agrandi à la main par sa poignée garde la hauteur choisie (comporteme
   n'affichent rien, ni erreur ni proposition. Quitter la note, le fichier ou la carte la coupe
   aussi. Une carte coupe ensemble ses demandes en cours (procédure et recherche peuvent
   tourner à la fois).
-- **Le tableau JSON est lu malgré son emballage** (`jsonArray`) : phrase avant ou après,
-  clôture de code n'importe où. Un objet qui enveloppe le tableau (`{"termes": […]}`) reste
-  refusé, comme le fixaient déjà les tests du §43.
+- **Le tableau JSON est lu malgré son emballage** : phrase avant ou après, clôture de code
+  n'importe où. Fusionné après la PR #30, qui faisait la même chose au même moment : sa lecture
+  (`parseJsonArray`, §43 révisé le 2026-10-29) est seule gardée, et accepte en plus un objet
+  qui enveloppe le tableau (`{"termes": […]}`).
 
 **Écartés.**
 - **La recherche sans accents** (« procedure » ne trouve pas « Procédure », §43 « Rouvrir si »),
-  faite ensuite avec une table repliée, voir §57.
+  faite ensuite avec une table repliée, voir §58.
   Mesuré sur 3 000 notes de 4 Ko : une fonction SQL de repliement coûte ~265 ms par recherche
   (~150 ms optimisée, 67 ms même vide : tout le texte passe par JavaScript), un motif `GLOB`
   accentué ~220 ms quand rien ne correspond, contre 3 ms aujourd'hui. Bien le faire demande une
@@ -2367,10 +2443,10 @@ attendre ailleurs que dans l'écran quitté.
 
 ---
 
-## 57. Recherche sans accents ni capitales : un texte replié par machine — 2026-10-29
+## 58. Recherche sans accents ni capitales : un texte replié par machine — 2026-10-29
 
 **Demande.** « Tu peux modifier la structure de la base pour faire sans ce coût la recherche
-sans accents » (§56 l'avait écartée : 150 à 265 ms par recherche sur 3 000 notes de 4 Ko).
+sans accents » (§57 l'avait écartée : 150 à 265 ms par recherche sur 3 000 notes de 4 Ko).
 
 **Décision.** Une table `entry_search(entry_id, text)` garde titre + texte repliés (`fold` :
 NFD, marques retirées, minuscules), et `GET /api/state?q=` y cherche par `LIKE`. Deux
@@ -2393,7 +2469,7 @@ par pertinence : un index plein texte (FTS5, `remove_diacritics`) changerait alo
 
 ---
 
-## 58. Voir l'IA travailler — 2026-10-29
+## 59. Voir l'IA travailler — 2026-10-29
 
 **Demande.** « Améliore également l'animation/feedback lors de la génération IA. »
 

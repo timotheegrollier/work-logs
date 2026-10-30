@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Lot du 2026-10-29 — recherche sans accents (§57) et IA qu'on voit travailler (§58), non publié
+## Lot du 2026-10-29 — recherche sans accents (§58) et IA qu'on voit travailler (§59), non publié
 
 - **Recherche sans accents ni capitales** (« procedure » trouve « Procédure », recherche de
   l'en-tête comme « ✨ Trouver la doc ») : table de la machine `entry_search` (titre + texte
@@ -20,7 +20,7 @@ sombre et 412 px vérifiées. `./scripts/check.sh` vert après rebase sur `maste
 705 front (dont l'échec attendu), 48 desktop unitaires, 32 scripts, 11 Worker, 11 relais,
 83 navigateur et 17 desktop e2e — 1 192 tests.
 
-## Lot du 2026-10-29 — IA : « Arrêter » une demande, réponses JSON tolérées (§56), non publié
+## Lot du 2026-10-29 — IA : « Arrêter » une demande, réponses JSON tolérées (§57), non publié
 
 Demande : « Améliore encore les fonctionnalités d'IA ». Aucune dépendance, route ni migration.
 - **Arrêter** une demande IA en cours : à côté du bouton en attente des trois menus ✨ IA (note
@@ -29,12 +29,14 @@ Demande : « Améliore encore les fonctionnalités d'IA ». Aucune dépendance, 
   de secours (`AiSettings.signal`, `AiCancelled`), sans message ; quitter la note, le fichier
   ou la carte coupe aussi. Sur téléphone, la rangée d'actions défile pour le montrer.
 - « Suggérer des tâches » et « Trouver la doc » lisent le tableau JSON même entouré d'une phrase
-  ou d'une clôture de code (`jsonArray`) ; un objet qui l'enveloppe reste refusé (§43).
+  ou d'une clôture de code. À la fusion, la lecture de la PR #30 (`parseJsonArray`, §43) a
+  remplacé celle de ce lot : elle accepte en plus un objet qui enveloppe le tableau.
 - Écartée d'abord après mesure (150 à 265 ms par recherche sur 3 000 notes), la recherche sans
-  accents a été faite ensuite avec une table repliée (§57).
+  accents a été faite ensuite avec une table repliée (§58).
 - La réponse coupée par le budget de jetons est corrigée à part (PR #26, révision du §17). Les
   quatre lots de cette série ont été rebasés ensemble sur `master` après les PR #26 et #27 ;
-  leurs décisions, d'abord numérotées 54 à 57, sont devenues 55 à 58 (le §54 est celui de #27).
+  leurs décisions, d'abord numérotées 54 à 57, sont devenues 56 à 59 (le §54 est celui de #27,
+  le §55 celui de #28).
 
 Tests : 3 unitaires (`ai-suggest.test.ts`), 2 gestes (`App.test.tsx` : note ; carte avec
 sous-tâches, recherche et procédure rafraîchie), 1 parcours téléphone (`ai-assistance.spec.ts`,
@@ -43,11 +45,11 @@ carte et 412 px vérifiées.
 `./scripts/check.sh` vert : 284 API, 701 front (dont l'échec attendu), 48 desktop unitaires,
 32 scripts, 11 Worker, 11 relais, 83 navigateur et 17 desktop e2e — 1 187 tests.
 
-## Lot du 2026-10-29 — champs de texte à la hauteur de leur texte et à la largeur de leur colonne (§55), non publié
+## Lot du 2026-10-29 — champs de texte à la hauteur de leur texte et à la largeur de leur colonne (§56), non publié
 
 Demande : la zone d'écriture ne grandissait pas avec le texte, et tous les champs doivent suivre un
 panneau ou une fenêtre redimensionnés. CSS seul (`styles.css`), aucune dépendance. Pourquoi et ce
-qui a été écarté : §55 ; usage : `03-UTILISATION.md` « Écrire une entrée ».
+qui a été écarté : §56 ; usage : `03-UTILISATION.md` « Écrire une entrée ».
 - `textarea { field-sizing: content }` : Markdown, sous-tâches d'une entrée liée, fichier texte du
   partage et champs IA des Paramètres grandissent avec leur texte et se recalculent à la poignée
   comme à la fenêtre, sans ascenseur dans le champ ; hauteurs au repos identiques (540, 98, 68 px).
@@ -71,6 +73,47 @@ mode **Écrire** sur A4 ne sort que le titre et un intitulé « Écriture » —
 ≤ 900 px s'appliquent aussi à la page imprimée (masquent `.sheet.is-split .prose`, ajoutent
 `.center::before`). **Lire** imprime bien. Le parcours « à l'impression » ne le voit pas : il
 émule l'impression à 1 280 px de large.
+
+## Correctif du 2026-10-29 — autoriser un document Google (partagé ou non)
+
+Aucun nouveau document ne pouvait être autorisé depuis le 22/09 : **Autoriser d'autres
+documents** (fenêtre Documents Google) relançait la connexion sans Picker (`pick` oublié), et
+**Choisir des documents dans Drive** demandait le Picker avec `openid email profile` en plus de
+`drive.file`, combinaison que Google exclut. Le Picker part maintenant en `drive.file` seul,
+`prompt=consent`, `login_hint` du compte connecté, et choisit **plusieurs documents à la fois**
+(`allow_multiple`, demandé par Timo) ; le compte affiché est relu par Drive (`about.get`).
+Pourquoi : `05-DECISIONS.md` §19. Tests : le bouton demande le Picker
+(`GoogleDocuments.test.tsx`), paramètres du Picker, sélection multiple et compte relu par Drive
+(`desktop/test/google.test.mjs`) — rouges tous les deux sans le correctif. **Pas encore vérifié
+avec le vrai Picker Google** : il faut un compte et un navigateur.
+`WORKLOGS_E2E_PORT=8432 ./scripts/check.sh` vert : 284 API, 699 front (dont 1 échec attendu),
+49 desktop unitaires, 32 scripts, 11 Worker, 11 relais, 78 navigateur et 17 desktop e2e —
+1181 tests. Deux passages étaient tombés chacun sur un test de catégories différent d'`App.test.tsx`
+(« un reclassement distant… », « crée une catégorie et sa sous-catégorie… ») pendant la
+vérification d'une autre copie de travail (charge 5 à 7) ; seuls, 3 fois sur 3 chacun.
+
+## Lot du 2026-10-29 — relais sans code, adresse gardée dans le compte Google (§55)
+
+La PWA du téléphone ne joignait plus le relais du dossier partagé. Constaté : relais en v0.63.0,
+`tailscale serve`, partage monté, Worker et PWA déployés répondaient ; Helium et Brave (PC)
+avaient la bonne adresse et le bon code ; mais le relais n'avait plus servi une seule liste de
+dossier depuis le **2026-10-12** (`shared_dirs.listed_at`). Le téléphone n'a pas pu être examiné.
+À la demande de Timo, **plus de code d'accès** : le réseau Tailscale suffit. Le relais refuse
+l'appel d'un navigateur venu d'une autre page que la PWA (`Origin` ou `Sec-Fetch-Site`, 403
+`RELAY_FOREIGN_ORIGIN`) : un site ouvert sur un appareil du réseau ne peut ni écrire dans le
+partage ni le lire. L'adresse est gardée **en clair** dans `WorkLogs/WorkLogs relais.json`
+(Drive du compte) et revient seule à la connexion Google, client personnel compris ;
+`/relay-key` est retiré du Worker ; l'ancienne copie chiffrée (§39) est remplacée par la
+première PWA qui a l'adresse. Paramètres › Dossier partagé du TSE ne demande plus que
+l'adresse. Aucune dépendance ajoutée. Pourquoi et limites : §55 ; installation et dépannage :
+`09-RELAIS.md`.
+À faire sur la VM **après la release suivante** : supprimer `/etc/worklogs-relais/code` et la
+ligne `WORKLOGS_RELAY_TOKEN_FILE` de `/etc/worklogs-relais/env` (un retour arrière automatique
+vers la v0.63.0 en a encore besoin).
+`./scripts/check.sh` vert : 284 API, 696 front (dont 1 échec attendu), 48 desktop unitaires,
+32 scripts, 8 Worker (les 3 de `/relay-key` retirés), 11 relais, 78 navigateur et 17 desktop
+e2e — 1174 tests.
+
 ## Lot du 2026-10-29 — téléphone : choisir un projet dans la liste (§54)
 
 Sur téléphone, la rangée de pastilles (une et demie visible à 412 px) laisse place à un bouton

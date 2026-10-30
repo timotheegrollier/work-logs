@@ -183,6 +183,32 @@ describe('extraction des actions explicites', () => {
     await expect(extractEntryActions(settings, 'N', actions.map((action) => action.evidence).join('\n'))).resolves.toEqual(actions.slice(0, 8));
   });
 
+  test('tableau entouré de prose ou enveloppé : les actions restent lues, budget assez large pour la réflexion', async () => {
+    const actions = [
+      { title: 'Appeler le client', due_date: null, evidence: 'Appeler le client.' },
+      { title: 'Vérifier la pompe', due_date: null, evidence: '- [ ] Vérifier la pompe' },
+    ];
+    const json = JSON.stringify(actions);
+    const fetch = vi.fn(async () => aiResponse(''));
+    vi.stubGlobal('fetch', fetch);
+    for (const reply of [
+      'Voici les actions :\n```json\n' + json + '\n```\nBonne journée.',
+      `Voici les actions : ${json}`,
+      JSON.stringify({ actions }),
+    ]) {
+      fetch.mockImplementation(async () => aiResponse(reply));
+      await expect(extractEntryActions(settings, 'N', actions.map((action) => action.evidence).join('\n'))).resolves.toEqual(actions);
+    }
+    expect(JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).max_tokens).toBe(8000);
+    const coded = [{ title: 'Relancer le build', due_date: null, evidence: 'Relancer ```make```.' }];
+    fetch.mockImplementation(async () => aiResponse(JSON.stringify(coded)));
+    await expect(extractEntryActions(settings, 'N', coded[0].evidence)).resolves.toEqual(coded);
+    fetch.mockImplementation(async () => aiResponse('Suggestions :\n```json\n' + JSON.stringify({ tasks: actions }) + '\n```'));
+    await expect(suggestEntryTasks(settings, 'N', actions.map((action) => action.evidence).join('\n')))
+      .resolves.toEqual(actions.map((action) => ({ ...action, priority: 'normal' })));
+    expect(JSON.parse((fetch.mock.calls.at(-1) as unknown as [string, RequestInit])[1].body as string).max_tokens).toBe(8000);
+  });
+
   test('réponse non JSON ou non tableau signalée ; note vide, trop longue ou sans clé sans réseau', async () => {
     const fetch = vi.fn(async () => aiResponse('Voici une action.'));
     vi.stubGlobal('fetch', fetch);
@@ -968,13 +994,15 @@ describe('mots pour retrouver la doc d’une tâche', () => {
     const reply = ['Imprimante', 'imprimante', ' Écran   tactile ', 'ecran TACTILE', 'x', 3, null, 'pilote', 'HP', 'réseau', 'câble', 'toner'];
     vi.stubGlobal('fetch', vi.fn(async () => aiResponse('```json\n' + JSON.stringify(reply) + '\n```')));
     await expect(suggestSearchTerms(settings, { title: 'Écran' })).resolves.toEqual(['Imprimante', 'Écran tactile', 'pilote', 'HP', 'réseau', 'câble']);
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse('{"termes":["imprimante"]}')));
+    await expect(suggestSearchTerms(settings, { title: 'Écran' })).resolves.toEqual(['imprimante']);
   });
 
   test('réponse illisible, autre chose qu’un tableau ou sans terme utilisable : erreur ; sans clé, rien ne part', async () => {
     const fetch = vi.fn(async () => aiResponse('Voici les mots : imprimante, pilote'));
     vi.stubGlobal('fetch', fetch);
     await expect(suggestSearchTerms(settings, { title: 'T' })).rejects.toThrow('Réponse IA illisible : réessaie.');
-    for (const reply of ['{"termes":["imprimante"]}', '[]', '[1, " ", "a"]']) {
+    for (const reply of ['{"termes":"imprimante"}', '[]', '[1, " ", "a"]']) {
       fetch.mockImplementation(async () => aiResponse(reply));
       await expect(suggestSearchTerms(settings, { title: 'T' })).rejects.toBeInstanceOf(AiError);
     }
@@ -1019,7 +1047,7 @@ describe('arrêter une demande', () => {
 });
 
 describe('tableau JSON entouré de texte', () => {
-  test('phrase, clôture de code ou les deux autour du tableau : la réponse est lue ; un objet qui l’enveloppe reste refusé', async () => {
+  test('phrase, clôture de code ou les deux autour du tableau : la réponse est lue', async () => {
     const actions = [{ title: 'Appeler le fournisseur', due_date: null, evidence: 'Appeler le fournisseur.' }];
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
@@ -1031,8 +1059,6 @@ describe('tableau JSON entouré de texte', () => {
       fetch.mockImplementationOnce(async () => aiResponse(reply));
       await expect(suggestEntryTasks(settings, 'N', 'Appeler le fournisseur.')).resolves.toMatchObject([{ title: 'Appeler le fournisseur' }]);
     }
-    fetch.mockImplementationOnce(async () => aiResponse(`{"taches": ${JSON.stringify(actions)}}`));
-    await expect(suggestEntryTasks(settings, 'N', 'Appeler le fournisseur.')).rejects.toThrow(/tableau JSON/);
     fetch.mockImplementationOnce(async () => aiResponse('Voici les mots :\n["imprimante", "pilote"]'));
     await expect(suggestSearchTerms(settings, { title: 'T' })).resolves.toEqual(['imprimante', 'pilote']);
   });

@@ -122,7 +122,7 @@ shared_files(rel_path PRIMARY KEY, base_hash, seen_hash, seen_size, seen_mtime_m
 shared_versions(id PRIMARY KEY, rel_path, hash, size, origin, state, author, created_at)
                                                          -- origin : base|mine|theirs|restored|merged
 shared_dirs(rel_dir PRIMARY KEY, entries_json, listed_at) -- dernière liste vue (arbre hors ligne)
-entry_search(entry_id PRIMARY KEY, text)                 -- titre + texte sans accents ni capitales (§57)
+entry_search(entry_id PRIMARY KEY, text)                 -- titre + texte sans accents ni capitales (§58)
                                                          -- effacé par déclencheur à chaque titre/texte changé
 -- Le dossier relié à un projet n'est plus ici : `projects.shared_dir` (adresse complète,
 -- synchronisée par Drive). `shared_project_folders` ne sert plus qu'à reprendre les anciens liens.
@@ -204,8 +204,8 @@ saisie) + `xlsx-formula.ts` (syntaxe, traduction, dépendances) (Excel, §27), `
 `procedureFileBytes` : une procédure locale envoyée vers le partage en docx/md/txt — §36).
 
 Sur la PWA, les mêmes routes sont servies par le **relais** (`api/src/relay.js`, VM du bureau,
-Tailscale, code d'accès, CORS limité à la PWA — §29, `docs/09-RELAIS.md`) ; le front y passe
-par `sharedClient(base, auth)`, réglé dans Paramètres (`web/src/relay-settings.ts`).
+Tailscale sans code d'accès, CORS et `Origin` limités à la PWA — §29, §55, `docs/09-RELAIS.md`) ;
+le front y passe par `sharedClient(base)`, réglé dans Paramètres (`web/src/relay-settings.ts`).
 
 Les routes `/api/shared/*` ne répondent qu'à cet ordinateur (`localOnly`) et ne fixent jamais
 le chemin du partage (dialogue natif desktop ou `WORKLOGS_SHARED_ROOT`). Elles passent par

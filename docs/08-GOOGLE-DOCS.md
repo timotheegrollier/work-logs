@@ -232,7 +232,9 @@ la connexion, les sauvegardes, les pièces jointes et la boîte mobile.
 **« Se connecter avec Google »** suffit : les clients OAuth du projet WorkLogs sont
 intégrés au build, plus rien à importer ni à coller. La connexion reste **facultative**
 (sans elle, tout reste sur l'appareil). L'app demande en plus `openid email profile`,
-uniquement pour afficher « Connecté : Nom · e-mail ».
+uniquement pour afficher « Connecté : Nom · e-mail ». **Jamais pour le Picker** desktop, que
+Google n'ouvre qu'en `drive.file` seul : le compte y est relu par Drive (`about.get`) —
+décision §19.
 
 | | Desktop | PWA |
 |---|---|---|
@@ -278,10 +280,9 @@ renouvellement, réponse de Google rendue telle quelle. Pourquoi et limites : d�
 Depuis l'option B, ce même Worker sert aussi le front (`[assets]` dans `wrangler.toml`,
 `web/dist/` construit avec `VITE_PWA=1`) : la PWA est à `/`, le relais à `/token`.
 
-Depuis le 2026-10-21, `POST /relay-key` rend aussi la clé qui chiffre, dans le Drive du compte,
-l'accès au relais du dossier partagé (`WorkLogs/WorkLogs relais.json`) : HMAC du secret et de
-l'identifiant du compte, pour un jeton que Google confirme émis pour `GOOGLE_CLIENT_ID`
-(`[vars]` de `wrangler.toml`). Rien n'est stocké. Pourquoi : décision §39.
+Du 2026-10-21 au 2026-10-29, `POST /relay-key` rendait aussi la clé qui chiffrait, dans le
+Drive du compte, l'accès au relais du dossier partagé (§39). Retiré avec le code du relais : la
+copie Drive ne garde plus que l'adresse, en clair (décision §55).
 
 **Déployer** (compte Cloudflare gratuit), depuis la racine puis `oauth-proxy/` :
 
@@ -338,7 +339,9 @@ invisible aux tests Node).
    Google**. Ce fichier identifie le client desktop ; ce n’est pas un compte de service.
 6. **Connecter Google Drive** ouvre le navigateur système. Autoriser suffit : revenir dans
    WorkLogs finalise la connexion sans imposer de document. **Choisir des documents dans
-   Drive** lance ensuite le Picker dans le navigateur et accorde l’accès aux fichiers choisis.
+   Drive** (Paramètres) ou **Autoriser d’autres documents** (fenêtre Documents Google) lance
+   ensuite le Picker dans le navigateur, plusieurs documents à la fois, et accorde l’accès
+   aux fichiers choisis.
 
 Le [flux OAuth desktop](https://developers.google.com/identity/protocols/oauth2/native-app)
 utilise PKCE et un retour HTTP sur `127.0.0.1` à port éphémère. Google interdit les

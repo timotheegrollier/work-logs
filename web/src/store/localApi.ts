@@ -104,7 +104,7 @@ const SHARED_DESKTOP_ONLY = 'Dossier partagé : règle le relais dans Paramètre
 /** Le relais du dossier partagé réglé sur ce téléphone, ou `null`. */
 function relayClient() {
   const settings = readRelay();
-  return settings ? sharedClient(settings.url, () => ({ Authorization: `Bearer ${settings.token}` })) : null;
+  return settings ? sharedClient(settings.url) : null;
 }
 const relay = () => relayClient() ?? fail(SHARED_DESKTOP_ONLY);
 const fail = (message: string): never => {
@@ -757,7 +757,7 @@ export const localApi: Api = {
     const needle = foldSearch(q.trim());
     const matching = allEntries
       .filter((entry) => (!projectId || entry.project_id === projectId) && matchesCategory(entry))
-      // Comme le serveur (§57) : sans accents ni capitales, texte replié gardé par note.
+      // Comme le serveur (§58) : sans accents ni capitales, texte replié gardé par note.
       .filter((entry) => !needle || foldedEntry(entry).includes(needle))
       .sort((a, b) => cmp(b.entry_date, a.entry_date) || cmp(b.updated_at, a.updated_at));
     const counts = new Map<string, number>();

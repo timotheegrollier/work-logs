@@ -36,6 +36,8 @@ function fakeDrive() {
       drive.downloads++;
       return new Response(drive.text);
     }
+    // Copie de l'adresse du relais (§55) : ce Drive n'en a pas.
+    if (/value='relay'/.test(decodeURIComponent(target))) return Response.json({ files: [] });
     if (target.includes('/drive/v3/files?')) {
       return Response.json({ files: drive.text ? [{ id: 'canon', name: 'WorkLogs backup.json', mimeType: 'application/json', modifiedTime: drive.modifiedTime }] : [] });
     }

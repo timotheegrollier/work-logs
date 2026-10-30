@@ -340,7 +340,7 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   // local seul, sans rien casser pour les lignes existantes.
   if (!columns(db, 'attachments').includes('drive_file_id')) db.exec("ALTER TABLE attachments ADD COLUMN drive_file_id TEXT NOT NULL DEFAULT ''");
   db.exec(LOCAL_SCHEMA);
-  // Recherche sans accents (§57) : titre + texte repliés, propres à cette machine (jamais
+  // Recherche sans accents (§58) : titre + texte repliés, propres à cette machine (jamais
   // sauvegardés ni synchronisés). Un titre ou un texte changé, par n'importe quel chemin,
   // efface la ligne ; `refreshSearch` replie à nouveau les seules lignes manquantes.
   db.exec(`CREATE TABLE IF NOT EXISTS entry_search (entry_id TEXT PRIMARY KEY, text TEXT NOT NULL);

@@ -1,8 +1,8 @@
 /**
- * PWA : où joindre le relais du dossier partagé (VM du bureau, par Tailscale) et
- * son code d'accès. Gardés sur ce téléphone (stockage de la PWA), et copiés dans
- * le compte Google connecté (`store/relay-drive.ts`, §29) pour revenir seuls
- * quand le téléphone les a perdus.
+ * PWA : où joindre le relais du dossier partagé (VM du bureau, par Tailscale).
+ * Gardé sur ce téléphone (stockage de la PWA), et copié dans le compte Google
+ * connecté (`store/relay-drive.ts`, §55) pour revenir seul quand le téléphone
+ * l'a perdu. Pas de code d'accès : le réseau Tailscale suffit.
  */
 
 const KEY = 'worklogs-relais';
@@ -11,7 +11,6 @@ const FORGOTTEN_KEY = 'worklogs-relais-oublie';
 
 export interface RelaySettings {
   url: string;
-  token: string;
   /** Moment de l'enregistrement : entre deux appareils, le plus récent gagne. */
   saved_at?: string;
 }
@@ -19,7 +18,8 @@ export interface RelaySettings {
 export function readRelay(): RelaySettings | null {
   try {
     const value = JSON.parse(localStorage.getItem(KEY) ?? 'null') as RelaySettings | null;
-    return value?.url && value.token ? value : null;
+    // L'adresse seule : un ancien réglage garde son code, qui ne doit partir nulle part.
+    return value?.url ? { url: value.url, saved_at: value.saved_at } : null;
   } catch {
     return null;
   }

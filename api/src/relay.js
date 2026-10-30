@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,20 +13,9 @@ import { addressFromMountinfo } from './shared-address.js';
  * CIFS) ; le téléphone le joint par Tailscale, en HTTPS (`tailscale serve`).
  * Mêmes routes et mêmes garde-fous que le desktop (`shared-service.js` : verrous,
  * envoi gardé, conflits, versions) ; à la place de « cet ordinateur seulement »,
- * un **code d'accès** (en-tête `Authorization: Bearer …`) et les seules origines
- * de la PWA (CORS). Voir docs/05-DECISIONS.md §29 et docs/09-RELAIS.md.
+ * le **réseau Tailscale**, sans code d'accès, et pour un navigateur les seules
+ * origines de la PWA. Voir docs/05-DECISIONS.md §29 et §55, docs/09-RELAIS.md.
  */
-
-const digest = (value) => crypto.createHash('sha256').update(String(value)).digest();
-
-/** Compare deux codes en temps constant (empreintes de même longueur). */
-export function sameToken(given, expected) {
-  if (!given || !expected) return false;
-  return crypto.timingSafeEqual(digest(given), digest(expected));
-}
-
-/** Code d'accès neuf : 32 octets aléatoires, en base64url (43 caractères). */
-export const newToken = () => crypto.randomBytes(32).toString('base64url');
 
 /**
  * Version de WorkLogs déployée, écrite à côté du code par la mise à jour automatique
@@ -41,7 +29,7 @@ export function relayVersion(file = fileURLToPath(new URL('../VERSION', import.m
   }
 }
 
-export function createRelayApp({ shared, token, origins, version = null }) {
+export function createRelayApp({ shared, origins, version = null }) {
   const allowed = new Set(origins);
   const app = express();
   app.disable('x-powered-by');
@@ -55,6 +43,7 @@ export function createRelayApp({ shared, token, origins, version = null }) {
     if (known) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
+      // `Authorization` : une PWA ouverte avant la fin du code d'accès (§55) l'envoie encore, ignoré.
       res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       res.setHeader('Access-Control-Max-Age', '600');
@@ -64,14 +53,18 @@ export function createRelayApp({ shared, token, origins, version = null }) {
     next();
   });
 
-  // Sans code : seulement de quoi vérifier que le relais tourne, et quelle version.
   app.get('/health', (_req, res) => res.json({ ok: true, service: 'worklogs-relais', ...(version ? { version } : {}) }));
 
+  // Pas de code : le réseau Tailscale suffit (§55). Mais d'un navigateur, seule la PWA passe :
+  // sinon n'importe quel site ouvert sur un appareil du réseau pourrait écrire dans le partage
+  // (formulaire, `fetch` sans CORS). Le navigateur dit d'où vient l'appel (`Origin` sur toute
+  // écriture, `Sec-Fetch-Site` partout) ; sans ces en-têtes (curl), ou l'adresse tapée dans la
+  // barre (`none`), le relais répond.
   const guard = (req, res, next) => {
-    const header = String(req.headers.authorization || '');
-    const given = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-    if (!sameToken(given, token)) {
-      return res.status(401).json({ error: 'Relais du dossier partagé : code d’accès absent ou incorrect.', code: 'RELAY_UNAUTHORIZED' });
+    const origin = req.headers.origin;
+    const site = req.headers['sec-fetch-site'];
+    if ((origin || (site && site !== 'none')) && !allowed.has(origin)) {
+      return res.status(403).json({ error: 'Relais du dossier partagé : appel refusé depuis une autre page que WorkLogs.', code: 'RELAY_FOREIGN_ORIGIN' });
     }
     next();
   };
@@ -85,14 +78,10 @@ export function createRelayApp({ shared, token, origins, version = null }) {
 export function relayConfig(env = process.env) {
   const root = env.WORKLOGS_SHARED_ROOT ? path.resolve(env.WORKLOGS_SHARED_ROOT) : null;
   if (!root) throw new Error('WORKLOGS_SHARED_ROOT manquant : le dossier du partage monté (ex. /mnt/tse-d/Global/…/00. PROCEDURE).');
-  const tokenFile = env.WORKLOGS_RELAY_TOKEN_FILE || '/etc/worklogs-relais/code';
-  const token = env.WORKLOGS_RELAY_TOKEN || (fs.existsSync(tokenFile) ? fs.readFileSync(tokenFile, 'utf8').trim() : '');
-  if (token.length < 32) throw new Error(`Code d’accès manquant ou trop court (${tokenFile}) : node src/relay.js --nouveau-code > ${tokenFile}`);
   const origins = (env.WORKLOGS_RELAY_ORIGINS || 'https://worklogs-google.cocodexcocoder.workers.dev')
     .split(',').map((origin) => origin.trim()).filter(Boolean);
   return {
     root,
-    token,
     origins,
     dataDir: path.resolve(env.WORKLOGS_RELAY_DATA || '/var/lib/worklogs-relais'),
     host: env.HOST || '127.0.0.1',
@@ -125,7 +114,7 @@ export function startRelay(config) {
   // Nom des verrous : celui du réglage, sauf s'il a été changé depuis le téléphone (Paramètres).
   const chosen = db.prepare("SELECT value FROM local_settings WHERE key='shared.display_name'").get();
   if (config.displayName && !chosen) shared.setDisplayName(config.displayName);
-  const app = createRelayApp({ shared, token: config.token, origins: config.origins, version: config.version });
+  const app = createRelayApp({ shared, origins: config.origins, version: config.version });
   const server = app.listen(config.port, config.host);
   const stop = async () => {
     server.close();
@@ -136,15 +125,11 @@ export function startRelay(config) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  if (process.argv.includes('--nouveau-code')) {
-    process.stdout.write(newToken() + '\n');
-  } else {
-    const config = relayConfig();
-    const relay = startRelay(config);
-    relay.server.on('listening', () => {
-      console.log(`[worklogs-relais] ${config.version ? `v${config.version} ` : ''}http://${config.host}:${config.port} → ${config.root}`);
-      console.log(`[worklogs-relais] origines : ${config.origins.join(', ')}`);
-    });
-    for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { void relay.stop().then(() => process.exit(0)); });
-  }
+  const config = relayConfig();
+  const relay = startRelay(config);
+  relay.server.on('listening', () => {
+    console.log(`[worklogs-relais] ${config.version ? `v${config.version} ` : ''}http://${config.host}:${config.port} → ${config.root}`);
+    console.log(`[worklogs-relais] origines : ${config.origins.join(', ')}`);
+  });
+  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { void relay.stop().then(() => process.exit(0)); });
 }
