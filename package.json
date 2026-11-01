@@ -38,6 +38,6 @@
   "homepage": "https://github.com/timotheegrollier/work-logs",
   "license": "UNLICENSED",
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.11"
   }
 }
