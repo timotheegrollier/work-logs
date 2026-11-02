@@ -228,3 +228,40 @@ test('IA sur mobile : « Arrêter » apparaît à l’écran au bout de la rang�
     await cleanProject(page, request, project.id);
   }
 });
+
+test('réglages IA : projet actif, clé accessible et paramètres techniques repliés', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Atelier réglages IA' });
+  try {
+    const note = await post(request, '/api/entries', { title: 'Note des réglages', project_id: project.id });
+    await configure(page, project.id, note.id);
+    await page.setViewportSize({ width: 412, height: 915 });
+    let calls = 0;
+    await page.route('**/chat/completions', async (route) => {
+      const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
+      if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+      calls += 1;
+      return route.fulfill({ headers, json: { choices: [{ message: { content: 'OK' } }] } });
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Compte et paramètres', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Paramètres', exact: true }).click();
+    const settings = page.getByRole('dialog', { name: 'Paramètres', exact: true });
+    await expect(settings.getByLabel('Clé IA', { exact: true })).toBeVisible();
+    await expect(settings.getByLabel('Projet du contexte IA', { exact: true })).toHaveValue(project.id);
+    await expect(settings.getByLabel('Endpoint IA', { exact: true })).toBeHidden();
+    await expect(settings.getByLabel('Modèle IA', { exact: true })).toBeHidden();
+    await settings.getByLabel('Contexte IA du projet', { exact: true }).fill('Commandes Linux, procédures concises.');
+    expect(calls).toBe(0);
+    await settings.getByText('Réglages avancés', { exact: true }).click();
+    await expect(settings.getByLabel('Endpoint IA', { exact: true })).toBeVisible();
+    await settings.getByLabel('Modèle IA', { exact: true }).selectOption('gemini-2.5-flash');
+    expect(calls).toBe(0);
+    expect(await settings.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBeTruthy();
+    await settings.getByText('Réglages avancés', { exact: true }).click();
+    await settings.getByRole('button', { name: 'Tester la connexion', exact: true }).click();
+    await expect(settings.getByRole('region', { name: 'Assistance IA', exact: true }).getByRole('status')).toContainText('Connexion vérifiée');
+    expect(calls).toBe(1);
+  } finally {
+    await cleanProject(page, request, project.id);
+  }
+});

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Project } from '../lib';
 import { readProjectAiBrief, saveProjectAiBrief } from '../ai-context';
 import {
@@ -21,28 +21,38 @@ type Probe = { state: 'idle' } | { state: 'testing' } | { state: 'ok'; ms: numbe
  * l'appareil, comme les largeurs de colonnes. Aucun appel n'est fait ici,
  * sauf « Tester ».
  */
-export function AiSettings({ projects = [] }: { projects?: Pick<Project, 'id' | 'name'>[] }) {
+export function AiSettings({ projects = [], projectId = null }: { projects?: Pick<Project, 'id' | 'name'>[]; projectId?: string | null }) {
+  const initialProject = projects.some((project) => project.id === projectId) ? projectId ?? '' : '';
   const [form, setForm] = useState<AiSettingsValues>(readAiSettings);
-  const [briefProject, setBriefProject] = useState('');
-  const [projectBrief, setProjectBrief] = useState(() => readProjectAiBrief(null));
+  const [briefProject, setBriefProject] = useState(initialProject);
+  const [projectBrief, setProjectBrief] = useState(() => readProjectAiBrief(initialProject || null));
   const knownModel = AI_MODELS.some((option) => option.id === form.model);
+  const modelLabel = AI_MODELS.find((option) => option.id === form.model)?.label.split(' — ')[0] || form.model || 'À renseigner';
   const [customModel, setCustomModel] = useState(knownModel ? '' : form.model);
   const [probe, setProbe] = useState<Probe>({ state: 'idle' });
+  const probeVersion = useRef(0);
+  const invalidateProbe = () => {
+    probeVersion.current += 1;
+    setProbe({ state: 'idle' });
+  };
   const setText =
     (field: 'endpoint' | 'key' | 'profile') =>
     (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const next = { ...form, [field]: event.target.value };
+      if (field !== 'profile') invalidateProbe();
       setForm(next);
       saveAiSettings(next);
     };
   const selectModel = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const next = { ...form, model: event.target.value === AI_CUSTOM_MODEL ? customModel : event.target.value };
+    invalidateProbe();
     setForm(next);
     saveAiSettings(next);
   };
   const editCustomModel = (event: React.ChangeEvent<HTMLInputElement>) => {
     setCustomModel(event.target.value);
     const next = { ...form, model: event.target.value };
+    invalidateProbe();
     setForm(next);
     saveAiSettings(next);
   };
@@ -50,30 +60,41 @@ export function AiSettings({ projects = [] }: { projects?: Pick<Project, 'id' | 
     const next = { ...form, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL };
     setForm(next);
     setCustomModel('');
-    setProbe({ state: 'idle' });
+    invalidateProbe();
     saveAiSettings(next);
   };
   const testModel = async () => {
+    const version = ++probeVersion.current;
     setProbe({ state: 'testing' });
     try {
       const ms = await testAiConnection(form);
-      setProbe({ state: 'ok', ms });
+      if (version === probeVersion.current) setProbe({ state: 'ok', ms });
     } catch (error) {
-      setProbe({ state: 'error', message: error instanceof Error ? error.message : String(error) });
+      if (version === probeVersion.current) setProbe({ state: 'error', message: error instanceof Error ? error.message : String(error) });
     }
   };
 
   return (
-    <section className="ai-settings" aria-label="IA — suggestions de sous-tâches">
+    <section className="ai-settings" aria-label="Assistance IA">
       <h3>Assistance IA</h3>
+      <label>
+        Clé IA
+        <input aria-label="Clé IA" type="password" value={form.key} onChange={setText('key')} autoComplete="off" />
+      </label>
       <p className="ai-hint">
-        Clé gratuite : Google AI Studio. Gardée sur cet appareil uniquement. Chaque clic
-        d’assistance envoie le titre, ton profil et le contexte (projet, consignes,
-        documents locaux sélectionnés, tâches voisines, contenu de l’entrée,
-        noms des pièces jointes, vocabulaire) au service
-        configuré, jamais automatiquement. Dans le dossier partagé, « ✨ IA › Compléter »
-        et « Mettre en page » envoient le nom, le dossier et le contenu du fichier ouvert.
+        {form.key.trim() ? 'Clé enregistrée sur cet appareil uniquement.' : 'Colle ta clé IA pour activer l’assistance.'}{' '}
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Obtenir une clé Google AI Studio</a>
       </p>
+      <div>
+        <button type="button" onClick={testModel} disabled={probe.state === 'testing'}>
+          Tester la connexion
+        </button>
+      </div>
+      {probe.state === 'idle' && <p role="status">{form.key.trim() ? 'Connexion non testée.' : 'Assistance inactive : clé IA manquante.'}</p>}
+      {probe.state === 'testing' && <p role="status">Test en cours…</p>}
+      {probe.state === 'ok' && <p role="status">✓ Connexion vérifiée ({(probe.ms / 1000).toFixed(1)} s)</p>}
+      {probe.state === 'error' && <p role="alert">{probe.message}</p>}
+      <p className="ai-hint">Modèle choisi : {modelLabel}</p>
       <label>
         Mon contexte de travail
         <textarea
@@ -109,42 +130,42 @@ export function AiSettings({ projects = [] }: { projects?: Pick<Project, 'id' | 
         />
       </label>
       <p className="ai-hint">Facultatif, enregistré sur cet appareil uniquement. Ces consignes accompagnent les actions IA de ce projet.</p>
-      <label>
-        Endpoint IA
-        <input aria-label="Endpoint IA" value={form.endpoint} onChange={setText('endpoint')} inputMode="url" autoComplete="off" spellCheck={false} />
-      </label>
-      <label>
-        Modèle IA
-        <select aria-label="Modèle IA" value={knownModel ? form.model : AI_CUSTOM_MODEL} onChange={selectModel}>
-          {AI_MODELS.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-          <option value={AI_CUSTOM_MODEL}>Personnalisé…</option>
-        </select>
-      </label>
-      {!knownModel && (
+      <p className="ai-hint">
+        Chaque clic d’assistance envoie le titre, ton profil et le contexte (projet, consignes,
+        documents locaux sélectionnés, tâches voisines, contenu de l’entrée,
+        noms des pièces jointes, vocabulaire) au service configuré, jamais automatiquement.
+        Dans le dossier partagé, « ✨ IA › Compléter » et « Mettre en page » envoient le nom,
+        le dossier et le contenu du fichier ouvert.
+      </p>
+      <details className="ai-advanced-settings">
+        <summary>Réglages avancés</summary>
         <label>
-          Modèle personnalisé
-          <input aria-label="Modèle personnalisé" value={customModel} onChange={editCustomModel} autoComplete="off" spellCheck={false} />
+          Endpoint IA
+          <input aria-label="Endpoint IA" value={form.endpoint} onChange={setText('endpoint')} inputMode="url" autoComplete="off" spellCheck={false} />
         </label>
-      )}
-      <label>
-        Clé IA
-        <input aria-label="Clé IA" type="password" value={form.key} onChange={setText('key')} autoComplete="off" />
-      </label>
-      <div>
-        <button type="button" onClick={testModel} disabled={probe.state === 'testing'}>
-          Tester le modèle
-        </button>
-        <button className="ghost" type="button" onClick={resetGemini}>
-          Valeurs Gemini gratuites
-        </button>
-      </div>
-      {probe.state === 'testing' && <p role="status">Test en cours…</p>}
-      {probe.state === 'ok' && <p role="status">✓ Modèle OK ({(probe.ms / 1000).toFixed(1)} s)</p>}
-      {probe.state === 'error' && <p role="alert">{probe.message}</p>}
+        <label>
+          Modèle IA
+          <select aria-label="Modèle IA" value={knownModel ? form.model : AI_CUSTOM_MODEL} onChange={selectModel}>
+            {AI_MODELS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+            <option value={AI_CUSTOM_MODEL}>Personnalisé…</option>
+          </select>
+        </label>
+        {!knownModel && (
+          <label>
+            Modèle personnalisé
+            <input aria-label="Modèle personnalisé" value={customModel} onChange={editCustomModel} autoComplete="off" spellCheck={false} />
+          </label>
+        )}
+        <div>
+          <button className="ghost" type="button" onClick={resetGemini}>
+            Restaurer les réglages Gemini
+          </button>
+        </div>
+      </details>
     </section>
   );
 }

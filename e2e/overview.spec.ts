@@ -170,8 +170,18 @@ test('une voie par projet qui tient en largeur, sur desktop comme sur téléphon
     await expect(overview).toBeVisible();
     const lane = overview.getByRole('listitem', { name: /^Bassins vue :/ });
     await expect(lane.getByRole('listitem').or(lane).first()).toBeVisible();
-    await expect(lane.locator('.lane-node')).toHaveCount(12);
-    await expect(lane.getByText('+3')).toBeVisible();
+    await expect(lane.locator('.lane-node')).toHaveCount(10);
+    await expect(lane.getByText('+5')).toBeVisible();
+    // « +5 » reste au bout de la piste, sur la ligne des nœuds qu'il prolonge.
+    const sameRow = async () => {
+      const more = (await lane.getByText('+5').boundingBox())!;
+      const last = (await lane.locator('.lane-node').last().boundingBox())!;
+      expect(Math.abs(more.y + more.height / 2 - (last.y + last.height / 2))).toBeLessThan(4);
+      expect(more.x).toBeGreaterThan(last.x);
+    };
+    await sameRow();
+    // Le compteur des terminées garde l'encre du texte : du blanc sur la couleur du projet est illisible.
+    await expect(lane.locator('.lane-done')).not.toHaveCSS('color', 'rgb(255, 255, 255)');
     await expect(lane.getByText('3/18 · 17 %')).toBeVisible();
     await expect(lane.getByText('Étude 1', { exact: true })).toBeVisible();
     await expect(overview.getByRole('listitem', { name: /^Compta vue :/ }).locator('.lane-node.is-late')).toHaveCount(1);
@@ -190,6 +200,7 @@ test('une voie par projet qui tient en largeur, sur desktop comme sur téléphon
     await expect(overview).toBeVisible();
     await expect(nav('Écriture')).toHaveAttribute('aria-pressed', 'true');
     expect(await noHorizontalScroll(page)).toBe(true);
+    await sameRow();
     await lane.locator('.lane-node').first().click();
     await expect(nav('Tâches')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('region', { name: 'Tâches' }).getByRole('button', { name: 'Étude 1', exact: true })).toBeFocused();
@@ -226,6 +237,21 @@ test('sur téléphone, créer une tâche, la ranger dans un projet et la démarr
   } finally {
     if (created) await request.delete(`/api/tasks/${created}`);
     await request.delete(`/api/projects/${project.id}`);
+  }
+});
+
+test('le bouton pour mettre en cours se voit au repos, plein au survol', async ({ page, request }) => {
+  const task = await post(request, '/api/tasks', { title: 'Tâche au repos vue' });
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    const button = page.getByRole('button', { name: 'Mettre en cours Tâche au repos vue' });
+    // 0,7 : le contraste de 3:1 d'une commande, sans attendre le survol (§47).
+    await expect(button).toHaveCSS('opacity', '0.7');
+    await page.getByRole('region', { name: 'Tâches' }).getByRole('button', { name: 'Tâche au repos vue', exact: true }).hover();
+    await expect(button).toHaveCSS('opacity', '1');
+  } finally {
+    await request.delete(`/api/tasks/${task.id}`);
   }
 });
 

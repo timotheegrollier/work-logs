@@ -1,8 +1,8 @@
 import { useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { api, dayLabel, isOverdue, overviewOrder, projectProgress, todayISO, type EntrySummary, type Project, type Task } from '../lib';
 
-/** Au-delà, la piste déborde : les autres tâches ouvertes sont comptées (« +N »). */
-export const LANE_NODES = 12;
+/** Au-delà, les autres tâches ouvertes sont comptées (« +N ») : la piste tient sur une ligne jusqu'à 360 px. */
+export const LANE_NODES = 10;
 
 const plural = (count: number, one: string, many: string) => `${count} ${count > 1 ? many : one}`;
 

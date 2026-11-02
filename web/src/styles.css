@@ -3349,9 +3349,10 @@ div.google-preserved {
   color: var(--mark);
 }
 /* « Mettre en cours » : un état, comme l'épingle ; posé, il reste visible à l'encre. Au repos,
-   il se devine (§47 : un geste quotidien ne doit pas se chercher au survol) ; ★ et ✕ restent cachés. */
+   il se voit (§47 : un geste quotidien ne se cherche pas au survol ; 0,7 tient le contraste
+   de 3:1 d'une commande) ; ★ et ✕ restent cachés. Au doigt, plein comme eux. */
 .card-top-actions .icon.doing {
-  opacity: 0.35;
+  opacity: 0.7;
   font-size: 11px;
 }
 .card:hover .card-top-actions .icon.doing,
@@ -4126,6 +4127,29 @@ div.google-preserved {
   width: 100%;
   min-height: calc(3lh + 14px);
   resize: vertical;
+}
+/* Endpoint et modèle repliés : la clé et son test suffisent au quotidien. */
+.ai-advanced-settings {
+  min-width: 0;
+  margin-top: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.ai-advanced-settings > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ai-advanced-settings[open] {
+  display: grid;
+  gap: 10px;
+}
+@media (max-width: 600px) {
+  .ai-advanced-settings > summary {
+    min-height: 36px;
+    align-content: center;
+  }
 }
 /* Numéro de version : redondant avec la pastille de l'en-tête en desktop
    large, il apparaît dès que la pastille est masquée (≤ 1180 px) : mobile,
@@ -6042,13 +6066,14 @@ button.lane-name:hover {
 .lane-activity.is-today {
   color: var(--mark);
 }
-/* Le trait de la branche, sous les nœuds. */
+/* Le trait de la branche, sous les nœuds. Toujours une ligne : faute de place (téléphone de
+   360 px), les nœuds se resserrent au lieu de pousser « +N » à la ligne suivante. */
 .lane-track {
   grid-area: track;
   position: relative;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 2px;
   min-height: 26px;
 }
@@ -6062,9 +6087,12 @@ button.lane-name:hover {
   border-radius: 2px;
   background: var(--rule);
 }
+/* La teinte d'une pastille active (`.chip.is-on`) : du blanc sur la couleur d'un projet
+   n'atteint pas 4,5:1 pour la plupart des couleurs de la palette. */
 .lane-done {
   position: relative;
   z-index: 1;
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -6073,17 +6101,19 @@ button.lane-name:hover {
   padding: 0 7px;
   margin-right: 4px;
   border-radius: 99px;
-  background: var(--project);
-  color: #fff;
+  background: color-mix(in srgb, var(--project) 18%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--project) 55%, transparent);
+  color: var(--text);
   font-size: 11.5px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
-/* Un nœud : cible de 24 px, cercle de 14 px dessiné dedans. */
+/* Un nœud : cible de 24 px (16 au plus serré), cercle de 14 px centré dedans. */
 .lane-node {
   position: relative;
   z-index: 1;
-  width: 24px;
+  flex: 0 1 24px;
+  min-width: 16px;
   height: 24px;
   padding: 0;
   border: 0;
@@ -6094,7 +6124,11 @@ button.lane-name:hover {
 .lane-node::before {
   content: '';
   position: absolute;
-  inset: 5px;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
   box-sizing: border-box;
   border-radius: 50%;
   border: 2px solid var(--project);
@@ -6122,6 +6156,7 @@ button.lane-name:hover {
 .lane-more {
   position: relative;
   z-index: 1;
+  flex: none;
   padding: 0 6px;
   background: var(--surface);
   font-size: 11.5px;
@@ -6174,8 +6209,9 @@ button.lane-name:hover {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-/* Centre étroit (panneaux larges, tablette) : le nom au-dessus, l'avancement à droite. */
-@container (max-width: 640px) {
+/* Centre de moins de 800 px (1 280 px de fenêtre, panneaux larges, tablette) : sur une
+   rangée, la piste n'aurait plus la place de dix nœuds ; le nom au-dessus, l'avancement à droite. */
+@container (max-width: 800px) {
   .lane {
     grid-template-columns: minmax(0, 1fr) 120px;
     grid-template-areas: 'name progress' 'track track' 'heads heads';
