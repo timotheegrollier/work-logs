@@ -558,6 +558,11 @@ describe('réglages IA', () => {
     await user.click(screen.getByRole('button', { name: 'Compte et paramètres' }));
     await user.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
     const dialog = await screen.findByRole('dialog', { name: 'Paramètres' });
+    expect(within(dialog).getByLabelText('Endpoint IA')).not.toBeVisible();
+    expect(within(dialog).getByLabelText('Modèle IA')).not.toBeVisible();
+    expect(within(dialog).getByLabelText('Clé IA')).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Tester la connexion' })).toBeVisible();
+    await user.click(within(dialog).getByText('Réglages avancés', { selector: 'summary' }));
     expect(within(dialog).getByLabelText('Endpoint IA')).toHaveValue(
       'https://generativelanguage.googleapis.com/v1beta/openai'
     );
@@ -569,13 +574,39 @@ describe('réglages IA', () => {
 
     await user.selectOptions(within(dialog).getByLabelText('Modèle IA'), 'gemini-3.5-flash');
     expect(localStorage.getItem('worklogs-ai-model')).toBe('gemini-3.5-flash');
-    await user.click(within(dialog).getByRole('button', { name: 'Valeurs Gemini gratuites' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Restaurer les réglages Gemini' }));
     expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('gemini-3-flash-preview');
     // La clé collée survit au reset des valeurs.
     expect(within(dialog).getByLabelText('Clé IA')).toHaveValue('cle-test');
 
     await user.type(within(dialog).getByLabelText('Mon contexte de travail'), 'Dev solo en pisciculture');
     expect(localStorage.getItem('worklogs-ai-profile')).toBe('Dev solo en pisciculture');
+  });
+
+  test('ouvre la fiche du projet actif et teste la connexion sans ouvrir les réglages avancés', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      projects: [{ id: 'pr_atelier', name: 'Atelier' }, { id: 'pr_bassin', name: 'Bassin' }],
+      entries: [{ id: 'en_note', title: 'Maintenance', project_id: 'pr_atelier' }],
+    });
+    localStorage.setItem('worklogs-project', 'pr_atelier');
+    localStorage.setItem('worklogs-ai-project-contexts', JSON.stringify({ pr_atelier: 'Postes Linux', pr_bassin: 'Pompes immergées' }));
+    mockAiSuggest('OK');
+    render(<App />);
+    await screen.findByLabelText('Titre de l’entrée');
+    await user.click(screen.getByRole('button', { name: 'Compte et paramètres' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
+    const settings = within(await screen.findByRole('dialog', { name: 'Paramètres' }));
+    expect(settings.getByLabelText('Projet du contexte IA')).toHaveValue('pr_atelier');
+    expect(settings.getByLabelText('Contexte IA du projet')).toHaveValue('Postes Linux');
+    expect(settings.getByLabelText('Endpoint IA')).not.toBeVisible();
+    await user.type(settings.getByLabelText('Clé IA'), 'cle-test');
+    await user.click(settings.getByRole('button', { name: 'Tester la connexion' }));
+    await settings.findByText(/Connexion vérifiée/);
+    expect(aiBodies).toHaveLength(1);
+    expect(settings.getByLabelText('Endpoint IA')).not.toBeVisible();
+    await user.selectOptions(settings.getByLabelText('Projet du contexte IA'), 'pr_bassin');
+    expect(settings.getByLabelText('Contexte IA du projet')).toHaveValue('Pompes immergées');
   });
 });
 

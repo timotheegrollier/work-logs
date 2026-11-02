@@ -285,6 +285,11 @@ Dans **⚙ Paramètres → Assistance IA**, renseigner le profil métier génér
 facultativement, le **Contexte IA du projet** : objectif, environnement, contraintes et
 termes utiles. Chaque fiche est conservée **sur cet appareil uniquement**.
 
+La section commence par la **Clé IA** et **Tester la connexion** : un seul appel, dont le
+résultat s'efface dès que la clé, l'endpoint ou le modèle change. Endpoint, modèle et
+**Restaurer les réglages Gemini** sont repliés sous **Réglages avancés**. Le contexte IA
+s'ouvre sur la fiche du projet sélectionné dans le bandeau.
+
 Un clic d'assistance lit aussi des documents locaux du même projet : documents liés
 d'abord, puis notes et procédures dont le titre ou l'extrait correspond au sujet et au
 texte en cours. Les tâches voisines pertinentes sont privilégiées. Cette recherche est

@@ -2524,7 +2524,8 @@ cours » demandait un glisser-déposer ou le formulaire.
   le cas que §33 prévoyait (voir les retards de tous les projets).
 - **▶ Mettre en cours** sur chaque carte ouverte, avant ★ : un clic met la tâche en cours (au
   bas de sa colonne, comme le select Statut), recliquer la remet à faire — elle perd donc sa
-  place dans À faire. Visible au repos (§47 : un geste quotidien ne se cherche pas au survol),
+  place dans À faire. Visible au repos à 70 % (§47 : un geste quotidien ne se cherche pas au
+  survol ; 0,7 tient le contraste de 3:1 d'une commande), plein au doigt et au survol,
   allumé à l'encre quand la tâche est en cours. Une tâche terminée n'a pas de ▶ : la case la
   rouvre d'abord.
 - **✨ IA › Prioriser les tâches** (menu du panneau, §44) : les champs enregistrés des tâches
@@ -2543,8 +2544,10 @@ cours » demandait un glisser-déposer ou le formulaire.
   qui lève projet, catégorie et recherche, comme les compteurs de l'en-tête — et refermée par
   Fermer, par le choix d'un projet ou par tout ce qui ouvre autre chose au centre. Une voie par
   projet dans l'ordre du bandeau (puis « Sans projet ») : le fil du journal couché, à la manière
-  d'un git dont l'historique est replié — une pastille compte les terminées, un nœud par tâche
-  ouverte (douze au plus, puis « +N »), plein avec un halo pour celle en cours (la tête de la
+  d'un git dont l'historique est replié — une pastille compte les terminées (teinte du projet,
+  chiffre à l'encre : du blanc sur la couleur d'un projet ne tient pas 4,5:1), un nœud par tâche
+  ouverte (dix au plus, puis « +N » ; la piste reste sur une ligne, les nœuds se resserrent
+  jusqu'à 360 px), plein avec un halo pour celle en cours (la tête de la
   branche), creux pour À faire, bord rouge en retard, anneau ambré si épinglée ; sous le trait
   « En cours : titre · titre », à droite la barre d'avancement et « 4/10 · 40 % », sous le nom
   la dernière note (« note hier », ambre si aujourd'hui). Le nom d'un projet le filtre ; un nœud

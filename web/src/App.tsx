@@ -860,7 +860,8 @@ export default function App() {
           <TaskBoard
             categories={state?.categories ?? []}
             categoryId={categoryId}
-            search={search}
+            // La recherche relue, pas la saisie : chaque frappe redessinerait toutes les cartes.
+            search={query}
             grouped={groupedCategories}
             tasks={state?.tasks ?? []}
             entries={state?.entries ?? []}
@@ -940,7 +941,7 @@ export default function App() {
             <Suspense fallback={loading}>
               <GoogleDrive onRestored={reload} onOpen={openDriveEntry} onDocuments={() => { setShowSettings(false); setShowDocuments(true); }} />
             </Suspense>
-            <AiSettings projects={state?.projects ?? []} />
+            <AiSettings projects={state?.projects ?? []} projectId={projectId || null} />
             {isPwa && <RelaySettings onChange={() => setSharedRevision((n) => n + 1)} />}
             <SharedSettings key={`nom-${sharedRevision}`} />
             {/* Largeurs au pixel près : les poignées entre les colonnes font le
