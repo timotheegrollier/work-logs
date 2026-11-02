@@ -31,7 +31,7 @@
     "@playwright/test": "^1.63.0",
     "concurrently": "^10.0.6",
     "electron": "44.4.5",
-    "electron-builder": "26.15.3",
+    "electron-builder": "26.18.0",
     "wrangler": "^4.143.0"
   },
   "author": "Timothée Grollier <timotheegrollier@gmail.com>",
