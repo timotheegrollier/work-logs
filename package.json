@@ -28,16 +28,16 @@
     "preview": "wrangler dev --config oauth-proxy/wrangler.toml"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
-    "concurrently": "^10.0.5",
+    "@playwright/test": "^1.64.1",
+    "concurrently": "^10.0.6",
     "electron": "44.4.5",
-    "electron-builder": "26.15.3",
-    "wrangler": "^4.143.0"
+    "electron-builder": "26.18.0",
+    "wrangler": "^4.156.0"
   },
   "author": "Timothée Grollier <timotheegrollier@gmail.com>",
   "homepage": "https://github.com/timotheegrollier/work-logs",
   "license": "UNLICENSED",
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.11"
   }
 }

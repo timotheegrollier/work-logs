@@ -15,17 +15,18 @@ export function TaskAdvice({ tasks, projects, onTask, missingOpen = 0 }: {
   const [prepared, setPrepared] = useState<Prepared | null>(null);
   const [excluded, setExcluded] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
-  const [result, setResult] = useState<Advice[] | null>(null);
+  const [result, setResult] = useState<{ summary: string; order: Advice[] } | null>(null);
   const [busy, setBusy] = useState<'preparing' | 'advising' | null>(null);
   const [error, setError] = useState('');
   const controller = useRef<AbortController | null>(null);
   const open = tasks.filter((task) => task.status !== 'done' && (scope === 'all' || (task.project_id ?? '') === scope));
   const needsSelection = open.length > MAX_ADVICE_TASKS;
   const selectedOpen = needsSelection ? open.filter((task) => selected.includes(task.id)) : open;
-  // Une suggestion ne doit pas survivre à un contexte modifié dans l'application.
+  // Une suggestion ne survit pas à des sources ou des repères modifiés. Cocher ou modifier une
+  // tâche, si : on suit l'ordre en avançant, la liste affiche l'état courant de chaque tâche.
   const snapshot = JSON.stringify([
-    open.map((task) => [task.id, task.updated_at, task.title, task.status, task.priority, task.due_date, task.pinned, task.project_id, task.documents?.map((doc) => [doc.id, doc.title, doc.updated_at, doc.kind, doc.project_id, doc.archived, doc.google_document_id, doc.google_tab_id])]),
-    projects.map((project) => [project.id, project.name, readProjectAiBrief(project.id)]), readProjectAiBrief(null), readAiSettings().profile, scope, missingOpen, needsSelection ? selected : [],
+    tasks.map((task) => task.documents?.map((doc) => [doc.id, doc.title, doc.updated_at, doc.kind, doc.project_id, doc.archived, doc.google_document_id, doc.google_tab_id])),
+    projects.map((project) => [project.id, project.name, readProjectAiBrief(project.id)]), readProjectAiBrief(null), readAiSettings().profile, scope, missingOpen, selected,
   ]);
   useEffect(() => {
     // Un contexte effectivement modifié invalide les résultats, mais l'utilisateur
@@ -98,13 +99,16 @@ export function TaskAdvice({ tasks, projects, onTask, missingOpen = 0 }: {
         <button className="task-primary" type="button" disabled={Boolean(busy)} onClick={() => void advise()}>Demander les conseils à l’IA</button>
       </div>}
       {result && <div className="overview-advice-result" role="region" aria-label="Ordre conseillé par l’IA">
-        <h4>Ordre proposé</h4>
-        {prepared && result.length < prepared.tasks.length && <p role="status">Réponse incomplète : {result.length} tâche{result.length > 1 ? 's' : ''} conseillée{result.length > 1 ? 's' : ''} sur {prepared.tasks.length}. Les autres ne sont pas classées.</p>}
-        <ol>{result.map((item) => {
-          const task = tasks.find((candidate) => candidate.id === item.id);
-          if (!task) return null;
-          return <li key={item.id}><button type="button" className="overview-task-title" onClick={() => onTask(task)}>{task.title}</button>{item.reason && <p>{item.reason}</p>}{item.advice && <p>{item.advice}</p>}</li>;
-        })}</ol>
+        {result.summary && <section className="overview-advice-summary" aria-label="Résumé des conseils IA"><h4>En bref</h4><p>{result.summary}</p></section>}
+        <div>
+          <h4>Ordre proposé</h4>
+          {prepared && result.order.length < prepared.tasks.length && <p role="status">Réponse incomplète : {result.order.length} tâche{result.order.length > 1 ? 's' : ''} conseillée{result.order.length > 1 ? 's' : ''} sur {prepared.tasks.length}. Les autres ne sont pas classées.</p>}
+          <ol>{result.order.map((item) => {
+            const task = tasks.find((candidate) => candidate.id === item.id);
+            if (!task) return null;
+            return <li key={item.id} className={task.status === 'done' ? 'is-done' : undefined}><button type="button" className="overview-task-title" onClick={() => onTask(task)}>{task.title}</button>{task.status === 'done' && ' · terminée'}{item.reason && <p>{item.reason}</p>}{item.advice && <p>{item.advice}</p>}</li>;
+          })}</ol>
+        </div>
         <p className="ai-hint">Conseils à vérifier : aucune tâche n’a été modifiée.</p>
       </div>}
     </section>

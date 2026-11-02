@@ -57,7 +57,8 @@ describe('catégories et sous-catégories', () => {
     const backend = { timeout: 5000 };
     seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }] });
     render(<App />);
-    await screen.findByRole('button', { name: 'Chantier' });
+    // Premier test du fichier : il paie aussi le démarrage du worker jsdom.
+    await screen.findByRole('button', { name: 'Chantier' }, backend);
     fireEvent.click(categories().getByRole('button', { name: '＋ Catégorie' }));
     fireEvent.change(categories().getByLabelText('Nom de la catégorie'), { target: { value: 'Préparation' } });
     fireEvent.click(categories().getByRole('button', { name: 'Enregistrer la catégorie' }));
@@ -2884,8 +2885,10 @@ describe('vue d’ensemble des projets', () => {
     expect(within(answer).getByText(/Réponse incomplète : 1 tâche conseillée sur 60/)).toBeInTheDocument();
   }, 15_000);
 
-  test('une réponse IA tardive est ignorée après le passage en cours d’une tâche', async () => {
+  test('passer une tâche en cours puis la cocher garde la réponse IA et l’ordre conseillé', async () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
+    // Chaque attente suit un aller-retour du backend : 1 s ne tient pas sous charge.
+    const backend = { timeout: 5000 };
     seedData(api.db, { tasks: [{ id: 'tk_a', title: 'Préparer la pompe' }] });
     const diverted = globalThis.fetch;
     let finish!: (response: Response) => void;
@@ -2898,18 +2901,26 @@ describe('vue d’ensemble des projets', () => {
       return diverted(input, init);
     }));
     render(<App />);
-    await within(board()).findByRole('button', { name: 'Préparer la pompe' });
+    await within(board()).findByRole('button', { name: 'Préparer la pompe' }, backend);
     fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
-    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
     const advice = within(overview).getByRole('region', { name: 'Conseils IA pour les tâches' });
     fireEvent.click(within(advice).getByRole('button', { name: 'Préparer les conseils' }));
-    fireEvent.click(await within(advice).findByRole('button', { name: 'Demander les conseils à l’IA' }));
-    await waitFor(() => expect(called).toBe(true));
+    fireEvent.click(await within(advice).findByRole('button', { name: 'Demander les conseils à l’IA' }, backend));
+    await waitFor(() => expect(called).toBe(true), backend);
     fireEvent.click(within(overview).getByRole('button', { name: 'Mettre en cours Préparer la pompe' }));
-    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_a').status).toBe('doing'));
-    await waitFor(() => expect(within(advice).queryByRole('button', { name: 'Arrêter' })).not.toBeInTheDocument());
-    await act(async () => finish({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '[{"n":1,"reason":"Ancien ordre","advice":"Ancien conseil"}]' } }] }) } as Response));
-    expect(within(advice).queryByText('Ancien conseil')).not.toBeInTheDocument();
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_a').status).toBe('doing'), backend);
+    // L'état rejoué après le changement de statut ne coupe plus la demande en vol.
+    await within(board()).findByRole('heading', { name: 'En cours 1' }, backend);
+    expect(within(advice).getByRole('button', { name: 'Arrêter' })).toBeInTheDocument();
+    await act(async () => finish({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"summary":"Commence par la pompe.","order":[{"n":1,"reason":"Premier","advice":"Couper l’arrivée."}]}' } }] }) } as Response));
+    const answer = await within(advice).findByRole('region', { name: 'Ordre conseillé par l’IA' }, backend);
+    fireEvent.click(within(board()).getByRole('checkbox', { name: 'Terminer Préparer la pompe' }));
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_a').status).toBe('done'), backend);
+    await waitFor(() => expect(within(answer).getByRole('listitem')).toHaveTextContent('Préparer la pompe · terminée'), backend);
+    expect(within(answer).getByText('Couper l’arrivée.')).toBeInTheDocument();
+    expect(within(answer).getByRole('region', { name: 'Résumé des conseils IA' })).toHaveTextContent('Commence par la pompe.');
+    expect(within(advice).queryByRole('alert')).not.toBeInTheDocument();
   }, 15_000);
 
   test('préparer les conseils survit à la mise à jour d’une note sans lien', async () => {
@@ -2963,7 +2974,7 @@ describe('vue d’ensemble des projets', () => {
       ],
     });
     for (const id of ['en_keep', 'en_skip']) api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_a', id, new Date().toISOString());
-    mockAiSuggest('[{"n":1,"reason":"Une fuite attend.","advice":"Vérifier le joint."}]');
+    mockAiSuggest('{"summary":"Commence par la fuite de la pompe, puis vérifie le joint.","order":[{"n":1,"reason":"Une fuite attend.","advice":"Vérifier le joint."}]}');
     render(<App />);
     await within(board()).findByRole('button', { name: 'Vérifier pompe' });
     fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
@@ -2976,6 +2987,7 @@ describe('vue d’ensemble des projets', () => {
     const answer = await within(advice).findByRole('region', { name: 'Ordre conseillé par l’IA' });
     expect(within(answer).getByText('Une fuite attend.')).toBeInTheDocument();
     expect(within(answer).getByText('Vérifier le joint.')).toBeInTheDocument();
+    expect(within(answer).getByRole('region', { name: 'Résumé des conseils IA' })).toHaveTextContent('Commence par la fuite de la pompe, puis vérifie le joint.');
     const prompt = (aiBodies[0] as { messages: { content: string }[] }).messages[1].content;
     expect(prompt).toContain('La pompe fuit depuis lundi.');
     expect(prompt).not.toContain('SECRET NON ENVOYÉ');
@@ -5616,321 +5628,5 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     expect(within(draft).getByLabelText('Titre de la procédure')).toHaveValue('Remplacer le filtre');
     expect(signals.map((signal) => signal.aborted)).toEqual([true, true, false, true]);
     expect(within(card).queryByRole('alert')).not.toBeInTheDocument();
-  });
-});
-
-describe('IA dans les notes : contexte, affinement et actions', () => {
-  test('extrait des actions sélectionnables, modifiables et créées dans le projet avec leur note source', async () => {
-    localStorage.setItem('worklogs-ai-key', 'cle-test');
-    const text = 'Vérifier la pompe le 2026-11-01.\nAppeler le fournisseur.\nEnvoyer le devis.';
-    seedData(api.db, {
-      projects: [{ id: 'pr_bassin', name: 'Bassin' }],
-      entries: [{ id: 'en_note', title: 'Compte rendu', content_md: text, project_id: 'pr_bassin' }],
-      tasks: [{ id: 'tk_devis', title: 'Envoyer le devis', project_id: 'pr_bassin' }],
-    });
-    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_devis', 'en_note', new Date().toISOString());
-    mockAiSuggest(JSON.stringify([
-      { title: 'Vérifier la pompe', due_date: '2026-11-01', evidence: 'Vérifier la pompe le 2026-11-01.' },
-      { title: 'Appeler le fournisseur', due_date: null, evidence: 'Appeler le fournisseur.' },
-      { title: 'Envoyer le devis', due_date: null, evidence: 'Envoyer le devis.' },
-    ]));
-    render(<App />);
-    // Le démarrage lit d'abord le journal puis le document sélectionné.
-    await within(journal()).findByText('Compte rendu');
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Extraire les actions' }));
-    const proposal = await screen.findByRole('region', { name: 'Actions proposées' });
-    expect(within(proposal).getAllByRole('checkbox')).toHaveLength(2);
-    expect(within(proposal).getByText('Vérifier la pompe le 2026-11-01.')).toBeInTheDocument();
-    expect(within(proposal).getByLabelText('Échéance de l’action 1')).toHaveValue('2026-11-01');
-    fireEvent.click(within(proposal).getByRole('checkbox', { name: 'Créer l’action Appeler le fournisseur' }));
-    fireEvent.change(within(proposal).getByLabelText('Titre de l’action 1'), { target: { value: 'Contrôler la pompe' } });
-    fireEvent.change(within(proposal).getByLabelText('Échéance de l’action 1'), { target: { value: '2026-11-02' } });
-    fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
-    await within(proposal).findByText('1 tâche créée et liée à cette note.');
-    const created = row(api.db, "SELECT id,title,project_id,due_date FROM tasks WHERE title='Contrôler la pompe'");
-    expect(created).toMatchObject({ title: 'Contrôler la pompe', project_id: 'pr_bassin', due_date: '2026-11-02' });
-    expect(row(api.db, 'SELECT entry_id FROM task_entries WHERE task_id=?', created.id).entry_id).toBe('en_note');
-    expect(row(api.db, "SELECT count(*) AS n FROM tasks WHERE title='Appeler le fournisseur'").n).toBe(0);
-    expect(row(api.db, "SELECT content_md FROM entries WHERE id='en_note'").content_md).toBe(text);
-  });
-
-  test('une création partielle conserve les réussites et réessaie seulement les tâches manquantes', async () => {
-    localStorage.setItem('worklogs-ai-key', 'cle-test');
-    seedData(api.db, { entries: [{ id: 'en_note', title: 'À faire', content_md: 'Appeler le client.\nVérifier le devis.' }] });
-    mockAiSuggest(JSON.stringify([
-      { title: 'Appeler le client', due_date: null, evidence: 'Appeler le client.' },
-      { title: 'Vérifier le devis', due_date: null, evidence: 'Vérifier le devis.' },
-    ]));
-    const actualCreate = clientApi.createTaskFromEntry;
-    const create = vi.spyOn(clientApi, 'createTaskFromEntry')
-      .mockImplementationOnce(actualCreate)
-      .mockRejectedValueOnce(new Error('Enregistrement temporairement indisponible.'));
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Extraire les actions' }));
-    const proposal = await screen.findByRole('region', { name: 'Actions proposées' });
-    fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Enregistrement temporairement indisponible');
-    expect(within(proposal).getByRole('checkbox', { name: 'Créer l’action Appeler le client' })).toBeDisabled();
-    expect(within(proposal).getByRole('checkbox', { name: 'Créer l’action Vérifier le devis' })).toBeChecked();
-    expect(within(proposal).getByLabelText('Titre de l’action 2')).toHaveValue('Vérifier le devis');
-    fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
-    await waitFor(() => expect(within(proposal).getAllByText('Créée et liée')).toHaveLength(2));
-    expect(create.mock.calls.map((call) => call[1]?.title)).toEqual(['Appeler le client', 'Vérifier le devis', 'Vérifier le devis']);
-    expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(2);
-    expect(row(api.db, 'SELECT count(*) AS n FROM task_entries').n).toBe(2);
-  });
-
-  test('modifier la note après extraction bloque la création des actions devenues anciennes', async () => {
-    localStorage.setItem('worklogs-ai-key', 'cle-test');
-    seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Appeler le client.' }] });
-    mockAiSuggest(JSON.stringify([{ title: 'Appeler le client', due_date: null, evidence: 'Appeler le client.' }]));
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Extraire les actions' }));
-    await screen.findByRole('region', { name: 'Actions proposées' });
-    fireEvent.click(screen.getByRole('button', { name: 'Écrire' }));
-    fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Le client a été appelé.' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Créer les tâches sélectionnées' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('a changé depuis l’extraction');
-    expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(0);
-    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Le client a été appelé.');
-  });
-
-  test('une note riche locale peut ne contenir aucune action, sans erreur ni création', async () => {
-    localStorage.setItem('worklogs-ai-key', 'cle-test');
-    seedData(api.db, { entries: [{ id: 'en_note', title: 'Bilan' }] });
-    api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'La pompe a été réparée.' }] }] }), 'en_note');
-    mockAiSuggest('[]');
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Extraire les actions' }));
-    const proposal = await screen.findByRole('region', { name: 'Actions proposées' });
-    expect(within(proposal).getByText('Aucune nouvelle action à créer dans cette note.')).toBeInTheDocument();
-    expect(within(proposal).queryByRole('button', { name: 'Créer les tâches sélectionnées' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    const sent = (aiBodies.at(-1) as { messages: { content: string }[] }).messages.map((message) => message.content).join('\n');
-    expect(sent).toContain('La pompe a été réparée.');
-  });
-
-  test('affiner une mise en page transmet la demande et la proposition précédente en gardant la source intacte', async () => {
-    localStorage.setItem('worklogs-ai-key', 'cle-test');
-    seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'texte original\n\n`cp fichier copie`' }] });
-    mockAiSuggest('Une première proposition détaillée.');
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Mettre en page' }));
-    const proposal = await screen.findByRole('region', { name: 'Mise en page proposée' });
-    mockAiSuggest('Une proposition plus courte.');
-    fireEvent.change(within(proposal).getByLabelText('Ajuster la proposition'), { target: { value: 'Conserver la commande exactement.' } });
-    fireEvent.click(within(proposal).getByRole('button', { name: 'Affiner' }));
-    await within(proposal).findByText('Une proposition plus courte.');
-    const sent = (aiBodies.at(-1) as { messages: { content: string }[] }).messages.map((message) => message.content).join('\n');
-    expect(sent).toContain('texte original');
-    expect(sent).toContain('cp fichier copie');
-    expect(sent).toContain('Une première proposition détaillée.');
-    expect(sent).toContain('Conserver la commande exactement.');
-    fireEvent.click(screen.getByRole('button', { name: 'Écrire' }));
-    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('texte original\n\n`cp fichier copie`');
-    expect(row(api.db, "SELECT content_md FROM entries WHERE id='en_note'").content_md).toBe('texte original\n\n`cp fichier copie`');
-    mockAiSuggest('Encore plus court.');
-    fireEvent.click(within(proposal).getByRole('button', { name: 'Plus court' }));
-    await within(proposal).findByText('Encore plus court.');
-    expect(JSON.stringify(aiBodies.at(-1))).toContain('Plus court');
-  });
-
-  test('les sous-tâches gardent la frappe arrivée pendant l’appel et utilisent le contexte du projet', async () => {
-    localStorage.setItem('worklogs-ai-key', 'cle-test');
-    seedData(api.db, {
-      projects: [{ id: 'pr_bassin', name: 'Bassin' }, { id: 'pr_autre', name: 'Autre projet' }],
-      entries: [
-        { id: 'en_note', title: 'Pompe : diagnostic', content_md: 'Vérifier la pompe.', project_id: 'pr_bassin', date: '2026-10-21' },
-        { id: 'en_proc', title: 'Purger la pompe', content_md: 'Fermer la vanne avant purge.', project_id: 'pr_bassin', kind: 'procedure' },
-        { id: 'en_secret', title: 'Pompe SECRET', content_md: 'SECRET AUTRE PROJET', project_id: 'pr_autre', date: '2026-10-20' },
-      ],
-    });
-    const diverted = globalThis.fetch;
-    let finish: (() => void) | undefined;
-    let request: { messages: { content: string }[] } | undefined;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).includes('chat/completions')) {
-        request = JSON.parse(init?.body as string);
-        return new Promise<Response>((resolve) => { finish = () => resolve({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'Purger la pompe' } }] }) } as Response); });
-      }
-      return diverted(input, init);
-    }));
-    render(<App />);
-    fireEvent.click(await within(await screen.findByRole('region', { name: 'Journal' })).findByText('Pompe : diagnostic'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Écrire' }));
-    fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Vérifier la pompe. Brouillon récent.' } });
-    fireEvent.click(screen.getByRole('button', { name: '✨ Suggérer des sous-tâches' }));
-    await waitFor(() => expect(finish).toBeTypeOf('function'));
-    fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Vérifier la pompe. Brouillon récent. Frappe pendant IA.' } });
-    await act(async () => { finish?.(); });
-    await waitFor(() => expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Vérifier la pompe. Brouillon récent. Frappe pendant IA.\n## Sous-tâches\n- [ ] Purger la pompe\n'));
-    expect(JSON.stringify(request)).toContain('Brouillon récent.');
-    expect(JSON.stringify(request)).toContain('Fermer la vanne avant purge.');
-    expect(JSON.stringify(request)).not.toContain('SECRET');
-  });
-
-  test('quitter une note ignore la procédure qui revient après son démontage', async () => {
-    localStorage.setItem('worklogs-ai-key', 'cle-test');
-    seedData(api.db, { entries: [
-      { id: 'en_a', title: 'Source', content_md: 'Réparer la pompe.', date: '2026-10-21' },
-      { id: 'en_b', title: 'Autre note', content_md: 'Texte conservé.', date: '2026-10-20' },
-    ] });
-    const diverted = globalThis.fetch;
-    let finish: (() => void) | undefined;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).includes('chat/completions')) return new Promise<Response>((resolve) => { finish = () => resolve({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '# Réparer la pompe\n\n1. Couper le courant' } }] }) } as Response); });
-      return diverted(input, init);
-    }));
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Créer une procédure' }));
-    await waitFor(() => expect(finish).toBeTypeOf('function'));
-    fireEvent.click(within(journal()).getByText('Autre note'));
-    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Autre note'));
-    await act(async () => { finish?.(); });
-    expect(screen.queryByRole('form', { name: 'Procédure rédigée' })).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Autre note');
-  });
-
-  test('sans clé, extraire explique le réglage requis avant de charger le contexte', async () => {
-    seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Appeler le client.' }] });
-    render(<App />);
-    const button = await screen.findByRole('button', { name: '✨ Extraire les actions' });
-    const state = vi.spyOn(clientApi, 'state');
-    const readEntry = vi.spyOn(clientApi, 'entry');
-    fireEvent.click(button);
-    expect(await screen.findByRole('alert')).toHaveTextContent('Colle ta clé IA');
-    expect(state).not.toHaveBeenCalled();
-    expect(readEntry).not.toHaveBeenCalled();
-  });
-
-  test('retirer une source ferme sa proposition et empêche sa réutilisation dans la demande suivante', async () => {
-    localStorage.setItem('worklogs-ai-key', 'cle-test');
-    seedData(api.db, {
-      projects: [{ id: 'pr_bassin', name: 'Bassin' }],
-      entries: [
-        { id: 'en_note', title: 'Pompe', content_md: 'Examiner le moteur.', project_id: 'pr_bassin' },
-        { id: 'en_proc', title: 'Purger la pompe', content_md: 'Instruction privée du document complémentaire.', project_id: 'pr_bassin', kind: 'procedure' },
-      ],
-    });
-    mockAiSuggest('Première proposition dérivée du document complémentaire.');
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Mettre en page' }));
-    await screen.findByRole('region', { name: 'Mise en page proposée' });
-    expect(JSON.stringify(aiBodies.at(-1))).toContain('Instruction privée du document complémentaire.');
-    fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Procédure : Purger la pompe' }));
-    expect(screen.queryByRole('region', { name: 'Mise en page proposée' })).not.toBeInTheDocument();
-    mockAiSuggest('Proposition indépendante.');
-    fireEvent.click(screen.getByRole('button', { name: '✨ Mettre en page' }));
-    await within(await screen.findByRole('region', { name: 'Mise en page proposée' })).findByText('Proposition indépendante.');
-    const sent = JSON.stringify(aiBodies.at(-1));
-    expect(sent).not.toContain('Instruction privée du document complémentaire.');
-    expect(sent).not.toContain('Purger la pompe');
-    expect(sent).not.toContain('Première proposition dérivée');
-  });
-
-  test('un aller-retour de projet pendant la suggestion invalide aussi son ancienne réponse', async () => {
-    localStorage.setItem('worklogs-ai-key', 'cle-test');
-    seedData(api.db, {
-      projects: [{ id: 'pr_a', name: 'Bassin' }, { id: 'pr_b', name: 'Atelier' }],
-      entries: [{ id: 'en_note', title: 'Note', content_md: 'Texte conservé.', project_id: 'pr_a' }],
-    });
-    const diverted = globalThis.fetch;
-    let finish: (() => void) | undefined;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).includes('chat/completions')) return new Promise<Response>((resolve) => { finish = () => resolve({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'Suggestion ancienne' } }] }) } as Response); });
-      return diverted(input, init);
-    }));
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Écrire' }));
-    fireEvent.click(screen.getByRole('button', { name: '✨ Suggérer des sous-tâches' }));
-    await waitFor(() => expect(finish).toBeTypeOf('function'));
-    fireEvent.change(screen.getByLabelText('Projet de l’entrée'), { target: { value: 'pr_b' } });
-    fireEvent.change(screen.getByLabelText('Projet de l’entrée'), { target: { value: 'pr_a' } });
-    await act(async () => { finish?.(); });
-    await waitFor(() => expect(screen.getByRole('button', { name: '✨ Suggérer des sous-tâches' })).toBeEnabled());
-    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Texte conservé.');
-    expect(screen.queryByRole('button', { name: 'Retirer la suggestion' })).not.toBeInTheDocument();
-  });
-
-  test.each([
-    { feature: 'les sous-tâches', button: '✨ Suggérer des sous-tâches', reply: 'Purger la pompe' },
-    { feature: 'les actions', button: '✨ Extraire les actions', reply: JSON.stringify([{ title: 'Appeler le client', due_date: null, evidence: 'Appeler le client.' }]) },
-  ])('retirer une source pendant la réponse invalide aussi $feature', async ({ button, reply }) => {
-    localStorage.setItem('worklogs-ai-key', 'cle-test');
-    seedData(api.db, {
-      projects: [{ id: 'pr_bassin', name: 'Bassin' }],
-      entries: [
-        { id: 'en_note', title: 'Pompe', content_md: 'Appeler le client.', project_id: 'pr_bassin' },
-        { id: 'en_proc', title: 'Purger la pompe', content_md: 'Instruction complémentaire.', project_id: 'pr_bassin', kind: 'procedure' },
-      ],
-    });
-    const diverted = globalThis.fetch;
-    let finish: (() => void) | undefined;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).includes('chat/completions')) return new Promise<Response>((resolve) => { finish = () => resolve({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: reply } }] }) } as Response); });
-      return diverted(input, init);
-    }));
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: button }));
-    await waitFor(() => expect(finish).toBeTypeOf('function'));
-    fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Procédure : Purger la pompe' }));
-    await act(async () => { finish?.(); });
-    await waitFor(() => expect(screen.getByRole('button', { name: button })).toBeEnabled());
-    expect(screen.queryByRole('button', { name: 'Retirer la suggestion' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Actions proposées' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Écrire' }));
-    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Appeler le client.');
-  });
-
-  test('une réponse de création perdue est réconciliée avant retry, et un état illisible bloque toute création', async () => {
-    localStorage.setItem('worklogs-ai-key', 'cle-test');
-    seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Appeler le client.' }] });
-    mockAiSuggest(JSON.stringify([{ title: 'Appeler le client', due_date: null, evidence: 'Appeler le client.' }]));
-    const actualCreate = clientApi.createTaskFromEntry;
-    const create = vi.spyOn(clientApi, 'createTaskFromEntry').mockImplementationOnce(async (...args) => {
-      await actualCreate(...args);
-      throw new Error('Réponse perdue après enregistrement.');
-    });
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: '✨ Extraire les actions' }));
-    const proposal = await screen.findByRole('region', { name: 'Actions proposées' });
-    fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Réponse perdue après enregistrement');
-    expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(1);
-    expect(within(proposal).getByRole('checkbox', { name: 'Créer l’action Appeler le client' })).toBeChecked();
-
-    vi.spyOn(clientApi, 'state').mockRejectedValueOnce(new Error('État indisponible.'));
-    fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Impossible de vérifier les tâches déjà liées');
-    expect(create).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(within(proposal).getByRole('button', { name: 'Créer les tâches sélectionnées' }));
-    await within(proposal).findByText('Créée et liée');
-    expect(within(proposal).getByRole('checkbox', { name: 'Créer l’action Appeler le client' })).toBeDisabled();
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(1);
-    expect(row(api.db, 'SELECT count(*) AS n FROM task_entries').n).toBe(1);
-  });
-
-  test('une case ajoutée pendant la suggestion ne devient pas une sous-tâche en double', async () => {
-    localStorage.setItem('worklogs-ai-key', 'cle-test');
-    seedData(api.db, { entries: [{ id: 'en_note', title: 'Pompe', content_md: 'Vérifier la pompe.' }] });
-    const diverted = globalThis.fetch;
-    let finish: (() => void) | undefined;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).includes('chat/completions')) return new Promise<Response>((resolve) => { finish = () => resolve({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'Purger la pompe' } }] }) } as Response); });
-      return diverted(input, init);
-    }));
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Écrire' }));
-    fireEvent.click(screen.getByRole('button', { name: '✨ Suggérer des sous-tâches' }));
-    await waitFor(() => expect(finish).toBeTypeOf('function'));
-    fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Vérifier la pompe.\n- [ ] Purger la pompe' } });
-    await act(async () => { finish?.(); });
-    await waitFor(() => expect(screen.getByRole('button', { name: '✨ Suggérer des sous-tâches' })).toBeEnabled());
-    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Vérifier la pompe.\n- [ ] Purger la pompe');
-    expect(screen.queryByRole('button', { name: 'Retirer la suggestion' })).not.toBeInTheDocument();
   });
 });
