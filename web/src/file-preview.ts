@@ -62,15 +62,6 @@ export function looksLikePdf(bytes: Uint8Array): boolean {
  * Type MIME d'une image, d'après ses premiers octets (jamais son nom), ou
  * `null` : un fichier nommé « image.png » qui contient du HTML n'est pas une image.
  */
-export function looksLikeImage(bytes: Uint8Array): boolean {
-  return imageMime(bytes) !== null;
-}
-
-/**
- * Type MIME d'une image, d'après ses premiers octets, ou `null`. Les mêmes
- * signatures que côté serveur (`api/src/image-magic.js`) : le front décide de
- * l'affichage, le serveur de ce qu'il sert.
- */
 export function imageMime(bytes: Uint8Array): string | null {
   if (bytes.length < 4) return null;
   const head = bytes.subarray(0, 16);
