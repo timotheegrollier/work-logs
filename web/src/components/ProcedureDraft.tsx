@@ -89,7 +89,6 @@ export function ProcedureDraft({
           {creating ? 'Création…' : 'Créer la procédure'}
         </button>
         <button className={'ghost' + (busy ? ' ai-busy' : '')} type="button" disabled={creating || busy} onClick={() => onRefresh()}>
-          {busy ? 'Rédaction…' : 'Rafraîchir'}
         </button>
         {busy && onCancel && <button className="ghost" type="button" aria-label="Arrêter la demande IA" onClick={onCancel}>Arrêter</button>}
         {/* Pendant une rédaction, fermer ne l'arrêterait pas : sa réponse rouvrirait le panneau. */}
