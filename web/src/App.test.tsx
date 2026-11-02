@@ -2887,6 +2887,8 @@ describe('vue d’ensemble des projets', () => {
 
   test('passer une tâche en cours puis la cocher garde la réponse IA et l’ordre conseillé', async () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
+    // Chaque attente suit un aller-retour du backend : 1 s ne tient pas sous charge.
+    const backend = { timeout: 5000 };
     seedData(api.db, { tasks: [{ id: 'tk_a', title: 'Préparer la pompe' }] });
     const diverted = globalThis.fetch;
     let finish!: (response: Response) => void;
@@ -2899,23 +2901,23 @@ describe('vue d’ensemble des projets', () => {
       return diverted(input, init);
     }));
     render(<App />);
-    await within(board()).findByRole('button', { name: 'Préparer la pompe' });
+    await within(board()).findByRole('button', { name: 'Préparer la pompe' }, backend);
     fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
-    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
     const advice = within(overview).getByRole('region', { name: 'Conseils IA pour les tâches' });
     fireEvent.click(within(advice).getByRole('button', { name: 'Préparer les conseils' }));
-    fireEvent.click(await within(advice).findByRole('button', { name: 'Demander les conseils à l’IA' }));
-    await waitFor(() => expect(called).toBe(true));
+    fireEvent.click(await within(advice).findByRole('button', { name: 'Demander les conseils à l’IA' }, backend));
+    await waitFor(() => expect(called).toBe(true), backend);
     fireEvent.click(within(overview).getByRole('button', { name: 'Mettre en cours Préparer la pompe' }));
-    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_a').status).toBe('doing'));
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_a').status).toBe('doing'), backend);
     // L'état rejoué après le changement de statut ne coupe plus la demande en vol.
-    await within(board()).findByRole('heading', { name: 'En cours 1' });
+    await within(board()).findByRole('heading', { name: 'En cours 1' }, backend);
     expect(within(advice).getByRole('button', { name: 'Arrêter' })).toBeInTheDocument();
     await act(async () => finish({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"summary":"Commence par la pompe.","order":[{"n":1,"reason":"Premier","advice":"Couper l’arrivée."}]}' } }] }) } as Response));
-    const answer = await within(advice).findByRole('region', { name: 'Ordre conseillé par l’IA' });
+    const answer = await within(advice).findByRole('region', { name: 'Ordre conseillé par l’IA' }, backend);
     fireEvent.click(within(board()).getByRole('checkbox', { name: 'Terminer Préparer la pompe' }));
-    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_a').status).toBe('done'));
-    await waitFor(() => expect(within(answer).getByRole('listitem')).toHaveTextContent('Préparer la pompe · terminée'));
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_a').status).toBe('done'), backend);
+    await waitFor(() => expect(within(answer).getByRole('listitem')).toHaveTextContent('Préparer la pompe · terminée'), backend);
     expect(within(answer).getByText('Couper l’arrivée.')).toBeInTheDocument();
     expect(within(answer).getByRole('region', { name: 'Résumé des conseils IA' })).toHaveTextContent('Commence par la pompe.');
     expect(within(advice).queryByRole('alert')).not.toBeInTheDocument();
