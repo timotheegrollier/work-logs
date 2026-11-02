@@ -57,7 +57,8 @@ describe('catégories et sous-catégories', () => {
     const backend = { timeout: 5000 };
     seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }] });
     render(<App />);
-    await screen.findByRole('button', { name: 'Chantier' });
+    // Premier test du fichier : il paie aussi le démarrage du worker jsdom.
+    await screen.findByRole('button', { name: 'Chantier' }, backend);
     fireEvent.click(categories().getByRole('button', { name: '＋ Catégorie' }));
     fireEvent.change(categories().getByLabelText('Nom de la catégorie'), { target: { value: 'Préparation' } });
     fireEvent.click(categories().getByRole('button', { name: 'Enregistrer la catégorie' }));
