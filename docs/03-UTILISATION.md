@@ -242,6 +242,10 @@ rendu approximatif.
   les champs des tâches sélectionnées, le profil et les repères des projets et les extraits
   cochés, jusqu’à trois documents par tâche, 40 documents et 600 caractères par extrait.
   Les pièces jointes et documents Google ne sont pas lus ; les omissions sont annoncées.
+  La réponse donne un résumé « En bref » (quoi faire, dans quel ordre, les conseils clés)
+  à côté de l’ordre détaillé. On peut cocher ou modifier les tâches en la suivant : elle
+  reste affichée et barre les tâches terminées. Elle disparaît si un document lié, les
+  repères ou le projet analysé changent.
   L’ordre et les conseils sont à relire : aucune tâche n’est modifiée. Au-delà de 60 tâches,
   sélectionner celles à analyser. Si la réponse est partielle, elle le dit. Sur desktop,
   l’API fournit au plus 500 tâches : la vue signale les éléments manquants et refuse de

@@ -6361,7 +6361,12 @@ button.lane-name:hover {
 .overview-advice-sources details { border: 1px solid var(--line); border-radius: 6px; padding: .4rem .6rem; }
 .overview-advice-sources details p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .overview-advice-sources > button { justify-self: start; }
-.overview-advice-result { margin-top: .9rem; }
+/* Le résumé à côté de l'ordre quand la colonne est assez large, au-dessus sinon. */
+.overview-advice-result { margin-top: .9rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: .9rem; align-items: start; }
+.overview-advice-result > .ai-hint { grid-column: 1 / -1; margin: 0; }
+.overview-advice-summary { padding: .6rem .8rem; border: 1px solid var(--line); border-radius: 8px; }
+.overview-advice-summary p { margin: 0; overflow-wrap: anywhere; }
+.overview-advice-result li.is-done .overview-task-title { text-decoration: line-through; }
 .overview-advice-result ol { padding-left: 1.4rem; }
 .overview-advice-result li { margin: .6rem 0; }
 .overview-advice-result li p { margin: .2rem 0; overflow-wrap: anywhere; }

@@ -2884,7 +2884,7 @@ describe('vue d’ensemble des projets', () => {
     expect(within(answer).getByText(/Réponse incomplète : 1 tâche conseillée sur 60/)).toBeInTheDocument();
   }, 15_000);
 
-  test('une réponse IA tardive est ignorée après le passage en cours d’une tâche', async () => {
+  test('passer une tâche en cours puis la cocher garde la réponse IA et l’ordre conseillé', async () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     seedData(api.db, { tasks: [{ id: 'tk_a', title: 'Préparer la pompe' }] });
     const diverted = globalThis.fetch;
@@ -2907,9 +2907,17 @@ describe('vue d’ensemble des projets', () => {
     await waitFor(() => expect(called).toBe(true));
     fireEvent.click(within(overview).getByRole('button', { name: 'Mettre en cours Préparer la pompe' }));
     await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_a').status).toBe('doing'));
-    await waitFor(() => expect(within(advice).queryByRole('button', { name: 'Arrêter' })).not.toBeInTheDocument());
-    await act(async () => finish({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '[{"n":1,"reason":"Ancien ordre","advice":"Ancien conseil"}]' } }] }) } as Response));
-    expect(within(advice).queryByText('Ancien conseil')).not.toBeInTheDocument();
+    // L'état rejoué après le changement de statut ne coupe plus la demande en vol.
+    await within(board()).findByRole('heading', { name: 'En cours 1' });
+    expect(within(advice).getByRole('button', { name: 'Arrêter' })).toBeInTheDocument();
+    await act(async () => finish({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"summary":"Commence par la pompe.","order":[{"n":1,"reason":"Premier","advice":"Couper l’arrivée."}]}' } }] }) } as Response));
+    const answer = await within(advice).findByRole('region', { name: 'Ordre conseillé par l’IA' });
+    fireEvent.click(within(board()).getByRole('checkbox', { name: 'Terminer Préparer la pompe' }));
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_a').status).toBe('done'));
+    await waitFor(() => expect(within(answer).getByRole('listitem')).toHaveTextContent('Préparer la pompe · terminée'));
+    expect(within(answer).getByText('Couper l’arrivée.')).toBeInTheDocument();
+    expect(within(answer).getByRole('region', { name: 'Résumé des conseils IA' })).toHaveTextContent('Commence par la pompe.');
+    expect(within(advice).queryByRole('alert')).not.toBeInTheDocument();
   }, 15_000);
 
   test('préparer les conseils survit à la mise à jour d’une note sans lien', async () => {
@@ -2963,7 +2971,7 @@ describe('vue d’ensemble des projets', () => {
       ],
     });
     for (const id of ['en_keep', 'en_skip']) api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_a', id, new Date().toISOString());
-    mockAiSuggest('[{"n":1,"reason":"Une fuite attend.","advice":"Vérifier le joint."}]');
+    mockAiSuggest('{"summary":"Commence par la fuite de la pompe, puis vérifie le joint.","order":[{"n":1,"reason":"Une fuite attend.","advice":"Vérifier le joint."}]}');
     render(<App />);
     await within(board()).findByRole('button', { name: 'Vérifier pompe' });
     fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
@@ -2976,6 +2984,7 @@ describe('vue d’ensemble des projets', () => {
     const answer = await within(advice).findByRole('region', { name: 'Ordre conseillé par l’IA' });
     expect(within(answer).getByText('Une fuite attend.')).toBeInTheDocument();
     expect(within(answer).getByText('Vérifier le joint.')).toBeInTheDocument();
+    expect(within(answer).getByRole('region', { name: 'Résumé des conseils IA' })).toHaveTextContent('Commence par la fuite de la pompe, puis vérifie le joint.');
     const prompt = (aiBodies[0] as { messages: { content: string }[] }).messages[1].content;
     expect(prompt).toContain('La pompe fuit depuis lundi.');
     expect(prompt).not.toContain('SECRET NON ENVOYÉ');

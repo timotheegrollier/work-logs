@@ -2672,6 +2672,14 @@ L’utilisateur choisit le périmètre et, au-delà de 60 tâches, un sous-ensem
 Les extraits sont bornés à trois documents par tâche, 40 documents et 600 caractères chacun.
 La réponse classe les tâches et donne une justification et un conseil ; les réponses partielles
 sont signalées. Aucun statut, ordre ni priorité n’est écrit automatiquement. Les propositions
-sont invalidées lorsque les données de la vue changent. La limite existante de 500 tâches de
+sont invalidées lorsque les documents liés, les repères, le profil ou le périmètre changent.
+La limite existante de 500 tâches de
 `/api/state` est annoncée et l’analyse est bloquée si des tâches ouvertes ne sont pas chargées,
 au lieu d’afficher un conseil incomplet comme global. Aucun nouveau service ni dépendance.
+
+**Amendé le 2026-11-02.** Cocher, mettre en cours ou modifier une tâche n’invalide plus ni la
+préparation, ni la demande en vol, ni la réponse : on suit l’ordre en avançant, et l’effacer à
+chaque case cochée rendait les conseils inutilisables. La liste affiche l’état courant (titre
+barré et « terminée ») ; ce qui part reste ce qui a été relu à la préparation. La même réponse
+porte un résumé de quelques phrases — quoi faire, dans quel ordre, les conseils clés — affiché
+à côté de l’ordre : un seul appel, pas de second envoi automatique.
