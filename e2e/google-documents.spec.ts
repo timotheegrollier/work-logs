@@ -68,7 +68,7 @@ test('Google Docs : onglets nombreux, édition autour des objets et dans les cel
   await expect(sync.getByRole('button', { name: 'Recharger depuis Google' })).toBeVisible();
   await expect(sync.getByRole('link', { name: /Ouvrir dans Google Docs/ })).toHaveAttribute('href', /tab=t\.0/);
   await expect(sync.getByLabel('Autres actions du document')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Tâches' })).toBeHidden();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeHidden();
   const leftHandle = page.getByRole('separator', { name: 'Redimensionner la colonne de gauche' });
   const rightHandle = page.getByRole('separator', { name: 'Redimensionner la colonne de droite' });
   await expect(leftHandle).toBeVisible();
@@ -82,7 +82,7 @@ test('Google Docs : onglets nombreux, édition autour des objets et dans les cel
   await page.setViewportSize({ width: 1100, height: 1000 });
   await expect(leftHandle).toBeVisible();
   await expect(rightHandle).toBeHidden();
-  await expect(page.getByRole('region', { name: 'Tâches' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole('button', { name: 'Masquer les tâches' }).click();
   const content = page.getByRole('textbox', { name: 'Contenu du document' });

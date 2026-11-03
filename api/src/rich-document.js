@@ -1,3 +1,5 @@
+import { decodeFollowUpRow } from './follow-up.js';
+
 /** Format JSON de l'éditeur riche. Indépendant de la bibliothèque d'affichage. */
 const BLOCKS = ['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'codeBlock', 'horizontalRule', 'table', 'image', 'googleBlock'];
 const CHILDREN = {
@@ -112,5 +114,5 @@ export function documentText(node) {
 }
 
 export function decodeEntry(entry) {
-  return entry ? { ...entry, content_json: entry.content_json ? JSON.parse(entry.content_json) : null } : entry;
+  return entry ? { ...decodeFollowUpRow(entry), content_json: entry.content_json ? JSON.parse(entry.content_json) : null } : entry;
 }

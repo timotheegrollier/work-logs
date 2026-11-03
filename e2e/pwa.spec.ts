@@ -33,12 +33,12 @@ test('PWA installable : manifeste, icônes et service worker versionné', async 
 
 test('à 390 px une vue à la fois, dans une page qui défile', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   await expect(page.locator('#workspace-editor')).toBeHidden();
   await expect(page.locator('#workspace-tasks')).toBeHidden();
   await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Tâches' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeHidden();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeHidden();
   // Modèle mobile : une seule page qui défile (l'application entière, en-tête
   // compris), pas trois fenêtres fixes.
   const metrics = await page.evaluate(() => ({

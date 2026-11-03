@@ -12,6 +12,36 @@ export const priorityLabel = (priority: Priority): string =>
 export type RichDocument = JSONContent;
 export const emptyDocument = (): RichDocument => ({ type: 'doc', content: [{ type: 'paragraph' }] });
 
+export type FollowUpKind = 'entry' | 'task';
+export type FollowUpStatus = 'unclear' | 'todo' | 'doing' | 'blocked' | 'done';
+export interface FollowUpReportDraft {
+  status: FollowUpStatus;
+  summary: string;
+  completed: string[];
+  next_steps: string[];
+  blockers: string[];
+  warnings: string[];
+}
+export interface FollowUpReport extends FollowUpReportDraft {
+  generated_at: string;
+  source_key: string;
+}
+export interface FollowUp { enabled: boolean; enabled_at: string; report: FollowUpReport | null }
+export interface FollowUpDocument {
+  id: string; title: string; content_md: string; content_json: RichDocument | null;
+  kind: 'note' | 'procedure';
+  entry_date: string;
+  /** Copie locale enregistrée : ne lit pas le document chez Google. */
+  google: boolean;
+}
+export interface FollowUpSource {
+  kind: FollowUpKind; id: string; title: string; project: string | null;
+  status?: Status; due_date?: string | null;
+  documents: FollowUpDocument[];
+}
+export interface FollowUpSnapshot { follow_up: FollowUp | null; source_key: string; source: FollowUpSource }
+export interface FollowUpUpdate { enabled?: boolean; report?: FollowUpReportDraft; source_key?: string }
+
 export interface Project {
   id: string;
   name: string;
@@ -45,6 +75,8 @@ export interface EntrySummary {
   /** `procedure` = mode d'emploi du projet, rassemblé dans le panneau Procédures. */
   kind: 'note' | 'procedure';
   updated_at: string;
+  follow_up?: FollowUp | null;
+  follow_up_key?: string;
   excerpt: string;
   attachments: number;
   /** Renseignés pour les onglets d'un document Google, sinon nuls. */
@@ -110,6 +142,8 @@ export interface Entry {
   kind: 'note' | 'procedure';
   created_at: string;
   updated_at: string;
+  follow_up?: FollowUp | null;
+  follow_up_key?: string;
   attachments: Attachment[];
 }
 export interface GoogleSync {
@@ -155,6 +189,8 @@ export interface Task {
   category_id?: string | null;
   created_at: string;
   updated_at: string;
+  follow_up?: FollowUp | null;
+  follow_up_key?: string;
   documents: EntrySummary[];
 }
 export interface Attachment {
@@ -452,6 +488,9 @@ export function sharedClient(base: string) {
 export type SharedClient = ReturnType<typeof sharedClient>;
 
 export const remoteApi = {
+  followUp: (kind: FollowUpKind, id: string) => req<FollowUpSnapshot>(`/api/follow-up/${kind}/${enc(id)}`),
+  saveFollowUp: (kind: FollowUpKind, id: string, body: FollowUpUpdate) =>
+    send<FollowUpSnapshot>('PUT', `/api/follow-up/${kind}/${enc(id)}`, body),
   googleStatus: () => req<GoogleStatus>('/api/google/status'),
   configureGoogle: (configuration: unknown) => send<GoogleStatus>('POST', '/api/google/configure', configuration),
   useBuiltinGoogle: () => send<GoogleStatus>('POST', '/api/google/use-builtin'),

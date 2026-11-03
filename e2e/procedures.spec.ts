@@ -4,7 +4,7 @@ const panel = (page) => page.getByRole('region', { name: 'Procédures du projet'
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
 });
 
 test('procédures du projet : création, pièce jointe rassemblée, ouverture', async ({ page }) => {
@@ -19,7 +19,7 @@ test('procédures du projet : création, pièce jointe rassemblée, ouverture', 
   await expect(page.getByText('Enregistré')).toBeVisible();
   await expect(panel(page).getByText('Dallage terrasse')).toBeVisible();
   // Une procédure n'apparaît jamais dans le journal.
-  await expect(page.getByRole('region', { name: 'Journal' }).getByText('Dallage terrasse')).toBeHidden();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true }).getByText('Dallage terrasse')).toBeHidden();
 
   await panel(page).getByLabel('Joindre un fichier à Dallage terrasse').setInputFiles({
     name: 'plan.pdf',
@@ -69,7 +69,7 @@ test('sidebar Procédures : repliée, persistée, et envoi direct de fichier', a
   });
   await expect(panel(page).getByRole('button', { name: 'Consulter direct.pdf' })).toBeVisible();
   // L'éditeur déjà ouvert reçoit les pièces jointes ajoutées dans la sidebar.
-  await expect(page.getByRole('region', { name: 'Entrée' }).getByRole('button', { name: 'Aperçu de direct.pdf' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Entrée', exact: true }).getByRole('button', { name: 'Aperçu de direct.pdf' })).toBeVisible();
 
   // On rend un journal sans filtre : les specs suivantes partent d'un écran complet.
   await page.getByRole('group', { name: 'Filtrer par projet' }).getByRole('button', { name: 'Tout' }).click();
@@ -181,8 +181,8 @@ test('IA : une entrée du journal devient une procédure, relue puis créée à 
   await page.evaluate(() => localStorage.setItem('worklogs-ai-key', 'cle-e2e'));
 
   // La note du jour, écrite sur le moment.
-  const journal = page.getByRole('region', { name: 'Journal' });
-  const editor = page.getByRole('region', { name: 'Entrée' });
+  const journal = page.getByRole('region', { name: 'Journal', exact: true });
+  const editor = page.getByRole('region', { name: 'Entrée', exact: true });
   const title = page.getByLabel('Titre de l’entrée');
   await page.getByRole('button', { name: 'Nouvelle entrée' }).click();
   await expect(title).toHaveValue('Sans titre');

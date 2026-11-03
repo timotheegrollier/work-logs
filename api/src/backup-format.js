@@ -1,4 +1,5 @@
 import { validateDocument } from './rich-document.js';
+import { readFollowUp } from './follow-up.js';
 
 /** Format de sauvegarde : 100 % pur (aucun accès disque/réseau),
  *  partageable avec le front/PWA qui valide avant d'écrire en local. */
@@ -132,6 +133,7 @@ export function validateBackup(input) {
       title: requiredText(entry.title, 'Titre d’entrée', 500),
       content_md: typeof entry.content_md === 'string' ? entry.content_md : fail('Contenu Markdown invalide.'),
       content_json: contentValue(entry.content_json, 'Document riche'),
+      follow_up: readFollowUp(entry.follow_up),
       entry_date: date,
       project_id: projectId,
       category_id: categoryOf(entry.category_id, projectId),
@@ -163,6 +165,7 @@ export function validateBackup(input) {
       pinned: Number(task.pinned),
       position: task.position,
       priority,
+      follow_up: readFollowUp(task.follow_up),
       project_id: projectId,
       category_id: categoryOf(task.category_id, projectId),
       created_at: timestamp(task.created_at, 'Date de création de la tâche'),

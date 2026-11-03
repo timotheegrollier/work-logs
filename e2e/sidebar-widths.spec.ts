@@ -24,7 +24,7 @@ async function drag(page: Page, side: 'gauche' | 'droite', delta: number) {
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1800, height: 1000 });
   await page.goto('/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
 });
 
 test('largeurs : glisser les deux bords ajuste les panneaux en direct et survit au rechargement', async ({ page }, testInfo) => {
@@ -107,32 +107,32 @@ test('largeurs : limites au glissement, réglage au clavier et adaptation aux pe
 
 test('panneaux : replier le journal et les tâches ne garde que l’écriture', async ({ page }) => {
   await page.getByRole('button', { name: 'Journal', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeHidden();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeHidden();
   await expect(page.getByRole('button', { name: 'Journal', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await page.getByRole('button', { name: 'Tâches', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Tâches' })).toBeHidden();
-  await expect(page.getByRole('region', { name: 'Entrée' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeHidden();
+  await expect(page.getByRole('region', { name: 'Entrée', exact: true })).toBeVisible();
   await expect(page.locator('.columns')).toHaveClass(/hide-left hide-right/);
   await page.getByRole('button', { name: 'Journal', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Tâches' })).toBeHidden();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeHidden();
 });
 
 test('panneaux : replier l’écriture garde le journal et les tâches', async ({ page }) => {
   await page.getByRole('button', { name: 'Écriture', exact: true }).click();
   await expect(page.locator('.columns')).toHaveClass(/hide-center/);
   await expect(page.getByRole('button', { name: 'Écriture', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Tâches' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
   await expect(page.getByRole('separator')).toHaveCount(0);
   await page.getByRole('button', { name: 'Écriture', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Entrée' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Entrée', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Écriture', exact: true }).click();
   await page.reload();
   await expect(page.locator('.columns')).toHaveClass(/hide-center/);
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
 });
 
 test('largeur des procédures : glisser le bord, clavier, limites, Paramètres et rechargement', async ({ page }) => {

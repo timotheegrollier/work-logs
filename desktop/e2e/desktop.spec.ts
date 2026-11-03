@@ -96,7 +96,7 @@ test('démarre en fenêtre maximisée', async () => {
   // maximize() : on ne peut l'affirmer que là où un WM tourne.
   test.skip(!process.env.XDG_CURRENT_DESKTOP && !process.env.DESKTOP_SESSION && !process.env.GDMSESSION,
     'pas de gestionnaire de fenêtres');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   await expect.poll(() => application!.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].isMaximized()
   )).toBe(true);
@@ -104,8 +104,8 @@ test('démarre en fenêtre maximisée', async () => {
 
 test('fenêtre autonome, renderer isolé, liens externes dans le navigateur', async () => {
   expect(page.url()).toBe('worklogs://app/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Tâches' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
   const preferences = await application!.evaluate(({ BrowserWindow }) => {
     const contents = BrowserWindow.getAllWindows()[0].webContents as unknown as {
       getLastWebPreferences: () => { nodeIntegration: boolean; contextIsolation: boolean; sandbox: boolean };
@@ -397,7 +397,7 @@ test('Google intégré : outils dans le canevas, isolation, dimensions et copie 
     type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Copie actualisée' }] }],
   } } }));
   await page.reload();
-  await page.getByRole('button', { name: /Google intégré/ }).click();
+  await page.getByRole('region', { name: 'Journal', exact: true }).getByRole('button', { name: /Google intégré/ }).click();
   await expect(page.getByLabel('Éditeur Google Docs intégré')).toBeVisible();
   await expect.poll(() => application!.context().pages().some(p => p.url().includes('/document/d/native-doc/'))).toBe(true);
   const googlePage = application!.context().pages().find(p => p.url().includes('/document/d/native-doc/'))!;
@@ -415,9 +415,9 @@ test('Google intégré : outils dans le canevas, isolation, dimensions et copie 
   await overview.click();
   await expect(page.getByLabel('Éditeur Google Docs intégré')).toBeVisible();
   await expect(googlePage.getByRole('textbox')).toHaveText('Édition native dans WorkLogs');
-  await page.getByRole('button', { name: /Comment ça marche/ }).click();
+  await page.getByRole('region', { name: 'Journal', exact: true }).getByRole('button', { name: /Comment ça marche/ }).click();
   expect(googlePage.isClosed()).toBe(false);
-  await page.getByRole('button', { name: /Google intégré/ }).click();
+  await page.getByRole('region', { name: 'Journal', exact: true }).getByRole('button', { name: /Google intégré/ }).click();
   await expect(googlePage.getByRole('textbox')).toHaveText('Édition native dans WorkLogs');
   await page.getByText('Détails du document', { exact: true }).click();
   await page.getByRole('button', { name: 'Imprimer', exact: true }).click();
@@ -494,7 +494,7 @@ test('Google intégré : validation des adresses et fermeture respectant les mod
   expect(await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.close('close-doc'))).toBe(false);
   expect(googlePage.isClosed()).toBe(false);
   await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   expect(googlePage.isClosed()).toBe(false);
   await application!.evaluate(({ dialog }) => { dialog.showMessageBoxSync = () => 1; });
   expect(await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.close('close-doc'))).toBe(true);

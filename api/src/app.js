@@ -11,6 +11,7 @@ import { registerSharedRoutes } from './shared-routes.js';
 import { attachmentHeader, inlineHeader } from './disposition.js';
 import { categoryFor, nextCategory, categoryDescendants, registerCategoryRoutes } from './categories.js';
 import { inheritTaskCategories } from './task-categories.js';
+import { createFollowUpAccess, registerFollowUpRoutes } from './follow-up-routes.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
 export const PRIORITIES = ['low', 'normal', 'high'];
@@ -75,11 +76,12 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     limits: { fileSize: 100 * 1024 * 1024 },
   });
 
+  const followUp = createFollowUpAccess(db);
   const getEntry = (id) => {
     const row = db.prepare('SELECT * FROM entries WHERE id=?').get(id);
-    return row ? { ...decodeEntry(row), google_sync: googleLink(db, row) } : row;
+    return row ? { ...followUp.metadata('entry', decodeEntry(row)), google_sync: googleLink(db, row) } : row;
   };
-  const getTask = (id) => db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
+  const getTask = (id) => followUp.metadata('task', db.prepare('SELECT * FROM tasks WHERE id=?').get(id));
   const getTaskWithDocuments = (id) => {
     const task = getTask(id);
     if (!task) return task;
@@ -100,6 +102,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, ts: nowISO() }));
   registerCategoryRoutes(app, db);
+  registerFollowUpRoutes(app, db, followUp);
 
   // ---------------------------------------------------------------- état global
   // Un seul appel alimente tout l'écran : projets, entrées (sans le corps),
@@ -132,7 +135,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     }
     const entries = db
       .prepare(
-        `SELECT entries.id, entries.title, entries.entry_date, entries.project_id, entries.category_id, entries.archived, entries.kind, entries.updated_at,
+        `SELECT entries.id, entries.title, entries.entry_date, entries.project_id, entries.category_id, entries.archived, entries.kind, entries.updated_at, entries.follow_up,
                 substr(entries.content_md, 1, 240) excerpt,
                 (SELECT COUNT(*) FROM attachments a WHERE a.entry_id = entries.id) attachments,
                 g.document_id google_document_id, g.tab_id google_tab_id,
@@ -144,7 +147,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
           ORDER BY entries.entry_date DESC, entries.updated_at DESC
           LIMIT 500`
       )
-      .all(...entryArgs);
+      .all(...entryArgs).map((entry) => followUp.metadata('entry', entry));
 
     const taskWhere = [...where];
     const taskArgs = [...args];
@@ -177,7 +180,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
          LIMIT 500`
       )
       .all(...taskArgs)
-      .map((task) => ({ ...task, documents: documentsByTask.get(task.id) || [] }));
+      .map((task) => ({ ...followUp.metadata('task', task), documents: documentsByTask.get(task.id) || [] }));
 
     // Pièces jointes rassemblées pour le panneau Procédures : celles des
     // procédures du filtre courant, métadonnées seules (binaires via /api/files).
@@ -700,7 +703,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   app.use((err, _req, res, _next) => {
     const status = err.status || (err.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
     res.status(status).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'fichier trop volumineux (100 Mo max)' : err.message,
-      ...(err.code?.startsWith('GOOGLE_') ? { code: err.code, ...(err.help_url ? { help_url: err.help_url } : {}) } : {}) });
+      ...(err.code?.startsWith('GOOGLE_') || err.code === 'FOLLOW_UP_STALE' ? { code: err.code, ...(err.help_url ? { help_url: err.help_url } : {}) } : {}) });
   });
 
   return app;

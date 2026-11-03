@@ -56,7 +56,7 @@ test('la vue attend les données globales et se ferme si une recherche ou une ca
     const searched = page.waitForResponse(response => response.url().includes('/api/state?q=Filtre') && response.ok());
     await search.fill('Filtre unique vue');
     await searched;
-    await expect(page.getByRole('region', { name: 'Tâches' }).getByRole('button', { name: 'Filtre unique vue', exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Tâches', exact: true }).getByRole('button', { name: 'Filtre unique vue', exact: true })).toBeVisible();
 
     // Bloque la nouvelle réponse globale, pas la recherche précédente : aucune
     // suggestion ni action ne doit utiliser l'ancien jeu de tâches filtré.
@@ -203,7 +203,7 @@ test('une voie par projet qui tient en largeur, sur desktop comme sur téléphon
     await sameRow();
     await lane.locator('.lane-node').first().click();
     await expect(nav('Tâches')).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByRole('region', { name: 'Tâches' }).getByRole('button', { name: 'Étude 1', exact: true })).toBeFocused();
+    await expect(page.getByRole('region', { name: 'Tâches', exact: true }).getByRole('button', { name: 'Étude 1', exact: true })).toBeFocused();
   } finally {
     for (const task of tasks) await request.delete(`/api/tasks/${task.id}`);
     await request.delete(`/api/projects/${project.id}`);
@@ -248,7 +248,7 @@ test('le bouton pour mettre en cours se voit au repos, plein au survol', async (
     const button = page.getByRole('button', { name: 'Mettre en cours Tâche au repos vue' });
     // 0,7 : le contraste de 3:1 d'une commande, sans attendre le survol (§47).
     await expect(button).toHaveCSS('opacity', '0.7');
-    await page.getByRole('region', { name: 'Tâches' }).getByRole('button', { name: 'Tâche au repos vue', exact: true }).hover();
+    await page.getByRole('region', { name: 'Tâches', exact: true }).getByRole('button', { name: 'Tâche au repos vue', exact: true }).hover();
     await expect(button).toHaveCSS('opacity', '1');
   } finally {
     await request.delete(`/api/tasks/${task.id}`);

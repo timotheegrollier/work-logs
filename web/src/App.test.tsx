@@ -5661,3 +5661,135 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     expect(within(card).queryByRole('alert')).not.toBeInTheDocument();
   });
 });
+
+describe('suivi IA des entrées et tâches', () => {
+  const backend = { timeout: 5000 };
+  const report = (summary: string) => JSON.stringify({ status: 'blocked', summary, completed: ['Pompe montée.'], next_steps: ['Recevoir le joint.'], blockers: ['Joint manquant.'], warnings: [] });
+  const follow = () => screen.getByRole('region', { name: 'Suivi IA de Note évolutive' });
+  const response = (summary: string) => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: report(summary) } }] }) }) as Response;
+  const prepare = () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    localStorage.setItem('worklogs-ai-endpoint', 'https://ia.example/v1');
+    seedData(api.db, {
+      entries: [{ id: 'en_suivi', title: 'Note évolutive', content_md: 'Pompe montée ; il manque le joint.' }],
+      tasks: [{ id: 'tk_suivi', title: 'Remonter la pompe', status: 'doing' }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_suivi', 'en_suivi', new Date().toISOString());
+  };
+
+  test('conserve des bilans distincts pour la note et sa tâche, visibles dans la vue d’ensemble sans changer leur texte ni leur statut', async () => {
+    prepare();
+    mockAiSuggest(report('Le montage attend son joint.'));
+    const view = render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend));
+    await within(follow()).findByText('Le montage attend son joint.', {}, backend);
+    const card = document.getElementById('task-tk_suivi')!;
+    fireEvent.click(within(card).getByRole('button', { name: 'Activer le suivi IA de Remonter la pompe' }));
+    await within(card).findByText('Le montage attend son joint.', {}, backend);
+    const linkedFollow = within(editor()).getByRole('group', { name: 'Suivi de la tâche liée Remonter la pompe' });
+    expect(within(linkedFollow).getByText('Le montage attend son joint.')).toBeInTheDocument();
+    expect(aiBodies).toHaveLength(2);
+    expect(JSON.stringify(aiBodies[1])).toContain('Pompe montée ; il manque le joint.');
+    expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_suivi').status).toBe('doing');
+    expect(row(api.db, 'SELECT content_md,archived FROM entries WHERE id=?', 'en_suivi')).toMatchObject({ content_md: 'Pompe montée ; il manque le joint.', archived: 0 });
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Bilans et suivis IA' }, backend);
+    expect(within(overview).getAllByText('Le montage attend son joint.')).toHaveLength(2);
+    fireEvent.click(within(overview).getByRole('button', { name: 'Ouvrir l’entrée Note évolutive' }));
+    await within(await screen.findByRole('region', { name: 'Suivi IA de Note évolutive' }, backend)).findByText('Le montage attend son joint.');
+    view.unmount();
+    render(<App />);
+    await within(await screen.findByRole('region', { name: 'Suivi IA de Note évolutive' }, backend)).findByText('Le montage attend son joint.');
+    expect(aiBodies).toHaveLength(2);
+  }, 20_000);
+
+  test('rejette une réponse dépassée par la saisie, puis permet d’actualiser manuellement avec l’automatisme coupé', async () => {
+    prepare();
+    const diverted = globalThis.fetch;
+    let finish!: (value: Response) => void;
+    const signals: AbortSignal[] = [];
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).includes('chat/completions')) return diverted(input, init);
+      calls++;
+      if (calls === 2) {
+        signals.push(init!.signal as AbortSignal);
+        return new Promise<Response>((resolve) => { finish = resolve; });
+      }
+      return Promise.resolve(response(calls === 1 ? 'Premier bilan conservé.' : 'Le joint est reçu.'));
+    }));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend));
+    await within(follow()).findByText('Premier bilan conservé.', {}, backend);
+    fireEvent.click(within(follow()).getByRole('checkbox', { name: 'Actualisation automatique de Note évolutive' }));
+    await waitFor(() => expect(within(follow()).getByRole('checkbox')).not.toBeChecked(), backend);
+    fireEvent.click(within(follow()).getByRole('button', { name: 'Actualiser le bilan de Note évolutive' }));
+    await waitFor(() => expect(calls).toBe(2), backend);
+    fireEvent.click(within(editor()).getByRole('button', { name: 'Écrire', pressed: false }));
+    fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Pompe montée.\n02/11 : le joint est reçu.' } });
+    await act(() => flushPendingSaves());
+    await waitFor(() => expect(signals[0].aborted).toBe(true), backend);
+    await act(async () => finish(response('Réponse dépassée à écarter.')));
+    await waitFor(() => expect(within(follow()).getByRole('button', { name: 'Actualiser le bilan de Note évolutive' })).toBeEnabled(), backend);
+    expect(within(follow()).getByText('Premier bilan conservé.')).toBeInTheDocument();
+    expect(within(follow()).queryByText('Réponse dépassée à écarter.')).not.toBeInTheDocument();
+    expect(within(follow()).getByText(/À actualiser/)).toBeInTheDocument();
+    fireEvent.click(within(follow()).getByRole('button', { name: 'Actualiser le bilan de Note évolutive' }));
+    await within(follow()).findByText('Le joint est reçu.', {}, backend);
+    expect((await clientApi.followUp('entry', 'en_suivi')).follow_up?.enabled).toBe(false);
+    expect(calls).toBe(3);
+  }, 20_000);
+
+  test('Arrêter et un refus du fournisseur conservent le dernier bilan et ne relancent pas la même version', async () => {
+    prepare();
+    const diverted = globalThis.fetch;
+    let finish!: (value: Response) => void;
+    let calls = 0;
+    let signal!: AbortSignal;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).includes('chat/completions')) return diverted(input, init);
+      calls++;
+      if (calls === 1) return Promise.resolve(response('Bilan à garder.'));
+      if (calls === 2) {
+        signal = init!.signal as AbortSignal;
+        return new Promise<Response>((resolve) => { finish = resolve; });
+      }
+      return Promise.resolve({ ok: false, status: 401, json: async () => ({ error: { message: 'Clé refusée' } }) } as Response);
+    }));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend));
+    await within(follow()).findByText('Bilan à garder.', {}, backend);
+    fireEvent.click(within(follow()).getByRole('button', { name: 'Actualiser le bilan de Note évolutive' }));
+    await waitFor(() => expect(calls).toBe(2), backend);
+    fireEvent.click(within(follow()).getByRole('button', { name: 'Arrêter le suivi IA de Note évolutive' }));
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish(response('Résultat arrêté.')));
+    expect(within(follow()).getByText('Bilan à garder.')).toBeInTheDocument();
+    expect(within(follow()).queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(within(follow()).getByRole('button', { name: 'Actualiser le bilan de Note évolutive' }));
+    await within(follow()).findByRole('alert', {}, backend);
+    expect(within(follow()).getByText('Bilan à garder.')).toBeInTheDocument();
+    expect((await clientApi.followUp('entry', 'en_suivi')).follow_up?.report?.summary).toBe('Bilan à garder.');
+    expect(calls).toBe(3);
+  }, 20_000);
+
+  test('une sauvegarde refusée empêche l’activation et l’envoi d’une ancienne copie à l’IA', async () => {
+    prepare();
+    mockAiSuggest(report('Ne doit pas être demandé.'));
+    render(<App />);
+    await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend);
+    fireEvent.click(within(editor()).getByRole('button', { name: 'Écrire', pressed: false }));
+    const save = vi.spyOn(clientApi, 'updateEntry').mockRejectedValue(new Error('Disque plein'));
+    try {
+      fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Dernière avancée non enregistrée.' } });
+      fireEvent.click(within(follow()).getByRole('button', { name: 'Activer le suivi IA de Note évolutive' }));
+      expect(await within(follow()).findByRole('alert', {}, backend)).toHaveTextContent('Disque plein');
+      expect(aiBodies).toHaveLength(0);
+      expect((await clientApi.followUp('entry', 'en_suivi')).follow_up).toBeNull();
+      expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Dernière avancée non enregistrée.');
+    } finally {
+      save.mockRestore();
+      await act(() => flushPendingSaves());
+    }
+  }, 20_000);
+});

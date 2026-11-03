@@ -16,7 +16,7 @@ const get = (name: string, encoding: BufferEncoding = 'utf8') => fs.readFileSync
 
 async function openShared(page: Page, name: string) {
   await page.goto('/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   const toggle = page.getByRole('button', { name: 'Procédures', exact: true });
   if (await page.locator('#workspace-procedures').isHidden()) await toggle.click();
   await page.getByRole('button', { name: new RegExp(`^Ouvrir ${name.replace(/[.()]/g, '\\$&')}`) }).click();
@@ -215,7 +215,7 @@ test('chercher dans le partage : taper un mot, ouvrir le fichier trouvé au fond
   put('Global/MURGAT INGENIERIE/13. SI/00. PROCEDURE/Procédure sauvegarde.md', '# Sauvegarde\n');
   put('notes.md', 'x');
   await page.goto('/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   if (await page.locator('#workspace-procedures').isHidden()) await page.getByRole('button', { name: 'Procédures', exact: true }).click();
   await page.getByLabel('Chercher dans le partage').fill('sauvegarde');
   const results = page.getByRole('region', { name: 'Résultats de la recherche' });
@@ -227,7 +227,7 @@ test('supprimer un fichier du partage : confirmation, fichier parti, arbre à jo
   put('à-garder.md', '# Gardé\n');
   put('à-jeter.md', '# Jeté\n');
   await page.goto('/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   if (await page.locator('#workspace-procedures').isHidden()) await page.getByRole('button', { name: 'Procédures', exact: true }).click();
   await expect(page.getByRole('button', { name: /^Ouvrir à-jeter\.md/ })).toBeVisible();
   page.once('dialog', (dialog) => void dialog.accept());
@@ -241,7 +241,7 @@ test('nouveau classeur Excel dans un dossier : créé, rempli au clavier, enregi
   fs.mkdirSync(path.join(share, '00. PROCEDURE'));
   put('00. PROCEDURE/lisez-moi.md', '# x\n');
   await page.goto('/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   if (await page.locator('#workspace-procedures').isHidden()) await page.getByRole('button', { name: 'Procédures', exact: true }).click();
   await page.getByRole('button', { name: 'Dossier 00. PROCEDURE' }).click();
   await expect(page.getByRole('button', { name: /^Ouvrir lisez-moi\.md/ })).toBeVisible();
@@ -268,7 +268,7 @@ test('nouveau classeur Excel dans un dossier : créé, rempli au clavier, enregi
 test('dossiers du partage : créer, y créer un fichier, renommer (l’éditeur suit), supprimer avec son contenu', async ({ page }) => {
   put('garde.md', '# Gardé\n');
   await page.goto('/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   if (await page.locator('#workspace-procedures').isHidden()) await page.getByRole('button', { name: 'Procédures', exact: true }).click();
 
   await page.getByRole('button', { name: '＋ Nouveau dossier…' }).click();

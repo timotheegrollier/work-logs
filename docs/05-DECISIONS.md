@@ -2686,3 +2686,56 @@ chaque case cochée rendait les conseils inutilisables. La liste affiche l’ét
 barré et « terminée ») ; ce qui part reste ce qui a été relu à la préparation. La même réponse
 porte un résumé de quelques phrases — quoi faire, dans quel ordre, les conseils clés — affiché
 à côté de l’ordre : un seul appel, pas de second envoi automatique.
+
+
+## 64. Un bilan IA persistant à côté du texte et dans la vue d’ensemble — 2026-11-02
+
+**Demande.** Les avancées s’accumulent dans la même entrée en texte/Markdown ; en tirer
+automatiquement un bilan et un suivi d’état, accessibles depuis l’entrée et la vue d’ensemble.
+
+**Choix.** Un bloc « Suivi IA », séparé du contenu, pour une entrée ou une tâche. Le bilan
+distingue état proposé, résumé, avancées attestées, prochaines actions et blocages ; pas de
+pourcentage inventé, pas d’historique reconstruit à partir d’un texte écrasé. Une procédure
+décrit des étapes, elle ne prouve pas qu’elles ont été faites. Les informations explicitement
+datées les plus récentes priment ; les contradictions restent à préciser. La carte et les
+entrées liées montrent le même bilan de tâche ; la vue d’ensemble rassemble tous les suivis
+chargés, y compris ceux des tâches terminées. Aucun onglet ni routeur.
+
+**Automatisme choisi.** « Activer le suivi IA » active l’envoi au service déjà configuré pour
+cet élément, produit le premier bilan et autorise l’actualisation après enregistrement. Cela
+amende le principe historique « jamais d’appel automatique » du §17 pour ce seul geste,
+à la demande explicite de Timo. Un délai de deux secondes regroupe les sauvegardes ; un seul
+appel en vol pour l’écran, partagé entre les différents accès au bilan. Aucun appel pour les
+éléments non activés. Décocher garde le bilan ; Actualiser et Arrêter restent accessibles.
+L’application doit être ouverte et l’élément chargé ; il n’y a pas de service permanent.
+
+**Fidélité et courses.** L’entrée enregistrée est sa propre source ; une tâche lit ses seuls
+documents explicitement liés et ses champs. Le document riche fait autorité. Huit documents,
+24 000 caractères de texte au plus ; pour chacun, le début et la fin sont conservés afin de
+prendre en compte les dernières avancées ajoutées en bas. Les coupes/omissions et l’absence
+de lecture des pièces jointes sont annoncées. Google utilise uniquement la copie locale
+enregistrée, avertissement compris. L’IA ne change ni texte, ni statut réel, ni archivage.
+L’empreinte porte sur les sources complètes, jamais sur le rapport ou updated_at : elle rend
+les bilans périmés visibles sans boucle de génération. Le serveur et la PWA refusent en 409
+un résultat calculé sur une autre version. Les frappes pendantes sont sauvegardées avant
+l’analyse et avant ce contrôle final. Une erreur ou un arrêt garde le dernier bilan et ne
+retente pas la même version en boucle ; le clic Actualiser permet un nouvel essai.
+
+**Persistance.** Une colonne JSON nullable additive sur entries/tasks, validation pure partagée
+par API et PWA. Le rapport a sa propre date generated_at et l’activation sa propre date
+enabled_at ; la sauvegarde, la restauration, l’ancienne boîte mobile et les protections de
+synchronisation conservent ces champs. Les anciennes sauvegardes et nouvelles copies
+commencent sans suivi. L’écriture d’un bilan ou d’un réglage ne touche jamais updated_at du
+texte ou de la tâche. La fusion choisit le contenu selon sa date habituelle, l’activation
+selon enabled_at et le rapport selon generated_at : un bilan calculé sur une ancienne copie
+ne peut remplacer une saisie distante plus récente, ressusciter une entrée supprimée ou
+réactiver l’automatisme coupé ailleurs. Les sources du rapport sont alors signalées périmées.
+Aucune nouvelle dépendance, aucun fournisseur ni secret supplémentaire.
+
+**Validation.** API et PWA : source/fingerprint, rapport invalide, réponse dépassée, migration,
+sauvegarde/restauration et synchro (saisie distante concurrente, arrêt distant, suppression,
+fusion convergente). Front : texte riche, limites début/fin, format de réponse,
+annulation, parcours entrée/tâche/vue d’ensemble, réponse devenue obsolète et erreur conservant
+l’ancien bilan. Navigateur : automatisme après sauvegarde, rechargement sans nouvel appel,
+accès mobile et absence de débordement. Les fournisseurs IA sont simulés : ces tests vérifient
+les contrats et les gestes, pas la justesse d’une réponse réelle.

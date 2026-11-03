@@ -6,7 +6,7 @@ test('un .docx joint se lit dans l’aperçu, sans quitter l’app', async ({ pa
   const entry = await (await request.post('/api/entries', { data: { title: 'Étiqueteuse', entry_date: '2026-09-24' } })).json();
   try {
     await page.goto('/');
-    await page.getByRole('region', { name: 'Journal' }).getByText('Étiqueteuse', { exact: true }).click();
+    await page.getByRole('region', { name: 'Journal', exact: true }).getByText('Étiqueteuse', { exact: true }).click();
     // L'éditeur de cette entrée doit être là avant de joindre : sinon le champ visé
     // peut encore être celui de l'entrée précédente, démonté juste après.
     await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Étiqueteuse');

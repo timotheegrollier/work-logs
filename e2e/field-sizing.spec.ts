@@ -23,7 +23,7 @@ test('la zone Markdown suit son texte, à la frappe et quand un panneau ou la fe
     // ≤ 1 180 px, l'aperçu est masqué : la zone restait à 60 % de l'écran, texte caché sous un ascenseur.
     await page.setViewportSize({ width: 1100, height: 900 });
     await page.goto('/');
-    const editor = page.getByRole('region', { name: 'Entrée' });
+    const editor = page.getByRole('region', { name: 'Entrée', exact: true });
     await editor.getByRole('button', { name: 'Écrire', exact: true }).click();
     const source = page.getByLabel('Contenu en Markdown');
     const initial = await fitsText(source);
@@ -72,7 +72,7 @@ test('les formulaires de l’Écriture se replient sur la largeur de la colonne,
     });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
-    const editor = page.getByRole('region', { name: 'Entrée' });
+    const editor = page.getByRole('region', { name: 'Entrée', exact: true });
     await editor.getByRole('button', { name: 'Écrire', exact: true }).click();
     await editor.getByRole('button', { name: 'Créer une tâche liée' }).click();
     await editor.getByRole('button', { name: 'Assistance IA', exact: true }).click();

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { api, COLUMNS, PRIORITIES, dayLabel, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type Priority, type RichDocument, type Status } from '../lib';
+import { api, COLUMNS, PRIORITIES, dayLabel, formatSize, googleHelpUrl, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type Priority, type RichDocument, type Status, type Task } from '../lib';
 import { AiCancelled, completeNote, draftProcedure, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
 import { insertCodeFence, renderMarkdown, toggleChecklistItem } from '../markdown';
@@ -16,6 +16,7 @@ import { AiRefinement } from './AiRefinement';
 
 import { CategoryPicker } from './CategoryPicker';
 import { FileIcon } from './FileIcon';
+import { FollowUpPanel } from './FollowUpPanel';
 
 // Chargés à la demande : l'éditeur riche (Tiptap) est le plus gros morceau du
 // paquet, l'aperçu Word ne sert qu'au premier fichier consulté.
@@ -65,7 +66,7 @@ export function EntryEditor({
   entry: Entry;
   projects: Project[];
   categories?: Category[];
-  linkedTasks?: { id: string; title: string; status: Status }[];
+  linkedTasks?: Pick<Task, 'id' | 'title' | 'status' | 'follow_up' | 'follow_up_key'>[];
   /** Toutes les tâches, pour lier l'entrée à des existantes (miroir du lieur de la carte). */
   tasks?: { id: string; title: string; status: Status }[];
   onChanged: () => void;
@@ -925,6 +926,11 @@ export function EntryEditor({
       </div>
 
       </DetailsWrapper>
+      <FollowUpPanel kind="entry" item={entry} dirty={save !== 'saved'} />
+      {linkedTasks.filter((task) => task.follow_up).map((task) => <div className="linked-follow-up no-print" role="group" aria-label={`Suivi de la tâche liée ${task.title}`} key={task.id}>
+        <p className="linked-follow-up-title">Suivi de la tâche liée : <strong>{task.title}</strong></p>
+        <FollowUpPanel kind="task" item={task} compact dirty={save !== 'saved'} />
+      </div>)}
       <div className="entry-task-action no-print">
         {!taskCreator ? <button className="ghost" type="button" disabled={syncing} onClick={openTaskCreator}><span aria-hidden="true">＋ </span>Créer une tâche liée</button> : <form className="task-creator" onSubmit={(event) => { event.preventDefault(); void createTask(); }}>          <strong>Nouvelle tâche liée à cette entrée</strong>
           <label>Titre de la tâche<input aria-label="Titre de la tâche liée" autoFocus value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} /></label>

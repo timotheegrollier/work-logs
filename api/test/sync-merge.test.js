@@ -13,6 +13,64 @@ const task = (id, minutes, over = {}) => ({ id, title: id, status: 'todo', due_d
 const project = (id, minutes, over = {}) => ({ id, name: id, color: '#fff', created_at: at(0), updated_at: at(minutes), ...over });
 const ids = (rows) => rows.map((row) => row.id).sort();
 const asBackup = (merged) => validateBackup({ version: 2, ...merged });
+const followUp = (config, generated, enabled = true, summary = 'Le travail reste en cours.') => ({
+  enabled, enabled_at: at(config),
+  report: { status: 'doing', summary, completed: [], next_steps: [], blockers: [], warnings: [], generated_at: at(generated), source_key: 'fu_ancienne_source' },
+});
+
+test('un bilan plus récent garde son suivi sans écraser le texte ni le statut saisis sur l’autre appareil', () => {
+  const desktop = snap({
+    entries: [entry('en_suivi', 1, { content_md: 'Diagnostic initial', follow_up: followUp(2, 30) })],
+    tasks: [task('tk_suivi', 1, { follow_up: followUp(2, 30) })],
+  });
+  const phone = snap({
+    entries: [entry('en_suivi', 20, { content_md: 'Diagnostic initial\nJoint posé et contrôle terminé.', follow_up: followUp(2, 3) })],
+    tasks: [task('tk_suivi', 20, { status: 'done', follow_up: followUp(2, 3) })],
+  });
+  for (const [local, remote] of [[desktop, phone], [phone, desktop]]) {
+    const { merged, changedLocal, changedRemote } = mergeSnapshots(local, remote, NOW);
+    assert.equal(merged.entries[0].content_md, phone.entries[0].content_md);
+    assert.equal(merged.entries[0].updated_at, at(20));
+    assert.equal(merged.tasks[0].status, 'done');
+    assert.equal(merged.tasks[0].updated_at, at(20));
+    assert.equal(merged.entries[0].follow_up.report.generated_at, at(30));
+    assert.equal(merged.tasks[0].follow_up.report.generated_at, at(30));
+    assert.equal(changedLocal, true);
+    assert.equal(changedRemote, true);
+    asBackup(merged);
+    const again = mergeSnapshots(merged, merged, NOW);
+    assert.equal(again.changedLocal, false);
+    assert.equal(again.changedRemote, false);
+  }
+});
+
+test('une analyse sur un appareil ne réactive pas l’automatisme coupé sur l’autre', () => {
+  const desktop = snap({ entries: [entry('en_suivi', 1, { follow_up: followUp(2, 30) })] });
+  const phone = snap({ entries: [entry('en_suivi', 1, { follow_up: followUp(20, 3, false) })] });
+  for (const [local, remote] of [[desktop, phone], [phone, desktop]]) {
+    const report = mergeSnapshots(local, remote, NOW).merged.entries[0].follow_up;
+    assert.equal(report.enabled, false);
+    assert.equal(report.enabled_at, at(20));
+    assert.equal(report.report.generated_at, at(30));
+  }
+});
+
+test('un bilan calculé après une suppression ne ressuscite pas son entrée ou sa tâche', () => {
+  const desktop = snap({ entries: [entry('en_suivi', 1, { follow_up: followUp(2, 30) })], tasks: [task('tk_suivi', 1, { follow_up: followUp(2, 30) })] });
+  const phone = snap({ deleted: [{ kind: 'entry', id: 'en_suivi', deleted_at: at(20) }, { kind: 'task', id: 'tk_suivi', deleted_at: at(20) }] });
+  const { merged } = mergeSnapshots(desktop, phone, NOW);
+  assert.deepEqual(merged.entries, []);
+  assert.deepEqual(merged.tasks, []);
+});
+
+test('le suivi fusionne de façon déterministe quand les deux horloges sont égales', () => {
+  const left = snap({ entries: [entry('en_suivi', 1, { follow_up: followUp(2, 30, true, 'Bilan A') })] });
+  const right = snap({ entries: [entry('en_suivi', 1, { follow_up: followUp(2, 30, false, 'Bilan B') })] });
+  const forward = mergeSnapshots(left, right, NOW).merged;
+  const backward = mergeSnapshots(right, left, NOW).merged;
+  assert.deepEqual(forward, backward);
+  assert.equal(forward.entries[0].follow_up.enabled, false);
+});
 
 test('sans fichier distant : le local part tel quel', () => {
   const local = snap({ entries: [entry('en_a', 1)] });

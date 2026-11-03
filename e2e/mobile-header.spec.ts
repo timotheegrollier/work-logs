@@ -28,7 +28,7 @@ async function longJournal(request: APIRequestContext, count = 18) {
 
 test('en-tête mobile : une rangée, barre du bas à quatre destinations, cibles tactiles', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
 
   const head = page.locator('header.head');
   const search = page.getByRole('searchbox', { name: 'Rechercher' });
@@ -68,17 +68,17 @@ test('en-tête mobile : une rangée, barre du bas à quatre destinations, cibles
   // La barre choisit une vue (une seule à la fois) : elle ne replie rien.
   await expect(buttons[0]).toHaveAttribute('aria-pressed', 'true');
   await buttons[2].click();
-  await expect(page.getByRole('region', { name: 'Tâches' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeHidden();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeHidden();
   await expect(buttons[2]).toHaveAttribute('aria-pressed', 'true');
   await expect(buttons[0]).toHaveAttribute('aria-pressed', 'false');
   await buttons[2].click();
-  await expect(page.getByRole('region', { name: 'Tâches' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
 });
 
 test('téléphone : chaque vue occupe l’écran de bord à bord, la version se lit dans Paramètres', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
 
   // La pastille de l'en-tête est masquée à 412 px : le dialogue prend le relais.
   await expect(page.locator('.head .logo .version')).toBeHidden();
@@ -107,7 +107,7 @@ test('paramètres : la version reste lisible sur tablette et avec un contenu lon
   // (tablette, PWA étroite), le dialogue est la seule source du numéro.
   await page.setViewportSize({ width: 800, height: 800 });
   await page.goto('/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   await expect(page.locator('.head .logo .version')).toBeHidden();
   await page.getByRole('button', { name: 'Compte et paramètres' }).click();
   await page.getByRole('menuitem', { name: 'Paramètres' }).click();
@@ -139,7 +139,7 @@ test('paramètres : la version reste lisible sur tablette et avec un contenu lon
 
 test('bandeau projets : global, sans débordement, utilisable dans chaque vue', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
 
   // Sous l'en-tête, au-dessus des vues : ni dans le journal, ni dedans.
   const strip = page.locator('.project-strip');
@@ -154,7 +154,7 @@ test('bandeau projets : global, sans débordement, utilisable dans chaque vue', 
 
   // Ailleurs que dans le journal, le filtre reste visible et cliquable.
   await nav(page, 'Tâches').click();
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeHidden();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeHidden();
   await expect(filters).toBeVisible();
   expect(await noHorizontalScroll(page)).toBe(true);
 });
@@ -163,7 +163,7 @@ test('mobile : la marque s’efface en descendant, le bandeau projets reste coll
   const ids = await longJournal(request);
   try {
     await page.goto('/');
-    await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
     const app = page.locator('.app');
     const strip = page.locator('.project-strip');
     const headHeight = (await page.locator('header.head').boundingBox())!.height;
@@ -192,7 +192,7 @@ test('mobile en paysage : une vue à la fois, barre horizontale et cibles tactil
   const navigation = page.locator('.head .panel-toggles');
   const buttons = navigation.locator('.panel-toggle');
   await expect(buttons).toHaveCount(4);
-  await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   await expect(page.locator('#workspace-editor')).toBeHidden();
 
   const navBounds = (await navigation.boundingBox())!;
@@ -214,7 +214,7 @@ test('téléphone : ouvrir une entrée passe à l’écriture, le retour ramène
   const ids = await longJournal(request);
   try {
     await page.goto('/');
-    const journal = page.getByRole('region', { name: 'Journal' });
+    const journal = page.getByRole('region', { name: 'Journal', exact: true });
     const app = page.locator('.app');
     const old = journal.getByText('Journal long 02', { exact: true });
     await old.scrollIntoViewIfNeeded();
@@ -257,7 +257,7 @@ test('mobile : écriture compacte, réglages repliés, actions à parts égales,
     await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Long document');
 
     // Réglages repliés : une seule ligne qui les résume (un document riche n'a pas Écrire / Lire).
-    const region = page.getByRole('region', { name: 'Entrée' });
+    const region = page.getByRole('region', { name: 'Entrée', exact: true });
     const toggle = region.getByRole('button', { name: 'Réglages de l’entrée' });
     await expect(toggle).toHaveText(/sam\. 15 mars 2025/);
     await expect(page.getByLabel('Date de l’entrée')).toBeHidden();

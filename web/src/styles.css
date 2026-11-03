@@ -6331,8 +6331,196 @@ button.lane-name:hover {
   color: var(--muted);
   font-size: 12px;
 }
+.overview-task > .follow-up {
+  grid-column: 1 / -1;
+}
 .overview-progress-title {
   margin: 0 0 10px;
+}
+
+/* Suivi IA : un bilan distinct du document, commun à l'entrée et à la vue globale. */
+.follow-up {
+  min-width: 0;
+  margin: 8px 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-soft) 26%, var(--surface));
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.follow-up p {
+  margin: 6px 0;
+}
+.follow-up-head,
+.follow-up-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+.follow-up-head strong {
+  font-size: 13px;
+}
+.follow-up-mode,
+.follow-up-empty,
+.follow-up-date,
+.follow-up-privacy,
+.follow-up-warnings {
+  color: var(--muted);
+  font-size: 12px;
+}
+.follow-up-status {
+  padding: 2px 7px;
+  border-radius: 6px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 12px;
+}
+.follow-up-status.is-blocked {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.follow-up-status.is-done {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+.follow-up-status.is-unclear,
+.follow-up-status.is-todo {
+  color: var(--muted);
+  background: var(--surface-2);
+}
+.follow-up-stale {
+  color: var(--mark);
+  font-size: 12px;
+}
+.follow-up-summary {
+  line-height: 1.55;
+}
+.follow-up-actions {
+  margin-top: 6px;
+}
+.follow-up button {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.follow-up-lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 8px 18px;
+  margin-top: 10px;
+}
+.follow-up-list h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+.follow-up-list ul,
+.follow-up-warnings {
+  margin: 0;
+  padding-left: 18px;
+}
+.follow-up-list li + li,
+.follow-up-warnings li + li {
+  margin-top: 3px;
+}
+.follow-up-auto {
+  display: flex;
+  align-items: start;
+  gap: 7px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+.follow-up-auto input {
+  flex: none;
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.follow-up-details > summary {
+  margin-top: 6px;
+  padding: 3px 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.follow-up.is-inactive {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.follow-up-intro {
+  flex: 1 1 250px;
+  min-width: 0;
+}
+.follow-up-intro p {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.follow-up.is-compact {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.follow-up.is-compact.is-inactive {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.follow-up.is-compact.is-inactive > button {
+  padding: 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.follow-up .ai-pending {
+  margin-top: 8px;
+}
+.linked-follow-up {
+  min-width: 0;
+  margin: 8px 0;
+}
+.linked-follow-up-title {
+  margin: 0 0 5px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.overview-follow-ups > h3 {
+  margin: 4px 0 10px;
+  font-size: 15px;
+}
+.overview-follow-ups > ul {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.overview-follow-ups > ul > li {
+  min-width: 0;
+}
+.overview-follow-up-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.overview-follow-up-title > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (pointer: coarse) {
+  .follow-up button,
+  .follow-up-details > summary,
+  .follow-up-auto {
+    min-height: 44px;
+  }
+  .follow-up-details > summary {
+    align-content: center;
+  }
 }
 @container (max-width: 550px) {
   .overview-add,

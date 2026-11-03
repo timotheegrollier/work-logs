@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS entries (
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   archived INTEGER NOT NULL DEFAULT 0,
   kind TEXT NOT NULL DEFAULT 'note',
+  follow_up TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   pinned INTEGER NOT NULL DEFAULT 0,
   position INTEGER NOT NULL DEFAULT 0,
   priority TEXT NOT NULL DEFAULT 'normal',
+  follow_up TEXT,
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -283,6 +285,7 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   // Classement du projet : une seule catégorie par document/tâche, nullable
   // pour conserver les données existantes et les éléments sans classement.
   for (const table of ['entries', 'tasks']) {
+    if (!columns(db, table).includes('follow_up')) db.exec(`ALTER TABLE ${table} ADD COLUMN follow_up TEXT`);
     if (!columns(db, table).includes('category_id')) {
       db.exec(`ALTER TABLE ${table} ADD COLUMN category_id TEXT REFERENCES categories(id) ON DELETE SET NULL`);
     }

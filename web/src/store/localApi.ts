@@ -7,6 +7,9 @@ import {
   type Attachment,
   type Entry,
   type EntrySummary,
+  type FollowUp,
+  type FollowUpKind,
+  type FollowUpSnapshot,
   type GoogleStatus,
   type Project,
   type RichDocument,
@@ -27,6 +30,8 @@ import { buildPreservingUpdate, importGoogleDocument } from '../../../api/src/go
 import { mergeGoogleChanges } from '../../../api/src/google-merge.js';
 // @ts-expect-error — résolution pure partagée avec l'API, sans dépendance Node.
 import { TASK_CATEGORY_MIGRATION, inheritedTaskCategory } from '../../../api/src/task-categories.js';
+// @ts-expect-error — contrat pur partagé avec SQLite, sans accès disque/réseau.
+import { buildFollowUpSource, decodeFollowUpRow, followUpKey, readFollowUp, updateFollowUp } from '../../../api/src/follow-up.js';
 import { readRelay } from '../relay-settings';
 import { beginWebLogin, builtinWebClientId, clearWebClient, disconnectWeb, downloadDriveBinary, webGoogleRequest, webGoogleStatus } from './google-web';
 
@@ -118,11 +123,13 @@ interface EntryRow {
   id: string; title: string; content_md: string; content_json: string | null;
   entry_date: string; project_id: string | null; category_id?: string | null; archived: 0 | 1; kind: 'note' | 'procedure';
   created_at: string; updated_at: string;
+  follow_up?: FollowUp | null;
 }
 interface TaskRow {
   id: string; title: string; status: Status; due_date: string | null; pinned: 0 | 1;
   position: number; priority: 'low' | 'normal' | 'high'; project_id: string | null; category_id?: string | null;
   created_at: string; updated_at: string;
+  follow_up?: FollowUp | null;
 }
 interface CategoryRow { id: string; name: string; color: string; project_id: string; parent_id: string | null; created_at: string; updated_at: string }
 interface ProjectRow { id: string; name: string; color: string; created_at: string; updated_at?: string; shared_dir?: string | null }
@@ -422,6 +429,24 @@ async function googleSync(entryId: string, contentJson: string | null): Promise<
   };
 }
 
+async function localFollowUpSnapshot(kind: FollowUpKind, id: string): Promise<FollowUpSnapshot> {
+  if (kind !== 'entry' && kind !== 'task') fail('type de suivi invalide (entry ou task attendu)');
+  const t = await tables();
+  const entity = (kind === 'entry' ? await t.entries.get(id) : await t.tasks.get(id))
+    ?? fail(kind === 'entry' ? 'entrée introuvable' : 'tâche introuvable');
+  const linked = new Set(kind === 'task' ? (await t.links.all()).filter((link) => link.task_id === id).map((link) => link.entry_id) : []);
+  const documents = kind === 'entry' ? [entity as EntryRow] : (await t.entries.all()).filter((entry) => linked.has(entry.id));
+  const googleIds = new Set((await t.google.all()).map((link) => link.entry_id));
+  const project = entity.project_id ? await t.projects.get(entity.project_id) : null;
+  const source = buildFollowUpSource(kind, entity, documents.map((entry) => ({ ...entry, google: googleIds.has(entry.id) })), project);
+  return { follow_up: readFollowUp(entity.follow_up), source_key: followUpKey(source), source };
+}
+
+async function localFollowUpMetadata<T extends EntryRow | TaskRow>(kind: FollowUpKind, row: T): Promise<T & { follow_up_key?: string }> {
+  const decoded = decodeFollowUpRow(row) as T;
+  return decoded.follow_up ? { ...decoded, follow_up_key: (await localFollowUpSnapshot(kind, row.id)).source_key } : decoded;
+}
+
 async function fullEntry(id: string): Promise<Entry> {
   const { entries, attachments } = await tables();
   const row = (await entries.get(id)) ?? fail('entrée introuvable');
@@ -429,7 +454,7 @@ async function fullEntry(id: string): Promise<Entry> {
     .filter((a) => a.entry_id === id)
     .sort((a, b) => cmp(b.created_at, a.created_at))
     .map(stripBlob);
-  const entry = { ...decodeEntry(row), attachments: files } as Entry;
+  const entry = { ...decodeEntry(await localFollowUpMetadata('entry', row)), attachments: files } as Entry;
   entry.google_sync = await googleSync(id, row.content_json);
   return entry;
 }
@@ -489,6 +514,28 @@ async function readGoogleSource(documentId: string, tabId = '') {
 const blankGoogleSource = () => ({ body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } });
 
 export const localApi: Api = {
+  followUp: localFollowUpSnapshot,
+  saveFollowUp: async (kind, id, body) => {
+    const value = await localFollowUpSnapshot(kind, id);
+    const stamp = nowISO();
+    let next: FollowUp;
+    try { next = updateFollowUp(value.follow_up, body, value.source_key, stamp) as FollowUp; }
+    catch (error) {
+      const failure = error as Error & { code?: string };
+      throw new ApiError(failure.message, failure.code);
+    }
+    const t = await tables();
+    if (kind === 'entry') {
+      const row = (await t.entries.get(id)) ?? fail('entrée introuvable');
+      await t.entries.put({ ...row, follow_up: next });
+      track('entries', id);
+    } else {
+      const row = (await t.tasks.get(id)) ?? fail('tâche introuvable');
+      await t.tasks.put({ ...row, follow_up: next });
+      track('tasks', id);
+    }
+    return { ...value, follow_up: next };
+  },
   // Connexion directe à Google depuis le navigateur : même forme que le desktop,
   // pour que l'en-tête (menu du compte) n'ait qu'un seul chemin.
   googleStatus: async (): Promise<GoogleStatus> => pwaGoogleStatus(),
@@ -754,6 +801,15 @@ export const localApi: Api = {
     const allLinks = await links.all();
     const allAttachments = await attachments.all();
     const googleByEntry = new Map((await google.all()).map((row) => [row.entry_id, row]));
+    const allProjects = (await projects.all()).sort((a, b) => cmp(a.name, b.name));
+    const metadata = <T extends EntryRow | TaskRow>(kind: FollowUpKind, row: T): T & { follow_up_key?: string } => {
+      const decoded = decodeFollowUpRow(row) as T;
+      if (!decoded.follow_up) return decoded;
+      const linked = new Set(kind === 'task' ? allLinks.filter((link) => link.task_id === row.id).map((link) => link.entry_id) : [row.id]);
+      const documents = allEntries.filter((entry) => linked.has(entry.id)).map((entry) => ({ ...entry, google: googleByEntry.has(entry.id) }));
+      const source = buildFollowUpSource(kind, row, documents, allProjects.find((project) => project.id === row.project_id));
+      return { ...decoded, follow_up_key: followUpKey(source) };
+    };
     const needle = foldSearch(q.trim());
     const matching = allEntries
       .filter((entry) => (!projectId || entry.project_id === projectId) && matchesCategory(entry))
@@ -774,14 +830,15 @@ export const localApi: Api = {
         google_tab_order: link?.tab_order ?? null, google_tab_depth: link?.tab_depth ?? null,
         google_sync_blocked: link?.readonly_reason ?? null,
         google_dirty: link ? entry.content_json !== link.synced_content_json : false,
+        follow_up: entry.follow_up ?? null,
+        ...(entry.follow_up ? { follow_up_key: metadata('entry', entry).follow_up_key } : {}),
       };
     });
     const matchingTasks = allTasks
       .filter((task) => (!projectId || task.project_id === projectId) && matchesCategory(task))
       .filter((task) => !needle || foldSearch(task.title).includes(needle))
       .sort((a, b) => a.position - b.position || cmp(b.updated_at, a.updated_at) || cmp(a.id, b.id))
-      .map((task) => ({ ...task, documents: taskDocuments(task.id, allEntries, allLinks, googleByEntry) }));
-    const allProjects = (await projects.all()).sort((a, b) => cmp(a.name, b.name));
+      .map((task) => ({ ...metadata('task', task), documents: taskDocuments(task.id, allEntries, allLinks, googleByEntry) }));
     const byStatus: Record<Status, number> = { todo: 0, doing: 0, done: 0 };
     for (const task of allTasks) byStatus[task.status]++;
     const day = today();
@@ -1256,6 +1313,7 @@ for (const method of [
   'createCategory', 'updateCategory', 'deleteCategory', 'createProject', 'updateProject', 'deleteProject',
   'createEntry', 'updateEntry', 'deleteEntry', 'copyEntry', 'createTaskFromEntry', 'createEntryFromTask',
   'createTask', 'updateTask', 'moveTask', 'deleteTask', 'linkTaskDocument', 'unlinkTaskDocument', 'exportBackup',
+  'saveFollowUp',
 ] as const) {
   const operation = localApi[method];
   Object.assign(localApi, { [method]: (...args: unknown[]) => localWrite(() => Reflect.apply(operation, localApi, args) as Promise<unknown>) });
@@ -1269,7 +1327,7 @@ async function backupObject() {
     projects: await projects.all(),
     categories: await categories.all(),
     entries: (await entries.all()).map((row) => decodeEntry(row)),
-    tasks: await tasks.all(),
+    tasks: (await tasks.all()).map((row) => decodeFollowUpRow(row)),
     task_entries: (await links.all()).map(({ task_id, entry_id, created_at }) => ({ task_id, entry_id, created_at })),
     google_documents: await google.all(),
     attachments: (await attachments.all()).map(stripBlob),
@@ -1352,9 +1410,9 @@ async function applySyncSnapshotUnlocked(merged: SyncSnapshot, base: SyncSnapsho
   await sync(t.categories, merged.categories || [], base.categories || [], (row) => (row as CategoryRow).id, (row) => ({ ...row }), ['name', 'color', 'project_id', 'parent_id']);
   await sync(t.entries, merged.entries, base.entries, (row) => (row as EntryRow).id,
     (row) => ({ ...row, content_json: row.content_json ? JSON.stringify(row.content_json) : null }) as EntryRow,
-    ['title', 'content_md', 'content_json', 'entry_date', 'project_id', 'category_id', 'archived', 'kind']);
+    ['title', 'content_md', 'content_json', 'entry_date', 'project_id', 'category_id', 'archived', 'kind', 'follow_up']);
   await sync(t.tasks, merged.tasks, base.tasks, (row) => (row as TaskRow).id, (row) => ({ ...row }),
-    ['title', 'status', 'due_date', 'pinned', 'position', 'priority', 'project_id', 'category_id']);
+    ['title', 'status', 'due_date', 'pinned', 'position', 'priority', 'project_id', 'category_id', 'follow_up']);
   await sync(t.links, merged.task_entries, base.task_entries, (row) => linkId(row.task_id, row.entry_id),
     (row) => ({ id: linkId(row.task_id, row.entry_id), ...row }), []);
   await sync(t.google, merged.google_documents, base.google_documents, (row) => (row as GoogleRow).entry_id, (row) => ({ ...row }), []);
@@ -1378,7 +1436,7 @@ export function importLocalBackup(input: unknown): Promise<{ ok: true; projects:
 }
 async function importLocalBackupUnlocked(input: unknown): Promise<{ ok: true; projects: number; entries: number; tasks: number }> {
   const data = validateBackup(input) as {
-    projects: ProjectRow[]; categories: CategoryRow[]; entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; archived: 0 | 1; kind: 'note' | 'procedure'; created_at: string; updated_at: string }[];
+    projects: ProjectRow[]; categories: CategoryRow[]; entries: SyncSnapshot['entries'];
     tasks: TaskRow[]; task_entries: { task_id: string; entry_id: string; created_at: string }[];
     google_documents: GoogleRow[]; attachments: { id: string; filename: string; stored: string; mime: string; size: number; entry_id: string; created_at: string; driveFileId?: string | null }[];
   };
@@ -1410,7 +1468,7 @@ export interface OutboxPayload {
   device: 'pwa';
   projects: ProjectRow[];
   categories?: CategoryRow[];
-  entries: { id: string; title: string; content_md: string; content_json: RichDocument | null; entry_date: string; project_id: string | null; archived: 0 | 1; kind: 'note' | 'procedure'; created_at: string; updated_at: string }[];
+  entries: SyncSnapshot['entries'];
   tasks: TaskRow[];
   task_entries: { task_id: string; entry_id: string; created_at: string }[];
   attachments: { id: string; filename: string; stored: string; mime: string; size: number; entry_id: string; created_at: string; driveFileId: string | null }[];
@@ -1513,5 +1571,5 @@ async function taskWithDocuments(id: string): Promise<Task> {
   const { tasks, entries, links, google } = await tables();
   const row = (await tasks.get(id)) ?? fail('tâche introuvable');
   const googleByEntry = new Map((await google.all()).map((link) => [link.entry_id, link]));
-  return { ...row, documents: taskDocuments(id, await entries.all(), await links.all(), googleByEntry) };
+  return { ...await localFollowUpMetadata('task', row), documents: taskDocuments(id, await entries.all(), await links.all(), googleByEntry) };
 }

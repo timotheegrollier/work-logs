@@ -8,6 +8,7 @@ import { buildPreservingUpdate, googlePreservedCount, importGoogleDocument as go
 import { buildBackup, BACKUP_NAME, MAX_BACKUP_BYTES, restoreBackup, validateBackup } from './backup.js';
 import { createSyncEngine } from './google-sync.js';
 import { validateOutbox } from './backup-format.js';
+import { mergeFollowUp, readFollowUp } from './follow-up.js';
 
 const blankSource = { body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } };
 const backupInfo = (file) => ({
@@ -215,32 +216,52 @@ export async function importOutbox(db, { google, uploadDir }, data) {
       for (const next of incoming) db.prepare('UPDATE categories SET parent_id=? WHERE id=?').run(next.parent_id, next.id);
     }
     for (const next of data.entries) {
+      const deleted = db.prepare('SELECT deleted_at FROM sync_tombstones WHERE kind=? AND id=?').get('entry', next.id);
+      if (deleted && deleted.deleted_at >= next.updated_at) { counts.conflicts++; continue; }
       const current = db.prepare('SELECT * FROM entries WHERE id=?').get(next.id);
       const content = next.content_json ? JSON.stringify(next.content_json) : null;
+      const followUp = mergeFollowUp(current?.follow_up, next.follow_up);
+      const serializedFollowUp = followUp ? JSON.stringify(followUp) : null;
       if (!current) {
-        db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-          .run(next.id, next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.created_at, next.updated_at, next.category_id ?? null);
+        db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,created_at,updated_at,category_id,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+          .run(next.id, next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.created_at, next.updated_at, next.category_id ?? null, serializedFollowUp);
         counts.entries++;
       } else if (next.updated_at > current.updated_at) {
-        db.prepare('UPDATE entries SET title=?,content_md=?,content_json=?,entry_date=?,project_id=?,archived=?,kind=?,updated_at=?,category_id=? WHERE id=?')
-          .run(next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.updated_at, next.category_id ?? null, next.id);
+        db.prepare('UPDATE entries SET title=?,content_md=?,content_json=?,entry_date=?,project_id=?,archived=?,kind=?,updated_at=?,category_id=?,follow_up=? WHERE id=?')
+          .run(next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.updated_at, next.category_id ?? null, serializedFollowUp, next.id);
         counts.updated++;
-      } else if (!sameEntry(current, next)) counts.conflicts++;
+      } else {
+        if (JSON.stringify(readFollowUp(current.follow_up)) !== JSON.stringify(followUp)) {
+          db.prepare('UPDATE entries SET follow_up=? WHERE id=?').run(serializedFollowUp, next.id);
+          counts.updated++;
+        }
+        if (!sameEntry(current, next)) counts.conflicts++;
+      }
     }
     for (const next of data.tasks) {
+      const deleted = db.prepare('SELECT deleted_at FROM sync_tombstones WHERE kind=? AND id=?').get('task', next.id);
+      if (deleted && deleted.deleted_at >= next.updated_at) { counts.conflicts++; continue; }
       const current = db.prepare('SELECT * FROM tasks WHERE id=?').get(next.id);
+      const followUp = mergeFollowUp(current?.follow_up, next.follow_up);
+      const serializedFollowUp = followUp ? JSON.stringify(followUp) : null;
       if (!current) {
-        db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-          .run(next.id, next.title, next.status, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.created_at, next.updated_at, next.category_id ?? null);
+        db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+          .run(next.id, next.title, next.status, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.created_at, next.updated_at, next.category_id ?? null, serializedFollowUp);
         counts.tasks++;
         touched.add(next.status);
       } else if (next.updated_at > current.updated_at) {
-        db.prepare('UPDATE tasks SET title=?,status=?,due_date=?,pinned=?,position=?,priority=?,project_id=?,updated_at=?,category_id=? WHERE id=?')
-          .run(next.title, next.status, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.updated_at, next.category_id ?? null, next.id);
+        db.prepare('UPDATE tasks SET title=?,status=?,due_date=?,pinned=?,position=?,priority=?,project_id=?,updated_at=?,category_id=?,follow_up=? WHERE id=?')
+          .run(next.title, next.status, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.updated_at, next.category_id ?? null, serializedFollowUp, next.id);
         counts.updated++;
         touched.add(current.status);
         touched.add(next.status);
-      } else if (!sameTask(current, next)) counts.conflicts++;
+      } else {
+        if (JSON.stringify(readFollowUp(current.follow_up)) !== JSON.stringify(followUp)) {
+          db.prepare('UPDATE tasks SET follow_up=? WHERE id=?').run(serializedFollowUp, next.id);
+          counts.updated++;
+        }
+        if (!sameTask(current, next)) counts.conflicts++;
+      }
     }
     for (const link of data.task_entries) {
       if (!db.prepare('SELECT 1 FROM tasks WHERE id=?').get(link.task_id)) continue;

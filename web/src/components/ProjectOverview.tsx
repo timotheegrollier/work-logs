@@ -1,5 +1,6 @@
 import { useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { api, dayLabel, isOverdue, overviewOrder, projectProgress, todayISO, type EntrySummary, type Project, type Task } from '../lib';
+import { FollowUpPanel } from './FollowUpPanel';
 
 /** Au-delà, les autres tâches ouvertes sont comptées (« +N ») : la piste tient sur une ligne jusqu'à 360 px. */
 export const LANE_NODES = 10;
@@ -11,7 +12,7 @@ const plural = (count: number, one: string, many: string) => `${count} ${count >
  * l'historique est replié — les terminées comptées dans une pastille, un nœud par tâche
  * ouverte (plein pour celle en cours, le HEAD), une barre d'avancement et la dernière note.
  */
-export function ProjectOverview({ projects, tasks, entries, onProject, onTask, onClose, onChanged, advice, missingOpen = 0, missingTasks = 0 }: {
+export function ProjectOverview({ projects, tasks, entries, onProject, onTask, onEntry, onClose, onChanged, advice, missingOpen = 0, missingTasks = 0 }: {
   projects: Project[];
   tasks: Task[];
   entries: EntrySummary[];
@@ -19,6 +20,7 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
   onProject: (id: string) => void;
   /** Un nœud mène à sa carte dans le panneau Tâches. */
   onTask: (task: Task) => void;
+  onEntry: (entry: EntrySummary) => void;
   onClose: () => void;
   onChanged: () => void | Promise<void>;
   advice?: ReactNode;
@@ -39,6 +41,8 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
   const shownTasks = filter === 'open' ? openTasks : openTasks.filter((task) => task.status === filter);
   const todoCount = openTasks.filter((task) => task.status === 'todo').length;
   const doingCount = openTasks.length - todoCount;
+  const followedTasks = tasks.filter((task) => task.follow_up);
+  const followedEntries = entries.filter((entry) => entry.follow_up);
   const run = async (key: string, action: () => Promise<unknown>) => {
     if (busy) return false;
     setBusy(key);
@@ -129,10 +133,24 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
                 <button className="ghost overview-task-move" type="button" disabled={Boolean(busy)} aria-label={task.status === 'doing' ? `Remettre à faire ${task.title}` : `Mettre en cours ${task.title}`} onClick={() => void run(task.id, () => api.moveTask(task.id, task.status === 'doing' ? 'todo' : 'doing', Number.MAX_SAFE_INTEGER))}>
                   {task.status === 'doing' ? 'Remettre à faire' : '▶ En cours'}
                 </button>
+                {!task.follow_up && <FollowUpPanel kind="task" item={task} compact />}
               </li>
             ))}
           </ul>
         )}
+        <section className="overview-follow-ups" aria-label="Bilans et suivis IA">
+          <h3>Bilans et suivis IA</h3>
+          {followedTasks.length + followedEntries.length === 0 ? <p className="ai-hint">Active un suivi depuis une entrée ou une tâche pour retrouver ici ses avancées et ses blocages.</p> : <ul>
+            {followedTasks.map((task) => <li key={'task-' + task.id}>
+              <div className="overview-follow-up-title"><span>Tâche</span><button className="overview-task-title" type="button" aria-label={`Ouvrir la tâche ${task.title}`} onClick={() => onTask(task)}>{task.title}</button></div>
+              <FollowUpPanel kind="task" item={task} compact />
+            </li>)}
+            {followedEntries.map((entry) => <li key={'entry-' + entry.id}>
+              <div className="overview-follow-up-title"><span>Entrée</span><button className="overview-task-title" type="button" aria-label={`Ouvrir l’entrée ${entry.title}`} onClick={() => onEntry(entry)}>{entry.title}</button></div>
+              <FollowUpPanel kind="entry" item={entry} compact />
+            </li>)}
+          </ul>}
+        </section>
         {advice && <div ref={adviceRef} tabIndex={-1} role="group" aria-label="Conseils IA">{advice}</div>}
       </div>
       <h3 className="overview-progress-title">Avancement des projets</h3>

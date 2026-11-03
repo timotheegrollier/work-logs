@@ -1,5 +1,37 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-11-02 — bilans et suivi IA des entrées et tâches (§64), prévu pour v0.67.0
+
+**Suivi IA**, séparé du texte : état proposé, bilan, avancées, prochaines actions et blocages.
+Activation par entrée ou tâche, premier bilan immédiat, puis actualisation après sauvegarde
+et pause de deux secondes ; actualisation automatique ou manuelle, Actualiser, Arrêter. Rien ne
+modifie le texte, le statut réel ou les archives. Le même bilan de tâche est accessible sur
+sa carte et dans ses entrées liées ; la vue d’ensemble rassemble tous les suivis chargés,
+tâches terminées comprises. Desktop, téléphone et PWA, sans onglet ni dépendance ajoutée.
+
+Sources enregistrées uniquement, note/procédure identifiée, document riche faisant autorité ;
+huit documents et 24 000 caractères de texte, début et fin conservés, limites annoncées.
+Les copies locales Google sont signalées ; pièces jointes et fichiers du partage non lus.
+L’empreinte des sources rend l’ancien bilan « À actualiser » et le contrôle serveur/PWA
+refuse une réponse dépassée. Erreur ou arrêt : dernier bilan conservé, sans boucle de relance.
+
+Migration additive `entries/tasks.follow_up`, sauvegardes, restauration, synchro et ancienne
+boîte mobile alignées. Les horloges `enabled_at` et `report.generated_at` fusionnent séparément
+de `updated_at` des sources : un bilan automatique n’écrase pas une saisie distante plus
+récente et ne réactive pas le suivi coupé ailleurs. Les anciennes sauvegardes restent valides.
+Usage : `03-UTILISATION.md` « Suivre les avancées avec l’IA » ; contrat : `01-ARCHITECTURE.md`.
+
+`./scripts/check.sh` vert le 2026-11-03 : **300 API, 770 front** (et un échec attendu),
+**49 desktop unitaires, 32 scripts, 8 Worker, 11 relais, 94 navigateur et 17 desktop e2e**.
+Tests IA simulés ; captures clair/sombre à 1 440 et 375 px vérifiées. Publication demandée
+par Timo le 2026-11-03 : le manifeste
+est déjà en 0.66.0, la version suivante sera 0.67.0, via le processus de `07-RELEASES.md`.
+Les régions de suivi portent le titre de leur source : les parcours Playwright ciblent
+désormais les noms exacts des panneaux, pour ne pas confondre « Entrée » ou « Journal » avec
+un bilan dont le titre contient ces mots. Les 26 parcours des trois fichiers en échec passent.
+Dans Electron, les clics sur un titre de document partent explicitement du journal : le
+bouton d’activation du suivi reprend lui aussi ce titre. Le parcours Google intégré passe.
+
 ## v0.66.0 — 2026-10-30 — vue d’ensemble des tâches et conseils IA (§63)
 
 Un bouton en haut de l’écran ouvre la vue d’ensemble sans déplier Tâches ni Procédures.

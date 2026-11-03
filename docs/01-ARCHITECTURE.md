@@ -60,12 +60,12 @@ categories(id, name, project_id → projects ON DELETE CASCADE,
 entries(id, title, content_md, content_json JSON|NULL, entry_date 'AAAA-MM-JJ',
         project_id → projects ON DELETE SET NULL, category_id → categories ON DELETE SET NULL,
         archived 0|1 DEFAULT 0,
-        kind ∈ {'note','procedure'} DEFAULT 'note', created_at, updated_at)
+        kind ∈ {'note','procedure'} DEFAULT 'note', follow_up JSON|NULL, created_at, updated_at)
 
 tasks(id, title, status ∈ {todo, doing, done}, due_date 'AAAA-MM-JJ'|NULL,
       pinned 0|1, position, priority ∈ {low, normal, high} DEFAULT 'normal',
       project_id → projects ON DELETE SET NULL, category_id → categories ON DELETE SET NULL,
-      created_at, updated_at)
+      follow_up JSON|NULL, created_at, updated_at)
 
 task_entries(task_id → tasks ON DELETE CASCADE, entry_id → entries ON DELETE CASCADE,
              created_at, PRIMARY KEY(task_id, entry_id))
@@ -98,6 +98,18 @@ La migration est additive ; les entrées Markdown gardent NULL. Pour un document
 `content_md` contient le texte de recherche et le JSON fait autorité. `google_documents`
 suit les révisions et le dernier contenu envoyé ; aucun jeton OAuth n’est stocké dans
 SQLite. Supprimer une entrée locale ne supprime jamais le fichier Google.
+
+`follow_up` est une colonne TEXT nullable sur les entrées et les tâches, décodée en
+`{enabled, enabled_at, report}` par l’API et les sauvegardes. Le rapport conserve l’état proposé
+(`unclear`, `todo`, `doing`, `blocked`, `done`), le bilan, les avancées, prochaines actions,
+blocages, limites de lecture, `generated_at` et `source_key`. La migration est additive ;
+les anciennes sauvegardes restent acceptées. Le miroir IndexedDB utilise les mêmes magasins.
+Les résumés et tâches suivis exposent `follow_up_key`, recalculé sur les sources enregistrées :
+le rapport et `updated_at` sont exclus. `follow-up.js` partage construction, validation et
+empreinte entre serveur et PWA ; `follow-up-controller.tsx` sérialise les demandes IA à l’écran.
+Le suivi ne change pas le `updated_at` du texte ou de la tâche. La synchronisation fusionne
+séparément l’activation par `enabled_at` et le rapport par `generated_at` : un bilan récent
+ne peut ni remplacer une saisie distante plus récente, ni réactiver un suivi désactivé ailleurs.
 
 `tab_depth` est ajouté par migration additive. Les entrées détaillées fournissent
 `google_sync.tabs` (tous les onglets locaux du fichier, même sous un filtre),
@@ -153,6 +165,8 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET | `/api/health` | `{ok, ts}` |
 | GET | `/api/state?q=&project_id=&category_id=` | **tout l'écran en un appel** : projets, catégories, entrées (extrait seul, avec `kind`), tâches avec `documents`, pièces jointes des procédures du filtre, compteurs ; catégorie et descendants ou `__none__` |
 | GET | `/api/entries/:id` | l'entrée complète + ses pièces jointes |
+| GET | `/api/follow-up/:kind/:id` | `kind=entry\|task` : configuration, bilan, empreinte courante et sources enregistrées (entrée seule ou documents explicitement liés) |
+| PUT | `/api/follow-up/:kind/:id` | `{enabled?}` règle l’automatisme ; `{report, source_key}` conserve un bilan daté par le serveur, refusé en 409 si les sources ont changé ; ne modifie ni texte ni statut |
 | POST · PUT · DELETE | `/api/entries[/:id]` | créer · modifier · supprimer |
 | POST | `/api/entries/:id/task` | crée une tâche `todo` et la lie atomiquement à l’entrée |
 | POST | `/api/entries/:id/copy` | copie locale indépendante, fichiers compris |

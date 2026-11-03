@@ -41,7 +41,7 @@ test.describe('desktop', () => {
 
   test('tâches : la saisie reste en tête, la liste défile dessous sans jamais passer devant', async ({ page }) => {
     await page.goto('/');
-    const board = page.getByRole('region', { name: 'Tâches' });
+    const board = page.getByRole('region', { name: 'Tâches', exact: true });
     await expect(board.getByText('Contrôle 14 du parc')).toBeAttached();
     const quick = board.locator('.quick');
     const lists = board.locator('.board-lists');
@@ -71,7 +71,7 @@ test.describe('desktop', () => {
 
   test('journal : les jours défilent avec leurs entrées au lieu de les masquer', async ({ page }) => {
     await page.goto('/');
-    const journal = page.getByRole('region', { name: 'Journal' });
+    const journal = page.getByRole('region', { name: 'Journal', exact: true });
     await expect(journal.getByText('Relevé 14')).toBeAttached();
     const left = page.locator('.left');
     await left.evaluate((el) => el.scrollTo(0, 260));
@@ -94,7 +94,7 @@ test.describe('mobile', () => {
   test('tâches : saisie et intitulés suivent la page, rien ne reste collé sur les cartes', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true }).click();
-    const board = page.getByRole('region', { name: 'Tâches' });
+    const board = page.getByRole('region', { name: 'Tâches', exact: true });
     await expect(board.getByText('Contrôle 14 du parc')).toBeAttached();
     const app = page.locator('.app');
     const quick = board.locator('.quick');

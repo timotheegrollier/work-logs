@@ -11,6 +11,7 @@ import { UpdateBar } from './components/UpdateBar';
 import { TaskBoard } from './components/TaskBoard';
 import { ProjectOverview } from './components/ProjectOverview';
 import { TaskAdvice } from './components/TaskAdvice';
+import { FollowUpProvider } from './follow-up-controller';
 import { ProjectBar } from './components/ProjectBar';
 import { CategoryBar } from './components/CategoryBar';
 import { categoryDescendants, UNCATEGORIZED } from './categories';
@@ -368,6 +369,7 @@ export default function App() {
       if (selectedSummary) {
         setEntry((current) => current && current.id === selectedSummary.id
           ? { ...current, archived: selectedSummary.archived, project_id: selectedSummary.project_id, category_id: selectedSummary.category_id, updated_at: selectedSummary.updated_at,
+              follow_up: selectedSummary.follow_up, follow_up_key: selectedSummary.follow_up_key,
               ...(selectedSummary.kind === 'procedure' ? { attachments: next.procedure_attachments.filter((file) => file.entry_id === current.id) } : {}) }
           : current);
       }
@@ -656,6 +658,7 @@ export default function App() {
   );
 
   return (
+    <FollowUpProvider state={state} onChanged={reload}>
     <div className="app" ref={pageRef}>
       <UpdateBar />
       <header className="head no-print">
@@ -805,6 +808,7 @@ export default function App() {
               entries={state.entries}
               onProject={(id) => void switchProject(id)}
               onTask={revealTask}
+              onEntry={(item) => void openEntry(item.id, undefined)}
               onClose={() => setOverview(false)}
               onChanged={reload}
               missingOpen={missingOpen}
@@ -833,8 +837,7 @@ export default function App() {
               entry={entry}
               projects={state.projects}
               linkedTasks={state.tasks
-                .filter((task) => (task.documents ?? []).some((document) => document.id === entry.id))
-                .map((task) => ({ id: task.id, title: task.title, status: task.status }))}
+                .filter((task) => (task.documents ?? []).some((document) => document.id === entry.id))}
               tasks={state.tasks.map((task) => ({ id: task.id, title: task.title, status: task.status }))}
               autoFocusTitle={freshEntry}
               compact={phone}
@@ -1021,6 +1024,7 @@ export default function App() {
         </Suspense>
       )}
     </div>
+    </FollowUpProvider>
   );
 }
 

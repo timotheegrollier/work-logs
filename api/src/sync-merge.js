@@ -10,6 +10,9 @@
 // - liens tâche ⇄ document et pièces jointes : union, moins les suppressions ;
 // - deux copies locales du même onglet Google (ouvert sur les deux appareils) :
 //   la plus récente est gardée, l'autre supprimée proprement.
+// - le suivi IA fusionne ses propres horloges : un bilan ne date jamais une saisie.
+
+import { mergeFollowUp } from './follow-up.js';
 
 export const TOMBSTONE_KINDS = ['project', 'category', 'entry', 'task', 'link', 'attachment'];
 export const TOMBSTONE_TTL_MS = 60 * 24 * 3600 * 1000;
@@ -61,6 +64,18 @@ function mergeRows(kind, localRows, remoteRows, tombs, keyOf = (row) => row.id) 
     kept.push(row);
   }
   return kept;
+}
+
+/** Le texte/statut garde sa règle habituelle ; le suivi ne peut le faire gagner
+ * ni ressusciter une ligne supprimée. Activation et bilan suivent leurs horloges. */
+function mergeSourceRows(kind, localRows, remoteRows, tombs) {
+  const local = new Map(localRows.map((row) => [row.id, row]));
+  const remote = new Map(remoteRows.map((row) => [row.id, row]));
+  return mergeRows(kind, localRows, remoteRows, tombs).map((row) => {
+    const left = local.get(row.id)?.follow_up;
+    const right = remote.get(row.id)?.follow_up;
+    return left || right ? { ...row, follow_up: mergeFollowUp(left, right) } : row;
+  });
 }
 
 /** Représentation canonique pour comparer deux instantanés sans faux positifs d'ordre. */
@@ -134,8 +149,8 @@ export function mergeSnapshots(local, remote, now = Date.now()) {
     return projectId !== row.project_id || categoryId !== (row.category_id || null)
       ? { ...row, project_id: projectId, category_id: categoryId } : row;
   };
-  let entries = mergeRows('entry', local.entries, other.entries, tombs).map(detach);
-  const tasks = mergeRows('task', local.tasks, other.tasks, tombs).map(detach);
+  let entries = mergeSourceRows('entry', local.entries, other.entries, tombs).map(detach);
+  const tasks = mergeSourceRows('task', local.tasks, other.tasks, tombs).map(detach);
 
   // Un même onglet Google ouvert sur deux appareils = deux copies locales : on garde la plus récente.
   const entryById = new Map(entries.map((row) => [row.id, row]));

@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const journal = (page: Page) => page.getByRole('region', { name: 'Journal' });
-const board = (page: Page) => page.getByRole('region', { name: 'Tâches' });
-const editor = (page: Page) => page.getByRole('region', { name: 'Entrée' });
+const journal = (page: Page) => page.getByRole('region', { name: 'Journal', exact: true });
+const board = (page: Page) => page.getByRole('region', { name: 'Tâches', exact: true });
+const editor = (page: Page) => page.getByRole('region', { name: 'Entrée', exact: true });
 const title = (page: Page) => page.getByLabel('Titre de l’entrée');
 
 /** Crée une entrée et renseigne son titre, avec l'assurance qu'elle est enregistrée. */

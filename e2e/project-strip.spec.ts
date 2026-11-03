@@ -40,7 +40,7 @@ test.describe('mobile', () => {
 
   test('téléphone : un bouton nomme le projet, la liste complète choisit, la gestion est au pied', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
     const switcher = page.getByRole('button', { name: 'Projet : Tous les projets' });
     await expect(switcher).toBeVisible();
     await expect(page.getByRole('group', { name: 'Filtrer par projet' })).toHaveCount(0);
@@ -105,7 +105,7 @@ test.describe('desktop', () => {
 
   test('bandeau : une rangée, molette, gestion posée sous son bouton', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('region', { name: 'Journal' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
     const rail = page.getByRole('group', { name: 'Filtrer par projet' });
     const manage = page.getByRole('button', { name: 'Gérer les projets' });
     await expect(rail.getByRole('button', { name: 'Vidéosurveillance' })).toBeAttached();

@@ -279,6 +279,33 @@ rendu approximatif.
 - **✨ IA › Créer une procédure** (pied de carte) fait rédiger par l'IA une procédure à partir de la tâche et de ses documents liés, à relire avant de la créer — voir « Procédures ».
 - **✨ IA › Trouver la doc** (pied de carte) retrouve la note, la procédure ou le fichier du dossier partagé qui aide à faire la tâche. L'IA réglée dans ⚙ Paramètres reçoit le titre et le statut de la tâche, son projet (nom, contexte IA du projet, vocabulaire) et les **titres** de ses documents liés — jamais un contenu — et propose au plus six mots. WorkLogs les cherche dans les titres et le texte de **toutes** les notes et procédures (tous projets, archives comprises) et dans les **noms** des fichiers du dossier partagé (sur le téléphone, par le relais du bureau). « Documents trouvés » liste, dans la carte, au plus huit documents : leur type (Procédure, Note, Partage), leur projet s'il n'est pas celui de la tâche ou leur dossier, et les mots qui les ont trouvés ; les documents déjà liés n'y reviennent pas. **Ouvrir** affiche le document au centre (le filtre passe à son projet) ; **Lier** l'associe à la tâche, comme « ＋ Documents ». Sans dossier partagé (non réglé, relais injoignable), la recherche se fait dans WorkLogs seulement et la liste le dit.
 
+## Suivre les avancées avec l’IA
+
+Dans une entrée, cliquer sur **Activer le suivi IA**. Le bloc **Suivi IA**, séparé du texte,
+présente un bilan, un **état proposé**, les avancées, prochaines actions et blocages. Le même
+bouton sur une carte de tâche analyse ses champs et ses documents explicitement liés. Le
+suivi d’une tâche est aussi visible dans ses entrées liées.
+
+L’activation produit le premier bilan puis coche **Actualiser automatiquement après
+enregistrement** : après une modification sauvegardée et une pause de deux secondes,
+WorkLogs actualise le suivi pendant que l’application est ouverte et les éléments chargés.
+Décocher conserve le dernier bilan et permet de continuer avec **Actualiser**. **Arrêter**
+coupe la demande en cours ; une prochaine modification pourra relancer le suivi automatique.
+Une version inchangée n’est pas réanalysée à chaque ouverture. Une erreur conserve le bilan
+précédent ; **À actualiser** signale que les sources ont changé.
+
+Ouvrir **Vue d’ensemble → Bilans et suivis IA** pour retrouver les suivis des entrées et des
+tâches chargées, y compris les tâches terminées. Le titre d’une entrée la rouvre ; celui d’une
+tâche mène à sa carte. Les détails se déplient sur les cartes compactes.
+
+Le service IA et la clé sont ceux des **Paramètres**. Le texte enregistré est envoyé à ce
+service après activation. L’analyse lit au plus huit documents et 24 000 caractères de texte,
+avec début et fin conservés pour les longs documents ; les coupes sont annoncées. Les
+documents Google utilisent leur copie locale enregistrée, qui peut être en retard sur Google.
+Les pièces jointes et fichiers du dossier partagé ne sont pas lus. L’état proposé ne change
+pas le statut réel de la tâche et n’archive rien. Les bilans suivent les sauvegardes et la
+synchronisation habituelles.
+
 ## Assistance IA
 
 Dans **⚙ Paramètres → Assistance IA**, renseigner le profil métier général et,

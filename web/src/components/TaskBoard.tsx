@@ -8,6 +8,7 @@ import { ProcedureDraft } from './ProcedureDraft';
 import { AiContextDetails } from './AiContextDetails';
 import { AiMenu } from './AiMenu';
 import { AiRefinement } from './AiRefinement';
+import { FollowUpPanel } from './FollowUpPanel';
 
 import { groupByCategory } from '../categories';
 import { CategoryBadge, CategoryPicker } from './CategoryPicker';
@@ -1095,6 +1096,7 @@ function TaskCard({
         )}
       </div>
       {proposal?.reason && <p className="ai-reason">{proposal.reason}</p>}
+      <FollowUpPanel kind="task" item={task} compact />
       {documentControls}
       {entryCreator}
       {aiContext && !creatingEntry && <AiContextDetails context={aiContext} excludedIds={excludedSourceIds} onExcludedChange={excludeSources} />}
