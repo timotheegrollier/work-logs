@@ -1,4 +1,6 @@
+import { useEffect, useRef } from 'react';
 import { useFollowUp, type FollowUpItem } from '../follow-up-controller';
+import { isFollowed } from '../lib';
 import { AiPending } from './AiMenu';
 
 const STATUS_LABELS = { unclear: 'À préciser', todo: 'À faire', doing: 'En cours', blocked: 'Bloqué', done: 'Terminé' };
@@ -15,9 +17,16 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false }: {
   compact?: boolean;
   dirty?: boolean;
 }) {
-  const { followUp, stale, busy, error, toggle, refresh, stop } = useFollowUp(kind, item);
+  const { followUp, stale, busy, error, toggle, disable, refresh, stop } = useFollowUp(kind, item);
   const report = followUp?.report;
-  const initial = !followUp;
+  const initial = !followUp || !isFollowed(item);
+  const activate = useRef<HTMLButtonElement>(null);
+  const turnedOff = useRef(false);
+  useEffect(() => {
+    // Après « Désactiver », le focus passe au bouton qui relance le suivi, pas en haut de page.
+    if (initial && turnedOff.current) activate.current?.focus();
+    turnedOff.current = false;
+  }, [initial]);
   const details = <>
     {report && <>
       <div className="follow-up-lists">
@@ -37,8 +46,8 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false }: {
 
   return <section className={'follow-up no-print' + (compact ? ' is-compact' : '') + (initial ? ' is-inactive' : '')} aria-label={`Suivi IA de ${item.title}`} aria-busy={busy}>
     {initial ? <>
-      {!compact && <div className="follow-up-intro"><strong>Suivi IA</strong><p>Un bilan de tes avancées, des prochaines actions et des blocages, actualisé après tes enregistrements. Le texte{kind === 'task' ? ' des documents liés' : ' de cette entrée'} sera envoyé au service IA configuré dans les Paramètres.</p></div>}
-      <button className="ghost" type="button" aria-label={`Activer le suivi IA de ${item.title}`} title="Générer un bilan puis l’actualiser automatiquement après enregistrement ; le texte est envoyé au service IA configuré dans les Paramètres" disabled={busy} onClick={() => toggle(true)}><span aria-hidden="true">✨ </span>{compact ? 'Suivi IA' : 'Activer le suivi IA'}</button>
+      {/* Un bouton, pas un encadré : une entrée qui n'en a pas besoin n'en est pas encombrée. */}
+      <button ref={activate} className="ghost" type="button" aria-label={`Activer le suivi IA de ${item.title}`} title={`Un bilan des avancées, des prochaines actions et des blocages, actualisé après chaque enregistrement ; le texte${kind === 'task' ? ' des documents liés' : ' de cette entrée'} est envoyé au service IA configuré dans les Paramètres`} disabled={busy} onClick={() => toggle(true)}><span aria-hidden="true">✨ </span>{compact ? 'Suivi IA' : 'Activer le suivi IA'}</button>
     </> : <>
       <div className="follow-up-head">
         <strong>Suivi IA</strong>
@@ -50,6 +59,7 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false }: {
       <div className="follow-up-actions">
         <button className="ghost" type="button" aria-label={`Actualiser le bilan de ${item.title}`} disabled={busy} onClick={refresh}>{report ? 'Actualiser' : 'Générer le bilan'}</button>
         {busy && <button className="ghost" type="button" aria-label={`Arrêter le suivi IA de ${item.title}`} onClick={stop}>Arrêter</button>}
+        <button className="ghost follow-up-off" type="button" aria-label={`Désactiver le suivi IA de ${item.title}`} title="Arrête le suivi et retire son bilan ; « ✨ Suivi IA » le relance" onClick={() => { turnedOff.current = true; disable(); }}>Désactiver</button>
       </div>
       {compact ? <details className="follow-up-details"><summary>Détails du suivi</summary>{details}</details> : details}
     </>}

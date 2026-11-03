@@ -1,5 +1,16 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Après v0.67.0 — 2026-11-03 — vue d’ensemble pleine largeur, Désactiver le suivi IA (§65)
+
+La vue d’ensemble recouvre Journal, Tâches et Procédures hors téléphone, sur 1 480 px au plus :
+tâches à gauche et bilans IA à droite dès 1 080 px de centre, cartes de bilans en dessous
+sinon ; sur tablette elle passe seule en tête. Les boutons de l’en-tête rouvrent un panneau à
+côté d’elle (un nœud rouvre Tâches), Écriture la referme. Le panneau Tâches perd son bouton
+« Vue d’ensemble ». **Désactiver** retire automatisme et bilan d’un clic (entrée, carte, vue
+d’ensemble) ; la fusion ne ressuscite pas un bilan retiré. Sans suivi, l’entrée n’a plus
+qu’une ligne « ✨ Activer le suivi IA ». « Trouver la doc » : un nom de fichier du partage
+compte comme un texte, les notes et procédures passent devant à mots égaux.
+
 ## v0.67.0 — 2026-11-03 — bilans et suivi IA des entrées et tâches (§64)
 
 **Suivi IA**, séparé du texte : état proposé, bilan, avancées, prochaines actions et blocages.

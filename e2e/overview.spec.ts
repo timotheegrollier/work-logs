@@ -1,7 +1,8 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
-// La vue d'ensemble des projets : au centre, une voie par projet (§60). jsdom ne voit ni
-// la largeur de la page ni la vue d'une tâche de téléphone : on les vérifie ici.
+// La vue d'ensemble des projets : au centre, une voie par projet (§60), par-dessus les autres
+// panneaux (§65). jsdom ne voit ni la largeur de la page ni la vue d'une tâche de téléphone :
+// on les vérifie ici.
 const noHorizontalScroll = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
@@ -165,9 +166,18 @@ test('une voie par projet qui tient en largeur, sur desktop comme sur téléphon
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
-    await page.getByRole('button', { name: 'Vue d’ensemble', exact: true }).click();
+    // Le panneau Tâches n'a plus son propre bouton : l'en-tête suffit.
+    await expect(page.getByRole('region', { name: 'Tâches', exact: true }).getByRole('button', { name: /Vue d’ensemble/ })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true }).click();
     const overview = page.getByRole('region', { name: 'Vue d’ensemble des projets' });
     await expect(overview).toBeVisible();
+    // Elle recouvre les panneaux et range les bilans IA à droite des tâches.
+    await expect(page.locator('#workspace-journal')).toBeHidden();
+    await expect(page.locator('#workspace-tasks')).toBeHidden();
+    const work = (await overview.locator('.overview-work').boundingBox())!;
+    const reports = (await overview.getByRole('region', { name: 'Bilans et suivis IA' }).boundingBox())!;
+    expect(reports.x).toBeGreaterThanOrEqual(work.x + work.width);
+    expect(Math.abs(reports.y - work.y)).toBeLessThan(40);
     const lane = overview.getByRole('listitem', { name: /^Bassins vue :/ });
     await expect(lane.getByRole('listitem').or(lane).first()).toBeVisible();
     await expect(lane.locator('.lane-node')).toHaveCount(10);
@@ -190,13 +200,28 @@ test('une voie par projet qui tient en largeur, sur desktop comme sur téléphon
     const box = (await lane.boundingBox())!;
     const main = (await page.locator('main.center').boundingBox())!;
     expect(box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 1);
+    // « Tâches » rouvre son panneau à côté de la vue, sans la fermer ni déborder.
+    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true }).click();
+    await expect(page.locator('#workspace-tasks')).toBeVisible();
+    await expect(overview).toBeVisible();
+    expect(await noHorizontalScroll(page)).toBe(true);
+    await sameRow();
+
+    // Tablette : la vue passe seule en tête de page, sans le journal au-dessus.
+    await page.setViewportSize({ width: 800, height: 1000 });
+    await page.reload();
+    await page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true }).click();
+    await expect(overview).toBeVisible();
+    await expect(page.locator('#workspace-journal')).toBeHidden();
+    expect((await overview.boundingBox())!.y).toBeLessThan(300);
+    expect(await noHorizontalScroll(page)).toBe(true);
 
     // Téléphone : la vue s'ouvre dans Écriture, en une colonne, sans débordement.
     await page.setViewportSize({ width: 412, height: 860 });
     await page.reload();
     const nav = (name: string) => page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name, exact: true });
     await nav('Tâches').click();
-    await page.getByRole('button', { name: 'Vue d’ensemble', exact: true }).click();
+    await page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true }).click();
     await expect(overview).toBeVisible();
     await expect(nav('Écriture')).toHaveAttribute('aria-pressed', 'true');
     expect(await noHorizontalScroll(page)).toBe(true);

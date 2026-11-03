@@ -147,7 +147,8 @@ describe('suivi IA enregistré', () => {
     const url = `/api/follow-up/entry/${note.id}`;
     for (const body of [{}, { enabled: 'oui' }, { report: { ...REPORT, status: 'urgent' } },
       { report: { ...REPORT, summary: 'a'.repeat(1501) } }, { report: { ...REPORT, completed: Array(9).fill('Fait') } },
-      { report: { ...REPORT, blockers: ['a'.repeat(501)] } }, { report: { ...REPORT, warnings: Array(13).fill('Attention') } }]) {
+      { report: { ...REPORT, blockers: ['a'.repeat(501)] } }, { report: { ...REPORT, warnings: Array(13).fill('Attention') } },
+      { report: null }, { enabled: true, report: null }]) {
       const response = await api.put(url, body);
       assert.equal(response.status, 400);
       assert.equal(typeof response.body.error, 'string');
@@ -156,6 +157,30 @@ describe('suivi IA enregistré', () => {
     assert.equal((await api.put('/api/follow-up/entry/inconnue', { enabled: true })).status, 404);
     assert.equal((await api.get(`/api/follow-up/project/${note.id}`)).status, 400);
     assert.equal((await snapshot('entry', note.id)).follow_up, null);
+  });
+
+  test('« Désactiver » coupe l’automatisme et retire le bilan sans toucher au texte ; le suivi peut repartir', async () => {
+    const note = await make.entry(api, { content_md: 'Rien à suivre ici.' });
+    const before = (await api.get(`/api/entries/${note.id}`)).body;
+    await api.put(`/api/follow-up/entry/${note.id}`, { enabled: true });
+    await report('entry', note.id);
+    // Décocher l'automatisme n'est pas désactiver : le bilan reste, aucune date de retrait.
+    const paused = await api.put(`/api/follow-up/entry/${note.id}`, { enabled: false });
+    assert.equal(paused.body.follow_up.report.summary, REPORT.summary);
+    assert.equal(paused.body.follow_up.cleared_at, undefined);
+    const off = await api.put(`/api/follow-up/entry/${note.id}`, { enabled: false, report: null });
+    assert.equal(off.status, 200);
+    assert.equal(off.body.follow_up.enabled, false);
+    assert.equal(off.body.follow_up.report, null);
+    assert.equal(off.body.follow_up.cleared_at, off.body.follow_up.enabled_at);
+    const state = (await api.get('/api/state')).body;
+    assert.deepEqual(state.entries.find((entry) => entry.id === note.id).follow_up, off.body.follow_up);
+    const after = (await api.get(`/api/entries/${note.id}`)).body;
+    assert.equal(after.content_md, before.content_md);
+    assert.equal(after.updated_at, before.updated_at);
+    const again = await api.put(`/api/follow-up/entry/${note.id}`, { enabled: true });
+    assert.deepEqual([again.body.follow_up.enabled, again.body.follow_up.report], [true, null]);
+    assert.equal(again.body.follow_up.cleared_at, off.body.follow_up.cleared_at);
   });
 
   test('les sauvegardes conservent les suivis et les anciennes versions restent importables', async () => {
@@ -204,6 +229,25 @@ test('fusion indépendante du suivi : choix et bilan gardent leur horloge et les
   assert.equal(forward.report.summary, tied.report.summary, 'les rapports égaux sont départagés par leur JSON canonique');
   assert.deepEqual(forward, mergeFollowUp(tied, local));
   assert.equal(local.report.summary, 'Ancien bilan', 'la fusion ne modifie pas ses entrées');
+
+  // « Désactiver » sur un appareil : le bilan plus ancien de l'autre copie ne revient pas.
+  const later = '2026-11-02T10:05:00.000Z';
+  const cleared = { enabled: false, enabled_at: later, report: null, cleared_at: later };
+  assert.deepEqual(mergeFollowUp(cleared, remote), cleared);
+  assert.deepEqual(mergeFollowUp(remote, cleared), cleared);
+  // Un bilan calculé après le retrait reste.
+  const fresher = { enabled: true, enabled_at: early, report: report('Bilan postérieur', '2026-11-02T10:06:00.000Z') };
+  assert.equal(mergeFollowUp(cleared, fresher).report.summary, 'Bilan postérieur');
+  // Réactivé ailleurs avant d'apprendre le retrait : l'automatisme repart, l'ancien bilan reste retiré.
+  const reactivated = { enabled: true, enabled_at: '2026-11-02T10:07:00.000Z', report: remote.report };
+  const expectedBack = { enabled: true, enabled_at: reactivated.enabled_at, report: null, cleared_at: later };
+  assert.deepEqual(mergeFollowUp(cleared, reactivated), expectedBack);
+  assert.deepEqual(mergeFollowUp(reactivated, cleared), expectedBack);
+  // Une simple pause avant le premier bilan n'est pas un retrait : le bilan de l'autre copie reste.
+  const paused = { enabled: false, enabled_at: later, report: null };
+  assert.equal(mergeFollowUp(paused, remote).report.summary, 'Nouveau bilan');
+  assert.deepEqual(mergeFollowUp(paused, remote), mergeFollowUp(remote, paused));
+  assert.equal(readFollowUp(JSON.stringify(cleared)).cleared_at, later);
 });
 
 test('migration additive des suivis : conserve textes, liens et intégrité d’une base antérieure', () => {

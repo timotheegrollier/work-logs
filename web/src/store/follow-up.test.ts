@@ -44,6 +44,12 @@ test('PWA : le suivi reste séparé du texte et du statut et remonte dans les r�
   expect(paused.follow_up?.report).toEqual(saved.follow_up?.report);
   expect(paused.source_key).toBe(initial.source_key);
   expect((await localApi.entry(entry.id)).updated_at).toBe(beforeEntry);
+  // « Désactiver » : plus d'automatisme ni de bilan, le texte ne bouge pas.
+  const off = await localApi.saveFollowUp('entry', entry.id, { enabled: false, report: null });
+  expect(off.follow_up).toMatchObject({ enabled: false, report: null, cleared_at: off.follow_up?.enabled_at });
+  expect((await localApi.state()).entries.find((row) => row.id === entry.id)?.follow_up).toEqual(off.follow_up);
+  expect((await localApi.entry(entry.id)).updated_at).toBe(beforeEntry);
+  await expect(localApi.saveFollowUp('entry', entry.id, { enabled: true, report: null })).rejects.toBeInstanceOf(ApiError);
 });
 
 test('PWA : une avancée enregistrée invalide le bilan lié et une réponse obsolète garde le dernier bilan', async () => {

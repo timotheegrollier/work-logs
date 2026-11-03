@@ -17,7 +17,8 @@ const AUTO_DELAY = 2000;
 const idle: Runtime = { busy: false, error: '' };
 interface Control {
   runtime: Record<string, Runtime>;
-  toggle: (item: Item, enabled: boolean) => void;
+  /** `clear` : « Désactiver », l'automatisme et le bilan partent ensemble. */
+  toggle: (item: Item, enabled: boolean, clear?: boolean) => void;
   refresh: (item: Item) => void;
   stop: (item: Item) => void;
 }
@@ -109,7 +110,7 @@ export function FollowUpProvider({ state, onChanged, children }: {
     if (active.current?.key === key) active.current.controller.abort();
     patch(key, idle);
   }, [patch]);
-  const toggle = useCallback((item: Item, enabled: boolean) => {
+  const toggle = useCallback((item: Item, enabled: boolean, clear = false) => {
     const key = keyOf(item.kind, item.id);
     if (configBusy.current.has(key)) return;
     if (!enabled) stop(item);
@@ -119,7 +120,7 @@ export function FollowUpProvider({ state, onChanged, children }: {
       try {
         await flushPendingSaves();
         if (!mounted.current) return;
-        const snapshot = await api.saveFollowUp(item.kind, item.id, { enabled });
+        const snapshot = await api.saveFollowUp(item.kind, item.id, clear ? { enabled: false, report: null } : { enabled });
         await changed.current();
         configBusy.current.delete(key);
         if (enabled && snapshot.follow_up?.report?.source_key !== snapshot.source_key && mounted.current && latest.current.has(key)) {
@@ -187,6 +188,7 @@ export function useFollowUp(kind: FollowUpKind, item: FollowUpItem) {
     stale: Boolean(followUp?.report && item.follow_up_key && followUp.report.source_key !== item.follow_up_key),
     ...value,
     toggle: (enabled: boolean) => context?.toggle({ ...item, kind }, enabled),
+    disable: () => context?.toggle({ ...item, kind }, false, true),
     refresh: () => context?.refresh({ ...item, kind }),
     stop: () => context?.stop({ ...item, kind }),
   };

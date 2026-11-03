@@ -70,6 +70,8 @@ export default function App() {
   // Vue d'ensemble des projets au centre, à la place de l'entrée : un affichage, pas un
   // mode (§33) — non retenu au redémarrage, refermé par tout ce qui ouvre autre chose.
   const [overview, setOverview] = useState(false);
+  // Hors téléphone, elle recouvre les panneaux (§65) ; ceux rouverts à côté d'elle, le temps qu'elle reste ouverte.
+  const [beside, setBeside] = useState<PhoneView[]>([]);
   const documentRef = useRef<string | undefined>(undefined);
   documentRef.current = entry?.google_sync?.document_id;
   const [theme, setTheme] = usePersisted('worklogs-theme', (stored) => (stored === 'light' ? 'light' : 'dark'));
@@ -226,13 +228,18 @@ export default function App() {
     setSearch('');
     setQuery('');
     setOverview(true);
+    setBeside([]);
     setShowCenter(true);
     revealEditor();
   }, []);
-  /** Un nœud de la vue d'ensemble mène à sa carte : le panneau Tâches, sans vue rapide, et le focus sur le titre. */
+  /**
+   * Un nœud de la vue d'ensemble mène à sa carte : le panneau Tâches, sans vue rapide, et le focus
+   * sur le titre. Il s'ouvre à côté de la vue, qui reste là avec ses conseils IA ; le réglage
+   * retenu du panneau ne change pas.
+   */
   const revealTask = useCallback((task: Task) => {
     setTaskView(null);
-    setShowRight(true);
+    setBeside(withView('tasks'));
     if (isPhone()) goTo('tasks');
     requestAnimationFrame(() => document.getElementById('task-' + task.id)?.querySelector<HTMLElement>('.card-title')?.focus());
   }, [goTo]);
@@ -556,16 +563,25 @@ export default function App() {
   // Session Google active (pas expirée) : la synchro automatique tourne.
   const autoSynced = Boolean(google?.connected && !google.expired);
   // Mêmes interrupteurs partout ; sur téléphone, ils choisissent la vue au lieu de replier.
+  // La vue d'ensemble recouvre les panneaux : leurs boutons les rouvrent à côté d'elle, « Écriture » la referme.
+  const covering = overview && !phone;
+  const shownBeside = (view: PhoneView, shown: boolean) => (phone ? phoneView === view : covering ? beside.includes(view) : shown);
   const panels: { view: PhoneView; label: string; id: string; shown: boolean; toggle: Dispatch<SetStateAction<boolean>>; what: string; icon: ReactNode }[] = [
-    { view: 'journal', label: 'Journal', id: 'workspace-journal', shown: phone ? phoneView === 'journal' : showLeft, toggle: setShowLeft, what: 'le journal',
+    { view: 'journal', label: 'Journal', id: 'workspace-journal', shown: shownBeside('journal', showLeft), toggle: setShowLeft, what: 'le journal',
       icon: <><path d="M7 4v16" /><circle cx="7" cy="7.5" r="2.2" /><circle cx="7" cy="16.5" r="2.2" /><path d="M12.5 7.5H20M12.5 16.5H20" /></> },
     { view: 'editor', label: 'Écriture', id: 'workspace-editor', shown: phone ? phoneView === 'editor' : showCenter, toggle: setShowCenter, what: 'l’écriture',
       icon: <><path d="M5 19.5h3.5L19 9a2.3 2.3 0 0 0-3.3-3.3L5 16.2z" /><path d="m14 7.5 3.3 3.3" /></> },
-    { view: 'tasks', label: 'Tâches', id: 'workspace-tasks', shown: phone ? phoneView === 'tasks' : showRight, toggle: setShowRight, what: 'les tâches',
+    { view: 'tasks', label: 'Tâches', id: 'workspace-tasks', shown: shownBeside('tasks', showRight), toggle: setShowRight, what: 'les tâches',
       icon: <><rect x="4.5" y="4.5" width="15" height="15" rx="4" /><path d="m8.6 12.2 2.4 2.4 4.6-4.8" /></> },
-    { view: 'procedures', label: 'Procédures', id: 'workspace-procedures', shown: phone ? phoneView === 'procedures' : showProcedures, toggle: setShowProcedures, what: 'les procédures',
+    { view: 'procedures', label: 'Procédures', id: 'workspace-procedures', shown: shownBeside('procedures', showProcedures), toggle: setShowProcedures, what: 'les procédures',
       icon: <><path d="M6 4.5h12v15H7.7A1.7 1.7 0 0 1 6 17.8z" /><path d="M6 17.8a1.7 1.7 0 0 1 1.7-1.7H18M9.5 8.5h5" /></> },
   ];
+  const togglePanel = (panel: (typeof panels)[number]) => {
+    if (phone) goTo(panel.view);
+    else if (!covering) panel.toggle((v) => !v);
+    else if (panel.view === 'editor') setOverview(false);
+    else setBeside((current) => (current.includes(panel.view) ? current.filter((view) => view !== panel.view) : [...current, panel.view]));
+  };
   const [showJournal, showEditor, showBoard, showProcedureBar] = panels.map((panel) => panel.shown);
   const documentTasks = phone ? phoneView === 'tasks' : showDocumentTasks;
 
@@ -582,7 +598,8 @@ export default function App() {
       setSearch('');
     }
     setTaskView(view);
-    setShowRight(true);
+    if (covering) setBeside(withView('tasks'));
+    else setShowRight(true);
     if (isGoogleDocument) setShowDocumentTasks(true);
   };
 
@@ -717,8 +734,8 @@ export default function App() {
               className={'panel-toggle' + (panel.shown ? ' is-on' : '')}
               aria-pressed={panel.shown}
               aria-controls={panel.id}
-              title={phone ? undefined : `${panel.shown ? 'Masquer' : 'Afficher'} ${panel.what}`}
-              onClick={() => (phone ? goTo(panel.view) : panel.toggle((v) => !v))}
+              title={phone ? undefined : covering && panel.view === 'editor' ? 'Fermer la vue d’ensemble et revenir à l’écriture' : `${panel.shown ? 'Masquer' : 'Afficher'} ${panel.what}`}
+              onClick={() => togglePanel(panel)}
             >
               <svg className="panel-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{panel.icon}</svg>
               {panel.label}
@@ -876,8 +893,6 @@ export default function App() {
             onOpenShared={openShared}
             onProcedureCreated={openCreatedProcedure}
             onChanged={reload}
-            onOverview={openOverview}
-            overviewOpen={overview}
           />
         </aside>
 
@@ -1063,6 +1078,8 @@ const writePanel = (shown: boolean) => (shown ? '1' : '0');
 /** Téléphone, en portrait comme en paysage : les mêmes requêtes que `styles.css` (§53). */
 const PHONE = '(max-width: 600px), (max-width: 900px) and (max-height: 500px)';
 type PhoneView = 'journal' | 'editor' | 'tasks' | 'procedures';
+/** Ajoute un panneau à ceux rouverts à côté de la vue d'ensemble. */
+const withView = (view: PhoneView) => (current: PhoneView[]) => (current.includes(view) ? current : [...current, view]);
 const isPhone = () => Boolean(window.matchMedia?.(PHONE).matches);
 const onPhoneChange = (notify: () => void) => {
   const query = window.matchMedia?.(PHONE);

@@ -59,6 +59,8 @@ test('suivi IA : bilan conservé au rechargement, actualisé après la saisie et
     await page.goto('/');
     const panel = page.getByRole('region', { name: `Suivi IA de ${title}`, exact: true });
     await expect(panel).toBeVisible();
+    // Sans suivi, un simple bouton sur une ligne, pas un encadré.
+    expect((await panel.boundingBox())!.height).toBeLessThan(40);
     expect(prompts).toHaveLength(0);
     await panel.getByRole('button', { name: `Activer le suivi IA de ${title}`, exact: true }).click();
     await expect(panel.getByText(firstSummary, { exact: true })).toBeVisible();
@@ -104,6 +106,16 @@ test('suivi IA : bilan conservé au rechargement, actualisé après la saisie et
     await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(title);
     await expect(panel.getByText(finalSummary, { exact: true })).toBeVisible();
     expect(prompts).toHaveLength(2);
+
+    // « Désactiver » : le bilan part, l'entrée retrouve sa ligne discrète, même après rechargement.
+    await panel.getByRole('button', { name: `Désactiver le suivi IA de ${title}`, exact: true }).click();
+    await expect(panel.getByRole('button', { name: `Activer le suivi IA de ${title}`, exact: true })).toBeVisible();
+    await expect(panel.getByText(finalSummary, { exact: true })).toHaveCount(0);
+    await page.reload();
+    await expect(panel.getByRole('button', { name: `Activer le suivi IA de ${title}`, exact: true })).toBeVisible();
+    await page.clock.fastForward(10_000);
+    expect(prompts).toHaveLength(2);
+    expect((await (await request.get(`/api/entries/${note.id}`)).json()).content_md).toBe(update);
   } finally {
     await cleanProject(page, request, project.id);
   }

@@ -2739,3 +2739,59 @@ annulation, parcours entrée/tâche/vue d’ensemble, réponse devenue obsolète
 l’ancien bilan. Navigateur : automatisme après sauvegarde, rechargement sans nouvel appel,
 accès mobile et absence de débordement. Les fournisseurs IA sont simulés : ces tests vérifient
 les contrats et les gestes, pas la justesse d’une réponse réelle.
+
+## 65. La vue d’ensemble recouvre les panneaux ; désactiver un suivi IA d’un clic — 2026-11-03
+
+**Demande.** « Le report IA sur la vue d’ensemble est mal dimensionné sur la largeur et il ne
+recouvre pas les autres panneaux, de plus le layout n’est pas bien responsive ; enlève le
+bouton vue d’ensemble de la liste des tâches (maintenant qu’il est en haut) ; je veux pouvoir
+désactiver le suivi IA sur les entrées (qui n’ont pas de tâches) qui ne le nécessitent pas,
+facilement, rapidement et avec ergonomie ; je veux que les entrées locales se classent mieux
+parmi celles du dossier partagé. »
+
+**Choix.**
+- **La vue recouvre** Journal, Tâches et Procédures hors téléphone : elle prend la largeur
+  (1 480 px au plus) au lieu d’être serrée entre deux colonnes. Pas de nouvel état retenu :
+  les panneaux recouverts sont simplement masqués (`hide-left`, `hide-right`), leurs réglages
+  restent tels quels et reviennent à la fermeture. Leurs boutons de l’en-tête les **rouvrent
+  à côté** de la vue (liste `beside`, oubliée à chaque ouverture) ; **Écriture** la referme.
+  Un nœud, une tâche de la vue ou un compteur de l’en-tête rouvre le panneau Tâches à côté au
+  lieu de fermer la vue (des conseils IA déjà demandés ne sont pas perdus), sans réécrire son
+  réglage retenu. Le focus revient au titre « Bilans et suivis IA » quand la carte retirée
+  l’avait, au bouton « Activer » dans l’entrée. Le téléphone garde sa vue Écriture (§53).
+- **Responsive par la largeur du centre** (`@container`, §56) : à partir de 1 080 px, les
+  tâches à gauche et les bilans IA à droite ; en dessous, les bilans sous les tâches, en
+  cartes côte à côte quand elles tiennent (360 px). Sur tablette, la vue passe seule en tête
+  de page au lieu de venir sous le journal.
+- **Un seul bouton Vue d’ensemble**, celui de l’en-tête (§63) ; celui du panneau Tâches part.
+- **Désactiver** (`{ enabled: false, report: null }`) coupe l’automatisme et retire le bilan
+  d’une entrée ou d’une tâche ; elle quitte la vue d’ensemble. Le bouton est sur chaque bilan,
+  y compris dans la vue d’ensemble, à l’écart d’Actualiser. Pas de confirmation : un bilan se
+  régénère, aucun texte n’est touché. Le mode manuel (case décochée, bilan gardé) reste.
+  Sans suivi, l’entrée ne montre plus un encadré explicatif mais une ligne discrète
+  « ✨ Activer le suivi IA » ; l’explication et l’envoi au service IA sont dans son infobulle.
+- **Fusion** : un bilan retiré ne doit pas revenir d’une autre copie. Le retrait a sa propre
+  date, `cleared_at` (facultative, écrite par « Désactiver » seul) : la fusion garde la plus
+  récente des deux copies et écarte tout bilan calculé avant elle, dans les deux sens. Une
+  simple pause (case décochée, même avant le premier bilan) n’en écrit pas : elle ne retire
+  rien, et le suivi reste affiché en mode manuel. Un bilan calculé après le retrait gagne ; un
+  suivi réactivé ailleurs repart sans l’ancien bilan. Est « suivi » ce qui a un bilan ou dont
+  le dernier choix n’est pas un retrait (`cleared_at ≠ enabled_at`). Le contrat
+  (`api/src/follow-up.js`) est partagé par l’API et la PWA ; une version antérieure ignore le
+  champ (le retrait y apparaît comme une pause sans bilan).
+- **« Trouver la doc »** (§43) : un nom de fichier du partage comptait comme un titre (double),
+  si bien qu’une note trouvée par son texte passait derrière n’importe quel fichier. Il compte
+  désormais comme un texte : à mots égaux, WorkLogs passe devant le partage (ordre §43).
+
+**Écartés.** Une fenêtre modale par-dessus l’écran (le reste de l’application deviendrait
+inaccessible) ; mémoriser les panneaux « à côté » d’une ouverture à l’autre (un mode de plus) ;
+cacher le suivi des entrées sans tâche liée (automatisme deviné, l’utilisateur choisit) ;
+réserver des places au partage ou à WorkLogs dans les huit résultats (le score suffit).
+
+**Validation.** API et PWA : désactivation et sa date, pause sans date, refus de
+`report: null` sans `enabled: false`, texte et `updated_at` intacts, fusion dans les deux sens
+(retrait, bilan postérieur, réactivation ailleurs, pause avant le premier bilan). Front : vue qui recouvre, panneaux
+rouverts à côté, Écriture qui referme, Désactiver depuis l’entrée et la vue d’ensemble, sans
+nouvel appel IA, classement à mots égaux. Navigateur : recouvrement et deux colonnes à
+1 440 px, Tâches rouvert sans débordement, tablette 800 px, téléphone ; ligne discrète et
+Désactiver qui survit au rechargement.
