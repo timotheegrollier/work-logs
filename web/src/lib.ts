@@ -26,7 +26,11 @@ export interface FollowUpReport extends FollowUpReportDraft {
   generated_at: string;
   source_key: string;
 }
-export interface FollowUp { enabled: boolean; enabled_at: string; report: FollowUpReport | null }
+/** `cleared_at` : date du dernier « Désactiver », qui retire aussi le bilan. */
+export interface FollowUp { enabled: boolean; enabled_at: string; report: FollowUpReport | null; cleared_at?: string }
+/** Désactivé en dernier (et pas seulement mis en manuel) : le suivi ne s'affiche plus nulle part. */
+export const isFollowed = ({ follow_up: value }: { follow_up?: FollowUp | null }) =>
+  Boolean(value && (value.report || value.cleared_at !== value.enabled_at));
 export interface FollowUpDocument {
   id: string; title: string; content_md: string; content_json: RichDocument | null;
   kind: 'note' | 'procedure';
@@ -40,7 +44,8 @@ export interface FollowUpSource {
   documents: FollowUpDocument[];
 }
 export interface FollowUpSnapshot { follow_up: FollowUp | null; source_key: string; source: FollowUpSource }
-export interface FollowUpUpdate { enabled?: boolean; report?: FollowUpReportDraft; source_key?: string }
+/** `{ enabled: false, report: null }` désactive le suivi et retire son bilan. */
+export interface FollowUpUpdate { enabled?: boolean; report?: FollowUpReportDraft | null; source_key?: string }
 
 export interface Project {
   id: string;

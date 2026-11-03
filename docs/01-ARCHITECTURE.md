@@ -100,7 +100,7 @@ suit les révisions et le dernier contenu envoyé ; aucun jeton OAuth n’est st
 SQLite. Supprimer une entrée locale ne supprime jamais le fichier Google.
 
 `follow_up` est une colonne TEXT nullable sur les entrées et les tâches, décodée en
-`{enabled, enabled_at, report}` par l’API et les sauvegardes. Le rapport conserve l’état proposé
+`{enabled, enabled_at, report, cleared_at?}` par l’API et les sauvegardes. Le rapport conserve l’état proposé
 (`unclear`, `todo`, `doing`, `blocked`, `done`), le bilan, les avancées, prochaines actions,
 blocages, limites de lecture, `generated_at` et `source_key`. La migration est additive ;
 les anciennes sauvegardes restent acceptées. Le miroir IndexedDB utilise les mêmes magasins.
@@ -166,7 +166,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET | `/api/state?q=&project_id=&category_id=` | **tout l'écran en un appel** : projets, catégories, entrées (extrait seul, avec `kind`), tâches avec `documents`, pièces jointes des procédures du filtre, compteurs ; catégorie et descendants ou `__none__` |
 | GET | `/api/entries/:id` | l'entrée complète + ses pièces jointes |
 | GET | `/api/follow-up/:kind/:id` | `kind=entry\|task` : configuration, bilan, empreinte courante et sources enregistrées (entrée seule ou documents explicitement liés) |
-| PUT | `/api/follow-up/:kind/:id` | `{enabled?}` règle l’automatisme ; `{report, source_key}` conserve un bilan daté par le serveur, refusé en 409 si les sources ont changé ; ne modifie ni texte ni statut |
+| PUT | `/api/follow-up/:kind/:id` | `{enabled?}` règle l’automatisme ; `{report, source_key}` conserve un bilan daté par le serveur, refusé en 409 si les sources ont changé ; `{enabled: false, report: null}` désactive, retire le bilan et date le retrait (`cleared_at`, §65) ; ne modifie ni texte ni statut |
 | POST · PUT · DELETE | `/api/entries[/:id]` | créer · modifier · supprimer |
 | POST | `/api/entries/:id/task` | crée une tâche `todo` et la lie atomiquement à l’entrée |
 | POST | `/api/entries/:id/copy` | copie locale indépendante, fichiers compris |

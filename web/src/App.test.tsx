@@ -2760,7 +2760,9 @@ describe('projets', () => {
 describe('vue d’ensemble des projets', () => {
   const hier = () => new Date(Date.now() - 864e5).toISOString().slice(0, 10);
   const page = () => screen.getByRole('region', { name: 'Vue d’ensemble des projets' });
-  const toggle = () => within(board()).getByRole('button', { name: 'Vue d’ensemble' });
+  const toggle = () => screen.getByRole('button', { name: 'Vue d’ensemble des tâches' });
+  const columns = () => document.querySelector('.columns') as HTMLElement;
+  const panel = (name: string) => within(screen.getByRole('group', { name: 'Panneaux latéraux' })).getByRole('button', { name });
 
   test('une entrée choisie pendant l’attente de la vue d’ensemble reste au centre', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Première entrée' }, { id: 'en_2', title: 'Entrée choisie' }] });
@@ -2803,6 +2805,12 @@ describe('vue d’ensemble des projets', () => {
     expect(await screen.findByRole('region', { name: 'Vue d’ensemble des projets' })).toBeInTheDocument();
     expect(toggle()).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('region', { name: 'Entrée' })).not.toBeInTheDocument();
+    // Elle recouvre les panneaux ; le panneau Tâches n'a plus son propre bouton.
+    expect(columns()).toHaveClass('hide-left', 'hide-right');
+    expect(columns()).not.toHaveClass('hide-center');
+    expect(columns()).not.toHaveClass('show-procedures');
+    expect(panel('Journal')).toHaveAttribute('aria-pressed', 'false');
+    expect(within(board()).queryByRole('button', { name: /Vue d’ensemble/ })).not.toBeInTheDocument();
     expect(within(page()).getByText(/2 projets · 4 tâches ouvertes · 1 terminée/)).toHaveTextContent('1 en retard');
     const alpha = within(page()).getByRole('listitem', { name: 'Alpha : 1 terminée sur 4, 1 en cours, 2 à faire' });
     expect(within(alpha).getByTitle('1 terminée')).toHaveTextContent('1');
@@ -2815,9 +2823,19 @@ describe('vue d’ensemble des projets', () => {
     expect(within(page()).getByRole('listitem', { name: 'Bravo : 0 terminée sur 0, 0 en cours, 0 à faire' })).toHaveTextContent('Aucune tâche');
     expect(within(page()).getByRole('listitem', { name: 'Sans projet : 0 terminée sur 1, 0 en cours, 1 à faire' })).toHaveTextContent('Rien en cours');
 
-    // Un nœud mène à sa carte dans le panneau Tâches.
+    // Un nœud mène à sa carte dans le panneau Tâches, rouvert à côté de la vue.
     await user.click(within(alpha).getByRole('button', { name: 'Relancer — à faire · en retard de 1 jour' }));
     await waitFor(() => expect(document.activeElement).toBe(within(board()).getByRole('button', { name: 'Relancer' })));
+    expect(columns()).not.toHaveClass('hide-right');
+    expect(columns()).toHaveClass('hide-left');
+    expect(panel('Tâches')).toHaveAttribute('aria-pressed', 'true');
+    expect(page()).toBeInTheDocument();
+    // Les boutons de l'en-tête rouvrent un panneau à côté, ou le replient, sans fermer la vue.
+    await user.click(panel('Journal'));
+    expect(columns()).not.toHaveClass('hide-left');
+    await user.click(panel('Tâches'));
+    expect(columns()).toHaveClass('hide-right');
+    expect(page()).toBeInTheDocument();
 
     // Un nom filtre le projet et referme la vue ; depuis un projet, « Vue d’ensemble » lève le filtre.
     await user.click(within(alpha).getByRole('button', { name: 'Filtrer sur Alpha' }));
@@ -2827,15 +2845,41 @@ describe('vue d’ensemble des projets', () => {
     await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
     await waitFor(() => expect(within(filters()).getByRole('button', { name: 'Tout' })).toHaveAttribute('aria-pressed', 'true'));
 
-    // Fermer rend l'entrée telle quelle ; ouvrir une entrée referme aussi.
+    // Rouverte, elle recouvre de nouveau tout ; un compteur de l'en-tête rouvre Tâches à côté.
+    expect(columns()).toHaveClass('hide-left', 'hide-right');
+    await user.click(screen.getByTitle('Voir les tâches en retard'));
+    expect(columns()).not.toHaveClass('hide-right');
+    expect(page()).toBeInTheDocument();
+
+    // Fermer rend l'entrée et les panneaux tels quels ; « Écriture » et ouvrir une entrée referment aussi.
     await user.click(screen.getByRole('button', { name: 'Fermer la vue d’ensemble' }));
     expect(await screen.findByDisplayValue('Compte rendu')).toBeInTheDocument();
     expect(toggle()).toHaveAttribute('aria-pressed', 'false');
+    expect(columns()).not.toHaveClass('hide-left');
+    expect(columns()).not.toHaveClass('hide-right');
+    await user.click(toggle());
+    await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
+    await user.click(panel('Écriture'));
+    expect(await screen.findByDisplayValue('Compte rendu')).toBeInTheDocument();
+    expect(panel('Écriture')).toHaveAttribute('aria-pressed', 'true');
     await user.click(toggle());
     await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
     await user.click(within(journal()).getByText('Compte rendu'));
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument());
     expect(await screen.findByDisplayValue('Compte rendu')).toBeInTheDocument();
+  });
+
+  test('rouvrir Tâches à côté de la vue ne change pas son réglage : replié avant, replié après', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-show-right', '0');
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Bravo' }], tasks: [{ id: 'tk_1', title: 'Relancer', project_id: 'pr_a' }] });
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    await user.click(await within(page()).findByRole('button', { name: 'Relancer — à faire' }));
+    expect(columns()).not.toHaveClass('hide-right');
+    await user.click(screen.getByRole('button', { name: 'Fermer la vue d’ensemble' }));
+    expect(columns()).toHaveClass('hide-right');
+    expect(localStorage.getItem('worklogs-show-right')).toBe('0');
   });
 
   test('la liste permet de créer, affecter au projet et démarrer une tâche sans quitter la vue', async () => {
@@ -3102,7 +3146,7 @@ describe('cartes empilées (tablette) et vues du téléphone', () => {
     stackedScreen(true, true);
     render(<App />);
     const nav = (name: string) => within(screen.getByRole('group', { name: 'Panneaux latéraux' })).getByRole('button', { name });
-    await user.click(await within(board()).findByRole('button', { name: 'Vue d’ensemble' }));
+    await user.click(await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' }));
 
     expect(await screen.findByRole('region', { name: 'Vue d’ensemble des projets' })).toBeInTheDocument();
     expect(nav('Écriture')).toHaveAttribute('aria-pressed', 'true');
@@ -3779,7 +3823,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     let calls = 0;
     const removeGuard = setLeaveGuard(() => ++calls === 1 ? new Promise<boolean>((resolve) => { finish = resolve; }) : Promise.resolve(true));
     try {
-      fireEvent.click(await within(board()).findByRole('button', { name: 'Vue d’ensemble' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' }));
       await waitFor(() => expect(calls).toBe(1));
       fireEvent.click(file);
       await screen.findByRole('region', { name: 'Fichier partagé' }, partage);
@@ -4996,11 +5040,12 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
       const card = await findDocs();
       const found = await within(card).findByRole('region', { name: 'Documents trouvés' }, partage);
       expect(within(found).getByText('Cherché avec : imprimante, pilote')).toBeInTheDocument();
-      // Mot du titre avant mot du texte ; la note déjà liée n'est pas reproposée.
+      // Mot du titre avant mot du texte ; à mot égal, la note de WorkLogs avant le fichier du
+      // partage, trouvé par son seul nom. La note déjà liée n'est pas reproposée.
       expect(within(found).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
         'ProcédureInstaller une imprimanteInformatique · trouvé avec : imprimanteOuvrirLier',
-        'PartagePilote HP.mdImprimantes · trouvé avec : piloteOuvrir',
         'NoteCompte rendu du lunditrouvé avec : piloteOuvrirLier',
+        'PartagePilote HP.mdImprimantes · trouvé avec : piloteOuvrir',
       ]);
       // Des titres partent, jamais le texte d'un document.
       const sent = (aiBodies.at(-1) as { messages: { content: string }[] }).messages[1].content;
@@ -5700,6 +5745,37 @@ describe('suivi IA des entrées et tâches', () => {
     view.unmount();
     render(<App />);
     await within(await screen.findByRole('region', { name: 'Suivi IA de Note évolutive' }, backend)).findByText('Le montage attend son joint.');
+    expect(aiBodies).toHaveLength(2);
+  }, 20_000);
+
+  test('« Désactiver » retire d’un clic le suivi d’une entrée qui n’en a pas besoin, dans l’entrée comme dans la vue d’ensemble', async () => {
+    prepare();
+    mockAiSuggest(report('Rien à suivre.'));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend));
+    await within(follow()).findByText('Rien à suivre.', {}, backend);
+    const off = within(follow()).getByRole('button', { name: 'Désactiver le suivi IA de Note évolutive' });
+    off.focus();
+    fireEvent.click(off);
+    // Retour à un simple bouton, qui reprend le focus ; ni bilan ni automatisme, le texte ne bouge pas.
+    const activate = await within(follow()).findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend);
+    await waitFor(() => expect(document.activeElement).toBe(activate));
+    expect(follow()).toHaveClass('is-inactive');
+    expect(within(follow()).queryByText('Rien à suivre.')).not.toBeInTheDocument();
+    expect((await clientApi.followUp('entry', 'en_suivi')).follow_up).toMatchObject({ enabled: false, report: null });
+    expect(row(api.db, 'SELECT content_md FROM entries WHERE id=?', 'en_suivi').content_md).toBe('Pompe montée ; il manque le joint.');
+
+    // Réactivé, puis désactivé depuis la liste des bilans : il en sort, sans nouvel appel.
+    fireEvent.click(within(follow()).getByRole('button', { name: 'Activer le suivi IA de Note évolutive' }));
+    await within(follow()).findByText('Rien à suivre.', {}, backend);
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const reports = await screen.findByRole('region', { name: 'Bilans et suivis IA' }, backend);
+    const offInList = within(reports).getByRole('button', { name: 'Désactiver le suivi IA de Note évolutive' });
+    offInList.focus();
+    fireEvent.click(offInList);
+    await within(reports).findByText(/Active un suivi depuis une entrée ou une tâche/, {}, backend);
+    // La carte retirée avait le focus : il revient au titre de la liste, pas en haut de page.
+    await waitFor(() => expect(document.activeElement).toBe(within(reports).getByRole('heading', { name: 'Bilans et suivis IA' })));
     expect(aiBodies).toHaveLength(2);
   }, 20_000);
 

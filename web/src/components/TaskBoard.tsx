@@ -34,8 +34,6 @@ export const TaskBoard = memo(function TaskBoard({
   onOpenShared,
   onProcedureCreated,
   onChanged,
-  onOverview,
-  overviewOpen = false,
 }: {
   tasks: Task[];
   entries: EntrySummary[];
@@ -53,9 +51,6 @@ export const TaskBoard = memo(function TaskBoard({
   /** Procédure tirée d'une tâche par l'IA, créée : l'app l'ouvre. */
   onProcedureCreated: (procedure: Entry) => void;
   onChanged: () => void;
-  /** Ouvre la vue d'ensemble des projets au centre ; `overviewOpen` : elle y est déjà. */
-  onOverview?: () => void;
-  overviewOpen?: boolean;
 }) {
   const [over, setOver] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -192,11 +187,6 @@ export const TaskBoard = memo(function TaskBoard({
               Prioriser les tâches
             </button>
           </AiMenu>
-          {onOverview && (
-            <button className={'ghost' + (overviewOpen ? ' is-on' : '')} type="button" aria-pressed={overviewOpen} title="L’avancement de chaque projet, au centre" onClick={onOverview}>
-              Vue d’ensemble
-            </button>
-          )}
         </div>
         {prioritizeError && <p className="error" role="alert">{prioritizeError}</p>}
         {proposal && (

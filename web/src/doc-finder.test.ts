@@ -24,9 +24,24 @@ describe('classement des documents trouvés', () => {
     expect(summary(ranked)).toEqual([
       'note Installer une Imprimante 4 imprimante',
       'note Compte rendu 3 imprimante+pilote',
-      // Un nom du partage compte comme un titre ; à égalité, la note passe avant le fichier.
+      // Un nom du partage compte comme un texte : il passe après le titre d'une note.
       'note Pilote réseau 2 pilote',
-      'shared Imprimantes/Pilote HP.docx 2 pilote',
+      'shared Imprimantes/Pilote HP.docx 1 pilote',
+    ]);
+  });
+
+  test('un nom du partage compte comme un texte : à mots égaux, la note ou la procédure de WorkLogs passe devant le fichier', () => {
+    const ranked = rankFoundDocuments(['toner', 'bureau'], [
+      { entries: [entry('en_texte', 'Compte rendu du mardi')], files: [file('Imprimantes/Toner.pdf'), file('Toner bureau.md')] },
+      { entries: [entry('en_texte', 'Compte rendu du mardi'), entry('en_proc', 'Accueil', 'procedure')], files: [file('Toner bureau.md'), file('Bureau 2.md')] },
+    ], new Set());
+    expect(summary(ranked)).toEqual([
+      // Trouvés par les mêmes mots : la note d'abord, puis le fichier.
+      'note Compte rendu du mardi 3 toner+bureau',
+      'shared Toner bureau.md 3 toner+bureau',
+      'shared Imprimantes/Toner.pdf 2 toner',
+      'procedure Accueil 1 bureau',
+      'shared Bureau 2.md 1 bureau',
     ]);
   });
 
@@ -44,7 +59,7 @@ describe('classement des documents trouvés', () => {
       'procedure Changer un écran 2 ecran',
       'note Écran neuf 2 ecran',
       'note ÉCRAN : réglages 2 ecran',
-      'shared Écrans/Ecran Dell.pdf 2 ecran',
+      'shared Écrans/Ecran Dell.pdf 1 ecran',
     ]);
     const many = Array.from({ length: 12 }, (_, index) => entry(`en_${index}`, `Note ${index}`));
     expect(rankFoundDocuments(['pompe'], [{ entries: many, files: [] }], new Set())).toHaveLength(MAX_FOUND);
@@ -61,7 +76,7 @@ describe('recherche dans WorkLogs et le partage', () => {
       .mockResolvedValueOnce(searched([file('Imprimante.md')]))
       .mockRejectedValueOnce(new Error('Partage injoignable'));
     const found = await findDocuments(['imprimante', 'pilote', 'toner'], new Set());
-    expect(summary(found.documents)).toEqual(['shared Imprimante.md 6 imprimante', 'note Toner 2 toner']);
+    expect(summary(found.documents)).toEqual(['shared Imprimante.md 3 imprimante', 'note Toner 2 toner']);
     expect(found.sharedNote).toBe('Partage : recherche partielle.');
     expect(state.mock.calls).toEqual([['imprimante', ''], ['pilote', ''], ['toner', '']]);
     expect(search).toHaveBeenCalledTimes(2);

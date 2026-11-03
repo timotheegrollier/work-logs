@@ -48,7 +48,9 @@ export function readFollowUp(value) {
   }
   const enabledAt = value.enabled_at === undefined || value.enabled_at === null || value.enabled_at === ''
     ? report?.generated_at || EPOCH : timestamp(value.enabled_at);
-  return { enabled: value.enabled, enabled_at: enabledAt, report };
+  // Date du dernier « Désactiver » : absente tant qu'on n'a jamais retiré de bilan.
+  const cleared = value.cleared_at ? { cleared_at: timestamp(value.cleared_at) } : {};
+  return { enabled: value.enabled, enabled_at: enabledAt, report, ...cleared };
 }
 
 /**
@@ -74,7 +76,11 @@ export function mergeFollowUp(local, remote) {
     report = leftTime > rightTime ? leftReport : rightTime > leftTime ? rightReport
       : canonical(leftReport) >= canonical(rightReport) ? leftReport : rightReport;
   }
-  return { enabled: config.enabled, enabled_at: config.enabled_at, report };
+  // « Désactiver » efface tout bilan calculé avant lui, quelle que soit la copie : la fusion ne
+  // le ressuscite pas. Le plus récent des deux, donc le même résultat dans les deux sens.
+  const cleared = [left.cleared_at, right.cleared_at].filter(Boolean).sort().pop();
+  if (cleared && report && Date.parse(report.generated_at) <= Date.parse(cleared)) report = null;
+  return { enabled: config.enabled, enabled_at: config.enabled_at, report, ...(cleared ? { cleared_at: cleared } : {}) };
 }
 
 /** Ne laisse jamais une chaîne JSON SQL apparaître dans l'API ou un export. */
@@ -116,7 +122,12 @@ export function updateFollowUp(previous, body, sourceKey, generatedAt) {
   if (!object(body) || (body.enabled === undefined && body.report === undefined)) fail();
   if (body.enabled !== undefined && typeof body.enabled !== 'boolean') fail();
   const next = readFollowUp(previous) || { enabled: false, enabled_at: EPOCH, report: null };
-  if (body.report !== undefined) {
+  // « Désactiver » : le bilan part avec l'automatisme, jamais seul, et la date du retrait reste.
+  if (body.report === null) {
+    if (body.enabled !== false) fail();
+    next.report = null;
+    next.cleared_at = generatedAt;
+  } else if (body.report !== undefined) {
     const report = validateFollowUpReport(body.report);
     if (body.source_key !== sourceKey) {
       fail('Le contenu a changé pendant le bilan. Actualise le suivi.', 409, 'FOLLOW_UP_STALE');

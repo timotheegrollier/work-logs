@@ -229,13 +229,18 @@ rendu approximatif.
   proposée » en pointillés et sa raison. **Appliquer** enregistre les seules priorités qui
   changent ; **Ignorer**, changer de projet ou de catégorie n'écrit rien ; **Arrêter** coupe
   la demande. L'IA ne touche ni statut, ni échéance, ni épingle, ni ordre à la main.
-- **Vue d’ensemble des tâches** : le bouton en haut de l’écran ouvre la vue au centre,
-  même si les panneaux Tâches et Procédures sont repliés. La liste affiche d’abord les tâches
+- **Vue d’ensemble des tâches** : le bouton en haut de l’écran (le seul : le panneau Tâches
+  n’en a plus) ouvre la vue sur toute la largeur, par-dessus Journal, Tâches et Procédures,
+  même si ces panneaux sont repliés. Leurs boutons de l’en-tête les rouvrent à côté d’elle ;
+  **Écriture** la referme et rend l’entrée. Assez large, la vue range les tâches à gauche et
+  les bilans IA à droite ; sur tablette elle passe seule en tête de page, sur téléphone elle
+  occupe la vue Écriture. La liste affiche d’abord les tâches
   **À faire** ; les boutons **En cours** et **Toutes** changent le filtre. Choisir un projet
   directement sur une ligne affecte la tâche à ce projet (une catégorie devenue incompatible
   est retirée) ; **▶ En cours** la démarre et **Remettre à faire** la remet dans À faire.
   Le formulaire ajoute une tâche et choisit son projet sans quitter la vue. Le schéma
-  d’avancement reste dessous ; cliquer un nœud ouvre la carte habituelle.
+  d’avancement reste dessous ; cliquer un nœud ouvre la carte habituelle dans le panneau
+  Tâches, rouvert à côté de la vue.
 - **✨ Ordre et conseils IA**, dans la vue d’ensemble : choisir tous les projets ou un projet,
   puis **Préparer les conseils**. WorkLogs lit localement les documents liés et montre leurs
   extraits ; décocher ceux à exclure, puis **Demander les conseils à l’IA**. Le service reçoit
@@ -277,11 +282,12 @@ rendu approximatif.
 - **Relier un document** ouvre la liste des entrées disponibles. Choisir une entrée locale ou un onglet Google puis cliquer sur **Relier** ; chaque document lié reste visible sur la carte avec son origine.
 - Cliquer sur le titre d'un document lié l'ouvre au centre. Le bouton ✕ retire seulement l'association, sans supprimer le document. Une même entrée peut fournir le contexte de plusieurs tâches.
 - **✨ IA › Créer une procédure** (pied de carte) fait rédiger par l'IA une procédure à partir de la tâche et de ses documents liés, à relire avant de la créer — voir « Procédures ».
-- **✨ IA › Trouver la doc** (pied de carte) retrouve la note, la procédure ou le fichier du dossier partagé qui aide à faire la tâche. L'IA réglée dans ⚙ Paramètres reçoit le titre et le statut de la tâche, son projet (nom, contexte IA du projet, vocabulaire) et les **titres** de ses documents liés — jamais un contenu — et propose au plus six mots. WorkLogs les cherche dans les titres et le texte de **toutes** les notes et procédures (tous projets, archives comprises) et dans les **noms** des fichiers du dossier partagé (sur le téléphone, par le relais du bureau). « Documents trouvés » liste, dans la carte, au plus huit documents : leur type (Procédure, Note, Partage), leur projet s'il n'est pas celui de la tâche ou leur dossier, et les mots qui les ont trouvés ; les documents déjà liés n'y reviennent pas. **Ouvrir** affiche le document au centre (le filtre passe à son projet) ; **Lier** l'associe à la tâche, comme « ＋ Documents ». Sans dossier partagé (non réglé, relais injoignable), la recherche se fait dans WorkLogs seulement et la liste le dit.
+- **✨ IA › Trouver la doc** (pied de carte) retrouve la note, la procédure ou le fichier du dossier partagé qui aide à faire la tâche. L'IA réglée dans ⚙ Paramètres reçoit le titre et le statut de la tâche, son projet (nom, contexte IA du projet, vocabulaire) et les **titres** de ses documents liés — jamais un contenu — et propose au plus six mots. WorkLogs les cherche dans les titres et le texte de **toutes** les notes et procédures (tous projets, archives comprises) et dans les **noms** des fichiers du dossier partagé (sur le téléphone, par le relais du bureau). « Documents trouvés » liste, dans la carte, au plus huit documents : leur type (Procédure, Note, Partage), leur projet s'il n'est pas celui de la tâche ou leur dossier, et les mots qui les ont trouvés ; les documents déjà liés n'y reviennent pas. Un nom de fichier du partage compte comme un mot trouvé dans un texte, pas dans un titre : à mots égaux, la note ou la procédure de WorkLogs passe devant le fichier. **Ouvrir** affiche le document au centre (le filtre passe à son projet) ; **Lier** l'associe à la tâche, comme « ＋ Documents ». Sans dossier partagé (non réglé, relais injoignable), la recherche se fait dans WorkLogs seulement et la liste le dit.
 
 ## Suivre les avancées avec l’IA
 
-Dans une entrée, cliquer sur **Activer le suivi IA**. Le bloc **Suivi IA**, séparé du texte,
+Dans une entrée, cliquer sur **✨ Activer le suivi IA** (une ligne discrète au-dessus des
+actions de l’entrée). Le bloc **Suivi IA**, séparé du texte,
 présente un bilan, un **état proposé**, les avancées, prochaines actions et blocages. Le même
 bouton sur une carte de tâche analyse ses champs et ses documents explicitement liés. Le
 suivi d’une tâche est aussi visible dans ses entrées liées.
@@ -293,6 +299,11 @@ Décocher conserve le dernier bilan et permet de continuer avec **Actualiser**. 
 coupe la demande en cours ; une prochaine modification pourra relancer le suivi automatique.
 Une version inchangée n’est pas réanalysée à chaque ouverture. Une erreur conserve le bilan
 précédent ; **À actualiser** signale que les sources ont changé.
+
+**Désactiver**, à droite d’Actualiser, coupe le suivi d’une entrée (ou d’une tâche) qui n’en
+a pas besoin : l’automatisme et le bilan partent, le texte ne change pas, et l’élément quitte
+la vue d’ensemble. Le bouton existe aussi sur chaque bilan de la vue d’ensemble, pour faire
+le tri d’un clic. **✨ Activer le suivi IA** le relance avec un nouveau bilan.
 
 Ouvrir **Vue d’ensemble → Bilans et suivis IA** pour retrouver les suivis des entrées et des
 tâches chargées, y compris les tâches terminées. Le titre d’une entrée la rouvre ; celui d’une

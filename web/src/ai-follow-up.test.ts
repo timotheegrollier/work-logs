@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { AiCancelled, AiError, buildFollowUpPrompt, generateFollowUp, MAX_FOLLOW_UP_CHARS, MAX_FOLLOW_UP_DOCUMENTS } from './ai-suggest';
-import type { FollowUpSource } from './lib';
+import { isFollowed, type FollowUpSource } from './lib';
 
 const settings = { endpoint: 'https://ia.example/v1', model: 'test', key: 'cle-test', profile: 'Maintenance des bassins' };
 const document = { id: 'en_1', kind: 'note' as const, title: 'Intervention', entry_date: '2026-11-02', content_md: '- [x] Diagnostic fait.\n- [ ] Remplacer la pompe.\n02/11 : attente de la pièce.', content_json: null, google: false };
@@ -107,4 +107,13 @@ describe('bilan du suivi IA', () => {
     await expect(pending).rejects.toBeInstanceOf(AiCancelled);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+});
+
+test('un suivi s’affiche tant qu’il n’a pas été désactivé en dernier ; une pause sans bilan reste visible', () => {
+  const at = '2026-11-03T10:00:00.000Z';
+  expect(isFollowed({ follow_up: null })).toBe(false);
+  expect(isFollowed({ follow_up: { enabled: true, enabled_at: at, report: null } })).toBe(true);
+  expect(isFollowed({ follow_up: { enabled: false, enabled_at: at, report: null } })).toBe(true);
+  expect(isFollowed({ follow_up: { enabled: false, enabled_at: at, report: null, cleared_at: at } })).toBe(false);
+  expect(isFollowed({ follow_up: { enabled: true, enabled_at: '2026-11-03T11:00:00.000Z', report: null, cleared_at: at } })).toBe(true);
 });

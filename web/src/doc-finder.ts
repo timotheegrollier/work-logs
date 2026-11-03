@@ -22,8 +22,10 @@ const fold = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLo
 
 /**
  * Chaque mot rapporte d'autant plus qu'il est haut dans la liste de l'IA, le
- * double s'il est dans le titre (le partage ne cherche que dans les noms, donc
- * toujours). Documents déjà liés et dossiers écartés ; à égalité, le plus récent.
+ * double s'il est dans le titre d'une note ou d'une procédure. Un nom de fichier
+ * du partage compte comme un texte, pas comme un titre : à mots égaux, WorkLogs
+ * passe devant le partage (§65). Documents déjà liés et dossiers écartés ; à
+ * égalité, le plus récent.
  */
 export function rankFoundDocuments(terms: string[], hits: TermHits[], excludedIds: ReadonlySet<string>): FoundDocument[] {
   const found = new Map<string, FoundDocument>();
@@ -41,7 +43,7 @@ export function rankFoundDocuments(terms: string[], hits: TermHits[], excludedId
       add(entry.id, { kind: entry.kind, entry, terms: [], score: 0 }, term, fold(entry.title).includes(fold(term)) ? 2 * weight : weight);
     }
     for (const file of files) {
-      if (file.type === 'file') add('partage:' + file.path, { kind: 'shared', file, terms: [], score: 0 }, term, 2 * weight);
+      if (file.type === 'file') add('partage:' + file.path, { kind: 'shared', file, terms: [], score: 0 }, term, weight);
     }
   });
   const date = (document: FoundDocument) => (document.kind === 'shared' ? '' : document.entry.updated_at);

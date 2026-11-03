@@ -3408,17 +3408,11 @@ div.google-preserved {
   font-size: 12px;
   color: var(--muted);
 }
-/* Outils du panneau : ✨ IA et la vue d'ensemble, sur une rangée ; la proposition dessous. */
+/* Outils du panneau : ✨ IA sur sa rangée (la vue d'ensemble est dans l'en-tête) ; la proposition dessous. */
 .board-tools {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-/* « Vue d'ensemble » ouverte au centre : le bouton le dit, comme un interrupteur de panneau. */
-.board-tools .ghost.is-on {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: transparent;
 }
 .ai-proposal {
   display: flex;
@@ -5989,6 +5983,10 @@ div.google-preserved {
    terminées sont l'historique replié (une pastille qui les compte, comme un git qui élide
    le passé), chaque tâche ouverte un nœud sur le trait ; celle en cours est pleine, c'est
    la tête de la branche. Rien que des jetons : les deux thèmes suivent. */
+/* Hors téléphone, la vue recouvre les panneaux (§65) : elle prend la largeur, sans lignes interminables. */
+.editor.overview {
+  max-width: 1480px;
+}
 .overview-head {
   display: flex;
   flex-wrap: wrap;
@@ -6248,11 +6246,23 @@ button.lane-name:hover {
   }
 }
 
-/* Vue d'ensemble : gestes quotidiens au centre, sans ouvrir un autre panneau. */
+/* Vue d'ensemble : gestes quotidiens au centre, sans ouvrir un autre panneau. Assez large,
+   les tâches à gauche et les bilans IA à droite ; sinon les bilans sous les tâches. */
+.overview-board {
+  display: grid;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+@container (min-width: 1080px) {
+  .overview-board {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
 .overview-work {
   display: grid;
   gap: 14px;
-  margin-bottom: 24px;
+  min-width: 0;
 }
 .overview-add {
   display: grid;
@@ -6451,14 +6461,30 @@ button.lane-name:hover {
   align-items: center;
   gap: 8px 14px;
 }
-.follow-up-intro {
-  flex: 1 1 250px;
-  min-width: 0;
+/* Entrée sans suivi : une ligne discrète, du même gabarit que « ＋ Créer une tâche liée ». */
+.follow-up.is-inactive:not(.is-compact) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
 }
-.follow-up-intro p {
-  margin-bottom: 0;
+.follow-up.is-inactive:not(.is-compact) > button {
+  font-size: 12.5px;
+  height: 28px;
+  padding: 0 11px;
+  border-color: transparent;
+  border-radius: 99px;
   color: var(--muted);
-  font-size: 12px;
+}
+.follow-up.is-inactive:not(.is-compact) > button:hover:not(:disabled) {
+  color: var(--text);
+}
+/* « Désactiver » à l'écart d'« Actualiser » : couper un suivi ne se fait pas par mégarde. */
+.follow-up-actions > .follow-up-off {
+  margin-left: auto;
+}
+.follow-up-actions > .follow-up-off:hover:not(:disabled) {
+  color: var(--danger);
 }
 .follow-up.is-compact {
   margin: 0;
@@ -6488,12 +6514,18 @@ button.lane-name:hover {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.overview-follow-ups {
+  min-width: 0;
+}
 .overview-follow-ups > h3 {
   margin: 4px 0 10px;
   font-size: 15px;
 }
+/* Des cartes côte à côte quand la colonne est large, une seule colonne sinon. */
 .overview-follow-ups > ul {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+  align-items: start;
   gap: 12px;
   list-style: none;
   margin: 0;
