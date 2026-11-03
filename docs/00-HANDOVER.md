@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Après v0.67.0 — 2026-11-03 — vue d’ensemble pleine largeur, Désactiver le suivi IA (§65)
+## v0.68.0 — 2026-11-03 — vue d’ensemble pleine largeur, Désactiver le suivi IA (§65)
 
 La vue d’ensemble recouvre Journal, Tâches et Procédures hors téléphone, sur 1 480 px au plus :
 tâches à gauche et bilans IA à droite dès 1 080 px de centre, cartes de bilans en dessous
@@ -10,6 +10,13 @@ côté d’elle (un nœud rouvre Tâches), Écriture la referme. Le panneau Tâc
 d’ensemble) ; la fusion ne ressuscite pas un bilan retiré. Sans suivi, l’entrée n’a plus
 qu’une ligne « ✨ Activer le suivi IA ». « Trouver la doc » : un nom de fichier du partage
 compte comme un texte, les notes et procédures passent devant à mots égaux.
+
+« Désactiver » date le retrait (`cleared_at`, facultatif) : la fusion écarte tout bilan
+antérieur, dans les deux sens, et une simple pause n’en écrit pas. La v0.67.0 ignore ce champ
+(un suivi désactivé y paraît en pause sans bilan). `./scripts/check.sh` vert le 2026-11-03 :
+**301 API, 775 front** (dont l’échec attendu), **49 desktop, 32 scripts, 8 Worker, 11 relais,
+94 navigateur et 17 desktop e2e** ; revue adversariale (4 angles, 8 constats corrigés).
+Fusionné par la PR #43 (`fd3b008`, arbre identique à la branche), CI de la PR verte.
 
 ## v0.67.0 — 2026-11-03 — bilans et suivi IA des entrées et tâches (§64)
 
