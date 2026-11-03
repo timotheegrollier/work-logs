@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Lot du 2026-11-02 — bilans et suivi IA des entrées et tâches (§64), prévu pour v0.67.0
+## v0.67.0 — 2026-11-03 — bilans et suivi IA des entrées et tâches (§64)
 
 **Suivi IA**, séparé du texte : état proposé, bilan, avancées, prochaines actions et blocages.
 Activation par entrée ou tâche, premier bilan immédiat, puis actualisation après sauvegarde
@@ -23,9 +23,10 @@ Usage : `03-UTILISATION.md` « Suivre les avancées avec l’IA » ; contrat : `
 
 `./scripts/check.sh` vert le 2026-11-03 : **300 API, 770 front** (et un échec attendu),
 **49 desktop unitaires, 32 scripts, 8 Worker, 11 relais, 94 navigateur et 17 desktop e2e**.
-Tests IA simulés ; captures clair/sombre à 1 440 et 375 px vérifiées. Publication demandée
-par Timo le 2026-11-03 : le manifeste
-est déjà en 0.66.0, la version suivante sera 0.67.0, via le processus de `07-RELEASES.md`.
+Tests IA simulés ; captures clair/sombre à 1 440 et 375 px vérifiées. Fonctionnalité poussée
+sur master dans `eb63619` ; CI Linux `41602128465` verte, installations Mint 22/Fedora 43/44
+comprises, PWA et Cloudflare déployées. Version 0.67.0 préparée à la demande de Timo,
+manifeste et lockfile alignés ; tag et publication via le processus de `07-RELEASES.md`.
 Les régions de suivi portent le titre de leur source : les parcours Playwright ciblent
 désormais les noms exacts des panneaux, pour ne pas confondre « Entrée » ou « Journal » avec
 un bilan dont le titre contient ces mots. Les 26 parcours des trois fichiers en échec passent.
