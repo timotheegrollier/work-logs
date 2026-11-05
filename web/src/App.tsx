@@ -234,20 +234,6 @@ export default function App() {
     revealEditor();
   }, []);
   /**
-   * Une tâche choisie quitte la vue d'ensemble et ouvre sa carte, même terminée.
-   * Une nouvelle séquence permet de revenir deux fois à la même tâche.
-   */
-  const revealTask = useCallback((task: Task) => {
-    ++navigationSequence.current;
-    setOverview(false);
-    setTaskView(null);
-    setShowRight(true);
-    setShowDocumentTasks(true);
-    setTaskReveal((current) => ({ id: task.id, sequence: current.sequence + 1 }));
-    if (isPhone()) goTo('tasks');
-  }, [goTo]);
-
-  /**
    * Ouvre une entrée au centre, en suivant son projet si `project` est donné.
    * Le fichier du partage n'est quitté qu'une fois la garde passée, et le
    * filtre projet ne change qu'après : « Annuler » laisse tout en place.
@@ -268,6 +254,24 @@ export default function App() {
     revealEditor();
     return true;
   }, [projectId]);
+
+  /** Une tâche de la vue d'ensemble ouvre son entrée liée la plus récente.
+   * Les documents sont déjà ordonnés par date par l'API et la PWA ; sans lien,
+   * sa carte reste le point d'entrée, y compris pour une tâche terminée. */
+  const revealTask = useCallback((task: Task) => {
+    const document = task.documents[0];
+    if (document) {
+      void openEntry(document.id, undefined);
+      return;
+    }
+    ++navigationSequence.current;
+    setOverview(false);
+    setTaskView(null);
+    setShowRight(true);
+    setShowDocumentTasks(true);
+    setTaskReveal((current) => ({ id: task.id, sequence: current.sequence + 1 }));
+    if (isPhone()) goTo('tasks');
+  }, [goTo, openEntry]);
 
   /**
    * Le centre suit le filtre : changer de projet referme ce qui appartient au

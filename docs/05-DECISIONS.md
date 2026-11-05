@@ -2883,3 +2883,61 @@ contexte périmé, nouvelle journée, modifications concurrentes API/PWA, sélec
 écriture partielle et réponse perdue, préservation des brouillons. Parcours navigateur pour
 le bilan, les dates corrigées, la sélection et l’ouverture des sources, dont les terminées.
 Captures clair/sombre et téléphone ; recette complète `./scripts/check.sh` en fin de lot.
+
+## 68. Une tâche de la vue d’ensemble ouvre d’abord une de ses entrées — 2026-11-05
+
+**Demande.** Ouvrir une tâche depuis la vue d’ensemble doit afficher une de ses entrées
+associées, plutôt que sa carte.
+
+**Choix.** Le même geste depuis la liste, un nœud, un suivi ou un conseil IA ouvre au centre
+la première entrée de `task.documents` : la plus récente par date d’entrée, puis de
+modification, dans l’ordre commun API/PWA déjà utilisé pour les documents liés. L’ouverture
+passe par la navigation habituelle des entrées : garde de sortie, fermeture de la vue et
+passage à Écriture sur téléphone. Aucun choix supplémentaire ni nouvel état mémorisé.
+Une tâche sans entrée liée conserve l’ouverture de sa carte, même terminée (§67).
+
+**Validation.** Front : entrée la plus récente parmi deux liens et refus de la garde laissant
+la vue ouverte. Navigateur : titre de liste, nœud et titre de suivi d’une tâche terminée aux
+trois tailles ordinateur/tablette/téléphone ; les parcours de repli sans lien restent verts.
+
+## 69. Actions directes et journal repliable dans la vue d’ensemble — 2026-11-05
+
+**Demande.** Archiver, valider ou changer le statut des tâches et des entrées sans quitter la
+vue d’ensemble, et améliorer nettement le design, le layout, le responsive et l’usage mobile.
+
+**Choix.**
+- Chaque ligne de tâche porte un sélecteur **Statut** (à faire, en cours, terminée) et un
+  bouton principal **✓ Valider**, remplacé par **Rouvrir** une fois la tâche terminée. Les
+  cartes de suivi IA portent les mêmes contrôles. Le sélecteur remplace les deux boutons de
+  sens opposé : l’état courant se lit et se change au même endroit.
+- Valider passe par la route de déplacement existante : la tâche est terminée et ses
+  documents liés sont archivés, comme depuis sa carte. Rouvrir ne désarchive rien ;
+  l’archivage reste un geste distinct, réversible depuis le journal ou la carte de suivi.
+- Le journal de la vue est un `<details>` replié par défaut : titre, date, projet, état
+  d’archive, recherche titre/projet et filtre **Actives / Archivées / Toutes**. Chaque entrée
+  porte **Archiver** ou **Désarchiver**. Une entrée suivie garde ses actions dans **Suivis
+  IA** et l’archivage ne désactive pas son suivi.
+- Pendant une action, les contrôles concernés sont désactivés et la zone de statut annonce
+  l’enregistrement puis le résultat. Un refus conserve la vue, l’élément et le focus le plus
+  proche possible, et affiche l’erreur. Une réponse perdue après écriture relit l’état sans
+  rejouer la mutation ; un élément qui quitte le filtre courant rend le focus au titre de la
+  section.
+- Mise en page : largeur maximale ramenée à 1 320 px, titres fluides, hiérarchie des cartes
+  et espacements revus, cibles tactiles de 44 px, contrôles empilés sous 550 px de conteneur,
+  journal et filtres pleine largeur sur téléphone, sans débordement horizontal de 320 à
+  1 440 px ni en paysage 800 × 390.
+
+**Pourquoi.** Les gestes quotidiens — valider une tâche, ranger une note — ne doivent exiger
+ni l’ouverture de chaque carte ni un changement d’écran. Un sélecteur unique rend le statut
+lisible et couvre le retour en arrière, absent des anciens boutons. Séparer validation et
+désarchivage évite qu’une réouverture ressuscite silencieusement des documents rangés.
+
+**Écartés.** Un bouton par transition de statut (redondant avec le sélecteur), désarchiver
+automatiquement à la réouverture, un journal toujours déplié qui noierait la liste des
+tâches, un nouvel endpoint ou une nouvelle dépendance.
+
+**Validation.** Front : validation et archivage des documents liés, réouverture sans
+désarchivage, archivage/désarchivage d’une entrée libre et d’une entrée suivie, refus
+conservant valeur et focus, réponse perdue relue sans rejeu. Navigateur : cinq tailles de
+320 px à 1 440 px et paysage, cibles de 44 px, absence de débordement, captures clair/sombre ;
+recette complète `./scripts/check.sh`.

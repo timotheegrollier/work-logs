@@ -235,12 +235,20 @@ rendu approximatif.
   **Écriture** la referme et rend l’entrée. Les actions IA et les suivis viennent en tête,
   puis les tâches dans une seule colonne ; sur tablette la vue passe seule en tête de page,
   sur téléphone elle occupe la vue Écriture. La liste affiche d’abord les tâches
-  **À faire** ; les boutons **En cours** et **Toutes** changent le filtre. Choisir un projet
-  directement sur une ligne affecte la tâche à ce projet (une catégorie devenue incompatible
-  est retirée) ; **▶ En cours** la démarre et **Remettre à faire** la remet dans À faire.
-  Le formulaire ajoute une tâche et choisit son projet sans quitter la vue. Le schéma
-  d’avancement reste dessous ; cliquer un titre de tâche ou un nœud ferme la vue et ouvre sa
-  carte dans le panneau Tâches, même terminée. Les brouillons de cartes restent disponibles.
+  **À faire** ; les boutons **En cours**, **Ouvertes** et **Terminées** changent le filtre.
+  Choisir un projet directement sur une ligne affecte la tâche à ce projet (une catégorie
+  devenue incompatible est retirée). Le sélecteur **Statut** la passe à faire, en cours ou
+  terminée ; **✓ Valider** la termine et archive ses documents liés, **Rouvrir** la remet à
+  faire sans désarchiver ces documents. Le formulaire ajoute une tâche et choisit son projet
+  sans quitter la vue. Le schéma d’avancement reste dessous ; cliquer un titre de tâche ou
+  un nœud ferme la vue et ouvre l’entrée liée la plus récente au centre, même pour une tâche
+  terminée. Sans entrée liée, la carte de la tâche s’ouvre. Les brouillons de cartes restent
+  disponibles.
+- **Entrées du journal**, sous les tâches de la vue d’ensemble : le panneau replié liste les
+  notes avec une recherche par titre ou projet et un filtre **Actives / Archivées / Toutes**.
+  **Archiver** retire une note traitée du journal actif ; **Désarchiver** la ramène. Le même
+  geste est proposé sur une entrée suivie dans **Suivis IA**, sans couper son suivi. Une
+  erreur laisse la vue ouverte, annonce le refus et garde le contrôle à portée de main.
 - **Bilan du jour**, en tête de la vue d’ensemble : un clic synthétise les bilans de suivi
   enregistrés en avancées attestées, blocages et prochaines actions. Les suivis sans bilan,
   anciens ou à actualiser sont signalés dans les limites. Une date de génération ne prouve
@@ -320,8 +328,9 @@ le tri d’un clic. **✨ Activer le suivi IA** le relance avec un nouveau bilan
 
 Ouvrir **Vue d’ensemble** pour retrouver les suivis des entrées et des tâches chargées, y
 compris les tâches terminées : **Suivis IA** apparaît en tête dès qu’un suivi existe et
-**Voir les suivis** y mène directement. Cliquer un titre ferme la vue et affiche l’entrée ou
-la carte de tâche ; les détails restent dépliables sur les cartes compactes.
+**Voir les suivis** y mène directement. Cliquer un titre ferme la vue et affiche l’entrée ;
+pour une tâche, c’est son entrée liée la plus récente, ou sa carte si elle n’a aucun lien.
+Les détails restent dépliables sur les cartes compactes.
 **+ Ajouter au suivi IA** ouvre une sélection commune : rechercher une tâche, une entrée ou
 un projet, cocher les éléments puis **Suivre la sélection**. Les bilans se préparent
 automatiquement. Une note déjà incluse dans une tâche suivie est signalée pour éviter un

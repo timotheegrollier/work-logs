@@ -1,5 +1,34 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Ajustement du 2026-11-05 — actions directes, journal et refonte de la vue (§69)
+
+La vue d’ensemble traite maintenant les tâches et les notes sur place. Chaque ligne de tâche
+porte un sélecteur **Statut** (à faire, en cours, terminée) et **✓ Valider** ou **Rouvrir** ;
+les cartes de suivi IA offrent les mêmes gestes. Valider termine la tâche et archive ses
+documents liés ; rouvrir ne les désarchive pas. Le journal est un panneau replié avec
+recherche et filtre **Actives / Archivées / Toutes**, et chaque entrée s’archive ou se
+désarchive, y compris une entrée suivie. Un refus garde la vue, la valeur et un point de
+focus accessible ; une réponse perdue relit l’état sans rejouer la mutation.
+
+La mise en page a été resserrée : 1 320 px au plus, titres fluides, hiérarchie et espacements
+revus, cibles de 44 px, actions empilées sous 550 px de conteneur, journal et filtres pleine
+largeur sur téléphone. Vérifié sans débordement de 320 à 1 440 px et en paysage 800 × 390,
+en clair et en sombre. Aucun changement d’API, de schéma ou de dépendance. Pourquoi : §69 ;
+gestes : `03-UTILISATION.md`. Le test préexistant de liaison de dossier partagé, sensible à
+la charge, attend désormais cinq secondes au lieu d’une ; aucun comportement applicatif changé.
+`./scripts/check.sh` vert : **306 API, 812 front** (dont l’échec attendu), **49 desktop
+unitaires, 32 scripts, 8 Worker, 11 relais, 106 navigateur et 17 desktop e2e**.
+
+## Ajustement du 2026-11-05 — une tâche de la vue ouvre son entrée liée (§68)
+
+Depuis la liste, un nœud, un suivi ou un conseil IA, ouvrir une tâche ferme la vue d’ensemble
+et affiche au centre son entrée liée la plus récente (ordre des documents API/PWA existant).
+Sans entrée liée, la carte de la tâche reste le repli. La garde de sortie et la navigation
+Écriture du téléphone sont conservées. Aucun changement d’API, de schéma ou de dépendance.
+Tests front et navigateur couvrent plusieurs liens, la tâche terminée et le repli sans lien.
+`./scripts/check.sh` vert : **306 API, 809 front** (et un échec attendu), **49 desktop
+unitaires, 32 scripts, 8 Worker, 11 relais, 100 navigateur et 17 desktop e2e**.
+
 ## Lot du 2026-11-05 — bilan du jour, replanification et accès aux suivis (§67)
 
 En tête de la vue d’ensemble : **Bilan du jour** synthétise les bilans des suivis enregistrés,

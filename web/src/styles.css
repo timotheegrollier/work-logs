@@ -5985,14 +5985,15 @@ div.google-preserved {
    la tête de la branche. Rien que des jetons : les deux thèmes suivent. */
 /* Hors téléphone, la vue recouvre les panneaux (§65) : elle prend la largeur, sans lignes interminables. */
 .editor.overview {
-  max-width: 1480px;
+  max-width: 1320px;
+  padding-bottom: 32px;
 }
 .overview-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 2px 16px;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 .overview-head-title {
   grid-column: 1;
@@ -6002,8 +6003,8 @@ div.google-preserved {
 }
 .overview-head h2 {
   margin: 0;
-  font-size: 22px;
-  letter-spacing: -0.015em;
+  font-size: clamp(22px, 2vw, 28px);
+  letter-spacing: -0.025em;
 }
 .overview-head .ai-hint {
   margin: 0;
@@ -6284,14 +6285,19 @@ button.lane-name:hover {
 /* Vue d'ensemble : gestes quotidiens au centre, sans ouvrir un autre panneau. Une seule
    colonne : créer, traiter, puis les bilans IA seulement quand il y en a. */
 .overview-work {
+  --overview-gap: 20px;
   display: grid;
-  gap: 14px;
+  gap: var(--overview-gap);
   min-width: 0;
   margin-bottom: 24px;
 }
 /* Les bilans d'abord : deux actions directes, puis les éléments réellement suivis. */
 .overview-ai {
   min-width: 0;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: 16px;
+  background: linear-gradient(125deg, color-mix(in srgb, var(--accent-soft) 58%, var(--surface)), var(--surface) 72%);
 }
 .overview-ai-actions,
 .overview-ai-result-head,
@@ -6303,13 +6309,23 @@ button.lane-name:hover {
 }
 .overview-ai-actions > button,
 .overview-follow-picker > button {
-  min-height: 40px;
+  min-height: 44px;
+  padding-inline: 16px;
+}
+.overview-ai-actions > .task-primary {
+  font-weight: 650;
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--accent-solid) 18%, transparent);
 }
 .overview-ai-follow-link {
   margin-left: auto;
 }
 .overview-ai > .ai-hint {
-  margin: 8px 0 0;
+  margin: 12px 0 0;
+  line-height: 1.5;
+}
+.overview-ai > .overview-ai-source {
+  margin-top: 6px;
+  font-size: 11px;
 }
 .overview-ai-result-head {
   justify-content: space-between;
@@ -6327,15 +6343,16 @@ button.lane-name:hover {
 .overview-daily,
 .overview-schedule,
 .overview-follow-selection {
-  margin-top: 12px;
-  padding: 16px;
+  margin-top: 16px;
+  padding: 18px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
   overflow-wrap: anywhere;
 }
 .overview-daily {
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  box-shadow: 0 3px 16px color-mix(in srgb, var(--accent) 5%, transparent);
 }
 .overview-daily > p {
   line-height: 1.6;
@@ -6378,7 +6395,7 @@ button.lane-name:hover {
 }
 .overview-schedule-task {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
 }
 .overview-schedule-task > span {
@@ -6403,6 +6420,7 @@ button.lane-name:hover {
 .overview-schedule-fields select {
   min-width: 0;
   max-width: 100%;
+  min-height: 44px;
 }
 .overview-schedule-reason {
   margin: 8px 0 0 24px;
@@ -6428,7 +6446,8 @@ button.lane-name:hover {
   display: flex;
   align-items: start;
   gap: 10px;
-  padding: 10px 4px;
+  padding: 12px 6px;
+  min-height: 48px;
   border-bottom: 1px solid var(--line-soft);
   cursor: pointer;
 }
@@ -6472,10 +6491,7 @@ button.lane-name:hover {
   grid-template-columns: minmax(0, 1fr) minmax(110px, 180px) auto;
   align-items: center;
   gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  background: var(--surface);
+  padding: 0;
 }
 .overview-add input,
 .overview-add select,
@@ -6487,7 +6503,7 @@ button.lane-name:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
+  gap: 12px 16px;
 }
 .overview-list-head h3,
 .overview-progress-title {
@@ -6500,23 +6516,38 @@ button.lane-name:hover {
 .overview-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.overview-filters > button {
+  min-height: 36px;
+  border-radius: 8px;
+  padding: 6px 11px;
+  white-space: nowrap;
+}
+.overview-filters > button.is-on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgb(0 0 0 / .08);
 }
 .overview-tasks {
   list-style: none;
   display: grid;
-  gap: 6px;
+  gap: 10px;
   margin: 0;
   padding: 0;
 }
 .overview-task {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(110px, 180px) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  padding: 9px 12px;
+  padding: 16px;
   border: 1px solid var(--line-soft);
-  border-radius: 10px;
+  border-radius: 14px;
   background: var(--surface);
 }
 .overview-task.is-doing {
@@ -6528,7 +6559,7 @@ button.lane-name:hover {
 .overview-task-main {
   display: grid;
   min-width: 0;
-  gap: 3px;
+  gap: 7px;
 }
 .overview-task-title {
   min-width: 0;
@@ -6537,6 +6568,7 @@ button.lane-name:hover {
   font-weight: 600;
   text-align: left;
   overflow-wrap: anywhere;
+  line-height: 1.45;
 }
 .overview-task-title:hover {
   color: var(--accent);
@@ -6546,7 +6578,7 @@ button.lane-name:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 3px 8px;
+  gap: 5px 10px;
   color: var(--muted);
   font-size: 12px;
 }
@@ -6572,6 +6604,183 @@ button.lane-name:hover {
 .overview-task-follow {
   color: var(--accent);
   white-space: nowrap;
+}
+.overview-task.is-done {
+  border-color: color-mix(in srgb, var(--ok) 25%, var(--line));
+}
+.overview-task-priority.is-high {
+  color: var(--danger);
+  font-weight: 600;
+}
+.overview-task-priority.is-low {
+  color: var(--muted);
+}
+.overview-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+.overview-item-actions button,
+.overview-item-actions select {
+  min-height: 44px;
+  min-width: 88px;
+}
+.overview-item-status {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.overview-item-status select {
+  width: 100%;
+  font-size: 13px;
+}
+.overview-task-validate {
+  min-width: 100px;
+  font-weight: 600;
+  background: var(--ok-soft);
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 30%, var(--line));
+}
+.overview-task-details {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+}
+.overview-task-details > summary {
+  width: fit-content;
+  min-width: 70px;
+  min-height: 36px;
+  align-content: center;
+  cursor: pointer;
+}
+.overview-task-details[open] > summary {
+  margin-bottom: 8px;
+}
+.overview-task-details label {
+  display: grid;
+  gap: 5px;
+  max-width: 260px;
+}
+.overview-task-details select {
+  min-height: 44px;
+  min-width: 0;
+  width: 100%;
+}
+.overview-action-feedback {
+  position: sticky;
+  top: 8px;
+  z-index: 12;
+  align-self: start;
+  border-radius: 10px;
+}
+.overview-action-feedback:has(.overview-status:empty):not(:has(.error)) {
+  margin-block: calc(var(--overview-gap) / -2);
+}
+.overview-action-feedback .overview-status:not(:empty) {
+  display: block;
+  max-width: none;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ok-soft);
+  color: var(--ok);
+  font-size: 13px;
+  box-shadow: var(--shadow);
+}
+.overview-action-feedback .overview-status.is-busy {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.overview-action-feedback .error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  background: var(--danger-soft);
+  box-shadow: var(--shadow);
+}
+.overview-journal,
+.overview-more-advice {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.overview-journal > summary,
+.overview-more-advice > summary {
+  min-height: 52px;
+  padding: 15px 16px;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+}
+.overview-journal[open] > summary,
+.overview-more-advice[open] > summary {
+  border-bottom: 1px solid var(--line-soft);
+}
+.overview-journal-head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.overview-journal-head > p {
+  margin: 0;
+}
+.overview-journal-head input {
+  flex: 1 1 240px;
+  min-width: 0;
+  min-height: 44px;
+}
+.overview-journal-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+  gap: 8px;
+}
+.overview-journal-filters select {
+  min-height: 44px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 12px;
+}
+.overview-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0 16px 6px;
+}
+.overview-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.overview-entry-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.overview-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.overview-more-advice .overview-advice {
+  margin: 0;
+  border: 0;
+  padding: 16px;
 }
 .overview-progress-title {
   margin: 0 0 10px;
@@ -6771,23 +6980,45 @@ button.lane-name:hover {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
   align-items: start;
-  gap: 12px;
+  gap: 16px;
   list-style: none;
   margin: 0;
   padding: 0;
 }
 .overview-follow-ups > ul > li {
   min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.overview-follow-ups .follow-up {
+  margin: 14px 0 0;
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: transparent;
+}
+.overview-follow-ups .overview-item-actions {
+  margin-top: 12px;
+}
+.overview-follow-ups .follow-up button,
+.overview-follow-ups .follow-up-details > summary {
+  min-height: 44px;
+  align-content: center;
 }
 .overview-follow-up-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+  display: grid;
+  gap: 5px;
   margin-bottom: 5px;
 }
 .overview-follow-up-title > span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
 }
 @media (pointer: coarse) {
   .follow-up button,
@@ -6800,6 +7031,112 @@ button.lane-name:hover {
   }
 }
 @container (max-width: 550px) {
+  .editor.overview {
+    padding-inline: 16px;
+  }
+  .overview-head {
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .overview-head .ai-hint {
+    line-height: 1.6;
+    max-width: 28ch;
+  }
+  .overview-head-actions button {
+    min-height: 44px;
+  }
+  .overview-work {
+    --overview-gap: 16px;
+  }
+  .overview-action-feedback {
+    top: 72px;
+  }
+  .overview-ai {
+    padding: 14px;
+    border-radius: 14px;
+  }
+  .overview-ai-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .overview-ai-actions > button {
+    min-height: 46px;
+    width: 100%;
+    padding-inline: 10px;
+    white-space: normal;
+    line-height: 1.4;
+  }
+  .overview-ai-actions > .task-primary,
+  .overview-ai-actions > button:last-child:nth-child(2) {
+    grid-column: 1 / -1;
+  }
+  .overview-ai-actions > .overview-ai-follow-link {
+    min-height: 44px;
+  }
+  .overview-ai > .overview-ai-source {
+    line-height: 1.5;
+  }
+  .overview-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .overview-filters > button {
+    min-height: 44px;
+    padding: 7px;
+  }
+  .overview-item-actions {
+    width: 100%;
+  }
+  .overview-task-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .overview-item-actions button,
+  .overview-item-actions select {
+    min-width: 0;
+    width: 100%;
+  }
+  .overview-task {
+    padding: 14px;
+  }
+  .overview-task > .overview-task-actions {
+    grid-column: 1 / -1;
+  }
+  .overview-task-details > summary {
+    min-height: 44px;
+  }
+  .overview-follow-ups > ul > li {
+    padding: 14px;
+  }
+  .overview-journal-head {
+    padding: 12px;
+  }
+  .overview-journal-head input {
+    flex-basis: 100%;
+    width: 100%;
+  }
+  .overview-journal-filters {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .overview-journal-filters select {
+    width: 100%;
+  }
+  .overview-entries {
+    padding-inline: 12px;
+  }
+  .overview-entry {
+    gap: 10px;
+  }
+  .overview-entry .overview-entry-actions {
+    width: auto;
+  }
+  .overview-entry-actions > button {
+    min-width: 88px;
+  }
   .overview-status {
     width: 100%;
     margin-left: 0;

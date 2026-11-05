@@ -2886,6 +2886,38 @@ describe('vue d’ensemble des projets', () => {
     expect(localStorage.getItem('worklogs-show-right')).toBe('1');
   });
 
+  test('ouvrir une tâche depuis la vue affiche son entrée liée la plus récente et respecte la garde de sortie', async () => {
+    seedData(api.db, {
+      entries: [
+        { id: 'en_initial', title: 'Entrée initiale', date: '2026-11-05' },
+        { id: 'en_old', title: 'Ancien diagnostic', date: '2026-11-01' },
+        { id: 'en_recent', title: 'Dernières avancées', date: '2026-11-04' },
+      ],
+      tasks: [{ id: 'tk_linked', title: 'Contrôler la pompe' }],
+    });
+    // L'ordre des liens ne choisit pas l'entrée : la date la plus récente gagne.
+    const link = api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)');
+    for (const id of ['en_recent', 'en_old']) link.run('tk_linked', id, new Date().toISOString());
+    render(<App />);
+    await screen.findByDisplayValue('Entrée initiale');
+    fireEvent.click(toggle());
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
+    const task = within(within(overview).getByRole('list', { name: 'Liste des tâches de la vue d’ensemble' })).getByRole('button', { name: 'Contrôler la pompe' });
+    const guard = vi.fn(async () => false);
+    const removeGuard = setLeaveGuard(guard);
+    try {
+      await act(async () => fireEvent.click(task));
+      expect(guard).toHaveBeenCalledOnce();
+      expect(overview).toBeInTheDocument();
+    } finally {
+      removeGuard();
+    }
+    fireEvent.click(task);
+    expect(await screen.findByDisplayValue('Dernières avancées')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument();
+    expect(within(board()).queryByRole('textbox', { name: 'Titre de la tâche' })).not.toBeInTheDocument();
+  });
+
   test('la liste permet de créer, affecter au projet et démarrer une tâche sans quitter la vue', async () => {
     seedData(api.db, {
       projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Bravo' }],
@@ -2901,20 +2933,21 @@ describe('vue d’ensemble des projets', () => {
     // La vue d'ensemble ne propose plus d'activer un suivi IA sur chaque ligne, ni de bloc vide.
     expect(within(list()).queryByRole('button', { name: /Activer le suivi IA/ })).not.toBeInTheDocument();
     expect(within(overview).queryByRole('region', { name: 'Bilans et suivis IA' })).not.toBeInTheDocument();
+    fireEvent.click(within(overview).getByLabelText('Détails de Préparer'));
     fireEvent.change(within(overview).getByLabelText('Projet de Préparer'), { target: { value: 'pr_b' } });
     await waitFor(() => expect(row(api.db, 'SELECT project_id FROM tasks WHERE id=?', 'tk_todo').project_id).toBe('pr_b'));
     await waitFor(() => expect(within(overview).getByLabelText('Projet de Préparer')).toHaveValue('pr_b'));
     await waitFor(() => expect(within(overview).getByRole('status')).toHaveTextContent('Projet mis à jour.'));
-    fireEvent.click(within(overview).getByRole('button', { name: 'Mettre en cours Préparer' }));
+    fireEvent.change(within(overview).getByLabelText('Statut de Préparer'), { target: { value: 'doing' } });
     await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_todo').status).toBe('doing'));
-    await waitFor(() => expect(within(overview).queryByRole('button', { name: 'Mettre en cours Préparer' })).not.toBeInTheDocument());
+    await waitFor(() => expect(within(overview).queryByLabelText('Statut de Préparer')).not.toBeInTheDocument());
     await waitFor(() => expect(within(overview).getByRole('status')).toHaveTextContent('« Préparer » passée en cours.'));
     fireEvent.click(within(overview).getByRole('button', { name: /En cours 2/ }));
-    fireEvent.click(await within(overview).findByRole('button', { name: 'Remettre à faire Préparer' }));
+    fireEvent.change(await within(overview).findByLabelText('Statut de Préparer'), { target: { value: 'todo' } });
     await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_todo').status).toBe('todo'));
-    await waitFor(() => expect(within(overview).queryByRole('button', { name: 'Remettre à faire Préparer' })).not.toBeInTheDocument());
+    await waitFor(() => expect(within(overview).queryByLabelText('Statut de Préparer')).not.toBeInTheDocument());
     fireEvent.click(within(overview).getByRole('button', { name: /À faire 1/ }));
-    expect(await within(overview).findByRole('button', { name: 'Mettre en cours Préparer' })).toBeInTheDocument();
+    expect(await within(overview).findByLabelText('Statut de Préparer')).toHaveValue('todo');
     fireEvent.change(within(overview).getByLabelText('Nouvelle tâche dans la vue d’ensemble'), { target: { value: 'Commander' } });
     fireEvent.change(within(overview).getByLabelText('Projet de la nouvelle tâche'), { target: { value: 'pr_a' } });
     fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter' }));
@@ -2938,6 +2971,107 @@ describe('vue d’ensemble des projets', () => {
     expect(input).toHaveValue('À conserver');
   });
 
+  test('valider depuis la vue termine la tâche et archive ses documents ; rouvrir conserve les archives', async () => {
+    const backend = { timeout: 5000 };
+    seedData(api.db, {
+      entries: [{ id: 'en_note', title: 'Intervention réalisée' }, { id: 'en_proc', title: 'Mode opératoire', kind: 'procedure' }],
+      tasks: [{ id: 'tk_finish', title: 'Finir le contrôle' }],
+    });
+    const link = api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)');
+    for (const id of ['en_note', 'en_proc']) link.run('tk_finish', id, new Date().toISOString());
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
+    const validate = within(overview).getByRole('button', { name: 'Valider la tâche Finir le contrôle' });
+    validate.focus();
+    fireEvent.click(validate);
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_finish').status).toBe('done'), backend);
+    await waitFor(() => expect(within(overview).queryByLabelText('Statut de Finir le contrôle')).not.toBeInTheDocument(), backend);
+    expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_note').archived).toBe(1);
+    expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_proc').archived).toBe(1);
+    await waitFor(() => expect(within(overview).getByRole('heading', { name: 'Tâches' })).toHaveFocus(), backend);
+    expect(overview.querySelector('.overview-status')).toHaveTextContent(/validée|terminée/i);
+
+    fireEvent.click(within(overview).getByRole('button', { name: /^Terminées/ }));
+    fireEvent.click(await within(overview).findByRole('button', { name: 'Rouvrir la tâche Finir le contrôle' }, backend));
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_finish').status).toBe('todo'), backend);
+    await waitFor(() => expect(within(overview).queryByRole('button', { name: 'Rouvrir la tâche Finir le contrôle' })).not.toBeInTheDocument(), backend);
+    expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_note').archived).toBe(1);
+    fireEvent.click(within(overview).getByRole('button', { name: /^À faire/ }));
+    fireEvent.change(await within(overview).findByLabelText('Statut de Finir le contrôle', {}, backend), { target: { value: 'doing' } });
+    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_finish').status).toBe('doing'), backend);
+    expect(screen.getByRole('region', { name: 'Vue d’ensemble des projets' })).toBeInTheDocument();
+  }, 20_000);
+
+  test('archive une entrée sans suivi dans le journal de la vue et désarchive une entrée suivie sans retirer son suivi', async () => {
+    const backend = { timeout: 5000 };
+    seedData(api.db, { entries: [{ id: 'en_free', title: 'Note à classer' }, { id: 'en_followed', title: 'Note suivie archivée' }] });
+    api.db.prepare('UPDATE entries SET archived=1 WHERE id=?').run('en_followed');
+    await clientApi.saveFollowUp('entry', 'en_followed', { enabled: false });
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
+    const journalToggle = within(overview).getByText(/^Entrées du journal \(/);
+    fireEvent.click(journalToggle);
+    const entries = within(overview).getByRole('region', { name: 'Entrées du journal' });
+    const archive = within(entries).getByRole('button', { name: 'Archiver l’entrée Note à classer' });
+    archive.focus();
+    fireEvent.click(archive);
+    await waitFor(() => expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_free').archived).toBe(1), backend);
+    await waitFor(() => expect(within(entries).queryByRole('button', { name: 'Archiver l’entrée Note à classer' })).not.toBeInTheDocument(), backend);
+    await waitFor(() => expect(journalToggle).toHaveFocus(), backend);
+    expect(row(api.db, 'SELECT follow_up FROM entries WHERE id=?', 'en_free').follow_up).toBeNull();
+    const reports = within(overview).getByRole('region', { name: 'Bilans et suivis IA' });
+    fireEvent.click(within(reports).getByRole('button', { name: 'Désarchiver l’entrée Note suivie archivée' }));
+    await waitFor(() => expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_followed').archived).toBe(0), backend);
+    await waitFor(() => expect(within(reports).getByRole('button', { name: 'Archiver l’entrée Note suivie archivée' })).toBeInTheDocument(), backend);
+    expect(within(reports).getByRole('region', { name: 'Suivi IA de Note suivie archivée' })).toBeInTheDocument();
+    fireEvent.change(within(entries).getByLabelText('Afficher les entrées du journal'), { target: { value: 'archived' } });
+    expect(await within(entries).findByRole('button', { name: 'Désarchiver l’entrée Note à classer' }, backend)).toBeInTheDocument();
+    expect(within(entries).queryByRole('button', { name: 'Archiver l’entrée Note suivie archivée' })).not.toBeInTheDocument();
+  }, 20_000);
+
+  test('un statut ou un archivage refusé conserve la source et annonce l’erreur sans quitter la vue', async () => {
+    const backend = { timeout: 5000 };
+    seedData(api.db, { entries: [{ id: 'en_keep', title: 'Note à garder' }], tasks: [{ id: 'tk_keep', title: 'Contrôle à garder' }] });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_keep', 'en_keep', new Date().toISOString());
+    const originalMove = clientApi.moveTask.bind(clientApi);
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
+    vi.spyOn(clientApi, 'moveTask').mockRejectedValueOnce(new Error('Changement de statut refusé'));
+    const status = within(overview).getByLabelText('Statut de Contrôle à garder');
+    status.focus();
+    fireEvent.change(status, { target: { value: 'doing' } });
+    expect(await within(overview).findByRole('alert', {}, backend)).toHaveTextContent('Changement de statut refusé');
+    expect(status).toHaveValue('todo');
+    expect(status).toHaveFocus();
+    expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_keep').status).toBe('todo');
+    fireEvent.click(within(overview).getByText(/^Entrées du journal \(/));
+    const entries = within(overview).getByRole('region', { name: 'Entrées du journal' });
+    vi.spyOn(clientApi, 'updateEntry').mockRejectedValueOnce(new Error('Archivage refusé'));
+    const archive = within(entries).getByRole('button', { name: 'Archiver l’entrée Note à garder' });
+    archive.focus();
+    fireEvent.click(archive);
+    expect(await within(overview).findByRole('alert', {}, backend)).toHaveTextContent('Archivage refusé');
+    expect(archive).toBeInTheDocument();
+    expect(archive).toHaveFocus();
+    expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_keep').archived).toBe(0);
+    expect(screen.getByRole('region', { name: 'Vue d’ensemble des projets' })).toBeInTheDocument();
+    // Une réponse perdue après écriture doit relire le statut réel, sans rejouer
+    // la validation ni laisser la tâche comme si le serveur l'avait refusée.
+    vi.mocked(clientApi.moveTask).mockImplementationOnce(async (...args) => {
+      await originalMove(...args);
+      throw new Error('Réponse perdue après validation');
+    });
+    fireEvent.click(within(overview).getByRole('button', { name: 'Valider la tâche Contrôle à garder' }));
+    expect(await within(overview).findByRole('alert', {}, backend)).toHaveTextContent('Réponse perdue après validation');
+    await waitFor(() => expect(within(overview).queryByLabelText('Statut de Contrôle à garder')).not.toBeInTheDocument(), backend);
+    expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_keep').status).toBe('done');
+    expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_keep').archived).toBe(1);
+    expect(clientApi.moveTask).toHaveBeenCalledTimes(2);
+  }, 20_000);
+
   test('la vue prévient et bloque l’IA si des tâches ouvertes dépassent la limite du serveur', async () => {
     seedData(api.db, { tasks: [
       ...Array.from({ length: 500 }, (_, i) => ({ id: `done_${i}`, title: `Terminée ${i}`, status: 'done' })),
@@ -2948,6 +3082,7 @@ describe('vue d’ensemble des projets', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
     const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
     expect(within(overview).getByText(/1 tâche ouverte.*manquante/i)).toBeInTheDocument();
+    fireEvent.click(within(overview).getByText('Conseils détaillés avec l’IA'));
     const advice = within(overview).getByRole('region', { name: 'Conseils IA pour les tâches' });
     expect(within(advice).getByRole('button', { name: 'Préparer les conseils' })).toBeDisabled();
     expect(within(advice).getByText(/1 tâche ouverte manque/)).toBeInTheDocument();
@@ -2960,6 +3095,7 @@ describe('vue d’ensemble des projets', () => {
     render(<App />);
     await within(board()).findByRole('button', { name: 'Tâche 1' });
     fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    fireEvent.click(await screen.findByText('Conseils détaillés avec l’IA'));
     const advice = await screen.findByRole('region', { name: 'Conseils IA pour les tâches' });
     expect(within(advice).getByRole('button', { name: 'Préparer les conseils' })).toBeDisabled();
     fireEvent.click(within(advice).getByRole('button', { name: 'Sélectionner les 60 premières' }));
@@ -2989,11 +3125,12 @@ describe('vue d’ensemble des projets', () => {
     await within(board()).findByRole('button', { name: 'Préparer la pompe' }, backend);
     fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
     const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
+    fireEvent.click(within(overview).getByText('Conseils détaillés avec l’IA'));
     const advice = within(overview).getByRole('region', { name: 'Conseils IA pour les tâches' });
     fireEvent.click(within(advice).getByRole('button', { name: 'Préparer les conseils' }));
     fireEvent.click(await within(advice).findByRole('button', { name: 'Demander les conseils à l’IA' }, backend));
     await waitFor(() => expect(called).toBe(true), backend);
-    fireEvent.click(within(overview).getByRole('button', { name: 'Mettre en cours Préparer la pompe' }));
+    fireEvent.change(within(overview).getByLabelText('Statut de Préparer la pompe'), { target: { value: 'doing' } });
     await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_a').status).toBe('doing'), backend);
     // L'état rejoué après le changement de statut ne coupe plus la demande en vol.
     await within(board()).findByRole('heading', { name: 'En cours 1' }, backend);
@@ -3063,6 +3200,7 @@ describe('vue d’ensemble des projets', () => {
     render(<App />);
     await within(board()).findByRole('button', { name: 'Vérifier pompe' });
     fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    fireEvent.click(await screen.findByText('Conseils détaillés avec l’IA'));
     const advice = await screen.findByRole('region', { name: 'Conseils IA pour les tâches' });
     fireEvent.click(within(advice).getByRole('button', { name: 'Préparer les conseils' }));
     const excluded = await within(advice).findByRole('checkbox', { name: 'Note : Note exclue' });
@@ -4267,7 +4405,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     expect((await tree()).getByRole('button', { name: /^Ouvrir autre\.md/ })).toBeInTheDocument();
     fireEvent.click(within(filters()).getByRole('button', { name: /Piscine/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine à un dossier…' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine au dossier Piscine' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine au dossier Piscine' }, { timeout: 5000 }));
     const piscine = within(await screen.findByRole('list', { name: 'Contenu de Piscine' }, partage));
     expect(piscine.getByRole('button', { name: /^Ouvrir consignes\.md/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Ouvrir autre\.md/ })).not.toBeInTheDocument();
@@ -4283,7 +4421,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     render(<App />);
     fireEvent.click(await within(filters()).findByRole('button', { name: /Piscine/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine à un dossier…' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine au dossier Piscine' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine au dossier Piscine' }, { timeout: 5000 }));
     expect(await screen.findByRole('button', { name: /^Ouvrir consignes\.md/ })).toBeInTheDocument();
     expect(api.db.prepare("SELECT shared_dir FROM projects WHERE id='pr_p'").get()).toEqual({ shared_dir: 'Piscine' });
     expect(api.db.prepare('SELECT COUNT(*) n FROM shared_project_folders').get()).toEqual({ n: 0 });
