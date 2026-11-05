@@ -117,6 +117,10 @@ Trois circuits selon le format installé (détecté par `installKind()` dans
 
 Le workflow **« Dépôts »** (`repos.yml`, ex-`rpm-repo.yml`) publie les deux dépôts à chaque
 release et **ne garde que les 3 dernières versions** (`scripts/prune-repo.mjs`).
+Après le push, il vérifie les URLs publiques avec `scripts/verify-repo.mjs` : `Packages`,
+`Packages.gz`, les sommes du `Release`, `repomd.xml`/`primary.xml` et les deux paquets,
+avec **10 minutes d'attente bornée**. Un 503 de propagation GitHub Pages fait donc échouer
+le run au lieu de le laisser vert alors que le dépôt n'est pas encore installable.
 
 ### Dépôt apt (Debian, Ubuntu, Linux Mint)
 

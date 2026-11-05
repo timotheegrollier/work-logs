@@ -54,3 +54,33 @@ describe('workflow PWA Cloudflare (option B — PWA + relais sur le même Worker
     assert.match(content, /VITE_PWA: '1'/);
   });
 });
+
+describe('workflow Dépôts (vérification des URLs publiques)', () => {
+  const content = readFileSync('./.github/workflows/repos.yml', 'utf8');
+
+  test('est un YAML valide, déclenché par la fin de « Release Linux »', () => {
+    assert.ok(content.trim().length > 0, 'fichier non vide');
+    if (yaml) {
+      const wf = yaml.load(content);
+      assert.equal(wf.name, 'Dépôts');
+      assert.equal(wf.on.workflow_run.workflows?.[0], 'Release Linux');
+      assert.equal(wf.concurrency?.group, 'gh-pages');
+      assert.equal(wf.jobs.repos['timeout-minutes'], 35);
+    }
+  });
+
+  test('vérifie les URLs publiques après le push, avec un échec explicite', () => {
+    const push = content.indexOf('git push origin gh-pages');
+    const verify = content.indexOf('node scripts/verify-repo.mjs');
+    assert.ok(push >= 0, 'le push gh-pages existe');
+    assert.ok(verify > push, 'la vérification suit le push');
+    assert.match(content, /"\$TAG" "\$PAGES"/);
+    assert.match(content, /--skip-deb/);
+  });
+
+  test('le vérificateur attend un délai borné et échoue explicitement', () => {
+    const script = readFileSync('./scripts/verify-repo.mjs', 'utf8');
+    assert.match(script, /DEFAULT_TIMEOUT_MS = 10 \* 60 \* 1000/);
+    assert.match(script, /::error::/);
+  });
+});

@@ -35,7 +35,8 @@ jobs:
     name: Construire, tester et publier les dépôts dnf et apt
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # 25 min de construction/tests + jusqu'à 10 min d'attente de propagation Pages.
+    timeout-minutes: 35
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
@@ -154,6 +155,18 @@ jobs:
             commit -m "depots: $TAG (dnf + apt, $KEEP versions gardées)" || { echo "rien de neuf"; exit 0; }
           git push origin gh-pages
           du -sh rpm deb
+
+      # GitHub Pages sert la branche de façon asynchrone : le nouveau .deb a déjà
+      # répondu 503 quelques minutes après la v0.70.0 alors que l'index annonçait
+      # déjà la version. On attend que les URLs publiques répondent vraiment avant
+      # de déclarer le dépôt publié.
+      - name: Vérifier que les dépôts publics servent la version publiée
+        run: |
+          if [[ "$DEB_OK" == true ]]; then
+            node scripts/verify-repo.mjs "$TAG" "$PAGES"
+          else
+            node scripts/verify-repo.mjs "$TAG" "$PAGES" --skip-deb
+          fi
 
       - name: 'Échec explicite si le dépôt apt a été sauté'
         if: env.DEB_OK != 'true'
