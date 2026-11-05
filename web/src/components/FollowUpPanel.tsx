@@ -34,7 +34,6 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false }: {
         <ReportList title="Prochaines actions" items={report.next_steps} />
         <ReportList title="Blocages" items={report.blockers} />
       </div>
-      <p className="follow-up-date">Bilan du <time dateTime={report.generated_at}>{new Date(report.generated_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</time></p>
       {report.warnings.length > 0 && <ul className="follow-up-warnings" aria-label="Limites du bilan">{report.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
     </>}
     <label className="follow-up-auto">
@@ -53,6 +52,7 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false }: {
         <strong>Suivi IA</strong>
         <span className="follow-up-mode">{followUp.enabled ? 'Automatique' : 'Manuel'}</span>
         {report && <span className={'follow-up-status is-' + report.status}>État proposé : {STATUS_LABELS[report.status]}</span>}
+        {report && <span className="follow-up-date">Bilan du <time dateTime={report.generated_at}>{new Date(report.generated_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</time></span>}
         {(stale || dirty) && report && <span className="follow-up-stale" role="status">À actualiser{dirty ? ' après enregistrement' : ''}</span>}
       </div>
       {report ? <p className="follow-up-summary">{report.summary}</p> : !busy && <p className="follow-up-empty">Aucun bilan pour le moment.</p>}

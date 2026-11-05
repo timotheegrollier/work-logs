@@ -188,3 +188,21 @@ test('un chargement limité annonce que d’autres suivis peuvent manquer au bil
   render(<OverviewAiActions {...props([task('a', { follow_up: follow })])} missingEntries={4} missingTasks={2} />);
   expect(screen.getByText(/Le bilan couvre uniquement 1 source chargée/)).toHaveTextContent('Éléments non chargés : 4 entrées et 2 tâches. D’autres sources peuvent manquer.');
 });
+
+test('la replanification distingue les changements des propositions inchangées', async () => {
+  const user = userEvent.setup();
+  const tasks = [task('a', { priority: 'normal', due_date: null }), task('b', { priority: 'high', due_date: today })];
+  vi.mocked(replanTasks).mockResolvedValue([
+    { id: 'a', priority: 'high', due_date: today, reason: 'À traiter en premier.' },
+    { id: 'b', priority: 'high', due_date: today, reason: '' },
+  ]);
+  render(<OverviewAiActions {...props(tasks)} />);
+  await user.click(screen.getByRole('button', { name: 'Replanifier avec l’IA' }));
+  await screen.findByRole('region', { name: 'Dates et priorités proposées par l’IA' });
+  expect(screen.getByText('2 tâches · 1 changement')).toBeVisible();
+  expect(screen.getByText('À modifier')).toBeVisible();
+  expect(screen.getByText('Inchangée')).toBeVisible();
+  const changedItem = screen.getByText('Tâche a').closest('li') as HTMLElement;
+  expect(changedItem).toHaveTextContent('Actuel : Normale · sans date');
+  expect(changedItem).toHaveTextContent(/Proposé : Haute/);
+});
