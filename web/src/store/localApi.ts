@@ -32,6 +32,8 @@ import { mergeGoogleChanges } from '../../../api/src/google-merge.js';
 import { TASK_CATEGORY_MIGRATION, inheritedTaskCategory } from '../../../api/src/task-categories.js';
 // @ts-expect-error — contrat pur partagé avec SQLite, sans accès disque/réseau.
 import { buildFollowUpSource, decodeFollowUpRow, followUpKey, readFollowUp, updateFollowUp } from '../../../api/src/follow-up.js';
+// @ts-expect-error — même comparaison pure de planification que dans l'API SQLite.
+import { assertExpectedTaskPlanning } from '../../../api/src/task-planning.js';
 import { readRelay } from '../relay-settings';
 import { beginWebLogin, builtinWebClientId, clearWebClient, disconnectWeb, downloadDriveBinary, webGoogleRequest, webGoogleStatus } from './google-web';
 
@@ -1052,6 +1054,14 @@ export const localApi: Api = {
     const { tasks, projects } = await tables();
     const current = (await tasks.get(id)) ?? fail('tâche introuvable');
     const patch = (body ?? {}) as Record<string, unknown>;
+    try {
+      // updateTask et la synchro partagent localWrite : aucun autre changement
+      // local ne s'intercale pendant les lectures IndexedDB de cette comparaison.
+      if (patch.expected_planning !== undefined) assertExpectedTaskPlanning(patch.expected_planning, await localFollowUpMetadata('task', current));
+    } catch (cause) {
+      const error = cause as Error & { code?: string };
+      throw new ApiError(error.message, error.code);
+    }
     const title = pick(patch, 'title', current.title, (v) => str(v));
     if (!title) fail('titre requis');
     const status = pick(patch, 'status', current.status, (v) => (str(v) || current.status) as Status);
@@ -1069,7 +1079,7 @@ export const localApi: Api = {
     await tasks.put(next);
     if (current.status !== 'done' && status === 'done') await archiveTaskDocuments(id);
     track('tasks', id);
-    return rowAsTask(next);
+    return rowAsTask(await localFollowUpMetadata('task', next));
   },
 
   moveTask: async (id, status, position) => {

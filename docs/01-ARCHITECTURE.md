@@ -207,6 +207,15 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | POST · DELETE | `/api/shared/lock?path=` | prendre/renouveler la main (`{take_over}`) · la rendre ; `409 SHARED_LOCKED` / `SHARED_LOCK_STALE` + `{lock}` |
 | PUT · DELETE | `/api/shared/projects/:id/folder` | relier un projet à un sous-dossier (`{dir}`) · le délier |
 
+`PUT /api/tasks/:id` accepte aussi `expected_planning`, instantané facultatif utilisé lors
+de l’application d’une replanification IA : `{status, priority, due_date}` requis ; `title`,
+`project_id`, `pinned` et `follow_up_key` facultatifs (ce dernier vaut `null` sans suivi).
+La comparaison et l’écriture sont sous le même verrou SQLite ; la PWA les sérialise avec ses
+autres mutations et la synchronisation locale. Une différence refuse toute écriture avec
+`409 {error, code: "TASK_PLANNING_STALE"}` ; un instantané mal formé est refusé en 400.
+L’empreinte du suivi permet aussi de refuser un planning établi avant une modification de ses
+documents liés. Sans ce champ, le comportement habituel de modification reste identique.
+
 Formats du dossier partagé, côté front (le serveur ne voit que des octets) : `text-codec.ts`,
 `text-file.ts`, `csv-file.ts`, `zip.ts` (archive, réécriture fidèle), `xml-scan.ts` (XML à
 positions), `ooxml.ts` (relations, propriétés : commun à Word et Excel), `docx.ts` +

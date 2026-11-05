@@ -12,6 +12,7 @@ import { attachmentHeader, inlineHeader } from './disposition.js';
 import { categoryFor, nextCategory, categoryDescendants, registerCategoryRoutes } from './categories.js';
 import { inheritTaskCategories } from './task-categories.js';
 import { createFollowUpAccess, registerFollowUpRoutes } from './follow-up-routes.js';
+import { assertExpectedTaskPlanning } from './task-planning.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
 export const PRIORITIES = ['low', 'normal', 'high'];
@@ -421,23 +422,25 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   });
 
   app.put('/api/tasks/:id', (req, res) => {
-    const cur = getTask(req.params.id);
-    if (!cur) return notFound(res, 'tâche introuvable');
     const b = req.body || {};
-
-    const title = pick(b, 'title', cur.title, str);
-    if (!title) return bad(res, 'titre requis');
-    const status = pick(b, 'status', cur.status, (v) => str(v) || cur.status);
-    if (!STATUSES.includes(status)) return bad(res, 'statut invalide');
-    const priority = pick(b, 'priority', cur.priority ?? 'normal', (v) => priorityOf(v, cur.priority ?? 'normal'));
-    if (!priority) return bad(res, 'priorité invalide (basse, normale ou haute attendue)');
-    const projectId = pick(b, 'project_id', cur.project_id, orNull);
-    if (projectId && !getProject(projectId)) return bad(res, 'projet introuvable');
-    const categoryId = nextCategory(db, b, cur, projectId);
-
-    const time = nowISO();
-    db.exec('BEGIN');
+    // Lecture attendue et écriture sous le même verrou : une synchronisation ne
+    // peut pas changer la tâche entre la comparaison et la nouvelle date.
+    db.exec('BEGIN IMMEDIATE');
     try {
+      const cur = getTask(req.params.id);
+      if (!cur) { db.exec('ROLLBACK'); return notFound(res, 'tâche introuvable'); }
+      assertExpectedTaskPlanning(b.expected_planning, cur);
+      const reject = (message) => { db.exec('ROLLBACK'); return bad(res, message); };
+      const title = pick(b, 'title', cur.title, str);
+      if (!title) return reject('titre requis');
+      const status = pick(b, 'status', cur.status, (v) => str(v) || cur.status);
+      if (!STATUSES.includes(status)) return reject('statut invalide');
+      const priority = pick(b, 'priority', cur.priority ?? 'normal', (v) => priorityOf(v, cur.priority ?? 'normal'));
+      if (!priority) return reject('priorité invalide (basse, normale ou haute attendue)');
+      const projectId = pick(b, 'project_id', cur.project_id, orNull);
+      if (projectId && !getProject(projectId)) return reject('projet introuvable');
+      const categoryId = nextCategory(db, b, cur, projectId);
+      const time = nowISO();
       db.prepare(
         'UPDATE tasks SET title=?, status=?, due_date=?, pinned=?, priority=?, project_id=?, updated_at=?, category_id=? WHERE id=?'
       ).run(
@@ -457,7 +460,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       db.exec('ROLLBACK');
       throw error;
     }
-    res.json(getTask(cur.id));
+    res.json(getTask(req.params.id));
   });
 
   // Déplacement kanban : insère la carte à `position` dans la colonne `status`,
@@ -703,7 +706,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   app.use((err, _req, res, _next) => {
     const status = err.status || (err.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
     res.status(status).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'fichier trop volumineux (100 Mo max)' : err.message,
-      ...(err.code?.startsWith('GOOGLE_') || err.code === 'FOLLOW_UP_STALE' ? { code: err.code, ...(err.help_url ? { help_url: err.help_url } : {}) } : {}) });
+      ...(err.code?.startsWith('GOOGLE_') || err.code === 'FOLLOW_UP_STALE' || err.code === 'TASK_PLANNING_STALE' ? { code: err.code, ...(err.help_url ? { help_url: err.help_url } : {}) } : {}) });
   });
 
   return app;

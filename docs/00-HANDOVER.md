@@ -1,5 +1,37 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot du 2026-11-05 — bilan du jour, replanification et accès aux suivis (§67)
+
+En tête de la vue d’ensemble : **Bilan du jour** synthétise les bilans des suivis enregistrés,
+**Replanifier avec l’IA** propose dates et priorités pour toutes les tâches ouvertes, avec
+relecture, cases à cocher et dates modifiables avant application. Les suivis sont visibles
+avant les tâches ; une sélection commune ajoute tâches et entrées au suivi, avec recherche
+et repérage des notes déjà incluses dans une tâche. Cliquer un titre ou un nœud ferme la vue
+et ouvre l’élément, tâches terminées comprises ; les brouillons de cartes sont conservés.
+
+Les dates IA restent des estimations ; un bilan ancien ne devient pas du travail accompli
+aujourd’hui. Sources manquantes/périmées et limites explicites (60 éléments). Les écritures
+de replanification vérifient les champs attendus côté API et PWA pour ne pas écraser une
+modification concurrente. Aucun ajout de dépendance ni migration. Pourquoi : §67 ; gestes :
+`03-UTILISATION.md`. `./scripts/check.sh` vert : **306 API, 808 front** (et un échec
+attendu), **49 desktop unitaires, 32 scripts, 8 Worker, 11 relais, 99 navigateur et
+17 desktop e2e**. Captures clair/sombre et téléphone relues ; IA simulée dans les tests.
+
+## Lot du 2026-11-04 — vue d’ensemble simplifiée (§66)
+
+La vue d’ensemble tient sur une colonne : composer une tâche sur une ligne, lire et traiter la
+liste, puis les bilans IA seulement s’il y en a. Le bloc vide « Bilans et suivis IA » ne prend
+plus la moitié de l’écran ; les bilans apparaissent sous les tâches en cartes. Chaque ligne
+n’affiche plus « Activer le suivi IA » : l’activation reste dans l’entrée ou la carte de la
+tâche, et une pastille « ✦ Suivi IA » signale seulement celles qui sont suivies. Après ajout,
+changement de projet ou passage en cours, une zone de statut annonce le résultat ; une erreur
+garde le titre saisi. Désactiver le dernier suivi ramène le focus au titre de la vue.
+
+Aucune dépendance, route API ou migration. `docs/05-DECISIONS.md` §66 pour le pourquoi et les
+pistes écartées. Tests front et navigateur mis à jour ; `./scripts/check.sh` vert le
+2026-11-04 : **301 API, 774 front** (plus l’échec attendu), **49 desktop unitaires, 32 scripts,
+8 Worker, 11 relais, 94 navigateur et 17 desktop e2e**.
+
 ## v0.68.0 — 2026-11-03 — vue d’ensemble pleine largeur, Désactiver le suivi IA (§65)
 
 La vue d’ensemble recouvre Journal, Tâches et Procédures hors téléphone, sur 1 480 px au plus :

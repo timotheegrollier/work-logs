@@ -232,15 +232,28 @@ rendu approximatif.
 - **Vue d’ensemble des tâches** : le bouton en haut de l’écran (le seul : le panneau Tâches
   n’en a plus) ouvre la vue sur toute la largeur, par-dessus Journal, Tâches et Procédures,
   même si ces panneaux sont repliés. Leurs boutons de l’en-tête les rouvrent à côté d’elle ;
-  **Écriture** la referme et rend l’entrée. Assez large, la vue range les tâches à gauche et
-  les bilans IA à droite ; sur tablette elle passe seule en tête de page, sur téléphone elle
-  occupe la vue Écriture. La liste affiche d’abord les tâches
+  **Écriture** la referme et rend l’entrée. Les actions IA et les suivis viennent en tête,
+  puis les tâches dans une seule colonne ; sur tablette la vue passe seule en tête de page,
+  sur téléphone elle occupe la vue Écriture. La liste affiche d’abord les tâches
   **À faire** ; les boutons **En cours** et **Toutes** changent le filtre. Choisir un projet
   directement sur une ligne affecte la tâche à ce projet (une catégorie devenue incompatible
   est retirée) ; **▶ En cours** la démarre et **Remettre à faire** la remet dans À faire.
   Le formulaire ajoute une tâche et choisit son projet sans quitter la vue. Le schéma
-  d’avancement reste dessous ; cliquer un nœud ouvre la carte habituelle dans le panneau
-  Tâches, rouvert à côté de la vue.
+  d’avancement reste dessous ; cliquer un titre de tâche ou un nœud ferme la vue et ouvre sa
+  carte dans le panneau Tâches, même terminée. Les brouillons de cartes restent disponibles.
+- **Bilan du jour**, en tête de la vue d’ensemble : un clic synthétise les bilans de suivi
+  enregistrés en avancées attestées, blocages et prochaines actions. Les suivis sans bilan,
+  anciens ou à actualiser sont signalés dans les limites. Une date de génération ne prouve
+  pas qu’un travail a été fait aujourd’hui. La synthèse reste affichée jusqu’à sa fermeture
+  ou à une modification des suivis ; elle se régénère à la demande.
+- **Replanifier avec l’IA** propose une date et une priorité pour toutes les tâches ouvertes
+  chargées, d’après leurs champs, les repères des projets et leurs bilans de suivi. Ce sont
+  des estimations à relire : modifier les dates et priorités, décocher les tâches à garder
+  telles quelles, puis **Appliquer**. **Ignorer** n’écrit rien, **Arrêter** annule l’analyse.
+  Une tâche modifiée entre-temps bloque l’ancienne proposition. Le texte et le statut ne
+  changent pas. Bilan et replanification acceptent chacun 60 éléments au maximum ; les
+  limites de chargement sont annoncées, et une liste de tâches ouvertes incomplète bloque
+  la replanification.
 - **✨ Ordre et conseils IA**, dans la vue d’ensemble : choisir tous les projets ou un projet,
   puis **Préparer les conseils**. WorkLogs lit localement les documents liés et montre leurs
   extraits ; décocher ceux à exclure, puis **Demander les conseils à l’IA**. Le service reçoit
@@ -305,9 +318,15 @@ a pas besoin : l’automatisme et le bilan partent, le texte ne change pas, et l
 la vue d’ensemble. Le bouton existe aussi sur chaque bilan de la vue d’ensemble, pour faire
 le tri d’un clic. **✨ Activer le suivi IA** le relance avec un nouveau bilan.
 
-Ouvrir **Vue d’ensemble → Bilans et suivis IA** pour retrouver les suivis des entrées et des
-tâches chargées, y compris les tâches terminées. Le titre d’une entrée la rouvre ; celui d’une
-tâche mène à sa carte. Les détails se déplient sur les cartes compactes.
+Ouvrir **Vue d’ensemble** pour retrouver les suivis des entrées et des tâches chargées, y
+compris les tâches terminées : **Suivis IA** apparaît en tête dès qu’un suivi existe et
+**Voir les suivis** y mène directement. Cliquer un titre ferme la vue et affiche l’entrée ou
+la carte de tâche ; les détails restent dépliables sur les cartes compactes.
+**+ Ajouter au suivi IA** ouvre une sélection commune : rechercher une tâche, une entrée ou
+un projet, cocher les éléments puis **Suivre la sélection**. Les bilans se préparent
+automatiquement. Une note déjà incluse dans une tâche suivie est signalée pour éviter un
+suivi redondant. Aucun bouton d’activation n’encombre chaque ligne de la liste ; une tâche
+suivie porte seulement une pastille « ✦ Suivi IA ».
 
 Le service IA et la clé sont ceux des **Paramètres**. Le texte enregistré est envoyé à ce
 service après activation. L’analyse lit au plus huit documents et 24 000 caractères de texte,

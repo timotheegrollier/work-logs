@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { api, dayLabel, isFollowed, isOverdue, overviewOrder, projectProgress, todayISO, type EntrySummary, type Project, type Task } from '../lib';
 import { FollowUpPanel } from './FollowUpPanel';
+import { OverviewAiActions } from './OverviewAiActions';
+import { OverviewFollowUpPicker } from './OverviewFollowUpPicker';
 
 /** Au-delà, les autres tâches ouvertes sont comptées (« +N ») : la piste tient sur une ligne jusqu'à 360 px. */
 export const LANE_NODES = 10;
@@ -12,7 +14,7 @@ const plural = (count: number, one: string, many: string) => `${count} ${count >
  * l'historique est replié — les terminées comptées dans une pastille, un nœud par tâche
  * ouverte (plein pour celle en cours, le HEAD), une barre d'avancement et la dernière note.
  */
-export function ProjectOverview({ projects, tasks, entries, onProject, onTask, onEntry, onClose, onChanged, advice, missingOpen = 0, missingTasks = 0 }: {
+export function ProjectOverview({ projects, tasks, entries, onProject, onTask, onEntry, onClose, onChanged, advice, missingOpen = 0, missingTasks = 0, missingEntries = 0 }: {
   projects: Project[];
   tasks: Task[];
   entries: EntrySummary[];
@@ -27,13 +29,14 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
   /** Nombre de tâches absentes de l’état global limité par le serveur. */
   missingOpen?: number;
   missingTasks?: number;
+  missingEntries?: number;
 }) {
-  const adviceRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<'todo' | 'doing' | 'open'>('todo');
   const [title, setTitle] = useState('');
   const [projectId, setProjectId] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [feedback, setFeedback] = useState('');
   const today = todayISO();
   const lanes = projectProgress(projects, tasks, entries, today);
   const totals = lanes.reduce((sum, lane) => ({ open: sum.open + lane.open.length, done: sum.done + lane.done, late: sum.late + lane.late }), { open: 0, done: 0, late: 0 });
@@ -43,21 +46,27 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
   const doingCount = openTasks.length - todoCount;
   const followedTasks = tasks.filter(isFollowed);
   const followedEntries = entries.filter(isFollowed);
+  const head = useRef<HTMLHeadingElement>(null);
   const followHead = useRef<HTMLHeadingElement>(null);
   const followCount = followedTasks.length + followedEntries.length;
   const lastFollowCount = useRef(followCount);
   useEffect(() => {
-    // « Désactiver » retire la carte qui avait le focus : il revient au titre de la liste.
-    if (followCount < lastFollowCount.current && document.activeElement === document.body) followHead.current?.focus({ preventScroll: true });
+    // « Désactiver » retire la carte qui avait le focus : il revient au titre de la
+    // liste, ou à celui de la vue si c'était le dernier suivi.
+    if (followCount < lastFollowCount.current && document.activeElement === document.body) {
+      (followCount > 0 ? followHead.current : head.current)?.focus({ preventScroll: true });
+    }
     lastFollowCount.current = followCount;
   }, [followCount]);
-  const run = async (key: string, action: () => Promise<unknown>) => {
+  const run = async (key: string, action: () => Promise<unknown>, done: string) => {
     if (busy) return false;
     setBusy(key);
     setError('');
+    setFeedback('');
     try {
       await action();
       await onChanged();
+      setFeedback(done);
       return true;
     } catch (e) {
       setError((e as Error).message || 'Impossible de modifier la tâche.');
@@ -70,7 +79,7 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
     event.preventDefault();
     const value = title.trim();
     if (!value) return;
-    if (await run('new', () => api.createTask({ title: value, project_id: projectId || null }))) {
+    if (await run('new', () => api.createTask({ title: value, project_id: projectId || null }), 'Tâche ajoutée.')) {
       setTitle('');
       setFilter('todo');
     }
@@ -86,83 +95,94 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
   return (
     <section className="editor overview" aria-label="Vue d’ensemble des projets">
       <div className="overview-head">
-        <h2>Vue d’ensemble</h2>
-        <p className="ai-hint">
-          {plural(projects.length, 'projet', 'projets')} · {plural(totals.open, 'tâche ouverte', 'tâches ouvertes')} · {plural(totals.done, 'terminée', 'terminées')}
-          {totals.late > 0 && <> · <b className="late">{totals.late} en retard</b></>}
-        </p>
-        <button className="ghost no-print" type="button" aria-label="Fermer la vue d’ensemble" onClick={onClose}>
-          Fermer
-        </button>
+        <div className="overview-head-title">
+          <h2 ref={head} tabIndex={-1}>Vue d’ensemble</h2>
+          <p className="ai-hint">
+            {plural(projects.length, 'projet', 'projets')} · {plural(totals.open, 'tâche ouverte', 'tâches ouvertes')} · {plural(totals.done, 'terminée', 'terminées')}
+            {totals.late > 0 && <> · <b className="late">{totals.late} en retard</b></>}
+          </p>
+        </div>
+        <div className="overview-head-actions">
+          <button className="ghost no-print" type="button" aria-label="Fermer la vue d’ensemble" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
       </div>
       {(missingOpen > 0 || missingTasks > 0) && <p className="notice" role="status">
         {missingOpen > 0 && <>{missingOpen} tâche{missingOpen > 1 ? 's' : ''} ouverte{missingOpen > 1 ? 's' : ''} manquante{missingOpen > 1 ? 's' : ''} : la liste est incomplète. </>}
         {missingTasks > 0 && <>L’avancement des projets est incomplet : {missingTasks} tâche{missingTasks > 1 ? 's' : ''} non chargée{missingTasks > 1 ? 's' : ''}.</>}
       </p>}
-      <div className="overview-board no-print">
-        <div className="overview-work no-print" aria-busy={Boolean(busy)}>
-          <form className="overview-add" onSubmit={(event) => void addTask(event)}>
-            <label className="overview-add-title">
-              <span>Nouvelle tâche</span>
-              <input aria-label="Nouvelle tâche dans la vue d’ensemble" placeholder="Que faut-il faire ?" disabled={Boolean(busy)} value={title} onChange={(event) => setTitle(event.target.value)} />
-            </label>
-            <label className="overview-add-project">
-              <span>Projet</span>
-              <select aria-label="Projet de la nouvelle tâche" disabled={Boolean(busy)} value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-                <option value="">Sans projet</option>
-                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-              </select>
-            </label>
-            <button className="task-primary" type="submit" disabled={Boolean(busy) || !title.trim()}>{busy === 'new' ? 'Ajout…' : 'Ajouter'}</button>
-          </form>
-          {error && <p className="error" role="alert">{error}</p>}
-          <div className="overview-list-head">
-            <h3>Tâches ouvertes</h3>
-            <div className="overview-filters" role="group" aria-label="Filtrer les tâches de la vue d’ensemble">
-              {([['todo', 'À faire', todoCount], ['doing', 'En cours', doingCount], ['open', 'Toutes', openTasks.length]] as const).map(([value, label, count]) => (
-                <button key={value} className={'chip' + (filter === value ? ' is-on' : '')} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label} <span className="count">{count}</span></button>
-              ))}
-            </div>
-            {advice && <button className="ghost overview-advice-jump" type="button" onClick={() => { adviceRef.current?.scrollIntoView?.({ block: 'start' }); adviceRef.current?.focus({ preventScroll: true }); }}>Conseils IA ↓</button>}
+      <div className="overview-work no-print" aria-busy={Boolean(busy)}>
+        <OverviewAiActions tasks={tasks} entries={entries} projects={projects} missingOpen={missingOpen} missingTasks={missingTasks} missingEntries={missingEntries} onChanged={onChanged} onTask={onTask} onShowFollowUps={() => {
+          followHead.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+          followHead.current?.focus({ preventScroll: true });
+        }} />
+        <OverviewFollowUpPicker tasks={tasks} entries={entries} projects={projects} onChanged={onChanged} />
+        {followCount > 0 && <section className="overview-follow-ups no-print" aria-label="Bilans et suivis IA">
+          <div className="overview-section-head">
+            <h3 ref={followHead} tabIndex={-1}>Suivis IA</h3>
+            <span>{plural(followCount, 'élément suivi', 'éléments suivis')}</span>
           </div>
-          {shownTasks.length === 0 ? <p className="empty">{filter === 'todo' ? 'Aucune tâche à faire.' : filter === 'doing' ? 'Aucune tâche en cours.' : 'Aucune tâche ouverte.'}</p> : (
-            <ul className="overview-tasks" aria-label="Liste des tâches de la vue d’ensemble">
-              {shownTasks.map((task) => (
-                <li className="overview-task" key={task.id}>
-                  <div className="overview-task-main">
-                    <button className="overview-task-title" type="button" onClick={() => onTask(task)}>{task.title}</button>
-                    <span className="overview-task-meta">{task.status === 'doing' ? 'En cours' : 'À faire'}{task.due_date ? ` · ${isOverdue(task, today) ? 'En retard · ' : 'Échéance '}${dayLabel(task.due_date)}` : ''}</span>
-                  </div>
-                  <div className="overview-task-project">
-                    <select aria-label={`Projet de ${task.title}`} title={task.category_id ? 'Changer de projet retire la catégorie actuelle' : 'Affecter à un projet'} disabled={Boolean(busy)} value={task.project_id ?? ''} onChange={(event) => void run(task.id, () => api.updateTask(task.id, { project_id: event.target.value || null }))}>
-                      <option value="">Sans projet</option>
-                      {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                    </select>
-                  </div>
-                  <button className="ghost overview-task-move" type="button" disabled={Boolean(busy)} aria-label={task.status === 'doing' ? `Remettre à faire ${task.title}` : `Mettre en cours ${task.title}`} onClick={() => void run(task.id, () => api.moveTask(task.id, task.status === 'doing' ? 'todo' : 'doing', Number.MAX_SAFE_INTEGER))}>
-                    {task.status === 'doing' ? 'Remettre à faire' : '▶ En cours'}
-                  </button>
-                  {!isFollowed(task) && <FollowUpPanel kind="task" item={task} compact />}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <section className="overview-follow-ups no-print" aria-label="Bilans et suivis IA">
-          <h3 ref={followHead} tabIndex={-1}>Bilans et suivis IA</h3>
-          {followedTasks.length + followedEntries.length === 0 ? <p className="ai-hint">Active un suivi depuis une entrée ou une tâche pour retrouver ici ses avancées et ses blocages.</p> : <ul>
+          <ul>
             {followedTasks.map((task) => <li key={'task-' + task.id}>
               <div className="overview-follow-up-title"><span>Tâche</span><button className="overview-task-title" type="button" aria-label={`Ouvrir la tâche ${task.title}`} onClick={() => onTask(task)}>{task.title}</button></div>
               <FollowUpPanel kind="task" item={task} compact />
             </li>)}
             {followedEntries.map((entry) => <li key={'entry-' + entry.id}>
-              <div className="overview-follow-up-title"><span>Entrée</span><button className="overview-task-title" type="button" aria-label={`Ouvrir l’entrée ${entry.title}`} onClick={() => onEntry(entry)}>{entry.title}</button></div>
+              <div className="overview-follow-up-title"><span>{entry.kind === 'procedure' ? 'Procédure' : 'Entrée'}</span><button className="overview-task-title" type="button" aria-label={`Ouvrir l’entrée ${entry.title}`} onClick={() => onEntry(entry)}>{entry.title}</button></div>
               <FollowUpPanel kind="entry" item={entry} compact />
             </li>)}
-          </ul>}
-        </section>
+          </ul>
+        </section>}
+        <form className="overview-add" onSubmit={(event) => void addTask(event)}>
+          <input className="overview-add-title" aria-label="Nouvelle tâche dans la vue d’ensemble" placeholder="Ajouter une tâche…" disabled={Boolean(busy)} value={title} onChange={(event) => setTitle(event.target.value)} />
+          <select aria-label="Projet de la nouvelle tâche" title="Projet de la nouvelle tâche" disabled={Boolean(busy)} value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+            <option value="">Sans projet</option>
+            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+          </select>
+          <button className="task-primary" type="submit" disabled={Boolean(busy) || !title.trim()}>{busy === 'new' ? 'Ajout…' : 'Ajouter'}</button>
+        </form>
+        {error && <p className="error" role="alert">{error}</p>}
+        <div className="overview-list-head">
+          <h3>Tâches</h3>
+          <div className="overview-filters" role="group" aria-label="Filtrer les tâches de la vue d’ensemble">
+            {([['todo', 'À faire', todoCount], ['doing', 'En cours', doingCount], ['open', 'Toutes', openTasks.length]] as const).map(([value, label, count]) => (
+              <button key={value} className={'chip' + (filter === value ? ' is-on' : '')} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label} <span className="count">{count}</span></button>
+            ))}
+          </div>
+          <span className={'overview-status' + (busy ? ' is-busy' : '')} role="status" aria-live="polite" aria-atomic="true">
+            {busy ? 'Enregistrement…' : feedback}
+          </span>
+        </div>
+        {shownTasks.length === 0 ? <p className="empty">{filter === 'todo' ? 'Aucune tâche à faire.' : filter === 'doing' ? 'Aucune tâche en cours.' : 'Aucune tâche ouverte.'}</p> : (
+          <ul className="overview-tasks" aria-label="Liste des tâches de la vue d’ensemble">
+            {shownTasks.map((task) => {
+              const late = isOverdue(task, today);
+              return (
+                <li className={'overview-task' + (task.status === 'doing' ? ' is-doing' : '') + (late ? ' is-late' : '')} key={task.id} aria-busy={busy === task.id}>
+                  <div className="overview-task-main">
+                    <button className="overview-task-title" type="button" onClick={() => onTask(task)}>{task.title}</button>
+                    <span className="overview-task-meta">
+                      <span className={'overview-task-status is-' + task.status}>{task.status === 'doing' ? 'En cours' : 'À faire'}</span>
+                      {task.due_date && <span className={'overview-task-due' + (late ? ' is-late' : '')}>{late ? 'En retard' : `Échéance ${dayLabel(task.due_date)}`}</span>}
+                      {task.pinned > 0 && <span className="overview-task-pin">Épinglée</span>}
+                      {isFollowed(task) && <span className="overview-task-follow" title="Suivi IA actif">✦ Suivi IA</span>}
+                    </span>
+                  </div>
+                  <select aria-label={`Projet de ${task.title}`} title={task.category_id ? 'Changer de projet retire la catégorie actuelle' : 'Affecter à un projet'} disabled={Boolean(busy)} value={task.project_id ?? ''} onChange={(event) => void run(task.id, () => api.updateTask(task.id, { project_id: event.target.value || null }), 'Projet mis à jour.')}>
+                    <option value="">Sans projet</option>
+                    {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                  </select>
+                  <button className="ghost overview-task-move" type="button" disabled={Boolean(busy)} aria-label={task.status === 'doing' ? `Remettre à faire ${task.title}` : `Mettre en cours ${task.title}`} onClick={() => void run(task.id, () => api.moveTask(task.id, task.status === 'doing' ? 'todo' : 'doing', Number.MAX_SAFE_INTEGER), task.status === 'doing' ? `« ${task.title} » remise à faire.` : `« ${task.title} » passée en cours.`)}>
+                    {task.status === 'doing' ? 'Remettre à faire' : '▶ En cours'}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {advice && <div className="no-print" role="group" aria-label="Conseils IA">{advice}</div>}
       </div>
-      {advice && <div className="no-print" ref={adviceRef} tabIndex={-1} role="group" aria-label="Conseils IA">{advice}</div>}
       <h3 className="overview-progress-title">Avancement des projets</h3>
       {lanes.length === 0 ? (
         <p className="empty">Aucun projet ni tâche : crée un projet dans « Gérer » ou ajoute une tâche ci-dessus.</p>

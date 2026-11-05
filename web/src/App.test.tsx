@@ -2823,22 +2823,26 @@ describe('vue d’ensemble des projets', () => {
     expect(within(page()).getByRole('listitem', { name: 'Bravo : 0 terminée sur 0, 0 en cours, 0 à faire' })).toHaveTextContent('Aucune tâche');
     expect(within(page()).getByRole('listitem', { name: 'Sans projet : 0 terminée sur 1, 0 en cours, 1 à faire' })).toHaveTextContent('Rien en cours');
 
-    // Un nœud mène à sa carte dans le panneau Tâches, rouvert à côté de la vue.
+    // Un nœud ferme la vue et ouvre directement la carte de la tâche.
     await user.click(within(alpha).getByRole('button', { name: 'Relancer — à faire · en retard de 1 jour' }));
-    await waitFor(() => expect(document.activeElement).toBe(within(board()).getByRole('button', { name: 'Relancer' })));
+    await waitFor(() => expect(document.activeElement).toBe(within(board()).getByRole('textbox', { name: 'Titre de la tâche' })));
+    expect(within(board()).getByRole('textbox', { name: 'Titre de la tâche' })).toHaveValue('Relancer');
     expect(columns()).not.toHaveClass('hide-right');
-    expect(columns()).toHaveClass('hide-left');
     expect(panel('Tâches')).toHaveAttribute('aria-pressed', 'true');
-    expect(page()).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument();
+    await user.click(toggle());
+    await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
     // Les boutons de l'en-tête rouvrent un panneau à côté, ou le replient, sans fermer la vue.
     await user.click(panel('Journal'));
     expect(columns()).not.toHaveClass('hide-left');
+    await user.click(panel('Tâches'));
+    expect(columns()).not.toHaveClass('hide-right');
     await user.click(panel('Tâches'));
     expect(columns()).toHaveClass('hide-right');
     expect(page()).toBeInTheDocument();
 
     // Un nom filtre le projet et referme la vue ; depuis un projet, « Vue d’ensemble » lève le filtre.
-    await user.click(within(alpha).getByRole('button', { name: 'Filtrer sur Alpha' }));
+    await user.click(within(page()).getByRole('button', { name: 'Filtrer sur Alpha' }));
     await waitFor(() => expect(within(filters()).getByRole('button', { name: /Alpha/ })).toHaveAttribute('aria-pressed', 'true'));
     expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument();
     await user.click(toggle());
@@ -2869,7 +2873,7 @@ describe('vue d’ensemble des projets', () => {
     expect(await screen.findByDisplayValue('Compte rendu')).toBeInTheDocument();
   });
 
-  test('rouvrir Tâches à côté de la vue ne change pas son réglage : replié avant, replié après', async () => {
+  test('ouvrir une tâche ferme la vue et montre sa carte même si le panneau était replié', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-show-right', '0');
     seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Bravo' }], tasks: [{ id: 'tk_1', title: 'Relancer', project_id: 'pr_a' }] });
@@ -2877,9 +2881,9 @@ describe('vue d’ensemble des projets', () => {
     await user.click(await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' }));
     await user.click(await within(page()).findByRole('button', { name: 'Relancer — à faire' }));
     expect(columns()).not.toHaveClass('hide-right');
-    await user.click(screen.getByRole('button', { name: 'Fermer la vue d’ensemble' }));
-    expect(columns()).toHaveClass('hide-right');
-    expect(localStorage.getItem('worklogs-show-right')).toBe('0');
+    expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument();
+    expect(await within(board()).findByRole('textbox', { name: 'Titre de la tâche' })).toHaveValue('Relancer');
+    expect(localStorage.getItem('worklogs-show-right')).toBe('1');
   });
 
   test('la liste permet de créer, affecter au projet et démarrer une tâche sans quitter la vue', async () => {
@@ -2894,12 +2898,17 @@ describe('vue d’ensemble des projets', () => {
     const list = () => within(overview).getByRole('list', { name: 'Liste des tâches de la vue d’ensemble' });
     expect(within(list()).getByRole('button', { name: 'Préparer' })).toBeInTheDocument();
     expect(within(list()).queryByRole('button', { name: 'En cours déjà' })).not.toBeInTheDocument();
+    // La vue d'ensemble ne propose plus d'activer un suivi IA sur chaque ligne, ni de bloc vide.
+    expect(within(list()).queryByRole('button', { name: /Activer le suivi IA/ })).not.toBeInTheDocument();
+    expect(within(overview).queryByRole('region', { name: 'Bilans et suivis IA' })).not.toBeInTheDocument();
     fireEvent.change(within(overview).getByLabelText('Projet de Préparer'), { target: { value: 'pr_b' } });
     await waitFor(() => expect(row(api.db, 'SELECT project_id FROM tasks WHERE id=?', 'tk_todo').project_id).toBe('pr_b'));
     await waitFor(() => expect(within(overview).getByLabelText('Projet de Préparer')).toHaveValue('pr_b'));
+    await waitFor(() => expect(within(overview).getByRole('status')).toHaveTextContent('Projet mis à jour.'));
     fireEvent.click(within(overview).getByRole('button', { name: 'Mettre en cours Préparer' }));
     await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_todo').status).toBe('doing'));
     await waitFor(() => expect(within(overview).queryByRole('button', { name: 'Mettre en cours Préparer' })).not.toBeInTheDocument());
+    await waitFor(() => expect(within(overview).getByRole('status')).toHaveTextContent('« Préparer » passée en cours.'));
     fireEvent.click(within(overview).getByRole('button', { name: /En cours 2/ }));
     fireEvent.click(await within(overview).findByRole('button', { name: 'Remettre à faire Préparer' }));
     await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_todo').status).toBe('todo'));
@@ -2911,6 +2920,7 @@ describe('vue d’ensemble des projets', () => {
     fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter' }));
     await waitFor(() => expect(row(api.db, 'SELECT project_id FROM tasks WHERE title=?', 'Commander').project_id).toBe('pr_a'));
     expect(await within(overview).findByRole('button', { name: 'Commander' })).toBeInTheDocument();
+    await waitFor(() => expect(within(overview).getByRole('status')).toHaveTextContent('Tâche ajoutée.'));
     expect(screen.getByRole('region', { name: 'Vue d’ensemble des projets' })).toBeInTheDocument();
   }, 15_000);
 
@@ -3154,7 +3164,9 @@ describe('cartes empilées (tablette) et vues du téléphone', () => {
 
     await user.click(screen.getByRole('button', { name: 'Relancer — à faire' }));
     expect(nav('Tâches')).toHaveAttribute('aria-pressed', 'true');
-    await waitFor(() => expect(document.activeElement).toBe(within(board()).getByRole('button', { name: 'Relancer' })));
+    await waitFor(() => expect(document.activeElement).toBe(within(board()).getByRole('textbox', { name: 'Titre de la tâche' })));
+    expect(within(board()).getByRole('textbox', { name: 'Titre de la tâche' })).toHaveValue('Relancer');
+    expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument();
   });
   const nav = (name: string) => within(screen.getByRole('group', { name: 'Panneaux latéraux' })).getByRole('button', { name });
 
@@ -5722,6 +5734,78 @@ describe('suivi IA des entrées et tâches', () => {
     api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_suivi', 'en_suivi', new Date().toISOString());
   };
 
+  test('la sélection commune active plusieurs suivis et indique les notes déjà incluses avec leur tâche', async () => {
+    prepare();
+    mockAiSuggest(report('Le montage attend son joint.'));
+    render(<App />);
+    await screen.findByDisplayValue('Note évolutive');
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
+    expect(within(overview).getByRole('button', { name: 'Bilan du jour' })).toBeDisabled();
+    fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter au suivi IA' }));
+    const picker = within(overview).getByRole('region', { name: 'Choisir les suivis IA' });
+    fireEvent.click(within(picker).getByRole('checkbox', { name: /Remonter la pompe/ }));
+    expect(within(picker).getByText(/Déjà incluse avec « Remonter la pompe »/)).toBeInTheDocument();
+    fireEvent.click(within(picker).getByRole('checkbox', { name: /Note évolutive/ }));
+    fireEvent.click(within(picker).getByRole('button', { name: 'Suivre la sélection (2)' }));
+    const reports = await within(overview).findByRole('region', { name: 'Bilans et suivis IA' }, backend);
+    await waitFor(() => expect(within(reports).getAllByText('Le montage attend son joint.')).toHaveLength(2), backend);
+    expect(within(overview).queryByRole('region', { name: 'Choisir les suivis IA' })).not.toBeInTheDocument();
+    expect(within(overview).getByRole('button', { name: 'Bilan du jour' })).toBeEnabled();
+    expect((await clientApi.followUp('task', 'tk_suivi')).follow_up?.enabled).toBe(true);
+    expect((await clientApi.followUp('entry', 'en_suivi')).follow_up?.enabled).toBe(true);
+    expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_suivi').status).toBe('doing');
+    expect(aiBodies).toHaveLength(2);
+  }, 20_000);
+
+  test('une réponse perdue à l’activation est réconciliée sans redater le suivi', async () => {
+    prepare();
+    mockAiSuggest(report('Suivi préparé.'));
+    const original = clientApi.saveFollowUp.bind(clientApi);
+    const save = vi.spyOn(clientApi, 'saveFollowUp').mockImplementation(async (kind, id, body) => {
+      const result = await original(kind, id, body);
+      if (body.enabled) throw new Error('Réponse perdue');
+      return result;
+    });
+    render(<App />);
+    await screen.findByDisplayValue('Note évolutive');
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
+    fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter au suivi IA' }));
+    const picker = within(overview).getByRole('region', { name: 'Choisir les suivis IA' });
+    fireEvent.click(within(picker).getByRole('checkbox', { name: /^Remonter la pompe/ }));
+    fireEvent.click(within(picker).getByRole('button', { name: 'Suivre la sélection (1)' }));
+    const reports = await within(overview).findByRole('region', { name: 'Bilans et suivis IA' }, backend);
+    expect(within(reports).getByRole('button', { name: 'Ouvrir la tâche Remonter la pompe' })).toBeInTheDocument();
+    expect(within(overview).queryByRole('alert')).not.toBeInTheDocument();
+    expect(save.mock.calls.filter(([, , body]) => body.enabled === true)).toHaveLength(1);
+  }, 20_000);
+
+  test('un refus partiel de la sélection garde les éléments restants et ne réactive pas les succès', async () => {
+    prepare();
+    mockAiSuggest(report('Suivi préparé.'));
+    const original = clientApi.saveFollowUp.bind(clientApi);
+    const save = vi.spyOn(clientApi, 'saveFollowUp');
+    let refused = true;
+    save.mockImplementation((kind, id, body) => kind === 'entry' && body.enabled && refused ? Promise.reject(new Error('Activation refusée')) : original(kind, id, body));
+    render(<App />);
+    await screen.findByDisplayValue('Note évolutive');
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
+    fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter au suivi IA' }));
+    const picker = within(overview).getByRole('region', { name: 'Choisir les suivis IA' });
+    fireEvent.click(within(picker).getByRole('checkbox', { name: /Remonter la pompe/ }));
+    fireEvent.click(within(picker).getByRole('checkbox', { name: /Note évolutive/ }));
+    fireEvent.click(within(picker).getByRole('button', { name: 'Suivre la sélection (2)' }));
+    expect(await within(overview).findByRole('alert', {}, backend)).toHaveTextContent('Activation refusée');
+    await waitFor(() => expect(within(picker).queryByRole('checkbox', { name: /^Remonter la pompe/ })).not.toBeInTheDocument(), backend);
+    expect(within(picker).getByRole('checkbox', { name: /Note évolutive/ })).toBeChecked();
+    refused = false;
+    fireEvent.click(within(picker).getByRole('button', { name: 'Suivre la sélection (1)' }));
+    await waitFor(() => expect(within(overview).queryByRole('region', { name: 'Choisir les suivis IA' })).not.toBeInTheDocument(), backend);
+    expect(save.mock.calls.filter(([kind, , body]) => kind === 'task' && body.enabled === true)).toHaveLength(1);
+  }, 20_000);
+
   test('conserve des bilans distincts pour la note et sa tâche, visibles dans la vue d’ensemble sans changer leur texte ni leur statut', async () => {
     prepare();
     mockAiSuggest(report('Le montage attend son joint.'));
@@ -5773,9 +5857,11 @@ describe('suivi IA des entrées et tâches', () => {
     const offInList = within(reports).getByRole('button', { name: 'Désactiver le suivi IA de Note évolutive' });
     offInList.focus();
     fireEvent.click(offInList);
-    await within(reports).findByText(/Active un suivi depuis une entrée ou une tâche/, {}, backend);
-    // La carte retirée avait le focus : il revient au titre de la liste, pas en haut de page.
-    await waitFor(() => expect(document.activeElement).toBe(within(reports).getByRole('heading', { name: 'Bilans et suivis IA' })));
+    // Plus aucun suivi : le bloc disparaît au lieu de laisser une colonne vide.
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Bilans et suivis IA' })).not.toBeInTheDocument(), backend);
+    const page = screen.getByRole('region', { name: 'Vue d’ensemble des projets' });
+    // La carte retirée avait le focus : il revient au titre de la vue, pas en haut de page.
+    await waitFor(() => expect(document.activeElement).toBe(within(page).getByRole('heading', { name: 'Vue d’ensemble' })), backend);
     expect(aiBodies).toHaveLength(2);
   }, 20_000);
 

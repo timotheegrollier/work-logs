@@ -198,6 +198,8 @@ export interface Task {
   follow_up_key?: string;
   documents: EntrySummary[];
 }
+/** Compare les champs relus avant d'appliquer une proposition IA, dans la même écriture. */
+export type TaskPlanningSnapshot = Pick<Task, 'status' | 'priority' | 'due_date'> & Partial<Pick<Task, 'title' | 'project_id' | 'pinned'>> & { follow_up_key?: string | null };
 export interface Attachment {
   id: string;
   filename: string;
@@ -550,7 +552,7 @@ export const remoteApi = {
     send<Entry>('POST', `/api/tasks/${taskId}/entry`, body),
 
   createTask: (body: Partial<Task>) => send<Task>('POST', '/api/tasks', body),
-  updateTask: (id: string, body: Partial<Task>) => send<Task>('PUT', `/api/tasks/${id}`, body),
+  updateTask: (id: string, body: Partial<Task> & { expected_planning?: TaskPlanningSnapshot }) => send<Task>('PUT', `/api/tasks/${id}`, body),
   moveTask: (id: string, status: Status, position: number) =>
     send<Task>('PATCH', `/api/tasks/${id}/move`, { status, position }),
   deleteTask: (id: string) => send<{ ok: true }>('DELETE', `/api/tasks/${id}`),

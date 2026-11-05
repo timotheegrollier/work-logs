@@ -5988,22 +5988,57 @@ div.google-preserved {
   max-width: 1480px;
 }
 .overview-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 2px 16px;
   margin-bottom: 18px;
+}
+.overview-head-title {
+  grid-column: 1;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 .overview-head h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 22px;
+  letter-spacing: -0.015em;
 }
 .overview-head .ai-hint {
   margin: 0;
-  flex: 1 1 240px;
+}
+.overview-head-actions {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .overview-head .late {
   color: var(--danger);
+}
+/* Retour après un geste : la ligne reste visible, sans déplacer la mise en page. */
+.overview-status {
+  min-height: 18px;
+  max-width: 32ch;
+  margin: 0 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+.overview-status:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.overview-status.is-busy {
+  color: var(--accent);
 }
 .lanes {
   list-style: none;
@@ -6246,44 +6281,205 @@ button.lane-name:hover {
   }
 }
 
-/* Vue d'ensemble : gestes quotidiens au centre, sans ouvrir un autre panneau. Assez large,
-   les tâches à gauche et les bilans IA à droite ; sinon les bilans sous les tâches. */
-.overview-board {
-  display: grid;
-  gap: 24px;
-  margin-bottom: 24px;
-}
-@container (min-width: 1080px) {
-  .overview-board {
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-    align-items: start;
-  }
-}
+/* Vue d'ensemble : gestes quotidiens au centre, sans ouvrir un autre panneau. Une seule
+   colonne : créer, traiter, puis les bilans IA seulement quand il y en a. */
 .overview-work {
   display: grid;
   gap: 14px;
   min-width: 0;
+  margin-bottom: 24px;
+}
+/* Les bilans d'abord : deux actions directes, puis les éléments réellement suivis. */
+.overview-ai {
+  min-width: 0;
+}
+.overview-ai-actions,
+.overview-ai-result-head,
+.overview-follow-selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.overview-ai-actions > button,
+.overview-follow-picker > button {
+  min-height: 40px;
+}
+.overview-ai-follow-link {
+  margin-left: auto;
+}
+.overview-ai > .ai-hint {
+  margin: 8px 0 0;
+}
+.overview-ai-result-head {
+  justify-content: space-between;
+}
+.overview-ai-result-head h3 {
+  margin: 0;
+  font-size: 17px;
+}
+.overview-ai-pending {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.overview-daily,
+.overview-schedule,
+.overview-follow-selection {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.overview-daily {
+  border-color: var(--accent);
+}
+.overview-daily > p {
+  line-height: 1.6;
+}
+.overview-daily-lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 16px;
+}
+.overview-daily-lists h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.overview-daily-lists ul,
+.overview-daily-limits ul {
+  padding-left: 20px;
+  margin: 0;
+}
+.overview-daily-lists li + li {
+  margin-top: 5px;
+}
+.overview-daily-limits {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.overview-daily-limits summary {
+  cursor: pointer;
+  padding: 6px 0;
+}
+.overview-schedule-list,
+.overview-follow-choices {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+}
+.overview-schedule-item {
+  padding: 12px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.overview-schedule-task {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.overview-schedule-task > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.overview-schedule-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  margin: 8px 0 0 24px;
+}
+.overview-schedule-fields label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.overview-schedule-fields input,
+.overview-schedule-fields select {
+  min-width: 0;
+  max-width: 100%;
+}
+.overview-schedule-reason {
+  margin: 8px 0 0 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.overview-follow-picker > .ai-hint {
+  display: inline;
+  margin-left: 8px;
+}
+.overview-follow-selection > p:first-child {
+  margin-top: 0;
+}
+.overview-follow-selection > input {
+  width: 100%;
+}
+.overview-follow-choices {
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.overview-follow-choices label {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+}
+.overview-follow-choices input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+.overview-follow-choices strong,
+.overview-follow-choices small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.overview-follow-choices strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.overview-follow-choices small {
+  margin-top: 3px;
+  color: var(--muted);
+}
+@container (max-width: 550px) {
+  .overview-ai-actions > button,
+  .overview-follow-picker > button,
+  .overview-follow-selection-actions > button {
+    min-height: 44px;
+  }
+  .overview-ai-follow-link {
+    margin-left: 0;
+  }
+  .overview-daily,
+  .overview-schedule,
+  .overview-follow-selection {
+    padding: 12px;
+  }
+  .overview-schedule-fields {
+    margin-left: 0;
+  }
 }
 .overview-add {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(110px, 180px) auto;
-  align-items: end;
+  align-items: center;
   gap: 8px;
-  padding: 12px;
+  padding: 10px;
   border: 1px solid var(--line-soft);
   border-radius: 12px;
   background: var(--surface);
 }
-.overview-add label {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--muted);
-}
 .overview-add input,
 .overview-add select,
-.overview-task-project select {
+.overview-task > select {
   width: 100%;
   min-width: 0;
 }
@@ -6297,6 +6493,9 @@ button.lane-name:hover {
 .overview-progress-title {
   margin: 0;
   font-size: 15px;
+}
+.overview-list-head h3 {
+  font-size: 16px;
 }
 .overview-filters {
   display: flex;
@@ -6314,16 +6513,22 @@ button.lane-name:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(110px, 180px) auto;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 9px 12px;
   border: 1px solid var(--line-soft);
   border-radius: 10px;
   background: var(--surface);
 }
+.overview-task.is-doing {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.overview-task.is-late {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
 .overview-task-main {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: 3px;
 }
 .overview-task-title {
   min-width: 0;
@@ -6338,11 +6543,35 @@ button.lane-name:hover {
   text-decoration: underline;
 }
 .overview-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 8px;
   color: var(--muted);
   font-size: 12px;
 }
-.overview-task > .follow-up {
-  grid-column: 1 / -1;
+.overview-task-status {
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.overview-task-status.is-doing {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.overview-task-due.is-late {
+  color: var(--danger);
+  font-weight: 600;
+}
+.overview-task-pin {
+  color: var(--mark);
+}
+.overview-task-follow {
+  color: var(--accent);
+  white-space: nowrap;
 }
 .overview-progress-title {
   margin: 0 0 10px;
@@ -6516,10 +6745,26 @@ button.lane-name:hover {
 }
 .overview-follow-ups {
   min-width: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
 }
-.overview-follow-ups > h3 {
-  margin: 4px 0 10px;
+/* Le titre de section suffit : chaque carte garde son mode et son état, sans répéter « Suivi IA ». */
+.overview-follow-ups .follow-up-head strong {
+  display: none;
+}
+.overview-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.overview-section-head h3 {
+  margin: 0;
   font-size: 15px;
+}
+.overview-section-head span {
+  color: var(--muted);
+  font-size: 12px;
 }
 /* Des cartes côte à côte quand la colonne est large, une seule colonne sinon. */
 .overview-follow-ups > ul {
@@ -6555,6 +6800,12 @@ button.lane-name:hover {
   }
 }
 @container (max-width: 550px) {
+  .overview-status {
+    width: 100%;
+    margin-left: 0;
+    max-width: none;
+    text-align: left;
+  }
   .overview-add,
   .overview-task {
     grid-template-columns: minmax(0, 1fr) auto;

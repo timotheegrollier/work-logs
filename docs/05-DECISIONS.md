@@ -2795,3 +2795,91 @@ rouverts à côté, Écriture qui referme, Désactiver depuis l’entrée et la 
 nouvel appel IA, classement à mots égaux. Navigateur : recouvrement et deux colonnes à
 1 440 px, Tâches rouvert sans débordement, tablette 800 px, téléphone ; ligne discrète et
 Désactiver qui survit au rechargement.
+
+## 66. Vue d’ensemble : une colonne, les gestes d’abord, un retour après chaque action — 2026-11-04
+
+**Demande.** « L’affichage de la vue d’ensemble ne convient toujours pas : simplifie
+l’interface et améliore le layout et le feedback ; enlève le bouton Activer le suivi IA sur
+chaque entrée, ainsi que les autres doublons que tu trouves. »
+
+**Choix.**
+- **Une seule colonne.** Les tâches reprennent toute la largeur ; le bloc des bilans IA ne
+  réserve plus une moitié d’écran vide quand personne ne suit rien. Il n’apparaît que s’il y a
+  au moins un suivi, sous la liste des tâches, en cartes de 360 px au plus. Ce qui était le
+  « doublon » le plus visible — un encadré vide à droite — disparaît.
+- **Plus d’activation par ligne.** Une tâche de la vue d’ensemble n’affiche plus
+  « ✨ Activer le suivi IA » sous son titre : l’activation reste dans l’entrée ou la carte de
+  la tâche, là où l’on voit le texte et les documents envoyés. Une tâche déjà suivie garde une
+  simple pastille « ✦ Suivi IA », qui informe sans ajouter de commande. Le titre « Suivi IA »
+  répété dans chaque carte de bilan est masqué : le titre de section suffit.
+- **Composer sans étiquettes.** Le formulaire d’ajout tient sur une ligne (champ, projet,
+  Ajouter), avec les libellés d’accessibilité sur les contrôles. Les métadonnées de chaque
+  tâche deviennent des pastilles (état, échéance, épingle), plus lisibles que la ligne de texte
+  précédente.
+- **Un retour après chaque geste.** Une zone `role="status"` près de la liste annonce
+  « Enregistrement… », puis « Tâche ajoutée. », « Projet mis à jour. » ou
+  « “titre” passée en cours. » ; elle ne prend aucune place quand elle est vide et reste dans
+  l’arbre d’accessibilité. Une erreur garde son `role="alert"` et le titre saisi.
+- **Focus stable.** Désactiver le dernier suivi retire le bloc : le focus revient au titre
+  « Vue d’ensemble » ; s’il en reste, il revient au titre de la section. Aucune colonne vide
+  n’est conservée juste pour recevoir le focus.
+- **Écartés.** Une notification flottante (un deuxième système de retour, qui masque le bas de
+  l’écran sur téléphone) ; supprimer la carte de la tâche suivie de la liste principale (on ne
+  pourrait plus la démarrer) ; retirer les voies d’avancement (elles restent la lecture
+  synthétique des projets) ; ajouter un onglet ou un mode.
+
+**Validation.** Front : plus de bouton d’activation ni de région de bilans vide dans la vue,
+retour affiché après ajout, affectation et passage en cours, retrait du dernier suivi et focus
+sur le titre. Navigateur : plus de bouton d’activation, liste à pleine largeur sans débordement
+à 1 440, 800 et 375 px, retour visible au téléphone, bilans toujours accessibles sous les
+tâches.
+
+## 67. Bilan du jour en tête, suivis choisis ensemble et dates proposées avant application — 2026-11-05
+
+**Demande.** Simplifier encore le haut de la vue d’ensemble ; rendre le bilan des suivis IA
+plus accessible, générer rapidement un bilan quotidien, redater les tâches selon ce qui compte
+réellement ; cliquer une source doit fermer la vue et l’afficher.
+
+**Choix.**
+- Deux actions directes en tête : **Bilan du jour** synthétise les rapports de suivi déjà
+  enregistrés en un appel ; **Replanifier avec l’IA** prépare dates et priorités pour toutes
+  les tâches ouvertes chargées. Les suivis passent avant la liste de tâches. Leur compteur
+  mène au titre de la section ; les détails restent repliables dans les cartes.
+- Le bilan ne relit pas de notes brutes et ne lance pas une analyse par élément. Il reçoit
+  les rapports datés, avec leur état de fraîcheur et leurs limites. Les anciens rapports ne
+  prouvent pas l’état actuel ; une génération du jour ne prouve pas des réalisations du jour.
+  Le prompt exige une date explicite pour les avancées quotidiennes et déduplique les faits
+  repris dans une tâche et ses entrées. Les listes sont bornées et les réponses validées.
+- Une sélection commune **Ajouter au suivi IA** remplace la navigation répétée vers chaque
+  carte : recherche par titre/projet, cases conservées pendant la recherche, activation
+  groupée et retours explicites. Une entrée déjà comprise dans une tâche suivie est signalée,
+  sans interdire un suivi séparé. Une réponse d’activation perdue est vérifiée avant tout
+  nouvel essai, pour ne pas redater un choix déjà enregistré.
+- La replanification reçoit les champs des tâches, les repères des projets et les extraits
+  des bilans disponibles : impact, dépendances et blocages passent avant le simple retard.
+  Les nouvelles dates sont des estimations à partir d’aujourd’hui, sans disponibilité ni
+  durée inventée. La proposition affiche la justification, la date précédente, une priorité
+  et une date modifiables, une case par tâche et **Appliquer**. Rien ne change avant ce clic ;
+  aucun texte, statut ou ordre manuel ne change. Une réponse partielle le dit.
+- Le contexte est figé pendant l’analyse et la relecture. Une tâche, un suivi, un repère ou
+  une journée modifiés invalident le résultat. Avant application, l’état global est relu ;
+  chaque écriture vérifie aussi ses champs attendus côté serveur/PWA pour refuser une
+  modification concurrente. Après un refus partiel, seules les tâches restantes sont
+  réessayées, les succès connus restent indiqués et l’état est relu même après erreur.
+- Un titre de tâche ou de suivi, ou un nœud, **ferme la vue** et ouvre sa source. Les tâches
+  terminées se déplient et le titre reçoit le focus. Les formulaires de tâche à enregistrement
+  explicite gardent leurs brouillons pendant ces allers-retours, même entre deux cartes.
+- 60 suivis ou tâches au maximum, sans troncature silencieuse. Les bilans ont un budget
+  partagé de 24 000 caractères ; chaque suivi reste représenté. Les entrées et tâches hors
+  de l’état chargé sont annoncées ; la replanification refuse une liste ouverte incomplète.
+  La synthèse quotidienne reste temporaire dans la vue et se régénère à la demande.
+
+**Écartés.** Un onglet ou un nouveau mode ; réintroduire un bouton d’activation sur chaque
+ligne (§66) ; appliquer automatiquement les dates proposées ; traiter une date estimée comme
+une obligation ; relancer tous les suivis pour chaque bilan quotidien.
+
+**Validation.** Prompts et réponses IA simulés, dates réelles et limites, annulation,
+contexte périmé, nouvelle journée, modifications concurrentes API/PWA, sélection groupée,
+écriture partielle et réponse perdue, préservation des brouillons. Parcours navigateur pour
+le bilan, les dates corrigées, la sélection et l’ouverture des sources, dont les terminées.
+Captures clair/sombre et téléphone ; recette complète `./scripts/check.sh` en fin de lot.

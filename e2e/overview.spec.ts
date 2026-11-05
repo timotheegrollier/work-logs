@@ -171,13 +171,14 @@ test('une voie par projet qui tient en largeur, sur desktop comme sur téléphon
     await page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true }).click();
     const overview = page.getByRole('region', { name: 'Vue d’ensemble des projets' });
     await expect(overview).toBeVisible();
-    // Elle recouvre les panneaux et range les bilans IA à droite des tâches.
+    // Elle recouvre les panneaux ; sans suivi IA, aucun bloc vide ne prend la moitié de la largeur.
     await expect(page.locator('#workspace-journal')).toBeHidden();
     await expect(page.locator('#workspace-tasks')).toBeHidden();
+    await expect(overview.getByRole('region', { name: 'Bilans et suivis IA' })).toHaveCount(0);
+    await expect(overview.getByRole('button', { name: /Activer le suivi IA/ })).toHaveCount(0);
     const work = (await overview.locator('.overview-work').boundingBox())!;
-    const reports = (await overview.getByRole('region', { name: 'Bilans et suivis IA' }).boundingBox())!;
-    expect(reports.x).toBeGreaterThanOrEqual(work.x + work.width);
-    expect(Math.abs(reports.y - work.y)).toBeLessThan(40);
+    const list = (await overview.locator('.overview-tasks').boundingBox())!;
+    expect(list.width).toBeGreaterThan(work.width * 0.9);
     const lane = overview.getByRole('listitem', { name: /^Bassins vue :/ });
     await expect(lane.getByRole('listitem').or(lane).first()).toBeVisible();
     await expect(lane.locator('.lane-node')).toHaveCount(10);
@@ -227,12 +228,93 @@ test('une voie par projet qui tient en largeur, sur desktop comme sur téléphon
     expect(await noHorizontalScroll(page)).toBe(true);
     await sameRow();
     await lane.locator('.lane-node').first().click();
+    await expect(overview).toBeHidden();
     await expect(nav('Tâches')).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByRole('region', { name: 'Tâches', exact: true }).getByRole('button', { name: 'Étude 1', exact: true })).toBeFocused();
+    await expect(page.getByRole('region', { name: 'Tâches', exact: true }).getByLabel('Titre de la tâche')).toHaveValue('Étude 1');
+    await expect(page.getByRole('region', { name: 'Tâches', exact: true }).getByLabel('Titre de la tâche')).toBeFocused();
   } finally {
     for (const task of tasks) await request.delete(`/api/tasks/${task.id}`);
     await request.delete(`/api/projects/${project.id}`);
     await request.delete(`/api/projects/${other.id}`);
+  }
+});
+
+test('choisir une tâche ou une entrée suivie ferme la vue et affiche la source, même une tâche terminée', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Navigation suivis vue' });
+  const task = await post(request, '/api/tasks', { title: 'Préparer la revue navigation', project_id: project.id });
+  const done = await post(request, '/api/tasks', { title: 'Contrôle terminé navigation', project_id: project.id, status: 'done' });
+  const entry = await post(request, '/api/entries', { title: 'Journal suivi navigation', project_id: project.id, content_md: 'Contrôle réalisé et validé.' });
+  // Le mode manuel rend les suivis visibles sans démarrer de requête IA.
+  for (const [kind, id] of [['task', done.id], ['entry', entry.id]]) {
+    const result = await request.put(`/api/follow-up/${kind}/${id}`, { data: { enabled: false } });
+    expect(result.ok()).toBeTruthy();
+  }
+  try {
+    await page.addInitScript(() => localStorage.setItem('worklogs-show-right', '0'));
+    const overview = page.getByRole('region', { name: 'Vue d’ensemble des projets', exact: true });
+    const board = page.getByRole('region', { name: 'Tâches', exact: true });
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 800, height: 1000 }, { width: 375, height: 812 }]) {
+      await page.setViewportSize(viewport);
+      await page.goto('/');
+      const trigger = page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true });
+      await trigger.click();
+      await overview.getByRole('button', { name: task.title, exact: true }).click();
+      await expect(overview).toBeHidden();
+      await expect(board.getByLabel('Titre de la tâche')).toHaveValue(task.title);
+      await expect(board.getByLabel('Titre de la tâche')).toBeFocused();
+
+      await trigger.click();
+      await overview.getByRole('button', { name: `Ouvrir la tâche ${done.title}`, exact: true }).click();
+      await expect(overview).toBeHidden();
+      await expect(board.getByLabel('Titre de la tâche')).toHaveValue(done.title);
+      await expect(board.getByLabel('Titre de la tâche')).toBeFocused();
+      await expect(board.getByRole('button', { name: /Masquer les tâches terminées/ })).toHaveAttribute('aria-expanded', 'true');
+
+      await trigger.click();
+      await overview.getByRole('button', { name: `Ouvrir l’entrée ${entry.title}`, exact: true }).click();
+      await expect(overview).toBeHidden();
+      await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(entry.title);
+      expect(await noHorizontalScroll(page)).toBe(true);
+    }
+  } finally {
+    await request.delete(`/api/tasks/${task.id}`);
+    await request.delete(`/api/tasks/${done.id}`);
+    await request.delete(`/api/entries/${entry.id}`);
+    await request.delete(`/api/projects/${project.id}`);
+  }
+});
+
+test('revenir à une carte depuis la vue conserve les brouillons de tâche, même après avoir ouvert une autre carte', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Brouillons navigation vue' });
+  const first = await post(request, '/api/tasks', { title: 'Première tâche brouillon vue', project_id: project.id });
+  const second = await post(request, '/api/tasks', { title: 'Seconde tâche brouillon vue', project_id: project.id });
+  try {
+    await page.goto('/');
+    const trigger = page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true });
+    const overview = page.getByRole('region', { name: 'Vue d’ensemble des projets', exact: true });
+    const board = page.getByRole('region', { name: 'Tâches', exact: true });
+    const title = board.getByLabel('Titre de la tâche');
+    await trigger.click();
+    await overview.getByRole('button', { name: first.title, exact: true }).click();
+    await title.fill('Première tâche : brouillon gardé');
+    await trigger.click();
+    await overview.getByRole('button', { name: first.title, exact: true }).click();
+    await expect(title).toHaveValue('Première tâche : brouillon gardé');
+    await trigger.click();
+    await overview.getByRole('button', { name: second.title, exact: true }).click();
+    await title.fill('Seconde tâche : brouillon gardé');
+    await trigger.click();
+    await overview.getByRole('button', { name: first.title, exact: true }).click();
+    await expect(title).toHaveValue('Première tâche : brouillon gardé');
+    expect((await (await request.get('/api/state')).json()).tasks.find((task: { id: string }) => task.id === first.id).title).toBe(first.title);
+    await board.locator('.is-editing').getByRole('button', { name: 'Annuler', exact: true }).click();
+    await trigger.click();
+    await overview.getByRole('button', { name: first.title, exact: true }).click();
+    await expect(title).toHaveValue(first.title);
+  } finally {
+    await request.delete(`/api/tasks/${first.id}`);
+    await request.delete(`/api/tasks/${second.id}`);
+    await request.delete(`/api/projects/${project.id}`);
   }
 });
 
@@ -252,12 +334,14 @@ test('sur téléphone, créer une tâche, la ranger dans un projet et la démarr
     created = (await (await response).json()).id;
     const row = overview.locator('.overview-task').filter({ hasText: 'Nouvelle tâche mobile vue' });
     await expect(row.getByLabel('Projet de Nouvelle tâche mobile vue')).toHaveValue(project.id);
+    await expect(overview.getByRole('status')).toContainText('Tâche ajoutée.');
     await row.getByRole('button', { name: 'Mettre en cours Nouvelle tâche mobile vue' }).click();
     await expect(row).toBeHidden();
+    await expect(overview.getByRole('status')).toContainText('passée en cours.');
     await overview.getByRole('button', { name: /^En cours/ }).click();
     await expect(overview.getByRole('button', { name: 'Remettre à faire Nouvelle tâche mobile vue' })).toBeVisible();
-    await overview.getByRole('button', { name: 'Conseils IA ↓' }).click();
-    await expect(overview.getByRole('group', { name: 'Conseils IA', exact: true })).toBeFocused();
+    await expect(overview.getByRole('button', { name: 'Bilan du jour', exact: true })).toBeDisabled();
+    await expect(overview.getByRole('button', { name: 'Ajouter au suivi IA', exact: true })).toBeVisible();
     expect(await noHorizontalScroll(page)).toBe(true);
   } finally {
     if (created) await request.delete(`/api/tasks/${created}`);

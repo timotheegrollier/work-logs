@@ -67,6 +67,7 @@ export default function App() {
   // Vue rapide de la colonne Tâches (en retard, en cours…) : un filtre d'affichage,
   // pas un mode — non retenu au redémarrage, levé d'un clic sur « Toutes ».
   const [taskView, setTaskView] = useState<TaskView | null>(null);
+  const [taskReveal, setTaskReveal] = useState({ id: '', sequence: 0 });
   // Vue d'ensemble des projets au centre, à la place de l'entrée : un affichage, pas un
   // mode (§33) — non retenu au redémarrage, refermé par tout ce qui ouvre autre chose.
   const [overview, setOverview] = useState(false);
@@ -233,15 +234,17 @@ export default function App() {
     revealEditor();
   }, []);
   /**
-   * Un nœud de la vue d'ensemble mène à sa carte : le panneau Tâches, sans vue rapide, et le focus
-   * sur le titre. Il s'ouvre à côté de la vue, qui reste là avec ses conseils IA ; le réglage
-   * retenu du panneau ne change pas.
+   * Une tâche choisie quitte la vue d'ensemble et ouvre sa carte, même terminée.
+   * Une nouvelle séquence permet de revenir deux fois à la même tâche.
    */
   const revealTask = useCallback((task: Task) => {
+    ++navigationSequence.current;
+    setOverview(false);
     setTaskView(null);
-    setBeside(withView('tasks'));
+    setShowRight(true);
+    setShowDocumentTasks(true);
+    setTaskReveal((current) => ({ id: task.id, sequence: current.sequence + 1 }));
     if (isPhone()) goTo('tasks');
-    requestAnimationFrame(() => document.getElementById('task-' + task.id)?.querySelector<HTMLElement>('.card-title')?.focus());
   }, [goTo]);
 
   /**
@@ -830,6 +833,7 @@ export default function App() {
               onChanged={reload}
               missingOpen={missingOpen}
               missingTasks={Math.max(0, state.stats.tasks.todo + state.stats.tasks.doing + state.stats.tasks.done - state.tasks.length)}
+              missingEntries={Math.max(0, state.stats.entries - state.entries.length)}
               advice={<TaskAdvice tasks={state.tasks} projects={state.projects} onTask={revealTask} missingOpen={missingOpen} />}
             />
           ) : overview ? (
@@ -888,6 +892,7 @@ export default function App() {
             projectId={projectId}
             projects={state?.projects ?? []}
             view={taskView}
+            revealRequest={taskReveal}
             onView={setTaskView}
             onOpenDocument={openDocument}
             onOpenShared={openShared}

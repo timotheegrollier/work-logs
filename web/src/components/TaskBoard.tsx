@@ -29,6 +29,7 @@ export const TaskBoard = memo(function TaskBoard({
   search = '',
   grouped = false,
   view,
+  revealRequest,
   onView,
   onOpenDocument,
   onOpenShared,
@@ -44,6 +45,8 @@ export const TaskBoard = memo(function TaskBoard({
   search?: string;
   grouped?: boolean;
   view: TaskView | null;
+  /** Ouverture depuis la vue d'ensemble, y compris dans la liste terminée repliée. */
+  revealRequest?: { id: string; sequence: number };
   onView: (view: TaskView | null) => void;
   /** `projectId` : projet connu d'un document absent de l'état filtré, que l'ouverture suit. */
   onOpenDocument: (entryId: string, projectId?: string | null) => void;
@@ -60,6 +63,31 @@ export const TaskBoard = memo(function TaskBoard({
   // Le brouillon survit au passage de la carte dans un autre groupe (suppression
   // ou déplacement de catégorie), même si React remonte cette carte.
   const [editingForm, setEditingForm] = useState<TaskEditForm | null>(null);
+  // Revenir depuis la vue d'ensemble ne remplace pas une saisie explicite. Chaque
+  // carte retrouve son brouillon jusqu'à Enregistrer ou Annuler.
+  const drafts = useRef(new Map<string, TaskEditForm>());
+  useEffect(() => {
+    if (editing && editingForm) drafts.current.set(editing, editingForm);
+  }, [editing, editingForm]);
+  const beginEdit = (task: Task) => {
+    if (editingRef.current === task.id) return;
+    setEditingForm(drafts.current.get(task.id) ?? taskForm(task));
+    setEditing(task.id);
+  };
+  const revealed = useRef(0);
+  useEffect(() => {
+    if (!revealRequest?.id || revealRequest.sequence === revealed.current) return;
+    const task = tasks.find((candidate) => candidate.id === revealRequest.id);
+    if (!task) return;
+    revealed.current = revealRequest.sequence;
+    if (task.status === 'done') setShowCompleted(true);
+    beginEdit(task);
+    requestAnimationFrame(() => {
+      const card = document.getElementById('task-' + task.id);
+      card?.scrollIntoView?.({ block: 'nearest' });
+      card?.querySelector<HTMLInputElement>('input[aria-label="Titre de la tâche"]')?.focus();
+    });
+  }, [revealRequest, tasks]);
   const creationCategory = categories.find((category) => category.id === categoryId);
   const today = todayISO();
   const active = TASK_VIEWS.find((candidate) => candidate.id === view);
@@ -261,8 +289,8 @@ export const TaskBoard = memo(function TaskBoard({
                         editing={editing === task.id}
                         form={editing === task.id && editingForm ? editingForm : taskForm(task)}
                         onFormChange={(next) => { if (editingRef.current === task.id) setEditingForm((current) => typeof next === 'function' ? next(current || taskForm(task)) : next); }}
-                        onEdit={() => { setEditingForm(taskForm(task)); setEditing(task.id); }}
-                        onEditDone={() => { if (editingRef.current === task.id) { editingRef.current = null; setEditing(null); setEditingForm(null); } }}
+                        onEdit={() => beginEdit(task)}
+                        onEditDone={() => { if (editingRef.current === task.id) { drafts.current.delete(task.id); editingRef.current = null; setEditing(null); setEditingForm(null); } }}
                         onOpenDocument={onOpenDocument}
                         onOpenShared={onOpenShared}
                         onProcedureCreated={onProcedureCreated}
