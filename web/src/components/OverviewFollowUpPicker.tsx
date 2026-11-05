@@ -64,6 +64,10 @@ export function OverviewFollowUpPicker({ tasks, entries, projects, onChanged }: 
     {feedback && <p role="status" className="ai-hint">{feedback}</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {open && <section id="overview-follow-selection" className="overview-follow-selection" aria-label="Choisir les suivis IA">
+      <div className="overview-follow-selection-head">
+        <div><span className="overview-kicker">Suivis IA</span><h4>Choisir des éléments</h4></div>
+        <span className="overview-follow-selection-count">{selected.length > 0 ? `${selected.length} sélectionné${selected.length > 1 ? 's' : ''}` : 'Aucune sélection'}</span>
+      </div>
       <p>Choisis les tâches ou les entrées à suivre. Le suivi d’une tâche lit aussi ses documents liés.</p>
       <input ref={search} type="search" aria-label="Rechercher un élément à suivre" placeholder="Rechercher une tâche, une entrée, un projet…" value={query} disabled={busy} onChange={(event) => setQuery(event.target.value)} />
       <p className="ai-hint">Les textes enregistrés des éléments choisis sont envoyés au service IA configuré dans les Paramètres.</p>

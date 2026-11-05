@@ -138,9 +138,12 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
       <div className="overview-head">
         <div className="overview-head-title">
           <h2 ref={head} tabIndex={-1}>Vue d’ensemble</h2>
-          <p className="ai-hint">
-            {plural(projects.length, 'projet', 'projets')} · {plural(totals.open, 'tâche ouverte', 'tâches ouvertes')} · {plural(totals.done, 'terminée', 'terminées')}
-            {totals.late > 0 && <> · <b className="late">{totals.late} en retard</b></>}
+          <p className="overview-summary">
+            <span className="overview-sr">{plural(projects.length, 'projet', 'projets')} · {plural(totals.open, 'tâche ouverte', 'tâches ouvertes')} · {plural(totals.done, 'terminée', 'terminées')}{totals.late > 0 && <> · {totals.late} en retard</>}</span>
+            <span className="overview-stat" aria-hidden="true"><b>{projects.length}</b> {projects.length > 1 ? 'projets' : 'projet'}</span>
+            <span className="overview-stat" aria-hidden="true"><b>{totals.open}</b> {totals.open > 1 ? 'tâches ouvertes' : 'tâche ouverte'}</span>
+            <span className="overview-stat" aria-hidden="true"><b>{totals.done}</b> {totals.done > 1 ? 'terminées' : 'terminée'}</span>
+            {totals.late > 0 && <span className="overview-stat is-late" aria-hidden="true"><b>{totals.late}</b> en retard</span>}
           </p>
         </div>
         <div className="overview-head-actions">
@@ -157,52 +160,62 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
         <OverviewAiActions tasks={tasks} entries={entries} projects={projects} missingOpen={missingOpen} missingTasks={missingTasks} missingEntries={missingEntries} onChanged={onChanged} onTask={onTask} onShowFollowUps={() => {
           followHead.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
           followHead.current?.focus({ preventScroll: true });
-        }} />
-        <OverviewFollowUpPicker tasks={tasks} entries={entries} projects={projects} onChanged={onChanged} />
+        }}>
+          <OverviewFollowUpPicker tasks={tasks} entries={entries} projects={projects} onChanged={onChanged} />
+        </OverviewAiActions>
         <div className="overview-action-feedback">
           <span className={'overview-status' + (busy ? ' is-busy' : '')} role="status" aria-live="polite" aria-atomic="true">{busy ? 'Enregistrement…' : feedback}</span>
           {error && <p className="error" role="alert">{error}</p>}
         </div>
         {followCount > 0 && <section className="overview-follow-ups no-print" aria-label="Bilans et suivis IA">
           <div className="overview-section-head">
-            <h3 ref={followHead} tabIndex={-1}>Suivis IA</h3>
-            <span>{plural(followCount, 'élément suivi', 'éléments suivis')}</span>
+            <div>
+              <h3 ref={followHead} tabIndex={-1}>Suivis IA</h3>
+              <p>Les bilans enregistrés, prêts à être relus ou actualisés.</p>
+            </div>
+            <span className="overview-section-count">{plural(followCount, 'élément suivi', 'éléments suivis')}</span>
           </div>
           <ul>
             {followedTasks.map((task) => <li key={'task-' + task.id}>
-              <div className="overview-follow-up-title"><span>Tâche</span><button className="overview-task-title" type="button" aria-label={`Ouvrir la tâche ${task.title}`} onClick={() => onTask(task)}>{task.title}</button></div>
-              <OverviewTaskActions task={task} disabled={Boolean(busy)} onStatus={changeTaskStatus} />
+              <div className="overview-follow-up-head">
+                <div className="overview-follow-up-title"><span>Tâche</span><button className="overview-task-title" type="button" aria-label={`Ouvrir la tâche ${task.title}`} onClick={() => onTask(task)}>{task.title}</button></div>
+                <OverviewTaskActions task={task} disabled={Boolean(busy)} onStatus={changeTaskStatus} />
+              </div>
               <FollowUpPanel kind="task" item={task} compact />
             </li>)}
             {followedEntries.map((entry) => <li key={'entry-' + entry.id}>
-              <div className="overview-follow-up-title"><span>{entry.kind === 'procedure' ? 'Procédure' : 'Entrée'}{entry.archived ? ' · Archivée' : ''}</span><button className="overview-task-title" type="button" aria-label={`Ouvrir l’entrée ${entry.title}`} onClick={() => onEntry(entry)}>{entry.title}</button></div>
-              <OverviewEntryActions entry={entry} disabled={Boolean(busy)} onArchive={changeEntryArchive} />
+              <div className="overview-follow-up-head">
+                <div className="overview-follow-up-title"><span>{entry.kind === 'procedure' ? 'Procédure' : 'Entrée'}{entry.archived ? ' · Archivée' : ''}</span><button className="overview-task-title" type="button" aria-label={`Ouvrir l’entrée ${entry.title}`} onClick={() => onEntry(entry)}>{entry.title}</button></div>
+                <OverviewEntryActions entry={entry} disabled={Boolean(busy)} onArchive={changeEntryArchive} />
+              </div>
               <FollowUpPanel kind="entry" item={entry} compact />
             </li>)}
           </ul>
         </section>}
-        <form className="overview-add" onSubmit={(event) => void addTask(event)}>
-          <input className="overview-add-title" aria-label="Nouvelle tâche dans la vue d’ensemble" placeholder="Ajouter une tâche…" disabled={Boolean(busy)} value={title} onChange={(event) => setTitle(event.target.value)} />
-          <select aria-label="Projet de la nouvelle tâche" title="Projet de la nouvelle tâche" disabled={Boolean(busy)} value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-            <option value="">Sans projet</option>
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-          </select>
-          <button className="task-primary" type="submit" disabled={Boolean(busy) || !title.trim()}>{busy === 'new' ? 'Ajout…' : 'Ajouter'}</button>
-        </form>
-        <div className="overview-list-head">
-          <h3 ref={taskHead} tabIndex={-1}>Tâches</h3>
-          <div className="overview-filters" role="group" aria-label="Filtrer les tâches de la vue d’ensemble">
-            {([['todo', 'À faire', todoCount], ['doing', 'En cours', doingCount], ['open', 'Ouvertes', openTasks.length], ['done', 'Terminées', doneTasks.length]] as const).map(([value, label, count]) => (
-              <button key={value} className={'chip' + (filter === value ? ' is-on' : '')} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label} <span className="count">{count}</span></button>
-            ))}
+        <div className="overview-tasks-panel">
+          <div className="overview-list-head">
+            <h3 ref={taskHead} tabIndex={-1}>Tâches</h3>
+            <div className="overview-filters" role="group" aria-label="Filtrer les tâches de la vue d’ensemble">
+              {([['todo', 'À faire', todoCount], ['doing', 'En cours', doingCount], ['open', 'Ouvertes', openTasks.length], ['done', 'Terminées', doneTasks.length]] as const).map(([value, label, count]) => (
+                <button key={value} className={'chip' + (filter === value ? ' is-on' : '')} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label} <span className="count">{count}</span></button>
+              ))}
+            </div>
           </div>
-        </div>
+          <form className="overview-add" onSubmit={(event) => void addTask(event)}>
+            <input className="overview-add-title" aria-label="Nouvelle tâche dans la vue d’ensemble" placeholder="Ajouter une tâche…" disabled={Boolean(busy)} value={title} onChange={(event) => setTitle(event.target.value)} />
+            <select aria-label="Projet de la nouvelle tâche" title="Projet de la nouvelle tâche" disabled={Boolean(busy)} value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+              <option value="">Sans projet</option>
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+            <button className="task-primary" type="submit" disabled={Boolean(busy) || !title.trim()}>{busy === 'new' ? 'Ajout…' : 'Ajouter'}</button>
+          </form>
         {shownTasks.length === 0 ? <p className="empty">{filter === 'todo' ? 'Aucune tâche à faire.' : filter === 'doing' ? 'Aucune tâche en cours.' : filter === 'done' ? 'Aucune tâche terminée.' : 'Aucune tâche ouverte.'}</p> : (
           <ul className="overview-tasks" aria-label="Liste des tâches de la vue d’ensemble">
             {shownTasks.map((task) => {
               const late = isOverdue(task, today);
               return (
                 <li className={'overview-task' + (task.status === 'doing' ? ' is-doing' : task.status === 'done' ? ' is-done' : '') + (late ? ' is-late' : '')} key={task.id} aria-busy={busy === 'task:' + task.id}>
+                  <span className={'overview-task-marker is-' + task.status + (late ? ' is-late' : '')} aria-hidden="true" />
                   <div className="overview-task-main">
                     <button className="overview-task-title" type="button" onClick={() => onTask(task)}>{task.title}</button>
                     <span className="overview-task-meta">
@@ -211,6 +224,7 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
                       <span className={'overview-task-priority is-' + task.priority}>{priorityLabel(task.priority)}</span>
                       {task.due_date && <span className={'overview-task-due' + (late ? ' is-late' : '')}>{late ? 'En retard' : `Échéance ${dayLabel(task.due_date)}`}</span>}
                       {task.pinned > 0 && <span className="overview-task-pin">Épinglée</span>}
+                      {task.documents.length > 0 && <span className="overview-task-docs">{plural(task.documents.length, 'document', 'documents')}</span>}
                       {isFollowed(task) && <span className="overview-task-follow" title="Suivi IA actif">✦ Suivi IA</span>}
                     </span>
                   </div>
@@ -229,6 +243,7 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
             })}
           </ul>
         )}
+        </div>
         <details className="overview-journal">
           <summary ref={journalHead}>Entrées du journal ({notes.length})</summary>
           <section aria-label="Entrées du journal">

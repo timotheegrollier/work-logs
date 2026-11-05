@@ -1,5 +1,21 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Ajustement du 2026-11-05 — lisibilité de la vue d’ensemble
+
+La vue d’ensemble ouvre sur une synthèse en pastilles (projets, tâches ouvertes, terminées,
+retards) tout en gardant une phrase complète pour les lecteurs d’écran. La carte Assistant
+regroupe les deux actions IA, replie les données envoyées et accueille le sélecteur de suivi ;
+les propositions de replanification deviennent des cartes **Actuel / Proposé**, avec badge
+**À modifier / Inchangée**, compteur de changements, priorité et date éditables, et barre
+d’application en pied de panneau. Les suivis IA regroupent titre, date et actions dans leur
+en-tête ; la liste des tâches dispose d’un panneau dédié, d’un formulaire sous le titre, d’un
+marqueur d’état et du compteur de documents liés. Adaptations sous 550 px, vérifiées sans
+débordement de 320 à 1 440 px.
+
+Aucun changement d’API, de schéma ou de dépendance. Version **0.71.0**. Suite front verte
+(51 fichiers, 815 tests, 1 échec attendu), build et parcours navigateur ciblés verts ; la CI
+Linux validera l’ensemble.
+
 ## Ajustement du 2026-11-05 — actions directes, journal et refonte de la vue (§69)
 
 La vue d’ensemble traite maintenant les tâches et les notes sur place. Chaque ligne de tâche
