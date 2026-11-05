@@ -5879,7 +5879,8 @@ describe('suivi IA des entrées et tâches', () => {
     await screen.findByDisplayValue('Note évolutive');
     fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
     const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
-    expect(within(overview).getByRole('button', { name: 'Bilan du jour' })).toBeDisabled();
+    // Une tâche ouverte non terminée suffit : le bilan lit la totalité des tâches.
+    expect(within(overview).getByRole('button', { name: 'Bilan du jour' })).toBeEnabled();
     fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter au suivi IA' }));
     const picker = within(overview).getByRole('region', { name: 'Choisir les suivis IA' });
     fireEvent.click(within(picker).getByRole('checkbox', { name: /Remonter la pompe/ }));

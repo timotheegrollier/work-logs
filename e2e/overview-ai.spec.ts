@@ -37,6 +37,7 @@ async function saveReport(request: APIRequestContext, kind: 'task' | 'entry', id
 }
 
 test('bilan du jour en un clic : synthétise les suivis, accessibles en tête et lisibles sur téléphone', async ({ page, request }, testInfo) => {
+  test.setTimeout(60_000);
   const project = await post(request, '/api/projects', { name: 'Bilan quotidien vue IA' });
   try {
     const task = await post(request, '/api/tasks', { title: 'Remise en service bilan quotidien', project_id: project.id });

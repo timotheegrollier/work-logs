@@ -22,21 +22,23 @@ const props = (tasks: Task[]) => ({ tasks, entries: [], projects: [], onChanged:
 beforeEach(() => { localStorage.clear(); vi.mocked(generateDailyReview).mockReset(); vi.mocked(replanTasks).mockReset(); });
 afterEach(() => vi.restoreAllMocks());
 
-test('le bilan est directement accessible et seuls les éléments suivis lui sont transmis', async () => {
+test('le bilan est directement accessible et lit la totalité des tâches non terminées', async () => {
   const user = userEvent.setup();
   vi.mocked(generateDailyReview).mockResolvedValue(review);
   const inputs = props([task('a', { follow_up: follow, follow_up_key: 'version1' }), task('b')]);
   render(<OverviewAiActions {...inputs} />);
   await user.click(screen.getByRole('button', { name: /Bilan du jour/ }));
   await screen.findByRole('region', { name: 'Bilan IA du jour' });
-  expect(generateDailyReview).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }), [expect.objectContaining({ id: 'a', kind: 'task', follow_up: follow })], { today });
+  expect(vi.mocked(generateDailyReview).mock.calls[0][1]).toHaveLength(2);
+  expect(vi.mocked(generateDailyReview).mock.calls[0][1][0]).toMatchObject({ id: 'a', kind: 'task', follow_up: follow });
+  expect(vi.mocked(generateDailyReview).mock.calls[0][1][1]).toMatchObject({ id: 'b', kind: 'task', status: 'todo' });
   expect(screen.getByText(review.summary)).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Voir les suivis (1)' }));
   expect(inputs.onShowFollowUps).toHaveBeenCalledOnce();
 });
 
-test('sans bilan disponible, le raccourci explique comment commencer et reste visible', () => {
-  render(<OverviewAiActions {...props([task('a')])} />);
+test('sans tâche ouverte et sans suivi, le raccourci du bilan reste désactivé', () => {
+  render(<OverviewAiActions {...props([task('finie', { status: 'done' })])} />);
   expect(screen.getByRole('button', { name: /Bilan du jour/ })).toBeDisabled();
   expect(screen.getByText(/Ajoute une tâche ou une entrée aux suivis IA/)).toBeVisible();
 });
@@ -119,6 +121,28 @@ test('la réussite partielle est conservée et la reprise écrit seulement les t
   expect(write.mock.calls.map(([id]) => id)).toEqual(['a', 'b', 'b']);
 });
 
+test('après application, le spinner se retire et la proposition se referme', async () => {
+  const user = userEvent.setup();
+  let tasks = [task('a')];
+  vi.mocked(replanTasks).mockResolvedValue([{ id: 'a', priority: 'high', due_date: today, reason: 'Débloque le contrôle.' }]);
+  vi.spyOn(api, 'state').mockImplementation(async () => state(tasks));
+  const write = vi.spyOn(api, 'updateTask').mockImplementation(async (id, patch) => {
+    const updated = { ...tasks.find((item) => item.id === id)!, ...patch };
+    tasks = tasks.map((item) => item.id === id ? updated : item);
+    return updated;
+  });
+  const inputs = props(tasks);
+  render(<OverviewAiActions {...inputs} />);
+  await user.click(screen.getByRole('button', { name: 'Replanifier avec l’IA' }));
+  await screen.findByRole('region', { name: 'Dates et priorités proposées par l’IA' });
+  await user.click(screen.getByRole('button', { name: 'Appliquer 1 tâche' }));
+  await waitFor(() => expect(inputs.onChanged).toHaveBeenCalled());
+  await waitFor(() => expect(screen.getByText('1 tâche replanifiée.')).toBeVisible(), { timeout: 3000 });
+  expect(write).toHaveBeenCalledOnce();
+  // La proposition refermée : plus rien à appliquer, le spinner de « Enregistrement » parti.
+  await waitFor(() => expect(screen.queryByRole('region', { name: 'Dates et priorités proposées par l’IA' })).not.toBeInTheDocument());
+});
+
 test('Arrêter coupe la demande et ignore une réponse qui arrive ensuite', async () => {
   const user = userEvent.setup();
   let resolve!: (value: typeof review) => void;
@@ -162,5 +186,5 @@ test('un changement de jour invalide le bilan au lieu de lui attribuer la nouvel
 
 test('un chargement limité annonce que d’autres suivis peuvent manquer au bilan', () => {
   render(<OverviewAiActions {...props([task('a', { follow_up: follow })])} missingEntries={4} missingTasks={2} />);
-  expect(screen.getByText(/Le bilan couvre uniquement 1 suivi chargé/)).toHaveTextContent('Éléments non chargés : 4 entrées et 2 tâches. D’autres suivis peuvent manquer.');
+  expect(screen.getByText(/Le bilan couvre uniquement 1 source chargée/)).toHaveTextContent('Éléments non chargés : 4 entrées et 2 tâches. D’autres sources peuvent manquer.');
 });

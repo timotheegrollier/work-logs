@@ -81,6 +81,17 @@ describe('bilan quotidien des suivis', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  test('lit la totalité des tâches non terminées : les ouvertes entrent dans le bilan, seules les suivies fournissent des bilans', async () => {
+    const prompt = buildDailyReviewPrompt([{ id: 'tk_ouvrante', kind: 'task', title: 'Réparer la pompe', status: 'doing', follow_up: null }], { today });
+    expect(prompt.user).toContain('Réparer la pompe');
+    expect(prompt.user).toContain('"open_tasks"');
+    const fetch = vi.fn(async () => response(JSON.stringify(review)));
+    vi.stubGlobal('fetch', fetch);
+    const result = await generateDailyReview(settings, [{ id: 'tk_ouvrante', kind: 'task', title: 'Réparer la pompe', status: 'doing', follow_up: null }], { today });
+    expect(result).toMatchObject(review);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   test('rend une synthèse validée et les limites locales, jamais les avertissements inventés par le modèle', async () => {
     const fetch = vi.fn(async () => response(`Voici :\n\`\`\`json\n${JSON.stringify({ ...review, warnings: ['Tout est actuel et vérifié.'] })}\n\`\`\``));
     vi.stubGlobal('fetch', fetch);

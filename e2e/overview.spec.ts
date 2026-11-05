@@ -393,7 +393,7 @@ test('sur téléphone, créer une tâche, la ranger dans un projet et la démarr
     await expect(overview.getByRole('status')).toContainText('passée en cours.');
     await overview.getByRole('button', { name: /^En cours/ }).click();
     await expect(overview.getByLabel('Statut de Nouvelle tâche mobile vue')).toHaveValue('doing');
-    await expect(overview.getByRole('button', { name: 'Bilan du jour', exact: true })).toBeDisabled();
+    await expect(overview.getByRole('button', { name: 'Bilan du jour', exact: true })).toBeEnabled();
     await expect(overview.getByRole('button', { name: 'Ajouter au suivi IA', exact: true })).toBeVisible();
     expect(await noHorizontalScroll(page)).toBe(true);
   } finally {
