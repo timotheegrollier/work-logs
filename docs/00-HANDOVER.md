@@ -6,7 +6,7 @@ Google refusait la publication : page d’accueil et politique sur `workers.dev`
 invérifiable dans Search Console. Elles passent sur GitHub Pages :
 **`https://timotheegrollier.github.io/work-logs/accueil.html`** (nouvelle page statique,
 `web/public/accueil.html`) et `…/work-logs/confidentialite.html`. Le domaine
-`timotheegrollier.github.io` se vérifie par le fichier `google….html` placé dans `public/` du
+`timotheegrollier.github.io` est vérifié (2026-11-06) par le fichier `google2a9d69a06d7f0ab3.html`, dans `public/` du
 dépôt portfolio. Connexion et relais inchangés sur Cloudflare. Étapes Google Cloud :
 `docs/08-GOOGLE-DOCS.md`, prérequis 6.
 

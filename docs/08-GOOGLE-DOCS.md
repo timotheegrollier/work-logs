@@ -280,7 +280,7 @@ Une ancienne autorisation sans `openid` fonctionne toujours, simplement sans com
    Google veut ces deux pages sur un domaine dont on est **propriétaire dans Search
    Console** : `cocodexcocoder.workers.dev` ne peut pas l'être, `timotheegrollier.github.io`
    si. Propriété « préfixe d'URL » `https://timotheegrollier.github.io/`, méthode **fichier
-   HTML** : le fichier `google….html` vit dans `public/` du dépôt
+   HTML** : le fichier `google2a9d69a06d7f0ab3.html` (validé le 2026-11-06) vit dans `public/` du dépôt
    `timotheegrollier/timotheegrollier.github.io` (le portfolio, servi à la racine). **Ne
    jamais le supprimer** : Google revérifie la propriété.
    Les pages sources sont `web/public/accueil.html` et `web/public/confidentialite.html` ;
