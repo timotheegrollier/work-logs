@@ -271,15 +271,22 @@ Une ancienne autorisation sans `openid` fonctionne toujours, simplement sans com
 5. Relais de jetons déployé (section suivante) et variable de dépôt `GOOGLE_TOKEN_PROXY_URL`.
    Sans lui, la PWA se connecte en flux « jeton », à reprendre toutes les heures.
 6. **Page d'accueil et politique de confidentialité** : dans Google Auth Platform →
-   **Branding** (ancien « Écran de consentement »), renseigner :
-   - page d'accueil : `https://worklogs-google.cocodexcocoder.workers.dev/` ;
+   **Branding** (ancien « Écran de consentement »), renseigner (décision §72) :
+   - page d'accueil : `https://timotheegrollier.github.io/work-logs/accueil.html` ;
    - politique de confidentialité :
-     `https://worklogs-google.cocodexcocoder.workers.dev/confidentialite.html`
-     (miroir GitHub Pages : `https://timotheegrollier.github.io/work-logs/confidentialite.html`) ;
-   - domaines autorisés : `cocodexcocoder.workers.dev` et `timotheegrollier.github.io`.
-   La page source est `web/public/confidentialite.html` ; elle est publiée avec la PWA par
-   les workflows `pwa.yml` et `pwa-cloudflare.yml`. Toute modification de la politique se
-   fait dans ce fichier, jamais dans `web/dist/`.
+     `https://timotheegrollier.github.io/work-logs/confidentialite.html` ;
+   - domaines autorisés : `timotheegrollier.github.io` (vérifié dans Search Console) et
+     `cocodexcocoder.workers.dev` (exigé par les redirections du client Web).
+   Google veut ces deux pages sur un domaine dont on est **propriétaire dans Search
+   Console** : `cocodexcocoder.workers.dev` ne peut pas l'être, `timotheegrollier.github.io`
+   si. Propriété « préfixe d'URL » `https://timotheegrollier.github.io/`, méthode **fichier
+   HTML** : le fichier `google….html` vit dans `public/` du dépôt
+   `timotheegrollier/timotheegrollier.github.io` (le portfolio, servi à la racine). **Ne
+   jamais le supprimer** : Google revérifie la propriété.
+   Les pages sources sont `web/public/accueil.html` et `web/public/confidentialite.html` ;
+   publiées avec la PWA par `pwa.yml` (GitHub Pages, `/work-logs/`) et `pwa-cloudflare.yml`
+   (même chemin sans `/work-logs/` sur le Worker). Toute modification se fait dans ces
+   fichiers, jamais dans `web/dist/`. La connexion et le relais restent sur Cloudflare.
 
 ## Relais de jetons (Cloudflare Worker) — depuis le 2026-09-23
 

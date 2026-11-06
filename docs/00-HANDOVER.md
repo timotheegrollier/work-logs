@@ -1,5 +1,15 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Ajustement du 2026-11-06 — page d’accueil publique pour Google (§72)
+
+Google refusait la publication : page d’accueil et politique sur `workers.dev`, domaine
+invérifiable dans Search Console. Elles passent sur GitHub Pages :
+**`https://timotheegrollier.github.io/work-logs/accueil.html`** (nouvelle page statique,
+`web/public/accueil.html`) et `…/work-logs/confidentialite.html`. Le domaine
+`timotheegrollier.github.io` se vérifie par le fichier `google….html` placé dans `public/` du
+dépôt portfolio. Connexion et relais inchangés sur Cloudflare. Étapes Google Cloud :
+`docs/08-GOOGLE-DOCS.md`, prérequis 6.
+
 ## Réparation du 2026-11-06 — master restauré, fusion d’entrées terminée
 
 Codex a été coupé par son quota en plein travail (optimisation des jetons IA, fusion

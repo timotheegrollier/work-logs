@@ -3015,3 +3015,27 @@ unique qui couperait aussi le texte de l’utilisateur.
 `ai-context.test.ts` (sélection, sections, exclusion puis déduplication), tests front
 alignés : une tâche ou une note sans mot commun n’est plus envoyée ni affichée dans le
 contexte.
+
+## 72. Page d'accueil et politique sur GitHub Pages, connexion sur Cloudflare — 2026-11-06
+
+**Décision.** Les URL publiques demandées par Google (Branding) pointent vers GitHub Pages :
+`https://timotheegrollier.github.io/work-logs/accueil.html` (nouvelle page statique, sans
+script) et `…/work-logs/confidentialite.html`. Le domaine `timotheegrollier.github.io` est
+vérifié dans Search Console par un fichier HTML à la racine du portfolio. La PWA, ses
+redirections OAuth et le relais de jetons restent sur `worklogs-google.cocodexcocoder.workers.dev`.
+
+**Pourquoi.** Google refuse une page d'accueil ou une politique sur un domaine non vérifié.
+`workers.dev` est un suffixe public : le domaine à prouver serait
+`cocodexcocoder.workers.dev`, dont on ne contrôle ni le DNS ni la racine. `github.io` est
+aussi un suffixe public, mais `timotheegrollier.github.io` est servi par le dépôt portfolio :
+un fichier HTML y suffit. La coquille de la PWA ne convient pas comme page d'accueil : elle
+n'explique rien sans JavaScript.
+
+**Écartés.** Acheter un domaine (demandé : sans achat) ; déplacer la connexion de la PWA sur
+GitHub Pages tant que Google accepte `cocodexcocoder.workers.dev` en domaine autorisé — repli
+prêt si ce n'est plus le cas : l'origine et la redirection `timotheegrollier.github.io/work-logs/`
+sont déjà enregistrées côté Google et acceptées par `oauth-proxy/worker.mjs`.
+
+**Validation.** `scripts/pwa-sw.test.mjs` : la page d'accueil nomme WorkLogs et ses liens
+relatifs (dont la politique) existent dans `web/public/`.
+

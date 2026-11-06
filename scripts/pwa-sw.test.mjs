@@ -233,3 +233,14 @@ test('une pièce jointe qui ouvre IndexedDB en premier crée aussi le schéma de
   assert.deepEqual(env.openedVersions, [{ name: 'worklogs', version: 2 }]);
   assert.deepEqual(env.createdStores.sort(), ['projects', 'categories', 'entries', 'tasks', 'task_entries', 'attachments', 'google_documents'].sort());
 });
+
+// Google (Branding) exige une page d'accueil publique qui nomme l'application et
+// renvoie à sa politique de confidentialité : un lien relatif cassé la ferait refuser.
+test('page d’accueil publique : nomme WorkLogs et ses liens relatifs existent', () => {
+  const publicDir = fileURLToPath(new URL('../web/public/', import.meta.url));
+  const html = fs.readFileSync(path.join(publicDir, 'accueil.html'), 'utf8');
+  assert.match(html, /<h1>WorkLogs<\/h1>/);
+  const local = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((href) => !/^(https?:|mailto:)/.test(href));
+  assert.ok(local.includes('confidentialite.html'));
+  for (const href of local) assert.ok(fs.existsSync(path.join(publicDir, href)), href);
+});
