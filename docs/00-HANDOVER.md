@@ -1,5 +1,30 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Correctifs du 2026-11-05 — replanification bloquée et contexte de complétion
+
+Travail repris sur la base **0.71.0**, sans bump ni publication.
+
+- **Replanification** : les réponses de mise à jour des tâches n’incluent pas les
+  documents liés (liste vide dans la PWA). Le remplacement du contexte complet par ces
+  réponses provoquait une exception sur `documents.length` pendant la sortie : spinner
+  bloqué dans la 0.70.0 installée, et relecture sautée après un refus partiel dans la
+  base 0.71.0. La réponse est fusionnée en gardant les documents du contexte ; le type du
+  client reflète les champs réellement renvoyés. Tests API/PWA sur une tâche liée,
+  reprise des seules écritures restantes et rafraîchissement en attente ; Electron avec
+  les vrais retours API. Pourquoi : §67.
+- **Compléter une entrée** : les autres tâches du projet et le vocabulaire tiré de leurs
+  titres pouvaient introduire une personne étrangère à la note. La complétion écarte ces
+  éléments et les notes récentes ; les références et repères aident à comprendre les
+  termes et les contraintes de rédaction, tandis que seuls le titre et le texte de
+  l’entrée fournissent les faits.
+  Le contexte affiché et l’affinement suivent le même périmètre. Test de consigne et geste
+  complet avec une tâche sans lien du même projet. Pourquoi : §42.
+
+Aucune dépendance, migration ou route API ajoutée. `./scripts/check.sh` vert avant et
+après : **306 API, 818 front** (plus 1 échec attendu), **49 desktop unitaires,
+41 scripts, 8 Worker, 11 relais, 106 navigateur et 19 desktop e2e** après correction.
+Les nouveaux tests échouent sans les correctifs ; appels IA simulés.
+
 ## Ajustement du 2026-11-05 — lisibilité de la vue d’ensemble
 
 La vue d’ensemble ouvre sur une synthèse en pastilles (projets, tâches ouvertes, terminées,

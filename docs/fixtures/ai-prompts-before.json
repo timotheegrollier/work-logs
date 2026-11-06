@@ -1,0 +1,322 @@
+{
+  "schema_version": 1,
+  "fixture_sha256": "4385a8b73b1d3f68a78fb4251ae0e852162fae4029713da0a67d0252cb473dd2",
+  "measures": "Longueur des contenus system+user en unités UTF-16 et octets UTF-8 ; ni tokens facturés ni qualité de réponse du modèle.",
+  "source_sha256": {
+    "ai-suggest.ts": "8109f1024a4fb0b6756aa4620e738edc58881e76c2889b45cb81aa48da461803",
+    "ai-context.ts": "3dc9e367bb6c3674e41feec14310b0826b71e91301fc44fc35ddbb556743eb33"
+  },
+  "cases": [
+    {
+      "name": "connexion",
+      "system_chars": 28,
+      "user_chars": 4,
+      "input_chars": 32,
+      "input_utf8_bytes": 33,
+      "retained_evidence": [],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false,
+      "output_token_ceiling": 300
+    },
+    {
+      "name": "contexte/selection",
+      "system_chars": 1003,
+      "user_chars": 5063,
+      "input_chars": 6066,
+      "input_utf8_bytes": 6215,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`",
+        "⚠ Consigner le circuit avant toute commande ; la fuite en aval reste à vérifier.",
+        "Organiser l’intervention prévue"
+      ],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false,
+      "unrelated_context_terms": [
+        "Gabin",
+        "congés annuels"
+      ]
+    },
+    {
+      "name": "contexte/exclusion-doublon",
+      "system_chars": 1003,
+      "user_chars": 2996,
+      "input_chars": 3999,
+      "input_utf8_bytes": 4112,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`",
+        "⚠ Consigner le circuit avant toute commande ; la fuite en aval reste à vérifier.",
+        "Organiser l’intervention prévue"
+      ],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false,
+      "unrelated_context_terms": [
+        "Gabin",
+        "congés annuels"
+      ]
+    },
+    {
+      "name": "sous-taches/court",
+      "system_chars": 1003,
+      "user_chars": 30,
+      "input_chars": 1033,
+      "input_utf8_bytes": 1079,
+      "retained_evidence": [],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "sous-taches/contexte",
+      "system_chars": 1003,
+      "user_chars": 6539,
+      "input_chars": 7542,
+      "input_utf8_bytes": 7825,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`"
+      ],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "relecture/court",
+      "system_chars": 931,
+      "user_chars": 284,
+      "input_chars": 1215,
+      "input_utf8_bytes": 1243,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`"
+      ],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "relecture/contexte",
+      "system_chars": 931,
+      "user_chars": 6448,
+      "input_chars": 7379,
+      "input_utf8_bytes": 7635,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`"
+      ],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "relecture/long",
+      "system_chars": 931,
+      "user_chars": 13330,
+      "input_chars": 14261,
+      "input_utf8_bytes": 14739,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`",
+        "2026-11-04 — ALERTE : la fuite persiste en aval de V12 ; ne pas remettre la pompe en service.",
+        "2026-11-06 — Joint reçu ; remplacement prévu le 2026-11-09, action non réalisée."
+      ],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "completer/court",
+      "system_chars": 1829,
+      "user_chars": 6155,
+      "input_chars": 7984,
+      "input_utf8_bytes": 8281,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`"
+      ],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "completer/long",
+      "system_chars": 1829,
+      "user_chars": 13038,
+      "input_chars": 14867,
+      "input_utf8_bytes": 15386,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`",
+        "2026-11-04 — ALERTE : la fuite persiste en aval de V12 ; ne pas remettre la pompe en service.",
+        "2026-11-06 — Joint reçu ; remplacement prévu le 2026-11-09, action non réalisée."
+      ],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "procedure/existante",
+      "system_chars": 1441,
+      "user_chars": 6458,
+      "input_chars": 7899,
+      "input_utf8_bytes": 8202,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`"
+      ],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "procedure/tache-doublons",
+      "system_chars": 1558,
+      "user_chars": 10812,
+      "input_chars": 12370,
+      "input_utf8_bytes": 12831,
+      "retained_evidence": [],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "extraire/court",
+      "system_chars": 1641,
+      "user_chars": 6650,
+      "input_chars": 8291,
+      "input_utf8_bytes": 8596,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`"
+      ],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false,
+      "output_token_ceiling": 8000
+    },
+    {
+      "name": "suggerer-taches/contexte",
+      "system_chars": 2091,
+      "user_chars": 7120,
+      "input_chars": 9211,
+      "input_utf8_bytes": 9566,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`"
+      ],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false,
+      "output_token_ceiling": 8000
+    },
+    {
+      "name": "affiner/texte-identique",
+      "system_chars": 2113,
+      "user_chars": 20212,
+      "input_chars": 22325,
+      "input_utf8_bytes": 23088,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`",
+        "2026-11-04 — ALERTE : la fuite persiste en aval de V12 ; ne pas remettre la pompe en service.",
+        "2026-11-06 — Joint reçu ; remplacement prévu le 2026-11-09, action non réalisée."
+      ],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false,
+      "output_token_ceiling": 8000
+    },
+    {
+      "name": "rechercher-document/contexte",
+      "system_chars": 962,
+      "user_chars": 1542,
+      "input_chars": 2504,
+      "input_utf8_bytes": 2605,
+      "retained_evidence": [],
+      "selected_items_represented": 0,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "prioriser/60",
+      "system_chars": 1428,
+      "user_chars": 8689,
+      "input_chars": 10117,
+      "input_utf8_bytes": 10996,
+      "retained_evidence": [
+        "2026-11-09"
+      ],
+      "selected_items_represented": 60,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "conseiller/60-references-partagees",
+      "system_chars": 1433,
+      "user_chars": 12347,
+      "input_chars": 13780,
+      "input_utf8_bytes": 14813,
+      "retained_evidence": [
+        "2026-11-09"
+      ],
+      "selected_items_represented": 60,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "suivi/long-et-courts",
+      "system_chars": 2104,
+      "user_chars": 5307,
+      "input_chars": 7411,
+      "input_utf8_bytes": 7624,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`",
+        "2026-11-06 — Joint reçu ; remplacement prévu le 2026-11-09, action non réalisée."
+      ],
+      "selected_items_represented": 8,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "suivi/documents-identiques",
+      "system_chars": 2104,
+      "user_chars": 16466,
+      "input_chars": 18570,
+      "input_utf8_bytes": 19126,
+      "retained_evidence": [
+        "2,5 bars",
+        "2026-11-09",
+        "`systemctl status pompe`"
+      ],
+      "selected_items_represented": 8,
+      "local_identifiers_present": false
+    },
+    {
+      "name": "bilan/60",
+      "system_chars": 2018,
+      "user_chars": 32953,
+      "input_chars": 34971,
+      "input_utf8_bytes": 35527,
+      "retained_evidence": [
+        "2,5 bars"
+      ],
+      "selected_items_represented": 60,
+      "local_identifiers_present": true
+    },
+    {
+      "name": "replanifier/60",
+      "system_chars": 1882,
+      "user_chars": 23780,
+      "input_chars": 25662,
+      "input_utf8_bytes": 26781,
+      "retained_evidence": [
+        "2026-11-09"
+      ],
+      "selected_items_represented": 60,
+      "local_identifiers_present": false
+    }
+  ],
+  "totals": {
+    "input_chars": 237489,
+    "input_utf8_bytes": 246303
+  }
+}

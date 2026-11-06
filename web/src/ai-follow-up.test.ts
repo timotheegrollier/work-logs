@@ -34,19 +34,67 @@ describe('bilan du suivi IA', () => {
 
   test('garde le début et la fin des longs textes et annonce chaque document omis', async () => {
     const long = `OBJECTIF_INITIAL${'a'.repeat(MAX_FOLLOW_UP_CHARS)}DERNIÈRE_AVANCÉE`;
-    const docs = Array.from({ length: MAX_FOLLOW_UP_DOCUMENTS + 2 }, (_, index) => ({ ...document, id: `en_${index}`, title: `Document ${index}`, content_md: index < MAX_FOLLOW_UP_DOCUMENTS ? long : 'DOCUMENT_OMIS' }));
+    const docs = Array.from({ length: MAX_FOLLOW_UP_DOCUMENTS + 2 }, (_, index) => ({ ...document, id: `en_${index}`, title: `Document ${index}`, content_md: index < MAX_FOLLOW_UP_DOCUMENTS ? long + index : 'DOCUMENT_OMIS' }));
     const prompt = await buildFollowUpPrompt({ ...source, documents: docs });
     const json = JSON.parse(prompt.user.split('\n\n')[1]);
     expect(json.documents).toHaveLength(MAX_FOLLOW_UP_DOCUMENTS);
     expect(json.documents.reduce((total: number, item: { text: string }) => total + item.text.length, 0)).toBeLessThanOrEqual(MAX_FOLLOW_UP_CHARS);
     for (const item of json.documents as { text: string }[]) {
       expect(item.text.startsWith('OBJECTIF_INITIAL')).toBe(true);
-      expect(item.text.endsWith('DERNIÈRE_AVANCÉE')).toBe(true);
+      expect(item.text).toMatch(/DERNIÈRE_AVANCÉE\d$/);
       expect(item.text).toContain('passage central non envoyé');
     }
     expect(prompt.user).not.toContain('DOCUMENT_OMIS');
     expect(prompt.warnings.filter((warning) => warning.includes('abrégé'))).toHaveLength(MAX_FOLLOW_UP_DOCUMENTS);
     expect(prompt.warnings).toContain('2 document(s) lié(s) non lu(s), au-delà de la limite de 8.');
+  });
+
+  test('partage un texte identique sans confondre les dates, titres ni rôles des documents', async () => {
+    const shared = 'Commande exacte : `systemctl status pompe`.\nLe remplacement est prévu, pas réalisé.';
+    const documents = [
+      { ...document, id: 'a', title: 'Observation du jour', content_md: shared },
+      { ...document, id: 'b', title: 'Procédure réutilisable', kind: 'procedure' as const, entry_date: '2026-10-01', content_md: shared },
+      { ...document, id: 'c', title: 'Copie du constat', entry_date: '2026-11-04', content_md: shared },
+    ];
+    const before = structuredClone(documents);
+    const prompt = await buildFollowUpPrompt({ ...source, documents });
+    const data = JSON.parse(prompt.user.split('\n\n')[1]);
+    expect(data.documents[0].text).toBe(shared);
+    expect(data.documents.slice(1).map((item: { same_text_as: number }) => item.same_text_as)).toEqual([1, 1]);
+    for (const item of data.documents as { n: number; kind: string; title: string; date: string; text?: string; same_text_as?: number }[]) {
+      const original = documents[item.n - 1];
+      expect(item).toMatchObject({ kind: original.kind, title: original.title, date: original.entry_date });
+      const owner = item.same_text_as ? data.documents[item.same_text_as - 1] : item;
+      expect(owner.same_text_as).toBeUndefined();
+      expect(owner.text).toBe(shared);
+    }
+    expect(data.documents.filter((item: { text?: string }) => item.text !== undefined)).toHaveLength(1);
+    expect(prompt.system).toContain('same_text_as');
+    expect(documents).toEqual(before);
+  });
+
+  test('réattribue la place des sources courtes au long document sans perdre l’alerte centrale', async () => {
+    const long = 'OBJECTIF\n' + 'Relevé de contrôle.\n'.repeat(180) + '\nALERTE : fuite persistante, remise en service interdite.\n' + 'Mesure conservée.\n'.repeat(180) + '\nDERNIÈRE_AVANCÉE';
+    const documents = [
+      { ...document, id: 'long', content_md: long },
+      ...Array.from({ length: 7 }, (_, i) => ({ ...document, id: `court_${i}`, content_md: `Note courte ${i} : joint attendu.` })),
+    ];
+    const prompt = await buildFollowUpPrompt({ ...source, documents });
+    const data = JSON.parse(prompt.user.split('\n\n')[1]);
+    expect(data.documents[0].text).toBe(long);
+    expect(data.documents).toHaveLength(8);
+    expect(prompt.warnings.some((warning) => warning.includes('abrégé'))).toBe(false);
+    expect(data.documents.reduce((sum: number, item: { text?: string }) => sum + (item.text?.length ?? 0), 0)).toBeLessThanOrEqual(MAX_FOLLOW_UP_CHARS);
+  });
+
+  test('une modification même brève du texte interdit le partage avec le constat précédent', async () => {
+    const prompt = await buildFollowUpPrompt({ ...source, documents: [
+      { ...document, id: 'avant', content_md: 'La remise en service est autorisée.' },
+      { ...document, id: 'apres', content_md: 'La remise en service est interdite.' },
+    ] });
+    const data = JSON.parse(prompt.user.split('\n\n')[1]);
+    expect(data.documents.map((item: { text: string }) => item.text)).toEqual(['La remise en service est autorisée.', 'La remise en service est interdite.']);
+    expect(data.documents.every((item: { same_text_as?: number }) => item.same_text_as === undefined)).toBe(true);
   });
 
   test('distingue le journal et la procédure liés à une tâche, et une procédure suivie seule', async () => {

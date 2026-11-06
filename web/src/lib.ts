@@ -102,6 +102,27 @@ export interface JournalItem {
   tabs: EntrySummary[];
 }
 
+/** Contrat du client pour la fusion d'entrées : identifiants et leur clé de
+ * source. Le contenu n'est jamais transmis au fournisseur IA, qui ne voit que
+ * l'entrée faite côté client. */
+export interface EntryMergeSource {
+  id: string;
+  source_key: string;
+}
+
+/** Demande de fusion : titre et texte finaux pour la nouvelle entrée, plus les
+ * sources retournées par l'IA. */
+export interface EntryMergeRequest {
+  request_id: string;
+  sources: EntryMergeSource[];
+  title: string;
+  content_md: string;
+}
+
+/** Réponse de la fusion : l'entrée nouvellement créée, avec ses documents et
+ * ses suivis IA copiés des anciennes. */
+export interface EntryMergeResult extends Entry {}
+
 /**
  * Regroupe les onglets d'un même document Google sous une seule ligne, pour ne
  * pas multiplier les documents dans le journal. L'ordre d'origine est conservé.
@@ -546,13 +567,15 @@ export const remoteApi = {
   updateEntry: (id: string, body: Partial<Entry>) => send<Entry>('PUT', `/api/entries/${id}`, body),
   deleteEntry: (id: string) => send<{ ok: true }>('DELETE', `/api/entries/${id}`),
   copyEntry: (id: string) => send<Entry>('POST', `/api/entries/${id}/copy`),
+  mergeEntries: (body: EntryMergeRequest) => send<Entry>('POST', '/api/entries/merge', body),
   createTaskFromEntry: (entryId: string, body?: { title?: string; due_date?: string | null; priority?: Priority; status?: Status }) =>
     send<Task>('POST', `/api/entries/${entryId}/task`, body),
   createEntryFromTask: (taskId: string, body?: { title?: string; content_md?: string }) =>
     send<Entry>('POST', `/api/tasks/${taskId}/entry`, body),
 
   createTask: (body: Partial<Task>) => send<Task>('POST', '/api/tasks', body),
-  updateTask: (id: string, body: Partial<Task> & { expected_planning?: TaskPlanningSnapshot }) => send<Task>('PUT', `/api/tasks/${id}`, body),
+  // La réponse de mutation ne joint pas les documents, disponibles dans state().
+  updateTask: (id: string, body: Partial<Task> & { expected_planning?: TaskPlanningSnapshot }) => send<Omit<Task, 'documents'>>('PUT', `/api/tasks/${id}`, body),
   moveTask: (id: string, status: Status, position: number) =>
     send<Task>('PATCH', `/api/tasks/${id}/move`, { status, position }),
   deleteTask: (id: string) => send<{ ok: true }>('DELETE', `/api/tasks/${id}`),

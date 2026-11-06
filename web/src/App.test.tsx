@@ -1269,6 +1269,39 @@ describe('écrire une entrée', () => {
     await waitFor(() => expect(row(api.db, "SELECT content_md FROM entries WHERE id='en_panne'").content_md).toBe(completed));
   });
 
+  test('Compléter une note ignore les tâches sans lien du même projet, y compris leur vocabulaire', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('La vanne fuit au raccord.');
+    seedData(api.db, {
+      projects: [{ id: 'p_vanne', name: 'Atelier' }],
+      entries: [{ id: 'en_vanne', title: 'Contrôle de la vanne', project_id: 'p_vanne', content_md: 'La vanne fuit au raccord.' }],
+      tasks: [
+        { id: 'tk_gabin', title: 'Faire le point avec Gabin', project_id: 'p_vanne' },
+        { id: 'tk_gabin2', title: 'Appeler Gabin', project_id: 'p_vanne' },
+        { id: 'tk_vanne', title: 'Contrôler le joint', project_id: 'p_vanne' },
+      ],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_vanne', 'en_vanne', new Date().toISOString());
+    render(<App />);
+    fireEvent.click(await aiAction('Compléter'));
+    const proposal = await screen.findByRole('region', { name: 'Note proposée' });
+    const messages = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages;
+    expect(messages[1].content).not.toMatch(/gabin/i);
+    expect(messages[1].content).toContain('Tâches liées : Contrôler le joint');
+    expect(messages[1].content).toContain('Déjà écrit :\nLa vanne fuit au raccord.');
+    expect(messages[0].content).toContain('Le titre et le texte de la note sont les seules sources de faits');
+    fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
+    const context = document.querySelector<HTMLElement>('.ai-context-details')!;
+    expect(context).not.toHaveTextContent(/gabin/i);
+    fireEvent.click(within(proposal).getByRole('button', { name: 'Plus court' }));
+    await waitFor(() => expect(aiBodies).toHaveLength(2));
+    const refined = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages;
+    expect(refined[1].content).not.toMatch(/gabin/i);
+    expect(refined[1].content).toContain('Consigne d’affinement de l’utilisateur :\nPlus court');
+    await waitFor(() => expect(proposal).toHaveAttribute('aria-busy', 'false'));
+    expect(row(api.db, "SELECT content_md FROM entries WHERE id='en_vanne'").content_md).toBe('La vanne fuit au raccord.');
+  });
+
   test('note riche locale : « Compléter » part en Markdown, la note appliquée s’enregistre dans le document', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-key', 'cle-test');
@@ -4403,9 +4436,24 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     await write('autre.md', 'x');
     render(<App />);
     expect((await tree()).getByRole('button', { name: /^Ouvrir autre\.md/ })).toBeInTheDocument();
-    fireEvent.click(within(filters()).getByRole('button', { name: /Piscine/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine à un dossier…' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine au dossier Piscine' }, { timeout: 5000 }));
+    // Un clic dès le commit du projet doit survivre aux effets encore en attente :
+    // l'ancien reset passif fermait le choix juste après ce premier clic.
+    let clicked = false;
+    const observer = new MutationObserver(() => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>('.shared-project-link button')]
+        .find((candidate) => candidate.textContent === 'Relier Piscine à un dossier…');
+      if (clicked || !button || button.disabled) return;
+      clicked = true;
+      fireEvent.click(button);
+    });
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true });
+    try {
+      fireEvent.click(within(filters()).getByRole('button', { name: /Piscine/ }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Relier Piscine au dossier Piscine' }, { timeout: 5000 }));
+      expect(clicked).toBe(true);
+    } finally {
+      observer.disconnect();
+    }
     const piscine = within(await screen.findByRole('list', { name: 'Contenu de Piscine' }, partage));
     expect(piscine.getByRole('button', { name: /^Ouvrir consignes\.md/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Ouvrir autre\.md/ })).not.toBeInTheDocument();
@@ -6072,6 +6120,61 @@ describe('suivi IA des entrées et tâches', () => {
     expect(within(follow()).getByText('Bilan à garder.')).toBeInTheDocument();
     expect((await clientApi.followUp('entry', 'en_suivi')).follow_up?.report?.summary).toBe('Bilan à garder.');
     expect(calls).toBe(3);
+  }, 20_000);
+
+  test('une réponse perdue du bilan est relue sans nouvel appel IA et Actualiser reste une nouvelle demande', async () => {
+    prepare();
+    mockAiSuggest(report('Bilan enregistré malgré la réponse perdue.'));
+    const original = clientApi.saveFollowUp.bind(clientApi);
+    const save = vi.spyOn(clientApi, 'saveFollowUp').mockImplementation(async (kind, id, body) => {
+      const result = await original(kind, id, body);
+      if (body.report) throw new Error('Réponse du bilan perdue');
+      return result;
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend));
+    await within(follow()).findByText('Bilan enregistré malgré la réponse perdue.', {}, backend);
+    expect(within(follow()).queryByRole('alert')).not.toBeInTheDocument();
+    expect(aiBodies).toHaveLength(1);
+    expect(save.mock.calls.filter(([, , body]) => body.report)).toHaveLength(1);
+
+    mockAiSuggest(report('Bilan actualisé volontairement.'));
+    fireEvent.click(within(follow()).getByRole('button', { name: 'Actualiser le bilan de Note évolutive' }));
+    await within(follow()).findByText('Bilan actualisé volontairement.', {}, backend);
+    expect(within(follow()).queryByRole('alert')).not.toBeInTheDocument();
+    expect(aiBodies).toHaveLength(1);
+    expect(save.mock.calls.filter(([, , body]) => body.report)).toHaveLength(2);
+  }, 20_000);
+
+  test.each(['ancien bilan identique', 'bilan différent', 'source modifiée', 'relecture indisponible'])('un enregistrement de bilan incertain garde son erreur : %s', async (scenario) => {
+    prepare();
+    mockAiSuggest(report('Bilan à garder.'));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend));
+    await within(follow()).findByText('Bilan à garder.', {}, backend);
+    const original = clientApi.saveFollowUp.bind(clientApi);
+    const originalRead = clientApi.followUp.bind(clientApi);
+    let refuseRead = false;
+    vi.spyOn(clientApi, 'followUp').mockImplementation((kind, id) => refuseRead
+      ? Promise.reject(new Error('Relecture refusée')) : originalRead(kind, id));
+    const save = vi.spyOn(clientApi, 'saveFollowUp').mockImplementation(async (kind, id, body) => {
+      if (scenario === 'bilan différent' && body.report) await original(kind, id, { ...body, report: { ...body.report, summary: 'Autre bilan enregistré ailleurs.' } });
+      if (scenario === 'source modifiée') {
+        await original(kind, id, body);
+        await clientApi.updateEntry('en_suivi', { content_md: 'Le joint est maintenant reçu.' });
+      }
+      if (scenario === 'relecture indisponible') {
+        await original(kind, id, body);
+        refuseRead = true;
+      }
+      throw new Error('Enregistrement du bilan non confirmé');
+    });
+    mockAiSuggest(report('Bilan à garder.'));
+    fireEvent.click(within(follow()).getByRole('button', { name: 'Actualiser le bilan de Note évolutive' }));
+    expect(await within(follow()).findByRole('alert', {}, backend)).toHaveTextContent('Enregistrement du bilan non confirmé');
+    expect(within(follow()).getByText('Bilan à garder.')).toBeInTheDocument();
+    expect(aiBodies).toHaveLength(1);
+    expect(save).toHaveBeenCalledOnce();
   }, 20_000);
 
   test('une sauvegarde refusée empêche l’activation et l’envoi d’une ancienne copie à l’IA', async () => {

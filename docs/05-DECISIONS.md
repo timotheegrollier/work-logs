@@ -1793,14 +1793,20 @@ qu'il n'ait rien à rédiger à part le titre et certains points importants. »
   journal, Markdown ou riche, il rédige la note complète (`completeNote`, `ai-suggest.ts`) ;
   sur une procédure, du journal ou du partage, c'est « ✨ Suggérer une procédure » renommé,
   consigne inchangée (§23, §30). Ni onglet, ni mode, ni route, ni dépendance, ni migration.
-- **Ce qui part** : titre, contenu (une note riche passe par le pont Markdown, §23), contexte
-  du projet (§41), titres des tâches liées, noms des pièces jointes ; le texte déjà écrit en
-  dernier. Plafond de 12 000 caractères, comme la mise en page.
+- **Ce qui part** : titre, contenu (une note riche passe par le pont Markdown, §23), repères
+  du projet (§41), références sélectionnées, titres des tâches explicitement liées, noms des
+  pièces jointes ; le texte déjà écrit en dernier. Depuis le correctif du 2026-11-05,
+  les tâches voisines, notes récentes et le vocabulaire global des titres du projet sont
+  exclus de cette complétion et du contexte affiché. Plafond de 12 000 caractères,
+  comme la mise en page.
 - **La consigne** développe chaque point en phrases courtes ; intertitres et cases « - [ ] »
   seulement si la note en a besoin ou les mentionne. Tout ce qui est écrit est gardé —
   commandes et valeurs à l'identique, cases cochées ou non — et le sens ne bouge pas : une
-  action prévue reste à faire, rien ne devient « fait ». Fait, résultat, valeur, date ou nom
-  absents du texte et du contexte : « à préciser ». Avec un titre seul : le plan de la note.
+  action prévue reste à faire, rien ne devient « fait ». Le titre et le texte de la note
+  sont les seules sources de faits : un résultat, une valeur, une date ou une personne
+  absents de la note restent « à préciser ». Le contexte peut éclairer le vocabulaire et
+  les contraintes de rédaction, sans ajouter de faits ni déplacer le sujet de l’entrée.
+  Avec un titre seul : le plan de la note.
 - **Relue avant d'être écrite**, comme toute proposition (§17) : « Note proposée », puis
   « Appliquer la note », « Rafraîchir » ou « Ignorer », et l'affinement de §41. Refusée si la
   note a changé pendant l'appel.
@@ -2883,6 +2889,17 @@ contexte périmé, nouvelle journée, modifications concurrentes API/PWA, sélec
 écriture partielle et réponse perdue, préservation des brouillons. Parcours navigateur pour
 le bilan, les dates corrigées, la sélection et l’ouverture des sources, dont les terminées.
 Captures clair/sombre et téléphone ; recette complète `./scripts/check.sh` en fin de lot.
+
+**Correctif du 2026-11-05, sur la base 0.71.0.** Les réponses de `PUT /api/tasks/:id`
+ne joignent pas les documents ; le miroir PWA renvoie une liste vide. Remplacer la tâche
+complète par cette réponse rendait le recalcul du contexte invalide : exception sur
+`documents.length` avant de libérer l’enregistrement dans la 0.70.0 installée, et relecture
+interrompue après un refus partiel malgré le premier correctif de sortie. Les champs renvoyés
+sont désormais fusionnés dans la tâche du contexte, en gardant ses documents. Le type du client
+ne promet plus les documents dans une réponse de mutation. Tests API/PWA avec une tâche liée,
+refus partiel et reprise sans réécrire les succès ; tests Electron avec de vrais retours API
+et contrôle des erreurs JavaScript. Un rafraîchissement encore en attente ne garde pas le
+spinner après confirmation des écritures. Aucun contrat serveur ni schéma modifié.
 
 ## 68. Une tâche de la vue d’ensemble ouvre d’abord une de ses entrées — 2026-11-05
 

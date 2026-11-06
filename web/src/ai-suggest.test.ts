@@ -16,6 +16,7 @@ import {
   suggestEntryTasks,
   prioritizeTasks,
   adviseTaskOrder,
+  mergeEntries,
   type AdviceTask,
   type PrioritizableTask,
   MAX_PROOFREAD_CHARS,
@@ -692,6 +693,25 @@ describe('procédures', () => {
 });
 
 describe('note complétée', () => {
+  test('les autres tâches et le vocabulaire global du projet ne deviennent pas le sujet de la note', () => {
+    const prompt = buildCompleteNotePrompt('Contrôle de la vanne', {
+      project: 'Atelier', projectBrief: 'Employer le vocabulaire technique du réseau.',
+      relatedTasks: ['Faire le point avec Gabin'],
+      relatedTaskPlanning: [{ title: 'Appeler Gabin', priority: 'high', due_date: '2026-11-10' }],
+      recentNotes: ['Réunion avec Gabin'], vocabulary: ['gabin'],
+      sources: [{ id: 'vanne', kind: 'procedure', title: 'Vanne', text: 'PN désigne la pression nominale.' }],
+      linkedTasks: ['Contrôler le joint'], text: 'La vanne fuit au raccord.',
+    });
+    expect(prompt.user).not.toMatch(/gabin/i);
+    expect(prompt.user).not.toContain('Tâches voisines');
+    expect(prompt.user).toContain('Tâches liées : Contrôler le joint');
+    expect(prompt.user).toContain('PN désigne la pression nominale.');
+    expect(prompt.user).toContain('Employer le vocabulaire technique du réseau.');
+    expect(prompt.system).toContain('Le titre et le texte de la note sont les seules sources de faits');
+    expect(prompt.system).toContain('aucun fait, nom de personne, action, résultat, date ou valeur provenant de ce contexte');
+    expect(prompt.system).not.toContain('absents du texte et du contexte');
+  });
+
   test('la consigne : la note entière à partir du titre et des points notés, sans rien retirer ni inventer', () => {
     const prompt = buildCompleteNotePrompt(' Panne de la pompe ', {
       project: 'Ferme',
@@ -724,6 +744,41 @@ describe('note complétée', () => {
     vi.stubGlobal('fetch', vi.fn(async () => aiResponse('# Contexte\n\nLa pompe s’est arrêtée.')));
     await expect(completeNote(settings, 'Panne', { context: { text: '# Contexte\n\n- pompe arrêtée' } })).resolves.toBe('# Contexte\n\nLa pompe s’est arrêtée.');
   });
+
+  describe('fusion d\'entrées', () => {
+  const sources = [
+    { id: 'en_a', source_key: 'key-a', title: 'Note A', content_md: 'Constat A : le joint fuit\n- [x] Mesurer : 2,5 bars', entry_date: '2026-11-06', project_id: 'p1', archived: 0, kind: 'note', updated_at: '2026-11-06T09:00:00Z' },
+    { id: 'en_b', source_key: 'key-b', title: 'Note B', content_md: 'Constat B : le joint est remplacé\n- [ ] Contrôler le 2026-11-09', entry_date: '2026-11-06', project_id: 'p1', archived: 0, kind: 'note', updated_at: '2026-11-06T10:00:00Z' },
+  ];
+
+  test('refuse moins de deux sources ou plus de huit', async () => {
+    await expect(mergeEntries(settings, sources.slice(0, 1))).rejects.toThrow(AiError);
+    const many = Array.from({ length: 9 }, (_, i) => ({ ...sources[0], id: `en_${i}`, source_key: `key-${i}` }));
+    await expect(mergeEntries(settings, many)).rejects.toThrow(AiError);
+  });
+
+  test('titre vide sur une source est refusé', async () => {
+    const bad = [{ ...sources[0], title: '   ' }, sources[1]];
+    await expect(mergeEntries(settings, bad)).rejects.toThrow(AiError);
+  });
+
+  test('source trop longue est refusée', async () => {
+    const bad = [{ ...sources[0], content_md: 'x'.repeat(24_001) }, sources[1]];
+    await expect(mergeEntries(settings, bad)).rejects.toThrow(AiError);
+  });
+
+  test('propose un titre et un contenu à partir des sources', async () => {
+    const fetch = vi.fn(async () => aiResponse(
+      '# Titre proposé\n\nConstat A et B fusionnés.\n- le joint fuit\n- le joint est remplacé\n',
+    ));
+    vi.stubGlobal('fetch', fetch);
+    const result = await mergeEntries(settings, sources);
+    expect(result.title).toBe('Titre proposé');
+    expect(result.content_md).toContain('joint');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+});
 
   test('ni titre ni texte, trop longue ou sans clé : aucun appel réseau', async () => {
     const fetch = vi.fn(async () => aiResponse('Note rédigée.'));

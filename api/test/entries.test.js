@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { startApi, make } from './helpers.js';
 import { openDb } from '../src/db.js';
+import { entryMergeSourceKey } from '../src/entry-merge.js';
+import crypto from 'node:crypto';
 
 describe('entrées de journal', () => {
   let api;
@@ -173,5 +175,60 @@ describe('entrées de journal', () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.title, 'Survivante');
     assert.equal(res.body.project_id, null);
+  });
+
+  test('fusionne deux entrées : crée la nouvelle et supprime les anciennes', async () => {
+    const entry1 = await make.entry(api, { title: 'Note A', content_md: 'Contenu de la note A\n- action 1' });
+    const entry2 = await make.entry(api, { title: 'Note B', content_md: 'Contenu de la note B\n- action 2' });
+
+    const body = {
+      request_id: crypto.randomUUID(),
+      sources: [
+        { id: entry1.id, source_key: entryMergeSourceKey(entry1) },
+        { id: entry2.id, source_key: entryMergeSourceKey(entry2) },
+      ],
+      title: 'Note fusionnée',
+      content_md: 'Contenu fusionné\n- action 1\n- action 2',
+    };
+
+    const res = await api.post('/api/entries/merge', body);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.title, 'Note fusionnée');
+    assert.equal(res.body.content_md, 'Contenu fusionné\n- action 1\n- action 2');
+    assert.notEqual(res.body.id, entry1.id);
+    assert.notEqual(res.body.id, entry2.id);
+
+    // Les anciennes entrées sont supprimées
+    assert.equal((await api.get(`/api/entries/${entry1.id}`)).status, 404);
+    assert.equal((await api.get(`/api/entries/${entry2.id}`)).status, 404);
+    assert.equal((await api.get(`/api/entries/${res.body.id}`)).status, 200);
+  });
+
+  test('refuse la fusion avec moins de deux entrées', async () => {
+    const body = {
+      request_id: crypto.randomUUID(),
+      sources: [{ id: 'en_test', source_key: 'key' }],
+      title: 'x',
+      content_md: 'y',
+    };
+    const res = await api.post('/api/entries/merge', body);
+    assert.equal(res.status, 400);
+    assert.equal(res.body.error, 'Fusion invalide : titre, texte, identifiant de demande et deux à huit entrées requis.');
+  });
+
+  test('refuse la fusion avec un titre ou du contenu vide', async () => {
+    const body = {
+      request_id: crypto.randomUUID(),
+      sources: [{ id: 'en_a', source_key: 'a' }, { id: 'en_b', source_key: 'b' }],
+      title: '   ',
+      content_md: 'du contenu',
+    };
+    let res = await api.post('/api/entries/merge', body);
+    assert.equal(res.status, 400);
+
+    body.title = 'Un titre';
+    body.content_md = '   ';
+    res = await api.post('/api/entries/merge', body);
+    assert.equal(res.status, 400);
   });
 });

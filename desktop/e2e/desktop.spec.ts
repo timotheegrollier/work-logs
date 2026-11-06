@@ -124,6 +124,92 @@ test('fenêtre autonome, renderer isolé, liens externes dans le navigateur', as
   expect(application!.windows()).toHaveLength(1);
 });
 
+type PlanningWindow = Window & { planningTest: { attempts: number; writes: { id: string; documents: boolean }[]; refreshed: number } };
+
+async function prepareOverviewPlanning(refuseSecond = false) {
+  const tasks = await page.evaluate(async (refuse) => {
+    localStorage.setItem('worklogs-ai-key', 'cle-replanification-desktop-e2e');
+    const real = window.fetch.bind(window);
+    const initial = await (await real('/api/state')).json();
+    const probe: PlanningWindow['planningTest'] = { attempts: 0, writes: [], refreshed: 0 };
+    (window as unknown as PlanningWindow).planningTest = probe;
+    // Playwright ne publie pas les réponses worklogs:// : observer le vrai fetch,
+    // en le laissant joindre le serveur et sans compléter son JSON avec des liens.
+    window.fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (init?.method === 'PUT' && /\/api\/tasks\//.test(url)) {
+        if (++probe.attempts === 2 && refuse) {
+          return new Response(JSON.stringify({ error: 'Écriture de recette refusée.' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+        }
+        const response = await real(input, init);
+        if (response.ok) {
+          const task = await response.clone().json();
+          probe.writes.push({ id: task.id, documents: Object.hasOwn(task, 'documents') });
+        }
+        return response;
+      }
+      if (/\/api\/state(?:\?|$)/.test(url) && probe.writes.length) probe.refreshed++;
+      return real(input, init);
+    };
+    return initial.tasks as { id: string; status: string; due_date: string | null }[];
+  }, refuseSecond);
+  const open = tasks.filter((task) => task.status !== 'done');
+  const dueDate = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  await page.route('**/chat/completions', async (route) => {
+    const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const prompt = route.request().postDataJSON().messages[1].content as string;
+    const numbers = [...prompt.matchAll(/^(\d+) · (.+?) · /gm)];
+    return route.fulfill({ headers, json: { choices: [{ message: { content: JSON.stringify(numbers.map((match) => ({
+      n: Number(match[1]), priority: 'high', due_date: dueDate, reason: 'Date de travail estimée pour la recette desktop.',
+    }))) } }] } });
+  });
+  await page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true }).click();
+  const overview = page.getByRole('region', { name: 'Vue d’ensemble des projets', exact: true });
+  await overview.getByRole('button', { name: 'Replanifier avec l’IA', exact: true }).click();
+  const schedule = overview.getByRole('region', { name: 'Dates et priorités proposées par l’IA', exact: true });
+  await expect(schedule.getByRole('checkbox')).toHaveCount(open.length);
+  return { open, dueDate, overview, schedule, assistant: overview.getByRole('region', { name: 'Bilan du jour et planification IA', exact: true }) };
+}
+
+test('replanification IA : les vrais retours API sans documents libèrent l’enregistrement', async () => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const { open, dueDate, overview, schedule, assistant } = await prepareOverviewPlanning();
+  await schedule.getByRole('button', { name: `Appliquer ${open.length} tâches`, exact: true }).click();
+  await expect(overview.getByRole('status').filter({ hasText: `${open.length} tâches replanifiées.` })).toBeVisible();
+  await expect(assistant).toHaveAttribute('aria-busy', 'false');
+  await expect(assistant.getByText('Enregistrement des dates et priorités…', { exact: true })).toHaveCount(0);
+  await expect(schedule).toHaveCount(0);
+  const saved = await page.evaluate(async () => (await (await fetch('/api/state')).json()).tasks as { id: string; due_date: string | null }[]);
+  for (const task of open) expect(saved.find((item) => item.id === task.id)?.due_date).toBe(dueDate);
+  expect(await page.evaluate(() => (window as unknown as PlanningWindow).planningTest.writes)).toEqual(open.map((task) => ({ id: task.id, documents: false })));
+  expect(errors).toEqual([]);
+});
+
+test('replanification IA : un refus partiel se relit et reprend sans renvoyer le succès confirmé', async () => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const { open, dueDate, overview, schedule, assistant } = await prepareOverviewPlanning(true);
+  expect(open.length).toBeGreaterThan(1);
+  await schedule.getByRole('button', { name: `Appliquer ${open.length} tâches`, exact: true }).click();
+  await expect(assistant.getByRole('alert')).toHaveText('1 tâche enregistrée. Écriture de recette refusée.');
+  await expect(assistant).toHaveAttribute('aria-busy', 'false');
+  await expect(schedule.getByRole('checkbox').first()).toBeDisabled();
+  // Le rechargement garde la proposition cohérente avec l’écriture déjà enregistrée.
+  await expect.poll(() => page.evaluate(() => (window as unknown as PlanningWindow).planningTest.refreshed)).toBeGreaterThan(0);
+  await expect(schedule.locator('.overview-schedule-compare').first()).toContainText('Actuel : Haute');
+  expect(errors).toEqual([]);
+  await schedule.getByRole('button', { name: `Appliquer ${open.length - 1} tâches`, exact: true }).click();
+  await expect(overview.getByRole('status').filter({ hasText: `${open.length - 1} tâches replanifiées.` })).toBeVisible();
+  await expect(assistant).toHaveAttribute('aria-busy', 'false');
+  await expect(schedule).toHaveCount(0);
+  const saved = await page.evaluate(async () => (await (await fetch('/api/state')).json()).tasks as { id: string; due_date: string | null }[]);
+  for (const task of open) expect(saved.find((item) => item.id === task.id)?.due_date).toBe(dueDate);
+  expect(await page.evaluate(() => (window as unknown as PlanningWindow).planningTest.writes)).toEqual(open.map((task) => ({ id: task.id, documents: false })));
+  expect(errors).toEqual([]);
+});
+
 test('fermer immédiatement sauve le texte et le thème survit au redémarrage', async () => {
   await page.getByLabel('Changer de thème').click();
   await page.getByRole('button', { name: 'Écrire', exact: true }).click();

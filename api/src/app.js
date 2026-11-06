@@ -13,6 +13,7 @@ import { categoryFor, nextCategory, categoryDescendants, registerCategoryRoutes 
 import { inheritTaskCategories } from './task-categories.js';
 import { createFollowUpAccess, registerFollowUpRoutes } from './follow-up-routes.js';
 import { assertExpectedTaskPlanning } from './task-planning.js';
+import { validateEntryMerge, assertEntryMergeSources, assertEntryMergeReplay, entryMergeTargetId, entryMergeClassification } from './entry-merge.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
 export const PRIORITIES = ['low', 'normal', 'high'];
@@ -337,6 +338,44 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       db.exec('ROLLBACK');
       for (const file of written) fs.rmSync(file, { force: true });
       throw e;
+    }
+  });
+
+  // Fusion de plusieurs entrées : l'IA propose une nouvelle entrée, on supprime
+  // les anciennes et on garde la nouvelle. Le payload n'est jamais envoyé au
+  // fournisseur IA : seuls les identifiants et leur source_key figurent dans
+  // la transaction ; l'assemblage reste à l'écran.
+  app.post('/api/entries/merge', async (req, res) => {
+    const body = req.body || {};
+    let normalized;
+    try {
+      normalized = validateEntryMerge(body);
+    } catch (error) {
+      return bad(res, error.message);
+    }
+    const ids = new Set(normalized.sources.map((source) => source.id));
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const rows = db.prepare('SELECT * FROM entries WHERE id IN (' + [...ids].map(() => '?').join(',') + ')').all(...ids);
+      const byId = new Map(rows.map((entry) => [entry.id, entry]));
+      assertEntryMergeSources(normalized, rows);
+      const classification = entryMergeClassification(rows);
+      const time = nowISO();
+      const id = await entryMergeTargetId(body);
+      db.prepare(
+        'INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+      ).run(
+        id, normalized.title, normalized.content_md, null, today(), classification.project_id ?? null, 0, 'note', time, time,
+        classification.category_id ?? null
+      );
+      for (const source of normalized.sources) {
+        db.prepare('DELETE FROM entries WHERE id=?').run(source.id);
+      }
+      db.exec('COMMIT');
+      res.json(getEntry(id));
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
     }
   });
 

@@ -44,6 +44,8 @@ export function saveProjectAiBrief(projectId: string | null, brief: string): voi
 
 function words(text: string): Set<string> {
   return new Set(text.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
+    // Un intitulé générique ne doit pas rapprocher deux sujets sans rapport.
+    .replace(/\b(?:comptes?[ -]+rendus?|sans titre)\b/g, ' ')
     .split(/[^a-z0-9]+/)
     .filter((word) => word.length >= 3 && !STOPWORDS.has(word))
     .map((word) => word.replace(/s$/, '')));
@@ -54,20 +56,72 @@ function matches(text: string, keywords: Set<string>): number {
   return [...keywords].filter((word) => tokens.has(word)).length;
 }
 
+/** Les commandes et les étapes espacées restent des blocs indivisibles. */
+function contextParagraphs(text: string): string[] {
+  const paragraphs: string[] = [];
+  let lines: string[] = [];
+  let fence = '';
+  const flush = () => {
+    const paragraph = lines.join('\n').trim();
+    if (paragraph) {
+      const list = /^(?:[-*+]|\d+[.)])\s/;
+      const previous = paragraphs.at(-1);
+      if (previous && list.test(previous) && list.test(paragraph)) paragraphs[paragraphs.length - 1] += '\n\n' + paragraph;
+      else paragraphs.push(paragraph);
+    }
+    lines = [];
+  };
+  for (const line of text.trim().split(/\r?\n/)) {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (marker && !fence) fence = marker;
+    else if (marker && marker[0] === fence[0] && marker.length >= fence.length && /^ {0,3}[`~]+\s*$/.test(line)) fence = '';
+    if (!line.trim() && !fence) flush();
+    else lines.push(line);
+  }
+  flush();
+  return paragraphs;
+}
+
 /**
- * Garde les paragraphes les plus proches du sujet, même en fin de document.
+ * Garde les sections pertinentes (titres et avertissements compris), ou le
+ * voisinage d'un passage sans titre. Sans correspondance dans le texte, le
+ * document choisi par son titre ou son lien garde le repli borné habituel.
  * Un paragraphe très long est fenêtré autour du premier mot pertinent.
  */
 function relevantExcerpt(text: string, keywords: Set<string>): string {
-  const paragraphs = text.trim().split(/\n\s*\n/).map((paragraph) => paragraph.trim()).filter(Boolean);
-  const ranked = paragraphs.map((paragraph, index) => ({ paragraph, index, score: matches(paragraph, keywords) }))
+  const paragraphs = contextParagraphs(text);
+  const scored = paragraphs.map((paragraph, index) => ({
+    paragraph, index, score: matches(paragraph, keywords), level: /^(#{1,6})\s+/.exec(paragraph)?.[1].length ?? 0,
+  }));
+  const hits = scored.filter((item) => item.score > 0);
+  const selected = new Set<number>();
+  for (const hit of hits) {
+    let heading = hit.index;
+    while (heading >= 0 && !scored[heading].level) heading--;
+    if (heading >= 0) {
+      let level = scored[heading].level;
+      let end = heading + 1;
+      while (end < scored.length && (!scored[end].level || scored[end].level > level)) end++;
+      for (let index = heading; index < end; index++) selected.add(index);
+      for (let index = heading - 1; index >= 0; index--) {
+        if (scored[index].level && scored[index].level < level) { selected.add(index); level = scored[index].level; }
+      }
+    } else {
+      for (let index = Math.max(0, hit.index - 1); index <= Math.min(scored.length - 1, hit.index + 1); index++) {
+        if (!scored[index].level) selected.add(index);
+      }
+    }
+  }
+  const ranked = scored.filter((item) => !hits.length || selected.has(item.index))
     .sort((a, b) => b.score - a.score || a.index - b.index);
   const chosen: { text: string; index: number }[] = [];
-  let remaining = MAX_SOURCE_TEXT;
+  // Réserver les marques d'omission évite de raccorder deux passages comme s'ils
+  // étaient contigus ; le texte final reste sous le même plafond de 2 000 caractères.
+  let remaining = MAX_SOURCE_TEXT - 10;
   for (const item of ranked) {
-    const separator = chosen.length ? 2 : 0;
+    const separator = chosen.length ? 7 : 0;
     const available = remaining - separator;
-    if (available < 80) break;
+    if (available <= 0 || (available < 80 && item.paragraph.length > available)) break;
     let excerpt = item.paragraph;
     if (excerpt.length > available) {
       const folded = excerpt.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
@@ -80,7 +134,11 @@ function relevantExcerpt(text: string, keywords: Set<string>): string {
     chosen.push({ text: excerpt, index: item.index });
     remaining -= excerpt.length + separator;
   }
-  return chosen.sort((a, b) => a.index - b.index).map((item) => item.text).join('\n\n');
+  chosen.sort((a, b) => a.index - b.index);
+  if (!chosen.length) return '';
+  return (chosen[0].index ? '[…]\n\n' : '')
+    + chosen.map((item, index) => (index ? (item.index > chosen[index - 1].index + 1 ? '\n\n[…]\n\n' : '\n\n') : '') + item.text).join('')
+    + (chosen.at(-1)!.index < paragraphs.length - 1 ? '\n\n[…]' : '');
 }
 
 export interface LoadAiContextOptions {
@@ -151,12 +209,17 @@ export async function loadAiContext(options: LoadAiContextOptions): Promise<AiWo
       throw new Error(`Impossible de lire « ${summary.title} » pour le contexte IA. Réessaie avant de lancer l’assistance.`);
     }
   }));
+  const linkedTaskDocuments = new Set([...linkedIds, ...(options.entryId ? [options.entryId] : [])]);
   const rankedOpenTasks = projectTasks.filter((task) => task.id !== options.taskId && task.status !== 'done')
-    .map((task, index) => ({ task, index, score: 3 * matches(task.title, titleWords) + matches(task.title, textWords) }))
-    .sort((a, b) => b.score - a.score || a.index - b.index);
+    .map((task, index) => ({
+      task, index, score: 3 * matches(task.title, titleWords) + matches(task.title, textWords),
+      linked: task.documents.some((document) => linkedTaskDocuments.has(document.id)),
+    }))
+    .filter((item) => item.linked || item.score > 0)
+    .sort((a, b) => Number(b.linked) - Number(a.linked) || b.score - a.score || a.index - b.index);
   const openTasks = rankedOpenTasks.map(({ task }) => task);
   const relatedTaskTitles = compactTitles(openTasks.map((task) => task.title));
-  const planningTitles = compactTitles(rankedOpenTasks.filter(({ score }) => score > 0).map(({ task }) => task.title));
+  const planningTitles = relatedTaskTitles;
   const relatedTaskPlanning = planningTitles.flatMap((title) => {
     const task = openTasks.find((candidate) => compactTitles([candidate.title])[0] === title);
     if (!task) return [];
@@ -165,8 +228,8 @@ export async function loadAiContext(options: LoadAiContextOptions): Promise<AiWo
       due_date: date && !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === task.due_date ? task.due_date : null }];
   });
   const vocabularyInputs = {
-    tasks: projectTasks.map((task) => task.title),
-    entries: eligible.map((entry) => ({ id: entry.id, title: entry.title })),
+    tasks: relatedTaskTitles,
+    entries: sources.map((source) => ({ id: source.id, title: source.title })),
   };
   return {
     project: state.projects.find((project) => project.id === options.projectId)?.name,
@@ -186,7 +249,17 @@ export function selectedAiContext(context: AiWorkContext, excludedIds: string[])
   // Les titres nécessaires au calcul restent dans le contexte local, jamais
   // dans l'objet prêt à transmettre au client IA.
   const { vocabularyInputs, ...selected } = context;
-  const sources = context.sources?.filter((source) => !excluded.has(source.id));
+  // Dédupliquer après l'exclusion : retirer la première copie doit laisser la
+  // seconde disponible. Des titres ou types différents gardent leur provenance.
+  const seenSources = new Set<string>();
+  const sources = context.sources?.filter((source) => {
+    if (excluded.has(source.id)) return false;
+    const key = JSON.stringify([source.kind, source.title, source.text.trim()]);
+    if (seenSources.has(key)) return false;
+    seenSources.add(key);
+    return true;
+  });
+  const selectedIds = new Set(sources?.map((source) => source.id));
   const removedTitles = new Set(context.sources?.filter((source) => excluded.has(source.id)).map((source) => source.title));
   const keptTitles = new Set(sources?.map((source) => source.title));
   return {
@@ -194,7 +267,7 @@ export function selectedAiContext(context: AiWorkContext, excludedIds: string[])
     sources,
     recentNotes: context.recentNotes?.filter((title) => !removedTitles.has(title) || keptTitles.has(title)),
     vocabulary: vocabularyInputs
-      ? recurringVocabulary([...vocabularyInputs.tasks, ...vocabularyInputs.entries.filter((entry) => !excluded.has(entry.id)).map((entry) => entry.title)])
+      ? recurringVocabulary([...vocabularyInputs.tasks, ...vocabularyInputs.entries.filter((entry) => selectedIds.has(entry.id)).map((entry) => entry.title)])
       : context.vocabulary,
   };
 }

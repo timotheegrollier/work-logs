@@ -95,9 +95,10 @@ test('un profil IA modifié sans rerender invalide la proposition avant toute é
   expect(write).not.toHaveBeenCalled();
 });
 
-test('la réussite partielle est conservée et la reprise écrit seulement les tâches restantes', async () => {
+test.each(['API', 'PWA'])('%s : une réponse sans documents complets conserve la réussite partielle et les tâches restantes', async (backend) => {
   const user = userEvent.setup();
-  let tasks = [task('a'), task('b')];
+  const documents: Task['documents'] = [{ id: 'note-a', title: 'Note liée', entry_date: today, project_id: null, archived: 0, kind: 'note', updated_at: `${today}T09:00:00Z`, excerpt: '', attachments: 0 }];
+  let tasks = [task('a', { documents }), task('b')];
   vi.mocked(replanTasks).mockResolvedValue([{ id: 'a', priority: 'high', due_date: today, reason: '' }, { id: 'b', priority: 'low', due_date: today, reason: '' }]);
   vi.spyOn(api, 'state').mockImplementation(async () => state(tasks));
   let refuse = true;
@@ -105,15 +106,21 @@ test('la réussite partielle est conservée et la reprise écrit seulement les t
     if (id === 'b' && refuse) throw new Error('Écriture refusée.');
     const updated = { ...tasks.find((item) => item.id === id)!, ...patch };
     tasks = tasks.map((item) => item.id === id ? updated : item);
-    return updated;
+    // Le PUT serveur omet les documents ; le miroir PWA renvoie une liste vide.
+    const { documents: _documents, ...response } = updated;
+    return backend === 'PWA' ? { ...response, documents: [] } : response;
   });
   const inputs = props(tasks);
-  render(<OverviewAiActions {...inputs} />);
+  const view = render(<OverviewAiActions {...inputs} />);
+  inputs.onChanged.mockImplementation(() => view.rerender(<OverviewAiActions {...inputs} tasks={tasks} />));
   await user.click(screen.getByRole('button', { name: 'Replanifier avec l’IA' }));
   await screen.findByRole('region', { name: 'Dates et priorités proposées par l’IA' });
   await user.click(screen.getByRole('button', { name: 'Appliquer 2 tâches' }));
   await screen.findByRole('alert');
   expect(screen.getByRole('alert')).toHaveTextContent('1 tâche enregistrée. Écriture refusée.');
+  await waitFor(() => expect(inputs.onChanged).toHaveBeenCalledOnce());
+  expect(screen.getByRole('region', { name: 'Bilan du jour et planification IA' })).toHaveAttribute('aria-busy', 'false');
+  expect(screen.queryByText('Enregistrement des dates et priorités…')).not.toBeInTheDocument();
   expect(screen.getByRole('checkbox', { name: 'Replanifier Tâche a' })).toBeDisabled();
   refuse = false;
   await user.click(screen.getByRole('button', { name: 'Appliquer 1 tâche' }));
@@ -121,7 +128,7 @@ test('la réussite partielle est conservée et la reprise écrit seulement les t
   expect(write.mock.calls.map(([id]) => id)).toEqual(['a', 'b', 'b']);
 });
 
-test('après application, le spinner se retire et la proposition se referme', async () => {
+test('après application, le spinner se retire et la proposition se referme même si la relecture attend', async () => {
   const user = userEvent.setup();
   let tasks = [task('a')];
   vi.mocked(replanTasks).mockResolvedValue([{ id: 'a', priority: 'high', due_date: today, reason: 'Débloque le contrôle.' }]);
@@ -132,6 +139,8 @@ test('après application, le spinner se retire et la proposition se referme', as
     return updated;
   });
   const inputs = props(tasks);
+  let release!: () => void;
+  inputs.onChanged.mockImplementation(() => new Promise<void>((resolve) => { release = resolve; }));
   render(<OverviewAiActions {...inputs} />);
   await user.click(screen.getByRole('button', { name: 'Replanifier avec l’IA' }));
   await screen.findByRole('region', { name: 'Dates et priorités proposées par l’IA' });
@@ -139,8 +148,11 @@ test('après application, le spinner se retire et la proposition se referme', as
   await waitFor(() => expect(inputs.onChanged).toHaveBeenCalled());
   await waitFor(() => expect(screen.getByText('1 tâche replanifiée.')).toBeVisible(), { timeout: 3000 });
   expect(write).toHaveBeenCalledOnce();
+  expect(screen.getByRole('region', { name: 'Bilan du jour et planification IA' })).toHaveAttribute('aria-busy', 'false');
+  expect(screen.queryByText('Enregistrement des dates et priorités…')).not.toBeInTheDocument();
   // La proposition refermée : plus rien à appliquer, le spinner de « Enregistrement » parti.
   await waitFor(() => expect(screen.queryByRole('region', { name: 'Dates et priorités proposées par l’IA' })).not.toBeInTheDocument());
+  await act(async () => { release(); });
 });
 
 test('Arrêter coupe la demande et ignore une réponse qui arrive ensuite', async () => {

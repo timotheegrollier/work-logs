@@ -39,7 +39,7 @@ describe('contexte IA limité au projet', () => {
       summary('active'), summary('archive', { archived: 1 }),
     ];
     const state = mockState([good, ...forbidden], [
-      task('current'), task('open', { title: 'Vérifier le toner' }),
+      task('current'), task('open', { title: 'Vérifier le toner imprimante' }),
       task('done', { status: 'done', title: 'Facturer' }), task('other', { project_id: 'p2', title: 'Pisciculture bassin' }),
     ]);
     const read = vi.spyOn(api, 'entry').mockResolvedValue(entry(good));
@@ -47,7 +47,7 @@ describe('contexte IA limité au projet', () => {
     expect(state).toHaveBeenCalledWith('', 'p1');
     expect(read.mock.calls).toEqual([['good']]);
     expect(context.project).toBe('Atelier');
-    expect(context.relatedTasks).toEqual(['Vérifier le toner']);
+    expect(context.relatedTasks).toEqual(['Vérifier le toner imprimante']);
     expect(context.vocabulary).not.toContain('pisciculture');
     expect(context.vocabulary).not.toContain('bassin');
     expect(context.sources?.map((source) => source.id)).toEqual(['good']);
@@ -55,7 +55,7 @@ describe('contexte IA limité au projet', () => {
 
   test('sans projet, ne réutilise aucune entrée ni tâche d’un projet nommé', async () => {
     const orphan = summary('orphan', { project_id: null });
-    const state = mockState([summary('project'), orphan], [task('project'), task('orphan', { project_id: null, title: 'Libre' })]);
+    const state = mockState([summary('project'), orphan], [task('project'), task('orphan', { project_id: null, title: 'Imprimante libre' })]);
     const read = vi.spyOn(api, 'entry').mockResolvedValue(entry(orphan));
     saveProjectAiBrief(null, 'Espace personnel');
     const context = await loadAiContext({ projectId: null, title: 'Imprimante' });
@@ -63,15 +63,20 @@ describe('contexte IA limité au projet', () => {
     expect(read.mock.calls).toEqual([['orphan']]);
     expect(context.project).toBeUndefined();
     expect(context.projectBrief).toBe('Espace personnel');
-    expect(context.relatedTasks).toEqual(['Libre']);
+    expect(context.relatedTasks).toEqual(['Imprimante libre']);
   });
 
   test('ne prend pas de documents au hasard quand le titre ne correspond pas', async () => {
-    mockState([summary('unrelated', { title: 'Congés annuels', excerpt: 'Planning et absences' })]);
+    mockState([summary('unrelated', { title: 'Congés annuels', excerpt: 'Planning et absences' })], [
+      task('budget', { title: 'Budget Gabin' }), task('meeting', { title: 'Appeler Gabin' }),
+    ]);
     const read = vi.spyOn(api, 'entry');
     const context = await loadAiContext({ projectId: 'p1', title: 'Configuration imprimante' });
     expect(context.sources).toEqual([]);
     expect(context.recentNotes).toEqual([]);
+    expect(context.relatedTasks).toEqual([]);
+    expect(context.relatedTaskPlanning).toEqual([]);
+    expect(context.vocabulary).toEqual([]);
     expect(read).not.toHaveBeenCalled();
   });
 
@@ -88,7 +93,42 @@ describe('contexte IA limité au projet', () => {
     const context = await loadAiContext({ projectId: 'p1', title: 'Compte rendu', text: 'La pompe présente une panne.' });
     expect(read.mock.calls).toEqual([['pump']]);
     expect(context.sources?.map((source) => source.id)).toEqual(['pump']);
-    expect(context.relatedTasks?.[0]).toBe('Remplacer la pompe');
+    expect(context.relatedTasks).toEqual(['Remplacer la pompe']);
+    expect(context.vocabulary).not.toContain('autre');
+  });
+
+  test('deux comptes rendus ne sont pas liés par leur seul intitulé générique', async () => {
+    const matching = summary('pump', { title: 'Entretien pompe', kind: 'procedure' });
+    const unrelated = summary('meeting', { title: 'Compte rendu', excerpt: 'Réunion avec Gabin.' });
+    mockState([unrelated, matching], [task('meeting-task', { title: 'Rédiger le compte rendu' })]);
+    const read = vi.spyOn(api, 'entry').mockResolvedValue(entry(matching, { content_md: 'Pompe : contrôler le joint.' }));
+    const context = await loadAiContext({ projectId: 'p1', title: 'Compte rendu', text: 'La pompe fuit.' });
+    expect(read.mock.calls).toEqual([['pump']]);
+    expect(context.relatedTasks).toEqual([]);
+    expect(JSON.stringify(context)).not.toContain('Gabin');
+  });
+
+  test('le mot compte reste pertinent hors de l’expression compte rendu', async () => {
+    const item = summary('account', { title: 'Accès au compte' });
+    mockState([item]);
+    const read = vi.spyOn(api, 'entry').mockResolvedValue(entry(item, { content_md: 'Compte : vérifier les droits.' }));
+    const context = await loadAiContext({ projectId: 'p1', title: 'Compte Google' });
+    expect(read.mock.calls).toEqual([['account']]);
+    expect(context.sources?.[0].text).toContain('vérifier les droits');
+  });
+
+  test('garde une tâche explicitement liée même si son titre ne reprend pas le sujet', async () => {
+    const active = summary('active', { title: 'Panne de la pompe' });
+    mockState([active], [
+      task('linked', { title: 'Commander le joint', documents: [active], priority: 'high', due_date: '2026-11-10' }),
+      task('unrelated', { title: 'Appeler Gabin' }),
+    ]);
+    const read = vi.spyOn(api, 'entry');
+    const context = await loadAiContext({ projectId: 'p1', title: 'Panne de la pompe', entryId: active.id });
+    expect(context.relatedTasks).toEqual(['Commander le joint']);
+    expect(context.relatedTaskPlanning).toEqual([{ title: 'Commander le joint', priority: 'high', due_date: '2026-11-10' }]);
+    expect(context.vocabulary).not.toContain('gabin');
+    expect(read).not.toHaveBeenCalled();
   });
 
   test('limite la planification aux cinq tâches ouvertes les plus pertinentes du projet', async () => {
@@ -154,6 +194,64 @@ describe('contexte IA limité au projet', () => {
     expect(context.sources?.[0].text).toContain('code 0x713 à résoudre.');
   });
 
+  test('un passage ciblé et ses voisins remplacent le remplissage hors sujet, sans changer les faits utiles', async () => {
+    const item = summary('pump', { title: 'Pompe de relevage' });
+    const useful = 'Pompe de relevage : fermer la vanne avant le démontage. Contrôler la pression : 3 bar maximum.';
+    const unrelated = Array.from({ length: 40 }, (_, index) => `Réunion administrative ${index} : revue du budget commercial et des horaires de transport.`).join('\n\n');
+    mockState([item]);
+    vi.spyOn(api, 'entry').mockResolvedValue(entry(item, { content_md: unrelated + '\n\n' + useful + '\n\n' + unrelated }));
+    const context = await loadAiContext({ projectId: 'p1', title: 'Pompe de relevage' });
+    const excerpt = context.sources![0].text;
+    expect(excerpt).toContain(useful);
+    expect(excerpt).toContain('Réunion administrative 39');
+    expect(excerpt).toContain('Réunion administrative 0');
+    expect(excerpt).not.toContain('Réunion administrative 20');
+    // Le même corpus produisait 1 976 caractères avant la sélection du voisinage.
+    expect(excerpt.length).toBeLessThan(1976 * 0.2);
+    expect(excerpt.startsWith('[…]')).toBe(true);
+    expect(excerpt.endsWith('[…]')).toBe(true);
+  });
+
+  test('conserve la section pertinente, ses titres parents, toutes ses étapes et son avertissement', async () => {
+    const item = summary('pump', { title: 'Maintenance pompe' });
+    const steps = '1. Couper l’alimentation.\n\n2. Fermer la vanne.\n\n3. Contrôler la pression : 3 bar maximum.';
+    const warning = '⚠ Ne jamais redémarrer sans remettre le cache.';
+    mockState([item]);
+    vi.spyOn(api, 'entry').mockResolvedValue(entry(item, { content_md: `# Atelier\n\n## Administration\n\nRéunion avec Gabin.\n\n## Pompe\n\n${steps}\n\n${warning}\n\n## Comptabilité\n\nFacturer la réunion.` }));
+    const excerpt = (await loadAiContext({ projectId: 'p1', title: 'Pompe' })).sources![0].text;
+    expect(excerpt).toContain('# Atelier');
+    expect(excerpt).toContain('## Pompe');
+    expect(excerpt).toContain(steps);
+    expect(excerpt).toContain(warning);
+    expect(excerpt).not.toContain('Gabin');
+    expect(excerpt).not.toContain('Facturer');
+    expect(excerpt.length).toBeLessThanOrEqual(2000);
+  });
+
+  test('ne sépare pas les lignes d’une commande ni les étapes espacées d’une liste', async () => {
+    const item = summary('pump', { title: 'Pompe' });
+    const code = '```sh\n# Arrêt contrôlé\n\npompe --stop\n\n# Limite de pression\npression --max 3\n```';
+    const steps = '1. Couper l’alimentation.\n\n2. Purger la pompe.\n\n3. Remonter le cache.';
+    mockState([item]);
+    vi.spyOn(api, 'entry').mockResolvedValue(entry(item, { content_md: `Administration.\n\n${code}\n\n${steps}\n\n⚠ Attendre le refroidissement.\n\nComptabilité.\n\nAutre réunion.` }));
+    const excerpt = (await loadAiContext({ projectId: 'p1', title: 'Pompe' })).sources![0].text;
+    expect(excerpt).toContain(code);
+    expect(excerpt).toContain(steps);
+    expect(excerpt).toContain('⚠ Attendre le refroidissement.');
+    expect(excerpt).not.toContain('Autre réunion.');
+  });
+
+  test('une source trouvée par son titre ou un lien reste lisible sans mot commun dans son texte', async () => {
+    const byTitle = summary('title', { title: 'Pompe' });
+    const linked = summary('linked', { title: 'Inventaire' });
+    const content = 'Couper l’alimentation.\n\nFermer l’arrivée.\n\nAttendre le refroidissement.';
+    mockState([byTitle, linked], [task('current', { documents: [linked] })]);
+    vi.spyOn(api, 'entry').mockImplementation(async (id) => entry(id === 'title' ? byTitle : linked, { content_md: content }));
+    const context = await loadAiContext({ projectId: 'p1', title: 'Pompe', taskId: 'current' });
+    expect(context.sources?.map((source) => source.id)).toEqual(['linked', 'title']);
+    expect(context.sources?.map((source) => source.text)).toEqual([content, content]);
+  });
+
   test('convertit les procédures riches et récupère les consignes locales du projet', async () => {
     const item = summary('rich', { kind: 'procedure' });
     mockState([item]);
@@ -192,6 +290,19 @@ describe('contexte IA limité au projet', () => {
     };
     expect(selectedAiContext(context, ['a'])).toEqual({ ...context, sources: [context.sources[1]], recentNotes: [] });
     expect(context.sources).toHaveLength(2);
+  });
+
+  test('déduplique les copies exactes après les exclusions et conserve les provenances distinctes', () => {
+    const source = { title: 'Pompe', kind: 'procedure' as const, text: 'Fermer la vanne puis contrôler 3 bar.' };
+    const context = { sources: [
+      { ...source, id: 'a' }, { ...source, id: 'b' },
+      { ...source, id: 'other-title', title: 'Autre pompe' }, { ...source, id: 'note', kind: 'note' as const },
+      { ...source, id: 'other-text', text: 'Fermer la vanne puis contrôler 4 bar.' },
+    ] };
+    expect(selectedAiContext(context, []).sources?.map((item) => item.id)).toEqual(['a', 'other-title', 'note', 'other-text']);
+    expect(selectedAiContext(context, ['a']).sources?.map((item) => item.id)).toEqual(['b', 'other-title', 'note', 'other-text']);
+    expect(context.sources).toHaveLength(5);
+    expect(selectedAiContext(context, ['a', 'b']).sources?.map((item) => item.id)).toEqual(['other-title', 'note', 'other-text']);
   });
 
   test('décocher une source retire aussi son vocabulaire, tout en gardant celui des autres documents et tâches', async () => {

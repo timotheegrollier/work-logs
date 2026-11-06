@@ -1,4 +1,6 @@
 import { memo, useState, type CSSProperties } from 'react';
+import { EntryMerge } from './EntryMerge';
+
 import { dayLabel, groupByDay, groupTabs, plainText, todayISO, type Category, type EntrySummary, type JournalItem, type Project } from '../lib';
 import { groupByCategory } from '../categories';
 import { CategoryBadge } from './CategoryPicker';
@@ -10,7 +12,10 @@ export const EntryList = memo(function EntryList({
   categories = [],
   grouped = false,
   selectedId,
+  selectedIds = [],
   onSelect,
+  onToggleSelect,
+  onMerge,
   onCreate,
   onCreateDocument,
   searching,
@@ -33,9 +38,17 @@ export const EntryList = memo(function EntryList({
   // le journal reste léger et les assertions « masqué » portent sur le DOM.
   const [archivesOpen, setArchivesOpen] = useState(false);
   const colors = new Map(projects.map((p) => [p.id, p.color]));
+  const merged = selectedIds.filter((id) => id !== selectedId);
 
   return (
     <section className="journal" aria-label="Journal">
+      <div className="entry-select-toolbar">
+        <span className="count">{selectedIds.length} sélectionné(s)</span>
+        <span className="spacer" />
+        {selectedIds.length >= 2 && onMerge && (
+          <button type="button" onClick={onMerge}>Fusionner</button>
+        )}
+      </div>
       <button className="new-entry" onClick={() => onCreate()}>
         <span aria-hidden="true">＋</span> Nouvelle entrée
       </button>
@@ -47,7 +60,7 @@ export const EntryList = memo(function EntryList({
         </p>
       )}
 
-      <EntryGroups entries={active} projects={projects} categories={categories} grouped={grouped} colors={colors} selectedId={selectedId} onSelect={onSelect} />
+      <EntryGroups entries={active} projects={projects} categories={categories} grouped={grouped} colors={colors} selectedId={selectedId} selectedIds={selectedIds} onSelect={onSelect} onToggleSelect={onToggleSelect} />
 
       {archived.length > 0 && (
         <details className="archives" open={archivesOpen} onToggle={(e) => setArchivesOpen(e.currentTarget.open)}>
@@ -59,19 +72,25 @@ export const EntryList = memo(function EntryList({
           )}
         </details>
       )}
+
+      {merged.length > 0 && onMerge && (
+        <EntryMerge state={undefined} selectedIds={merged} onDone={{ selectedIds: [] }} />
+      )}
     </section>
   );
 });
 
 
-function EntryGroups({ entries, projects, categories, grouped, ...props }: {
+function EntryGroups({ entries, projects, categories, grouped, selectedId, selectedIds, ...props }: {
   entries: EntrySummary[];
   projects: Project[];
   categories: Category[];
   grouped: boolean;
   colors: Map<string, string>;
   selectedId: string | null;
+  selectedIds: string[];
   onSelect: (id: string) => void;
+  onToggleSelect: (id: string) => void;
   dimmed?: boolean;
 }) {
   if (!grouped) return <DayGroups items={groupTabs(entries)} categories={categories} {...props} />;
@@ -90,14 +109,18 @@ function DayGroups({
   colors,
   categories,
   selectedId,
+  selectedIds,
   onSelect,
+  onToggleSelect,
   dimmed = false,
 }: {
   items: JournalItem[];
   colors: Map<string, string>;
   categories: Category[];
   selectedId: string | null;
+  selectedIds: string[];
   onSelect: (id: string) => void;
+  onToggleSelect: (id: string) => void;
   dimmed?: boolean;
 }) {
   const byId = new Map(items.map((item) => [item.entry.id, item]));
@@ -115,6 +138,7 @@ function DayGroups({
                   style={{ '--project': colors.get(entry.project_id ?? '') } as CSSProperties}
                   onClick={() => onSelect(tabs.find(t => t.id === selectedId)?.id || entry.id)}
                 >
+                  <span className="entry-check" onClick={(e) => { e.stopPropagation(); onToggleSelect(entry.id); }} aria-label={`Sélectionner ${entry.title}`}></span>
                   <span className="entry-title">
                     {entry.project_id && (
                       <span

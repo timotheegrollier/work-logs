@@ -139,7 +139,9 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
             title: task.title, status: task.status, priority: task.priority, due_date: task.due_date,
             project_id: task.project_id, pinned: task.pinned, follow_up_key: task.follow_up_key ?? null,
           } });
-          expected.current = expected.current.map((candidate) => candidate.id === updated.id ? updated : candidate);
+          // Le PUT ne recharge pas les liens (absents côté serveur, liste vide
+          // côté PWA) : garder les documents du contexte relu avant l'écriture.
+          expected.current = expected.current.map((candidate) => candidate.id === updated.id ? { ...candidate, ...updated, documents: candidate.documents } : candidate);
           written += 1;
         }
         edit(choice.id, { applied: true, selected: false });

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { api, COLUMNS, PRIORITIES, dayLabel, formatSize, googleHelpUrl, isFollowed, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type Priority, type RichDocument, type Status, type Task } from '../lib';
-import { AiCancelled, completeNote, draftProcedure, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
+import { AiCancelled, completeNote, draftProcedure, noteCompletionContext, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
 import { insertCodeFence, renderMarkdown, toggleChecklistItem } from '../markdown';
 import { markdownToRich, richToMarkdown } from '../rich-markdown';
@@ -383,11 +383,12 @@ export function EntryEditor({
     aiRequest.current = new AbortController();
     return { ...settings, signal: aiRequest.current.signal };
   };
-  const contextForAi = async (current: typeof draft, version: number, contextVersion: number, showTaskPlanning = false) => {
-    const context = await loadAiContext({ projectId: current.project_id || null, title: current.title, text: current.content_json ? richToMarkdown(current.content_json) : current.content_md, entryId: entry.id });
+  const contextForAi = async (current: typeof draft, version: number, contextVersion: number, purpose: 'general' | 'planning' | 'note' = 'general') => {
+    const loaded = await loadAiContext({ projectId: current.project_id || null, title: current.title, text: current.content_json ? richToMarkdown(current.content_json) : current.content_md, entryId: entry.id });
+    const context = purpose === 'note' ? noteCompletionContext(loaded) : loaded;
     if (!sameProject(current.project_id) || projectVersion.current !== version || aiContextVersion.current !== contextVersion) return null;
     setAiContext(context);
-    setShowAiTaskPlanning(showTaskPlanning);
+    setShowAiTaskPlanning(purpose === 'planning');
     return selectedAiContext(context, excludedAiSourcesRef.current);
   };
   const suggestForEntry = async (instruction?: string) => {
@@ -491,7 +492,7 @@ export function EntryEditor({
       }
       const source = previous?.source ?? (current.content_json ? richToMarkdown(current.content_json) : current.content_md);
       const title = previous?.title ?? current.title;
-      const context = await contextForAi(current, version, contextVersion);
+      const context = await contextForAi(current, version, contextVersion, mode === 'note' ? 'note' : 'general');
       if (!context) return;
       const refinement = previous && instruction ? { instruction, previous: previous.fixed } : undefined;
       const fixed = mode === 'layout'
@@ -620,7 +621,7 @@ export function EntryEditor({
       const current = draftRef.current;
       const snapshot = contentSnapshot(current);
       const source = current.content_json ? richToMarkdown(current.content_json) : current.content_md;
-      const context = await contextForAi(current, version, contextVersion, true);
+      const context = await contextForAi(current, version, contextVersion, 'planning');
       if (!context) return;
       const suggestions = await suggestEntryTasks(settings, current.title, source, {
         entryDate: current.entry_date,
