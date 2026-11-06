@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { api, type AppState, type FollowUp, type FollowUpKind } from './lib';
+import { api, type AppState, type FollowUp, type FollowUpKind, type FollowUpReportDraft } from './lib';
 import { AiCancelled, generateFollowUp, readAiSettings } from './ai-suggest';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
 
@@ -15,6 +15,9 @@ type Job = { item: Item; manual: boolean };
 const keyOf = (kind: FollowUpKind, id: string) => `${kind}:${id}`;
 const AUTO_DELAY = 2000;
 const idle: Runtime = { busy: false, error: '' };
+const reportContent = (report: FollowUpReportDraft) => JSON.stringify([
+  report.status, report.summary, report.completed, report.next_steps, report.blockers, report.warnings,
+]);
 interface Control {
   runtime: Record<string, Runtime>;
   /** `clear` : « Désactiver », l'automatisme et le bilan partent ensemble. */
@@ -76,7 +79,23 @@ export function FollowUpProvider({ state, onChanged, children }: {
         // serveur ; aucune ancienne analyse ne devient le bilan d'un nouveau texte.
         await flushPendingSaves();
         if (controller.signal.aborted) return;
-        await api.saveFollowUp(job.item.kind, job.item.id, { report, source_key: snapshot.source_key });
+        try {
+          await api.saveFollowUp(job.item.kind, job.item.id, { report, source_key: snapshot.source_key });
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          if ((error as { code?: string }).code === 'FOLLOW_UP_STALE') throw error;
+          // Une réponse perdue peut cacher une écriture réussie. La confirmer
+          // évite de payer une nouvelle génération pour le même bilan.
+          const saved = await api.followUp(job.item.kind, job.item.id).catch(() => null);
+          if (controller.signal.aborted) return;
+          const stored = saved?.follow_up?.report;
+          const previous = snapshot.follow_up?.report;
+          const content = reportContent(report);
+          const confirmed = saved?.source_key === snapshot.source_key && stored?.source_key === snapshot.source_key
+            && reportContent(stored) === content
+            && (!previous || stored.generated_at !== previous.generated_at || stored.source_key !== previous.source_key || reportContent(previous) !== content);
+          if (!confirmed) throw error;
+        }
         if (!controller.signal.aborted) await changed.current();
       } catch (error) {
         if (!controller.signal.aborted && (error as { code?: string }).code === 'FOLLOW_UP_STALE') {

@@ -4,6 +4,7 @@ import './styles.css';
 import { api, emptyDocument, taskViewMatch, todayISO, type AppState, type Entry, type GoogleStatus, type GoogleSyncStatus, type Task, type TaskView } from './lib';
 import { startWebSync, subscribeWebSync } from './store/sync-web';
 import { EntryList } from './components/EntryList';
+import { EntryMerge } from './components/EntryMerge';
 import { ProcedureList } from './components/ProcedureList';
 import { EntryEditor } from './components/EntryEditor';
 import { Logo } from './components/Logo';
@@ -54,6 +55,7 @@ export default function App() {
   // aussi ce qui rend les recettes déterministes — elles pariaient jusqu'ici sur
   // l'ordre des entrées après un rechargement.
   const [selectedId, setSelectedId] = usePersisted<string | null>(SELECTED_KEY, (stored) => stored, orForget);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   // Fichier du dossier partagé ouvert au centre, à la place de l'entrée (§25).
   // Desktop et dev seulement : la PWA n'atteint pas un partage SMB.
   // PWA : le dossier partagé passe par le relais du bureau, s'il est réglé.
@@ -815,7 +817,10 @@ export default function App() {
             entries={journalEntries}
             projects={state?.projects ?? []}
             selectedId={sharedPath ? null : selectedId}
+            selectedIds={selectedIds}
             onSelect={selectFromList}
+            onToggleSelect={toggleSelect}
+            onMerge={handleMerge}
             onCreate={createEntry}
             onCreateDocument={createDocument}
             searching={query !== ''}
@@ -1033,8 +1038,15 @@ export default function App() {
           </div>
           {/* La pastille de version de l'en-tête est masquée dès 1180 px
               (mobile, tablette, PWA étroite) : le numéro reste accessible
-              ici, en pied fixe du dialogue. */}
-          <p className="settings-version">WorkLogs {__WORKLOGS_VERSION__}</p>
+              ici, en pied fixe du dialogue. La politique de confidentialité
+              s'ouvre dans le navigateur système : la page publique est aussi
+              celle déclarée à Google Cloud. */}
+          <footer className="settings-footer">
+            <a href="https://worklogs-google.cocodexcocoder.workers.dev/confidentialite.html" target="_blank" rel="noreferrer">
+              Politique de confidentialité
+            </a>
+            <span className="settings-version">WorkLogs {__WORKLOGS_VERSION__}</span>
+          </footer>
         </dialog>
       ), document.body)}
       {showDocuments && (

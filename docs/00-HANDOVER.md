@@ -1,5 +1,21 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Ajustement du 2026-11-06 — politique de confidentialité publique
+
+La page `web/public/confidentialite.html` est publiée avec la PWA et sert d’URL de
+politique de confidentialité à Google Cloud : **`https://worklogs-google.cocodexcocoder.workers.dev/confidentialite.html`**
+(miroir GitHub Pages : `https://timotheegrollier.github.io/work-logs/confidentialite.html`).
+Elle couvre le journal local, les scopes Google (`drive.file`, `openid email profile`), le
+relais de jetons, l’IA facultative, le partage en réseau local, la conservation et les
+droits. Un lien **Politique de confidentialité** a été ajouté au pied du dialogue
+Paramètres (ouvert dans le navigateur système en desktop), avec un test front. Aucun
+changement d’API, de schéma ou de dépendance. `./scripts/check.sh` vert sur la base
+**v0.71.0** : **306 API, 816 front** (plus l’échec attendu), **49 desktop unitaires,
+42 scripts, 8 Worker, 11 relais, 106 navigateur et 17 desktop e2e**. Le commit est rebasé
+sur master, mais master ne compile pas encore (commit 5bb3a13 « fusion d entrées IA » :
+App.tsx, EntryList.tsx, EntryMerge.tsx, ai-suggest) : la page sera publiée au prochain
+déploiement vert.
+
 ## Correctifs du 2026-11-05 — replanification bloquée et contexte de complétion
 
 Travail repris sur la base **0.71.0**, sans bump ni publication.

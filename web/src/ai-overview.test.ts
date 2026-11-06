@@ -62,7 +62,7 @@ describe('bilan quotidien des suivis', () => {
 
   test('partage le budget entre tous les suivis sans omettre les derniers, en annonçant les coupes', () => {
     const longReport = { ...followUp.report!, summary: 'DÉBUT' + 'x'.repeat(1500) + 'FIN', completed: ['c'.repeat(4000)], next_steps: ['n'.repeat(4000)], blockers: ['b'.repeat(4000)] };
-    const items = Array.from({ length: MAX_DAILY_FOLLOW_UPS }, (_, i) => ({ ...item, id: `en_${i}`, title: `Source ${i}`, follow_up: { ...followUp, report: longReport } }));
+    const items = Array.from({ length: MAX_DAILY_FOLLOW_UPS }, (_, i) => ({ ...item, id: `en_${i}`, title: `Source ${i}`, follow_up: { ...followUp, report: { ...longReport, summary: `${longReport.summary} ${i}` } } }));
     const prompt = buildDailyReviewPrompt(items, { today });
     const data = JSON.parse(prompt.user.split('\n\n')[0]);
     expect(data.reports).toHaveLength(MAX_DAILY_FOLLOW_UPS);
@@ -72,6 +72,78 @@ describe('bilan quotidien des suivis', () => {
     expect(data.reports[0].summary).toContain('DÉBUT');
     expect(data.reports[0].summary).toContain('FIN');
     expect(prompt.warnings.some((warning) => warning.includes('60 bilan(s) abrégé(s)'))).toBe(true);
+  });
+
+  test('mutualise seulement les détails identiques et garde les dates, fraîcheurs, états et limites de chaque bilan', () => {
+    const common = followUp.report!;
+    const items: DailyFollowUpInput[] = [
+      { ...item, id: 'a_secret', title: 'Premier constat' },
+      { ...item, id: 'b_secret', title: 'Copie du constat', date: '2026-11-01', follow_up_key: 'source_modifiee', follow_up: { ...followUp, report: { ...common, generated_at: '2026-11-04T10:00:00Z', status: 'done', warnings: [...common.warnings, 'Source ancienne à vérifier.'] } } },
+      { ...item, id: 'c_secret', title: 'Situation différente', follow_up: { ...followUp, report: { ...common, blockers: ['La pièce ne manque plus.'] } } },
+      { ...item, id: 'd_secret', title: 'Dernière copie' },
+    ];
+    const prompt = buildDailyReviewPrompt(items, { today });
+    const data = JSON.parse(prompt.user.split('\n\n')[0]);
+    expect(data.reports[1]).toMatchObject({ n: 2, title: 'Copie du constat', entry_date: '2026-11-01', generated_at: '2026-11-04T10:00:00Z', stale: true, status: 'done', same_details_as: 1 });
+    expect(data.reports[1].summary).toBeUndefined();
+    expect(data.reports[2].same_details_as).toBeUndefined();
+    expect(data.reports[2].blockers).toBe('La pièce ne manque plus.');
+    const shared = data.reports[data.reports[1].same_details_as - 1];
+    expect(shared.same_details_as).toBeUndefined();
+    expect(shared.summary).toBe(common.summary);
+    expect(data.reports[3].same_details_as).toBe(1);
+    expect(data.reading_limits).toEqual(['Copie locale uniquement.', 'Source ancienne à vérifier.']);
+    expect(data.reports.map((value: { limits: number[] }) => value.limits)).toEqual([[1], [1, 2], [1], [1]]);
+    expect(prompt.system).toContain('same_details_as');
+    expect(prompt.user).not.toMatch(/a_secret|b_secret|c_secret|d_secret|source_modifiee/);
+  });
+
+  test('soixante copies d’un même bilan ne forcent pas l’abrègement de son contenu unique', () => {
+    const common = {
+      ...followUp.report!, summary: 'Résumé conservé. '.repeat(70),
+      completed: Array.from({ length: 8 }, (_, i) => `Avancée ${i} : ${'a'.repeat(470)}`),
+      next_steps: Array.from({ length: 8 }, (_, i) => `Action ${i} : ${'n'.repeat(470)}`),
+      blockers: Array.from({ length: 8 }, (_, i) => `Blocage ${i} : ${'b'.repeat(470)}`),
+    };
+    const items = Array.from({ length: MAX_DAILY_FOLLOW_UPS }, (_, i) => ({ ...item, id: `en_${i}`, title: `Source ${i}`, follow_up: { ...followUp, report: common } }));
+    const prompt = buildDailyReviewPrompt(items, { today });
+    const data = JSON.parse(prompt.user.split('\n\n')[0]);
+    expect(data.reports[0]).toMatchObject({ summary: common.summary, completed: common.completed.join('\n'), next_steps: common.next_steps.join('\n'), blockers: common.blockers.join('\n') });
+    expect(data.reports.slice(1).every((value: { same_details_as?: number; summary?: string }) => value.same_details_as === 1 && value.summary === undefined)).toBe(true);
+    expect(prompt.warnings.some((warning) => warning.includes('abrégé'))).toBe(false);
+  });
+
+  test('le budget des champs vides laisse les résumés courts et leurs dernières informations intacts', () => {
+    const items = Array.from({ length: MAX_DAILY_FOLLOW_UPS }, (_, i) => ({
+      ...item, id: `en_${i}`, title: `Source ${i}`,
+      follow_up: { ...followUp, report: { ...followUp.report!, summary: `Début ${i}. ${'Information enregistrée. '.repeat(11)}Fin ${i}.`, completed: [], next_steps: [], blockers: [] } },
+    }));
+    const prompt = buildDailyReviewPrompt(items, { today });
+    const data = JSON.parse(prompt.user.split('\n\n')[0]);
+    expect(data.reports.map((value: { summary: string }) => value.summary)).toEqual(items.map((value) => value.follow_up.report.summary));
+    expect(prompt.warnings.some((warning) => warning.includes('abrégé'))).toBe(false);
+  });
+
+  test('une tâche ouverte renvoie à son bilan sans répéter son titre, avec sa vraie priorité et son échéance', () => {
+    const prompt = buildDailyReviewPrompt([
+      { ...item, id: 'tk_secret_suivie', kind: 'task', title: 'TITRE_UNIQUE_SUIVI', status: 'doing', priority: 'high', due_date: '2026-11-09' },
+      { id: 'tk_secret_sans_suivi', kind: 'task', title: 'Autre travail', status: 'todo', priority: 'low', due_date: null },
+    ], { today });
+    const data = JSON.parse(prompt.user.split('\n\n')[0]);
+    expect(data.open_tasks).toEqual([
+      { n: 1, report: 1, status: 'doing', priority: 'high', due_date: '2026-11-09' },
+      { n: 2, title: 'Autre travail', status: 'todo', priority: 'low', due_date: null },
+    ]);
+    expect(prompt.user.match(/TITRE_UNIQUE_SUIVI/g)).toHaveLength(1);
+    expect(data.reports[0].status).toBe('blocked');
+    expect(prompt.user).not.toContain('tk_secret');
+  });
+
+  test('borne aussi les tâches ouvertes sans suivi avant tout appel réseau', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+    const items = Array.from({ length: MAX_DAILY_FOLLOW_UPS + 1 }, (_, i) => ({ id: `task_${i}`, kind: 'task' as const, title: `Tâche ${i}`, status: 'todo' as const }));
+    await expect(generateDailyReview(settings, items, { today })).rejects.toThrow(/Trop de/);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   test('refuse le vide et le dépassement avant un appel, sans tronquer la sélection', async () => {

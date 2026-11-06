@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api, ApiError, type Project, type SharedDirSummary, type SharedEntry, type SharedListing, type SharedSearch, type SharedStatus } from '../lib';
 import { badgesFor, REACH_HELP, REACH_LABELS, sinceLabel } from '../shared-session';
 import { editorKind } from '../file-formats';
@@ -90,7 +90,9 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
   /** Refus d'une action sur un dossier : affiché sous sa ligne, pas en haut de la section. */
   const [dirError, setDirError] = useState<{ path: string; message: string } | null>(null);
   const [lastOpened, setLastOpened] = useState('');
-  useEffect(() => { setLinking(false); }, [projectId]);
+  // Réinitialiser avant que le nouveau bouton reçoive un clic : un effet passif
+  // pouvait refermer le choix demandé juste après le changement de projet.
+  useLayoutEffect(() => { setLinking(false); }, [projectId]);
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
 

@@ -270,6 +270,16 @@ Une ancienne autorisation sans `openid` fonctionne toujours, simplement sans com
    Sans eux, la CI construit comme avant (configuration manuelle).
 5. Relais de jetons déployé (section suivante) et variable de dépôt `GOOGLE_TOKEN_PROXY_URL`.
    Sans lui, la PWA se connecte en flux « jeton », à reprendre toutes les heures.
+6. **Page d'accueil et politique de confidentialité** : dans Google Auth Platform →
+   **Branding** (ancien « Écran de consentement »), renseigner :
+   - page d'accueil : `https://worklogs-google.cocodexcocoder.workers.dev/` ;
+   - politique de confidentialité :
+     `https://worklogs-google.cocodexcocoder.workers.dev/confidentialite.html`
+     (miroir GitHub Pages : `https://timotheegrollier.github.io/work-logs/confidentialite.html`) ;
+   - domaines autorisés : `cocodexcocoder.workers.dev` et `timotheegrollier.github.io`.
+   La page source est `web/public/confidentialite.html` ; elle est publiée avec la PWA par
+   les workflows `pwa.yml` et `pwa-cloudflare.yml`. Toute modification de la politique se
+   fait dans ce fichier, jamais dans `web/dist/`.
 
 ## Relais de jetons (Cloudflare Worker) — depuis le 2026-09-23
 

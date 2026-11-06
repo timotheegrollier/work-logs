@@ -53,6 +53,8 @@ L'AppImage, elle, se met à jour seule et en différentiel — rien à activer.
 
 Données dans `~/.local/share/worklogs/`, profil et thème dans
 `~/.config/worklogs/` (construction des releases : `docs/07-RELEASES.md`).
+Politique de confidentialité :
+[worklogs / confidentialité](https://worklogs-google.cocodexcocoder.workers.dev/confidentialite.html).
 
 ## Développer
 
