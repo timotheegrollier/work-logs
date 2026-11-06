@@ -240,6 +240,17 @@ conteneur `ubuntu:24.04` (la base de Mint 22.x) à chaque release.
   supprimés), au-delà de la limite d'1 Go d'un site GitHub Pages. `prune-repo.mjs` garde
   les 3 dernières versions ; son tri est en semver, pas en texte (sinon `0.6.9` passerait
   après `0.6.10` et la purge supprimerait la mauvaise).
+- **Déploiement Pages bloqué puis annulé** (vécu le 2026-11-06, v0.72.0) : le job `deploy`
+  de `pages-build-deployment` est resté 10 min en `updating_pages` puis s'est annulé
+  (« Timeout reached »). La taille du site (534 Mo) n'y était pour rien et GitHub ne
+  signalait aucun incident. « Dépôts » échoue alors à juste titre sur sa vérification
+  publique. **Relancer ne sert à rien** (`gh api -X POST …/pages/builds` ou rerun) : le
+  déploiement porte l'identifiant du SHA de gh-pages, déjà marqué annulé, et l'essai
+  suivant meurt en 12 s sur « Deployment cancelled ». Il faut donner un nouveau SHA à
+  gh-pages, avec le même contenu :
+  `git push origin "$(git commit-tree 'origin/gh-pages^{tree}' -p origin/gh-pages -m 'pages: redéploie')":refs/heads/gh-pages`,
+  puis `node scripts/verify-repo.mjs vX.Y.Z https://timotheegrollier.github.io/work-logs`.
+  Ne pas relancer « Dépôts » : les paquets sont déjà sur gh-pages, son run reste rouge.
 - **Liste fermée de `stage-desktop.mjs`** : tout nouveau fichier sous `desktop/` doit y
   être ajouté, sinon l'app installée plante à l'import (fenêtres jamais ouvertes,
   timeouts `firstWindow` dans les 3 jobs paquets — vu sur la 0.3.0).
