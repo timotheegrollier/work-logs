@@ -56,5 +56,5 @@ export function assertEntryMergeReplay(body, entry) {
 export function entryMergeClassification(entries) {
   const common = (key) => entries.every((entry) => (entry[key] ?? null) === (entries[0][key] ?? null)) ? entries[0][key] ?? null : null;
   const project_id = common('project_id');
-  return { project_id, category_id: project_id ? common('category_id') : null };
+  return { project_id, category_id: project_id ? common('category_id') : null, kind: common('kind') === 'procedure' ? 'procedure' : 'note' };
 }

@@ -34,6 +34,8 @@ import { TASK_CATEGORY_MIGRATION, inheritedTaskCategory } from '../../../api/src
 import { buildFollowUpSource, decodeFollowUpRow, followUpKey, readFollowUp, updateFollowUp } from '../../../api/src/follow-up.js';
 // @ts-expect-error — même comparaison pure de planification que dans l'API SQLite.
 import { assertExpectedTaskPlanning } from '../../../api/src/task-planning.js';
+// @ts-expect-error — même contrat de fusion que dans l'API SQLite.
+import { assertEntryMergeReplay, assertEntryMergeSources, entryMergeClassification, entryMergeTargetId, validateEntryMerge } from '../../../api/src/entry-merge.js';
 import { readRelay } from '../relay-settings';
 import { beginWebLogin, builtinWebClientId, clearWebClient, disconnectWeb, downloadDriveBinary, webGoogleRequest, webGoogleStatus } from './google-web';
 
@@ -986,6 +988,44 @@ export const localApi: Api = {
     return fullEntry(copyId);
   },
 
+  // Même contrat que POST /api/entries/merge (§70).
+  mergeEntries: async (input) => {
+    const body = validateEntryMerge(input);
+    const id: string = await entryMergeTargetId(body);
+    const { entries, links, attachments } = await tables();
+    if (await entries.get(id)) {
+      const replay = await fullEntry(id);
+      assertEntryMergeReplay(body, replay);
+      return replay;
+    }
+    const sources: (Entry | null)[] = [];
+    for (const source of body.sources as { id: string }[]) sources.push((await entries.get(source.id)) ? await fullEntry(source.id) : null);
+    assertEntryMergeSources(body, sources);
+    const { project_id, category_id, kind } = entryMergeClassification(sources);
+    const time = nowISO();
+    await entries.put({
+      id, title: body.title, content_md: body.content_md, content_json: null, entry_date: today(),
+      project_id, category_id, archived: 0, kind, created_at: time, updated_at: time,
+    });
+    track('entries', id);
+    for (const source of sources as Entry[]) {
+      for (const file of (await attachments.all()).filter((row) => row.entry_id === source.id)) {
+        await attachments.put({ ...file, entry_id: id });
+        track('attachments', file.id);
+      }
+      for (const link of (await links.all()).filter((row) => row.entry_id === source.id)) {
+        await links.remove(link.id);
+        untrack('links', link.id);
+        await links.put({ id: linkId(link.task_id, id), task_id: link.task_id, entry_id: id, created_at: time });
+        track('links', linkId(link.task_id, id));
+      }
+      await entries.remove(source.id);
+      untrack('entries', source.id);
+      tombstone('entry', source.id);
+    }
+    return fullEntry(id);
+  },
+
   createTaskFromEntry: async (entryId, body) => {
     const { entries, tasks, links } = await tables();
     const source = (await entries.get(entryId)) ?? fail('entrée introuvable');
@@ -1321,7 +1361,7 @@ export const localApi: Api = {
 // queue. Google actions that call updateEntry/deleteEntry join it per mutation.
 for (const method of [
   'createCategory', 'updateCategory', 'deleteCategory', 'createProject', 'updateProject', 'deleteProject',
-  'createEntry', 'updateEntry', 'deleteEntry', 'copyEntry', 'createTaskFromEntry', 'createEntryFromTask',
+  'createEntry', 'updateEntry', 'deleteEntry', 'copyEntry', 'mergeEntries', 'createTaskFromEntry', 'createEntryFromTask',
   'createTask', 'updateTask', 'moveTask', 'deleteTask', 'linkTaskDocument', 'unlinkTaskDocument', 'exportBackup',
   'saveFollowUp',
 ] as const) {

@@ -102,26 +102,14 @@ export interface JournalItem {
   tabs: EntrySummary[];
 }
 
-/** Contrat du client pour la fusion d'entrées : identifiants et leur clé de
- * source. Le contenu n'est jamais transmis au fournisseur IA, qui ne voit que
- * l'entrée faite côté client. */
-export interface EntryMergeSource {
-  id: string;
-  source_key: string;
-}
-
-/** Demande de fusion : titre et texte finaux pour la nouvelle entrée, plus les
- * sources retournées par l'IA. */
+/** Fusion d'entrées (§70) : la note relue et, pour chaque source, la clé de
+ * l'état lu au moment de la proposition. Jamais envoyé au fournisseur IA. */
 export interface EntryMergeRequest {
   request_id: string;
-  sources: EntryMergeSource[];
+  sources: { id: string; source_key: string }[];
   title: string;
   content_md: string;
 }
-
-/** Réponse de la fusion : l'entrée nouvellement créée, avec ses documents et
- * ses suivis IA copiés des anciennes. */
-export interface EntryMergeResult extends Entry {}
 
 /**
  * Regroupe les onglets d'un même document Google sous une seule ligne, pour ne

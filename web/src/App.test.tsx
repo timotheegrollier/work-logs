@@ -880,15 +880,14 @@ describe('écrire une entrée', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Sous-tâches de l’entrée liée, une par ligne')).toHaveValue('Relire\nPayer');
     });
-    // Le prompt connaît le projet, la tâche voisine, la note récente,
-    // le profil et le vocabulaire appris des titres.
+    // Le prompt connaît le projet et le profil ; une tâche ou une note sans mot
+    // commun avec la tâche n'est plus envoyée, ni comme titre ni comme vocabulaire.
     const sent = (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
     expect(sent).toContain('Profil : Dev solo en pisciculture');
     expect(sent).toContain('Projet : Chantier');
-    expect(sent).toContain('- Relire le devis');
-    // La note hors sujet ne fait plus partie des documents de contexte retenus.
-    expect(sent).not.toContain('- Compte rendu');
-    expect(sent).toContain('Vocabulaire du métier : compte, devis, dossier');
+    expect(sent).not.toContain('Relire le devis');
+    expect(sent).not.toContain('Compte rendu');
+    expect(sent).not.toContain('Vocabulaire du métier');
     await user.click(screen.getByRole('button', { name: 'Créer et ouvrir' }));
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Préparer le dossier'));
     await user.click(screen.getByRole('button', { name: 'Écrire' }));
@@ -1199,7 +1198,8 @@ describe('écrire une entrée', () => {
     // Le document riche part en Markdown, annoncé comme une procédure.
     const request = aiBodies.at(-1) as { messages: { role: string; content: string }[] };
     expect(request.messages[1].content).toContain('Procédure : Vidange\n\nTexte :\n## etapes\n\n1. coupé l’eau\n2. vider le bassin');
-    expect(request.messages[1].content).toContain('Vocabulaire du métier : journal');
+    // Le titre d'une note sans rapport n'est plus un « vocabulaire du métier ».
+    expect(request.messages[1].content).not.toContain('Vocabulaire du métier');
     expect(request.messages[0].content).toContain('liste numérotée');
     expect(within(proposal).getByText(/surlignage, couleurs et alignements sont remis à plat/)).toBeInTheDocument();
 
@@ -2045,8 +2045,8 @@ describe('organiser les tâches', () => {
     expect(proposal).toHaveTextContent('2 priorités à changer');
     // Les champs enregistrés partent, jamais la tâche terminée.
     const sent = (aiBodies[0] as { messages: { content: string }[] }).messages[1].content;
-    expect(sent).toContain('3 · Photos des bassins · Site web · à faire · normale · sans échéance');
-    expect(sent).toContain('1 · Page tarifs · Site web · en cours');
+    expect(sent).toContain('3 · Photos des bassins · P1 · à faire · normale · sans échéance');
+    expect(sent).toContain('1 · Page tarifs · P1 · en cours');
     expect(sent).not.toContain('Déjà fait');
     // La liste suit la proposition : priorité proposée, puis le rang de l'IA.
     expect(titles()).toEqual(['Page tarifs', 'Photos des bassins', 'Changer le filtre']);
@@ -5309,6 +5309,38 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
 });
 
 describe('IA dans les notes : contexte, affinement et actions', () => {
+  test('fusionner deux entrées cochées : l’IA propose une note relue, Valider la garde seule', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('# Vanne et joint\n\nLa vanne fuit.\n\nLe joint est remplacé.');
+    seedData(api.db, {
+      entries: [
+        { id: 'en_vanne', title: 'Vanne', content_md: 'La vanne fuit.' },
+        { id: 'en_joint', title: 'Joint', content_md: 'Le joint est remplacé.' },
+      ],
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Choisir Vanne pour une fusion' }));
+    const bar = screen.getByRole('group', { name: 'Entrées choisies' });
+    expect(within(bar).getByRole('button', { name: '✨ Fusionner' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Choisir Joint pour une fusion' }));
+    fireEvent.click(within(bar).getByRole('button', { name: '✨ Fusionner' }));
+    const panel = await screen.findByRole('form', { name: 'Fusion d’entrées' });
+    expect(await within(panel).findByLabelText('Titre de l’entrée fusionnée')).toHaveValue('Vanne et joint');
+    expect(aiBodies).toHaveLength(1);
+    const sent = (aiBodies[0] as { messages: { content: string }[] }).messages[1].content;
+    expect(sent).toContain('Le joint est remplacé.');
+    expect(sent).not.toMatch(/en_vanne|en_joint/);
+    // Rien n'est écrit avant la validation.
+    expect(row(api.db, 'SELECT count(*) n FROM entries').n).toBe(2);
+    fireEvent.click(within(panel).getByRole('button', { name: 'Valider la fusion' }));
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Fusion d’entrées' })).not.toBeInTheDocument(), { timeout: 5000 });
+    expect(await screen.findByDisplayValue('Vanne et joint')).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Entrées choisies' })).not.toBeInTheDocument();
+    expect(api.db.prepare('SELECT title, content_md FROM entries').all()).toEqual([
+      { title: 'Vanne et joint', content_md: 'La vanne fuit.\n\nLe joint est remplacé.' },
+    ]);
+  });
+
   test('suggère des tâches depuis le brouillon en cours et crée seulement la sélection liée', async () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     seedData(api.db, {
@@ -5833,13 +5865,15 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     await screen.findByRole('region', { name: 'Tâches suggérées' });
     const sent = JSON.stringify(aiBodies.at(-1));
     expect(sent).toContain('Réparer la pompe — priorité haute ; échéance 2026-11-01');
-    expect(sent).toContain('Commander des fournitures');
+    // Une tâche du projet sans mot commun avec la note n'est plus envoyée du tout.
+    expect(sent).not.toContain('Commander des fournitures');
     expect(sent).not.toContain('2026-12-01');
     expect(sent).not.toContain('Pompe secrète');
     expect(sent).not.toContain('Pompe terminée');
     fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
     expect(screen.getByText('Réparer la pompe — priorité haute ; échéance 2026-11-01')).toBeInTheDocument();
-    expect(screen.getByText(/Tâches en cours :/)).toHaveTextContent('Commander des fournitures');
+    // Le contexte affiché est celui envoyé.
+    expect(screen.getByText(/Tâches en cours :/)).not.toHaveTextContent('Commander des fournitures');
   });
 
   // Service IA qui ne répond qu'aux appels prévus : les autres attendent qu'on les coupe.

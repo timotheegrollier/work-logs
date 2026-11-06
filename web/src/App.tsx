@@ -55,7 +55,9 @@ export default function App() {
   // aussi ce qui rend les recettes déterministes — elles pariaient jusqu'ici sur
   // l'ordre des entrées après un rechargement.
   const [selectedId, setSelectedId] = usePersisted<string | null>(SELECTED_KEY, (stored) => stored, orForget);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Fusion d'entrées (§70) : les cases cochées du journal, puis celles figées à l'ouverture du panneau.
+  const [picked, setPicked] = useState<string[]>([]);
+  const [merging, setMerging] = useState<string[] | null>(null);
   // Fichier du dossier partagé ouvert au centre, à la place de l'entrée (§25).
   // Desktop et dev seulement : la PWA n'atteint pas un partage SMB.
   // PWA : le dossier partagé passe par le relais du bureau, s'il est réglé.
@@ -518,6 +520,16 @@ export default function App() {
     selectEntry(id);
     setShowCenter(true);
   }, [selectEntry, setShowCenter]);
+  const startMerge = useCallback(() => {
+    setMerging(picked);
+    setShowCenter(true);
+  }, [picked, setShowCenter]);
+  const entryMerged = useCallback((created: Entry) => {
+    setMerging(null);
+    setPicked([]);
+    selectFromList(created.id);
+    void reload();
+  }, [selectFromList, reload]);
   const editProcedure = useCallback((id: string) => {
     selectFromList(id);
     setProcedureEdit((current) => ({ id, sequence: current.sequence + 1 }));
@@ -817,10 +829,10 @@ export default function App() {
             entries={journalEntries}
             projects={state?.projects ?? []}
             selectedId={sharedPath ? null : selectedId}
-            selectedIds={selectedIds}
             onSelect={selectFromList}
-            onToggleSelect={toggleSelect}
-            onMerge={handleMerge}
+            picked={picked}
+            onPick={setPicked}
+            onMerge={startMerge}
             onCreate={createEntry}
             onCreateDocument={createDocument}
             searching={query !== ''}
@@ -830,7 +842,9 @@ export default function App() {
         <ColumnResizer side="left" panelId="workspace-journal" value={colLeft} onChange={setColLeft} />
 
         <main id="workspace-editor" className="center">
-          {overview && state && !query && !projectId && !categoryId && stateScope === JSON.stringify(['', '', '']) ? (
+          {merging ? (
+            <EntryMerge key={merging.join()} ids={merging} onCancel={() => setMerging(null)} onMerged={entryMerged} />
+          ) : overview && state && !query && !projectId && !categoryId && stateScope === JSON.stringify(['', '', '']) ? (
             <ProjectOverview
               projects={state.projects}
               tasks={state.tasks}

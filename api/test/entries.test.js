@@ -204,6 +204,48 @@ describe('entrées de journal', () => {
     assert.equal((await api.get(`/api/entries/${res.body.id}`)).status, 200);
   });
 
+  test('fusion : pièces jointes et tâches suivent, une demande rejouée rend la même entrée', async () => {
+    const project = await make.project(api, 'Atelier');
+    const a = await make.entry(api, { title: 'A', content_md: 'a', project_id: project.id });
+    await api.upload('photo.txt', 'image', { entry_id: a.id });
+    const b = await make.entry(api, { title: 'B', content_md: 'b', project_id: project.id });
+    const task = await make.task(api, { title: 'Joint' });
+    await api.post(`/api/tasks/${task.id}/documents/${a.id}`);
+    await api.post(`/api/tasks/${task.id}/documents/${b.id}`);
+    const [fullA, fullB] = await Promise.all([a, b].map(async (entry) => (await api.get(`/api/entries/${entry.id}`)).body));
+    const body = {
+      request_id: crypto.randomUUID(),
+      sources: [fullA, fullB].map((entry) => ({ id: entry.id, source_key: entryMergeSourceKey(entry) })),
+      title: 'A et B', content_md: 'a\nb',
+    };
+    const merged = (await api.post('/api/entries/merge', body)).body;
+    assert.equal(merged.project_id, project.id);
+    const files = (await api.get(`/api/entries/${merged.id}`)).body.attachments;
+    assert.deepEqual(files.map((file) => file.filename), ['photo.txt']);
+    const state = (await api.get('/api/state')).body;
+    assert.deepEqual(state.tasks.find((t) => t.id === task.id).documents.map((d) => d.id), [merged.id]);
+    // Réponse perdue : revalider la même proposition ne crée rien de plus.
+    const replay = await api.post('/api/entries/merge', body);
+    assert.equal(replay.status, 200);
+    assert.equal(replay.body.id, merged.id);
+    assert.equal(state.entries.filter((entry) => entry.title === 'A et B').length, 1);
+  });
+
+  test('fusion : une source modifiée depuis la proposition refuse tout', async () => {
+    const a = await make.entry(api, { title: 'A', content_md: 'a' });
+    const b = await make.entry(api, { title: 'B', content_md: 'b' });
+    const body = {
+      request_id: crypto.randomUUID(),
+      sources: [a, b].map((entry) => ({ id: entry.id, source_key: entryMergeSourceKey(entry) })),
+      title: 'A et B', content_md: 'a\nb',
+    };
+    await api.put(`/api/entries/${b.id}`, { content_md: 'b modifié ailleurs' });
+    const res = await api.post('/api/entries/merge', body);
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /a changé/);
+    assert.equal((await api.get(`/api/entries/${a.id}`)).status, 200);
+  });
+
   test('refuse la fusion avec moins de deux entrées', async () => {
     const body = {
       request_id: crypto.randomUUID(),

@@ -2958,3 +2958,60 @@ désarchivage, archivage/désarchivage d’une entrée libre et d’une entrée 
 conservant valeur et focus, réponse perdue relue sans rejeu. Navigateur : cinq tailles de
 320 px à 1 440 px et paysage, cibles de 44 px, absence de débordement, captures clair/sombre ;
 recette complète `./scripts/check.sh`.
+
+## 70. Fusionner des entrées : une note relue remplace ses sources — 2026-11-06
+
+**Décision.** Une case par ligne du journal (discrète tant que rien n’est coché) ; dès deux
+entrées choisies, **✨ Fusionner** ouvre au centre une proposition de l’IA — un seul appel,
+avec les titres, dates et textes seulement (8 entrées et 24 000 caractères au plus). On
+relit et corrige le titre et le texte ; **Valider la fusion** crée la note et supprime les
+sources, en une transaction (`POST /api/entries/merge`, même contrat dans la PWA via
+`api/src/entry-merge.js`). Les pièces jointes et les liens aux tâches passent sur la
+nouvelle entrée ; projet et catégorie sont gardés s’ils sont communs, la date est celle du
+jour. Chaque source porte la clé de l’état lu (`source_key`) : une entrée modifiée entre la
+proposition et la validation refuse tout (409). L’identifiant de la nouvelle entrée dérive
+de la demande : revalider après une réponse perdue rend la même entrée. Les documents
+Google ne se fusionnent pas ici.
+
+**Pourquoi.** Demandé explicitement, avec la consigne « le moins de jetons possible ». Rien
+ne doit disparaître sans relecture : une pièce jointe supprimée avec sa source serait une
+perte silencieuse.
+
+**Écartés.** Garder les sources archivées (la demande est de les supprimer), un mode de
+sélection séparé, envoyer identifiants ou clés au fournisseur IA, fusionner sans relecture.
+
+**Validation.** API : fusion, pièces jointes et tâches déplacées, rejeu idempotent, source
+modifiée refusée, demandes invalides. PWA : même contrat. Front : de la case cochée à la
+note validée, prompt sans identifiants, rien d’écrit avant validation.
+
+## 71. Moins de jetons IA : chaque geste n’envoie que ce qui le concerne — 2026-11-06
+
+**Décision.** Travail de Codex interrompu par son quota, terminé à la réparation du
+2026-11-06 :
+
+- **Contexte d’une note ou d’une tâche** (`ai-context.ts`) : seules partent les tâches
+  ouvertes liées au document ou ayant un mot commun avec lui ; le vocabulaire vient de ces
+  tâches et des références retenues, plus de tous les titres du projet. Un intitulé
+  générique (« compte rendu », « sans titre ») ne rapproche plus deux sujets. Les extraits
+  gardent leur section (titre compris) et marquent les coupures « […] ».
+- **Doublons supprimés** : une référence identique au texte principal n’est pas réexpédiée ;
+  un titre déjà dans le planning des suggestions n’est pas répété ; un affinement identique
+  à la source ne la recopie pas ; Prioriser nomme chaque projet une fois (`P1 · Nom ·
+  repères`) puis le désigne par `P1` sur chaque ligne.
+- **Gestes fidèles à la note** (relecture, mise en page, extraction des actions, complétion,
+  §42) : ni tâches voisines, ni notes récentes, ni leur planning — seulement le lexique.
+- Consignes système raccourcies, mêmes règles de fidélité.
+- `scripts/measure-ai-prompts.mjs` mesure les entrées IA sur un corpus synthétique, sans
+  appel fournisseur ; `docs/fixtures/ai-prompts-before.json` garde la mesure d’avant.
+
+**Pourquoi.** Demandé : « optimiser grandement les jetons tout en améliorant la
+pertinence ». Les titres sans rapport coûtaient des jetons et déplaçaient le sujet (le
+« Gabin » de §42).
+
+**Écartés.** Un résumé IA préalable du contexte (un appel de plus), un plafond global
+unique qui couperait aussi le texte de l’utilisateur.
+
+**Validation.** `ai-efficiency.test.ts` (doublons, extraction centrée, projets une fois),
+`ai-context.test.ts` (sélection, sections, exclusion puis déduplication), tests front
+alignés : une tâche ou une note sans mot commun n’est plus envoyée ni affichée dans le
+contexte.

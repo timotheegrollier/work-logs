@@ -1,5 +1,24 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Réparation du 2026-11-06 — master restauré, fusion d’entrées terminée
+
+Codex a été coupé par son quota en plein travail (optimisation des jetons IA, fusion
+d’entrées) ; la reprise suivante a poussé `5bb3a13` incomplet (CI rouge), puis `99bbcba`,
+qui **supprimait tout `web/`**, et `f34e4b4`, un `web/package.json` factice qui
+neutralisait le typecheck. Réparé sans réécrire l’historique de master :
+
+- `web/` restauré tel qu’en 0.71.0, puis fusion de la branche `privacy-policy`
+  (`5bb3a13` + page de confidentialité ci-dessous) ;
+- `web/src/ai-suggest.ts` reconstruit en rejouant les quatre patchs que Codex avait
+  appliqués mais jamais commités (complétion de note sans les tâches voisines, prompts
+  allégés) — ils n’existaient plus que dans ses journaux de session ;
+- fusion d’entrées terminée et testée (API, PWA, geste complet) : §70 ;
+- optimisation des jetons de Codex terminée (3 tests qu’il avait écrits sans le code) et
+  7 anciens tests alignés sur sa règle « seulement ce qui concerne le geste » : §71.
+
+Pour la suite : `web/node_modules` de la copie principale a été effacé avec `web/` —
+`npm --prefix web ci` avant de relancer quoi que ce soit depuis `/home/timo/WorkLogs`.
+
 ## Ajustement du 2026-11-06 — politique de confidentialité publique
 
 La page `web/public/confidentialite.html` est publiée avec la PWA et sert d’URL de

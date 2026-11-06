@@ -341,41 +341,43 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     }
   });
 
-  // Fusion de plusieurs entrées : l'IA propose une nouvelle entrée, on supprime
-  // les anciennes et on garde la nouvelle. Le payload n'est jamais envoyé au
-  // fournisseur IA : seuls les identifiants et leur source_key figurent dans
-  // la transaction ; l'assemblage reste à l'écran.
-  app.post('/api/entries/merge', async (req, res) => {
-    const body = req.body || {};
-    let normalized;
+  // Fusion d’entrées (§70) : la note relue remplace ses sources, en une transaction.
+  // Pièces jointes et liens aux tâches passent sur la nouvelle entrée ; une source
+  // modifiée depuis la proposition (source_key) refuse tout, et rejouer la même
+  // demande rend la même entrée.
+  app.post('/api/entries/merge', async (req, res, next) => {
     try {
-      normalized = validateEntryMerge(body);
-    } catch (error) {
-      return bad(res, error.message);
-    }
-    const ids = new Set(normalized.sources.map((source) => source.id));
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      const rows = db.prepare('SELECT * FROM entries WHERE id IN (' + [...ids].map(() => '?').join(',') + ')').all(...ids);
-      const byId = new Map(rows.map((entry) => [entry.id, entry]));
-      assertEntryMergeSources(normalized, rows);
-      const classification = entryMergeClassification(rows);
-      const time = nowISO();
+      const body = validateEntryMerge(req.body);
+      // Calculé avant BEGIN : aucune autre requête ne s'intercale dans la transaction.
       const id = await entryMergeTargetId(body);
-      db.prepare(
-        'INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
-      ).run(
-        id, normalized.title, normalized.content_md, null, today(), classification.project_id ?? null, 0, 'note', time, time,
-        classification.category_id ?? null
-      );
-      for (const source of normalized.sources) {
-        db.prepare('DELETE FROM entries WHERE id=?').run(source.id);
+      const replay = getEntry(id);
+      if (replay) {
+        assertEntryMergeReplay(body, replay);
+        return res.json(replay);
       }
-      db.exec('COMMIT');
+      const sources = body.sources.map((source) => getEntry(source.id));
+      assertEntryMergeSources(body, sources);
+      const { project_id, category_id, kind } = entryMergeClassification(sources);
+      const time = nowISO();
+      db.exec('BEGIN');
+      try {
+        db.prepare('INSERT INTO entries (id,title,content_md,entry_date,project_id,category_id,kind,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
+          .run(id, body.title, body.content_md, today(), project_id, category_id, kind, time, time);
+        for (const source of sources) {
+          db.prepare('UPDATE attachments SET entry_id=? WHERE entry_id=?').run(id, source.id);
+          db.prepare('INSERT OR IGNORE INTO task_entries (task_id,entry_id,created_at) SELECT task_id,?,? FROM task_entries WHERE entry_id=?')
+            .run(id, time, source.id);
+          db.prepare('DELETE FROM entries WHERE id=?').run(source.id);
+          tombstone(db, 'entry', source.id);
+        }
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
       res.json(getEntry(id));
     } catch (error) {
-      db.exec('ROLLBACK');
-      throw error;
+      next(error);
     }
   });
 

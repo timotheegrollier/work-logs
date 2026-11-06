@@ -244,7 +244,8 @@ describe('suggestions de tâches issues de la note', () => {
     fetch.mockClear();
     await extractEntryActions(settings, 'Note', text, { context });
     body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
-    expect(body.messages[1].content).toContain('Réparer la pompe');
+    // L'extraction ne lit que la note : ni les tâches voisines, ni leur planning.
+    expect(body.messages[1].content).not.toContain('Réparer la pompe');
     expect(body.messages[1].content).not.toContain('2026-10-31');
     expect(body.messages[1].content).not.toContain('priorité haute');
   });
@@ -776,6 +777,10 @@ describe('note complétée', () => {
     expect(result.title).toBe('Titre proposé');
     expect(result.content_md).toContain('joint');
     expect(fetch).toHaveBeenCalledTimes(1);
+    // Ni identifiant ni instantané local chez le fournisseur : titres, dates et textes seulement.
+    const sent = (fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string;
+    expect(sent).toContain('Constat B : le joint est remplacé');
+    expect(sent).not.toMatch(/en_a|key-a/);
     vi.unstubAllGlobals();
   });
 });
@@ -1141,10 +1146,11 @@ describe('priorités de la liste des tâches', () => {
     expect(body.messages[0].content).toContain('Réserve high à un tiers des tâches au plus');
     expect(body.messages[1].content).toContain('Profil : Dev solo');
     expect(body.messages[1].content).toContain('Date du jour : 2026-10-30');
-    expect(body.messages[1].content).toContain('1 · Commander les alevins · Ferme · en cours · haute · 2026-10-28 · épinglée · 2 document(s) · 2026-10-01');
-    expect(body.messages[1].content).toContain('2 · Tâche b · Ferme · à faire · basse · sans échéance · non épinglée · 0 document(s)');
+    expect(body.messages[1].content).toContain('1 · Commander les alevins · P1 · en cours · haute · 2026-10-28 · épinglée · 2 document(s) · 2026-10-01');
+    expect(body.messages[1].content).toContain('2 · Tâche b · P1 · à faire · basse · sans échéance · non épinglée · 0 document(s)');
     expect(body.messages[1].content).not.toContain('\na · ');
-    expect(body.messages[1].content.split('Repères du projet « Ferme »')).toHaveLength(2);
+    expect(body.messages[1].content).toContain('Projets :\nP1 · Ferme · repères : Pisciculture en eau douce');
+    expect(body.messages[1].content.split('Pisciculture en eau douce')).toHaveLength(2);
     expect(body.messages[1].content).not.toContain('Déjà finie');
     expect(body.max_tokens).toBe(8000);
   });
@@ -1158,11 +1164,11 @@ describe('priorités de la liste des tâches', () => {
       task('c', { project: 'Atelier', projectId: 'pr_secret_a', projectBrief: 'Maintenance des pompes' }),
     ]);
     const prompt = requestBody(fetch).messages[1].content as string;
-    expect(prompt).toContain('Repères du projet « [projet 1] Atelier » : Maintenance des pompes');
-    expect(prompt).toContain('Repères du projet « [projet 2] Atelier » : Logiciel de facturation');
-    expect(prompt).toContain('1 · Tâche a · [projet 1] Atelier ·');
-    expect(prompt).toContain('2 · Tâche b · [projet 2] Atelier ·');
-    expect(prompt).toContain('3 · Tâche c · [projet 1] Atelier ·');
+    expect(prompt).toContain('P1 · Atelier · repères : Maintenance des pompes');
+    expect(prompt).toContain('P2 · Atelier · repères : Logiciel de facturation');
+    expect(prompt).toContain('1 · Tâche a · P1 ·');
+    expect(prompt).toContain('2 · Tâche b · P2 ·');
+    expect(prompt).toContain('3 · Tâche c · P1 ·');
     expect(prompt.split('Maintenance des pompes')).toHaveLength(2);
     expect(prompt).not.toContain('pr_secret_');
   });

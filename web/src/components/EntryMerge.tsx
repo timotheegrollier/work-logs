@@ -1,131 +1,96 @@
-import { useCallback, useMemo, useState } from 'react';
-import { api, todayISO, type AppState, type EntrySummary } from '../lib';
-import { mergeEntries, type MergeContext } from '../ai-suggest';
+import { useEffect, useState } from 'react';
+import { api, type Entry, type EntryMergeRequest } from '../lib';
+import { AiCancelled, mergeEntries, readAiSettings } from '../ai-suggest';
+// @ts-expect-error — même clé de source que l'API, calculée sur l'entrée lue.
+import { entryMergeSourceKey } from '../../../api/src/entry-merge.js';
 
-/** Fusion : séléctionner plusieurs entrées, l'IA propose une nouvelle entrée
- * qui réajuste leur contenu. Validation = suppression des anciennes, conservation
- * de la nouvelle. */
-export function EntryMerge({ state, selectedIds = [], onDone }: {
-  state: AppState | null;
-  selectedIds: string[];
-  onDone: () => void;
+/**
+ * Fusion d'entrées (§70) : un appel IA propose une seule note à partir des
+ * entrées choisies ; on la relit, puis « Valider » la crée et supprime les
+ * anciennes. Rien n'est écrit avant.
+ */
+export function EntryMerge({ ids, onCancel, onMerged }: {
+  ids: string[];
+  onCancel: () => void;
+  onMerged: (entry: Entry) => void;
 }) {
-  const entries = useMemo(() => new Map(state?.entries ?? []).set(null, null), [state?.entries]);
-  const selected = selectedIds
-    .map((id) => entries.get(id))
-    .filter((entry): entry is EntrySummary => Boolean(entry));
-  const [proposal, setProposal] = useState<{ title: string; content_md: string } | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [sources, setSources] = useState<Entry[]>([]);
+  const [proposal, setProposal] = useState<{ request: EntryMergeRequest } | null>(null);
   const [error, setError] = useState('');
-  const [validating, setValidating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
-  const selectedContexts = useMemo<MergeContext[]>(
-    () => selected.map((entry) => ({
-      id: entry.id,
-      source_key: entry.source_key ?? '',
-      title: entry.title,
-      content_md: entry.content_md ?? '',
-      entry_date: entry.entry_date,
-      project_id: entry.project_id ?? null,
-      category_id: entry.category_id ?? null,
-      archived: entry.archived,
-      kind: entry.kind,
-      updated_at: entry.updated_at,
-      follow_up: entry.follow_up ?? null,
-      follow_up_key: entry.follow_up_key ?? '',
-    })),
-    [selected]
-  );
+  useEffect(() => {
+    const controller = new AbortController();
+    setProposal(null);
+    setError('');
+    void (async () => {
+      try {
+        const entries = await Promise.all(ids.map((id) => api.entry(id)));
+        if (controller.signal.aborted) return;
+        setSources(entries);
+        const merged = await mergeEntries({ ...readAiSettings(), signal: controller.signal }, entries);
+        if (controller.signal.aborted) return;
+        // Un identifiant par proposition : revalider après une réponse perdue rend la même entrée.
+        setProposal({ request: {
+          request_id: crypto.randomUUID(),
+          sources: entries.map((entry) => ({ id: entry.id, source_key: entryMergeSourceKey(entry) })),
+          ...merged,
+        } });
+      } catch (e) {
+        if (!controller.signal.aborted && !(e instanceof AiCancelled)) setError((e as Error).message);
+      }
+    })();
+    return () => controller.abort();
+  }, [ids, attempt]);
 
-  const propose = useCallback(async () => {
-    if (selectedContexts.length < 2) return;
-    setBusy(true);
+  const edit = (patch: Partial<EntryMergeRequest>) => setProposal((current) => current && { request: { ...current.request, ...patch } });
+
+  const validate = async () => {
+    if (!proposal || saving) return;
+    setSaving(true);
     setError('');
     try {
-      const merge = await mergeEntries({ endpoint: '', model: '', key: '', profile: '' }, selectedContexts, {
-        today: todayISO(),
-      });
-      setProposal(merge);
+      onMerged(await api.mergeEntries(proposal.request));
     } catch (e) {
-      setError((e as Error).message || 'Impossible de proposer la fusion.');
-      setProposal(null);
-    } finally {
-      setBusy(false);
+      setError((e as Error).message);
+      setSaving(false);
     }
-  }, [selectedContexts]);
-
-  const merge = useCallback(async () => {
-    if (!proposal || !state) return;
-    setValidating(true);
-    setError('');
-    try {
-      const body: EntryMergeRequest = {
-        request_id: 'en_merge_' + crypto.randomUUID(),
-        sources: selected.map((entry) => ({ id: entry.id, source_key: entry.source_key ?? '' })),
-        title: proposal.title,
-        content_md: proposal.content_md,
-      };
-      const merged = await api.mergeEntries(body);
-      setValidatedId(merged.id);
-      onDone();
-    } catch (e) {
-      setError((e as Error).message || 'Impossible de créer la nouvelle entrée.');
-    } finally {
-      setValidating(false);
-    }
-  }, [proposal, state, selected]);
-
-  const deselect = (id: string) => {
-    onDone({ selectedIds: selectedIds.filter((item) => item !== id) });
   };
 
   return (
-    <div className="entry-merge">
-      <div className="entry-merge-head">
-        <h3>Fusionner {selected.length} entrée{selected.length > 1 ? 's' : ''}</h3>
-        {selected.length >= 2 && (
-          <button className="task-primary" type="button" onClick={propose} disabled={busy}>
-            {busy ? 'IA en cours…' : 'Proposer la fusion'}
-          </button>
-        )}
-      </div>
-      {selected.length < 2 && (
-        <p className="notice">Sélectionnez au moins deux entrées pour les fusionner.</p>
+    <form
+      className="editor proofread-preview entry-merge"
+      aria-label="Fusion d’entrées"
+      aria-busy={!proposal && !error}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void validate();
+      }}
+    >
+      <strong>Fusionner {ids.length} entrées — relis avant de valider</strong>
+      <small>
+        {sources.length ? sources.map((entry) => entry.title).join(' · ') : 'Lecture des entrées…'}
+        {' — '}elles seront remplacées par celle-ci ; leurs pièces jointes et tâches liées la suivent.
+      </small>
+      {!proposal && !error && <p role="status">✨ Fusion en cours…</p>}
+      {proposal && (
+        <>
+          <label>
+            Titre
+            <input aria-label="Titre de l’entrée fusionnée" value={proposal.request.title} disabled={saving} onChange={(event) => edit({ title: event.target.value })} />
+          </label>
+          <textarea aria-label="Texte de l’entrée fusionnée" rows={16} value={proposal.request.content_md} disabled={saving} onChange={(event) => edit({ content_md: event.target.value })} />
+        </>
       )}
       {error && <p className="error" role="alert">{error}</p>}
-      {proposal && (
-        <div className="entry-merge-proposal">
-          <div className="entry-merge-fields">
-            <label>Titre
-              <input aria-label="Titre de la nouvelle entrée" value={proposal.title} onChange={(e) => setProposal({ ...proposal, title: e.target.value })} />
-            </label>
-            <div className="entry-merge-inline">
-                            <span className="entry-merge-spacer" />
-              <button className="task-primary" type="button" onClick={merge} disabled={validating}>
-                {validating ? 'Création…' : 'Valider la fusion'}
-              </button>
-            </div>
-          </div>
-          <textarea
-            aria-label="Contenu proposé"
-            value={proposal.content_md}
-            onChange={(e) => setProposal({ ...proposal, content_md: e.target.value })}
-            rows={12}
-            className="entry-merge-text"
-          />
-          <p className="ai-hint">L'IA a réuni les faits et les commandes des entrées sélectionnées. Relisez avant de valider : les anciennes entrées seront supprimées.</p>
-          <div className="entry-merge-sources">
-            {selected.map((entry) => (
-              <div key={entry.id} className="entry-merge-source">
-                <strong>{entry.title}</strong>
-                <button className="link" type="button" onClick={() => deselect(entry.id)}>Retirer</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+      <div className="task-creator-actions">
+        <button className="task-primary" type="submit" disabled={!proposal || saving || !proposal.request.title.trim() || !proposal.request.content_md.trim()}>
+          {saving ? 'Fusion…' : 'Valider la fusion'}
+        </button>
+        {error && !proposal && <button className="ghost" type="button" onClick={() => setAttempt(attempt + 1)}>Réessayer</button>}
+        <button className="ghost" type="button" disabled={saving} onClick={onCancel}>Annuler</button>
+      </div>
+    </form>
   );
 }
-
-

@@ -13,6 +13,8 @@ import {
   setLocalDatabase,
 } from './localApi';
 import { createMemoryDatabase } from './storage';
+// @ts-expect-error — même clé de source que l'API.
+import { entryMergeSourceKey } from '../../../api/src/entry-merge.js';
 
 beforeEach(() => {
   setLocalDatabase(createMemoryDatabase());
@@ -107,6 +109,32 @@ describe('entrées', () => {
     expect(copy.content_md).not.toContain(stored);
     await localApi.deleteEntry(original.id);
     expect((await localApi.state()).stats.entries).toBe(2); // amorçage + copie
+  });
+
+  test('fusion : même contrat que l’API, fichiers et tâches suivent, source modifiée refusée', async () => {
+    const id = await projectId();
+    const a = await localApi.createEntry({ title: 'A', project_id: id, content_md: 'a' });
+    const b = await localApi.createEntry({ title: 'B', project_id: id, content_md: 'b' });
+    await localApi.upload(new File(['pixels'], 'photo.jpg', { type: 'image/jpeg' }), a.id);
+    const task = await localApi.createTask({ title: 'Joint' });
+    await localApi.linkTaskDocument(task.id, b.id);
+    const request = async () => ({
+      request_id: crypto.randomUUID(),
+      sources: await Promise.all([a, b].map(async (entry) => ({ id: entry.id, source_key: entryMergeSourceKey(await localApi.entry(entry.id)) }))),
+      title: 'A et B', content_md: 'a\nb',
+    });
+    const stale = await request();
+    await localApi.updateEntry(b.id, { content_md: 'b modifié' });
+    await expect(localApi.mergeEntries(stale)).rejects.toThrow(/a changé/);
+    const body = await request();
+    const merged = await localApi.mergeEntries(body);
+    expect(merged).toMatchObject({ title: 'A et B', project_id: id });
+    expect(merged.attachments.map((file) => file.filename)).toEqual(['photo.jpg']);
+    expect((await localApi.mergeEntries(body)).id).toBe(merged.id);
+    const state = await localApi.state();
+    expect(state.entries.map((entry) => entry.title)).not.toContain('A');
+    expect(state.tasks.find((t) => t.id === task.id)?.documents?.map((d) => d.id)).toEqual([merged.id]);
+    expect(readLocalOutbox().entries).toContain(merged.id);
   });
 });
 
