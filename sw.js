@@ -6,8 +6,8 @@ const VERSION = '0.71.0';
 const CACHE = `worklogs-${VERSION}`;
 // Fichiers du build, listés par `emit-sw.mjs` : les morceaux chargés à la demande
 // (éditeur riche, dossier partagé, Drive) sont là hors ligne dès l'installation.
-const ASSETS = ["./assets/FileViewer-BqnYsGot.js","./assets/GoogleDocuments-DNDyEZQC.js","./assets/GoogleDrive-9kxQ6VTi.js","./assets/RichEditor-Dgg-pjpG.js","./assets/SharedFileEditor-nbfnUqko.js","./assets/dist-B_eIHRNc.js","./assets/docx-preview-CvB2C1xp.js","./assets/index-BJq0BtRY.js","./assets/index-LS5znd5O.css","./assets/rich-document-DRDfNNY1.js"];
-const CORE = ['./', './index.html', './manifest.webmanifest', ...ASSETS];
+const ASSETS = ["./assets/FileViewer-CYH8oAdf.js","./assets/GoogleDocuments-Bk1OECUC.js","./assets/GoogleDrive-tqL7F4cL.js","./assets/RichEditor-DHxmng9f.js","./assets/SharedFileEditor-ZC24ianm.js","./assets/dist-Di85DMuh.js","./assets/docx-preview-DTN_gwv4.js","./assets/index-C7IrtbFi.js","./assets/index-CUQqL592.css","./assets/rich-document-DRDfNNY1.js"];
+const CORE = ['./', './index.html', './manifest.webmanifest', './confidentialite.html', ...ASSETS];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -99,14 +99,20 @@ self.addEventListener('fetch', (event) => {
   // L'API ne se met jamais en cache : les données restent toujours fraîches.
   if (url.pathname.includes('/api/')) return;
   if (request.mode === 'navigate') {
+    // La coquille de l'application est mise en cache sous `./index.html` ; les
+    // autres pages (politique de confidentialité) gardent leur propre URL. Sans
+    // cette distinction, ouvrir la politique remplacerait la coquille hors-ligne
+    // par son contenu.
+    const shell = url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
     event.respondWith(
       fetch(request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put('./index.html', copy));
+          if (shell) caches.open(CACHE).then((cache) => cache.put('./index.html', copy));
+          else if (response.ok) caches.open(CACHE).then((cache) => cache.put(request, copy));
           return response;
         })
-        .catch(() => caches.match('./index.html'))
+        .catch(() => caches.match(shell ? './index.html' : request).then((hit) => hit || caches.match('./index.html')))
     );
     return;
   }
