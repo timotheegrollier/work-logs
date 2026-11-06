@@ -4210,22 +4210,33 @@ div.google-preserved {
     align-content: center;
   }
 }
-/* Numéro de version : redondant avec la pastille de l'en-tête en desktop
-   large, il apparaît dès que la pastille est masquée (≤ 1180 px) : mobile,
-   tablette et PWA étroite gardent le numéro accessible dans les paramètres. */
+/* Pied du dialogue Paramètres : la politique de confidentialité reste
+   accessible partout ; le numéro de version, redondant avec la pastille de
+   l'en-tête en desktop large, n'apparaît que lorsque la pastille est masquée
+   (≤ 1180 px) : mobile, tablette et PWA étroite. */
+.settings-footer {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.settings-footer a {
+  color: inherit;
+  text-underline-offset: 2px;
+}
 .settings-version {
   display: none;
 }
 @media (max-width: 1180px) {
   .settings-version {
-    display: block;
-    flex: none;
-    margin: 0;
-    padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
-    border-top: 1px solid var(--line-soft);
-    color: var(--muted);
-    font-size: 12px;
-    text-align: center;
+    display: inline;
   }
 }
 /* Documents Google : une ligne par document, actions à portée de main. */

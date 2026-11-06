@@ -101,7 +101,7 @@ test('installation : le précache garde aussi les éditeurs chargés à la deman
   let installation;
   env.listeners.install({ waitUntil: (promise) => { installation = promise; } });
   await installation;
-  assert.deepEqual(env.precached, ['./', './index.html', './manifest.webmanifest', ...assets]);
+  assert.deepEqual(env.precached, ['./', './index.html', './manifest.webmanifest', './confidentialite.html', ...assets]);
 });
 
 const getEvent = (url, mode = 'cors') => {
@@ -132,6 +132,30 @@ describe('routage fetch du service worker', () => {
     const retry = getEvent('https://pwa.test/', 'navigate');
     offline.listeners.fetch(retry);
     assert.equal(await retry.responses[0].then((r) => r.text()), '<html></html>');
+  });
+
+  test('navigation vers la politique : elle garde son URL et n’écrase pas la coquille', async () => {
+    const env = loadSw({ fetchImpl: async () => new Response('<html>politique</html>') });
+    const nav = getEvent('https://pwa.test/confidentialite.html', 'navigate');
+    env.listeners.fetch(nav);
+    assert.equal(await nav.responses[0].then((r) => r.text()), '<html>politique</html>');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(env.cached.has('https://pwa.test/confidentialite.html'), true);
+    assert.equal(env.cached.has('./index.html'), false);
+
+    const offline = loadSw({ fetchImpl: async () => { throw new Error('hors-ligne'); } });
+    offline.cached.set('https://pwa.test/confidentialite.html', new Response('<html>politique</html>'));
+    const retry = getEvent('https://pwa.test/confidentialite.html', 'navigate');
+    offline.listeners.fetch(retry);
+    assert.equal(await retry.responses[0].then((r) => r.text()), '<html>politique</html>');
+
+    // GitHub Pages sert la PWA sous `/work-logs/` : ce chemin reste la coquille.
+    const base = loadSw({ fetchImpl: async () => new Response('<html>base</html>') });
+    const baseNav = getEvent('https://pwa.test/work-logs/', 'navigate');
+    base.listeners.fetch(baseNav);
+    assert.equal(await baseNav.responses[0].then((r) => r.text()), '<html>base</html>');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(base.cached.has('./index.html'), true);
   });
 
   test('ressource : cache d’abord, puis réseau mis en cache', async () => {

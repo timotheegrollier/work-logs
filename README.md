@@ -54,6 +54,8 @@ The AppImage updates itself, differentially — nothing to enable.
 Data lives in `~/.local/share/worklogs/`, profile and theme in
 `~/.config/worklogs/`. The app checks for updates on launch and offers the
 download in one click (see `docs/07-RELEASES.md` for how releases are built).
+Privacy policy:
+[WorkLogs privacy](https://worklogs-google.cocodexcocoder.workers.dev/confidentialite.html).
 
 ## Develop
 

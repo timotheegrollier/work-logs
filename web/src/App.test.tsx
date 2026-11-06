@@ -547,6 +547,19 @@ describe('gestion Google Drive', () => {
     await user.click(within(screen.getByRole('dialog', { name: 'Paramètres' })).getByRole('button', { name: 'Fermer' }));
     expect(screen.queryByRole('dialog', { name: 'Paramètres' })).not.toBeInTheDocument();
   });
+
+  test('le pied des paramètres mène à la politique de confidentialité publique', async () => {
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Compte et paramètres' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Paramètres' });
+    const link = within(dialog).getByRole('link', { name: 'Politique de confidentialité' });
+    expect(link).toHaveAttribute('href', 'https://worklogs-google.cocodexcocoder.workers.dev/confidentialite.html');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer');
+  });
 });
 
 describe('réglages IA', () => {

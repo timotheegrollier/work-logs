@@ -1038,8 +1038,15 @@ export default function App() {
           </div>
           {/* La pastille de version de l'en-tête est masquée dès 1180 px
               (mobile, tablette, PWA étroite) : le numéro reste accessible
-              ici, en pied fixe du dialogue. */}
-          <p className="settings-version">WorkLogs {__WORKLOGS_VERSION__}</p>
+              ici, en pied fixe du dialogue. La politique de confidentialité
+              s'ouvre dans le navigateur système : la page publique est aussi
+              celle déclarée à Google Cloud. */}
+          <footer className="settings-footer">
+            <a href="https://worklogs-google.cocodexcocoder.workers.dev/confidentialite.html" target="_blank" rel="noreferrer">
+              Politique de confidentialité
+            </a>
+            <span className="settings-version">WorkLogs {__WORKLOGS_VERSION__}</span>
+          </footer>
         </dialog>
       ), document.body)}
       {showDocuments && (

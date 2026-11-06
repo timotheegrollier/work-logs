@@ -7,7 +7,7 @@ const CACHE = `worklogs-${VERSION}`;
 // Fichiers du build, listés par `emit-sw.mjs` : les morceaux chargés à la demande
 // (éditeur riche, dossier partagé, Drive) sont là hors ligne dès l'installation.
 const ASSETS = __WORKLOGS_ASSETS__;
-const CORE = ['./', './index.html', './manifest.webmanifest', ...ASSETS];
+const CORE = ['./', './index.html', './manifest.webmanifest', './confidentialite.html', ...ASSETS];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -99,14 +99,20 @@ self.addEventListener('fetch', (event) => {
   // L'API ne se met jamais en cache : les données restent toujours fraîches.
   if (url.pathname.includes('/api/')) return;
   if (request.mode === 'navigate') {
+    // La coquille de l'application est mise en cache sous `./index.html` ; les
+    // autres pages (politique de confidentialité) gardent leur propre URL. Sans
+    // cette distinction, ouvrir la politique remplacerait la coquille hors-ligne
+    // par son contenu.
+    const shell = url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
     event.respondWith(
       fetch(request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put('./index.html', copy));
+          if (shell) caches.open(CACHE).then((cache) => cache.put('./index.html', copy));
+          else if (response.ok) caches.open(CACHE).then((cache) => cache.put(request, copy));
           return response;
         })
-        .catch(() => caches.match('./index.html'))
+        .catch(() => caches.match(shell ? './index.html' : request).then((hit) => hit || caches.match('./index.html')))
     );
     return;
   }
