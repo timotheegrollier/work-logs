@@ -5341,6 +5341,41 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     ]);
   });
 
+  test('fusionner deux tâches cochées : l’IA propose une tâche et sa note, Valider les garde seules', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('# Remplacer le joint\n\nLa vanne fuit.\n\n- [ ] Commander le joint');
+    seedData(api.db, {
+      entries: [{ id: 'en_vanne', title: 'Constat vanne', content_md: 'La vanne fuit.' }],
+      tasks: [{ id: 'tk_vanne', title: 'Vérifier la vanne' }, { id: 'tk_joint', title: 'Commander le joint', pinned: 1 }],
+    });
+    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_vanne', 'en_vanne', new Date().toISOString());
+    render(<App />);
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Choisir la tâche Vérifier la vanne pour une fusion' }));
+    const bar = screen.getByRole('group', { name: 'Tâches choisies' });
+    expect(within(bar).getByRole('button', { name: '✨ Fusionner' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Choisir la tâche Commander le joint pour une fusion' }));
+    fireEvent.click(within(bar).getByRole('button', { name: '✨ Fusionner' }));
+    const panel = await screen.findByRole('form', { name: 'Fusion de tâches' });
+    expect(await within(panel).findByLabelText('Titre de la tâche fusionnée')).toHaveValue('Remplacer le joint');
+    expect(aiBodies).toHaveLength(1);
+    const sent = (aiBodies[0] as { messages: { content: string }[] }).messages[1].content;
+    expect(sent).toContain('La vanne fuit.');
+    expect(sent).toContain('Commander le joint');
+    expect(sent).not.toMatch(/tk_vanne|tk_joint|en_vanne/);
+    // Rien n'est écrit avant la validation.
+    expect(row(api.db, 'SELECT count(*) n FROM tasks').n).toBe(2);
+    expect(row(api.db, 'SELECT count(*) n FROM entries').n).toBe(1);
+    fireEvent.click(within(panel).getByRole('button', { name: 'Valider la fusion' }));
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Fusion de tâches' })).not.toBeInTheDocument(), { timeout: 5000 });
+    expect(await screen.findByDisplayValue('Remplacer le joint')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('group', { name: 'Tâches choisies' })).not.toBeInTheDocument());
+    expect(api.db.prepare('SELECT title, pinned FROM tasks').all()).toEqual([{ title: 'Remplacer le joint', pinned: 1 }]);
+    expect(api.db.prepare('SELECT title, content_md FROM entries').all()).toEqual([
+      { title: 'Remplacer le joint', content_md: 'La vanne fuit.\n\n- [ ] Commander le joint' },
+    ]);
+    expect(row(api.db, 'SELECT count(*) n FROM task_entries').n).toBe(1);
+  });
+
   test('suggère des tâches depuis le brouillon en cours et crée seulement la sélection liée', async () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     seedData(api.db, {

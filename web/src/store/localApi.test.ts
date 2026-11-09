@@ -14,7 +14,7 @@ import {
 } from './localApi';
 import { createMemoryDatabase } from './storage';
 // @ts-expect-error — même clé de source que l'API.
-import { entryMergeSourceKey } from '../../../api/src/entry-merge.js';
+import { entryMergeSourceKey, taskMergeSourceKey } from '../../../api/src/entry-merge.js';
 
 beforeEach(() => {
   setLocalDatabase(createMemoryDatabase());
@@ -135,6 +135,43 @@ describe('entrées', () => {
     expect(state.entries.map((entry) => entry.title)).not.toContain('A');
     expect(state.tasks.find((t) => t.id === task.id)?.documents?.map((d) => d.id)).toEqual([merged.id]);
     expect(readLocalOutbox().entries).toContain(merged.id);
+  });
+
+  test('fusion de tâches : même contrat que l’API, procédures gardées, source modifiée refusée', async () => {
+    const id = await projectId();
+    const a = await localApi.createTask({ title: 'A', project_id: id, priority: 'high', due_date: '2026-12-10' });
+    const b = await localApi.createTask({ title: 'B', project_id: id, due_date: '2026-12-05', pinned: 1 });
+    const note = await localApi.createEntry({ title: 'Note', project_id: id, content_md: 'n' });
+    await localApi.upload(new File(['pixels'], 'photo.jpg', { type: 'image/jpeg' }), note.id);
+    const procedure = await localApi.createEntry({ title: 'Mode opératoire', kind: 'procedure', content_md: 'étapes' });
+    await localApi.linkTaskDocument(a.id, note.id);
+    await localApi.linkTaskDocument(b.id, procedure.id);
+    const request = async () => {
+      const { tasks } = await localApi.state();
+      return {
+        request_id: crypto.randomUUID(),
+        sources: await Promise.all([a, b].map(async ({ id: taskId }) => {
+          const task = tasks.find((candidate) => candidate.id === taskId)!;
+          return { id: taskId, source_key: taskMergeSourceKey(task, await Promise.all(task.documents.map((document) => localApi.entry(document.id)))) };
+        })),
+        title: 'Tâche commune', content_md: 'Note commune',
+      };
+    };
+    const stale = await request();
+    await localApi.updateEntry(note.id, { content_md: 'n modifiée' });
+    await expect(localApi.mergeTasks(stale)).rejects.toThrow(/a changé/);
+    const body = await request();
+    const merged = await localApi.mergeTasks(body);
+    expect(merged).toMatchObject({ title: 'Tâche commune', content_md: 'Note commune', project_id: id });
+    expect(merged.attachments.map((file) => file.filename)).toEqual(['photo.jpg']);
+    expect((await localApi.mergeTasks(body)).id).toBe(merged.id);
+    const state = await localApi.state();
+    expect(state.tasks.map((task) => task.title)).toEqual(expect.not.arrayContaining(['A', 'B']));
+    const task = state.tasks.find((candidate) => candidate.title === 'Tâche commune')!;
+    expect(task).toMatchObject({ status: 'todo', due_date: '2026-12-05', priority: 'high', pinned: 1 });
+    expect(task.documents.map((document) => document.id).sort()).toEqual([merged.id, procedure.id].sort());
+    expect(state.entries.map((entry) => entry.title)).not.toContain('Note');
+    expect(readLocalOutbox().tasks).toContain(task.id);
   });
 });
 

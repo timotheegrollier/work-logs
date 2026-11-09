@@ -14,13 +14,13 @@ export function entryMergeSourceKey(entry) {
   ]));
 }
 
-export function validateEntryMerge(body) {
+export function validateEntryMerge(body, what = 'entrées') {
   if (!body || typeof body !== 'object' || Array.isArray(body)
     || typeof body.request_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.request_id)
     || typeof body.title !== 'string' || !body.title.trim()
     || typeof body.content_md !== 'string' || !body.content_md.trim()
     || !Array.isArray(body.sources) || body.sources.length < 2 || body.sources.length > 8) {
-    throw error('Fusion invalide : titre, texte, identifiant de demande et deux à huit entrées requis.');
+    throw error(`Fusion invalide : titre, texte, identifiant de demande et deux à huit ${what} requis.`);
   }
   const ids = new Set();
   for (const source of body.sources) {
@@ -57,4 +57,41 @@ export function entryMergeClassification(entries) {
   const common = (key) => entries.every((entry) => (entry[key] ?? null) === (entries[0][key] ?? null)) ? entries[0][key] ?? null : null;
   const project_id = common('project_id');
   return { project_id, category_id: project_id ? common('category_id') : null, kind: common('kind') === 'procedure' ? 'procedure' : 'note' };
+}
+
+/** Fusion de tâches (§73) : seule une note se réécrit ; un document Google ou une procédure reste lié tel quel. */
+export const isRewritableNote = (entry) => !entry.google_sync && !entry.google_document_id && !entry.google_tab_id && (entry.kind ?? 'note') === 'note';
+
+/** Couvre la tâche et tous ses documents : un lien ajouté ou retiré périme aussi la proposition. */
+export function taskMergeSourceKey(task, documents) {
+  return JSON.stringify(canonical([
+    'task-merge-v1', task.id, task.title, task.status, task.due_date ?? null, task.pinned ? 1 : 0, task.priority ?? 'normal',
+    task.project_id ?? null, task.category_id ?? null, task.created_at, task.updated_at, documents.map(entryMergeSourceKey).sort(),
+  ]));
+}
+
+export function assertTaskMergeSources(body, tasks, documentsOf) {
+  for (const source of body.sources) {
+    const task = tasks.find((item) => item?.id === source.id);
+    if (!task || taskMergeSourceKey(task, documentsOf(task.id)) !== source.source_key) {
+      throw error('Une tâche ou un de ses documents a changé ou a déjà été remplacé. Relance la fusion.', 409, 'ENTRY_MERGE_STALE');
+    }
+  }
+}
+
+/** La tâche fusionnée dérive de la même demande que sa note. */
+export const taskMergeTaskId = (entryId) => entryId.replace('en_merge_', 'tk_merge_');
+
+/** Seules les tâches ouvertes décident : une ancienne terminée ne met pas la nouvelle en retard. */
+export function taskMergeAttributes(tasks) {
+  const open = tasks.filter((task) => task.status !== 'done');
+  const deciding = open.length ? open : tasks;
+  const { project_id, category_id } = entryMergeClassification(tasks);
+  return {
+    project_id, category_id,
+    status: deciding.some((task) => task.status === 'doing') ? 'doing' : deciding[0].status,
+    due_date: deciding.map((task) => task.due_date).filter(Boolean).sort()[0] ?? null,
+    pinned: deciding.some((task) => task.pinned) ? 1 : 0,
+    priority: ['high', 'normal', 'low'].find((level) => deciding.some((task) => task.priority === level)) ?? 'normal',
+  };
 }
