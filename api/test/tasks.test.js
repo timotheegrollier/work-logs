@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { startApi, make } from './helpers.js';
 import { openDb } from '../src/db.js';
+import { taskMergeSourceKey } from '../src/entry-merge.js';
 
 /** Titres d'une colonne, dans l'ordre d'affichage. */
 async function column(api, status) {
@@ -376,6 +377,135 @@ describe('tâches', () => {
 
     assert.equal((await api.del(`/api/tasks/${task.id}`)).status, 200);
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=?').get(task.id).n, 0);
+  });
+
+  describe('fusion de tâches', () => {
+    /** Demande telle que l'écran la construit : tâches de l'état, documents relus un à un. */
+    const mergeRequest = async (ids, patch = {}) => {
+      const { tasks } = (await api.get('/api/state')).body;
+      const sources = await Promise.all(ids.map(async (id) => {
+        const task = tasks.find((candidate) => candidate.id === id);
+        const documents = await Promise.all(task.documents.map(async (document) => (await api.get(`/api/entries/${document.id}`)).body));
+        return { id, source_key: taskMergeSourceKey(task, documents) };
+      }));
+      return { request_id: crypto.randomUUID(), sources, title: 'Tâche commune', content_md: 'Note commune', ...patch };
+    };
+    const stateTask = async (id) => (await api.get('/api/state')).body.tasks.find((task) => task.id === id);
+    const link = (taskId, entryId) => api.post(`/api/tasks/${taskId}/documents/${entryId}`);
+
+    test('une tâche et une note remplacent les sources ; pièces jointes, Google et procédures suivent', async () => {
+      const project = await make.project(api, 'Atelier');
+      const a = await make.task(api, { title: 'A', project_id: project.id, priority: 'low', due_date: '2026-12-10' });
+      const b = await make.task(api, { title: 'B', project_id: project.id, priority: 'high', due_date: '2026-12-05', pinned: true });
+      await api.patch(`/api/tasks/${b.id}/move`, { status: 'doing', position: 0 });
+      const other = await make.task(api, { title: 'Autre' });
+      const noteA = await make.entry(api, { title: 'Note A', content_md: 'a', project_id: project.id });
+      await api.upload('photo.txt', 'image', { entry_id: noteA.id });
+      const noteB = await make.entry(api, { title: 'Note B', content_md: 'b', project_id: project.id });
+      const procedure = await make.entry(api, { title: 'Mode opératoire', content_md: 'étapes', kind: 'procedure' });
+      const google = await make.entry(api, { title: 'Doc Google', content_md: 'g' });
+      api.db.prepare(`INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json,synced_at)
+        VALUES (?,?,?,?,?,?)`).run(google.id, 'doc', 't.0', 'rev', '{"type":"doc","content":[]}', new Date().toISOString());
+      await link(a.id, noteA.id);
+      await link(a.id, procedure.id);
+      await link(b.id, noteB.id);
+      await link(b.id, google.id);
+      await link(other.id, noteB.id);
+
+      const res = await api.post('/api/tasks/merge', await mergeRequest([a.id, b.id]));
+      assert.equal(res.status, 200);
+      assert.equal(res.body.title, 'Tâche commune');
+      assert.equal(res.body.content_md, 'Note commune');
+      assert.equal(res.body.project_id, project.id);
+      assert.deepEqual((await api.get(`/api/entries/${res.body.id}`)).body.attachments.map((file) => file.filename), ['photo.txt']);
+
+      const state = (await api.get('/api/state')).body;
+      assert.deepEqual(state.tasks.map((task) => task.title).sort(), ['Autre', 'Tâche commune']);
+      const merged = state.tasks.find((task) => task.title === 'Tâche commune');
+      // Le plus urgent des sources : en cours, échéance la plus proche, priorité haute, épinglée.
+      assert.equal(merged.status, 'doing');
+      assert.equal(merged.due_date, '2026-12-05');
+      assert.equal(merged.priority, 'high');
+      assert.equal(merged.pinned, 1);
+      assert.equal(merged.project_id, project.id);
+      assert.deepEqual(merged.documents.map((document) => document.id).sort(), [res.body.id, procedure.id, google.id].sort());
+      // Une tâche non choisie qui partageait une note suit la nouvelle, comme à la fusion d'entrées.
+      assert.deepEqual(state.tasks.find((task) => task.id === other.id).documents.map((document) => document.id), [res.body.id]);
+      assert.equal((await api.get(`/api/entries/${noteA.id}`)).status, 404);
+      assert.equal((await api.get(`/api/entries/${noteB.id}`)).status, 404);
+      assert.equal((await api.get(`/api/entries/${procedure.id}`)).status, 200);
+      assert.equal((await api.get(`/api/entries/${google.id}`)).status, 200);
+      // La synchro doit savoir que les sources ont disparu, sinon elles reviendraient.
+      const tombstones = api.db.prepare('SELECT kind, id FROM sync_tombstones').all().map((row) => `${row.kind}:${row.id}`);
+      for (const expected of [`task:${a.id}`, `task:${b.id}`, `entry:${noteA.id}`, `entry:${noteB.id}`]) assert.ok(tombstones.includes(expected), expected);
+      assert.ok(!tombstones.includes(`entry:${procedure.id}`));
+    });
+
+    test('des tâches sans document donnent quand même une tâche avec sa note', async () => {
+      const a = await make.task(api, { title: 'A' });
+      const b = await make.task(api, { title: 'B' });
+      const res = await api.post('/api/tasks/merge', await mergeRequest([a.id, b.id]));
+      const merged = (await api.get('/api/state')).body.tasks.find((task) => task.title === 'Tâche commune');
+      assert.deepEqual(merged.documents.map((document) => document.id), [res.body.id]);
+    });
+
+    test('rejouer la même demande rend la même note et ne crée rien de plus', async () => {
+      const a = await make.task(api, { title: 'A' });
+      const b = await make.task(api, { title: 'B' });
+      const body = await mergeRequest([a.id, b.id]);
+      const first = await api.post('/api/tasks/merge', body);
+      const replay = await api.post('/api/tasks/merge', body);
+      assert.equal(replay.status, 200);
+      assert.equal(replay.body.id, first.body.id);
+      assert.equal((await api.get('/api/state')).body.tasks.length, 1);
+    });
+
+    test('une tâche, une note ou un lien modifiés depuis la proposition refusent tout', async () => {
+      const a = await make.task(api, { title: 'A' });
+      const b = await make.task(api, { title: 'B' });
+      const note = await make.entry(api, { title: 'Note', content_md: 'n' });
+      await link(a.id, note.id);
+      const changes = [
+        () => api.put(`/api/tasks/${b.id}`, { title: 'B modifiée' }),
+        () => api.put(`/api/entries/${note.id}`, { content_md: 'n modifiée' }),
+        async () => link(b.id, (await make.entry(api, { title: 'Nouvelle', content_md: 'x' })).id),
+      ];
+      for (const change of changes) {
+        const body = await mergeRequest([a.id, b.id]);
+        await change();
+        const res = await api.post('/api/tasks/merge', body);
+        assert.equal(res.status, 409);
+        assert.match(res.body.error, /a changé/);
+      }
+      assert.ok(await stateTask(a.id));
+      assert.ok(await stateTask(b.id));
+      assert.equal((await api.get(`/api/entries/${note.id}`)).status, 200);
+    });
+
+    test('une tâche terminée ne décide pas si une autre reste ouverte', async () => {
+      const done = await make.task(api, { title: 'Ancienne', due_date: '2020-01-01', priority: 'high', status: 'done' });
+      const open = await make.task(api, { title: 'Ouverte', due_date: '2026-12-05' });
+      await api.post('/api/tasks/merge', await mergeRequest([done.id, open.id]));
+      const merged = (await api.get('/api/state')).body.tasks[0];
+      assert.equal(merged.status, 'todo');
+      assert.equal(merged.due_date, '2026-12-05');
+      assert.equal(merged.priority, 'normal');
+    });
+
+    test('tout terminé : la tâche reste terminée et sa note est archivée', async () => {
+      const a = await make.task(api, { title: 'A', status: 'done' });
+      const b = await make.task(api, { title: 'B', status: 'done' });
+      const res = await api.post('/api/tasks/merge', await mergeRequest([a.id, b.id]));
+      assert.equal((await api.get('/api/state')).body.tasks[0].status, 'done');
+      assert.equal((await api.get(`/api/entries/${res.body.id}`)).body.archived, 1);
+    });
+
+    test('refuse moins de deux tâches', async () => {
+      const task = await make.task(api, { title: 'Seule' });
+      const res = await api.post('/api/tasks/merge', await mergeRequest([task.id]));
+      assert.equal(res.status, 400);
+      assert.equal(res.body.error, 'Fusion invalide : titre, texte, identifiant de demande et deux à huit tâches requis.');
+    });
   });
 
   test('404 sur une tâche inconnue', async () => {

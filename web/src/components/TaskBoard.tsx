@@ -35,6 +35,7 @@ export const TaskBoard = memo(function TaskBoard({
   onOpenShared,
   onProcedureCreated,
   onChanged,
+  onMerge,
 }: {
   tasks: Task[];
   entries: EntrySummary[];
@@ -54,8 +55,13 @@ export const TaskBoard = memo(function TaskBoard({
   /** Procédure tirée d'une tâche par l'IA, créée : l'app l'ouvre. */
   onProcedureCreated: (procedure: Entry) => void;
   onChanged: () => void;
+  /** Fusion (§73) : les tâches cochées, lues au moment du clic. */
+  onMerge?: (tasks: Task[]) => void;
 }) {
   const [over, setOver] = useState<string | null>(null);
+  // Filtré sur l'état reçu : une tâche fusionnée ou masquée par un projet sort d'elle-même.
+  const [picked, setPicked] = useState<string[]>([]);
+  const chosen = tasks.filter((task) => picked.includes(task.id));
   const [editing, setEditing] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const editingRef = useRef(editing);
@@ -177,10 +183,18 @@ export const TaskBoard = memo(function TaskBoard({
   };
 
   return (
-    <section className="board" aria-label="Tâches">
+    <section className={'board' + (chosen.length ? ' is-picking' : '')} aria-label="Tâches">
       <div className="board-head">
         {/* Une tâche neuve n'entre dans aucune vue : on lève le filtre pour la voir arriver. */}
         <QuickAdd projectId={projectId || creationCategory?.project_id || ''} categoryId={creationCategory?.id || null} onAdded={() => { onView(null); onChanged(); }} />
+
+        {chosen.length > 0 && onMerge && (
+          <div className="entry-pick-bar" role="group" aria-label="Tâches choisies">
+            <span>{chosen.length} choisie{chosen.length > 1 ? 's' : ''}</span>
+            <button className="task-primary" type="button" disabled={chosen.length < 2} onClick={() => onMerge(chosen)}>✨ Fusionner</button>
+            <button className="ghost" type="button" onClick={() => setPicked([])}>Annuler</button>
+          </div>
+        )}
 
         {views.length > 0 && (
           <div className="chips task-views" role="group" aria-label="Filtrer les tâches">
@@ -295,6 +309,8 @@ export const TaskBoard = memo(function TaskBoard({
                         onOpenShared={onOpenShared}
                         onProcedureCreated={onProcedureCreated}
                         onChanged={onChanged}
+                        picked={picked.includes(task.id)}
+                        onPick={onMerge ? (on) => setPicked((current) => on ? [...current, task.id] : current.filter((id) => id !== task.id)) : undefined}
                         // Position dans la colonne entière : filtres et groupes cachent des voisines.
                         onDrop={target ? (e) => drop(e, target, task.position) : undefined}
                       />
@@ -363,6 +379,8 @@ function TaskCard({
   onOpenShared,
   onProcedureCreated,
   onChanged,
+  picked = false,
+  onPick,
   onDrop,
 }: {
   task: Task;
@@ -387,6 +405,8 @@ function TaskCard({
   onOpenShared: (path: string) => void;
   onProcedureCreated: (procedure: Entry) => void;
   onChanged: () => void;
+  picked?: boolean;
+  onPick?: (on: boolean) => void;
   onDrop?: (event: React.DragEvent) => void;
 }) {
   const [editError, setEditError] = useState('');
@@ -1037,6 +1057,16 @@ function TaskCard({
           {task.title}
         </button>
         <span className="card-top-actions">
+          {onPick && (
+            <input
+              className="card-pick"
+              type="checkbox"
+              aria-label={`Choisir la tâche ${task.title} pour une fusion`}
+              title="Choisir pour une fusion"
+              checked={picked}
+              onChange={(event) => onPick(event.target.checked)}
+            />
+          )}
           {/* Sans glisser-déposer : un clic met en cours ou remet à faire, la carte va au bas de sa colonne (comme « Statut »). */}
           {!done && (
             <button

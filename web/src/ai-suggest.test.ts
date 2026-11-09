@@ -783,6 +783,17 @@ describe('note complétée', () => {
     expect(sent).not.toMatch(/en_a|key-a/);
     vi.unstubAllGlobals();
   });
+
+  test('tâches : le prompt parle de tâches, une tâche sans note garde son titre', async () => {
+    const fetch = vi.fn(async () => aiResponse('# Tâche commune\n\nÀ faire.'));
+    vi.stubGlobal('fetch', fetch);
+    await mergeEntries(settings, [{ title: 'Commander', content_md: '' }, { title: 'Poser', content_md: 'Note' }], { tasks: true });
+    const sent = (fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string;
+    expect(sent).toContain('Tu fusionnes plusieurs tâches');
+    expect(sent).toContain('## Tâche 1 : Commander');
+    await expect(mergeEntries(settings, [{ title: 'Seule', content_md: '' }], { tasks: true })).rejects.toThrow('Choisis de 2 à 8 tâches à fusionner.');
+    vi.unstubAllGlobals();
+  });
 });
 
   test('ni titre ni texte, trop longue ou sans clé : aucun appel réseau', async () => {

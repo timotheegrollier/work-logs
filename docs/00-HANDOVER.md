@@ -1,5 +1,12 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Ajout du 2026-11-09 — fusion de tâches (§73)
+
+Une case à droite de chaque carte (au survol), **✨ Fusionner** dès deux tâches : l’IA
+propose une tâche et sa note, on relit, **Valider la fusion** remplace les tâches choisies
+et leurs notes. Route `POST /api/tasks/merge`, contrat dans `api/src/entry-merge.js` partagé
+avec la PWA, panneau commun avec la fusion d’entrées dans `EntryMerge.tsx`.
+
 ## Ajustement du 2026-11-06 — page d’accueil publique pour Google (§72)
 
 Google refusait la publication : page d’accueil et politique sur `workers.dev`, domaine
