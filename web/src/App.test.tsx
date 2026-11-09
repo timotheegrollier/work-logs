@@ -5966,6 +5966,23 @@ describe('suivi IA des entrées et tâches', () => {
     });
     api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_suivi', 'en_suivi', new Date().toISOString());
   };
+  // Une entrée sans suivi n’a plus de bouton d’activation : seul
+  // « + Ajouter au suivi IA » de la vue d’ensemble peut la suivre.
+  const activateEntryViaOverview = async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
+    fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter au suivi IA' }));
+    const picker = within(overview).getByRole('region', { name: 'Choisir les suivis IA' });
+    fireEvent.click(within(picker).getByRole('checkbox', { name: /Note évolutive/ }));
+    fireEvent.click(within(picker).getByRole('button', { name: 'Suivre la sélection (1)' }));
+    const reports = await within(overview).findByRole('region', { name: 'Bilans et suivis IA' }, backend);
+    fireEvent.click(within(reports).getByRole('button', { name: 'Ouvrir l’entrée Note évolutive' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument(), backend);
+    const panel = await screen.findByRole('region', { name: 'Suivi IA de Note évolutive' }, backend);
+    // L’activation par la sélection ne génère qu’après la pause automatique :
+    // le bouton « Générer le bilan » force la première demande, comme avant.
+    fireEvent.click(within(panel).getByRole('button', { name: 'Actualiser le bilan de Note évolutive' }));
+  };
 
   test('la sélection commune active plusieurs suivis et indique les notes déjà incluses avec leur tâche', async () => {
     prepare();
@@ -6044,7 +6061,8 @@ describe('suivi IA des entrées et tâches', () => {
     prepare();
     mockAiSuggest(report('Le montage attend son joint.'));
     const view = render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend));
+    expect(screen.queryByRole('button', { name: 'Activer le suivi IA de Note évolutive' })).not.toBeInTheDocument();
+    await activateEntryViaOverview();
     await within(follow()).findByText('Le montage attend son joint.', {}, backend);
     const card = document.getElementById('task-tk_suivi')!;
     fireEvent.click(within(card).getByRole('button', { name: 'Activer le suivi IA de Remonter la pompe' }));
@@ -6070,21 +6088,20 @@ describe('suivi IA des entrées et tâches', () => {
     prepare();
     mockAiSuggest(report('Rien à suivre.'));
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend));
+    expect(screen.queryByRole('button', { name: 'Activer le suivi IA de Note évolutive' })).not.toBeInTheDocument();
+    await activateEntryViaOverview();
     await within(follow()).findByText('Rien à suivre.', {}, backend);
     const off = within(follow()).getByRole('button', { name: 'Désactiver le suivi IA de Note évolutive' });
     off.focus();
     fireEvent.click(off);
-    // Retour à un simple bouton, qui reprend le focus ; ni bilan ni automatisme, le texte ne bouge pas.
-    const activate = await within(follow()).findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend);
-    await waitFor(() => expect(document.activeElement).toBe(activate));
-    expect(follow()).toHaveClass('is-inactive');
-    expect(within(follow()).queryByText('Rien à suivre.')).not.toBeInTheDocument();
+    // Le bloc disparaît, sans bouton d’activation : ni bilan ni automatisme, le texte ne bouge pas.
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Suivi IA de Note évolutive' })).not.toBeInTheDocument(), backend);
+    expect(screen.queryByRole('button', { name: 'Activer le suivi IA de Note évolutive' })).not.toBeInTheDocument();
     expect((await clientApi.followUp('entry', 'en_suivi')).follow_up).toMatchObject({ enabled: false, report: null });
     expect(row(api.db, 'SELECT content_md FROM entries WHERE id=?', 'en_suivi').content_md).toBe('Pompe montée ; il manque le joint.');
 
     // Réactivé, puis désactivé depuis la liste des bilans : il en sort, sans nouvel appel.
-    fireEvent.click(within(follow()).getByRole('button', { name: 'Activer le suivi IA de Note évolutive' }));
+    await activateEntryViaOverview();
     await within(follow()).findByText('Rien à suivre.', {}, backend);
     fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
     const reports = await screen.findByRole('region', { name: 'Bilans et suivis IA' }, backend);
@@ -6115,7 +6132,7 @@ describe('suivi IA des entrées et tâches', () => {
       return Promise.resolve(response(calls === 1 ? 'Premier bilan conservé.' : 'Le joint est reçu.'));
     }));
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend));
+    await activateEntryViaOverview();
     await within(follow()).findByText('Premier bilan conservé.', {}, backend);
     fireEvent.click(within(follow()).getByRole('checkbox', { name: 'Actualisation automatique de Note évolutive' }));
     await waitFor(() => expect(within(follow()).getByRole('checkbox')).not.toBeChecked(), backend);
@@ -6153,7 +6170,7 @@ describe('suivi IA des entrées et tâches', () => {
       return Promise.resolve({ ok: false, status: 401, json: async () => ({ error: { message: 'Clé refusée' } }) } as Response);
     }));
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend));
+    await activateEntryViaOverview();
     await within(follow()).findByText('Bilan à garder.', {}, backend);
     fireEvent.click(within(follow()).getByRole('button', { name: 'Actualiser le bilan de Note évolutive' }));
     await waitFor(() => expect(calls).toBe(2), backend);
@@ -6179,7 +6196,7 @@ describe('suivi IA des entrées et tâches', () => {
       return result;
     });
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend));
+    await activateEntryViaOverview();
     await within(follow()).findByText('Bilan enregistré malgré la réponse perdue.', {}, backend);
     expect(within(follow()).queryByRole('alert')).not.toBeInTheDocument();
     expect(aiBodies).toHaveLength(1);
@@ -6197,7 +6214,7 @@ describe('suivi IA des entrées et tâches', () => {
     prepare();
     mockAiSuggest(report('Bilan à garder.'));
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend));
+    await activateEntryViaOverview();
     await within(follow()).findByText('Bilan à garder.', {}, backend);
     const original = clientApi.saveFollowUp.bind(clientApi);
     const originalRead = clientApi.followUp.bind(clientApi);
@@ -6224,23 +6241,19 @@ describe('suivi IA des entrées et tâches', () => {
     expect(save).toHaveBeenCalledOnce();
   }, 20_000);
 
-  test('une sauvegarde refusée empêche l’activation et l’envoi d’une ancienne copie à l’IA', async () => {
+  test('une entrée sans suivi n’a pas de bouton d’activation et n’envoie rien à l’IA', async () => {
     prepare();
     mockAiSuggest(report('Ne doit pas être demandé.'));
     render(<App />);
-    await screen.findByRole('button', { name: 'Activer le suivi IA de Note évolutive' }, backend);
+    await screen.findByDisplayValue('Note évolutive');
+    // Retiré : l’entrée sans suivi n’affiche ni bouton ni panneau.
+    expect(screen.queryByRole('button', { name: 'Activer le suivi IA de Note évolutive' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Suivi IA de Note évolutive' })).not.toBeInTheDocument();
     fireEvent.click(within(editor()).getByRole('button', { name: 'Écrire', pressed: false }));
-    const save = vi.spyOn(clientApi, 'updateEntry').mockRejectedValue(new Error('Disque plein'));
-    try {
-      fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Dernière avancée non enregistrée.' } });
-      fireEvent.click(within(follow()).getByRole('button', { name: 'Activer le suivi IA de Note évolutive' }));
-      expect(await within(follow()).findByRole('alert', {}, backend)).toHaveTextContent('Disque plein');
-      expect(aiBodies).toHaveLength(0);
-      expect((await clientApi.followUp('entry', 'en_suivi')).follow_up).toBeNull();
-      expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Dernière avancée non enregistrée.');
-    } finally {
-      save.mockRestore();
-      await act(() => flushPendingSaves());
-    }
+    fireEvent.change(screen.getByLabelText('Contenu en Markdown'), { target: { value: 'Dernière avancée non enregistrée.' } });
+    await act(() => flushPendingSaves());
+    expect(aiBodies).toHaveLength(0);
+    expect((await clientApi.followUp('entry', 'en_suivi')).follow_up).toBeNull();
+    expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Dernière avancée non enregistrée.');
   }, 20_000);
 });
