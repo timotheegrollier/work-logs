@@ -70,8 +70,7 @@ test('bilan du jour en un clic : synthétise les suivis, accessibles en tête et
     expect(prompts[0]).not.toContain('TEXTE BRUT NON ENVOYÉ');
     expect(await noHorizontalScroll(page)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('overview-desktop-light.png'), fullPage: true });
-    await overview.getByRole('button', { name: 'Voir les suivis (2)', exact: true }).click();
-    await expect(overview.getByRole('heading', { name: 'Suivis IA', exact: true })).toBeFocused();
+    await expect(overview.getByRole('heading', { name: 'Suivis IA', exact: true })).toBeVisible();
 
     await page.setViewportSize({ width: 375, height: 812 });
     await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Écriture', exact: true }).click();
@@ -177,7 +176,6 @@ test('ajout groupé au suivi : recherche, sélection conservée et documents dé
     await expect(reports.getByRole('region', { name: `Suivi IA de ${task.title}`, exact: true }).getByText('Une vérification reste à effectuer.', { exact: true })).toBeVisible();
     await expect(reports.getByRole('region', { name: `Suivi IA de ${entry.title}`, exact: true }).getByText('Une vérification reste à effectuer.', { exact: true })).toBeVisible();
     await expect(reports.getByRole('region', { name: `Suivi IA de ${linked.title}`, exact: true })).toHaveCount(0);
-    await expect(overview.getByRole('button', { name: 'Voir les suivis (2)', exact: true })).toBeVisible();
     expect(calls).toBe(2);
     expect(await noHorizontalScroll(page)).toBe(true);
     expect((await (await request.get(`/api/entries/${entry.id}`)).json()).content_md).toBe('Le joint reste à commander.');

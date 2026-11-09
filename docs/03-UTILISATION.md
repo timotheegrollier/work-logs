@@ -232,23 +232,16 @@ rendu approximatif.
 - **Vue d’ensemble des tâches** : le bouton en haut de l’écran (le seul : le panneau Tâches
   n’en a plus) ouvre la vue sur toute la largeur, par-dessus Journal, Tâches et Procédures,
   même si ces panneaux sont repliés. Leurs boutons de l’en-tête les rouvrent à côté d’elle ;
-  **Écriture** la referme et rend l’entrée. Les actions IA et les suivis viennent en tête,
-  puis les tâches dans une seule colonne ; sur tablette la vue passe seule en tête de page,
-  sur téléphone elle occupe la vue Écriture. La liste affiche d’abord les tâches
-  **À faire** ; les boutons **En cours**, **Ouvertes** et **Terminées** changent le filtre.
-  Choisir un projet directement sur une ligne affecte la tâche à ce projet (une catégorie
-  devenue incompatible est retirée). Le sélecteur **Statut** la passe à faire, en cours ou
+  **Écriture** la referme et rend l’entrée. La page ne montre que ce que l’IA a rédigé et
+  la frise d’avancement : côte à côte sur grand écran, l’un après l’autre ailleurs ; sur
+  tablette la vue passe seule en tête de page, sur téléphone elle occupe la vue Écriture.
+  Sur la carte d’un élément suivi, le sélecteur de statut passe la tâche à faire, en cours ou
   terminée ; **✓ Valider** la termine et archive ses documents liés, **Rouvrir** la remet à
-  faire sans désarchiver ces documents. Le formulaire ajoute une tâche et choisit son projet
-  sans quitter la vue. Le schéma d’avancement reste dessous ; cliquer un titre de tâche ou
-  un nœud ferme la vue et ouvre l’entrée liée la plus récente au centre, même pour une tâche
-  terminée. Sans entrée liée, la carte de la tâche s’ouvre. Les brouillons de cartes restent
-  disponibles.
-- **Entrées du journal**, sous les tâches de la vue d’ensemble : le panneau replié liste les
-  notes avec une recherche par titre ou projet et un filtre **Actives / Archivées / Toutes**.
-  **Archiver** retire une note traitée du journal actif ; **Désarchiver** la ramène. Le même
-  geste est proposé sur une entrée suivie dans **Suivis IA**, sans couper son suivi. Une
-  erreur laisse la vue ouverte, annonce le refus et garde le contrôle à portée de main.
+  faire sans désarchiver ces documents ; **Archiver** range une entrée sans couper son suivi.
+  Les tâches et les notes sans suivi se traitent dans les panneaux Tâches et Journal.
+  Cliquer un titre de suivi ou un nœud de la frise ferme la vue et ouvre l’entrée liée la plus
+  récente au centre, même pour une tâche terminée. Sans entrée liée, la carte de la tâche
+  s’ouvre. Les brouillons de cartes restent disponibles.
 - **Bilan du jour**, en tête de la vue d’ensemble : un clic synthétise les bilans de suivi
   enregistrés en avancées attestées, blocages et prochaines actions. Les suivis sans bilan,
   anciens ou à actualiser sont signalés dans les limites. Une date de génération ne prouve
@@ -329,8 +322,8 @@ le tri d’un clic. Une entrée se relance avec **+ Ajouter au suivi IA** dans l
 une tâche avec **✨ Suivi IA** sur sa carte.
 
 Ouvrir **Vue d’ensemble** pour retrouver les suivis des entrées et des tâches chargées, y
-compris les tâches terminées : **Suivis IA** apparaît en tête dès qu’un suivi existe et
-**Voir les suivis** y mène directement. Cliquer un titre ferme la vue et affiche l’entrée ;
+compris les tâches terminées : **Suivis IA** apparaît dès qu’un suivi existe, avec ses
+prochaines actions et ses blocages. Cliquer un titre ferme la vue et affiche l’entrée ;
 pour une tâche, c’est son entrée liée la plus récente, ou sa carte si elle n’a aucun lien.
 Les détails restent dépliables sur les cartes compactes.
 **+ Ajouter au suivi IA** ouvre une sélection commune : rechercher une tâche, une entrée ou

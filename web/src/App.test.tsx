@@ -2857,7 +2857,7 @@ describe('vue d’ensemble des projets', () => {
     expect(columns()).not.toHaveClass('show-procedures');
     expect(panel('Journal')).toHaveAttribute('aria-pressed', 'false');
     expect(within(board()).queryByRole('button', { name: /Vue d’ensemble/ })).not.toBeInTheDocument();
-    expect(within(page()).getByText(/2 projets · 4 tâches ouvertes · 1 terminée/)).toHaveTextContent('1 en retard');
+    expect(within(page()).getByText(/4 ouvertes · 1 terminée/)).toHaveTextContent('1 en retard');
     const alpha = within(page()).getByRole('listitem', { name: 'Alpha : 1 terminée sur 4, 1 en cours, 2 à faire' });
     expect(within(alpha).getByTitle('1 terminée')).toHaveTextContent('1');
     expect(within(alpha).getByText('1/4 · 25 %')).toBeInTheDocument();
@@ -2948,7 +2948,7 @@ describe('vue d’ensemble des projets', () => {
     await screen.findByDisplayValue('Entrée initiale');
     fireEvent.click(toggle());
     const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
-    const task = within(within(overview).getByRole('list', { name: 'Liste des tâches de la vue d’ensemble' })).getByRole('button', { name: 'Contrôler la pompe' });
+    const task = within(overview).getByRole('button', { name: 'Contrôler la pompe — à faire' });
     const guard = vi.fn(async () => false);
     const removeGuard = setLeaveGuard(guard);
     try {
@@ -2964,57 +2964,25 @@ describe('vue d’ensemble des projets', () => {
     expect(within(board()).queryByRole('textbox', { name: 'Titre de la tâche' })).not.toBeInTheDocument();
   });
 
-  test('la liste permet de créer, affecter au projet et démarrer une tâche sans quitter la vue', async () => {
+  test('la vue ne garde ni liste de tâches, ni journal, ni ajout : les gestes restent sur les suivis', async () => {
     seedData(api.db, {
-      projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Bravo' }],
-      tasks: [{ id: 'tk_todo', title: 'Préparer', project_id: 'pr_a' }, { id: 'tk_doing', title: 'En cours déjà', status: 'doing' }],
+      projects: [{ id: 'pr_a', name: 'Alpha' }],
+      entries: [{ id: 'en_free', title: 'Note libre' }],
+      tasks: [{ id: 'tk_free', title: 'Tâche libre', project_id: 'pr_a' }, { id: 'tk_followed', title: 'Tâche suivie', project_id: 'pr_a' }],
     });
+    await clientApi.saveFollowUp('task', 'tk_followed', { enabled: false });
     render(<App />);
-    await within(board()).findByRole('button', { name: 'Préparer' });
+    await within(board()).findByRole('button', { name: 'Tâche libre' });
     fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
     const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
-    const list = () => within(overview).getByRole('list', { name: 'Liste des tâches de la vue d’ensemble' });
-    expect(within(list()).getByRole('button', { name: 'Préparer' })).toBeInTheDocument();
-    expect(within(list()).queryByRole('button', { name: 'En cours déjà' })).not.toBeInTheDocument();
-    // La vue d'ensemble ne propose plus d'activer un suivi IA sur chaque ligne, ni de bloc vide.
-    expect(within(list()).queryByRole('button', { name: /Activer le suivi IA/ })).not.toBeInTheDocument();
-    expect(within(overview).queryByRole('region', { name: 'Bilans et suivis IA' })).not.toBeInTheDocument();
-    fireEvent.click(within(overview).getByLabelText('Détails de Préparer'));
-    fireEvent.change(within(overview).getByLabelText('Projet de Préparer'), { target: { value: 'pr_b' } });
-    await waitFor(() => expect(row(api.db, 'SELECT project_id FROM tasks WHERE id=?', 'tk_todo').project_id).toBe('pr_b'));
-    await waitFor(() => expect(within(overview).getByLabelText('Projet de Préparer')).toHaveValue('pr_b'));
-    await waitFor(() => expect(within(overview).getByRole('status')).toHaveTextContent('Projet mis à jour.'));
-    fireEvent.change(within(overview).getByLabelText('Statut de Préparer'), { target: { value: 'doing' } });
-    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_todo').status).toBe('doing'));
-    await waitFor(() => expect(within(overview).queryByLabelText('Statut de Préparer')).not.toBeInTheDocument());
-    await waitFor(() => expect(within(overview).getByRole('status')).toHaveTextContent('« Préparer » passée en cours.'));
-    fireEvent.click(within(overview).getByRole('button', { name: /En cours 2/ }));
-    fireEvent.change(await within(overview).findByLabelText('Statut de Préparer'), { target: { value: 'todo' } });
-    await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_todo').status).toBe('todo'));
-    await waitFor(() => expect(within(overview).queryByLabelText('Statut de Préparer')).not.toBeInTheDocument());
-    fireEvent.click(within(overview).getByRole('button', { name: /À faire 1/ }));
-    expect(await within(overview).findByLabelText('Statut de Préparer')).toHaveValue('todo');
-    fireEvent.change(within(overview).getByLabelText('Nouvelle tâche dans la vue d’ensemble'), { target: { value: 'Commander' } });
-    fireEvent.change(within(overview).getByLabelText('Projet de la nouvelle tâche'), { target: { value: 'pr_a' } });
-    fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter' }));
-    await waitFor(() => expect(row(api.db, 'SELECT project_id FROM tasks WHERE title=?', 'Commander').project_id).toBe('pr_a'));
-    expect(await within(overview).findByRole('button', { name: 'Commander' })).toBeInTheDocument();
-    await waitFor(() => expect(within(overview).getByRole('status')).toHaveTextContent('Tâche ajoutée.'));
-    expect(screen.getByRole('region', { name: 'Vue d’ensemble des projets' })).toBeInTheDocument();
-  }, 15_000);
-
-  test('une création refusée garde le titre et affiche l’erreur', async () => {
-    seedData(api.db, { tasks: [{ id: 'tk_1', title: 'Première' }] });
-    render(<App />);
-    await within(board()).findByRole('button', { name: 'Première' });
-    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
-    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
-    vi.spyOn(clientApi, 'createTask').mockRejectedValueOnce(new Error('Création refusée'));
-    const input = within(overview).getByLabelText('Nouvelle tâche dans la vue d’ensemble');
-    fireEvent.change(input, { target: { value: 'À conserver' } });
-    fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter' }));
-    expect(await within(overview).findByRole('alert')).toHaveTextContent('Création refusée');
-    expect(input).toHaveValue('À conserver');
+    expect(within(overview).queryByRole('list', { name: 'Liste des tâches de la vue d’ensemble' })).not.toBeInTheDocument();
+    expect(within(overview).queryByText(/^Entrées du journal/)).not.toBeInTheDocument();
+    expect(within(overview).queryByText('Note libre')).not.toBeInTheDocument();
+    expect(within(overview).queryByLabelText('Nouvelle tâche dans la vue d’ensemble')).not.toBeInTheDocument();
+    // Une tâche sans suivi n'a plus de gestes ici : elle reste un nœud de la frise.
+    expect(within(overview).queryByLabelText('Statut de Tâche libre')).not.toBeInTheDocument();
+    expect(within(overview).getByRole('button', { name: 'Tâche libre — à faire' })).toBeInTheDocument();
+    expect(within(within(overview).getByRole('region', { name: 'Bilans et suivis IA' })).getByLabelText('Statut de Tâche suivie')).toHaveValue('todo');
   });
 
   test('valider depuis la vue termine la tâche et archive ses documents ; rouvrir conserve les archives', async () => {
@@ -3025,6 +2993,7 @@ describe('vue d’ensemble des projets', () => {
     });
     const link = api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)');
     for (const id of ['en_note', 'en_proc']) link.run('tk_finish', id, new Date().toISOString());
+    await clientApi.saveFollowUp('task', 'tk_finish', { enabled: false });
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' }));
     const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
@@ -3032,55 +3001,45 @@ describe('vue d’ensemble des projets', () => {
     validate.focus();
     fireEvent.click(validate);
     await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_finish').status).toBe('done'), backend);
-    await waitFor(() => expect(within(overview).queryByLabelText('Statut de Finir le contrôle')).not.toBeInTheDocument(), backend);
+    await waitFor(() => expect(within(overview).getByLabelText('Statut de Finir le contrôle')).toHaveValue('done'), backend);
     expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_note').archived).toBe(1);
     expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_proc').archived).toBe(1);
-    await waitFor(() => expect(within(overview).getByRole('heading', { name: 'Tâches' })).toHaveFocus(), backend);
     expect(overview.querySelector('.overview-status')).toHaveTextContent(/validée|terminée/i);
 
-    fireEvent.click(within(overview).getByRole('button', { name: /^Terminées/ }));
-    fireEvent.click(await within(overview).findByRole('button', { name: 'Rouvrir la tâche Finir le contrôle' }, backend));
+    // La carte reste affichée : le focus reste sur le bouton, devenu « Rouvrir ».
+    const reopen = await within(overview).findByRole('button', { name: 'Rouvrir la tâche Finir le contrôle' }, backend);
+    expect(reopen).toHaveFocus();
+    fireEvent.click(reopen);
     await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_finish').status).toBe('todo'), backend);
-    await waitFor(() => expect(within(overview).queryByRole('button', { name: 'Rouvrir la tâche Finir le contrôle' })).not.toBeInTheDocument(), backend);
+    expect(await within(overview).findByRole('button', { name: 'Valider la tâche Finir le contrôle' }, backend)).toBeInTheDocument();
     expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_note').archived).toBe(1);
-    fireEvent.click(within(overview).getByRole('button', { name: /^À faire/ }));
-    fireEvent.change(await within(overview).findByLabelText('Statut de Finir le contrôle', {}, backend), { target: { value: 'doing' } });
+    fireEvent.change(within(overview).getByLabelText('Statut de Finir le contrôle'), { target: { value: 'doing' } });
     await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_finish').status).toBe('doing'), backend);
     expect(screen.getByRole('region', { name: 'Vue d’ensemble des projets' })).toBeInTheDocument();
   }, 20_000);
 
-  test('archive une entrée sans suivi dans le journal de la vue et désarchive une entrée suivie sans retirer son suivi', async () => {
+  test('archive et désarchive une entrée suivie depuis sa carte sans retirer son suivi', async () => {
     const backend = { timeout: 5000 };
-    seedData(api.db, { entries: [{ id: 'en_free', title: 'Note à classer' }, { id: 'en_followed', title: 'Note suivie archivée' }] });
+    seedData(api.db, { entries: [{ id: 'en_followed', title: 'Note suivie archivée' }] });
     api.db.prepare('UPDATE entries SET archived=1 WHERE id=?').run('en_followed');
     await clientApi.saveFollowUp('entry', 'en_followed', { enabled: false });
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' }));
     const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
-    const journalToggle = within(overview).getByText(/^Entrées du journal \(/);
-    fireEvent.click(journalToggle);
-    const entries = within(overview).getByRole('region', { name: 'Entrées du journal' });
-    const archive = within(entries).getByRole('button', { name: 'Archiver l’entrée Note à classer' });
-    archive.focus();
-    fireEvent.click(archive);
-    await waitFor(() => expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_free').archived).toBe(1), backend);
-    await waitFor(() => expect(within(entries).queryByRole('button', { name: 'Archiver l’entrée Note à classer' })).not.toBeInTheDocument(), backend);
-    await waitFor(() => expect(journalToggle).toHaveFocus(), backend);
-    expect(row(api.db, 'SELECT follow_up FROM entries WHERE id=?', 'en_free').follow_up).toBeNull();
     const reports = within(overview).getByRole('region', { name: 'Bilans et suivis IA' });
     fireEvent.click(within(reports).getByRole('button', { name: 'Désarchiver l’entrée Note suivie archivée' }));
     await waitFor(() => expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_followed').archived).toBe(0), backend);
-    await waitFor(() => expect(within(reports).getByRole('button', { name: 'Archiver l’entrée Note suivie archivée' })).toBeInTheDocument(), backend);
+    fireEvent.click(await within(reports).findByRole('button', { name: 'Archiver l’entrée Note suivie archivée' }, backend));
+    await waitFor(() => expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_followed').archived).toBe(1), backend);
     expect(within(reports).getByRole('region', { name: 'Suivi IA de Note suivie archivée' })).toBeInTheDocument();
-    fireEvent.change(within(entries).getByLabelText('Afficher les entrées du journal'), { target: { value: 'archived' } });
-    expect(await within(entries).findByRole('button', { name: 'Désarchiver l’entrée Note à classer' }, backend)).toBeInTheDocument();
-    expect(within(entries).queryByRole('button', { name: 'Archiver l’entrée Note suivie archivée' })).not.toBeInTheDocument();
   }, 20_000);
 
   test('un statut ou un archivage refusé conserve la source et annonce l’erreur sans quitter la vue', async () => {
     const backend = { timeout: 5000 };
     seedData(api.db, { entries: [{ id: 'en_keep', title: 'Note à garder' }], tasks: [{ id: 'tk_keep', title: 'Contrôle à garder' }] });
     api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_keep', 'en_keep', new Date().toISOString());
+    await clientApi.saveFollowUp('task', 'tk_keep', { enabled: false });
+    await clientApi.saveFollowUp('entry', 'en_keep', { enabled: false });
     const originalMove = clientApi.moveTask.bind(clientApi);
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' }));
@@ -3093,10 +3052,8 @@ describe('vue d’ensemble des projets', () => {
     expect(status).toHaveValue('todo');
     expect(status).toHaveFocus();
     expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_keep').status).toBe('todo');
-    fireEvent.click(within(overview).getByText(/^Entrées du journal \(/));
-    const entries = within(overview).getByRole('region', { name: 'Entrées du journal' });
     vi.spyOn(clientApi, 'updateEntry').mockRejectedValueOnce(new Error('Archivage refusé'));
-    const archive = within(entries).getByRole('button', { name: 'Archiver l’entrée Note à garder' });
+    const archive = within(overview).getByRole('button', { name: 'Archiver l’entrée Note à garder' });
     archive.focus();
     fireEvent.click(archive);
     expect(await within(overview).findByRole('alert', {}, backend)).toHaveTextContent('Archivage refusé');
@@ -3112,7 +3069,7 @@ describe('vue d’ensemble des projets', () => {
     });
     fireEvent.click(within(overview).getByRole('button', { name: 'Valider la tâche Contrôle à garder' }));
     expect(await within(overview).findByRole('alert', {}, backend)).toHaveTextContent('Réponse perdue après validation');
-    await waitFor(() => expect(within(overview).queryByLabelText('Statut de Contrôle à garder')).not.toBeInTheDocument(), backend);
+    await waitFor(() => expect(within(overview).getByLabelText('Statut de Contrôle à garder')).toHaveValue('done'), backend);
     expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_keep').status).toBe('done');
     expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_keep').archived).toBe(1);
     expect(clientApi.moveTask).toHaveBeenCalledTimes(2);
@@ -3157,6 +3114,7 @@ describe('vue d’ensemble des projets', () => {
     // Chaque attente suit un aller-retour du backend : 1 s ne tient pas sous charge.
     const backend = { timeout: 5000 };
     seedData(api.db, { tasks: [{ id: 'tk_a', title: 'Préparer la pompe' }] });
+    await clientApi.saveFollowUp('task', 'tk_a', { enabled: false });
     const diverted = globalThis.fetch;
     let finish!: (response: Response) => void;
     let called = false;
