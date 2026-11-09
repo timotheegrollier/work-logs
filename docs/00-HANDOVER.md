@@ -1,5 +1,13 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Ajustement du 2026-11-09 — vue d’ensemble allégée (§75)
+
+La vue ne montre plus que ce que l’IA a rédigé et la frise d’avancement. Liste des tâches,
+journal repliable, ajout de tâche et compteurs sont retirés ; Valider, Statut et Archiver
+restent seulement sur les cartes de suivi (`FollowUpPanel`, prop `actions`), qui montrent
+aussi prochaines actions et blocages sans déplier. À partir de 1 080 px de centre : textes à
+gauche, frise à droite.
+
 ## Ajout du 2026-11-09 — fusion de tâches (§73)
 
 Une case à droite de chaque carte (au survol), **✨ Fusionner** dès deux tâches : l’IA

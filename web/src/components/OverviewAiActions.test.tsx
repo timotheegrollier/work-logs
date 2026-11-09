@@ -17,7 +17,7 @@ const task = (id: string, rest: Partial<Task> = {}): Task => ({ id, title: `Tâc
 const follow: FollowUp = { enabled: true, enabled_at: `${today}T09:00:00Z`, report: { status: 'doing', summary: 'Contrôle commencé.', completed: ['Mesures relevées.'], next_steps: ['Vérifier la vanne.'], blockers: [], warnings: [], generated_at: `${today}T10:00:00Z`, source_key: 'version1' } };
 const state = (tasks: Task[]): AppState => ({ projects: [], entries: [], tasks, procedure_attachments: [], stats: { entries: 0, entriesThisWeek: 0, tasks: { todo: tasks.filter((item) => item.status === 'todo').length, doing: tasks.filter((item) => item.status === 'doing').length, done: tasks.filter((item) => item.status === 'done').length }, overdue: 0 } });
 const review = { summary: 'Les mesures sont prêtes ; la vanne reste à vérifier.', completed: ['Mesures relevées.'], next_steps: ['Vérifier la vanne.'], blockers: [], warnings: ['Le bilan ne date pas les avancées.'] };
-const props = (tasks: Task[]) => ({ tasks, entries: [], projects: [], onChanged: vi.fn(), onTask: vi.fn(), onShowFollowUps: vi.fn() });
+const props = (tasks: Task[]) => ({ tasks, entries: [], projects: [], onChanged: vi.fn(), onTask: vi.fn() });
 
 beforeEach(() => { localStorage.clear(); vi.mocked(generateDailyReview).mockReset(); vi.mocked(replanTasks).mockReset(); });
 afterEach(() => vi.restoreAllMocks());
@@ -33,8 +33,6 @@ test('le bilan est directement accessible et lit la totalité des tâches non te
   expect(vi.mocked(generateDailyReview).mock.calls[0][1][0]).toMatchObject({ id: 'a', kind: 'task', follow_up: follow });
   expect(vi.mocked(generateDailyReview).mock.calls[0][1][1]).toMatchObject({ id: 'b', kind: 'task', status: 'todo' });
   expect(screen.getByText(review.summary)).toBeVisible();
-  await user.click(screen.getByRole('button', { name: 'Voir les suivis (1)' }));
-  expect(inputs.onShowFollowUps).toHaveBeenCalledOnce();
 });
 
 test('sans tâche ouverte et sans suivi, le raccourci du bilan reste désactivé', () => {

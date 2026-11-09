@@ -23,7 +23,7 @@ const dailyKey = (items: DailyFollowUpInput[], missingEntries: number, missingTa
 const validDate = (value: string, today: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value && value >= today;
 
 /** Deux demandes directes ; seules les dates et priorités explicitement relues sont écrites. */
-export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, missingEntries = 0, missingTasks = 0, onChanged, onTask, onShowFollowUps, children }: {
+export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, missingEntries = 0, missingTasks = 0, onChanged, onTask, children }: {
   tasks: Task[];
   entries: EntrySummary[];
   projects: Project[];
@@ -32,7 +32,6 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
   missingTasks?: number;
   onChanged: () => void | Promise<void>;
   onTask: (task: Task) => void;
-  onShowFollowUps: () => void;
   children?: ReactNode;
 }) {
   const [busy, setBusy] = useState<Work>(null);
@@ -162,36 +161,23 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
   const list = (title: string, values: string[]) => values.length > 0 && <div><h4>{title}</h4><ul>{values.map((value, index) => <li key={index}>{value}</li>)}</ul></div>;
 
   return <section className="overview-ai no-print" aria-label="Bilan du jour et planification IA" aria-busy={Boolean(busy)}>
-    <div className="overview-ai-head">
-      <div className="overview-ai-title">
-        <span className="overview-kicker">Assistant</span>
-        <h3>Bilan et planification</h3>
-      </div>
-      {followed.length > 0 && <button className="ghost overview-ai-follow-link" type="button" onClick={onShowFollowUps}>Voir les suivis ({followed.length})</button>}
-    </div>
     <div className="overview-ai-actions">
-      <button className="task-primary overview-ai-action" type="button" aria-label="Bilan du jour" disabled={Boolean(busy) || !hasReports || dailyItems.length > MAX_DAILY_FOLLOW_UPS} onClick={() => void generate('daily')}>
-        <span className="overview-ai-action-icon" aria-hidden="true">✨</span>
-        <span className="overview-ai-action-copy"><strong>Bilan du jour</strong><small>{dailyItems.length > 0 ? `${dailyItems.length} source${dailyItems.length > 1 ? 's' : ''} à synthétiser` : 'Aucune source suivie'}</small></span>
-      </button>
-      <button className="ghost overview-ai-action" type="button" aria-label="Replanifier avec l’IA" disabled={Boolean(busy) || !open.length || missingOpen > 0 || open.length > MAX_REPLANNED_TASKS} onClick={() => void generate('schedule')}>
-        <span className="overview-ai-action-icon" aria-hidden="true">↻</span>
-        <span className="overview-ai-action-copy"><strong>Replanifier</strong><small>{open.length > 0 ? `${open.length} tâche${open.length > 1 ? 's' : ''} ouverte${open.length > 1 ? 's' : ''}` : 'Aucune tâche ouverte'}</small></span>
-      </button>
+      <button className="task-primary" type="button" aria-label="Bilan du jour" disabled={Boolean(busy) || !hasReports || dailyItems.length > MAX_DAILY_FOLLOW_UPS} onClick={() => void generate('daily')}><span aria-hidden="true">✨ </span>Bilan du jour</button>
+      <button className="ghost" type="button" aria-label="Replanifier avec l’IA" disabled={Boolean(busy) || !open.length || missingOpen > 0 || open.length > MAX_REPLANNED_TASKS} onClick={() => void generate('schedule')}><span aria-hidden="true">↻ </span>Replanifier</button>
+      {children}
     </div>
-    <p className="ai-hint overview-ai-note">{hasReports ? 'Le bilan rassemble les avancées, blocages et prochaines actions de tes suivis IA.' : 'Ajoute une tâche ou une entrée aux suivis IA pour préparer ton bilan du jour.'}</p>
+    {followed.length === 0 && <p className="ai-hint overview-ai-note">Ajoute une tâche ou une entrée aux suivis IA pour retrouver ici leurs bilans.</p>}
     <details className="overview-ai-scope">
       <summary>Données envoyées au service IA</summary>
       <p>Le service IA reçoit les bilans de suivi et, pour replanifier, les champs des tâches et les repères des projets.</p>
     </details>
-    {children}
     {(missingEntries > 0 || missingTasks > 0) && <p className="notice">Le bilan couvre uniquement {dailyItems.length} source{dailyItems.length > 1 ? 's' : ''} chargée{dailyItems.length > 1 ? 's' : ''}. Éléments non chargés : {missingEntries > 0 ? `${missingEntries} entrée${missingEntries > 1 ? 's' : ''}` : ''}{missingEntries > 0 && missingTasks > 0 ? ' et ' : ''}{missingTasks > 0 ? `${missingTasks} tâche${missingTasks > 1 ? 's' : ''}` : ''}. D’autres sources peuvent manquer.</p>}
     {(dailyItems.length > MAX_DAILY_FOLLOW_UPS || open.length > MAX_REPLANNED_TASKS) && <p className="notice">{dailyItems.length > MAX_DAILY_FOLLOW_UPS ? `Le bilan accepte ${MAX_DAILY_FOLLOW_UPS} sources au maximum. ` : ''}{open.length > MAX_REPLANNED_TASKS ? `La replanification accepte ${MAX_REPLANNED_TASKS} tâches ouvertes au maximum ; termine les tâches devenues inutiles.` : ''}</p>}
     {busy && <div className="overview-ai-pending"><AiPending label={busy === 'daily' ? 'L’IA rassemble les bilans de suivi…' : busy === 'schedule' ? 'L’IA propose les priorités et les dates…' : 'Enregistrement des dates et priorités…'} />{busy !== 'applying' && <button className="ghost" type="button" onClick={() => { controller.current?.abort(); controller.current = null; work.current = null; setBusy(null); }}>Arrêter</button>}</div>}
     {error && <p className="error" role="alert">{error}</p>}
     {feedback && <p className="overview-ai-feedback" role="status">{feedback}</p>}
     {daily && <section className="overview-daily" aria-label="Bilan IA du jour">
-      <div className="overview-ai-result-head"><div className="overview-result-heading"><span className="overview-result-kicker">Synthèse</span><h3 ref={dailyHead} tabIndex={-1}>Bilan du {new Date(dailyDate + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}</h3></div><button className="ghost" type="button" aria-label="Fermer le bilan du jour" onClick={() => setDaily(null)}>Fermer</button></div>
+      <div className="overview-ai-result-head"><div className="overview-result-heading"><h3 ref={dailyHead} tabIndex={-1}>Bilan du {new Date(dailyDate + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}</h3></div><button className="ghost" type="button" aria-label="Fermer le bilan du jour" onClick={() => setDaily(null)}>Fermer</button></div>
       <p>{daily.summary}</p>
       <div className="overview-daily-lists">{list('Avancées attestées', daily.completed)}{list('Prochaines actions', daily.next_steps)}{list('Blocages', daily.blockers)}</div>
       {daily.warnings.length > 0 && <details className="overview-daily-limits"><summary>Sources et limites du bilan ({daily.warnings.length})</summary><ul>{daily.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
@@ -199,7 +185,7 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
     </section>}
     {choices && <section className="overview-schedule" aria-label="Dates et priorités proposées par l’IA">
       <div className="overview-ai-result-head">
-        <div className="overview-result-heading"><span className="overview-result-kicker">Proposition</span><h3 ref={scheduleHead} tabIndex={-1}>Replanification</h3></div>
+        <div className="overview-result-heading"><h3 ref={scheduleHead} tabIndex={-1}>Replanification</h3></div>
         <div className="overview-result-actions">
           <span className="overview-result-count">{choices.length} tâche{choices.length > 1 ? 's' : ''}{changedCount > 0 ? ` · ${changedCount} changement${changedCount > 1 ? 's' : ''}` : ' · aucun changement'}</span>
           <button className="ghost" type="button" disabled={Boolean(busy)} onClick={() => { setChoices(null); expected.current = null; scheduleInput.current = null; }}>Ignorer</button>

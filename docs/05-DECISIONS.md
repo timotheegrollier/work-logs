@@ -2834,6 +2834,8 @@ chaque entrée, ainsi que les autres doublons que tu trouves. »
   pourrait plus la démarrer) ; retirer les voies d’avancement (elles restent la lecture
   synthétique des projets) ; ajouter un onglet ou un mode.
 
+*Une colonne : remplacé par §75, qui rend aussi l’ajout de tâche à la colonne Tâches.*
+
 **Validation.** Front : plus de bouton d’activation ni de région de bilans vide dans la vue,
 retour affiché après ajout, affectation et passage en cours, retrait du dernier suivi et focus
 sur le titre. Navigateur : plus de bouton d’activation, liste à pleine largeur sans débordement
@@ -2952,6 +2954,8 @@ désarchivage évite qu’une réouverture ressuscite silencieusement des docume
 **Écartés.** Un bouton par transition de statut (redondant avec le sélecteur), désarchiver
 automatiquement à la réouverture, un journal toujours déplié qui noierait la liste des
 tâches, un nouvel endpoint ou une nouvelle dépendance.
+
+*Gestes par ligne et journal repliable : retirés par §75, seules les cartes de suivi les gardent.*
 
 **Validation.** Front : validation et archivage des documents liés, réouverture sans
 désarchivage, archivage/désarchivage d’une entrée libre et d’une entrée suivie, refus
@@ -3074,3 +3078,43 @@ rapide et les tâches existantes sont concernées.
 synchronisation, rejeu, trois causes de péremption, tâche terminée, tout terminé, demande
 invalide. PWA : même contrat. Front : de la case cochée à la tâche validée, prompt sans
 identifiants, rien d’écrit avant validation.
+
+## 75. Vue d’ensemble : ce que l’IA a rédigé, et la frise — 2026-11-09
+
+**Demande.** « Améliore le design et layout de la vue d’ensemble, elle ne doit pas afficher
+trop d’infos, genre enlève la liste des tâches, entrées du journal ; on garde bien la frise
+avancement des projets, mais le contenu textuel de cette page doit être simple et présenter
+principalement des résumés/bilans/propositions rédigés par l’IA. » Ces textes doivent
+permettre de **décider** quoi faire, d’**agir** (valider, archiver, replanifier) et d’**ouvrir**
+l’élément concerné en un clic.
+
+**Choix.**
+- **Retirés de la vue :** la liste des tâches et ses filtres, le formulaire d’ajout, le journal
+  repliable, les pastilles de compteurs, le sous-titre des suivis, « Voir les suivis » (les suivis
+  sont juste dessous) et les textes de présentation du bloc IA. Ajouter ou traiter une tâche sans
+  suivi se fait dans la colonne Tâches, ranger une note dans le journal.
+- **Cela revient sur §69 :** Valider, Statut et Archiver ne sont plus proposés sur chaque ligne,
+  mais seulement sur les cartes des éléments suivis par l’IA, choix explicite de Timo. Les règles
+  de ces gestes ne changent pas (documents archivés à la validation, Rouvrir sans désarchiver).
+- **Cela revient sur §66 :** les deux colonnes reviennent, car la gauche n’est plus jamais vide
+  (les actions IA y sont toujours). À partir de 1 080 px de centre (§65), les textes de l’IA à
+  gauche et la frise à droite sur 420 px ; en dessous, la frise après les textes. La frise est
+  son propre conteneur : ses voies se replient d’elles-mêmes dans cette colonne.
+- **Une carte de suivi se lit de haut en bas :** titre (ouvre l’élément), état proposé, résumé,
+  **Prochaines actions** et **Blocages** dépliés car c’est ce qui sert à décider, puis une seule
+  rangée de gestes. Les avancées, les limites et le mode d’actualisation restent dans « Détails
+  du suivi ». Dans l’entrée, le panneau compact ne change pas.
+- **Moins de cadres :** les actions IA tiennent sur une rangée sans encadré ; ni le bloc IA ni la
+  section des suivis ne dessinent plus de boîte autour de leurs cartes.
+
+**Écartés.** Générer le Bilan du jour à l’ouverture (§17, §67 : aucun appel sans geste ; c’est
+aussi une dépense de jetons, §71) ; le garder d’une ouverture à l’autre (un état de plus, §67) ;
+relier chaque ligne du Bilan du jour à un élément (il faudrait changer le contrat de réponse de
+l’IA : les liens et les gestes sont sur les cartes de suivi et la replanification) ; un onglet ou
+un mode pour retrouver les listes.
+
+**Validation.** Front : plus de liste, de journal ni d’ajout, gestes présents sur les suivis
+seulement, validation/réouverture, archivage, refus et réponse perdue depuis une carte, ouverture
+par un nœud. Navigateur : mise en page côte à côte à 1 440 px et empilée à 800 et 412 px, suite
+proposée visible et avancées repliées, cibles de 44 px et absence de débordement de 320 à 1 440 px
+et en paysage. Captures clair/sombre sur base jetable. Les réponses IA sont simulées.

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useFollowUp, type FollowUpItem } from '../follow-up-controller';
 import { isFollowed } from '../lib';
 import { AiPending } from './AiMenu';
@@ -11,11 +11,13 @@ function ReportList({ title, items }: { title: string; items: string[] }) {
 }
 
 /** Le bilan reste à côté du texte et partage le même état depuis tous ses accès. */
-export function FollowUpPanel({ kind, item, compact = false, dirty = false }: {
+export function FollowUpPanel({ kind, item, compact = false, dirty = false, actions }: {
   kind: 'entry' | 'task';
   item: FollowUpItem;
   compact?: boolean;
   dirty?: boolean;
+  /** Vue d'ensemble : les gestes sur l'élément, à côté de la suite proposée, qui reste dépliée pour décider. */
+  actions?: ReactNode;
 }) {
   const { followUp, stale, busy, error, toggle, disable, refresh, stop } = useFollowUp(kind, item);
   const report = followUp?.report;
@@ -27,12 +29,15 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false }: {
     if (initial && turnedOff.current) activate.current?.focus();
     turnedOff.current = false;
   }, [initial]);
+  const proposals = report && <>
+    <ReportList title="Prochaines actions" items={report.next_steps} />
+    <ReportList title="Blocages" items={report.blockers} />
+  </>;
   const details = <>
     {report && <>
       <div className="follow-up-lists">
         <ReportList title="Avancées" items={report.completed} />
-        <ReportList title="Prochaines actions" items={report.next_steps} />
-        <ReportList title="Blocages" items={report.blockers} />
+        {!actions && proposals}
       </div>
       {report.warnings.length > 0 && <ul className="follow-up-warnings" aria-label="Limites du bilan">{report.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
     </>}
@@ -56,7 +61,9 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false }: {
         {(stale || dirty) && report && <span className="follow-up-stale" role="status">À actualiser{dirty ? ' après enregistrement' : ''}</span>}
       </div>
       {report ? <p className="follow-up-summary">{report.summary}</p> : !busy && <p className="follow-up-empty">Aucun bilan pour le moment.</p>}
+      {actions && <div className="follow-up-lists">{proposals}</div>}
       <div className="follow-up-actions">
+        {actions}
         <button className="ghost" type="button" aria-label={`Actualiser le bilan de ${item.title}`} disabled={busy} onClick={refresh}>{report ? 'Actualiser' : 'Générer le bilan'}</button>
         {busy && <button className="ghost" type="button" aria-label={`Arrêter le suivi IA de ${item.title}`} onClick={stop}>Arrêter</button>}
         <button className="ghost follow-up-off" type="button" aria-label={`Désactiver le suivi IA de ${item.title}`} title="Arrête le suivi et retire son bilan ; « ✨ Suivi IA » le relance" onClick={() => { turnedOff.current = true; disable(); }}>Désactiver</button>

@@ -32,12 +32,12 @@ async function manualReport(request: APIRequestContext, kind: 'task' | 'entry', 
 }
 
 for (const viewport of [{ width: 320, height: 740 }, { width: 375, height: 812 }, { width: 800, height: 1000 }, { width: 1440, height: 1000 }, { width: 800, height: 390 }]) {
-  test(`actions dans la vue : statut, validation et archives sans débordement à ${viewport.width}×${viewport.height}`, async ({ page, request }, testInfo) => {
+  test(`gestes sur les suivis : statut, validation et archives sans débordement à ${viewport.width}×${viewport.height}`, async ({ page, request }, testInfo) => {
     const project = await post(request, '/api/projects', { name: `Actions vue ${viewport.width}×${viewport.height}` });
     try {
       const task = await post(request, '/api/tasks', { title: 'Contrôler le raccord de filtration avant la remise en service', project_id: project.id });
       const note = await post(request, '/api/entries', { title: 'Diagnostic du raccord à contrôler', project_id: project.id, content_md: 'Raccord posé. Contrôle restant.' });
-      const standalone = await post(request, '/api/entries', { title: 'Compte rendu indépendant à archiver', project_id: project.id, content_md: 'Compte rendu à ranger après lecture.' });
+      const free = await post(request, '/api/entries', { title: 'Compte rendu sans suivi', project_id: project.id, content_md: 'Une note ordinaire.' });
       const followed = await post(request, '/api/entries', { title: 'Suivi de la commande déjà archivée', project_id: project.id, content_md: 'La livraison est confirmée.' });
       await post(request, `/api/tasks/${task.id}/documents/${note.id}`, {});
       await manualReport(request, 'task', task.id);
@@ -49,67 +49,43 @@ for (const viewport of [{ width: 320, height: 740 }, { width: 375, height: 812 }
       await page.goto('/');
       await page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true }).click();
       const overview = page.getByRole('region', { name: 'Vue d’ensemble des projets', exact: true });
-      const tasks = overview.getByRole('list', { name: 'Liste des tâches de la vue d’ensemble', exact: true });
-      const row = tasks.locator('.overview-task').filter({ has: page.getByRole('button', { name: task.title, exact: true }) });
-      const status = row.getByLabel(`Statut de ${task.title}`, { exact: true });
-      const validate = row.getByRole('button', { name: `Valider la tâche ${task.title}`, exact: true });
+      const reports = overview.getByRole('region', { name: 'Bilans et suivis IA', exact: true });
+      // Ce que l'IA propose se lit sans déplier ; les avancées restent dans les détails.
+      await expect(reports.getByText('Contrôler le raccord.', { exact: true }).first()).toBeVisible();
+      await expect(reports.getByText('Diagnostic confirmé.', { exact: true }).first()).toBeHidden();
+      // Plus de liste de tâches, de journal ni d'ajout ici : la colonne Tâches s'en charge.
+      await expect(overview.getByText(/^Entrées du journal \(/)).toHaveCount(0);
+      await expect(overview.getByText(free.title, { exact: true })).toHaveCount(0);
+      await expect(overview.getByRole('textbox', { name: 'Nouvelle tâche dans la vue d’ensemble', exact: true })).toHaveCount(0);
+
+      const status = reports.getByLabel(`Statut de ${task.title}`, { exact: true });
+      const validate = reports.getByRole('button', { name: `Valider la tâche ${task.title}`, exact: true });
       await touchTarget(status);
       await touchTarget(validate);
-      await status.focus();
       await status.selectOption('doing');
-      await expect(row).toBeHidden();
-      await expect(overview.getByRole('heading', { name: 'Tâches', exact: true })).toBeFocused();
-      await overview.getByRole('button', { name: /^En cours/ }).click();
+      await expect(overview.getByRole('status').filter({ hasText: 'passée en cours.' })).toBeVisible();
       await expect(status).toHaveValue('doing');
       await validate.click();
-      await expect(row).toBeHidden();
-      await expect(overview.getByRole('heading', { name: 'Tâches', exact: true })).toBeFocused();
-      await expect.poll(async () => (await (await request.get(`/api/entries/${note.id}`)).json()).archived).toBe(1);
-      await overview.getByRole('button', { name: /^Terminées/ }).click();
-      const reopen = row.getByRole('button', { name: `Rouvrir la tâche ${task.title}`, exact: true });
+      const reopen = reports.getByRole('button', { name: `Rouvrir la tâche ${task.title}`, exact: true });
       await touchTarget(reopen);
       await expect(status).toHaveValue('done');
+      await expect.poll(async () => (await (await request.get(`/api/entries/${note.id}`)).json()).archived).toBe(1);
       await reopen.click();
-      await expect(row).toBeHidden();
+      await expect(status).toHaveValue('todo');
       await expect.poll(async () => (await (await request.get('/api/state')).json()).tasks.find((item: { id: string }) => item.id === task.id).status).toBe('todo');
       expect((await (await request.get(`/api/entries/${note.id}`)).json()).archived).toBe(1);
 
-      // Les entrées sans suivi restent accessibles dans le journal compact.
-      const journalToggle = overview.getByText(/^Entrées du journal \(/);
-      await journalToggle.click();
-      const journal = overview.getByRole('region', { name: 'Entrées du journal', exact: true });
-      const search = journal.getByRole('searchbox', { name: 'Rechercher dans les entrées du journal', exact: true });
-      await search.fill('independant');
-      const archive = journal.getByRole('button', { name: `Archiver l’entrée ${standalone.title}`, exact: true });
-      await touchTarget(archive);
-      await archive.click();
-      await expect(archive).toHaveCount(0);
-      await expect(journalToggle).toBeFocused();
-      expect((await (await request.get(`/api/entries/${standalone.id}`)).json()).archived).toBe(1);
-      const entryFilter = journal.getByLabel('Afficher les entrées du journal', { exact: true });
-      await touchTarget(entryFilter);
-      await entryFilter.selectOption('archived');
-      const unarchive = journal.getByRole('button', { name: `Désarchiver l’entrée ${standalone.title}`, exact: true });
+      const unarchive = reports.getByRole('button', { name: `Désarchiver l’entrée ${followed.title}`, exact: true });
       await touchTarget(unarchive);
       await unarchive.click();
-      await expect(unarchive).toHaveCount(0);
-      await expect(journalToggle).toBeFocused();
-      await expect.poll(async () => (await (await request.get(`/api/entries/${standalone.id}`)).json()).archived).toBe(0);
-
-      // Le geste est disponible sur une carte suivie, indépendamment du journal.
-      const reports = overview.getByRole('region', { name: 'Bilans et suivis IA', exact: true });
-      const followedArchive = reports.getByRole('button', { name: `Désarchiver l’entrée ${followed.title}`, exact: true });
-      await touchTarget(followedArchive);
-      await followedArchive.click();
-      await expect(reports.getByRole('button', { name: `Archiver l’entrée ${followed.title}`, exact: true })).toBeVisible();
+      const archive = reports.getByRole('button', { name: `Archiver l’entrée ${followed.title}`, exact: true });
+      await expect(archive).toBeVisible();
+      await expect.poll(async () => (await (await request.get(`/api/entries/${followed.id}`)).json()).archived).toBe(0);
       await expect(reports.getByRole('region', { name: `Suivi IA de ${followed.title}`, exact: true })).toBeVisible();
       expect(await noHorizontalScroll(page)).toBe(true);
       await expect(overview).toBeVisible();
 
       if (viewport.width === 1440 || viewport.width === 375) {
-        await overview.getByRole('button', { name: /^À faire/ }).click();
-        await search.clear();
-        await entryFilter.selectOption('active');
         await overview.getByRole('heading', { name: 'Vue d’ensemble', exact: true }).scrollIntoViewIfNeeded();
         await page.screenshot({ path: testInfo.outputPath(`${viewport.width === 1440 ? 'desktop' : 'mobile'}.png`), fullPage: true });
         await page.getByRole('button', { name: 'Changer de thème', exact: true }).click();
@@ -125,6 +101,7 @@ test('un changement de statut refusé garde le statut et un point de focus acces
   const project = await post(request, '/api/projects', { name: 'Refus gestes vue' });
   try {
     const task = await post(request, '/api/tasks', { title: 'Contrôle conservé après refus', project_id: project.id });
+    await manualReport(request, 'task', task.id);
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto('/');
     await page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true }).click();
@@ -136,7 +113,7 @@ test('un changement de statut refusé garde le statut et un point de focus acces
     await expect(overview.getByRole('alert')).toHaveText('Statut refusé pour le test');
     await expect(status).toHaveValue('todo');
     await expect(status).toBeEnabled();
-    await expect.poll(async () => status.evaluate((element) => element === document.activeElement || document.activeElement?.textContent === 'Tâches')).toBe(true);
+    await expect.poll(async () => status.evaluate((element) => element === document.activeElement || document.activeElement?.textContent === 'Suivis IA')).toBe(true);
     expect(await noHorizontalScroll(page)).toBe(true);
   } finally {
     await page.unrouteAll({ behavior: 'wait' });
