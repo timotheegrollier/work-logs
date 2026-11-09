@@ -1431,6 +1431,10 @@ button:disabled {
   flex: 1;
   color: var(--muted);
 }
+/* `.editor` occupe toute la hauteur : sans ça, la grille étire titre et boutons. */
+.entry-merge {
+  align-content: start;
+}
 .entry-merge textarea {
   width: 100%;
   font: inherit;
@@ -3313,6 +3317,20 @@ div.google-preserved {
   display: flex;
   gap: 2px;
   flex: none;
+}
+/* Case de fusion (§73) : discrète comme celle du journal, visible dès qu'une est cochée. */
+.card-pick {
+  align-self: center;
+  margin: 0 4px 0 0;
+  opacity: 0;
+}
+.card:hover .card-pick,
+.card:focus-within .card-pick,
+.board.is-picking .card-pick {
+  opacity: 1;
+}
+@media (hover: none) {
+  .card-pick { opacity: 0.6; }
 }
 .card-top-actions .icon {
   min-width: 26px;

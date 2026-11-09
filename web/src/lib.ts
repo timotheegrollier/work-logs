@@ -556,6 +556,7 @@ export const remoteApi = {
   deleteEntry: (id: string) => send<{ ok: true }>('DELETE', `/api/entries/${id}`),
   copyEntry: (id: string) => send<Entry>('POST', `/api/entries/${id}/copy`),
   mergeEntries: (body: EntryMergeRequest) => send<Entry>('POST', '/api/entries/merge', body),
+  mergeTasks: (body: EntryMergeRequest) => send<Entry>('POST', '/api/tasks/merge', body),
   createTaskFromEntry: (entryId: string, body?: { title?: string; due_date?: string | null; priority?: Priority; status?: Status }) =>
     send<Task>('POST', `/api/entries/${entryId}/task`, body),
   createEntryFromTask: (taskId: string, body?: { title?: string; content_md?: string }) =>

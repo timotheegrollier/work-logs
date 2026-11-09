@@ -1,6 +1,13 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Ajustement du 2026-11-09 — plus de bouton « Activer le suivi IA » dans une entrée (§73)
+## Ajout du 2026-11-09 — fusion de tâches (§73)
+
+Une case à droite de chaque carte (au survol), **✨ Fusionner** dès deux tâches : l’IA
+propose une tâche et sa note, on relit, **Valider la fusion** remplace les tâches choisies
+et leurs notes. Route `POST /api/tasks/merge`, contrat dans `api/src/entry-merge.js` partagé
+avec la PWA, panneau commun avec la fusion d’entrées dans `EntryMerge.tsx`.
+
+## Ajustement du 2026-11-09 — plus de bouton « Activer le suivi IA » dans une entrée (§74)
 
 Une entrée sans suivi n’affiche plus rien : l’activation d’une entrée passe uniquement
 par **+ Ajouter au suivi IA** dans la vue d’ensemble. Le bloc **Suivi IA** reste visible

@@ -4,7 +4,7 @@ import './styles.css';
 import { api, emptyDocument, taskViewMatch, todayISO, type AppState, type Entry, type GoogleStatus, type GoogleSyncStatus, type Task, type TaskView } from './lib';
 import { startWebSync, subscribeWebSync } from './store/sync-web';
 import { EntryList } from './components/EntryList';
-import { EntryMerge } from './components/EntryMerge';
+import { EntryMerge, TaskMerge } from './components/EntryMerge';
 import { ProcedureList } from './components/ProcedureList';
 import { EntryEditor } from './components/EntryEditor';
 import { Logo } from './components/Logo';
@@ -58,6 +58,8 @@ export default function App() {
   // Fusion d'entrées (§70) : les cases cochées du journal, puis celles figées à l'ouverture du panneau.
   const [picked, setPicked] = useState<string[]>([]);
   const [merging, setMerging] = useState<string[] | null>(null);
+  // Fusion de tâches (§73) : les tâches telles qu'elles étaient au clic, dont dérivent les clés de source.
+  const [mergingTasks, setMergingTasks] = useState<Task[] | null>(null);
   // Fichier du dossier partagé ouvert au centre, à la place de l'entrée (§25).
   // Desktop et dev seulement : la PWA n'atteint pas un partage SMB.
   // PWA : le dossier partagé passe par le relais du bureau, s'il est réglé.
@@ -521,11 +523,18 @@ export default function App() {
     setShowCenter(true);
   }, [selectEntry, setShowCenter]);
   const startMerge = useCallback(() => {
+    setMergingTasks(null);
     setMerging(picked);
     setShowCenter(true);
   }, [picked, setShowCenter]);
+  const startTaskMerge = useCallback((tasks: Task[]) => {
+    setMerging(null);
+    setMergingTasks(tasks);
+    setShowCenter(true);
+  }, [setShowCenter]);
   const entryMerged = useCallback((created: Entry) => {
     setMerging(null);
+    setMergingTasks(null);
     setPicked([]);
     selectFromList(created.id);
     void reload();
@@ -842,7 +851,9 @@ export default function App() {
         <ColumnResizer side="left" panelId="workspace-journal" value={colLeft} onChange={setColLeft} />
 
         <main id="workspace-editor" className="center">
-          {merging ? (
+          {mergingTasks ? (
+            <TaskMerge key={mergingTasks.map((task) => task.id).join()} tasks={mergingTasks} onCancel={() => setMergingTasks(null)} onMerged={entryMerged} />
+          ) : merging ? (
             <EntryMerge key={merging.join()} ids={merging} onCancel={() => setMerging(null)} onMerged={entryMerged} />
           ) : overview && state && !query && !projectId && !categoryId && stateScope === JSON.stringify(['', '', '']) ? (
             <ProjectOverview
@@ -921,6 +932,7 @@ export default function App() {
             onOpenShared={openShared}
             onProcedureCreated={openCreatedProcedure}
             onChanged={reload}
+            onMerge={startTaskMerge}
           />
         </aside>
 

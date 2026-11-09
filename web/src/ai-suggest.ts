@@ -771,31 +771,35 @@ export const MAX_MERGE_SOURCES = 8;
 /** Toutes sources confondues : une fusion coûte un seul appel, borné comme un bilan. */
 export const MAX_MERGE_CHARS = 24_000;
 
-export function buildMergePrompt(sources: MergeContext[], profile = ''): { system: string; user: string } {
+export function buildMergePrompt(sources: MergeContext[], profile = '', tasks = false): { system: string; user: string } {
   const sections = profile.trim() ? [`Profil : ${profile.trim()}`] : [];
   sources.forEach((source, i) => sections.push(
-    `## Entrée ${i + 1} : ${source.title.trim()}${source.entry_date ? ` (${source.entry_date})` : ''}\n${source.content_md.trim() || 'Vide.'}`));
+    `## ${tasks ? 'Tâche' : 'Entrée'} ${i + 1} : ${source.title.trim()}${source.entry_date ? ` (${source.entry_date})` : ''}\n${source.content_md.trim() || 'Vide.'}`));
   return {
-    system: `Tu fusionnes plusieurs notes du journal de travail de l'utilisateur dans WorkLogs en une seule note, en Markdown et en français.
+    system: `${tasks
+      ? `Tu fusionnes plusieurs tâches de l'utilisateur dans WorkLogs en une seule tâche, accompagnée d'une note en Markdown et en français qui en précise le contenu.
+Une tâche marquée « Vide. » n'a que son titre : reprends-le comme une action à faire.`
+      : `Tu fusionnes plusieurs notes du journal de travail de l'utilisateur dans WorkLogs en une seule note, en Markdown et en français.`}
 Regroupe le contenu par sujet et supprime les répétitions ; si deux notes se contredisent, garde la plus récente et signale l'écart.
 Garde toutes les informations (valeurs, commandes, chemins, liens, images, blocs de code, cases cochées ou non) à l'identique. N'invente rien et ne change jamais le sens : une action prévue reste à faire.
-Réponds uniquement avec la note : une première ligne « # Titre » qui résume l'ensemble, puis le texte, sans introduction ni explication.`,
+Réponds uniquement avec la note : une première ligne « # Titre » qui ${tasks ? 'nomme la tâche commune en quelques mots, comme une action' : "résume l'ensemble"}, puis le texte, sans introduction ni explication.`,
     user: sections.join('\n\n'),
   };
 }
 
-/** Fusion d'entrées : un clic = un appel. Rien n'est écrit ici, la proposition se relit d'abord. */
+/** Fusion d'entrées, ou de tâches avec `tasks` : un clic = un appel. Rien n'est écrit ici, la proposition se relit d'abord. */
 export async function mergeEntries(
   settings: AiSettings,
   sources: MergeContext[],
-  options: { timeoutMs?: number } = {}
+  options: { timeoutMs?: number; tasks?: boolean } = {}
 ): Promise<{ title: string; content_md: string }> {
-  if (sources.length < 2 || sources.length > MAX_MERGE_SOURCES) throw new AiError(`Choisis de 2 à ${MAX_MERGE_SOURCES} entrées à fusionner.`);
-  if (sources.some((source) => !source.title.trim())) throw new AiError('Chaque entrée à fusionner doit avoir un titre.');
+  const noun = options.tasks ? 'tâche' : 'entrée';
+  if (sources.length < 2 || sources.length > MAX_MERGE_SOURCES) throw new AiError(`Choisis de 2 à ${MAX_MERGE_SOURCES} ${noun}s à fusionner.`);
+  if (sources.some((source) => !source.title.trim())) throw new AiError(`Chaque ${noun} à fusionner doit avoir un titre.`);
   const chars = sources.reduce((total, source) => total + source.content_md.length, 0);
-  if (chars > MAX_MERGE_CHARS) throw new AiError(`Entrées trop longues pour être fusionnées (${chars} caractères, ${MAX_MERGE_CHARS} maximum).`);
-  const prompt = buildMergePrompt(sources, settings.profile);
-  const merged = parseDraftedProcedure(await postChatCompletions(settings, 'la fusion d’entrées', prompt.system, prompt.user,
+  if (chars > MAX_MERGE_CHARS) throw new AiError(`${options.tasks ? 'Tâches' : 'Entrées'} trop longues pour être fusionnées (${chars} caractères, ${MAX_MERGE_CHARS} maximum).`);
+  const prompt = buildMergePrompt(sources, settings.profile, options.tasks);
+  const merged = parseDraftedProcedure(await postChatCompletions(settings, options.tasks ? 'la fusion de tâches' : 'la fusion d’entrées', prompt.system, prompt.user,
     DOCUMENT_MAX_TOKENS, options.timeoutMs ?? AI_TIMEOUT_MS), sources[0].title);
   if (!merged.markdown) throw new AiError('Réponse IA illisible : réessaie.');
   return { title: merged.title, content_md: merged.markdown };

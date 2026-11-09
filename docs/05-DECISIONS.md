@@ -3039,7 +3039,43 @@ sont déjà enregistrées côté Google et acceptées par `oauth-proxy/worker.mj
 **Validation.** `scripts/pwa-sw.test.mjs` : la page d'accueil nomme WorkLogs et ses liens
 relatifs (dont la politique) existent dans `web/public/`.
 
-## 73. Plus de bouton « Activer le suivi IA » dans une entrée — 2026-11-09
+## 73. Fusionner des tâches : une tâche et une note relues remplacent les sources — 2026-11-09
+
+**Décision.** Une case à droite de chaque carte (discrète tant que rien n’est coché) ; dès
+deux tâches choisies, **✨ Fusionner** ouvre au centre le même panneau que la fusion
+d’entrées (§70) : un seul appel IA, avec les titres des tâches et le texte de leurs notes
+(8 tâches et 24 000 caractères au plus). On relit le titre et la note ; **Valider la
+fusion** crée une tâche et sa note, et supprime les tâches choisies et leurs notes, en une
+transaction (`POST /api/tasks/merge`, même contrat dans la PWA via `api/src/entry-merge.js`).
+La tâche fusionnée a donc toujours une note qui en précise le contenu.
+
+Ce qui passe sur la nouvelle tâche : les pièces jointes des notes ; les documents Google et
+les procédures, ni réécrits ni supprimés, simplement reliés. Une tâche non choisie qui
+partageait une note suit la nouvelle note, comme en §70. Statut, échéance, priorité et
+épingle viennent des tâches ouvertes (de toutes si aucune ne l’est) : en cours l’emporte,
+l’échéance la plus proche, la priorité la plus haute. Projet et catégorie sont gardés s’ils
+sont communs. La clé de source couvre la tâche et tous ses documents : une tâche, une note
+ou un lien modifiés depuis la proposition refusent tout (409). Les identifiants dérivent de
+la demande : revalider après une réponse perdue rend la même note.
+
+**Pourquoi.** Demandé explicitement : l’IA rédige une tâche qui mutualise celles qui sont
+sélectionnées, et une tâche doit avoir une entrée pour en préciser le contenu. Les statut,
+échéance et priorité sont calculés plutôt que proposés par l’IA : c’est une règle, pas une
+rédaction, et elle ne coûte aucun jeton. Une tâche terminée ne décide pas tant qu’une autre
+reste ouverte, sinon une vieille échéance mettrait la nouvelle tâche en retard.
+
+**Écartés.** Garder les notes sources à côté de la nouvelle (doublons dans le journal),
+réécrire les documents Google ou les procédures (ils ont leur vie propre), reprendre le
+suivi IA des sources (il décrit des tâches qui n’existent plus, on le relance sur la
+nouvelle). Imposer une entrée à toute tâche créée reste à décider à part : la création
+rapide et les tâches existantes sont concernées.
+
+**Validation.** API : remplacement, pièces jointes, Google et procédures, tombes de
+synchronisation, rejeu, trois causes de péremption, tâche terminée, tout terminé, demande
+invalide. PWA : même contrat. Front : de la case cochée à la tâche validée, prompt sans
+identifiants, rien d’écrit avant validation.
+
+## 74. Plus de bouton « Activer le suivi IA » dans une entrée — 2026-11-09
 
 **Demande.** « Enlève le bouton activer le suivi IA sur chaque entrée. »
 

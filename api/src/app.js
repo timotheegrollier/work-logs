@@ -13,7 +13,7 @@ import { categoryFor, nextCategory, categoryDescendants, registerCategoryRoutes 
 import { inheritTaskCategories } from './task-categories.js';
 import { createFollowUpAccess, registerFollowUpRoutes } from './follow-up-routes.js';
 import { assertExpectedTaskPlanning } from './task-planning.js';
-import { validateEntryMerge, assertEntryMergeSources, assertEntryMergeReplay, entryMergeTargetId, entryMergeClassification } from './entry-merge.js';
+import { validateEntryMerge, assertEntryMergeSources, assertEntryMergeReplay, entryMergeTargetId, entryMergeClassification, isRewritableNote, assertTaskMergeSources, taskMergeTaskId, taskMergeAttributes } from './entry-merge.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
 export const PRIORITIES = ['low', 'normal', 'high'];
@@ -341,6 +341,15 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     }
   });
 
+  /** La note fusionnée reprend les pièces jointes et les liens aux tâches de sa source, qui disparaît. */
+  const absorbEntry = (targetId, sourceId, time) => {
+    db.prepare('UPDATE attachments SET entry_id=? WHERE entry_id=?').run(targetId, sourceId);
+    db.prepare('INSERT OR IGNORE INTO task_entries (task_id,entry_id,created_at) SELECT task_id,?,? FROM task_entries WHERE entry_id=?')
+      .run(targetId, time, sourceId);
+    db.prepare('DELETE FROM entries WHERE id=?').run(sourceId);
+    tombstone(db, 'entry', sourceId);
+  };
+
   // Fusion d’entrées (§70) : la note relue remplace ses sources, en une transaction.
   // Pièces jointes et liens aux tâches passent sur la nouvelle entrée ; une source
   // modifiée depuis la proposition (source_key) refuse tout, et rejouer la même
@@ -363,13 +372,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       try {
         db.prepare('INSERT INTO entries (id,title,content_md,entry_date,project_id,category_id,kind,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
           .run(id, body.title, body.content_md, today(), project_id, category_id, kind, time, time);
-        for (const source of sources) {
-          db.prepare('UPDATE attachments SET entry_id=? WHERE entry_id=?').run(id, source.id);
-          db.prepare('INSERT OR IGNORE INTO task_entries (task_id,entry_id,created_at) SELECT task_id,?,? FROM task_entries WHERE entry_id=?')
-            .run(id, time, source.id);
-          db.prepare('DELETE FROM entries WHERE id=?').run(source.id);
-          tombstone(db, 'entry', source.id);
-        }
+        for (const source of sources) absorbEntry(id, source.id, time);
         db.exec('COMMIT');
       } catch (error) {
         db.exec('ROLLBACK');
@@ -410,6 +413,56 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       throw error;
     }
     res.status(201).json(getTaskWithDocuments(id));
+  });
+
+  // Fusion de tâches (§73) : une tâche et une note relues remplacent les tâches choisies
+  // et leurs notes, en une transaction. Documents Google et procédures restent liés à la
+  // nouvelle tâche ; clé de source et rejeu comme pour la fusion d’entrées.
+  app.post('/api/tasks/merge', async (req, res, next) => {
+    try {
+      const body = validateEntryMerge(req.body, 'tâches');
+      // Calculé avant BEGIN : aucune autre requête ne s'intercale dans la transaction.
+      const entryId = await entryMergeTargetId(body);
+      const taskId = taskMergeTaskId(entryId);
+      if (getTask(taskId)) {
+        const replay = getEntry(entryId) ?? {};
+        assertEntryMergeReplay(body, replay);
+        return res.json(replay);
+      }
+      const sources = body.sources.map((source) => getTask(source.id));
+      const documentsOf = (id) => db.prepare('SELECT entry_id FROM task_entries WHERE task_id=?').all(id).map((link) => getEntry(link.entry_id));
+      assertTaskMergeSources(body, sources, documentsOf);
+      const { status, due_date, pinned, priority, project_id, category_id } = taskMergeAttributes(sources);
+      const documents = new Map(sources.flatMap((task) => documentsOf(task.id)).map((entry) => [entry.id, entry]));
+      const time = nowISO();
+      db.exec('BEGIN');
+      try {
+        const position = db.prepare('SELECT COALESCE(MAX(position),-1)+1 p FROM tasks WHERE status=?').get(status).p;
+        db.prepare('INSERT INTO entries (id,title,content_md,entry_date,project_id,category_id,kind,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
+          .run(entryId, body.title, body.content_md, today(), project_id, category_id, 'note', time, time);
+        db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+          .run(taskId, body.title, status, due_date, pinned, position, priority, project_id, time, time, category_id);
+        const link = db.prepare('INSERT OR IGNORE INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)');
+        link.run(taskId, entryId, time);
+        for (const entry of documents.values()) {
+          if (isRewritableNote(entry)) absorbEntry(entryId, entry.id, time);
+          else link.run(taskId, entry.id, time);
+        }
+        for (const task of sources) {
+          db.prepare('DELETE FROM tasks WHERE id=?').run(task.id);
+          tombstone(db, 'task', task.id);
+        }
+        for (const changed of new Set([status, ...sources.map((task) => task.status)])) renumber(db, changed);
+        if (status === 'done') archiveTaskDocuments(db, taskId, time);
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+      res.json(getEntry(entryId));
+    } catch (error) {
+      next(error);
+    }
   });
 
   // Miroir de /api/entries/:id/task : une entrée créée depuis une tâche, liée
