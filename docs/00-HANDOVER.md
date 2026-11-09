@@ -7,6 +7,13 @@ propose une tâche et sa note, on relit, **Valider la fusion** remplace les tâc
 et leurs notes. Route `POST /api/tasks/merge`, contrat dans `api/src/entry-merge.js` partagé
 avec la PWA, panneau commun avec la fusion d’entrées dans `EntryMerge.tsx`.
 
+## Ajustement du 2026-11-09 — plus de bouton « Activer le suivi IA » dans une entrée (§74)
+
+Une entrée sans suivi n’affiche plus rien : l’activation d’une entrée passe uniquement
+par **+ Ajouter au suivi IA** dans la vue d’ensemble. Le bloc **Suivi IA** reste visible
+dès qu’elle est suivie ; le bouton des tâches est conservé. Tests fronts et parcours
+`e2e/follow-up.spec.ts` alignés.
+
 ## Ajustement du 2026-11-06 — page d’accueil publique pour Google (§72)
 
 Google refusait la publication : page d’accueil et politique sur `workers.dev`, domaine

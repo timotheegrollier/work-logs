@@ -24,9 +24,13 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false }: {
   const turnedOff = useRef(false);
   useEffect(() => {
     // Après « Désactiver », le focus passe au bouton qui relance le suivi, pas en haut de page.
-    if (initial && turnedOff.current) activate.current?.focus();
+    // Une entrée n’a plus de bouton : son panneau disparaît, rien à restaurer.
+    if (initial && turnedOff.current && kind !== 'entry') activate.current?.focus();
     turnedOff.current = false;
-  }, [initial]);
+  }, [initial, kind]);
+  // Une entrée sans suivi n’affiche rien : l’activation se fait dans la vue
+  // d’ensemble (« + Ajouter au suivi IA »), jamais dans l’entrée.
+  if (kind === 'entry' && initial) return null;
   const details = <>
     {report && <>
       <div className="follow-up-lists">
@@ -59,7 +63,7 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false }: {
       <div className="follow-up-actions">
         <button className="ghost" type="button" aria-label={`Actualiser le bilan de ${item.title}`} disabled={busy} onClick={refresh}>{report ? 'Actualiser' : 'Générer le bilan'}</button>
         {busy && <button className="ghost" type="button" aria-label={`Arrêter le suivi IA de ${item.title}`} onClick={stop}>Arrêter</button>}
-        <button className="ghost follow-up-off" type="button" aria-label={`Désactiver le suivi IA de ${item.title}`} title="Arrête le suivi et retire son bilan ; « ✨ Suivi IA » le relance" onClick={() => { turnedOff.current = true; disable(); }}>Désactiver</button>
+        <button className="ghost follow-up-off" type="button" aria-label={`Désactiver le suivi IA de ${item.title}`} title={kind === 'entry' ? "Arrête le suivi et retire son bilan ; la vue d’ensemble permet de le relancer avec « + Ajouter au suivi IA »" : "Arrête le suivi et retire son bilan ; « ✨ Suivi IA » le relance"} onClick={() => { turnedOff.current = true; disable(); }}>Désactiver</button>
       </div>
       {compact ? <details className="follow-up-details"><summary>Détails du suivi</summary>{details}</details> : details}
     </>}

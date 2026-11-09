@@ -307,10 +307,11 @@ rendu approximatif.
 
 ## Suivre les avancées avec l’IA
 
-Dans une entrée, cliquer sur **✨ Activer le suivi IA** (une ligne discrète au-dessus des
-actions de l’entrée). Le bloc **Suivi IA**, séparé du texte,
-présente un bilan, un **état proposé**, les avancées, prochaines actions et blocages. Le même
-bouton sur une carte de tâche analyse ses champs et ses documents explicitement liés. Le
+Une entrée sans suivi n’affiche rien : l’activation se fait dans **Vue d’ensemble**,
+avec **+ Ajouter au suivi IA** (voir plus bas). Une fois suivie, l’entrée affiche le
+bloc **Suivi IA**, séparé du texte,
+présente un bilan, un **état proposé**, les avancées, prochaines actions et blocages. Le bouton
+**✨ Suivi IA** sur une carte de tâche analyse ses champs et ses documents explicitement liés. Le
 suivi d’une tâche est aussi visible dans ses entrées liées.
 
 L’activation produit le premier bilan puis coche **Actualiser automatiquement après
@@ -322,9 +323,10 @@ Une version inchangée n’est pas réanalysée à chaque ouverture. Une erreur 
 précédent ; **À actualiser** signale que les sources ont changé.
 
 **Désactiver**, à droite d’Actualiser, coupe le suivi d’une entrée (ou d’une tâche) qui n’en
-a pas besoin : l’automatisme et le bilan partent, le texte ne change pas, et l’élément quitte
-la vue d’ensemble. Le bouton existe aussi sur chaque bilan de la vue d’ensemble, pour faire
-le tri d’un clic. **✨ Activer le suivi IA** le relance avec un nouveau bilan.
+a pas besoin : l’automatisme et le bilan partent, le texte ne change pas, et pour une entrée
+le bloc disparaît. Le bouton existe aussi sur chaque bilan de la vue d’ensemble, pour faire
+le tri d’un clic. Une entrée se relance avec **+ Ajouter au suivi IA** dans la vue d’ensemble,
+une tâche avec **✨ Suivi IA** sur sa carte.
 
 Ouvrir **Vue d’ensemble** pour retrouver les suivis des entrées et des tâches chargées, y
 compris les tâches terminées : **Suivis IA** apparaît en tête dès qu’un suivi existe et
