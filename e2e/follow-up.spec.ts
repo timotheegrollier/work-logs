@@ -58,11 +58,20 @@ test('suivi IA : bilan conservé au rechargement, actualisé après la saisie et
     });
     await page.goto('/');
     const panel = page.getByRole('region', { name: `Suivi IA de ${title}`, exact: true });
-    await expect(panel).toBeVisible();
-    // Sans suivi, un simple bouton sur une ligne, pas un encadré.
-    expect((await panel.boundingBox())!.height).toBeLessThan(40);
+    // Sans suivi, une entrée n’affiche rien : pas de bouton d’activation.
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByRole('button', { name: `Activer le suivi IA de ${title}`, exact: true })).toHaveCount(0);
     expect(prompts).toHaveLength(0);
-    await panel.getByRole('button', { name: `Activer le suivi IA de ${title}`, exact: true }).click();
+    await page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true }).click();
+    const overview = page.getByRole('region', { name: 'Vue d’ensemble des projets', exact: true });
+    await overview.getByRole('button', { name: 'Ajouter au suivi IA', exact: true }).click();
+    const picker = overview.getByRole('region', { name: 'Choisir les suivis IA', exact: true });
+    await picker.getByRole('checkbox', { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click();
+    await picker.getByRole('button', { name: 'Suivre la sélection (1)', exact: true }).click();
+    await expect(overview.getByRole('region', { name: 'Bilans et suivis IA', exact: true })).toBeVisible();
+    await page.clock.fastForward(2_000);
+    await overview.getByRole('button', { name: `Ouvrir l’entrée ${title}`, exact: true }).click();
+    await expect(panel).toBeVisible();
     await expect(panel.getByText(firstSummary, { exact: true })).toBeVisible();
     await expect(panel.getByRole('checkbox', { name: `Actualisation automatique de ${title}`, exact: true })).toBeChecked();
     expect(prompts).toHaveLength(1);
@@ -107,12 +116,13 @@ test('suivi IA : bilan conservé au rechargement, actualisé après la saisie et
     await expect(panel.getByText(finalSummary, { exact: true })).toBeVisible();
     expect(prompts).toHaveLength(2);
 
-    // « Désactiver » : le bilan part, l'entrée retrouve sa ligne discrète, même après rechargement.
+    // « Désactiver » : le bilan part, le panneau disparaît, sans bouton d’activation.
     await panel.getByRole('button', { name: `Désactiver le suivi IA de ${title}`, exact: true }).click();
-    await expect(panel.getByRole('button', { name: `Activer le suivi IA de ${title}`, exact: true })).toBeVisible();
-    await expect(panel.getByText(finalSummary, { exact: true })).toHaveCount(0);
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByRole('button', { name: `Activer le suivi IA de ${title}`, exact: true })).toHaveCount(0);
     await page.reload();
-    await expect(panel.getByRole('button', { name: `Activer le suivi IA de ${title}`, exact: true })).toBeVisible();
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByRole('button', { name: `Activer le suivi IA de ${title}`, exact: true })).toHaveCount(0);
     await page.clock.fastForward(10_000);
     expect(prompts).toHaveLength(2);
     expect((await (await request.get(`/api/entries/${note.id}`)).json()).content_md).toBe(update);
@@ -141,9 +151,19 @@ test('sur téléphone, le suivi et ses détails longs restent lisibles et la vue
     });
     await page.goto('/');
     const navigation = page.getByRole('group', { name: 'Panneaux latéraux' });
-    await navigation.getByRole('button', { name: 'Écriture', exact: true }).click();
     const panel = page.getByRole('region', { name: `Suivi IA de ${title}`, exact: true });
-    await panel.getByRole('button', { name: `Activer le suivi IA de ${title}`, exact: true }).click();
+    await expect(panel).toHaveCount(0);
+    await page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true }).click();
+    const overview = page.getByRole('region', { name: 'Vue d’ensemble des projets', exact: true });
+    await overview.getByRole('button', { name: 'Ajouter au suivi IA', exact: true }).click();
+    const picker = overview.getByRole('region', { name: 'Choisir les suivis IA', exact: true });
+    await picker.getByRole('checkbox', { name: /Diagnostic du circuit/ }).click();
+    await picker.getByRole('button', { name: 'Suivre la sélection (1)', exact: true }).click();
+    await expect(overview.getByRole('region', { name: 'Bilans et suivis IA', exact: true })).toBeVisible();
+    await expect(overview.getByText(summary, { exact: true })).toBeVisible();
+    await overview.getByRole('button', { name: `Ouvrir l’entrée ${title}`, exact: true }).click();
+    await navigation.getByRole('button', { name: 'Écriture', exact: true }).click();
+    await expect(panel).toBeVisible();
     await expect(panel.getByText(summary, { exact: true })).toBeVisible();
     await expect(panel.getByText(blocker, { exact: true })).toBeVisible();
     expect(await noHorizontalScroll(page)).toBe(true);

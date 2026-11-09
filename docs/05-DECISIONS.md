@@ -3079,6 +3079,29 @@ synchronisation, rejeu, trois causes de péremption, tâche terminée, tout term
 invalide. PWA : même contrat. Front : de la case cochée à la tâche validée, prompt sans
 identifiants, rien d’écrit avant validation.
 
+## 74. Plus de bouton « Activer le suivi IA » dans une entrée — 2026-11-09
+
+**Demande.** « Enlève le bouton activer le suivi IA sur chaque entrée. »
+
+**Décision.** Une entrée sans suivi n’affiche plus rien (`FollowUpPanel` rend `null` pour
+`kind === 'entry'` tant qu’elle n’est pas suivie). Le bloc **Suivi IA** reste visible dès
+qu’elle est suivie, avec **Actualiser** et **Désactiver** ; l’activation d’une entrée passe
+uniquement par **+ Ajouter au suivi IA** dans la vue d’ensemble. Le bouton des tâches
+(« ✨ Suivi IA » sur la carte) est conservé : la demande ne visait que les entrées.
+
+**Pourquoi.** Le bouton encombrait chaque entrée ouverte, même celles qui n’ont pas besoin
+de suivi, et dupliquait la sélection commune de la vue d’ensemble qui remplace déjà la
+navigation répétée pour activer (§67). Une entrée non suivie redevient un texte seul ;
+une entrée suivie garde son bilan à côté du texte.
+
+**Ce que ça coûte.** Après **Désactiver** dans une entrée, le panneau disparaît sans
+point de focus restauré (il n’y a plus de bouton qui relance) ; la relance se fait depuis
+la vue d’ensemble. Les infobulles de **Désactiver** distinguent les deux relances.
+
+**Validation.** Tests fronts du suivi mis à jour (activation d’une entrée via la vue
+d’ensemble, disparition du panneau après **Désactiver**, aucun bouton sur une entrée non
+suivie) ; parcours `e2e/follow-up.spec.ts` alignés.
+
 ## 75. Vue d’ensemble : ce que l’IA a rédigé, et la frise — 2026-11-09
 
 **Demande.** « Améliore le design et layout de la vue d’ensemble, elle ne doit pas afficher
