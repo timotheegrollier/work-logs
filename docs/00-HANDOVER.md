@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Lot IA du 2026-11-10 (non publié) — plafond quotidien, assistant, suivi plus sobre (§77)
+## Lot IA du 2026-11-10 (v0.74.0) — plafond quotidien, assistant, suivi plus sobre (§77)
 
 Les fonctions IA sont retravaillées, sans dépendance ni route nouvelle. Décisions, écartés et
 limites : **§77** de `05-DECISIONS.md`.
