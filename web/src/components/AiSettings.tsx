@@ -1,11 +1,15 @@
 import { useRef, useState } from 'react';
 import type { Project } from '../lib';
+import { MAX_DAILY_REQUESTS, MIN_DAILY_REQUESTS, aiUsageLabel, readDailyLimit, saveDailyLimit } from '../ai-budget';
 import { readProjectAiBrief, saveProjectAiBrief } from '../ai-context';
 import {
   AI_CUSTOM_MODEL,
   AI_MODELS,
   DEFAULT_AI_ENDPOINT,
   DEFAULT_AI_MODEL,
+  GEMINI_ENDPOINT,
+  GEMINI_FALLBACK_MODELS,
+  MAX_AI_PROFILE,
   readAiSettings,
   saveAiSettings,
   testAiConnection,
@@ -29,6 +33,9 @@ export function AiSettings({ projects = [], projectId = null }: { projects?: Pic
   const knownModel = AI_MODELS.some((option) => option.id === form.model);
   const modelLabel = AI_MODELS.find((option) => option.id === form.model)?.label.split(' — ')[0] || form.model || 'À renseigner';
   const [customModel, setCustomModel] = useState(knownModel ? '' : form.model);
+  // Le texte saisi reste libre le temps de la frappe : « 2 » en route vers « 200 » n'est pas ramené à 10.
+  const [dailyLimit, setDailyLimit] = useState(() => String(readDailyLimit()));
+  const freeGuaranteed = GEMINI_ENDPOINT.test(form.endpoint.trim()) && GEMINI_FALLBACK_MODELS.includes(form.model.trim());
   const [probe, setProbe] = useState<Probe>({ state: 'idle' });
   const probeVersion = useRef(0);
   const invalidateProbe = () => {
@@ -95,12 +102,15 @@ export function AiSettings({ projects = [], projectId = null }: { projects?: Pic
       {probe.state === 'ok' && <p role="status">✓ Connexion vérifiée ({(probe.ms / 1000).toFixed(1)} s)</p>}
       {probe.state === 'error' && <p role="alert">{probe.message}</p>}
       <p className="ai-hint">Modèle choisi : {modelLabel}</p>
+      {!freeGuaranteed && <p className="notice">Avec ce modèle ou ce service, WorkLogs ne peut pas garantir la gratuité : vérifie ses tarifs.</p>}
+      <p className="ai-hint">{aiUsageLabel()}</p>
       <label>
         Mon contexte de travail
         <textarea
           aria-label="Mon contexte de travail"
           rows={3}
           placeholder="Ex. développeur solo dans une pisciculture : suivi des bassins, devis, maintenance…"
+          maxLength={MAX_AI_PROFILE}
           value={form.profile}
           onChange={setText('profile')}
         />
@@ -133,7 +143,8 @@ export function AiSettings({ projects = [], projectId = null }: { projects?: Pic
       <p className="ai-hint">
         Chaque clic d’assistance envoie le titre, ton profil et le contexte (projet, consignes,
         documents locaux sélectionnés, tâches voisines, contenu de l’entrée,
-        noms des pièces jointes, vocabulaire) au service configuré, jamais automatiquement.
+        noms des pièces jointes, vocabulaire) au service configuré. Sans clic, seuls les
+        éléments ajoutés au suivi IA envoient leur texte enregistré, après une pause.
         Dans le dossier partagé, « ✨ IA › Compléter » et « Mettre en page » envoient le nom,
         le dossier et le contenu du fichier ouvert.
       </p>
@@ -160,6 +171,27 @@ export function AiSettings({ projects = [], projectId = null }: { projects?: Pic
             <input aria-label="Modèle personnalisé" value={customModel} onChange={editCustomModel} autoComplete="off" spellCheck={false} />
           </label>
         )}
+        <label>
+          Plafond de requêtes IA par jour
+          <input
+            aria-label="Plafond de requêtes IA par jour"
+            type="number"
+            inputMode="numeric"
+            min={MIN_DAILY_REQUESTS}
+            max={MAX_DAILY_REQUESTS}
+            step={1}
+            value={dailyLimit}
+            onChange={(event) => {
+              setDailyLimit(event.target.value);
+              if (event.target.value) saveDailyLimit(Number(event.target.value));
+            }}
+            onBlur={() => setDailyLimit(String(readDailyLimit()))}
+          />
+        </label>
+        <p className="ai-hint">
+          Une clé AI Studio d’un projet sans facturation ne coûte rien : au pire, Google répond « quota atteint ».
+          WorkLogs n’utilise que des modèles gratuits en secours et s’arrête au plafond ; le compteur porte sur cet appareil.
+        </p>
         <div>
           <button className="ghost" type="button" onClick={resetGemini}>
             Restaurer les réglages Gemini

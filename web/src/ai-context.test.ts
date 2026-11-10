@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, type AppState, type Entry, type EntrySummary, type Task } from './lib';
-import { loadAiContext, readProjectAiBrief, saveProjectAiBrief, selectedAiContext } from './ai-context';
+import { contextWords, loadAiContext, readProjectAiBrief, saveProjectAiBrief, selectedAiContext } from './ai-context';
+import { buildSuggestPrompt } from './ai-suggest';
+import { seedData, useRealApi } from './test/server';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -19,14 +21,17 @@ const entry = (item: EntrySummary, patch: Partial<Entry> = {}): Entry => ({
   ...item, content_md: `Résolution imprimante ${item.id}`, created_at: '', attachments: [], ...patch,
 });
 
-function mockState(entries: EntrySummary[], tasks: Task[] = []) {
-  return vi.spyOn(api, 'state').mockResolvedValue({
+const fold = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+/** Comme la vraie recherche : sous-chaîne repliée, dans le titre et le texte complet (`bodies`). */
+function mockState(entries: EntrySummary[], tasks: Task[] = [], bodies: Record<string, string> = {}) {
+  return vi.spyOn(api, 'state').mockImplementation(async (q = '') => ({
     projects: [
       { id: 'p1', name: 'Atelier', color: '#123456', created_at: '', entries: 0, open_tasks: 0 },
       { id: 'p2', name: 'Autre', color: '#654321', created_at: '', entries: 0, open_tasks: 0 },
-    ], entries, tasks,
+    ], entries: entries.filter((item) => fold(`${item.title}\n${item.excerpt}\n${bodies[item.id] ?? ''}`).includes(fold(q))), tasks,
     procedure_attachments: [], stats: { entries: entries.length, entriesThisWeek: 0, overdue: 0, tasks: { todo: 0, doing: 0, done: 0 } },
-  } as AppState);
+  } as AppState));
 }
 
 describe('contexte IA limité au projet', () => {
@@ -73,7 +78,6 @@ describe('contexte IA limité au projet', () => {
     const read = vi.spyOn(api, 'entry');
     const context = await loadAiContext({ projectId: 'p1', title: 'Configuration imprimante' });
     expect(context.sources).toEqual([]);
-    expect(context.recentNotes).toEqual([]);
     expect(context.relatedTasks).toEqual([]);
     expect(context.relatedTaskPlanning).toEqual([]);
     expect(context.vocabulary).toEqual([]);
@@ -280,16 +284,25 @@ describe('contexte IA limité au projet', () => {
     await expect(loadAiContext({ projectId: 'p1', title: 'Imprimante' })).rejects.toThrow('Impossible de lire');
   });
 
-  test('une exclusion retire le texte et le titre annexe sans modifier le contexte original', () => {
+  test('une exclusion retire la source sans modifier le contexte original', () => {
     const context = {
       project: 'Atelier', projectBrief: 'Contrainte', relatedTasks: ['Vérifier le toner'],
       sources: [
         { id: 'a', title: 'Compte rendu', kind: 'note' as const, text: 'Texte retiré' },
         { id: 'b', title: 'CUPS', kind: 'procedure' as const, text: 'Texte gardé' },
-      ], recentNotes: ['Compte rendu'],
+      ],
     };
-    expect(selectedAiContext(context, ['a'])).toEqual({ ...context, sources: [context.sources[1]], recentNotes: [] });
+    expect(selectedAiContext(context, ['a'])).toEqual({ ...context, sources: [context.sources[1]] });
     expect(context.sources).toHaveLength(2);
+  });
+
+  test('une source exclue ne laisse pas son titre dans le prompt, même au-delà de 80 caractères', async () => {
+    const note = summary('long', { title: 'Rapport confidentiel sur la vanne du bassin principal et les réglages de la station aval' });
+    mockState([note]);
+    vi.spyOn(api, 'entry').mockResolvedValue(entry(note));
+    const context = await loadAiContext({ projectId: 'p1', title: 'Vanne du bassin' });
+    expect(context.sources?.map((source) => source.id)).toEqual(['long']);
+    expect(buildSuggestPrompt('Vanne du bassin', selectedAiContext(context, ['long'])).user).not.toContain('Rapport confidentiel');
   });
 
   test('déduplique les copies exactes après les exclusions et conserve les provenances distinctes', () => {
@@ -320,6 +333,217 @@ describe('contexte IA limité au projet', () => {
     expect(selected.vocabularyInputs).toBeUndefined();
     expect(full.vocabulary).toContain('zirchon');
     expect(selectedAiContext(full, []).vocabulary).toContain('zirchon');
+  });
+});
+
+describe('choix des sources du contexte IA', () => {
+  test('liens, images, chemins, courriels et adresses IP ne sont pas des mots-clés, les autres nombres si', () => {
+    expect([...contextWords('Serveur 192.168.1.10 https://wiki.exemple.fr/page')]).toEqual(['serveur']);
+    expect([...contextWords('![capture](/api/files/abc.png)')]).toEqual(['capture']);
+    expect([...contextWords('Erreur 404 sur HP 3015')]).toEqual(['erreur', '404', '3015']);
+    expect([...contextWords('Serveur intranet.exemple.fr/wiki www.exemple.fr contact@exemple.fr /mnt/partage/archives fin')]).toEqual(['serveur', 'fin']);
+  });
+
+  test.each(['intranet.exemple.fr/stock', 'www.exemple.fr/stock', '/mnt/partage/stock', 'contact@exemple.fr'])('une adresse commune (%s) ne retient pas un document sans rapport', async (address) => {
+    mockState([summary('other', { title: 'Inventaire', excerpt: `Voir ${address}` })]);
+    const read = vi.spyOn(api, 'entry');
+    await loadAiContext({ projectId: 'p1', title: 'Compte rendu', text: `Consulter ${address}` });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test('une année ne rapproche pas deux documents, un autre nombre si', async () => {
+    const model = summary('model', { title: 'Cartouche HP 3015' });
+    mockState([summary('budget', { title: 'Budget 2026' }), summary('stock', { title: 'Inventaire 2026' }), summary('badges', { title: 'Badges' }), model], [], { badges: 'La pointeuse est en panne.' });
+    const read = vi.spyOn(api, 'entry').mockResolvedValue(entry(model));
+    // L'année reste cherchée : seul, « point » ferait retenir la pointeuse.
+    expect((await loadAiContext({ projectId: 'p1', title: 'Point du 12/03/2026' })).sources).toEqual([]);
+    expect((await loadAiContext({ projectId: 'p1', title: 'Compte rendu', text: 'Commande prévue en 2026.' })).sources).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
+    await loadAiContext({ projectId: 'p1', title: 'Panne 3015' });
+    expect(read.mock.calls).toEqual([['model']]);
+  });
+
+  test('des mots courants partagés ne font pas retenir un document sans rapport', async () => {
+    const related = summary('joint', { title: 'Réception du joint' });
+    mockState([
+      summary('conges', { title: 'Congés d’été', excerpt: 'Il faut remplir le formulaire, on peut aussi écrire au service.' }),
+      summary('repas', { title: 'Repas de fin d’année', excerpt: 'Besoin d’une réponse demain pour le traiteur.' }),
+      summary('compta', { title: 'Compta', excerpt: 'Un très bon trimestre, la même marge.' }),
+      related,
+    ]);
+    const read = vi.spyOn(api, 'entry').mockResolvedValue(entry(related));
+    await loadAiContext({ projectId: 'p1', title: 'Joint V12', text: 'Il faut changer le joint, on peut le faire demain matin : besoin d’une cale très fine, la même que l’an dernier.' });
+    expect(read.mock.calls).toEqual([['joint']]);
+  });
+
+  test('les mots vides sont écartés au singulier comme au pluriel', () => {
+    expect([...contextWords('Mises à jours de mon serveur')]).toEqual(['serveur']);
+    expect([...contextWords('Voir ici : ils ont une réunion')]).toEqual([]);
+  });
+
+  test('un sigle de trois lettres garde son s, un pluriel plus long le perd', async () => {
+    expect([...contextWords('Panne NAS et certificats DNS')]).toEqual(['panne', 'nas', 'certificat', 'dns']);
+    const state = mockState([]);
+    await loadAiContext({ projectId: 'p1', title: 'NAS' });
+    expect(state.mock.calls).toEqual([['', 'p1'], ['nas', 'p1']]);
+  });
+
+  test('une adresse et un lien communs ne font pas passer une note hors sujet devant le sujet', async () => {
+    const noise = summary('nas', { title: 'Panne NAS', excerpt: 'Le NAS 192.168.1.20 ne répond plus, voir https://wiki.exemple.fr/nas' });
+    const toner = summary('toner', { title: 'Toner de l’atelier' });
+    mockState([noise, toner]);
+    const read = vi.spyOn(api, 'entry').mockResolvedValue(entry(toner));
+    await loadAiContext({ projectId: 'p1', title: 'Imprimante HP atelier', text: 'Adresse 192.168.1.50, voir https://wiki.exemple.fr/imprimantes' });
+    expect(read.mock.calls).toEqual([['toner']]);
+  });
+
+  test('« Mise à jour » ne rapproche rien, le mot du sujet dans un extrait suffit', async () => {
+    const service = summary('service', { title: 'Mise en service de la pompe' });
+    const rules = summary('rules', { title: 'Règles pare-feu du site', excerpt: 'Le firewall filtre le site.' });
+    mockState([service, rules]);
+    const read = vi.spyOn(api, 'entry').mockResolvedValue(entry(rules));
+    await loadAiContext({ projectId: 'p1', title: 'Mise à jour du firewall' });
+    expect(read.mock.calls).toEqual([['rules']]);
+  });
+
+  test('un seul mot du brouillon dans un extrait ne suffit pas, deux mots ou un titre oui', async () => {
+    mockState([
+      summary('weak', { title: 'Inventaire', excerpt: 'La vanne du local.' }),
+      summary('excerpt', { title: 'Relevé', excerpt: 'La vanne fuit encore.' }),
+      summary('title', { title: 'Vanne de purge' }),
+    ]);
+    const read = vi.spyOn(api, 'entry').mockImplementation(async (id) => entry(summary(id)));
+    await loadAiContext({ projectId: 'p1', title: 'Compte rendu', text: 'La vanne fuit.' });
+    expect(read.mock.calls.flat().sort()).toEqual(['excerpt', 'title']);
+  });
+
+  test('une section au-delà de l’extrait est trouvée quand deux mots du titre y figurent', async () => {
+    const item = summary('poste', { title: 'Préparation d’un poste', kind: 'procedure', excerpt: 'Installer le système.' });
+    const content = 'Installer le système. '.repeat(40) + '\n\n## Certificat VPN\n\nImporter le fichier dans le profil.';
+    mockState([item], [], { poste: content });
+    vi.spyOn(api, 'entry').mockResolvedValue(entry(item, { content_md: content }));
+    const context = await loadAiContext({ projectId: 'p1', title: 'Renouveler le certificat VPN' });
+    expect(context.sources?.map((source) => source.id)).toEqual(['poste']);
+    expect(context.sources?.[0].text).toContain('Importer le fichier dans le profil.');
+  });
+
+  test('un seul mot courant du titre dans un texte ne suffit pas', async () => {
+    const item = summary('stock', { title: 'Inventaire' });
+    mockState([item], [], { stock: 'Le serveur est rangé en baie 3.' });
+    const read = vi.spyOn(api, 'entry');
+    expect((await loadAiContext({ projectId: 'p1', title: 'Redémarrer le serveur de sauvegarde' })).sources).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test('un titre d’un seul mot s’appuie sur le texte, sauf si ce mot est un simple nombre', async () => {
+    const item = summary('rules', { title: 'Règles du site' });
+    mockState([item], [], { rules: 'Le firewall date de 2026.' });
+    const read = vi.spyOn(api, 'entry').mockResolvedValue(entry(item));
+    await loadAiContext({ projectId: 'p1', title: 'Mise à jour du firewall' });
+    expect(read.mock.calls).toEqual([['rules']]);
+    read.mockClear();
+    expect((await loadAiContext({ projectId: 'p1', title: 'Compte rendu 2026-11-05' })).sources).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test('cherche dans les textes les quatre mots les plus longs du titre, dans le projet', async () => {
+    const state = mockState([]);
+    await loadAiContext({ projectId: 'p1', title: 'Renouveler certificat sauvegarde principal serveur VPN' });
+    expect(state.mock.calls).toEqual([['', 'p1'], ['renouveler', 'p1'], ['certificat', 'p1'], ['sauvegarde', 'p1'], ['principal', 'p1']]);
+  });
+
+  test('un titre sans mot utilisable ne lance aucune recherche ni ne retient de document', async () => {
+    const state = mockState([summary('any', { title: 'Inventaire' })]);
+    const read = vi.spyOn(api, 'entry');
+    expect((await loadAiContext({ projectId: 'p1', title: 'Compte rendu' })).sources).toEqual([]);
+    expect(state.mock.calls).toEqual([['', 'p1']]);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test('un document trouvé dans son texte reste soumis aux exclusions de projet, Google et archive', async () => {
+    const good = summary('good', { title: 'Inventaire' });
+    const forbidden = [summary('other', { project_id: 'p2' }), summary('google', { google_document_id: 'g' }), summary('tab', { google_tab_id: 't' }), summary('archive', { archived: 1 })];
+    mockState([good, ...forbidden], [], Object.fromEntries([good, ...forbidden].map((item) => [item.id, 'Imprimante du réseau'])));
+    const read = vi.spyOn(api, 'entry').mockResolvedValue(entry(good));
+    await loadAiContext({ projectId: 'p1', title: 'Imprimante réseau' });
+    expect(read.mock.calls).toEqual([['good']]);
+  });
+
+  test('un document absent de la lecture générale reste trouvable par son texte', async () => {
+    const old = summary('old', { title: 'Archive atelier' });
+    const state = mockState([old], [], { old: 'Certificat VPN du site.' });
+    // Au-delà de 500 entrées, la lecture générale ne rend que les plus récentes.
+    state.mockResolvedValueOnce({ ...await api.state(), entries: [] });
+    const read = vi.spyOn(api, 'entry').mockResolvedValue(entry(old));
+    await loadAiContext({ projectId: 'p1', title: 'Certificat VPN' });
+    expect(read.mock.calls).toEqual([['old']]);
+  });
+
+  test.each([
+    ['une recherche de mot', (q: string) => q !== ''],
+    ['la lecture générale', (q: string) => q === ''],
+  ])('%s impossible interrompt la demande', async (_, fails) => {
+    const state = mockState([]);
+    const implementation = state.getMockImplementation()!;
+    state.mockImplementation(async (q = '', project) => {
+      if (fails(q)) throw new Error('réseau indisponible');
+      return implementation(q, project);
+    });
+    await expect(loadAiContext({ projectId: 'p1', title: 'Imprimante' })).rejects.toThrow('Impossible de charger le contexte IA du projet.');
+  });
+
+  test('les autres documents de la tâche liée à la note sont retenus, sans lier d’autres tâches', async () => {
+    const active = summary('active', { title: 'CR intervention' });
+    const sibling = summary('sibling', { title: 'Démontage P4', kind: 'procedure' });
+    mockState([active, sibling, summary('other', { title: 'Comptabilité' })], [
+      task('shared', { title: 'Remplacer la pompe', documents: [active, sibling] }),
+      task('indirect', { title: 'Commander le joint', documents: [sibling] }),
+    ]);
+    const read = vi.spyOn(api, 'entry').mockResolvedValue(entry(sibling));
+    const context = await loadAiContext({ projectId: 'p1', title: 'CR intervention', entryId: active.id });
+    expect(read.mock.calls).toEqual([['sibling']]);
+    expect(context.relatedTasks).toEqual(['Remplacer la pompe']);
+  });
+
+  test('un document voisin par sa tâche reste derrière les titres correspondants', async () => {
+    const active = summary('active');
+    const sibling = summary('sibling', { title: 'Démontage P4' });
+    mockState([sibling, active, summary('a'), summary('b'), summary('c')], [task('shared', { documents: [active, sibling] })]);
+    const read = vi.spyOn(api, 'entry').mockImplementation(async (id) => entry(summary(id)));
+    await loadAiContext({ projectId: 'p1', title: 'Imprimante', entryId: active.id });
+    expect(read.mock.calls.flat().sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  test('date les notes, jamais les procédures dont la date reste celle de leur création', async () => {
+    const note = summary('note', { title: 'Imprimante panne', entry_date: '2026-03-04' });
+    const procedure = summary('procedure', { title: 'Imprimante réglage', kind: 'procedure', entry_date: '2024-01-01' });
+    mockState([note, procedure]);
+    vi.spyOn(api, 'entry').mockImplementation(async (id) => entry(id === 'note' ? note : procedure));
+    const context = await loadAiContext({ projectId: 'p1', title: 'Imprimante' });
+    expect(context.sources?.find((source) => source.id === 'note')?.date).toBe('2026-03-04');
+    expect(context.sources?.find((source) => source.id === 'procedure')?.date).toBeUndefined();
+  });
+});
+
+describe('contexte IA sur la vraie recherche', () => {
+  test('retrouve une section au-delà de l’extrait, sans casse ni accent, et jamais hors du projet', async () => {
+    const server = await useRealApi();
+    try {
+      const filler = 'Installer le système. '.repeat(40);
+      seedData(server.db, {
+        projects: [{ id: 'p_parc', name: 'Parc' }, { id: 'p_autre', name: 'Autre' }],
+        entries: [
+          { id: 'en_far', title: 'Préparation d’un poste', kind: 'procedure', project_id: 'p_parc', content_md: `${filler}\n\n## Certificat VPN\n\nImporter le fichier dans le profil.` },
+          { id: 'en_lone', title: 'Inventaire', project_id: 'p_parc', content_md: `${filler}\n\nLe certificat papier est rangé.` },
+          { id: 'en_other', title: 'Confidentiel', kind: 'procedure', project_id: 'p_autre', content_md: `${filler}\n\nCertificat VPN privé.` },
+        ],
+      });
+      const context = await loadAiContext({ projectId: 'p_parc', title: 'Renouveler le CERTIFICAT VPN' });
+      expect(context.sources?.map((source) => source.id)).toEqual(['en_far']);
+      expect(context.sources?.[0].text).toContain('Importer le fichier dans le profil.');
+    } finally {
+      await server.close();
+    }
   });
 });
 

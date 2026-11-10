@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi, afterEach } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AiSettings } from './AiSettings';
+import { pacificDay } from '../ai-budget';
 import { readProjectAiBrief, saveProjectAiBrief } from '../ai-context';
 
 beforeEach(() => {
@@ -79,7 +80,7 @@ describe('réglages IA', () => {
     expect(options).toEqual([
       'gemini-3-flash-preview',
       'gemini-2.5-flash',
-      'gemini-3.5-flash',
+      'gemini-3.6-flash',
       'gemini-3.5-flash-lite',
       'gemini-3.1-flash-lite',
       'personnalise',
@@ -90,8 +91,61 @@ describe('réglages IA', () => {
     const user = userEvent.setup();
     render(<AiSettings />);
     await user.click(screen.getByText('Réglages avancés'));
-    await user.selectOptions(screen.getByLabelText('Modèle IA'), 'gemini-3.5-flash');
-    expect(localStorage.getItem('worklogs-ai-model')).toBe('gemini-3.5-flash');
+    await user.selectOptions(screen.getByLabelText('Modèle IA'), 'gemini-3.6-flash');
+    expect(localStorage.getItem('worklogs-ai-model')).toBe('gemini-3.6-flash');
+  });
+
+  test('la consommation du jour s’affiche et le plafond quotidien reste borné', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-usage', JSON.stringify({ day: pacificDay(), requests: 12, tokens: 18_400, background: 2 }));
+    render(<AiSettings />);
+    expect(screen.getByText('Aujourd’hui : 12 / 150 requêtes · ≈ 18 400 jetons')).toBeVisible();
+    await user.click(screen.getByText('Réglages avancés'));
+    const limit = screen.getByLabelText('Plafond de requêtes IA par jour');
+    expect(limit).toHaveValue(150);
+    expect(limit).toHaveAttribute('min', '10');
+    expect(limit).toHaveAttribute('max', '5000');
+    await user.clear(limit);
+    await user.type(limit, '300');
+    expect(localStorage.getItem('worklogs-ai-daily-limit')).toBe('300');
+    expect(screen.getByText('Aujourd’hui : 12 / 300 requêtes · ≈ 18 400 jetons')).toBeVisible();
+    // Libre le temps de la frappe, ramené dans les bornes en quittant le champ.
+    await user.clear(limit);
+    await user.type(limit, '3');
+    expect(limit).toHaveValue(3);
+    await user.tab();
+    expect(limit).toHaveValue(10);
+    expect(localStorage.getItem('worklogs-ai-daily-limit')).toBe('10');
+    await user.clear(limit);
+    await user.type(limit, '999999');
+    await user.tab();
+    expect(limit).toHaveValue(5000);
+    expect(localStorage.getItem('worklogs-ai-daily-limit')).toBe('5000');
+  });
+
+  test('l’envoi automatique du suivi est annoncé et la garantie de gratuité expliquée', () => {
+    render(<AiSettings />);
+    expect(screen.queryByText(/jamais automatiquement/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Sans clic, seuls les\s+éléments ajoutés au suivi IA/)).toBeInTheDocument();
+    expect(screen.getByText(/d’un projet sans facturation ne coûte rien/)).toHaveTextContent('le compteur porte sur cet appareil');
+  });
+
+  test('la gratuité n’est garantie qu’avec un modèle de la chaîne de secours sur l’endpoint Gemini', async () => {
+    const user = userEvent.setup();
+    const warning = /ne peut pas garantir la gratuité/;
+    render(<AiSettings />);
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
+    await user.click(screen.getByText('Réglages avancés'));
+    await user.selectOptions(screen.getByLabelText('Modèle IA'), 'gemini-3.6-flash');
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Modèle IA'), 'personnalise');
+    await user.type(screen.getByLabelText('Modèle personnalisé'), 'modele-payant');
+    expect(screen.getByText(warning)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Restaurer les réglages Gemini' }));
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
+    await user.clear(screen.getByLabelText('Endpoint IA'));
+    await user.type(screen.getByLabelText('Endpoint IA'), 'https://ia.example/v1');
+    expect(screen.getByText(warning)).toBeVisible();
   });
 
   test('modèle inconnu enregistré : saisie libre préremplie', async () => {
@@ -155,7 +209,7 @@ describe('réglages IA', () => {
     await user.type(screen.getByLabelText('Mon contexte de travail'), 'Maintenance');
     expect(screen.getByRole('status')).toHaveTextContent(/Connexion vérifiée/);
     if (field !== 'Clé IA') await user.click(screen.getByText('Réglages avancés'));
-    if (field === 'Modèle IA') await user.selectOptions(screen.getByLabelText(field), 'gemini-3.5-flash');
+    if (field === 'Modèle IA') await user.selectOptions(screen.getByLabelText(field), 'gemini-3.6-flash');
     else await user.type(screen.getByLabelText(field), 'x');
     expect(screen.getByRole('status')).toHaveTextContent('Connexion non testée.');
     expect(screen.queryByText(/Connexion vérifiée/)).not.toBeInTheDocument();
@@ -200,6 +254,7 @@ describe('réglages IA', () => {
     expect(screen.getByLabelText('Endpoint IA')).toHaveValue('https://generativelanguage.googleapis.com/v1beta/openai');
     expect(screen.getByLabelText('Clé IA')).toHaveValue('cle-test');
     expect(screen.getByLabelText('Mon contexte de travail')).toHaveValue('Maintenance');
+    expect(screen.getByLabelText('Mon contexte de travail')).toHaveAttribute('maxlength', '2000');
     expect(screen.getByRole('status')).toHaveTextContent('Connexion non testée.');
     expect(screen.queryByLabelText('Modèle personnalisé')).not.toBeInTheDocument();
     expect(localStorage.getItem('worklogs-ai-model')).toBe('gemini-3-flash-preview');

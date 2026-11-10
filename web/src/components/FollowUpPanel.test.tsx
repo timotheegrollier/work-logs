@@ -31,6 +31,7 @@ const control = (background: boolean) => ({
   toggle: vi.fn(),
   refresh: vi.fn(),
   stop: vi.fn(),
+  hold: () => () => {},
 });
 
 test('une actualisation automatique reste discrète et laisse le bilan affiché', () => {
@@ -55,4 +56,14 @@ test('une actualisation demandée garde l’attente visible sous le bilan', () =
   expect(screen.getByText('Le joint est livré.')).toBeInTheDocument();
   expect(screen.getByText('L’IA prépare le bilan…')).toBeInTheDocument();
   expect(screen.queryByText('Actualisation en cours…')).not.toBeInTheDocument();
+});
+
+test('une demande en file annonce son attente plutôt qu’un travail en cours', () => {
+  render(
+    <FollowUpContext.Provider value={{ ...control(false), runtime: { 'entry:en_1': { busy: true, queued: true, error: '', background: false } } }}>
+      <FollowUpPanel kind="entry" item={item} />
+    </FollowUpContext.Provider>,
+  );
+  expect(screen.getByText('En attente…')).toBeInTheDocument();
+  expect(screen.queryByText('L’IA prépare le bilan…')).not.toBeInTheDocument();
 });

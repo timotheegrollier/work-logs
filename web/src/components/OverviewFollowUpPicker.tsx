@@ -55,7 +55,7 @@ export function OverviewFollowUpPicker({ tasks, entries, projects, onChanged }: 
       setError((cause as Error).message || 'Impossible d’activer le suivi.');
     } finally {
       if (count) {
-        setFeedback(`${count} suivi${count > 1 ? 's' : ''} activé${count > 1 ? 's' : ''}. Les bilans se préparent automatiquement.`);
+        setFeedback(`${count} suivi${count > 1 ? 's' : ''} activé${count > 1 ? 's' : ''}.`);
       }
       try { await onChanged(); } catch (cause) { setError((cause as Error).message); }
       submitting.current = false; setBusy(false);

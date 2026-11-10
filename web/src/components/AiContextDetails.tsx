@@ -6,11 +6,13 @@ interface Props {
   context: AiWorkContext;
   excludedIds: string[];
   showTaskPlanning?: boolean;
+  /** Mise en page : les documents n'apportent que leur vocabulaire. */
+  vocabularyOnly?: boolean;
   onExcludedChange: (ids: string[]) => void;
 }
 
 /** Les documents complémentaires restent consultables et révocables avant l'envoi. */
-export function AiContextDetails({ context, excludedIds, onExcludedChange, showTaskPlanning = false }: Props) {
+export function AiContextDetails({ context, excludedIds, onExcludedChange, showTaskPlanning = false, vocabularyOnly = false }: Props) {
   const vocabulary = selectedAiContext(context, excludedIds).vocabulary;
   const toggle = (id: string) => onExcludedChange(excludedIds.includes(id)
     ? excludedIds.filter((excluded) => excluded !== id)
@@ -23,6 +25,7 @@ export function AiContextDetails({ context, excludedIds, onExcludedChange, showT
       {!!context.sources?.length ? (
         <fieldset className="ai-context-sources">
           <legend>Documents pour les prochaines demandes</legend>
+          {vocabularyOnly && <p>Pour la mise en page, seul le vocabulaire de ces documents est envoyé, pas leur texte.</p>}
           <p>Les changements de sélection s’appliquent aux prochaines demandes, y compris aux affinements.</p>
           {context.sources.map((source) => (
             <div key={source.id}>
@@ -38,7 +41,7 @@ export function AiContextDetails({ context, excludedIds, onExcludedChange, showT
           ))}
         </fieldset>
       ) : <p>Aucun document complémentaire pertinent.</p>}
-      {!!context.relatedTasks?.length && <p>Tâches en cours : {context.relatedTasks.join(' · ')}</p>}
+      {!vocabularyOnly && !!context.relatedTasks?.length && <p>Tâches en cours : {context.relatedTasks.join(' · ')}</p>}
       {!!(showTaskPlanning && context.relatedTaskPlanning?.length) && <div>
         <p>Tâches voisines en cours : priorités et échéances enregistrées</p>
         <ul>{context.relatedTaskPlanning.map((task, index) => <li key={index}>{task.title} — priorité {priorityLabel(task.priority).toLowerCase()} ; échéance {task.due_date || 'non fixée'}</li>)}</ul>

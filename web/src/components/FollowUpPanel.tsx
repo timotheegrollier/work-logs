@@ -19,7 +19,7 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false, acti
   /** Vue d'ensemble : les gestes sur l'élément, à côté de la suite proposée, qui reste dépliée pour décider. */
   actions?: ReactNode;
 }) {
-  const { followUp, stale, busy, error, background, toggle, disable, refresh, stop } = useFollowUp(kind, item);
+  const { followUp, stale, busy, queued, error, background, toggle, disable, refresh, stop } = useFollowUp(kind, item);
   const report = followUp?.report;
   const initial = !followUp || !isFollowed(item);
   const activate = useRef<HTMLButtonElement>(null);
@@ -63,7 +63,7 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false, acti
         {report && <span className={'follow-up-status is-' + report.status}>État proposé : {STATUS_LABELS[report.status]}</span>}
         {report && <span className="follow-up-date">Bilan du <time dateTime={report.generated_at}>{new Date(report.generated_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</time></span>}
         {busy && background
-          ? <span className="follow-up-refreshing" role="status"><span className="ai-spark" aria-hidden="true">✨</span>Actualisation en cours…</span>
+          ? <span className="follow-up-refreshing" role="status"><span className="ai-spark" aria-hidden="true">✨</span>{queued ? 'En attente…' : 'Actualisation en cours…'}</span>
           : (stale || dirty) && report && <span className="follow-up-stale" role="status">À actualiser{dirty ? ' après enregistrement' : ''}</span>}
       </div>
       {report ? <p className="follow-up-summary">{report.summary}</p> : !busy && <p className="follow-up-empty">Aucun bilan pour le moment.</p>}
@@ -76,7 +76,7 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false, acti
       </div>
       {compact ? <details className="follow-up-details"><summary>Détails du suivi</summary>{details}</details> : details}
     </>}
-    {busy && !background && <AiPending label="L’IA prépare le bilan…" />}
+    {busy && !background && <AiPending label={queued ? 'En attente…' : 'L’IA prépare le bilan…'} />}
     {error && <p className="error" role="alert">{error}</p>}
   </section>;
 }

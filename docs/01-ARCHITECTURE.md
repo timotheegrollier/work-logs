@@ -105,7 +105,7 @@ SQLite. Supprimer une entrée locale ne supprime jamais le fichier Google.
 blocages, limites de lecture, `generated_at` et `source_key`. La migration est additive ;
 les anciennes sauvegardes restent acceptées. Le miroir IndexedDB utilise les mêmes magasins.
 Les résumés et tâches suivis exposent `follow_up_key`, recalculé sur les sources enregistrées :
-le rapport et `updated_at` sont exclus. `follow-up.js` partage construction, validation et
+le rapport, `updated_at` et, pour une tâche, le statut et l’échéance sont exclus (§77). `follow-up.js` partage construction, validation et
 empreinte entre serveur et PWA ; `follow-up-controller.tsx` sérialise les demandes IA à l’écran.
 Le suivi ne change pas le `updated_at` du texte ou de la tâche. La synchronisation fusionne
 séparément l’activation par `enabled_at` et le rapport par `generated_at` : un bilan récent
@@ -274,6 +274,9 @@ une tâche, une entrée ou une association inconnue renvoie `404` avec un messag
 | `markdown.ts` | `marked` (GFM, `breaks`) puis `DOMPurify` — le rendu part en `dangerouslySetInnerHTML` ; clôtures du bouton « Bloc de code » |
 | `rich-code.ts` | « Bloc de code » de l'éditeur riche : plusieurs lignes sélectionnées → un seul bloc |
 | `ai-suggest.ts` | client IA compatible OpenAI (Gemini par défaut, chaîne de secours) : sous-tâches, mise en page, procédures — dont `draftProcedure`, une procédure tirée d'une entrée ou d'une tâche |
+| `ai-budget.ts` | plafond quotidien de l’IA, par appareil (`localStorage`) : requêtes, jetons, jour de Los Angeles, un tiers au plus pour le suivi automatique |
+| `ai-chat.ts` | assistant : lecture locale, prompt borné, réponse JSON validée en propositions, application au clic ; aucune route nouvelle |
+| `components/AiChat.tsx` | dialogue de l’assistant : journal, propositions à appliquer, consommation du jour |
 | `components/ProcedureDraft.tsx` | relecture d'une procédure rédigée par l'IA (titre modifiable, aperçu), puis création par `POST /api/entries` |
 | `components/EntryList.tsx` | journal groupé par jour, extrait sur une ligne |
 | `components/ProcedureList.tsx` | procédures du projet (entrées `kind='procedure'`) + pièces jointes rassemblées |

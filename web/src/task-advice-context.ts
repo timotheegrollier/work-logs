@@ -1,5 +1,5 @@
 import { api, type Project, type Task } from './lib';
-import { AiCancelled, AiError, MAX_ADVICE_SOURCE_CHARS, MAX_ADVICE_SOURCES, MAX_ADVICE_TASKS, truncate, type AdviceSource, type AdviceTask } from './ai-suggest';
+import { AiCancelled, AiError, MAX_ADVICE_SOURCE_CHARS, MAX_ADVICE_SOURCES, MAX_ADVICE_TASKS, followUpExcerpt, type AdviceSource, type AdviceTask } from './ai-suggest';
 import { readProjectAiBrief } from './ai-context';
 import { richToMarkdown } from './rich-markdown';
 
@@ -40,7 +40,8 @@ export async function prepareTaskAdvice(
           throw new Error('source modifiée depuis le chargement');
         }
         const text = entry.content_json ? richToMarkdown(entry.content_json) : entry.content_md;
-        if (text.trim()) loaded.set(entry.id, { id: entry.id, title: entry.title, kind: entry.kind, text: truncate(text, MAX_ADVICE_SOURCE_CHARS) });
+        // Date des notes seulement : celle d'une procédure reste son jour de création.
+        if (text.trim()) loaded.set(entry.id, { id: entry.id, title: entry.title, kind: entry.kind, text: followUpExcerpt(text.trim(), MAX_ADVICE_SOURCE_CHARS), date: entry.kind === 'note' ? entry.entry_date : undefined });
       } catch (error) {
         if (error instanceof AiCancelled) throw error;
         throw new AiError(`Impossible de lire « ${summary.title} » pour les conseils IA. Réessaie après actualisation.`);
@@ -54,6 +55,7 @@ export async function prepareTaskAdvice(
       id: task.id, title: task.title, status: task.status, priority: task.priority, due_date: task.due_date,
       pinned: task.pinned, created_at: task.created_at, project: projects.find((project) => project.id === task.project_id)?.name,
       projectId: task.project_id ?? undefined, projectBrief: readProjectAiBrief(task.project_id), documents: task.documents?.length ?? 0,
+      follow_up: task.follow_up, follow_up_key: task.follow_up_key,
       sources: (taskSourceIds.get(task.id) ?? []).flatMap((id) => loaded.get(id) ? [loaded.get(id)!] : []),
     })),
     sources,

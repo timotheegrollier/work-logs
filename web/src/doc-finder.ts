@@ -1,3 +1,4 @@
+import { AiCancelled } from './ai-suggest';
 import { api, type EntrySummary, type SharedSearchResult } from './lib';
 
 /** Une note ou une procédure de WorkLogs, ou un fichier du partage, avec les mots qui l'ont trouvé. */
@@ -17,6 +18,8 @@ export const MAX_FOUND = 8;
 const KIND_ORDER = { procedure: 0, note: 1, shared: 2 };
 const UNAVAILABLE = 'Dossier partagé indisponible : recherche dans WorkLogs seulement.';
 const PARTIAL = 'Partage : recherche partielle.';
+/** Chaque mot relit tout le partage (8 s au plus) : au-delà, WorkLogs continue seul. */
+const SHARED_BUDGET_MS = 10_000;
 
 const fold = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 
@@ -59,13 +62,20 @@ export function rankFoundDocuments(terms: string[], hits: TermHits[], excludedId
  * comprises) et, s'il répond, le partage (noms de fichiers). Un partage qui
  * tombe en route garde ce qu'il a trouvé et le dit ; WorkLogs ne l'attend pas.
  */
-export async function findDocuments(terms: string[], excludedIds: ReadonlySet<string>): Promise<{ documents: FoundDocument[]; sharedNote: string }> {
+export async function findDocuments(terms: string[], excludedIds: ReadonlySet<string>, signal?: AbortSignal): Promise<{ documents: FoundDocument[]; sharedNote: string }> {
   const status = await api.sharedStatus().catch(() => null);
   // Relais injoignable (PWA) : chaque recherche attendrait son délai pour rien.
   let usable = Boolean(status?.available && status.root && !status.relayError);
   let sharedNote = usable ? '' : UNAVAILABLE;
   const hits: TermHits[] = [];
+  const started = Date.now();
   for (const term of terms) {
+    // shortcut: « Arrêter » attend la fin du mot en cours, à revoir si cette attente se voit sur le vrai partage.
+    if (signal?.aborted) throw new AiCancelled();
+    if (usable && Date.now() - started > SHARED_BUDGET_MS) {
+      usable = false;
+      sharedNote ||= PARTIAL;
+    }
     const [state, search] = await Promise.all([api.state(term, ''), usable ? api.searchShared(term).catch(() => null) : null]);
     if (usable && !search) {
       usable = false;

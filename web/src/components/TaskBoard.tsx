@@ -120,6 +120,8 @@ export const TaskBoard = memo(function TaskBoard({
   // Un autre filtre ou des tâches modifiées : la proposition ne les concerne plus.
   useEffect(() => {
     aiRequest.current?.abort();
+    // Le dire, comme les conseils ; un changement de filtre efface ce message juste après.
+    if (prioritizing || proposal) setPrioritizeError((current) => current || 'Les tâches ont changé. Relance la priorisation.');
     setProposal(null);
   }, [projectId, categoryId, search, view, taskSnapshot]);
   useEffect(() => { setPrioritizeError(''); }, [projectId, categoryId, search, view]);
@@ -555,8 +557,11 @@ function TaskCard({
     try {
       const settings = aiSettings();
       if (!settings.key) throw new Error('Colle ta clé IA dans ⚙ Paramètres pour activer les suggestions.');
-      const context = selectedAiContext(await contextForTask(version, entryTitle.trim() || task.title, entrySubtasks), excludedSourceIds);
-      const raw = await suggestSubtasks(settings, entryTitle.trim() || task.title, {
+      const edited = entryTitle.trim();
+      // Le prompt ne nomme la tâche nulle part ailleurs : un titre d'entrée la complète sans la remplacer.
+      const subject = edited && edited !== task.title ? `${task.title} — ${edited}` : task.title;
+      const context = selectedAiContext(await contextForTask(version, subject, entrySubtasks), excludedSourceIds);
+      const raw = await suggestSubtasks(settings, subject, {
         context: { ...context, linkedDocuments: linkedDocuments
           .filter((document) => !excludedSourceIds.includes(document.id))
           .map((document) => document.title) },
@@ -669,7 +674,7 @@ function TaskCard({
         vocabulary: suggestContext.vocabulary,
         linkedDocuments: linkedDocuments.map((document) => document.title),
       });
-      const result = await findDocuments(terms, linkedIds);
+      const result = await findDocuments(terms, linkedIds, settings.signal);
       // Arrêtée pendant les recherches : la liste n'est plus attendue.
       if (!settings.signal.aborted) setFound({ terms, ...result });
     } catch (e) {

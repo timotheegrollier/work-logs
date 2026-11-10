@@ -97,10 +97,10 @@ async function pass(): Promise<void> {
     const { merged, changedLocal, changedRemote } = mergeSnapshots(local, remote) as {
       merged: SyncSnapshot; changedLocal: boolean; changedRemote: boolean;
     };
-    let revision = status.revision;
     if (changedLocal) {
       const { changed, skipped } = await applySyncSnapshot(merged, local);
-      if (changed) revision++;
+      // Dès l'écriture : une frappe pendant l'envoi ou un envoi en échec ferait passer le tirage pour une saisie (§77).
+      if (changed) publish({ revision: status.revision + 1 });
       // Une saisie pendant la synchro : on repasse aussitôt pour l'envoyer.
       if (skipped) again = true;
     }
@@ -111,7 +111,7 @@ async function pass(): Promise<void> {
     seen = { id: written?.id || '', modifiedTime: written?.modifiedTime || '', snapshot: merged };
     // Tout est sur Drive : l'ancienne « boîte mobile » n'a plus rien à envoyer.
     clearLocalOutbox();
-    publish({ state: 'idle', error: '', lastSyncedAt: new Date().toISOString(), revision });
+    publish({ state: 'idle', error: '', lastSyncedAt: new Date().toISOString() });
     if (changedLocal) {
       // Les photos arrivent après les fiches, sans bloquer la synchro.
       void fetchMissingDriveAttachments().then(({ fetched }) => { if (fetched) publish({ revision: status.revision + 1 }); }).catch(() => {});

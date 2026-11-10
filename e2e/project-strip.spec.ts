@@ -46,7 +46,8 @@ test.describe('mobile', () => {
     await expect(page.getByRole('group', { name: 'Filtrer par projet' })).toHaveCount(0);
     const stripBox = await box(page, '.project-strip');
     expect(stripBox.height).toBeLessThanOrEqual(64);
-    expect((await switcher.boundingBox())!.width).toBeGreaterThan(stripBox.width * 0.7);
+    // Le bandeau porte aussi « Vue » et « Assistant » : le sélecteur en garde plus de la moitié.
+    expect((await switcher.boundingBox())!.width).toBeGreaterThan(stripBox.width * 0.5);
     expect(await noHorizontalScroll(page)).toBe(true);
 
     // La liste monte du bas, ne déplace rien derrière elle et montre tous les projets.

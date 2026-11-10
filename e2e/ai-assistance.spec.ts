@@ -177,7 +177,9 @@ test('IA dans le partage : affine avec le contexte du projet puis applique en br
     await editor.getByRole('menuitem', { name: 'Mettre en page', exact: true }).click();
     const proposal = editor.getByRole('region', { name: 'Mise en page proposée', exact: true });
     await expect(proposal.getByText('Fermer la vanne avant intervention.', { exact: true })).toBeVisible();
-    expect(prompts[0]).toContain('La vanne rouge isole le circuit.');
+    // La mise en page ne reçoit d'une source que son vocabulaire : « repères » vient de son titre.
+    expect(prompts[0]).toContain('Vocabulaire du métier : filtration, repères');
+    expect(prompts[0]).not.toContain('La vanne rouge isole le circuit.');
     await proposal.getByRole('button', { name: 'Plus court', exact: true }).click();
     await expect(proposal.getByText('Fermer la vanne.', { exact: true })).toBeVisible();
     expect(prompts[1]).toContain('fermer la vane avant intervention.');

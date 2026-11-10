@@ -336,7 +336,8 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
-        void sendRef.current();
+        // Derrière un dialogue (l'assistant, où l'on tape en continu), ce réflexe publierait un brouillon qu'on ne voit pas.
+        if (!document.querySelector('dialog[open]')) void sendRef.current();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -504,6 +505,7 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
   const [aiBusy, setAiBusy] = useState<FileAiMode | null>(null);
   const [aiProposal, setAiProposal] = useState<{ mode: FileAiMode; snapshot: string; version: number; answer: string; proposal: FileAiProposal } | null>(null);
   const [aiContext, setAiContext] = useState<AiWorkContext | null>(null);
+  const [aiVocabularyOnly, setAiVocabularyOnly] = useState(false);
   const [excludedSourceIds, setExcludedSourceIds] = useState<string[]>([]);
   const contextVersion = useRef(0);
   // « Arrêter », ou fermer le fichier, coupe la demande en vol.
@@ -545,6 +547,7 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
       const loadedContext = projectId ? await loadAiContext({ projectId, title, text: request.text }) : {};
       if (contextVersion.current !== selection) return;
       setAiContext(loadedContext);
+      setAiVocabularyOnly(mode === 'layout');
       const context = selectedAiContext(loadedContext, excludedSourceIds);
       const refinement = instruction && aiProposal ? { instruction, previous: aiProposal.answer } : undefined;
       let answer: string;
@@ -720,7 +723,7 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
           </AiMenu>
         </div>
       )}
-      {aiContext && projectId && <AiContextDetails context={aiContext} excludedIds={excludedSourceIds} onExcludedChange={excludeSources} />}
+      {aiContext && projectId && <AiContextDetails context={aiContext} excludedIds={excludedSourceIds} vocabularyOnly={aiVocabularyOnly} onExcludedChange={excludeSources} />}
       {aiBusy && !aiProposal && <AiPending label={aiBusy === 'layout' ? 'L’IA met le fichier en page…' : 'L’IA rédige la procédure…'} />}
       {aiProposal && (
         <div className="proofread-preview no-print" role="region" aria-busy={aiBusy !== null} aria-label={aiProposal.mode === 'layout' ? 'Mise en page proposée' : 'Procédure proposée'}>

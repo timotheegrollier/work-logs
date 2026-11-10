@@ -18,18 +18,20 @@ marked.use({
  */
 export function renderMarkdown(source: string, options: { interactiveCheckboxes?: boolean } = {}): string {
   const html = marked.parse(source || '', { async: false });
-  const sanitized = DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
-  if (!options.interactiveCheckboxes) return sanitized;
-  return sanitized.replace(
-    /<input([^>]*?)type=(["']?)checkbox\2([^>]*?)>/gi,
-    (_tag, before: string, _quote: string, after: string) => {
-      const cleaned = `${before} ${after}`
-        .replace(/\s*disabled(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      return `<input type="checkbox"${cleaned ? ` ${cleaned}` : ''}>`;
-    },
-  );
+  if (!options.interactiveCheckboxes) return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
+  // Sur le DOM assaini : une regex sur le HTML peut couper un attribut et en fabriquer d'autres.
+  const body = DOMPurify.sanitize(html, { ADD_ATTR: ['target'], RETURN_DOM: true }) as HTMLElement;
+  body.querySelectorAll('input[type="checkbox"]').forEach((box) => box.removeAttribute('disabled'));
+  return body.innerHTML;
+}
+
+/** Sur les jetons : `<VirtualHost>` dans un bloc de code n'est pas du HTML. */
+export function hasHtmlOrImage(source: string): boolean {
+  let found = false;
+  marked.walkTokens(marked.lexer(source), (token) => {
+    found ||= token.type === 'html' || token.type === 'image';
+  });
+  return found;
 }
 
 /**

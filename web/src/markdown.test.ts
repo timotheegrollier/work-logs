@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { insertCodeFence, renderMarkdown, toggleChecklistItem } from './markdown';
+import { hasHtmlOrImage, insertCodeFence, renderMarkdown, toggleChecklistItem } from './markdown';
 
 describe('rendu Markdown', () => {
   test('produit les titres et le gras', () => {
@@ -71,6 +71,48 @@ describe('rendu Markdown', () => {
     const html = renderMarkdown('- [x] fait', { interactiveCheckboxes: true });
     expect(html).toContain('checked');
     expect(html).not.toMatch(/disabled/i);
+  });
+
+  test('retirer `disabled` ne fabrique aucun attribut à partir d’un titre piégé', () => {
+    const html = renderMarkdown('<input type=checkbox title="a disabled=b"><a title="style=animation-name:pulse;animation-duration:1ms onanimationstart=alert(1) x">y</a>', { interactiveCheckboxes: true });
+    const input = new DOMParser().parseFromString(html, 'text/html').querySelector('input')!;
+    expect(input.getAttributeNames().sort()).toEqual(['title', 'type']);
+    expect(input.title).toBe('a disabled=b');
+  });
+
+  test('seules les cases à cocher perdent `disabled`', () => {
+    expect(renderMarkdown('<input type="text" disabled>', { interactiveCheckboxes: true })).toContain('disabled');
+  });
+
+  test('une note vide en mode Lire reste vide', () => {
+    expect(renderMarkdown('', { interactiveCheckboxes: true })).toBe('');
+  });
+});
+
+describe('hasHtmlOrImage', () => {
+  test.each([
+    ['image', '![x](https://exemple.net/a.png)'],
+    ['image par référence', '![x][1]\n\n[1]: https://exemple.net/a.png'],
+    ['balise en ligne', 'Voir <input type="image" src="https://exemple.net/a">'],
+    ['bloc HTML', '<div style="background-image:url(https://exemple.net/a)">x</div>'],
+    ['dans un tableau', '| a |\n| --- |\n| <span style="color:red">x</span> |'],
+    ['dans une liste', '- ![x](https://exemple.net/a.png)'],
+    ['dans une citation', '> <style>a{}</style>'],
+    ['dans un titre', '# <svg></svg>'],
+    ['dans du gras', '**<span>x</span>**'],
+    ['dans un lien', '[![x](https://exemple.net/a.png)](https://exemple.net)'],
+  ])('détecte : %s', (_name, source) => {
+    expect(hasHtmlOrImage(source)).toBe(true);
+  });
+
+  test.each([
+    ['bloc de code', '```apache\n<VirtualHost *:80>\n![x](y)\n```'],
+    ['code en ligne', 'Remplacer `<nom-du-serveur>` puis `![x](y)`.'],
+    ['autolien', '<https://exemple.fr>'],
+    ['inégalité', 'Vérifier que a<b.'],
+    ['Markdown ordinaire', '## Bilan\n**Tout** va [bien](https://exemple.fr).\n\n- [x] fait'],
+  ])('laisse passer : %s', (_name, source) => {
+    expect(hasHtmlOrImage(source)).toBe(false);
   });
 });
 

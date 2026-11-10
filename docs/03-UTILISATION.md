@@ -243,10 +243,14 @@ rendu approximatif.
   récente au centre, même pour une tâche terminée. Sans entrée liée, la carte de la tâche
   s’ouvre. Les brouillons de cartes restent disponibles.
 - **Bilan du jour**, en tête de la vue d’ensemble : un clic synthétise les bilans de suivi
-  enregistrés en avancées attestées, blocages et prochaines actions. Les suivis sans bilan,
-  anciens ou à actualiser sont signalés dans les limites. Une date de génération ne prouve
-  pas qu’un travail a été fait aujourd’hui. La synthèse reste affichée jusqu’à sa fermeture
-  ou à une modification des suivis ; elle se régénère à la demande.
+  enregistrés en avancées attestées, blocages et prochaines actions, avec les titres des tâches
+  terminées et des notes du jour. Les suivis sans bilan, anciens ou à actualiser sont signalés
+  dans les limites. Une date de génération ne prouve pas qu’un travail a été fait aujourd’hui :
+  faute de date de clôture, une tâche terminée et modifiée aujourd’hui y figure seulement comme
+  « terminée ou retouchée aujourd’hui », et une note du jour prouve seulement qu’elle a été
+  écrite. La synthèse reste affichée jusqu’à sa fermeture ou à une modification
+  des suivis ; elle se régénère à la demande. Tant que des bilans de suivi se préparent,
+  **Bilan du jour** et **Replanifier** attendent leur fin.
 - **Replanifier avec l’IA** propose une date et une priorité pour toutes les tâches ouvertes
   chargées, d’après leurs champs, les repères des projets et leurs bilans de suivi. Ce sont
   des estimations à relire : modifier les dates et priorités, décocher les tâches à garder
@@ -258,8 +262,9 @@ rendu approximatif.
 - **✨ Ordre et conseils IA**, dans la vue d’ensemble : choisir tous les projets ou un projet,
   puis **Préparer les conseils**. WorkLogs lit localement les documents liés et montre leurs
   extraits ; décocher ceux à exclure, puis **Demander les conseils à l’IA**. Le service reçoit
-  les champs des tâches sélectionnées, le profil et les repères des projets et les extraits
-  cochés, jusqu’à trois documents par tâche, 40 documents et 600 caractères par extrait.
+  les champs des tâches sélectionnées, les blocages notés dans leurs bilans de suivi, le profil
+  et les repères des projets et les extraits cochés, début et fin du texte, jusqu’à trois
+  documents par tâche, 40 documents et 600 caractères par extrait.
   Les pièces jointes et documents Google ne sont pas lus ; les omissions sont annoncées.
   La réponse donne un résumé « En bref » (quoi faire, dans quel ordre, les conseils clés)
   à côté de l’ordre détaillé. On peut cocher ou modifier les tâches en la suivant : elle
@@ -296,7 +301,7 @@ rendu approximatif.
 - **Relier un document** ouvre la liste des entrées disponibles. Choisir une entrée locale ou un onglet Google puis cliquer sur **Relier** ; chaque document lié reste visible sur la carte avec son origine.
 - Cliquer sur le titre d'un document lié l'ouvre au centre. Le bouton ✕ retire seulement l'association, sans supprimer le document. Une même entrée peut fournir le contexte de plusieurs tâches.
 - **✨ IA › Créer une procédure** (pied de carte) fait rédiger par l'IA une procédure à partir de la tâche et de ses documents liés, à relire avant de la créer — voir « Procédures ».
-- **✨ IA › Trouver la doc** (pied de carte) retrouve la note, la procédure ou le fichier du dossier partagé qui aide à faire la tâche. L'IA réglée dans ⚙ Paramètres reçoit le titre et le statut de la tâche, son projet (nom, contexte IA du projet, vocabulaire) et les **titres** de ses documents liés — jamais un contenu — et propose au plus six mots. WorkLogs les cherche dans les titres et le texte de **toutes** les notes et procédures (tous projets, archives comprises) et dans les **noms** des fichiers du dossier partagé (sur le téléphone, par le relais du bureau). « Documents trouvés » liste, dans la carte, au plus huit documents : leur type (Procédure, Note, Partage), leur projet s'il n'est pas celui de la tâche ou leur dossier, et les mots qui les ont trouvés ; les documents déjà liés n'y reviennent pas. Un nom de fichier du partage compte comme un mot trouvé dans un texte, pas dans un titre : à mots égaux, la note ou la procédure de WorkLogs passe devant le fichier. **Ouvrir** affiche le document au centre (le filtre passe à son projet) ; **Lier** l'associe à la tâche, comme « ＋ Documents ». Sans dossier partagé (non réglé, relais injoignable), la recherche se fait dans WorkLogs seulement et la liste le dit.
+- **✨ IA › Trouver la doc** (pied de carte) retrouve la note, la procédure ou le fichier du dossier partagé qui aide à faire la tâche. L'IA réglée dans ⚙ Paramètres reçoit le titre et le statut de la tâche, son projet (nom, contexte IA du projet, vocabulaire) et les **titres** de ses documents liés — jamais un contenu — et propose au plus six mots. WorkLogs les cherche dans les titres et le texte de **toutes** les notes et procédures (tous projets, archives comprises) et dans les **noms** des fichiers du dossier partagé (sur le téléphone, par le relais du bureau). « Documents trouvés » liste, dans la carte, au plus huit documents : leur type (Procédure, Note, Partage), leur projet s'il n'est pas celui de la tâche ou leur dossier, et les mots qui les ont trouvés ; les documents déjà liés n'y reviennent pas. Un nom de fichier du partage compte comme un mot trouvé dans un texte, pas dans un titre : à mots égaux, la note ou la procédure de WorkLogs passe devant le fichier. **Ouvrir** affiche le document au centre (le filtre passe à son projet) ; **Lier** l'associe à la tâche, comme « ＋ Documents ». Sans dossier partagé (non réglé, relais injoignable), la recherche se fait dans WorkLogs seulement et la liste le dit ; si le partage tarde, sa lecture s’arrête après dix secondes et la liste annonce une recherche partielle.
 
 ## Suivre les avancées avec l’IA
 
@@ -307,15 +312,27 @@ présente un bilan, un **état proposé**, les avancées, prochaines actions et 
 **✨ Suivi IA** sur une carte de tâche analyse ses champs et ses documents explicitement liés. Le
 suivi d’une tâche est aussi visible dans ses entrées liées.
 
-L’activation produit le premier bilan puis coche **Actualiser automatiquement après
+L’activation produit le premier bilan tout de suite puis coche **Actualiser automatiquement après
 enregistrement** : après une modification sauvegardée et une pause de huit secondes,
-WorkLogs actualise le suivi pendant que l’application est ouverte et les éléments chargés.
-Décocher conserve le dernier bilan et permet de continuer avec **Actualiser**. **Arrêter**
-coupe la demande en cours ; une prochaine modification pourra relancer le suivi automatique.
+WorkLogs actualise le suivi pendant que l’application est ouverte, visible et les éléments chargés.
+Le bilan en place reste affiché avec la mention **Actualisation en cours…**, ou **En attente…**
+s’il est en file derrière un autre.
 Un bilan déjà périmé au chargement ou après une synchro n’est pas recalculé tout seul : il
 reste marqué **À actualiser** jusqu’à un clic. Deux actualisations automatiques d’un même
 élément sont espacées d’au moins une minute ; une version inchangée n’est pas réanalysée.
-Une erreur conserve le bilan précédent ; **À actualiser** signale que les sources ont changé.
+Changer le statut ou l’échéance d’une tâche ne relance pas de bilan : ils sont pris en compte
+au suivant.
+Décocher conserve le dernier bilan et permet de continuer avec **Actualiser**, qui passe devant
+les actualisations automatiques en attente. **Arrêter**
+coupe la demande en cours ; une prochaine modification pourra relancer le suivi automatique.
+Une erreur conserve le bilan précédent. Un échec automatique isolé laisse passer les éléments
+suivants ; au deuxième échec de suite, les actualisations automatiques en attente sont écartées
+jusqu’à la prochaine modification de chaque élément. **À actualiser** signale que les sources ont
+changé. Le suivi automatique prend au plus un tiers du plafond quotidien (voir « Plafond quotidien
+et gratuité ») : au-delà, il se suspend, **Actualiser** reste disponible, et il reprend seul le
+lendemain ou dès que le plafond est relevé. Tant qu’une proposition de **Bilan du jour**, de
+**Replanifier** ou des conseils est en préparation ou à l’écran, l’actualisation automatique d’un
+bilan existant attend : elle l’effacerait.
 
 **Désactiver**, à droite d’Actualiser, coupe le suivi d’une entrée (ou d’une tâche) qui n’en
 a pas besoin : l’automatisme et le bilan partent, le texte ne change pas, et pour une entrée
@@ -348,15 +365,17 @@ Dans **⚙ Paramètres → Assistance IA**, renseigner le profil métier génér
 facultativement, le **Contexte IA du projet** : objectif, environnement, contraintes et
 termes utiles. Chaque fiche est conservée **sur cet appareil uniquement**.
 
-La section commence par la **Clé IA** et **Tester la connexion** : un seul appel, dont le
-résultat s'efface dès que la clé, l'endpoint ou le modèle change. Endpoint, modèle et
-**Restaurer les réglages Gemini** sont repliés sous **Réglages avancés**. Le contexte IA
-s'ouvre sur la fiche du projet sélectionné dans le bandeau.
+La section commence par la **Clé IA** et **Tester la connexion** : un seul appel, au seul
+modèle affiché, sans modèle de secours, dont le résultat s'efface dès que la clé, l'endpoint
+ou le modèle change. Endpoint, modèle, plafond quotidien et **Restaurer les réglages Gemini**
+sont repliés sous **Réglages avancés**. Le contexte IA s'ouvre sur la fiche du projet
+sélectionné dans le bandeau.
 
 Un clic d'assistance lit aussi des documents locaux du même projet : documents liés
-d'abord, puis notes et procédures dont le titre ou l'extrait correspond au sujet et au
-texte en cours. Les tâches voisines pertinentes sont privilégiées. Cette recherche est
-locale ; au plus trois extraits de 2 000 caractères accompagnent la demande. Le contenu des
+d'abord, puis notes et procédures dont le titre, l'extrait ou le texte entier correspond au
+sujet et au texte en cours. Les tâches voisines pertinentes sont privilégiées. Cette recherche
+est locale ; au plus trois extraits de 2 000 caractères accompagnent la demande, sauf pour
+**Mise en page**, qui n’en reçoit que le vocabulaire. Le contenu des
 documents Google et des pièces jointes n'est pas transmis. Pour tirer une procédure
 d'une tâche, ses cinq documents liés restent les sources principales, même d'un autre projet.
 Dans le partage, le contexte local accompagne le fichier seulement si un projet est
@@ -378,7 +397,9 @@ tâches est rangée dans ce même menu **✨ IA**.
 **Contexte utilisé par l'IA** apparaît après la première demande : déplier pour lire
 les extraits et décocher une source pour les demandes suivantes. Une modification de
 sélection retire les propositions en attente issues de l'ancienne sélection. Une source
-décochée ne contribue plus non plus au vocabulaire calculé depuis son titre.
+décochée ne contribue plus non plus au vocabulaire calculé depuis son titre. Après **Mise en
+page**, le panneau signale que seul le vocabulaire des documents part, et ne liste plus les
+tâches voisines.
 
 **✨ IA › Compléter** rédige le document ouvert à partir de son titre et de ce qui est déjà
 écrit : quelques points clés suffisent, l'IA en fait la note complète (phrases courtes ;
@@ -425,6 +446,70 @@ une note non vide et ne lit pas les documents Google ni le contenu des pièces j
 À la création, parmi les tâches sélectionnées qui restent à créer, la plus prioritaire passe
 en **En cours** ; en cas d'égalité, l'échéance la plus proche départage. Les autres sont
 créées en **À faire**.
+
+### L’assistant
+
+**Assistant**, dans l’en-tête (sur téléphone, dans le bandeau du projet), ouvre une conversation
+sur les tâches et les notes : un panneau à droite sur ordinateur, une feuille plein écran sur
+téléphone. **Entrée** envoie, **Maj+Entrée** va à la ligne, **Arrêter** coupe la demande.
+**Échap** ou **Fermer** referme le panneau et coupe une demande en cours ; la conversation reste
+là tant que l’application est ouverte, mais n’est enregistrée nulle part.
+**Nouvelle conversation** repart de zéro.
+
+Il répond sur ce qui existe (« qu’est-ce qui est en retard sur ce projet ? », « retrouve la
+procédure de sauvegarde ») et place sous sa réponse les tâches et les documents trouvés. Un clic
+referme le panneau et les ouvre, en levant filtres et recherche si la tâche était masquée.
+
+Il prépare aussi des écritures, **jamais appliquées sans clic** : créer une tâche (titre,
+priorité, échéance, statut, projet), modifier une tâche (les mêmes champs et l’épingle), créer
+une note. Chaque proposition dit ce qui changera, avec **Appliquer** et **Ignorer** ;
+**Tout appliquer** apparaît à partir de deux. Une création va dans le projet affiché, sauf
+demande contraire, et y hérite de la catégorie filtrée. Terminer une tâche archive ses documents
+liés : la proposition l’annonce.
+Si la tâche a changé depuis la proposition, l’écriture est refusée : redemander à l’assistant.
+**Réessayer** après un échec ne crée pas de doublon.
+
+Il ne sait ni supprimer ni archiver, ni modifier le texte d’une note existante, ni lire un
+document Google ou une pièce jointe, ni agir hors de WorkLogs : il le dit. Une note proposée ne
+peut contenir ni image ni HTML, et l’assistant répond en texte simple.
+
+La recherche se fait d’abord sur l’appareil. Chaque message envoie ensuite au service IA la
+demande, les six derniers messages, le profil, le projet affiché et ses repères, le titre de la
+note ouverte, le nom des projets, les champs des tâches les plus proches de la demande (40
+ouvertes et 10 terminées au plus), et le type, le titre, la date et 200 caractères de six notes
+ou procédures au plus ; pour un document Google, son titre et sa date seulement. Aucune pièce
+jointe. Si le modèle demande à chercher davantage, le second appel ajoute au plus 10 tâches et
+6 documents.
+
+Un message coûte un appel au modèle, deux s’il demande à chercher davantage ; si la recherche
+n’apporte rien de nouveau, il n’y a pas de second appel. Une réponse vide ou bloquée par le filtre
+du fournisseur n’a droit qu’à un seul autre modèle, et les essais refusés (429, 5xx) n’entrent pas
+dans ce compte.
+
+Sans clé, au plafond quotidien ou si le service IA est en panne, l’assistant répond par une
+**recherche locale** : il en donne la raison, montre les tâches et les documents les plus proches
+et ne propose aucune écriture.
+
+### Plafond quotidien et gratuité
+
+Une clé AI Studio d’un projet **sans facturation** ne coûte rien : au pire, Google répond
+« quota atteint ». C’est elle qui fait la gratuité. WorkLogs n’emploie en secours que des modèles
+gratuits, et **⚙ Paramètres** prévient si le modèle choisi n’en fait pas partie ou si le service
+n’est pas Gemini. Avec un projet facturé, le plafond borne la dépense sans l’annuler. Gratuit ne
+veut pas dire confidentiel : sur ce niveau, Google indique se servir des contenus reçus pour
+améliorer ses produits (tarifs relus le 2026-11-09).
+
+La consommation du jour s’affiche dans les Paramètres et au pied de l’assistant : « Aujourd’hui :
+12 / 150 requêtes · ≈ 18 400 jetons ». Le plafond est de **150 requêtes par jour** et de
+1 500 000 jetons ; il se règle de 10 à 5 000 requêtes sous **Réglages avancés**, et celui des
+jetons suit (10 000 par requête). Une fois atteint, aucune demande ne part, pas même vers un
+modèle de secours, et le message dit à quelle heure il revient : les quotas de Google repartent à
+minuit heure du Pacifique, vers 9 h en France.
+
+Le compteur porte sur **cet appareil**, alors que Google compte par projet : un ordinateur et un
+téléphone qui utilisent la même clé ont chacun leur compteur pour un seul quota, et Google peut
+donc répondre « quota atteint » avant le plafond. Comme ses quotas sont comptés par modèle, un
+autre modèle prend alors le relais tant qu’il lui en reste.
 
 ## Projets
 

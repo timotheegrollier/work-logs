@@ -1,5 +1,29 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Lot IA du 2026-11-10 (non publié) — plafond quotidien, assistant, suivi plus sobre (§77)
+
+Les fonctions IA sont retravaillées, sans dépendance ni route nouvelle. Décisions, écartés et
+limites : **§77** de `05-DECISIONS.md`.
+
+- **Plafond** (`ai-budget.ts`) : 150 requêtes par jour et par appareil, réglable, un tiers au plus
+  pour le suivi automatique. La chaîne de modèles s’arrête au plafond, et une réponse comptée mais
+  inutilisable n’a droit qu’à un seul autre modèle.
+- **Assistant** (`ai-chat.ts`, `AiChat.tsx`) : il répond sur les tâches et les notes et propose des
+  écritures, appliquées au clic seulement ; sans clé, au plafond ou en panne, recherche locale.
+- **Suivi IA** : les déclencheurs de l’entrée ci-dessous ne changent pas (rien au chargement, huit
+  secondes de pause, une minute entre deux actualisations). En plus : une fenêtre masquée ne génère
+  pas, deux échecs de suite vident la file, un « Actualiser » passe devant, et une synthèse à
+  l’écran retient l’actualisation d’un bilan existant.
+- **Sécurité** : le rendu des cases à cocher ne peut plus fabriquer d’attributs, et une note
+  proposée par l’assistant ne peut contenir ni image ni HTML.
+
+**Non vérifié** (marche à suivre : `04-RECETTES.md` §14) : aucun vrai fournisseur n’a été appelé,
+tout est simulé ; `reasoning_effort` n’a jamais atteint un vrai modèle ; l’ordre des modèles est à
+remesurer **avant le 2026-12-01**.
+
+`./scripts/check.sh` vert sur `acb62c3` : **320 API, 1 300 front** (plus l’échec attendu), **49 desktop
+unitaires, 46 scripts, 8 Worker, 11 relais, 111 navigateur et 19 desktop e2e**.
+
 ## Correctifs du 2026-11-10 — nouveau document Google visible et relais GitHub Pages
 
 - **Documents Google** : la liste complète le résultat de `files.list` avec les documents
@@ -151,7 +175,7 @@ Travail repris sur la base **0.71.0**, sans bump ni publication.
   les vrais retours API. Pourquoi : §67.
 - **Compléter une entrée** : les autres tâches du projet et le vocabulaire tiré de leurs
   titres pouvaient introduire une personne étrangère à la note. La complétion écarte ces
-  éléments et les notes récentes ; les références et repères aident à comprendre les
+  éléments ; les références et repères aident à comprendre les
   termes et les contraintes de rédaction, tandis que seuls le titre et le texte de
   l’entrée fournissent les faits.
   Le contexte affiché et l’affinement suivent le même périmètre. Test de consigne et geste

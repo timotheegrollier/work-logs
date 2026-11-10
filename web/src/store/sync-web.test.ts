@@ -162,6 +162,29 @@ describe('synchro PWA', () => {
     expect(drive.trashed).toEqual(['drive-file-1']);
   });
 
+  test('un tirage écrit est annoncé avant l’envoi : un envoi lent ou en échec ne le retarde ni ne le perd', async () => {
+    const drive = fakeDrive();
+    drive.text = remoteBackup([entry('en_pc', 'Note du PC', '2026-09-20T08:00:00.000Z')]);
+    drive.modifiedTime = '2026-09-20T08:00:00.000Z';
+    connect();
+    const { sync } = await load();
+    const transport = globalThis.fetch;
+    let answer!: (response: Response) => void;
+    const sending = new Promise<void>((started) => {
+      vi.stubGlobal('fetch', (url: RequestInfo | URL, init?: RequestInit) => {
+        if (!String(url).includes('/upload/')) return transport(url, init);
+        started();
+        return new Promise<Response>((resolve) => { answer = resolve; });
+      });
+    });
+    const pass = sync.syncWebNow();
+    await sending;
+    expect(sync.webSyncStatus()).toMatchObject({ state: 'syncing', revision: 1 });
+    answer(Response.json({ error: { message: 'panne' } }, { status: 503 }));
+    await pass;
+    expect(sync.webSyncStatus()).toMatchObject({ state: 'error', revision: 1 });
+  });
+
   test('une saisie pendant la synchro n’est jamais écrasée par la version fusionnée', async () => {
     const { local } = await load();
     const created = await local.localApi.createEntry({ title: 'Brouillon' });

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { make, startApi } from './helpers.js';
 import { openDb } from '../src/db.js';
 import { buildBackup, restoreBackup } from '../src/backup.js';
-import { mergeFollowUp, readFollowUp } from '../src/follow-up.js';
+import { followUpKey, mergeFollowUp, readFollowUp } from '../src/follow-up.js';
 
 const REPORT = {
   status: 'blocked', summary: 'Le devis est prêt ; la signature reste attendue.',
@@ -111,14 +111,20 @@ describe('suivi IA enregistré', () => {
     assert.notEqual((await snapshot('task', task.id)).source_key, changed.source_key);
   });
 
-  test('lier et délier un document ou changer le statut invalide le suivi de la tâche', async () => {
+  test('lier, délier un document ou renommer la tâche invalide son suivi ; statut et échéance restent lus sans l’invalider', async () => {
     const task = await make.task(api);
     const note = await make.entry(api, { content_md: 'Avancement' });
     const initial = await snapshot('task', task.id);
     await api.post(`/api/tasks/${task.id}/documents/${note.id}`);
     const linked = await snapshot('task', task.id);
     assert.notEqual(linked.source_key, initial.source_key);
-    await api.put(`/api/tasks/${task.id}`, { status: 'doing' });
+    await api.put(`/api/tasks/${task.id}`, { status: 'doing', due_date: '2026-12-01' });
+    await api.patch(`/api/tasks/${task.id}/move`, { status: 'done', position: 0 });
+    const closed = await snapshot('task', task.id);
+    assert.equal(closed.source_key, linked.source_key);
+    assert.equal(closed.source.status, 'done');
+    assert.equal(closed.source.due_date, '2026-12-01');
+    await api.put(`/api/tasks/${task.id}`, { title: 'Nouveau titre' });
     assert.notEqual((await snapshot('task', task.id)).source_key, linked.source_key);
     await api.del(`/api/tasks/${task.id}/documents/${note.id}`);
     assert.equal((await snapshot('task', task.id)).source.documents.length, 0);
@@ -206,6 +212,11 @@ describe('suivi IA enregistré', () => {
     assert.equal((await snapshot('entry', note.id)).follow_up, null);
     assert.equal((await snapshot('task', task.id)).follow_up, null);
   });
+});
+
+test('empreinte du suivi : celle d’une entrée n’a pas bougé, ses bilans restent à jour', () => {
+  const entry = { kind: 'entry', id: 'en_1', title: 'Journal', project: 'Chantier', documents: [{ id: 'en_1', title: 'Journal', kind: 'note', content_md: 'Devis prêt', content_json: null, entry_date: '2026-11-01', google: false }] };
+  assert.equal(followUpKey(entry), 'fu_24f76b4dfead8769', 'valeur d’avant le retrait du statut et de l’échéance');
 });
 
 test('fusion indépendante du suivi : choix et bilan gardent leur horloge et les égalités sont déterministes', () => {

@@ -548,6 +548,12 @@ fournisseur n'est exclu de plus. Et `finish_reason: "length"` rend « Réponse I
 avant la fin » au lieu d'un texte tronqué présenté comme complet. Pas de modèle suivant
 dans ce cas : il aurait le même budget (une réponse **vide** passe toujours au suivant).
 
+**Révisé le 2026-11-09 : chaîne et dépense, voir §77.** `gemini-3.5-flash`, routé vers
+`gemini-3.6-flash`, quitte la chaîne et `gemini-3.8-flash` y entre ; les modèles déjà mesurés
+gardent leur ordre. **Tester la connexion** n’interroge plus que le modèle affiché, un suivi
+automatique essaie deux modèles au plus, et un plafond quotidien par appareil refuse tout appel
+au-delà. « Jamais d’auto-envoi » reste vrai, hors suivi activé (§64).
+
 ## 16. L'en-tête mobile se réorganise, sans hamburger — 2026-09-18
 
 **Le besoin.** Sur un Pixel 9a (412 px), la barre entassait logo, version, recherche,
@@ -1796,7 +1802,7 @@ qu'il n'ait rien à rédiger à part le titre et certains points importants. »
 - **Ce qui part** : titre, contenu (une note riche passe par le pont Markdown, §23), repères
   du projet (§41), références sélectionnées, titres des tâches explicitement liées, noms des
   pièces jointes ; le texte déjà écrit en dernier. Depuis le correctif du 2026-11-05,
-  les tâches voisines, notes récentes et le vocabulaire global des titres du projet sont
+  les tâches voisines et le vocabulaire global des titres du projet sont
   exclus de cette complétion et du contexte affiché. Plafond de 12 000 caractères,
   comme la mise en page.
 - **La consigne** développe chaque point en phrases courtes ; intertitres et cases « - [ ] »
@@ -2710,7 +2716,7 @@ chargés, y compris ceux des tâches terminées. Aucun onglet ni routeur.
 **Automatisme choisi.** « Activer le suivi IA » active l’envoi au service déjà configuré pour
 cet élément, produit le premier bilan et autorise l’actualisation après enregistrement. Cela
 amende le principe historique « jamais d’appel automatique » du §17 pour ce seul geste,
-à la demande explicite de Timo. Une pause d’écriture de huit secondes regroupe les
+à la demande explicite de Timo. Un délai de silence, précisé plus bas, regroupe les
 sauvegardes ; un seul appel en vol pour l’écran, partagé entre les différents accès au bilan.
 Aucun appel pour les éléments non activés. Décocher garde le bilan ; Actualiser et Arrêter
 restent accessibles. L’application doit être ouverte et l’élément chargé ; il n’y a pas de
@@ -2761,6 +2767,12 @@ annulation, parcours entrée/tâche/vue d’ensemble, réponse devenue obsolète
 l’ancien bilan. Navigateur : automatisme après sauvegarde, rechargement sans nouvel appel,
 accès mobile et absence de débordement. Les fournisseurs IA sont simulés : ces tests vérifient
 les contrats et les gestes, pas la justesse d’une réponse réelle.
+
+**Amendé le 2026-11-10 (§77).** Le statut et l’échéance d’une tâche restent lus
+mais sortent de l’empreinte, qui ne porte donc plus sur les sources complètes : les changer ne
+relance plus de bilan. Une fenêtre masquée ne génère pas, deux échecs automatiques de suite vident
+la file sans la rejouer, et l’automatique s’arrête au tiers du plafond quotidien, jusqu’au
+lendemain ou à un plafond relevé.
 
 ## 65. La vue d’ensemble recouvre les panneaux ; désactiver un suivi IA d’un clic — 2026-11-03
 
@@ -3019,7 +3031,7 @@ note validée, prompt sans identifiants, rien d’écrit avant validation.
   à la source ne la recopie pas ; Prioriser nomme chaque projet une fois (`P1 · Nom ·
   repères`) puis le désigne par `P1` sur chaque ligne.
 - **Gestes fidèles à la note** (relecture, mise en page, extraction des actions, complétion,
-  §42) : ni tâches voisines, ni notes récentes, ni leur planning — seulement le lexique.
+  §42) : ni tâches voisines, ni leur planning — seulement le lexique.
 - Consignes système raccourcies, mêmes règles de fidélité.
 - `scripts/measure-ai-prompts.mjs` mesure les entrées IA sur un corpus synthétique, sans
   appel fournisseur ; `docs/fixtures/ai-prompts-before.json` garde la mesure d’avant.
@@ -3035,6 +3047,14 @@ unique qui couperait aussi le texte de l’utilisateur.
 `ai-context.test.ts` (sélection, sections, exclusion puis déduplication), tests front
 alignés : une tâche ou une note sans mot commun n’est plus envoyée ni affichée dans le
 contexte.
+
+**Amendé le 2026-11-09 (§77).** **Mise en page** n’envoie plus les documents de référence : le
+vocabulaire qu’ils apportent part déjà seul, et **Contexte utilisé par l’IA** le signale sans plus
+lister les tâches voisines. Une référence peut être retenue sur son texte entier, et un seul mot
+du brouillon trouvé dans un extrait ne suffit plus. Les conseils et le bilan du jour envoient
+un peu plus (blocages, activité du jour) pour répondre mieux. Sur le corpus de
+`scripts/measure-ai-prompts.mjs`, par rapport à l’état d’avant ce lot : −2,9 % de caractères au
+total, −66 % sur une mise en page avec contexte, +13,4 % sur les conseils, +10,5 % sur le bilan.
 
 ## 72. Page d'accueil et politique sur GitHub Pages, connexion sur Cloudflare — 2026-11-06
 
@@ -3190,3 +3210,214 @@ affiché) ; ajouter un code d'accès au relais (retiré en §55).
 la liste ; relais : les préliminaires CORS des deux origines passent, une origine étrangère
 reste refusée, `WORKLOGS_RELAY_ORIGINS` ajoute une origine. PWA : la liste rend le document créé
 absent de l'index local. Front : le sélecteur autorise puis recharge la liste sans **Actualiser**.
+
+## 77. Un plafond quotidien pour l’IA, et un assistant qui propose avant d’écrire — 2026-11-09
+
+**Demande.** Améliorer concrètement toutes les fonctions IA (pertinence, fiabilité, performances,
+contexte), maîtriser la consommation pour garantir un usage gratuit, et ajouter un chat où l’IA
+recherche et réalise des tâches dans l’application.
+
+**Faits Google**, lus le 2026-11-09 sur des pages sans date de mise à jour :
+
+- [Limites](https://aistudio.google.com/docs/rate-limits) : comptées par projet et non par clé,
+  et selon le modèle ; requêtes du jour remises à zéro à minuit, heure du Pacifique ; le débit de
+  jetons par minute ne compte que l’entrée ; limites plus strictes pour les modèles preview. Les
+  chiffres gratuits ne sont pas publiés (AI Studio les montre pour le projet) ; des relevés tiers
+  vont de 20 à 1 500 requêtes par jour et par modèle. **La ressource rare est la requête**, pas
+  le jeton.
+- [Tarifs](https://aistudio.google.com/docs/pricing) : les sept modèles de la chaîne ont un niveau
+  gratuit ; à ce niveau, les contenus envoyés servent à améliorer les produits de Google.
+- [Compatibilité OpenAI](https://aistudio.google.com/docs/openai) : `reasoning_effort` accepte
+  `minimal`, `low`, `medium` et `high` ; sans lui, le modèle garde son niveau par défaut. `none`
+  coupe la réflexion des modèles 2.5, pas celle de 2.5 Pro ni des modèles 3.
+- [Retraits](https://aistudio.google.com/docs/deprecations) : `gemini-3.5-flash` est routé vers
+  `gemini-3.6-flash` ; à partir du 2026-12-01, `gemini-2.5-flash` le sera vers
+  `gemini-3.5-flash-lite`.
+
+**Décision : un plafond** (`web/src/ai-budget.ts`).
+
+- 150 requêtes par jour et par appareil par défaut, réglables de 10 à 5 000 sous **Réglages
+  avancés**, et un plafond de jetons égal à requêtes × 10 000 (1 500 000). Ordre de grandeur :
+  sept modèles gratuits à 20 requêtes, le plus bas relevé, font 140. Dans ce pire cas Google
+  répond « quota atteint » avant le plafond, sans rien coûter.
+- Le jour est celui de Los Angeles ; le refus donne l’heure locale du retour.
+- Sont comptés : chaque réponse 200 (`usage.total_tokens`, sinon un jeton pour quatre caractères)
+  et chaque abandon après envoi (délai dépassé ou **Arrêter** : le fournisseur a pu traiter, on
+  estime l’entrée). Les refus immédiats (4xx, 5xx, réseau) ne le sont pas.
+- Le suivi automatique s’arrête au tiers du plafond. Un geste explicite n’est refusé qu’au plafond.
+- La consommation du jour se lit dans les Paramètres et au pied de l’assistant.
+
+**Ce que la gratuité veut dire.** Elle vient de la clé, pas du plafond : une clé AI Studio d’un
+projet sans facturation ne coûte rien, au pire Google répond « quota atteint ». WorkLogs ne peut
+pas vérifier de quel projet vient une clé. Sur un projet facturé, les mêmes modèles sont payants
+et le plafond borne la dépense sans l’annuler. Les Paramètres préviennent quand le modèle choisi
+n’est pas dans la chaîne ou que l’endpoint n’est pas Gemini. Le compteur porte sur un appareil
+alors que Google compte par projet (`shortcut:` dans `ai-budget.ts`) : deux appareils, c’est deux
+plafonds pour un seul quota. Et gratuit ne veut pas dire confidentiel (voir les tarifs).
+
+**Transport** (`web/src/ai-suggest.ts`).
+
+- Chaîne : `gemini-3-flash-preview`, `2.5-flash`, `3.6-flash`, `2.5-flash-lite`, `3.5-flash-lite`,
+  `3.1-flash-lite`, `3.8-flash`. `3.5-flash` en sort (routé vers `3.6-flash`, il essayait deux
+  fois le même quota) et `3.8-flash` y ajoute un quota gratuit. `3.6-flash` le remplace dans le
+  select, sans migrer un choix enregistré (§17). Les modèles déjà mesurés gardent leur ordre,
+  faute de mesure neuve.
+- **Tester la connexion** n’interroge que le modèle affiché : un secours pouvait faire réussir un
+  modèle en panne. Un suivi automatique essaie deux modèles au plus.
+- Une réponse comptée mais inutilisable (vide ou bloquée par le filtre) n’a droit qu’à un seul autre
+  modèle ; les 429 et 5xx refusés n’entrent pas dans ce compte. La chaîne s’arrête dès que le
+  plafond est atteint, ou le tiers pour le suivi automatique.
+- `reasoning_effort`, sur l’endpoint Gemini seulement : `minimal` pour les sous-tâches, les mots
+  de recherche et le test (`none` pour un modèle 2.5 Flash) ; `low` pour la relecture, la complétion,
+  les procédures, la fusion et l’assistant ; rien pour les gestes de jugement (priorités,
+  conseils, replanification, suivi, bilan, tâches suggérées). Un 400 sur un envoi qui le portait
+  renvoie une fois sans lui, et ce modèle ne le reçoit plus jusqu’au prochain lancement.
+- Un essai n’est lancé que s’il reste au moins une demi-tranche. Les délais suivent la réponse
+  attendue : le plus grand de 30 s et de 4 ms par caractère pour la relecture, la complétion et
+  la fusion, avec 300 caractères comptés par tâche pour Prioriser, Conseiller et Replanifier.
+- Un 429 passe au modèle suivant ; en fin de chaîne, un échec de quota ou un blocage du filtre
+  l’emporte sur un dernier 5xx ou 404, et le quota donne l’heure de retour du quota du jour. Un 400
+  qui nomme la clé dit « clé refusée » ; un corps d’erreur en tableau est lu ; un filtre de contenu
+  passe au modèle suivant avec son propre message, même sans aucun texte, au lieu d’une réponse
+  coupée rendue pour complète.
+
+**Suivi automatique, qui complète §64** (`follow-up-controller.tsx`, `api/src/follow-up.js`). Les
+déclencheurs restent ceux de §64 : rien au chargement ni après une synchro, huit secondes de pause
+après une modification de la session, au moins une minute entre deux actualisations automatiques
+d’un même élément. Écarté : attendre cinq minutes de silence avant toute actualisation, plus
+économe, mais le bilan du jour resterait en retard pendant qu’on écrit ; le tiers du plafond borne
+déjà la dépense. L’actualisation automatique reste discrète : le bilan en place demeure affiché avec
+« Actualisation en cours… », ou « En attente… » s’il est en file. Le statut et l’échéance d’une
+tâche restent lus mais sortent de l’empreinte : clore ou replanifier une tâche ne paie plus de
+bilan. L’empreinte d’une entrée ne change pas d’un octet ; **celle d’une tâche suivie change une
+fois**, son bilan passe « À actualiser » et le reste jusqu’à un clic ou au prochain changement
+de son empreinte pendant une session ouverte. Une
+fenêtre masquée ne génère pas : un second appareil laissé ouvert ne consomme pas à la place du
+premier. Un échec automatique isolé laisse passer les suivants, car il peut ne concerner que son
+élément ; au deuxième échec de suite, la file automatique se vide et ses éléments attendent leur
+prochaine version. Au plafond aussi elle se vide, mais ses éléments reprennent seuls le lendemain
+ou après un plafond relevé : aucun état ne change alors, un relevé chaque minute le voit.
+**Actualiser** passe en tête. Tant qu’un bilan se prépare, **Bilan du jour** et **Replanifier**
+sont désactivés : son arrivée les invaliderait (§67). Pour la même raison, l’actualisation
+automatique d’un bilan existant attend tant qu’une proposition de la vue d’ensemble ou des
+conseils est en préparation ou à l’écran. Une version reçue par synchro porte sa marque
+(`fromSync`, posée par `App`) : elle reste « À actualiser » sans appel, sauf sur le desktop si un
+rechargement local tombe entre le tirage et le relevé suivant de la révision (5 s au plus) : cet
+état sans marque compte alors comme une modification de la session et paie un bilan. En PWA, la révision est
+annoncée dès le tirage écrit, avant l’envoi vers Drive, comme sur le desktop. Un filtre masque sans
+supprimer : un bilan demandé par un geste va au bout, seul le 404 arrête un élément vraiment
+parti. La minute entre deux actualisations automatiques tient aussi après un aller-retour de
+filtre, un « Actualiser » ou un « Arrêter ».
+
+**Pertinence et contexte** (`ai-suggest.ts`, `ai-context.ts`, `task-advice-context.ts`).
+
+- Une référence peut être retenue sur son texte entier (recherche locale, quatre mots du titre au
+  plus), plus seulement sur son titre et ses 240 premiers caractères. Un seul mot du brouillon
+  trouvé dans un extrait ne suffit plus, liens et adresses ne comptent plus, et les documents des
+  tâches liées à la note remontent. Les titres des notes récentes (`recentNotes`) ne partent plus :
+  ils ne faisaient que répéter des titres déjà présents.
+- Le profil part coupé à 2 000 caractères dans tous les prompts (300 dans l’assistant, plus compact),
+  et la liste des cases déjà présentes d’une note à 4 000, début et fin gardés. Le champ s’arrête à
+  2 000 ; un profil plus long déjà enregistré reste entier dans les réglages.
+- **Prioriser** dit pourquoi sa demande ou sa proposition disparaît quand une tâche change, comme
+  les conseils et la replanification.
+- Les notes citées portent leur date, pas les procédures, dont la date n’est que la création. Le
+  prompt prévient que les plus anciennes peuvent être dépassées.
+- Les conseils lisent le début et la fin des extraits et les blocages attestés (2 × 160
+  caractères), marqués à vérifier quand le bilan est périmé. Le bilan du jour reçoit le statut
+  réel, la priorité et l’échéance des tâches et les titres de l’activité du jour, sans les
+  documents Google. Faute de date de clôture, une tâche terminée et modifiée aujourd’hui n’y figure
+  que comme « Tâche terminée ou retouchée aujourd’hui ».
+- Moins de réponses valides perdues : l’ancrage d’une suggestion ne dépend plus de la typographie,
+  un bilan un peu trop long est rogné, une tâche voisine ouverte n’est plus reproposée. Une note
+  riche fusionnée passe en Markdown au lieu d’être aplatie.
+
+**L’assistant** (`web/src/ai-chat.ts`, `components/AiChat.tsx`). Un dialogue, pas un onglet : un
+bouton dans l’en-tête (le bandeau du projet sur téléphone), un panneau à droite sur ordinateur,
+une feuille plein écran sur téléphone. La conversation vit en mémoire dans `App`, rien ne part
+dans `localStorage` ; refermer la garde et coupe la demande en vol.
+
+- **Un appel au modèle par message**, deux au plus s’il demande une recherche ; une recherche sans
+  résultat nouveau ne coûte pas de second appel. L’historique garde les actions proposées et les
+  titres affichés : « et la deuxième ? » a un référent. Chaque message y est coupé à 400 caractères,
+  le dernier à 900 pour que ces lignes ne chassent pas la réponse. Avant l’appel, une lecture locale range ce qui est
+  proche de la demande : 40 tâches ouvertes, 10 terminées, 6 documents, 30 projets, moins de 18 000
+  caractères au pire, 21 000 avec une recherche, qui ajoute au plus 10 tâches et 6 documents.
+- **Écritures proposées, jamais exécutées sans clic** : créer une tâche, modifier une tâche
+  (titre, statut, priorité, échéance, projet, épingle), créer une note. Une création dans le projet
+  affiché hérite de la catégorie filtrée, comme à la main. Chaque action est validée
+  localement sur la numérotation du prompt ; une valeur douteuse l’écarte entière et l’écart est
+  annoncé. Les libellés sont construits localement, pas par le modèle, et annoncent l’archivage
+  des documents liés quand une tâche devient terminée. Une modification porte l’état attendu : une
+  tâche changée entre-temps refuse (409). Un réessai ne recrée pas ce qui a abouti sans réponse.
+- **Impossible, et dit en clair** : supprimer ou archiver, modifier le texte d’une note existante,
+  lire un document Google ou une pièce jointe, agir hors de WorkLogs. Une note proposée ne peut
+  contenir ni image ni HTML : choisis par le modèle, ils chargeraient une adresse tierce à
+  l’ouverture de la note. Le filtre lit les jetons Markdown, pour laisser passer un `<VirtualHost>`
+  dans un bloc de code.
+- **Repli local** quand la clé manque, au plafond (aucun appel ne part) ou après une erreur du
+  fournisseur : « Recherche locale : N résultats », avec la raison. Le repli cherche la seule demande :
+  sans modèle pour relire l’échange, les titres déjà affichés évinceraient ce qu’elle nomme.
+- Le contenu d’un document Google ne part jamais : son titre et sa date seulement. Les réponses
+  restent en texte brut : le Markdown afficherait une image choisie par le modèle, que l’`img-src`
+  de la CSP laisse charger.
+- **Correction de sécurité** (`markdown.ts`), sur un défaut antérieur à ce lot que l’assistant
+  rendait atteignable : le mode Lire retirait `disabled` des cases à cocher par une expression
+  régulière sur le HTML assaini, qui pouvait couper un attribut et en fabriquer d’autres (script
+  exécuté sur la PWA, sans CSP). Il agit désormais sur le DOM assaini.
+
+**Écartés.**
+
+- Le protocole `tools` : les signatures de pensée de Gemini 3 sont à faire circuler d’un tour à
+  l’autre, et d’autres fournisseurs compatibles ne l’ont pas. Un JSON validé localement suffit.
+- Un compteur par projet : WorkLogs ne sait pas lire la consommation du projet.
+- Limiter les clics à trois essais ou arrêter la chaîne sur un 429 : les quotas sont par modèle,
+  et les derniers modèles sont justement ce qui reste quand les premiers sont épuisés.
+- Mémoriser les 429 modèle par modèle, ou distinguer la minute du jour : le corps d’un 429 sur cet
+  endpoint n’a jamais été vu avec une vraie clé.
+- Cinq minutes pour tous les suivis, qui retarderaient le premier bilan, et une attente persistée
+  de 15 minutes, qui demanderait son propre minuteur.
+- Réordonner la chaîne ou placer un modèle non preview en tête, et `low` sur les gestes de
+  jugement : rien ne le justifie sans mesure réelle.
+- Sortir les bilans des clés de la vue d’ensemble : cela reviendrait sur §67 ; désactiver les deux
+  boutons et faire attendre l’actualisation automatique suffit.
+- Écrire sans clic, supprimer ou archiver depuis l’assistant : une erreur du modèle se paierait
+  en données. Garder la conversation d’une session à l’autre : un état de plus.
+
+**Validation.** `ai-budget.test.ts` : jour Pacifique, plafonds, tiers automatique, stockage
+indisponible, valeurs corrompues, bornes. `ai-suggest.test.ts` : chaîne, test de connexion,
+`reasoning_effort` et renvoi sur 400, comptage, quota, filtre, délais. `ai-chat.test.ts` :
+classement, prompt borné, absence d’extrait Google, un ou deux appels, validation champ par champ,
+repli local, Arrêter, dates, réessai sans doublon, conflit 409. `follow-up-controller.test.tsx` et
+`api/test/follow-up.test.js` : délais, fenêtre masquée, file, reprise, empreinte. `markdown.test.ts` :
+attributs fabriqués au rendu des cases, HTML et images repérés sur les jetons. `AiChat.test.tsx`,
+`App.test.tsx`, `App.local.test.tsx` : gestes, ouverture, application réelle en base, PWA.
+`e2e/ai-chat.spec.ts` : ordinateur et téléphone à 412 px, débordement, cibles, proposition
+vérifiée par `/api/state`, Échap, focus. Ces tests vérifient les contrats et les gestes, pas la
+justesse d’une réponse réelle.
+
+**Ce qui n’a pas été vérifié.** **Le fournisseur a été simulé partout : aucun appel réel n’a été
+fait pour ce lot.** Restent à juger avec une vraie clé, selon `04-RECETTES.md` §14 :
+
+- **`reasoning_effort`** : jamais envoyé à un vrai modèle. On ignore si chaque modèle de la chaîne
+  l’accepte, ce qu’il fait gagner en temps, et ce que devient `none` envoyé à `2.5-flash` une fois
+  routé vers un modèle 3.x, qui ne peut pas couper sa réflexion. Un refus coûte un renvoi.
+- **L’ordre des modèles** : il vient des mesures du 2026-09-24, à refaire avant le 2026-12-01.
+- **La qualité des réponses** : ni l’assistant (compréhension, dates relatives, respect du JSON),
+  ni l’effet de `low` sur la relecture, la complétion et les procédures, ni les prompts retouchés
+  n’ont été comparés à l’état précédent.
+- **Le compteur face à Google** : 150 est une estimation ; la forme d’un 429 ou d’un blocage par
+  le filtre sur cet endpoint, la présence de `usage.total_tokens` et le décompte par Google des
+  requêtes en échec n’ont pas été observés.
+
+**Confirmé par la revue, non corrigé.** Tiptap reste dans le bloc d’entrée, contrairement au
+chargement à la demande du §47 : défaut antérieur, sans rapport avec l’IA. Les aperçus de
+proposition IA hors chat (`aiProposalHtml` d’`EntryEditor.tsx`, `ProcedureDraft.tsx`) passent par
+`renderMarkdown` sans le filtre de l’assistant et rendent encore les images.
+
+**Rouvrir si** une mesure réelle montre qu’un effort bas dégrade un geste ou qu’un modèle refuse
+le paramètre ; si les 429 arrivent régulièrement avant le plafond (baisser le défaut) ou si le
+plafond gêne un usage normal ; si Google publie ses chiffres gratuits ou si WorkLogs peut lire la
+consommation du projet ; si une minute entre deux actualisations épuise trop vite le tiers automatique ; si
+l’assistant doit écrire dans une note existante, à traiter à part à cause du brouillon de l’entrée
+ouverte, que la frappe suivante réécrirait.

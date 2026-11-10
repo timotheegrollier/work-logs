@@ -176,12 +176,50 @@ describe('bilan quotidien des suivis', () => {
   });
 
   test.each([
-    { ...review, summary: '' }, { ...review, summary: 'a'.repeat(1501) },
+    { ...review, summary: '' },
     { ...review, completed: undefined }, { ...review, next_steps: [1] },
-    { ...review, blockers: Array(9).fill('Blocage') }, { ...review, blockers: ['x'.repeat(501)] },
   ])('refuse une synthèse incomplète ou hors contrat (%j)', async (invalid) => {
     vi.stubGlobal('fetch', vi.fn(async () => response(JSON.stringify(invalid))));
     await expect(generateDailyReview(settings, [item], { today })).rejects.toBeInstanceOf(AiError);
+  });
+
+  test('rogne une synthèse qui dépasse de peu plutôt que de perdre l’appel', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response(JSON.stringify({
+      ...review, summary: 'a'.repeat(1501), next_steps: ['x'.repeat(501)],
+      blockers: Array.from({ length: 9 }, (_, index) => `Blocage ${index}`),
+    }))));
+    const result = await generateDailyReview(settings, [item], { today });
+    expect(result.summary).toBe('a'.repeat(1500));
+    expect(result.next_steps).toEqual(['x'.repeat(500)]);
+    expect(result.blockers).toHaveLength(8);
+  });
+
+  test('l’activité du jour part bornée dans le JSON, avec sa règle de preuve', async () => {
+    const fetch = vi.fn(async () => response(JSON.stringify(review)));
+    vi.stubGlobal('fetch', fetch);
+    const doneTasks = ['Joint V12 remplacé', 'y'.repeat(200), ...Array.from({ length: 25 }, (_, index) => `Tâche ${index}`)];
+    await generateDailyReview(settings, [item], { today, todayActivity: { doneTasks, notes: ['Note du jour'] } });
+    const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    const data = JSON.parse(body.messages[1].content.split('\n\n')[1]);
+    expect(data.today_activity.done_tasks).toHaveLength(20);
+    expect(data.today_activity.done_tasks[0]).toBe('Joint V12 remplacé');
+    expect(data.today_activity.done_tasks[1]).toBe('y'.repeat(119) + '…');
+    expect(data.today_activity.notes).toEqual(['Note du jour']);
+    expect(body.messages[0].content).toContain('sa date de clôture est inconnue');
+    expect(body.messages[0].content).toContain('« Tâche terminée ou retouchée aujourd\'hui : titre »');
+    expect(body.messages[0].content).not.toContain('« Tâche terminée : titre »');
+    expect(body.messages[0].content).toContain('prouve seulement qu\'une note a été écrite');
+    expect(buildDailyReviewPrompt([item], { today, todayActivity: { doneTasks: [], notes: [] } }).warnings.at(-1)).toContain('et des titres de l’activité du jour');
+    expect(JSON.parse(buildDailyReviewPrompt([item], { today }).user.split('\n\n')[0])).not.toHaveProperty('today_activity');
+  });
+
+  test('un bilan de tâche porte le statut réel de la tâche, y compris terminée ; jamais un bilan d’entrée', () => {
+    const data = JSON.parse(buildDailyReviewPrompt([
+      { ...item, id: 'tk_finie', kind: 'task', title: 'Tâche finie', status: 'done' },
+      { ...item, id: 'en_note', title: 'Note suivie' },
+    ], { today }).user.split('\n\n')[0]);
+    expect(data.reports[0]).toMatchObject({ status: 'blocked', task_status: 'done' });
+    expect(data.reports[1]).not.toHaveProperty('task_status');
   });
 });
 

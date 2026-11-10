@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, type Entry, type EntrySummary, type Task } from './lib';
 import { prepareTaskAdvice } from './task-advice-context';
+import { buildTaskAdvicePrompt } from './ai-suggest';
 
 const summary = (id: string, extra: Partial<EntrySummary> = {}): EntrySummary => ({
   id, title: `Note ${id}`, entry_date: '2026-10-30', project_id: 'p', archived: 0,
@@ -50,5 +51,39 @@ describe('préparation des conseils IA', () => {
     await expect(prepareTaskAdvice(Array.from({ length: 61 }, (_, index) => task(String(index))), [])).rejects.toThrow(/61, 60 au plus/);
     expect(read).not.toHaveBeenCalled();
     await expect(prepareTaskAdvice([task('1', [summary('a')])], [])).rejects.toThrow(/Impossible de lire/);
+  });
+
+  test('garde le début et la fin d’un long document : un blocage noté en bas reste lu', async () => {
+    vi.spyOn(api, 'entry').mockImplementation(async (id) => ({ ...entry(id), content_md: `Contexte initial. ${'x'.repeat(700)}\nBloqué : pièce attendue le 20/11.\n` }));
+    const [source] = (await prepareTaskAdvice([task('1', [summary('a')])], [])).sources;
+    expect(source.text.length).toBeLessThanOrEqual(600);
+    expect(source.text.startsWith('Contexte initial.')).toBe(true);
+    expect(source.text.endsWith('Bloqué : pièce attendue le 20/11.')).toBe(true);
+  });
+
+  test('date les notes, pas les procédures dont la date reste celle de leur création', async () => {
+    vi.spyOn(api, 'entry').mockImplementation(async (id) => ({ ...entry(id), kind: id === 'procedure' ? 'procedure' : 'note', entry_date: '2026-03-04' }));
+    const { sources } = await prepareTaskAdvice([task('1', [summary('note'), summary('procedure', { kind: 'procedure' })])], []);
+    expect(sources.map((source) => source.date)).toEqual(['2026-03-04', undefined]);
+  });
+
+  test('les blocages du bilan de suivi vont jusqu’au prompt, le reste du bilan non', async () => {
+    const followed: Task = { ...task('1'), follow_up: { enabled: true, enabled_at: '2026-11-01T00:00:00Z', report: {
+      generated_at: '2026-11-05T11:00:00Z', source_key: 'k', status: 'blocked', summary: 'Bilan privé', completed: [], next_steps: [], warnings: [], blockers: ['Pièce attendue le 20/11.'],
+    } } };
+    const { tasks } = await prepareTaskAdvice([followed, task('2')], []);
+    const { user } = buildTaskAdvicePrompt(tasks, { today: '2026-11-09' });
+    expect(user).toContain('Tâche 1 : Pièce attendue le 20/11.');
+    expect(user).not.toContain('Bilan privé');
+  });
+
+  test('les blocages d’un bilan périmé sont signalés à vérifier, pas donnés pour attestés', async () => {
+    const report = { generated_at: '2026-11-05T11:00:00Z', source_key: 'k', status: 'blocked' as const, summary: 'S', completed: [], next_steps: [], warnings: [], blockers: ['Pièce attendue le 20/11.'] };
+    const promptWith = async (follow_up_key: string) => {
+      const { tasks } = await prepareTaskAdvice([{ ...task('1'), follow_up_key, follow_up: { enabled: true, enabled_at: '2026-11-01T00:00:00Z', report } }], []);
+      return buildTaskAdvicePrompt(tasks, { today: '2026-11-09' }).user;
+    };
+    expect(await promptWith('k')).toContain('Tâche 1 : Pièce attendue le 20/11.');
+    expect(await promptWith('nouvelle-source')).toContain('Tâche 1 (bilan à actualiser, à vérifier) : Pièce attendue le 20/11.');
   });
 });

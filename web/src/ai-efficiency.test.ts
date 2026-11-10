@@ -12,7 +12,7 @@ const response = (content: string) => new Response(JSON.stringify({ choices: [{ 
 afterEach(() => vi.unstubAllGlobals());
 
 test('un même extrait et son titre ne sont pas répétés, sans confondre deux procédures différentes', () => {
-  const context: AiWorkContext = { sources: [reference, { ...reference, id: 'copie' }], recentNotes: [reference.title] };
+  const context: AiWorkContext = { sources: [reference, { ...reference, id: 'copie' }] };
   const prompt = buildSuggestPrompt('Vanne', context);
   expect(occurrences(prompt.user, reference.text)).toBe(1);
   expect(occurrences(prompt.user, reference.title)).toBe(1);
@@ -21,15 +21,14 @@ test('un même extrait et son titre ne sont pas répétés, sans confondre deux 
   expect(distinct.user).toContain('Autre équipement');
 });
 
-test('la relecture garde la source exacte et le contexte lexical, sans les autres travaux du projet', () => {
+test('la relecture garde la source exacte et le contexte lexical, sans les autres travaux du projet ni les documents de référence', () => {
   const prompt = buildProofreadPrompt('Pompe', primary, '', false, 'markdown', {
     project: 'Atelier', projectBrief: 'Réponses concises.', sources: [reference], vocabulary: ['joint'],
-    relatedTasks: ['Réunion étrangère avec Gabin'], recentNotes: ['Préparer les congés'],
+    relatedTasks: ['Réunion étrangère avec Gabin'],
   });
   expect(prompt.user).not.toContain('Gabin');
-  expect(prompt.user).not.toContain('congés');
   expect(prompt.user).toContain('Réponses concises.');
-  expect(prompt.user).toContain(reference.text);
+  expect(prompt.user).not.toContain(reference.text);
   expect(prompt.user).toContain('Vocabulaire du métier : joint');
   expect(prompt.user.endsWith(primary)).toBe(true);
 });
@@ -37,7 +36,7 @@ test('la relecture garde la source exacte et le contexte lexical, sans les autre
 test('les suggestions ne doublent pas les titres du planning ; l’extraction explicite reste centrée sur la note', async () => {
   const fetch = vi.fn(async () => response('[]')); vi.stubGlobal('fetch', fetch);
   const context = {
-    sources: [reference], relatedTasks: ['Réparer la pompe'], recentNotes: ['Congés sans rapport'],
+    sources: [reference], relatedTasks: ['Réparer la pompe'],
     relatedTaskPlanning: [{ title: 'Réparer la pompe', priority: 'high' as const, due_date: '2026-11-09' }],
   };
   await suggestEntryTasks(settings, 'Joint', primary, { context, today: '2026-11-06' });
@@ -48,7 +47,6 @@ test('les suggestions ne doublent pas les titres du planning ; l’extraction ex
   await extractEntryActions(settings, 'Joint', primary, { context });
   const extracted = JSON.parse((fetch.mock.calls[1] as unknown as [string, RequestInit])[1].body as string).messages[1].content;
   expect(extracted).not.toContain('Réparer la pompe');
-  expect(extracted).not.toContain('Congés sans rapport');
   expect(extracted).toContain(reference.text);
   expect(extracted).toContain(primary);
   expect(fetch).toHaveBeenCalledTimes(2);

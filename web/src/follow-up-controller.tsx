@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, type AppState, type FollowUp, type FollowUpKind, type FollowUpReportDraft } from './lib';
-import { AiCancelled, generateFollowUp, readAiSettings } from './ai-suggest';
+import { aiBudgetRefusal } from './ai-budget';
+import { AiBudgetError, AiCancelled, generateFollowUp, readAiSettings } from './ai-suggest';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
 
 export interface FollowUpItem {
@@ -11,7 +12,7 @@ export interface FollowUpItem {
 }
 type Item = FollowUpItem & { kind: FollowUpKind };
 /** `background` : actualisation automatique, présentée sans déplacer le bilan affiché. */
-type Runtime = { busy: boolean; error: string; background: boolean };
+type Runtime = { busy: boolean; queued?: boolean; error: string; background: boolean };
 type Job = { item: Item; manual: boolean };
 const keyOf = (kind: FollowUpKind, id: string) => `${kind}:${id}`;
 // Une vraie pause d'écriture : deux secondes relançaient l'IA au milieu d'une note.
@@ -28,6 +29,7 @@ interface Control {
   toggle: (item: Item, enabled: boolean, clear?: boolean) => void;
   refresh: (item: Item) => void;
   stop: (item: Item) => void;
+  hold: () => () => void;
 }
 export const FollowUpContext = createContext<Control | null>(null);
 
@@ -62,21 +64,25 @@ export function FollowUpProvider({ state, onChanged, children }: {
   const queue = useRef(new Map<string, Job>());
   const active = useRef<{ key: string; sourceKey: string; controller: AbortController; manual: boolean } | null>(null);
   const configBusy = useRef(new Set<string>());
+  // Refus du plafond : il a une fin, contrairement à une panne, ces éléments repartent à son retour.
+  const refused = useRef(new Set<string>());
+  const failures = useRef(0);
+  const holds = useRef(0);
   const patch = useCallback((key: string, value: Runtime) => {
     if (mounted.current) setRuntime((current) => ({ ...current, [key]: value }));
   }, []);
   const drain = useRef<() => void>(() => {});
   drain.current = () => {
     if (!mounted.current || active.current || queue.current.size === 0) return;
-    const [key, job] = queue.current.entries().next().value!;
+    // Un geste explicite passe devant l'automatique, dans l'ordre des clics.
+    const jobs = [...queue.current];
+    const [key, job] = jobs.find(([, candidate]) => candidate.manual) ?? jobs[0];
     queue.current.delete(key);
-    // Une demande explicite repart tout de suite ; une actualisation de fond
-    // n'ouvre la période de calme qu'au moment où elle appelle vraiment l'IA.
-    if (job.manual) lastAutoAt.current.delete(key);
     const controller = new AbortController();
-    const request = { key, sourceKey: job.item.follow_up_key ?? '', controller, manual: job.manual };
+    // Un geste explicite vise le texte que son propre enregistrement va écrire : l'état rechargé ne l'annule qu'après l'instantané.
+    const request = { key, sourceKey: job.manual ? '' : job.item.follow_up_key ?? '', controller, manual: job.manual };
     active.current = request;
-    attempted.current.set(key, request.sourceKey);
+    attempted.current.set(key, job.item.follow_up_key ?? '');
     patch(key, { busy: true, error: '', background: !job.manual });
     void (async () => {
       try {
@@ -88,8 +94,9 @@ export function FollowUpProvider({ state, onChanged, children }: {
         // Une file attendue peut déjà avoir été mise à jour sur un autre appareil.
         if (!job.manual && (!snapshot.follow_up?.enabled || snapshot.follow_up.report?.source_key === snapshot.source_key)) return;
         attempted.current.set(key, snapshot.source_key);
+        // Seule une actualisation de fond qui appelle vraiment l'IA ouvre la période de calme.
         if (!job.manual) lastAutoAt.current.set(key, Date.now());
-        const report = await generateFollowUp({ ...readAiSettings(), signal: controller.signal }, snapshot.source);
+        const report = await generateFollowUp({ ...readAiSettings(), signal: controller.signal, background: !job.manual }, snapshot.source);
         if (controller.signal.aborted) return;
         // Les frappes arrivées pendant l'analyse doivent aussi participer au CAS
         // serveur ; aucune ancienne analyse ne devient le bilan d'un nouveau texte.
@@ -112,6 +119,7 @@ export function FollowUpProvider({ state, onChanged, children }: {
             && (!previous || stored.generated_at !== previous.generated_at || stored.source_key !== previous.source_key || reportContent(previous) !== content);
           if (!confirmed) throw error;
         }
+        failures.current = 0;
         if (!controller.signal.aborted) await changed.current();
       } catch (error) {
         if (!controller.signal.aborted && (error as { code?: string }).code === 'FOLLOW_UP_STALE') {
@@ -119,6 +127,17 @@ export function FollowUpProvider({ state, onChanged, children }: {
           await changed.current();
         } else if (!controller.signal.aborted && !(error instanceof AiCancelled)) {
           patch(key, { busy: false, error: (error as Error).message || 'Impossible de préparer le bilan.', background: false });
+          const budget = error instanceof AiBudgetError;
+          if (budget && !job.manual) refused.current.add(key);
+          failures.current = queue.current.size && !budget ? failures.current + 1 : 0;
+          // Un échec isolé peut ne concerner que cet élément ; plafond ou deuxième échec de suite : les suivants paieraient le même.
+          if (!job.manual && (budget || failures.current > 1)) for (const [waiting, queued] of queue.current) {
+            if (queued.manual) continue;
+            queue.current.delete(waiting);
+            attempted.current.set(waiting, queued.item.follow_up_key ?? '');
+            if (budget) refused.current.add(waiting);
+            patch(waiting, idle);
+          }
         }
       } finally {
         if (active.current === request) active.current = null;
@@ -135,14 +154,14 @@ export function FollowUpProvider({ state, onChanged, children }: {
     if (configBusy.current.has(key) || active.current?.key === key || queue.current.has(key)) return;
     if (!manual && attempted.current.get(key) === item.follow_up_key) return;
     queue.current.set(key, { item, manual });
-    patch(key, { busy: true, error: '', background: !manual });
+    patch(key, { busy: true, queued: active.current !== null, error: '', background: !manual });
     drain.current();
   }, [patch]);
   const stop = useCallback((item: Item) => {
     const key = keyOf(item.kind, item.id);
     attempted.current.set(key, latest.current.get(key)?.follow_up_key ?? item.follow_up_key ?? '');
     observed.current.changed.delete(key);
-    lastAutoAt.current.delete(key);
+    refused.current.delete(key);
     queue.current.delete(key);
     if (active.current?.key === key) active.current.controller.abort();
     patch(key, idle);
@@ -176,7 +195,8 @@ export function FollowUpProvider({ state, onChanged, children }: {
     // Le nouveau texte annule la réponse en vol ; la version suivante sera
     // regroupée après la pause de saisie et la sauvegarde réussie.
     const request = active.current;
-    if (request) {
+    // Absent n'est pas supprimé, l'état suit le filtre : un geste explicite va au bout, le 404 arrête un élément vraiment parti.
+    if (request && (!request.manual || items.has(request.key))) {
       const current = items.get(request.key);
       if (!current) {
         request.controller.abort();
@@ -185,7 +205,7 @@ export function FollowUpProvider({ state, onChanged, children }: {
     }
     for (const [key, job] of queue.current) {
       const current = items.get(key);
-      if (!current || (!job.manual && (!current.follow_up?.enabled || current.follow_up_key !== job.item.follow_up_key))) {
+      if (!job.manual && (!current || !current.follow_up?.enabled || current.follow_up_key !== job.item.follow_up_key)) {
         queue.current.delete(key);
         patch(key, idle);
       }
@@ -200,16 +220,17 @@ export function FollowUpProvider({ state, onChanged, children }: {
       present.add(key);
       const sourceKey = item.follow_up_key ?? '';
       const previous = watch.keys.get(key);
-      if (watch.ready && previous && sourceKey && sourceKey !== previous) watch.changed.set(key, sourceKey);
+      if (watch.ready && !state?.fromSync && previous && sourceKey && sourceKey !== previous) watch.changed.set(key, sourceKey);
       if (!item.follow_up?.enabled || !sourceKey || item.follow_up.report?.source_key === sourceKey) watch.changed.delete(key);
       watch.keys.set(key, sourceKey);
     }
     for (const key of watch.keys.keys()) {
       if (!present.has(key)) {
         watch.keys.delete(key);
+        // Masqué n'est pas oublié : la période de calme tient, et un refus du plafond repart à son retour.
+        if (refused.current.has(key)) continue;
         watch.changed.delete(key);
         attempted.current.delete(key);
-        lastAutoAt.current.delete(key);
       }
     }
     if (!watch.ready && items.size > 0) watch.ready = true;
@@ -229,15 +250,17 @@ export function FollowUpProvider({ state, onChanged, children }: {
       timer = setTimeout(() => {
         // Une sauvegarde en erreur reste en attente : pas d'envoi d'une copie
         // dépassée, et aucun appel IA déclenché par des frappes seules.
-        if (hasPendingSaves()) { schedule(); return; }
+        // Un second appareil laissé en arrière-plan ne génère pas à la place du premier.
+        if (hasPendingSaves() || document.hidden) { schedule(); return; }
         const current = Date.now();
+        const held = holds.current > 0;
         let cooling = false;
         for (const [key, sourceKey] of [...observed.current.changed]) {
           const item = latest.current.get(key);
           if (!item || !item.follow_up?.enabled || item.follow_up_key !== sourceKey) continue;
           if (item.follow_up.report?.source_key === sourceKey) { observed.current.changed.delete(key); continue; }
           const last = lastAutoAt.current.get(key);
-          if (last !== undefined && current - last < AUTO_COOLDOWN) { cooling = true; continue; }
+          if ((item.follow_up.report && held) || (last !== undefined && current - last < AUTO_COOLDOWN)) { cooling = true; continue; }
           enqueue(item, false);
         }
         if (cooling) schedule();
@@ -248,14 +271,38 @@ export function FollowUpProvider({ state, onChanged, children }: {
   }, [items, wake, enqueue, patch]);
   useEffect(() => {
     mounted.current = true;
+    // Minuit à Los Angeles ou un plafond relevé ne changent aucun état : seul un relevé régulier les voit, hors travail actif pour ne rien effacer d'en cours.
+    const resume = setInterval(() => {
+      if (!refused.current.size || active.current || aiBudgetRefusal(true)) return;
+      for (const key of refused.current) {
+        attempted.current.delete(key);
+        patch(key, idle);
+      }
+      refused.current.clear();
+      setWake((value) => value + 1);
+    }, 60_000);
     return () => {
       mounted.current = false;
+      clearInterval(resume);
       queue.current.clear();
       active.current?.controller.abort();
     };
+  }, [patch]);
+  const hold = useCallback(() => {
+    holds.current += 1;
+    return () => { holds.current -= 1; };
   }, []);
 
-  return <FollowUpContext.Provider value={{ runtime, toggle, refresh: (item) => enqueue(item, true), stop }}>{children}</FollowUpContext.Provider>;
+  return <FollowUpContext.Provider value={{ runtime, toggle, refresh: (item) => enqueue(item, true), stop, hold }}>{children}</FollowUpContext.Provider>;
+}
+
+/** Un bilan qui arrive invalide les synthèses de la vue d'ensemble : mieux vaut ne pas les lancer. */
+export const useFollowUpBusy = () => Object.values(useContext(FollowUpContext)?.runtime ?? {}).some((value) => value.busy);
+
+/** Tant qu'une synthèse payée est affichée, l'actualisation d'un bilan existant attend : à son arrivée, elle l'effacerait. */
+export function useFollowUpHold(active: boolean) {
+  const hold = useContext(FollowUpContext)?.hold;
+  useEffect(() => (active ? hold?.() : undefined), [active, hold]);
 }
 
 export function useFollowUp(kind: FollowUpKind, item: FollowUpItem) {

@@ -332,4 +332,36 @@ describe('dossier partagé dans la PWA', () => {
     expect(normalizeRelayUrl('http://127.0.0.1:8420')).toBe('http://127.0.0.1:8420');
     expect(() => normalizeRelayUrl('  ')).toThrow('adresse du relais');
   });
+
+  test('assistant : la recherche locale nourrit la demande, la proposition s’écrit dans la base du navigateur', async () => {
+    const stockage = { timeout: 10_000 };
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    const prompts: string[] = [];
+    const diverted = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).includes('chat/completions')) return diverted(input, init);
+      prompts.push(JSON.parse(init!.body as string).messages[1].content);
+      return Response.json({ choices: [{ message: { content: JSON.stringify({ reply: 'Je propose cette tâche.', actions: [{ kind: 'create_task', title: 'Acheter des graines', priority: 'high' }] }) } }] });
+    });
+    try {
+      render(<App />);
+      await within(await screen.findByRole('region', { name: 'Tâches' }, stockage)).findByText('Prendre en main WorkLogs', undefined, stockage);
+      await user.click(await within(screen.getByRole('banner')).findByRole('button', { name: 'Ouvrir l’assistant IA' }));
+      const chat = within(await screen.findByRole('dialog', { name: 'Assistant IA' }));
+      await user.click(chat.getByRole('textbox', { name: 'Message pour l’assistant' }));
+      await user.paste('Que reste-t-il à faire ?');
+      await user.keyboard('{Enter}');
+      await chat.findByText('Je propose cette tâche.', undefined, stockage);
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).toContain('Prendre en main WorkLogs');
+
+      await user.click(chat.getByRole('button', { name: /^Appliquer : Créer la tâche « Acheter des graines »/ }));
+      await chat.findByText('✓ Appliqué', undefined, stockage);
+      expect((await localApi.state()).tasks.find((task) => task.title === 'Acheter des graines')).toMatchObject({ priority: 'high', status: 'todo' });
+      expect(await within(board()).findByText('Acheter des graines', undefined, stockage)).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }, 30_000);
 });

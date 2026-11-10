@@ -585,8 +585,8 @@ describe('réglages IA', () => {
     await user.type(within(dialog).getByLabelText('Clé IA'), 'cle-test');
     expect(localStorage.getItem('worklogs-ai-key')).toBe('cle-test');
 
-    await user.selectOptions(within(dialog).getByLabelText('Modèle IA'), 'gemini-3.5-flash');
-    expect(localStorage.getItem('worklogs-ai-model')).toBe('gemini-3.5-flash');
+    await user.selectOptions(within(dialog).getByLabelText('Modèle IA'), 'gemini-3.6-flash');
+    expect(localStorage.getItem('worklogs-ai-model')).toBe('gemini-3.6-flash');
     await user.click(within(dialog).getByRole('button', { name: 'Restaurer les réglages Gemini' }));
     expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('gemini-3-flash-preview');
     // La clé collée survit au reset des valeurs.
@@ -894,6 +894,26 @@ describe('écrire une entrée', () => {
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('## Sous-tâches\n- [ ] Relire\n- [ ] Payer\n');
   });
 
+  test('une entrée liée renommée complète le sujet de la tâche sans l’effacer', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('Relire');
+    seedData(api.db, { tasks: [{ id: 'tk_mail', title: 'Migrer le serveur mail' }] });
+    render(<App />);
+
+    const card = (await within(board()).findByText('Migrer le serveur mail')).closest('.card') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: /Créer une entrée liée/ }));
+    await user.click(screen.getByRole('button', { name: '✨ Suggérer' }));
+    await waitFor(() => expect(aiBodies).toHaveLength(1));
+    expect((aiBodies[0] as { messages: { content: string }[] }).messages[1].content).toMatch(/^Tâche : Migrer le serveur mail$/m);
+
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée liée')).toBeEnabled());
+    fireEvent.change(screen.getByLabelText('Titre de l’entrée liée'), { target: { value: 'Préparation' } });
+    await user.click(screen.getByRole('button', { name: '✨ Suggérer' }));
+    await waitFor(() => expect(aiBodies).toHaveLength(2));
+    expect((aiBodies[1] as { messages: { content: string }[] }).messages[1].content).toContain('Tâche : Migrer le serveur mail — Préparation');
+  });
+
   test('suggérer remplace le contenu du créateur, effacer le vide', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-key', 'cle-test');
@@ -965,6 +985,24 @@ describe('écrire une entrée', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Intro.\n- [ ] Déjà là\n## Sous-tâches\n- [ ] Relire\n');
     });
+  });
+
+  test('aucune sous-tâche nouvelle : le dit au lieu de se taire, sans toucher au texte, et une nouvelle demande efface le message', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('Relire le devis');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Intro.\n- [ ] Relire le devis\n' }] });
+    render(<App />);
+
+    await user.click(await aiAction('Suggérer des sous-tâches'));
+    expect(await within(editor()).findByText('Aucune nouvelle sous-tâche à ajouter.')).toHaveAttribute('role', 'status');
+    expect(row(api.db, 'SELECT content_md FROM entries WHERE id=?', 'en_note').content_md).toBe('Intro.\n- [ ] Relire le devis\n');
+    expect(screen.queryByRole('button', { name: 'Retirer la suggestion' })).not.toBeInTheDocument();
+
+    mockAiSuggest('Payer');
+    await user.click(await aiAction('Suggérer des sous-tâches'));
+    expect(await screen.findByRole('button', { name: 'Retirer la suggestion' })).toBeInTheDocument();
+    expect(within(editor()).queryByText('Aucune nouvelle sous-tâche à ajouter.')).not.toBeInTheDocument();
   });
 
   test('suggérer remplace le bloc dans l’éditeur, retirer le supprime', async () => {
@@ -1965,6 +2003,42 @@ describe('organiser les tâches', () => {
     await waitFor(() => expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_1').status).toBe('doing'));
     await waitFor(() => expect(within(board()).queryByRole('region', { name: 'Priorités proposées par l’IA' })).not.toBeInTheDocument());
     expect(row(api.db, 'SELECT priority FROM tasks WHERE id=?', 'tk_1').priority).toBe('normal');
+    expect(within(board()).getByRole('alert')).toHaveTextContent('Les tâches ont changé');
+  });
+
+  test('une tâche modifiée pendant « Prioriser » le dit', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { tasks: [{ id: 'tk_1', title: 'Relancer le devis' }] });
+    const diverted = globalThis.fetch;
+    let finish!: (response: Response) => void;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => (
+      String(input).includes('chat/completions') ? new Promise<Response>((resolve) => { finish = resolve; }) : diverted(input, init)
+    )));
+    render(<App />);
+    await within(board()).findByRole('button', { name: 'Relancer le devis' });
+    fireEvent.click(await aiAction('Prioriser les tâches', board(), 'Assistance IA des tâches'));
+    await waitFor(() => expect(finish).toBeDefined());
+    await user.click(within(board()).getByRole('button', { name: 'Mettre en cours Relancer le devis' }));
+    expect(await within(board()).findByRole('alert')).toHaveTextContent('Les tâches ont changé');
+    await act(async () => finish({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '[{"n":1,"priority":"high"}]' } }] }) } as Response));
+    expect(within(board()).queryByRole('region', { name: 'Priorités proposées par l’IA' })).not.toBeInTheDocument();
+  });
+
+  test('un échec pendant l’application de la proposition garde son message', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    seedData(api.db, { tasks: [{ id: 'tk_1', title: 'Un' }, { id: 'tk_2', title: 'Deux' }] });
+    mockAiSuggest('[{"n":1,"priority":"high"},{"n":2,"priority":"low"}]');
+    render(<App />);
+    await within(board()).findByRole('button', { name: 'Un' });
+    fireEvent.click(await aiAction('Prioriser les tâches', board(), 'Assistance IA des tâches'));
+    const proposal = await within(board()).findByRole('region', { name: 'Priorités proposées par l’IA' });
+    const write = clientApi.updateTask;
+    vi.spyOn(clientApi, 'updateTask').mockImplementationOnce(write).mockRejectedValueOnce(new Error('Écriture refusée.'));
+    await user.click(within(proposal).getByRole('button', { name: 'Appliquer' }));
+    await waitFor(() => expect(within(board()).queryByRole('region', { name: 'Priorités proposées par l’IA' })).not.toBeInTheDocument());
+    expect(within(board()).getByRole('alert')).toHaveTextContent('Écriture refusée.');
   });
 
   test('la liste regroupée indique toujours les tâches en cours', async () => {
@@ -2011,6 +2085,7 @@ describe('organiser les tâches', () => {
     await act(async () => finish({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '[{"n":1,"priority":"high"}]' } }] }) } as Response));
     await waitFor(() => expect(within(board()).queryByRole('button', { name: 'Priorisation…' })).not.toBeInTheDocument());
     expect(within(board()).queryByRole('region', { name: 'Priorités proposées par l’IA' })).not.toBeInTheDocument();
+    expect(within(board()).queryByRole('alert')).not.toBeInTheDocument();
   });
 
   test('« Tout » range les tâches ouvertes en une liste ; ✨ IA › Prioriser propose, relit, applique ou ignore', async () => {
@@ -2062,6 +2137,7 @@ describe('organiser les tâches', () => {
     await waitFor(() => expect(within(board()).queryByRole('region', { name: 'Priorités proposées par l’IA' })).not.toBeInTheDocument());
     expect(await within(photos).findByText('Haute')).toBeInTheDocument();
     expect(within(photos).queryByText('Bloque la page tarifs.')).not.toBeInTheDocument();
+    expect(within(board()).queryByRole('alert')).not.toBeInTheDocument();
 
     // Ignorer n'écrit rien.
     mockAiSuggest(JSON.stringify([{ n: 2, priority: 'low', reason: 'Peut attendre.' }]));
@@ -3953,7 +4029,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
   const openFromTree = async (name: string) => {
     // Un fichier d'un dossier déplié attend en plus la liste de ce dossier.
     fireEvent.click(await (await tree()).findByRole('button', { name: new RegExp(`^Ouvrir ${name.replace(/[.()]/g, '\\$&')}`) }, partage));
-    return screen.findByRole('region', { name: 'Fichier partagé' });
+    return screen.findByRole('region', { name: 'Fichier partagé' }, partage);
   };
 
   beforeEach(async () => {
@@ -4035,6 +4111,26 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     fireEvent.change(area, { target: { value: '# Consignes\n\nLaver le filtre.\nContrôler le pH.\n' } });
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(async () => expect(await read('notes.md')).toBe('# Consignes\r\n\r\nLaver le filtre.\r\nContrôler le pH.\r\n'), partage);
+  });
+
+  test('Ctrl+S derrière l’assistant ne publie pas le brouillon', async () => {
+    await write('notes.md', '# Consignes\n');
+    render(<App />);
+    const editorRegion = await openFromTree('notes.md');
+    const area = await within(editorRegion).findByLabelText('Contenu de notes.md', undefined, partage);
+    fireEvent.change(area, { target: { value: '# Consignes\n\nBrouillon pas fini.\n' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Ouvrir l’assistant IA' }, partage));
+    const chat = await screen.findByRole('dialog', { name: 'Assistant IA' }, partage);
+
+    // Le navigateur n'ouvre pas sa fenêtre d'enregistrement pour autant ; un envoi afficherait « Envoi… » dès le geste.
+    expect(fireEvent.keyDown(window, { key: 's', ctrlKey: true })).toBe(false);
+    expect(within(editorRegion).queryByText('Envoi…')).not.toBeInTheDocument();
+    expect(await read('notes.md')).toBe('# Consignes\n');
+
+    fireEvent.click(within(chat).getByRole('button', { name: 'Fermer l’assistant' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Assistant IA' })).not.toBeInTheDocument());
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(async () => expect(await read('notes.md')).toBe('# Consignes\n\nBrouillon pas fini.\n'), partage);
   });
 
   test('un PDF du partage se lit au centre, sous son nom, sans être modifiable', async () => {
@@ -5251,6 +5347,31 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
       await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Installer une imprimante'));
     });
 
+    test('Trouver la doc : Arrêter pendant les recherches abandonne les mots suivants, sans erreur ni liste', async () => {
+      mockAiSuggest(JSON.stringify(['imprimante', 'pilote']));
+      seedTask();
+      const originalState = clientApi.state.bind(clientApi);
+      const terms: string[] = [];
+      let release!: () => void;
+      vi.spyOn(clientApi, 'state').mockImplementation(async (q = '', projectId = '', categoryId = '') => {
+        if (q) {
+          terms.push(q);
+          await new Promise<void>((resolve) => { release = resolve; });
+        }
+        return originalState(q, projectId, categoryId);
+      });
+      render(<App />);
+
+      const card = await findDocs();
+      await waitFor(() => expect(terms).toEqual(['imprimante']), partage);
+      fireEvent.click(within(card).getByRole('button', { name: 'Arrêter la demande IA' }));
+      await act(async () => release());
+      expect(await within(card).findByRole('button', { name: 'Assistance IA de la tâche' }, partage)).toBeInTheDocument();
+      expect(terms).toEqual(['imprimante']);
+      expect(within(card).queryByRole('region', { name: 'Documents trouvés' })).not.toBeInTheDocument();
+      expect(within(card).queryByRole('alert')).not.toBeInTheDocument();
+    });
+
     test('Trouver la doc : une réponse IA illisible s’affiche en erreur, rien n’est cherché ni listé', async () => {
       mockAiSuggest('Voici quelques mots : imprimante, pilote.');
       seedTask();
@@ -5297,6 +5418,30 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     expect(api.db.prepare('SELECT title, content_md FROM entries').all()).toEqual([
       { title: 'Vanne et joint', content_md: 'La vanne fuit.\n\nLe joint est remplacé.' },
     ]);
+  });
+
+  test('fusionner une entrée riche envoie son Markdown : le lien et son adresse arrivent au modèle', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('# Accès et joint\n\nVoir le [wiki](https://wiki.exemple/p).');
+    seedData(api.db, { entries: [{ id: 'en_joint', title: 'Joint', content_md: 'Le joint est remplacé.' }] });
+    await clientApi.createEntry({ title: 'Accès', content_json: { type: 'doc', content: [
+      { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Procédure' }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'wiki', marks: [{ type: 'link', attrs: { href: 'https://wiki.exemple/p' } }] }] },
+    ] } });
+    render(<App />);
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Choisir Accès pour une fusion' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Choisir Joint pour une fusion' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Entrées choisies' })).getByRole('button', { name: '✨ Fusionner' }));
+    const panel = await screen.findByRole('form', { name: 'Fusion d’entrées' });
+    expect(await within(panel).findByLabelText('Titre de l’entrée fusionnée')).toHaveValue('Accès et joint');
+    const sent = (aiBodies[0] as { messages: { content: string }[] }).messages[1].content;
+    expect(sent).toContain('[wiki](https://wiki.exemple/p)');
+    expect(sent).toContain('## Procédure');
+    expect(sent).toContain('Le joint est remplacé.');
+    // Les clés des sources restent celles des entrées lues : la validation aboutit.
+    fireEvent.click(within(panel).getByRole('button', { name: 'Valider la fusion' }));
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Fusion d’entrées' })).not.toBeInTheDocument(), { timeout: 5000 });
+    expect(api.db.prepare('SELECT title FROM entries').all()).toEqual([{ title: 'Accès et joint' }]);
   });
 
   test('fusionner deux tâches cochées : l’IA propose une tâche et sa note, Valider les garde seules', async () => {
@@ -5691,7 +5836,9 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     render(<App />);
     fireEvent.click(await aiAction('Mettre en page'));
     await screen.findByRole('region', { name: 'Mise en page proposée' });
-    expect(JSON.stringify(aiBodies.at(-1))).toContain('Instruction privée du document complémentaire.');
+    // La mise en page ne reçoit d'une source que son vocabulaire : « purger » vient de son titre.
+    expect(JSON.stringify(aiBodies.at(-1))).toContain('Vocabulaire du métier : pompe, purger');
+    expect(JSON.stringify(aiBodies.at(-1))).not.toContain('Instruction privée du document complémentaire.');
     fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Procédure : Purger la pompe' }));
     expect(screen.queryByRole('region', { name: 'Mise en page proposée' })).not.toBeInTheDocument();
@@ -5699,7 +5846,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     fireEvent.click(await aiAction('Mettre en page'));
     await within(await screen.findByRole('region', { name: 'Mise en page proposée' })).findByText('Proposition indépendante.');
     const sent = JSON.stringify(aiBodies.at(-1));
-    expect(sent).not.toContain('Instruction privée du document complémentaire.');
+    expect(sent).not.toContain('purger');
     expect(sent).not.toContain('Purger la pompe');
     expect(sent).not.toContain('Première proposition dérivée');
   });
@@ -5827,15 +5974,16 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     await screen.findByRole('region', { name: 'Mise en page proposée' });
     const sent = JSON.stringify(aiBodies.at(-1));
     expect(sent).toContain('Le moteur de la pompe chauffe.');
-    expect(sent).toContain('Purger le filtre avant le redémarrage.');
-    expect(sent).not.toContain('Texte hors projet.');
+    // La mise en page ne reçoit d'une source que son vocabulaire : « entretien » vient de son titre.
+    expect(sent).toContain('Vocabulaire du métier : entretien, pompe');
+    expect(sent).not.toContain('Purger le filtre avant le redémarrage.');
+    expect(sent).not.toContain('confidentielle');
     fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));
     expect(screen.getByText(/Vocabulaire du projet :/)).toHaveTextContent('entretien');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Procédure : Entretien de la pompe' }));
     expect(screen.queryByText(/Vocabulaire du projet :.*entretien/)).not.toBeInTheDocument();
     fireEvent.click(await aiAction('Mettre en page'));
     await screen.findByRole('region', { name: 'Mise en page proposée' });
-    expect(JSON.stringify(aiBodies.at(-1))).not.toContain('Purger le filtre avant le redémarrage.');
     expect(JSON.stringify(aiBodies.at(-1))).not.toContain('entretien');
   });
 
@@ -5976,6 +6124,64 @@ describe('suivi IA des entrées et tâches', () => {
     await screen.findByRole('region', { name: 'Suivi IA de Note évolutive' }, backend);
   };
 
+  test('une version venue de la synchro reste « À actualiser » sans appel ; une modification de la session repart', async () => {
+    prepare();
+    mockAiSuggest(report('Bilan actualisé.'));
+    const enabled = await clientApi.saveFollowUp('entry', 'en_suivi', { enabled: true });
+    await clientApi.saveFollowUp('entry', 'en_suivi', { report: JSON.parse(report('Bilan de départ.')), source_key: enabled.source_key });
+    // Seule la durée change : le relevé de synchro (5 s) et la pause d’écriture (8 s).
+    const { setInterval: interval, setTimeout: timeout } = globalThis;
+    vi.spyOn(globalThis, 'setInterval').mockImplementation(((run: () => void, ms?: number, ...rest: unknown[]) => interval(run, ms === 5000 ? 50 : ms, ...rest)) as typeof setInterval);
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((run: () => void, ms?: number, ...rest: unknown[]) => timeout(run, ms === 8000 ? 50 : ms, ...rest)) as typeof setTimeout);
+    const calm = () => act(async () => { await new Promise((resolve) => timeout(resolve, 300)); });
+    const remote = (text: string) => api.db.prepare('UPDATE entries SET content_md=? WHERE id=?').run(text, 'en_suivi');
+    let connect!: (status: Awaited<ReturnType<typeof clientApi.googleStatus>>) => void;
+    vi.spyOn(clientApi, 'googleStatus').mockReturnValue(new Promise((resolve) => { connect = resolve; }));
+    let revision = 1;
+    vi.spyOn(clientApi, 'googleSync').mockImplementation(async () => ({ state: 'idle', error: '', lastSyncedAt: null, revision }));
+    render(<App />);
+    await screen.findByDisplayValue('Note évolutive');
+
+    // Passage d’ouverture : l’écran est déjà chargé quand la première révision connue arrive.
+    remote('Version de l’autre appareil.');
+    connect({ available: true, configured: true, connected: true, pending: false, error: '', selectedIds: [], account: { email: 'timo@example.com', name: 'Timo' } });
+    await within(follow()).findByText('À actualiser', undefined, backend);
+    await calm();
+    expect(aiBodies).toHaveLength(0);
+
+    // Synchro pendant la session.
+    remote('Encore une autre version.');
+    revision = 2;
+    await within(journal()).findByText(/Encore une autre version/, undefined, backend);
+    await calm();
+    expect(aiBodies).toHaveLength(0);
+    expect(within(follow()).getByText('À actualiser')).toBeVisible();
+
+    // Un geste local supplante la relecture de synchro : celle qui répond à sa place porte la marque.
+    const readState = clientApi.state;
+    const answers: (() => void)[] = [];
+    const held = vi.spyOn(clientApi, 'state').mockImplementation(async (...args) => {
+      const next = await readState(...args);
+      await new Promise<void>((answer) => answers.push(answer));
+      return next;
+    });
+    remote('Version reçue pendant un geste.');
+    revision = 3;
+    await waitFor(() => expect(answers).toHaveLength(1), backend);
+    fireEvent.change(screen.getByLabelText('Nouvelle tâche'), { target: { value: 'Sans rapport' } });
+    fireEvent.click(within(board()).getByRole('button', { name: 'Ajouter' }));
+    await waitFor(() => expect(answers).toHaveLength(2), backend);
+    held.mockRestore();
+    await act(async () => answers[0]());
+    await act(async () => answers[1]());
+    await within(journal()).findByText(/Version reçue pendant un geste/, undefined, backend);
+    await calm();
+    expect(aiBodies).toHaveLength(0);
+
+    fireEvent.change(screen.getByLabelText('Titre de l’entrée'), { target: { value: 'Note évolutive modifiée' } });
+    await waitFor(() => expect(aiBodies).toHaveLength(1), backend);
+  });
+
   test('la sélection commune active plusieurs suivis et indique les notes déjà incluses avec leur tâche', async () => {
     prepare();
     mockAiSuggest(report('Le montage attend son joint.'));
@@ -5994,11 +6200,45 @@ describe('suivi IA des entrées et tâches', () => {
     const reports = await within(overview).findByRole('region', { name: 'Bilans et suivis IA' }, backend);
     await waitFor(() => expect(within(reports).getAllByText('Le montage attend son joint.')).toHaveLength(2), backend);
     expect(within(overview).queryByRole('region', { name: 'Choisir les suivis IA' })).not.toBeInTheDocument();
-    expect(within(overview).getByRole('button', { name: 'Bilan du jour' })).toBeEnabled();
+    await waitFor(() => expect(within(overview).getByRole('button', { name: 'Bilan du jour' })).toBeEnabled(), backend);
     expect((await clientApi.followUp('task', 'tk_suivi')).follow_up?.enabled).toBe(true);
     expect((await clientApi.followUp('entry', 'en_suivi')).follow_up?.enabled).toBe(true);
     expect(row(api.db, 'SELECT status FROM tasks WHERE id=?', 'tk_suivi').status).toBe('doing');
     expect(aiBodies).toHaveLength(2);
+  }, 20_000);
+
+  test('pendant qu’un suivi s’actualise, Bilan du jour et Replanifier attendent, puis redeviennent disponibles', async () => {
+    prepare();
+    const diverted = globalThis.fetch;
+    let finish!: (value: Response) => void;
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).includes('chat/completions')) return diverted(input, init);
+      calls++;
+      return new Promise<Response>((resolve) => { finish = resolve; });
+    }));
+    render(<App />);
+    await screen.findByDisplayValue('Note évolutive');
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
+    fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter au suivi IA' }));
+    const picker = within(overview).getByRole('region', { name: 'Choisir les suivis IA' });
+    fireEvent.click(within(picker).getByRole('checkbox', { name: /Note évolutive/ }));
+    fireEvent.click(within(picker).getByRole('button', { name: 'Suivre la sélection (1)' }));
+    // L’activation part sans pause : il ne reste que les allers-retours du serveur.
+    await waitFor(() => expect(calls).toBe(1), { timeout: 10_000 });
+    const daily = () => within(overview).getByRole('button', { name: 'Bilan du jour' });
+    const replan = () => within(overview).getByRole('button', { name: 'Replanifier avec l’IA' });
+    const hint = /Bilans de suivi en cours d’actualisation/;
+    await waitFor(() => expect(daily()).toBeDisabled(), backend);
+    expect(replan()).toBeDisabled();
+    expect(within(overview).getByText(hint)).toBeInTheDocument();
+    await act(async () => finish(response('Bilan prêt.')));
+    await within(overview).findByText('Bilan prêt.', {}, backend);
+    await waitFor(() => expect(daily()).toBeEnabled(), backend);
+    expect(replan()).toBeEnabled();
+    expect(within(overview).queryByText(hint)).not.toBeInTheDocument();
+    expect(calls).toBe(1);
   }, 20_000);
 
   test('une réponse perdue à l’activation est réconciliée sans redater le suivi', async () => {
@@ -6047,6 +6287,21 @@ describe('suivi IA des entrées et tâches', () => {
     fireEvent.click(within(picker).getByRole('button', { name: 'Suivre la sélection (1)' }));
     await waitFor(() => expect(within(overview).queryByRole('region', { name: 'Choisir les suivis IA' })).not.toBeInTheDocument(), backend);
     expect(save.mock.calls.filter(([kind, , body]) => kind === 'task' && body.enabled === true)).toHaveLength(1);
+  }, 20_000);
+
+  test('la sélection annonce l’activation sans promettre un bilan que rien ne prépare', async () => {
+    prepare();
+    localStorage.removeItem('worklogs-ai-key');
+    render(<App />);
+    await screen.findByDisplayValue('Note évolutive');
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    const overview = await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
+    fireEvent.click(within(overview).getByRole('button', { name: 'Ajouter au suivi IA' }));
+    const picker = within(overview).getByRole('region', { name: 'Choisir les suivis IA' });
+    fireEvent.click(within(picker).getByRole('checkbox', { name: /^Remonter la pompe/ }));
+    fireEvent.click(within(picker).getByRole('button', { name: 'Suivre la sélection (1)' }));
+    expect(await within(overview).findByRole('alert', {}, backend)).toHaveTextContent('Colle ta clé IA');
+    expect(within(overview).getByText('1 suivi activé.')).toBeInTheDocument();
   }, 20_000);
 
   test('conserve des bilans distincts pour la note et sa tâche, visibles dans la vue d’ensemble sans changer leur texte ni leur statut', async () => {
@@ -6247,5 +6502,254 @@ describe('suivi IA des entrées et tâches', () => {
     expect(aiBodies).toHaveLength(0);
     expect((await clientApi.followUp('entry', 'en_suivi')).follow_up).toBeNull();
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Dernière avancée non enregistrée.');
+  }, 20_000);
+});
+
+describe('assistant IA', () => {
+  const backend = { timeout: 5000 };
+  const chatDialog = () => screen.findByRole('dialog', { name: 'Assistant IA' }, backend);
+  const chatOpener = async () => within(await screen.findByRole('banner', {}, backend)).findByRole('button', { name: 'Ouvrir l’assistant IA' }, backend);
+  function ask(chat: HTMLElement, text: string) {
+    const field = within(chat).getByRole('textbox', { name: 'Message pour l’assistant' });
+    fireEvent.change(field, { target: { value: text } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+  }
+  const assistantReply = (reply: object) => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest(JSON.stringify(reply));
+  };
+
+  test('le bouton de l’en-tête ouvre l’assistant, Échap referme, le focus revient et la conversation reste', async () => {
+    seedData(api.db, { tasks: [{ id: 'tk_pompe', title: 'Réparer la pompe' }] });
+    assistantReply({ reply: 'La pompe reste à réparer.' });
+    render(<App />);
+    const opener = await chatOpener();
+    fireEvent.click(opener);
+    const chat = await chatDialog();
+    ask(chat, 'Où en est la pompe ?');
+    expect(await within(chat).findByText('La pompe reste à réparer.', undefined, backend)).toBeInTheDocument();
+    expect(aiBodies).toHaveLength(1);
+    expect((aiBodies[0] as { messages: { content: string }[] }).messages[1].content).toContain('Réparer la pompe');
+
+    fireEvent(chat, new Event('cancel', { cancelable: true }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Assistant IA' })).not.toBeInTheDocument());
+    expect(opener).toHaveFocus();
+
+    fireEvent.click(opener);
+    expect(await within(await chatDialog()).findByText('Où en est la pompe ?')).toBeInTheDocument();
+    expect(JSON.stringify({ ...localStorage })).not.toContain('Où en est la pompe');
+  }, 20_000);
+
+  test('une proposition appliquée arrive en base et sur l’écran ; rien n’est écrit sans clic', async () => {
+    seedData(api.db, { projects: [{ id: 'pj_a', name: 'Atelier' }], tasks: [{ id: 'tk_pompe', title: 'Réparer la pompe', project_id: 'pj_a' }] });
+    localStorage.setItem('worklogs-project', 'pj_a');
+    assistantReply({
+      reply: 'Voici ce que je propose.',
+      actions: [
+        { kind: 'create_task', title: 'Commander le joint', priority: 'high', due_date: '2026-12-01' },
+        { kind: 'update_task', n: 1, status: 'doing' },
+        { kind: 'create_note', title: 'Suivi de la pompe', content: 'Joint à commander.' },
+      ],
+    });
+    render(<App />);
+    await within(board()).findByText('Réparer la pompe', undefined, backend);
+    fireEvent.click(await chatOpener());
+    const chat = await chatDialog();
+    ask(chat, 'Que faire pour la pompe ?');
+    await within(chat).findByText('Voici ce que je propose.', undefined, backend);
+    expect(row(api.db, 'SELECT COUNT(*) AS n FROM tasks').n).toBe(1);
+    expect(row(api.db, 'SELECT status FROM tasks WHERE id = ?', 'tk_pompe').status).toBe('todo');
+
+    fireEvent.click(within(chat).getByRole('button', { name: /^Appliquer : Créer la tâche « Commander le joint »/ }));
+    await within(chat).findByText('✓ Appliqué', undefined, backend);
+    expect(row(api.db, 'SELECT status, priority, due_date, project_id FROM tasks WHERE title = ?', 'Commander le joint'))
+      .toEqual({ status: 'todo', priority: 'high', due_date: '2026-12-01', project_id: 'pj_a' });
+    expect(await within(board()).findByText('Commander le joint', undefined, backend)).toBeInTheDocument();
+
+    fireEvent.click(within(chat).getByRole('button', { name: 'Tout appliquer (2)' }));
+    await waitFor(() => expect(within(chat).getAllByText('✓ Appliqué')).toHaveLength(3), backend);
+    expect(row(api.db, 'SELECT status FROM tasks WHERE id = ?', 'tk_pompe').status).toBe('doing');
+    expect(row(api.db, 'SELECT content_md, project_id FROM entries WHERE title = ?', 'Suivi de la pompe')).toEqual({ content_md: 'Joint à commander.', project_id: 'pj_a' });
+    expect(await within(journal()).findByText('Suivi de la pompe', undefined, backend)).toBeInTheDocument();
+    expect(aiBodies).toHaveLength(1);
+  }, 20_000);
+
+  test('une tâche changée entre-temps ne s’écrit pas : le message propose de redemander', async () => {
+    seedData(api.db, { tasks: [{ id: 'tk_pompe', title: 'Réparer la pompe' }] });
+    assistantReply({ reply: 'Voici.', actions: [{ kind: 'update_task', n: 1, status: 'doing' }] });
+    render(<App />);
+    fireEvent.click(await chatOpener());
+    const chat = await chatDialog();
+    ask(chat, 'Passe la pompe en cours');
+    await within(chat).findByText('Voici.', undefined, backend);
+    api.db.prepare('UPDATE tasks SET title = ? WHERE id = ?').run('Remplacer la pompe', 'tk_pompe');
+
+    fireEvent.click(within(chat).getByRole('button', { name: /^Appliquer : « Réparer la pompe »/ }));
+    expect(await within(chat).findByRole('alert', {}, backend)).toHaveTextContent('Cette tâche a changé depuis la proposition : redemande à l’assistant.');
+    expect(row(api.db, 'SELECT status FROM tasks WHERE id = ?', 'tk_pompe').status).toBe('todo');
+    expect(within(chat).getByRole('button', { name: /^Réessayer : « Réparer la pompe »/ })).toBeInTheDocument();
+  }, 20_000);
+
+  test('ouvrir une tâche masquée lève la recherche et le filtre, puis révèle sa carte', async () => {
+    seedData(api.db, {
+      projects: [{ id: 'pj_a', name: 'Atelier' }, { id: 'pj_b', name: 'Bureau' }],
+      tasks: [{ id: 'tk_facture', title: 'Classer les factures', project_id: 'pj_b' }, { id: 'tk_pompe', title: 'Réparer la pompe', project_id: 'pj_a' }],
+    });
+    localStorage.setItem('worklogs-project', 'pj_a');
+    assistantReply({ reply: 'Elle est dans Bureau.', show_tasks: [1] });
+    render(<App />);
+    await within(board()).findByText('Réparer la pompe', undefined, backend);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Rechercher' }), { target: { value: 'pompe' } });
+    await waitFor(() => expect(within(board()).queryByText('Réparer la pompe')).toBeInTheDocument(), backend);
+    expect(within(board()).queryByText('Classer les factures')).not.toBeInTheDocument();
+
+    fireEvent.click(await chatOpener());
+    const chat = await chatDialog();
+    ask(chat, 'Où sont les factures ?');
+    fireEvent.click(await within(chat).findByRole('button', { name: 'Ouvrir la tâche Classer les factures' }, backend));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Assistant IA' })).not.toBeInTheDocument());
+
+    expect(await within(board()).findByDisplayValue('Classer les factures', undefined, backend)).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Rechercher' })).toHaveValue('');
+    await waitFor(() => expect(localStorage.getItem('worklogs-project')).toBe(''));
+    expect(aiBodies).toHaveLength(1);
+  }, 20_000);
+
+  test('ouvrir un document referme l’assistant et affiche la note en suivant son projet', async () => {
+    seedData(api.db, {
+      projects: [{ id: 'pj_a', name: 'Atelier' }, { id: 'pj_b', name: 'Bureau' }],
+      entries: [{ id: 'en_ici', title: 'Note de l’atelier', project_id: 'pj_a' }, { id: 'en_facture', title: 'Factures de mars', content_md: 'Trois factures.', project_id: 'pj_b' }],
+    });
+    localStorage.setItem('worklogs-project', 'pj_a');
+    localStorage.setItem('worklogs-entry', 'en_ici');
+    assistantReply({ reply: 'Voici la note.', show_documents: [1] });
+    render(<App />);
+    fireEvent.click(await chatOpener());
+    const chat = await chatDialog();
+    ask(chat, 'Où sont les factures ?');
+    fireEvent.click(await within(chat).findByRole('button', { name: 'Ouvrir le document Factures de mars' }, backend));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Assistant IA' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Factures de mars'), backend);
+    expect(localStorage.getItem('worklogs-project')).toBe('pj_b');
+  }, 20_000);
+
+  test('le titre de la note ouverte et le projet affiché accompagnent la demande', async () => {
+    seedData(api.db, { projects: [{ id: 'pj_a', name: 'Atelier' }], entries: [{ id: 'en_ici', title: 'Note de l’atelier', project_id: 'pj_a' }] });
+    localStorage.setItem('worklogs-project', 'pj_a');
+    localStorage.setItem('worklogs-entry', 'en_ici');
+    assistantReply({ reply: 'Vu.' });
+    render(<App />);
+    await screen.findByDisplayValue('Note de l’atelier', undefined, backend);
+    fireEvent.click(await chatOpener());
+    const chat = await chatDialog();
+    ask(chat, 'Résume');
+    await within(chat).findByText('Vu.', undefined, backend);
+    const prompt = (aiBodies[0] as { messages: { content: string }[] }).messages[1].content;
+    expect(prompt).toContain('Note ouverte : « Note de l’atelier »');
+    expect(prompt).toContain('Projet affiché : P1, Atelier');
+  }, 20_000);
+
+  test('la vue d’ensemble cache la note : son titre ne part pas', async () => {
+    seedData(api.db, { entries: [{ id: 'en_ici', title: 'Note de l’atelier' }] });
+    localStorage.setItem('worklogs-entry', 'en_ici');
+    assistantReply({ reply: 'Vu.' });
+    render(<App />);
+    await screen.findByDisplayValue('Note de l’atelier', undefined, backend);
+    fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    await screen.findByRole('region', { name: 'Vue d’ensemble des projets' }, backend);
+    fireEvent.click(await chatOpener());
+    const chat = await chatDialog();
+    ask(chat, 'Résume');
+    await within(chat).findByText('Vu.', undefined, backend);
+    expect((aiBodies[0] as { messages: { content: string }[] }).messages[1].content).not.toContain('Note ouverte');
+  }, 20_000);
+
+  test('la note renommée part sous son nouveau titre', async () => {
+    seedData(api.db, { entries: [{ id: 'en_ici', title: 'Note de l’atelier' }] });
+    localStorage.setItem('worklogs-entry', 'en_ici');
+    assistantReply({ reply: 'Vu.' });
+    render(<App />);
+    fireEvent.change(await screen.findByDisplayValue('Note de l’atelier', undefined, backend), { target: { value: 'Note renommée' } });
+    await within(journal()).findByText('Note renommée', undefined, backend);
+    fireEvent.click(await chatOpener());
+    const chat = await chatDialog();
+    ask(chat, 'Résume');
+    await within(chat).findByText('Vu.', undefined, backend);
+    expect((aiBodies[0] as { messages: { content: string }[] }).messages[1].content).toContain('Note ouverte : « Note renommée »');
+  }, 20_000);
+
+  test('ouvrir une tâche déjà affichée ne touche ni à la recherche ni au filtre', async () => {
+    seedData(api.db, { projects: [{ id: 'pj_a', name: 'Atelier' }], tasks: [{ id: 'tk_pompe', title: 'Réparer la pompe', project_id: 'pj_a' }] });
+    localStorage.setItem('worklogs-project', 'pj_a');
+    assistantReply({ reply: 'La voici.', show_tasks: [1] });
+    render(<App />);
+    await within(board()).findByText('Réparer la pompe', undefined, backend);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Rechercher' }), { target: { value: 'pompe' } });
+    fireEvent.click(await chatOpener());
+    const chat = await chatDialog();
+    ask(chat, 'Où en est la pompe ?');
+    fireEvent.click(await within(chat).findByRole('button', { name: 'Ouvrir la tâche Réparer la pompe' }, backend));
+    expect(await within(board()).findByDisplayValue('Réparer la pompe', undefined, backend)).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Rechercher' })).toHaveValue('pompe');
+    expect(localStorage.getItem('worklogs-project')).toBe('pj_a');
+  }, 20_000);
+
+  test('une tâche supprimée depuis la réponse : le filtre reste et un message le dit', async () => {
+    seedData(api.db, { projects: [{ id: 'pj_a', name: 'Atelier' }], tasks: [{ id: 'tk_pompe', title: 'Réparer la pompe', project_id: 'pj_a' }] });
+    localStorage.setItem('worklogs-project', 'pj_a');
+    assistantReply({ reply: 'La voici.', show_tasks: [1] });
+    render(<App />);
+    await within(board()).findByText('Réparer la pompe', undefined, backend);
+    const opener = await chatOpener();
+    fireEvent.click(opener);
+    const chat = await chatDialog();
+    ask(chat, 'Où est la pompe ?');
+    await within(chat).findByRole('button', { name: 'Ouvrir la tâche Réparer la pompe' }, backend);
+    fireEvent(chat, new Event('cancel', { cancelable: true }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Assistant IA' })).not.toBeInTheDocument());
+
+    fireEvent.click(within(board()).getByRole('button', { name: 'Supprimer Réparer la pompe' }));
+    await waitFor(() => expect(within(board()).queryByText('Réparer la pompe')).not.toBeInTheDocument(), backend);
+    fireEvent.click(opener);
+    fireEvent.click(await within(await chatDialog()).findByRole('button', { name: 'Ouvrir la tâche Réparer la pompe' }, backend));
+
+    expect(await screen.findByText('tâche introuvable', undefined, backend)).toBeInTheDocument();
+    expect(localStorage.getItem('worklogs-project')).toBe('pj_a');
+  }, 20_000);
+
+  test('une tâche créée sous une vue rapide la lève pour apparaître', async () => {
+    seedData(api.db, { tasks: [{ id: 'tk_retard', title: 'Tâche en retard', due_date: '2026-01-05' }] });
+    assistantReply({ reply: 'Voici.', actions: [{ kind: 'create_task', title: 'Commander le joint' }] });
+    render(<App />);
+    fireEvent.click(await within(board()).findByRole('button', { name: 'En retard 1' }, backend));
+    fireEvent.click(await chatOpener());
+    const chat = await chatDialog();
+    ask(chat, 'Ajoute le joint');
+    fireEvent.click(await within(chat).findByRole('button', { name: /^Appliquer : Créer la tâche « Commander le joint »/ }, backend));
+    await within(chat).findByText('✓ Appliqué', undefined, backend);
+    expect(await within(board()).findByText('Commander le joint', undefined, backend)).toBeInTheDocument();
+  }, 20_000);
+
+  test('une création demandée sous une catégorie filtrée en hérite et reste affichée', async () => {
+    seedData(api.db, { projects: [{ id: 'pj_a', name: 'Atelier' }] });
+    const category = await clientApi.createCategory({ name: 'Devis', project_id: 'pj_a' });
+    localStorage.setItem('worklogs-project', 'pj_a');
+    assistantReply({ reply: 'Voici.', actions: [{ kind: 'create_task', title: 'Chiffrer le lot' }, { kind: 'create_note', title: 'Notes du lot', content: 'Trois postes.' }] });
+    render(<App />);
+    await within(filters()).findByRole('button', { name: /Atelier/ }, backend);
+    fireEvent.click(document.querySelector<HTMLButtonElement>('.category-trigger')!);
+    fireEvent.click(await within(document.querySelector<HTMLElement>('.category-sheet')!).findByRole('button', { name: 'Afficher la catégorie Devis' }, backend));
+    await waitFor(() => expect(document.querySelector('.category-trigger')).toHaveAccessibleName('Catégories : Devis'), backend);
+
+    fireEvent.click(await chatOpener());
+    const chat = await chatDialog();
+    ask(chat, 'Prépare le lot');
+    fireEvent.click(await within(chat).findByRole('button', { name: 'Tout appliquer (2)' }, backend));
+    await waitFor(() => expect(within(chat).getAllByText('✓ Appliqué')).toHaveLength(2), backend);
+
+    expect(row(api.db, 'SELECT category_id FROM tasks WHERE title = ?', 'Chiffrer le lot').category_id).toBe(category.id);
+    expect(row(api.db, 'SELECT category_id FROM entries WHERE title = ?', 'Notes du lot').category_id).toBe(category.id);
+    expect(await within(board()).findByText('Chiffrer le lot', undefined, backend)).toBeInTheDocument();
+    expect(await within(journal()).findByText('Notes du lot', undefined, backend)).toBeInTheDocument();
   }, 20_000);
 });

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { AiCancelled } from './ai-suggest';
 import { findDocuments, MAX_FOUND, rankFoundDocuments, type FoundDocument } from './doc-finder';
 import { api, type AppState, type EntrySummary, type SharedSearch, type SharedSearchResult } from './lib';
 
@@ -93,5 +94,33 @@ describe('recherche dans WorkLogs et le partage', () => {
     expect(search).not.toHaveBeenCalled();
     status.mockResolvedValueOnce({ available: true, root: '/partage', reach: 'offline' });
     expect((await findDocuments(['pompe'], new Set())).sharedNote).toBe('Partage hors ligne : dernières listes vues.');
+  });
+
+  test('Arrêter : aucun mot suivant n’est cherché', async () => {
+    vi.spyOn(api, 'sharedStatus').mockResolvedValue({ available: true, root: '/partage' });
+    const stop = new AbortController();
+    const state = vi.spyOn(api, 'state').mockImplementation(async () => {
+      stop.abort();
+      return stateWith([]);
+    });
+    const search = vi.spyOn(api, 'searchShared').mockResolvedValue(searched([]));
+    await expect(findDocuments(['pompe', 'joint'], new Set(), stop.signal)).rejects.toBeInstanceOf(AiCancelled);
+    expect(state.mock.calls).toEqual([['pompe', '']]);
+    expect(search).toHaveBeenCalledOnce();
+  });
+
+  test('au-delà de 10 s, le partage n’est plus interrogé : WorkLogs continue et le dit', async () => {
+    vi.spyOn(api, 'sharedStatus').mockResolvedValue({ available: true, root: '/partage' });
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    vi.spyOn(api, 'state').mockImplementation(async (q = '') => stateWith(q === 'toner' ? [entry('en_toner', 'Toner')] : []));
+    const search = vi.spyOn(api, 'searchShared').mockImplementation(async (term) => {
+      clock.mockReturnValue(term === 'pilote' ? 11_000 : 11_001);
+      return searched([file(`${term}.md`)]);
+    });
+    // Tout juste 10 s : le deuxième mot passe encore.
+    const found = await findDocuments(['pilote', 'bureau', 'toner'], new Set());
+    expect(search.mock.calls.map(([term]) => term)).toEqual(['pilote', 'bureau']);
+    expect(summary(found.documents)).toEqual(['shared pilote.md 3 pilote', 'note Toner 2 toner', 'shared bureau.md 2 bureau']);
+    expect(found.sharedNote).toBe('Partage : recherche partielle.');
   });
 });

@@ -30,6 +30,7 @@ describe('bilan du suivi IA', () => {
     expect(body.messages[0].content).toContain('Une procédure décrit comment faire');
     expect(body.messages[0].content).toContain('les informations explicitement datées les plus récentes');
     expect(body.messages[0].content).toContain('Ne reconstruis aucun historique absent');
+    expect(body.messages[0].content).toContain('recopie en tête la date écrite dans la source');
   });
 
   test('garde le début et la fin des longs textes et annonce chaque document omis', async () => {
@@ -121,22 +122,33 @@ describe('bilan du suivi IA', () => {
     expect(empty.warnings).toContain('Aucun document lié : seuls les champs de la tâche sont disponibles.');
   });
 
-  test('refuse un état inconnu ou un bilan incomplet et borne les textes et listes', async () => {
+  test('refuse un état inconnu ou un bilan incomplet', async () => {
     const fetch = vi.fn(async () => response('')); vi.stubGlobal('fetch', fetch);
     for (const invalid of [
       { ...report, status: 'probably done' },
       { ...report, summary: '' },
-      { ...report, summary: 'x'.repeat(1501) },
       { ...report, completed: undefined },
       { ...report, next_steps: [4] },
-      { ...report, blockers: [' '] },
-      { ...report, blockers: ['x'.repeat(501)] },
-      { ...report, completed: Array(9).fill('Étape faite') },
     ]) {
       fetch.mockImplementationOnce(async () => response(JSON.stringify(invalid)));
       await expect(generateFollowUp(settings, source)).rejects.toBeInstanceOf(AiError);
     }
-    expect(fetch).toHaveBeenCalledTimes(8);
+    expect(fetch).toHaveBeenCalledTimes(4);
+  });
+
+  test('rogne un bilan qui dépasse de peu aux bornes du serveur plutôt que de perdre l’appel', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response(JSON.stringify({
+      ...report,
+      summary: `  ${'s'.repeat(1600)}`,
+      completed: Array.from({ length: 10 }, (_, index) => `Étape ${index}`),
+      next_steps: ['x'.repeat(501)],
+      blockers: [' ', 'La pièce manque.', ''],
+    }))));
+    const value = await generateFollowUp(settings, source);
+    expect(value.summary).toBe('s'.repeat(1500));
+    expect(value.completed).toEqual(Array.from({ length: 8 }, (_, index) => `Étape ${index}`));
+    expect(value.next_steps).toEqual(['x'.repeat(500)]);
+    expect(value.blockers).toEqual(['La pièce manque.']);
   });
 
   test('sans clé ou après arrêt rien ne part ; un appel en vol peut être arrêté', async () => {

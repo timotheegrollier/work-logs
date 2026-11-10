@@ -365,6 +365,7 @@ export function EntryEditor({
   const [suggestedBlock, setSuggestedBlock] = useState<string | null>(null);
   const [aiContext, setAiContext] = useState<AiWorkContext | null>(null);
   const [showAiTaskPlanning, setShowAiTaskPlanning] = useState(false);
+  const [aiVocabularyOnly, setAiVocabularyOnly] = useState(false);
   const [excludedAiSources, setExcludedAiSources] = useState<string[]>([]);
   const excludedAiSourcesRef = useRef(excludedAiSources);
   const aiContextVersion = useRef(0);
@@ -383,12 +384,13 @@ export function EntryEditor({
     aiRequest.current = new AbortController();
     return { ...settings, signal: aiRequest.current.signal };
   };
-  const contextForAi = async (current: typeof draft, version: number, contextVersion: number, purpose: 'general' | 'planning' | 'note' = 'general') => {
+  const contextForAi = async (current: typeof draft, version: number, contextVersion: number, purpose: 'general' | 'planning' | 'note' | 'layout' = 'general') => {
     const loaded = await loadAiContext({ projectId: current.project_id || null, title: current.title, text: current.content_json ? richToMarkdown(current.content_json) : current.content_md, entryId: entry.id });
     const context = purpose === 'note' ? noteCompletionContext(loaded) : loaded;
     if (!sameProject(current.project_id) || projectVersion.current !== version || aiContextVersion.current !== contextVersion) return null;
     setAiContext(context);
     setShowAiTaskPlanning(purpose === 'planning');
+    setAiVocabularyOnly(purpose === 'layout');
     return selectedAiContext(context, excludedAiSourcesRef.current);
   };
   const suggestForEntry = async (instruction?: string) => {
@@ -398,6 +400,7 @@ export function EntryEditor({
     const contextVersion = aiContextVersion.current;
     setSuggesting(true);
     setError('');
+    setTaskMessage('');
     try {
       const settings = settingsForAi('les suggestions');
       await autosave.flush();
@@ -433,7 +436,7 @@ export function EntryEditor({
         return true;
       });
       // Une case ajoutée pendant la demande compte elle aussi comme existante.
-      if (!freshLines.length) return;
+      if (!freshLines.length) { setTaskMessage('Aucune nouvelle sous-tâche à ajouter.'); return; }
       const block = subtasksMd(freshLines.join('\n'));
       // Suggérer remplace le bloc suivi, sinon ajoute : un seul geste.
       if (suggestedBlock && latest.includes(suggestedBlock)) {
@@ -492,7 +495,7 @@ export function EntryEditor({
       }
       const source = previous?.source ?? (current.content_json ? richToMarkdown(current.content_json) : current.content_md);
       const title = previous?.title ?? current.title;
-      const context = await contextForAi(current, version, contextVersion, mode === 'note' ? 'note' : 'general');
+      const context = await contextForAi(current, version, contextVersion, mode === 'procedure' ? 'general' : mode);
       if (!context) return;
       const refinement = previous && instruction ? { instruction, previous: previous.fixed } : undefined;
       const fixed = mode === 'layout'
@@ -628,8 +631,6 @@ export function EntryEditor({
         context: {
           ...context,
           linkedTasks: linkedTasks.map((task) => task.title),
-          existingSubtasks: parseChecklist(source),
-          attachments: attachments.map((file) => file.filename),
         },
       });
       if (!sameProject(current.project_id) || projectVersion.current !== version || aiContextVersion.current !== contextVersion) return;
@@ -1077,7 +1078,7 @@ export function EntryEditor({
           </button>
         )}
       </div>
-      {aiContext && <AiContextDetails context={aiContext} excludedIds={excludedAiSources} showTaskPlanning={showAiTaskPlanning} onExcludedChange={excludeAiSources} />}
+      {aiContext && <AiContextDetails context={aiContext} excludedIds={excludedAiSources} showTaskPlanning={showAiTaskPlanning} vocabularyOnly={aiVocabularyOnly} onExcludedChange={excludeAiSources} />}
       {error && <p role="alert" className="error no-print">{error}</p>}
       {error && googleHelp && <a className="no-print" href={googleHelp} target="_blank" rel="noopener noreferrer">Activer l’API dans Google Cloud</a>}
       {/* Première demande : l'attente s'affiche là où la proposition va venir. */}

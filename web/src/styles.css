@@ -5260,9 +5260,24 @@ div.google-preserved {
     display: none;
   }
 }
+/* Le libellé « Assistant » déborderait juste au-dessus des deux seuils : 1 180 px, et 1 550 px où les statistiques reviennent. */
+@media (max-width: 1260px) and (min-width: 601px), (min-width: 1550px) and (max-width: 1669px) {
+  .head .ai-chat-trigger span {
+    display: none;
+  }
+  .head .ai-chat-trigger {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+  .head input.search {
+    min-width: 110px;
+  }
+}
 @media (max-width: 860px) and (min-width: 601px) {
   .head {
     flex-wrap: wrap;
+    gap: 6px;
   }
   .head input.search {
     order: 10;
@@ -7255,4 +7270,162 @@ button.lane-name:hover {
   .overview-result-actions { align-items: flex-start; flex-direction: column; }
   .overview-schedule-task { align-items: flex-start; }
   .overview-schedule-badge { margin-top: 1px; }
+}
+
+/* Assistant : le gabarit des dialogues en panneau à droite, une feuille plein écran sur téléphone. */
+.ai-chat-dialog {
+  inset: 0 0 0 auto;
+  transform: none;
+  width: min(480px, 100vw);
+  height: 100dvh;
+  max-height: none;
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+}
+.ai-chat-dialog .settings-dialog-heading {
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+}
+.ai-chat-new-short {
+  display: none;
+}
+.ai-chat-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 16px;
+  padding: 12px 14px;
+}
+.ai-chat-log .empty {
+  color: var(--muted);
+}
+.ai-chat-turn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.ai-chat-turn > p {
+  margin: 0;
+}
+.ai-chat-bubble {
+  justify-self: start;
+  max-width: 92%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ai-chat-bubble.is-user {
+  justify-self: end;
+  background: var(--accent-soft);
+}
+.ai-chat-found {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ai-chat-found button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+}
+.ai-chat-found span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ai-chat-found small {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.ai-chat-proposal {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.ai-action-row.is-ignored .ai-chat-proposal {
+  color: var(--muted);
+}
+.ai-action-row > .ai-hint,
+.ai-action-row > .task-message {
+  margin: 0;
+}
+.ai-chat-apply-all {
+  justify-self: start;
+}
+.ai-chat-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 14px 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.ai-chat-composer textarea {
+  flex: 1 1 0;
+  min-height: 36px;
+  max-height: 30vh;
+  resize: none;
+}
+.ai-chat-composer button {
+  flex: none;
+  min-height: 36px;
+}
+.ai-chat-footer {
+  display: grid;
+  padding: 0 14px max(10px, env(safe-area-inset-bottom, 0px));
+}
+.ai-chat-footer .overview-ai-scope {
+  margin-top: 2px;
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .ai-chat-dialog button,
+  .ai-chat-dialog summary {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .ai-chat-dialog summary {
+    align-content: center;
+  }
+  .ai-chat-composer textarea,
+  .ai-settings input[type='number'] {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
+@media (max-width: 600px) {
+  .ai-chat-dialog {
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border-width: 0;
+    border-radius: 0;
+  }
+}
+@media (max-width: 400px) {
+  .ai-chat-new-label {
+    display: none;
+  }
+  .ai-chat-new-short {
+    display: inline;
+  }
+  /* « Arrêter » et « Envoyer » côte à côte : le champ garde sa ligne à 320 px. */
+  .ai-chat-composer {
+    gap: 6px;
+  }
+  .ai-chat-composer button {
+    padding-inline: 8px;
+  }
 }

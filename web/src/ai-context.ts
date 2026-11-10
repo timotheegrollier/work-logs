@@ -10,8 +10,10 @@ const MAX_SOURCE_TEXT = 2000;
 // titre ni rendre le classement coûteux. On garde aussi la fin du document.
 const MAX_QUERY_TEXT = 12000;
 const MAX_QUERY_WORDS = 80;
+// Chaque mot du titre cherché dans les textes coûte une lecture complète de l'état.
+const MAX_BODY_SEARCHES = 4;
 const STOPWORDS = new Set(
-  'le la les de des du un une et est en dans pour avec sur par au aux ce cette ces ses son ton ta tes mes que qui quoi dont ou comme tout tous toute toutes plus moins aussi bien faire fait font etre ete avoir leur leurs notre nos votre vos mais donc car ni si elle il ils elles nous vous je tu on ne pas encore entre vers chez sans sous apres avant pendant depuis contre autre autres tel telle tels telles cela ceci note notes procedure procedures creer nouvelle nouveau mettre jour'.split(' ')
+  'le la les de des du un une et est en dans pour avec sur par au aux ce cette ces ses son ton ta tes mes que qui quoi dont ou comme tout tous toute toutes plus moins aussi bien faire fait font etre ete avoir leur leurs notre nos votre vos mais donc car ni si elle il ils elles nous vous je tu on ne pas encore entre vers chez sans sous apres avant pendant depuis contre autre autres tel telle tels telles cela ceci note notes procedure procedures creer nouvelle nouveau mettre jour mon sont ont cet ici voir mise reunion faut peut doit dois tres meme quand alors puis ainsi afin selon lors chaque plusieurs quelques aucun aucune besoin demain hier aujourd hui'.split(' ')
 );
 
 function projectBriefs(): Record<string, unknown> {
@@ -46,14 +48,22 @@ function words(text: string): Set<string> {
   return new Set(text.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
     // Un intitulé générique ne doit pas rapprocher deux sujets sans rapport.
     .replace(/\b(?:comptes?[ -]+rendus?|sans titre)\b/g, ' ')
+    // Un lien, une image, un chemin, un courriel ou une adresse IP non plus ; les autres nombres identifient (404, HP 3015).
+    // Chemin et courriel ancrés au début du mot : sans ancre, un long mot sans espace coûte un temps quadratique.
+    .replace(/\]\([^)]*\)|(?:https?:\/\/|www\.)\S+|\b[\w-]+(?:\.[\w-]+)+\/\S*|(?:^|\s)(?:\/|\S+@)\S+|\b\d{1,3}(?:\.\d{1,3}){3}\b/g, ' ')
     .split(/[^a-z0-9]+/)
     .filter((word) => word.length >= 3 && !STOPWORDS.has(word))
-    .map((word) => word.replace(/s$/, '')));
+    // Un sigle garde son s : la recherche par sous-chaîne de « na » (NAS) toucherait presque tout.
+    .map((word) => word.length > 3 ? word.replace(/s$/, '') : word)
+    .filter((word) => !STOPWORDS.has(word)));
 }
+export { words as contextWords };
 
 function matches(text: string, keywords: Set<string>): number {
   const tokens = words(text);
-  return [...keywords].filter((word) => tokens.has(word)).length;
+  // L'année reste dans words() pour garder le seuil de deux mots cherchés, mais ne rapproche pas deux documents.
+  // shortcut: un identifiant en forme d'année (HP 2015) ne compte plus, à revoir si de tels modèles doivent retenir un document.
+  return [...keywords].filter((word) => tokens.has(word) && !/^(?:19|20)\d{2}$/.test(word)).length;
 }
 
 /** Les commandes et les étapes espacées restent des blocs indivisibles. */
@@ -157,13 +167,22 @@ export interface LoadAiContextOptions {
  * Ce module n'appelle jamais le fournisseur IA et ne lit aucune pièce jointe.
  */
 export async function loadAiContext(options: LoadAiContextOptions): Promise<AiWorkContext> {
-  let state;
+  const titleWords = words(options.title);
+  // L'extrait s'arrête à 240 caractères : la recherche locale voit tout le texte.
+  // shortcut: recherche par sous-chaîne (« port » trouve « rapport »), à revoir si des documents hors sujet remontent.
+  const searched = [...titleWords].sort((a, b) => b.length - a.length).slice(0, MAX_BODY_SEARCHES);
+  let states;
   try {
     // L'API ne possède pas de filtre « sans projet » : on filtre aussi localement.
-    state = await api.state('', options.projectId ?? '');
+    states = await Promise.all(['', ...searched].map((word) => api.state(word, options.projectId ?? '')));
   } catch {
     throw new Error('Impossible de charger le contexte IA du projet. Réessaie avant de lancer l’assistance.');
   }
+  const [state, ...searches] = states;
+  const bodyHits = new Map<string, number>();
+  for (const search of searches) for (const { id } of search.entries) bodyHits.set(id, (bodyHits.get(id) ?? 0) + 1);
+  // Un mot courant ou l'année d'un titre daté toucheraient trop de documents : deux mots, ou l'unique mot du titre.
+  const bodyHitsNeeded = searched.length === 1 && !/^\d+$/.test(searched[0]) ? 1 : 2;
   const projectTasks = state.tasks.filter((task) => task.project_id === options.projectId);
   const currentTask = projectTasks.find((task) => task.id === options.taskId);
   const linkedIds = new Set([
@@ -171,11 +190,12 @@ export async function loadAiContext(options: LoadAiContextOptions): Promise<AiWo
     ...(currentTask?.documents ?? []).map((document) => document.id),
   ]);
   const byId = new Map<string, EntrySummary>();
-  for (const summary of [...(currentTask?.documents ?? []), ...state.entries]) byId.set(summary.id, summary);
+  for (const summary of [...(currentTask?.documents ?? []), ...states.flatMap((item) => item.entries)]) byId.set(summary.id, summary);
   const eligible = [...byId.values()].filter((summary) =>
     summary.project_id === options.projectId && summary.id !== options.entryId && !summary.archived
     && !summary.google_document_id && !summary.google_tab_id);
-  const titleWords = words(options.title);
+  const siblings = new Set(projectTasks.filter((task) => task.documents.some((document) => document.id === options.entryId))
+    .flatMap((task) => task.documents.map((document) => document.id)));
   const rawText = options.text ?? '';
   const queryText = rawText.length > MAX_QUERY_TEXT
     ? rawText.slice(0, MAX_QUERY_TEXT / 2) + '\n' + rawText.slice(-MAX_QUERY_TEXT / 2)
@@ -185,12 +205,17 @@ export async function loadAiContext(options: LoadAiContextOptions): Promise<AiWo
     ? [...allTextWords.slice(0, MAX_QUERY_WORDS / 2), ...allTextWords.slice(-MAX_QUERY_WORDS / 2)]
     : allTextWords);
   const keywords = new Set([...titleWords, ...textWords]);
-  const candidates = eligible.map((summary) => ({
-    summary,
-    linked: linkedIds.has(summary.id),
-    score: 3 * matches(summary.title, titleWords) + matches(summary.excerpt || '', titleWords)
-      + 2 * matches(summary.title, textWords) + matches(summary.excerpt || '', textWords),
-  })).filter((item) => item.linked || item.score > 0)
+  const candidates = eligible.map((summary) => {
+    const titleScore = 3 * matches(summary.title, titleWords) + matches(summary.excerpt || '', titleWords);
+    return {
+      summary, titleScore, linked: linkedIds.has(summary.id),
+      // +2 : retenu par son texte ou une tâche commune, mais derrière un titre correspondant (3 et plus).
+      score: titleScore + 2 * matches(summary.title, textWords) + matches(summary.excerpt || '', textWords)
+        + ((bodyHits.get(summary.id) ?? 0) >= bodyHitsNeeded ? 2 : 0) + (siblings.has(summary.id) ? 2 : 0),
+    };
+  })
+    // Un seul mot du brouillon dans un extrait ne mérite pas une place de 2 000 caractères.
+    .filter((item) => item.linked || item.titleScore > 0 || item.score >= 2)
     .sort((a, b) => Number(b.linked) - Number(a.linked)
       || b.score - a.score
       || Number(b.summary.kind === 'procedure') - Number(a.summary.kind === 'procedure')
@@ -204,7 +229,8 @@ export async function loadAiContext(options: LoadAiContextOptions): Promise<AiWo
         throw new Error('source déplacée ou liée à Google');
       }
       const text = entry.content_json ? richToMarkdown(entry.content_json) : entry.content_md;
-      return { id: entry.id, title: entry.title, kind: entry.kind, text: relevantExcerpt(text, keywords) };
+      // La date d'une procédure est celle de sa création : elle la ferait passer pour dépassée.
+      return { id: entry.id, title: entry.title, kind: entry.kind, text: relevantExcerpt(text, keywords), date: entry.kind === 'note' ? entry.entry_date : undefined };
     } catch {
       throw new Error(`Impossible de lire « ${summary.title} » pour le contexte IA. Réessaie avant de lancer l’assistance.`);
     }
@@ -237,7 +263,6 @@ export async function loadAiContext(options: LoadAiContextOptions): Promise<AiWo
     sources,
     relatedTasks: relatedTaskTitles,
     relatedTaskPlanning,
-    recentNotes: compactTitles(sources.filter((source) => source.kind === 'note').map((source) => source.title)),
     vocabulary: recurringVocabulary([...vocabularyInputs.tasks, ...vocabularyInputs.entries.map((entry) => entry.title)]),
     vocabularyInputs,
   };
@@ -260,12 +285,9 @@ export function selectedAiContext(context: AiWorkContext, excludedIds: string[])
     return true;
   });
   const selectedIds = new Set(sources?.map((source) => source.id));
-  const removedTitles = new Set(context.sources?.filter((source) => excluded.has(source.id)).map((source) => source.title));
-  const keptTitles = new Set(sources?.map((source) => source.title));
   return {
     ...selected,
     sources,
-    recentNotes: context.recentNotes?.filter((title) => !removedTitles.has(title) || keptTitles.has(title)),
     vocabulary: vocabularyInputs
       ? recurringVocabulary([...vocabularyInputs.tasks, ...vocabularyInputs.entries.filter((entry) => selectedIds.has(entry.id)).map((entry) => entry.title)])
       : context.vocabulary,

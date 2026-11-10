@@ -17,6 +17,7 @@ import { ProjectBar } from './components/ProjectBar';
 import { CategoryBar } from './components/CategoryBar';
 import { categoryDescendants, UNCATEGORIZED } from './categories';
 import { AiSettings } from './components/AiSettings';
+import { AiChat, type ChatTurn } from './components/AiChat';
 import { AccountMenu } from './components/AccountMenu';
 import { ColumnResizer } from './components/ColumnResizer';
 import { SharedFolder } from './components/SharedFolder';
@@ -93,6 +94,11 @@ export default function App() {
   const [showProcedures, setShowProcedures] = usePersisted('worklogs-show-procedures', readPanel(false), writePanel);
   const [showSettings, setShowSettings] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
+  // L'assistant : sa conversation survit au dialogue, pas au redémarrage.
+  const [showChat, setShowChat] = useState(false);
+  const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
+  const chatDraft = useRef('');
+  const chatOpener = useRef<HTMLButtonElement>(null);
   // Compte Google au niveau de l'app : le menu de l'en-tête le montre partout.
   const [google, setGoogle] = useState<GoogleStatus | null>(null);
   const refreshGoogle = useCallback(async () => {
@@ -112,7 +118,9 @@ export default function App() {
   }, [google?.pending, refreshGoogle]);
   // Synchro Drive : la PWA la porte elle-même, le desktop la fait côté serveur.
   const [sync, setSync] = useState<GoogleSyncStatus | null>(null);
-  const syncRevision = useRef<number | null>(null);
+  const syncRevision = useRef(0);
+  // Le prochain état rechargé apporte un tirage Drive, pas une écriture de cette session.
+  const fromSync = useRef(false);
   // Retour de Google en échec (PWA) : à part d'`error`, que chaque `reload` efface.
   const [loginError, setLoginError] = useState('');
   useEffect(() => {
@@ -261,6 +269,15 @@ export default function App() {
     return true;
   }, [projectId]);
 
+  const revealTaskCard = useCallback((task: Task) => {
+    ++navigationSequence.current;
+    setOverview(false);
+    setTaskView(null);
+    setShowRight(true);
+    setShowDocumentTasks(true);
+    setTaskReveal((current) => ({ id: task.id, sequence: current.sequence + 1 }));
+    if (isPhone()) goTo('tasks');
+  }, [goTo]);
   /** Une tâche de la vue d'ensemble ouvre son entrée liée la plus récente.
    * Les documents sont déjà ordonnés par date par l'API et la PWA ; sans lien,
    * sa carte reste le point d'entrée, y compris pour une tâche terminée. */
@@ -270,14 +287,8 @@ export default function App() {
       void openEntry(document.id, undefined);
       return;
     }
-    ++navigationSequence.current;
-    setOverview(false);
-    setTaskView(null);
-    setShowRight(true);
-    setShowDocumentTasks(true);
-    setTaskReveal((current) => ({ id: task.id, sequence: current.sequence + 1 }));
-    if (isPhone()) goTo('tasks');
-  }, [goTo, openEntry]);
+    revealTaskCard(task);
+  }, [openEntry, revealTaskCard]);
 
   /**
    * Le centre suit le filtre : changer de projet referme ce qui appartient au
@@ -380,7 +391,8 @@ export default function App() {
     try {
       const next = await api.state(query, projectId, categoryId);
       if (sequence !== reloadSequence.current || !isCurrent()) return;
-      setState(next);
+      setState(fromSync.current ? { ...next, fromSync: true } : next);
+      fromSync.current = false;
       setStateScope(JSON.stringify([query, projectId, categoryId]));
       setError('');
       // Une tâche terminée peut archiver l'entrée actuellement ouverte :
@@ -428,7 +440,10 @@ export default function App() {
   // Des changements sont arrivés de l'autre appareil : l'écran se met à jour seul.
   useEffect(() => {
     if (!sync) return;
-    if (syncRevision.current !== null && sync.revision !== syncRevision.current) void reload();
+    if (sync.revision !== syncRevision.current) {
+      fromSync.current = true;
+      void reload();
+    }
     syncRevision.current = sync.revision;
   }, [sync, reload]);
   // L'accès au relais est revenu du compte Google : la section « Dossier partagé » apparaît.
@@ -677,6 +692,31 @@ export default function App() {
     });
   }, [openEntry]);
 
+  const openChatTask = async (task: Task) => {
+    setShowChat(false);
+    // Le tableau ne révèle qu'une carte présente : le filtre qui la masque est levé d'abord.
+    if (!state?.tasks.some((candidate) => candidate.id === task.id)) {
+      // Supprimée depuis la réponse, lever le filtre n'ouvrirait rien ; sans terme, c'est l'état que lira le tableau.
+      const all = await api.state().catch(() => null);
+      if (all && !all.tasks.some((candidate) => candidate.id === task.id)) {
+        setError('tâche introuvable');
+        return;
+      }
+      setProjectId('');
+      setCategoryId('');
+      setSearch('');
+      setQuery('');
+    }
+    revealTaskCard(task);
+  };
+  const openChatDocument = (id: string) => {
+    setShowChat(false);
+    void api.entry(id).then(openDriveEntry).catch((e) => setError((e as Error).message));
+  };
+  // Le titre relu, pas celui du chargement : l'entrée a pu être renommée depuis.
+  const openNote = overview || sharedPath ? undefined : entry;
+  const openNoteTitle = state?.entries.find((candidate) => candidate.id === openNote?.id)?.title ?? openNote?.title;
+
   useEffect(() => {
     if (!showSettings) return;
     const dialog = settingsRef.current;
@@ -701,6 +741,20 @@ export default function App() {
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 19h16M6 16V9m6 7V5m6 11v-5" /><circle cx="6" cy="7" r="1.5" /><circle cx="12" cy="3.5" r="1.5" /><circle cx="18" cy="9" r="1.5" /></svg>
       <span className="overview-trigger-label">Vue d’ensemble</span>
       <span className="overview-trigger-short" aria-hidden="true">Vue</span>
+    </button>
+  );
+  const chatTrigger = (
+    <button
+      className="ghost overview-trigger ai-chat-trigger"
+      type="button"
+      ref={chatOpener}
+      aria-label="Ouvrir l’assistant IA"
+      aria-haspopup="dialog"
+      title="Chercher dans les tâches et les notes, préparer des créations et des modifications"
+      onClick={() => setShowChat(true)}
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20.5 11.5a8 8 0 0 1-11.8 7L4 20l1.5-4.6a8 8 0 1 1 15-3.9z" /><path d="m12.5 7.7 1 2.8 2.8 1-2.8 1-1 2.8-1-2.8-2.8-1 2.8-1z" /></svg>
+      <span>Assistant</span>
     </button>
   );
 
@@ -756,6 +810,7 @@ export default function App() {
           </p>
         )}
         {!phone && overviewTrigger}
+        {!phone && chatTrigger}
         <div className="panel-toggles no-print" role="group" aria-label="Panneaux latéraux">
           {panels.map((panel) => (
             <button
@@ -825,6 +880,7 @@ export default function App() {
           />
         </ProjectBar>
         {phone && overviewTrigger}
+        {phone && chatTrigger}
       </div>
 
       {isGoogleDocument && <div className="workspace-switch no-print"><span>Document Google · {siblingTabs.length} onglet{siblingTabs.length > 1 ? 's' : ''}</span>
@@ -1075,6 +1131,26 @@ export default function App() {
           </footer>
         </dialog>
       ), document.body)}
+      {showChat && (
+        <AiChat
+          turns={chatTurns}
+          onTurns={setChatTurns}
+          draftStore={chatDraft}
+          projectId={creationProjectId ?? ''}
+          categoryId={creationCategoryId}
+          openTitle={openNoteTitle}
+          compact={phone}
+          opener={chatOpener}
+          onClose={() => setShowChat(false)}
+          onChanged={(createdTask) => {
+            // Comme à l'ajout à la main : une tâche neuve n'entre dans aucune vue, on la lève pour la voir arriver.
+            if (createdTask) setTaskView(null);
+            return reload();
+          }}
+          onTask={openChatTask}
+          onDocument={openChatDocument}
+        />
+      )}
       {showDocuments && (
         <Suspense fallback={loading}>
           <GoogleDocuments

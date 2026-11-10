@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AiCancelled, MAX_ADVICE_TASKS, adviseTaskOrder, readAiSettings, type TaskAdvice as Advice } from '../ai-suggest';
 import { prepareTaskAdvice } from '../task-advice-context';
 import { readProjectAiBrief } from '../ai-context';
+import { useFollowUpHold } from '../follow-up-controller';
 import type { Project, Task } from '../lib';
 import { AiPending } from './AiMenu';
 
@@ -19,6 +20,7 @@ export function TaskAdvice({ tasks, projects, onTask, missingOpen = 0 }: {
   const [busy, setBusy] = useState<'preparing' | 'advising' | null>(null);
   const [error, setError] = useState('');
   const controller = useRef<AbortController | null>(null);
+  useFollowUpHold(Boolean(busy || prepared || result));
   const open = tasks.filter((task) => task.status !== 'done' && (scope === 'all' || (task.project_id ?? '') === scope));
   const needsSelection = open.length > MAX_ADVICE_TASKS;
   const selectedOpen = needsSelection ? open.filter((task) => selected.includes(task.id)) : open;
@@ -26,6 +28,8 @@ export function TaskAdvice({ tasks, projects, onTask, missingOpen = 0 }: {
   // tâche, si : on suit l'ordre en avançant, la liste affiche l'état courant de chaque tâche.
   const snapshot = JSON.stringify([
     tasks.map((task) => task.documents?.map((doc) => [doc.id, doc.title, doc.updated_at, doc.kind, doc.project_id, doc.archived, doc.google_document_id, doc.google_tab_id])),
+    // shortcut: pas de filtre sur le statut, cocher une tâche raccourcirait la liste et effacerait les conseils ; le bilan changé d'une tâche terminée les efface donc encore, à revoir si ce cas rare gêne.
+    tasks.filter((task) => scope === 'all' || (task.project_id ?? '') === scope).map((task) => task.follow_up?.report?.blockers),
     projects.map((project) => [project.id, project.name, readProjectAiBrief(project.id)]), readProjectAiBrief(null), readAiSettings().profile, scope, missingOpen, selected,
   ]);
   useEffect(() => {
@@ -78,7 +82,7 @@ export function TaskAdvice({ tasks, projects, onTask, missingOpen = 0 }: {
         </select></label>
         <button className="ghost" type="button" disabled={Boolean(busy) || !selectedOpen.length || selectedOpen.length > MAX_ADVICE_TASKS || missingOpen > 0} onClick={() => void prepare()}>Préparer les conseils</button>
       </div>
-      <p className="ai-hint">{open.length} tâche{open.length > 1 ? 's' : ''} ouverte{open.length > 1 ? 's' : ''} à analyser · {MAX_ADVICE_TASKS} au maximum. L’IA reçoit les champs des tâches, le profil et les repères des projets, ainsi que les extraits de notes et procédures liées sélectionnés ci-dessous : jusqu’à 3 documents par tâche, 40 documents et 600 caractères par extrait. Les fichiers Google et pièces jointes ne sont pas lus.</p>
+      <p className="ai-hint">{open.length} tâche{open.length > 1 ? 's' : ''} ouverte{open.length > 1 ? 's' : ''} à analyser · {MAX_ADVICE_TASKS} au maximum. L’IA reçoit les champs des tâches, les blocages notés dans leurs bilans de suivi, le profil et les repères des projets, ainsi que les extraits de notes et procédures liées sélectionnés ci-dessous : jusqu’à 3 documents par tâche, 40 documents et 600 caractères par extrait. Les fichiers Google et pièces jointes ne sont pas lus.</p>
       {missingOpen > 0 && <p className="error" role="alert">L’analyse est indisponible : {missingOpen} tâche{missingOpen > 1 ? "s" : ""} ouverte{missingOpen > 1 ? "s" : ""} manque{missingOpen > 1 ? "nt" : ""} dans la vue limitée à 500 tâches.</p>}
       {needsSelection && <details className="overview-advice-selection" open>
         <summary>Choisir les tâches à analyser ({selectedOpen.length}/{MAX_ADVICE_TASKS})</summary>

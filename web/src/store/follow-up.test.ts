@@ -68,6 +68,18 @@ test('PWA : une avancée enregistrée invalide le bilan lié et une réponse obs
   await expect(localApi.followUp('entry', 'absente')).rejects.toThrow('entrée introuvable');
 });
 
+test('PWA : statut et échéance restent lus sans rendre le bilan obsolète, un nouveau titre le rend obsolète', async () => {
+  const task = await localApi.createTask({ title: 'Signer' });
+  const saved = await saveReport('task', task.id);
+  await localApi.updateTask(task.id, { status: 'doing', due_date: '2026-12-01' });
+  await localApi.moveTask(task.id, 'done', 0);
+  const closed = await localApi.followUp('task', task.id);
+  expect(closed.source_key).toBe(saved.source_key);
+  expect(closed.source).toMatchObject({ status: 'done', due_date: '2026-12-01' });
+  await localApi.updateTask(task.id, { title: 'Signer le devis' });
+  expect((await localApi.followUp('task', task.id)).source_key).not.toBe(saved.source_key);
+});
+
 test('PWA : sauvegarde, restauration et boîte mobile conservent les bilans ; les vieux exports restent valides', async () => {
   const entry = await localApi.createEntry({ title: 'Bilan à garder', content_md: 'Devis prêt' });
   const task = await localApi.createTask({ title: 'Signer' });

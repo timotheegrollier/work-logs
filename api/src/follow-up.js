@@ -106,7 +106,9 @@ export function buildFollowUpSource(kind, entity, documents, project) {
 
 /** Deux empreintes FNV indépendantes, identiques dans Node et le navigateur. */
 export function followUpKey(source) {
-  const value = JSON.stringify(source);
+  // Le statut et l'échéance restent dans le prompt : les changer ne vaut pas une nouvelle génération.
+  const { status, due_date, ...hashed } = source;
+  const value = JSON.stringify(hashed);
   let left = 0x811c9dc5;
   let right = 0x9e3779b9;
   for (let i = 0; i < value.length; i++) {

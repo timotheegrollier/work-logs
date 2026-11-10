@@ -122,7 +122,8 @@ export function EntryMerge({ ids, onCancel, onMerged }: {
           names: entries.map((entry) => entry.title),
           propose: async (signal) => ({
             sources: entries.map((entry) => ({ id: entry.id, source_key: entryMergeSourceKey(entry) })),
-            ...await mergeEntries({ ...readAiSettings(), signal }, entries),
+            // Le texte plat d'une note riche perdrait liens et images, et les sources sont supprimées ensuite.
+            ...await mergeEntries({ ...readAiSettings(), signal }, entries.map((entry) => ({ ...entry, content_md: entry.content_json ? richToMarkdown(entry.content_json) : entry.content_md }))),
           }),
         };
       }}

@@ -227,6 +227,8 @@ export interface Stats {
   overdue: number;
 }
 export interface AppState {
+  /** Posé par App : cet état vient d'un tirage Drive, pas d'une écriture de cette session. */
+  fromSync?: boolean;
   projects: Project[];
   categories?: Category[];
   entries: EntrySummary[];

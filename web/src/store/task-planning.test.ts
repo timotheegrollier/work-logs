@@ -38,7 +38,8 @@ test('PWA : la nouvelle source d’un suivi est comparée et la réponse réussi
   const before = await current(task.id);
   await expect(localApi.updateTask(task.id, { priority: 'high', due_date: '2026-11-07', expected_planning: expected(snapshot) })).rejects.toMatchObject({ code: 'TASK_PLANNING_STALE' });
   expect(await current(task.id)).toEqual(before);
-  const updated = await localApi.updateTask(task.id, { priority: 'high', due_date: '2026-11-07', expected_planning: expected(before) });
+  // L'échéance ne compte plus dans l'empreinte : seul le titre la renouvelle ici.
+  const updated = await localApi.updateTask(task.id, { title: 'Intervenir vite', due_date: '2026-11-07', expected_planning: expected(before) });
   expect(updated.follow_up_key).toBe((await current(task.id)).follow_up_key);
   expect(updated.follow_up_key).not.toBe(before.follow_up_key);
 });
