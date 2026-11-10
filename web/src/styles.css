@@ -6686,6 +6686,11 @@ button.lane-name:hover {
   color: var(--mark);
   font-size: 12px;
 }
+/* Actualisation automatique : une mention discrète, le bilan en place ne bouge pas. */
+.follow-up-refreshing {
+  color: var(--muted);
+  font-size: 12px;
+}
 .follow-up-summary {
   line-height: 1.55;
 }

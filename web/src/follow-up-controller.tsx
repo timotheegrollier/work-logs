@@ -10,11 +10,13 @@ export interface FollowUpItem {
   follow_up_key?: string;
 }
 type Item = FollowUpItem & { kind: FollowUpKind };
-type Runtime = { busy: boolean; error: string };
+/** `background` : actualisation automatique, présentée sans déplacer le bilan affiché. */
+type Runtime = { busy: boolean; error: string; background: boolean };
 type Job = { item: Item; manual: boolean };
 const keyOf = (kind: FollowUpKind, id: string) => `${kind}:${id}`;
-const AUTO_DELAY = 2000;
-const idle: Runtime = { busy: false, error: '' };
+// Une vraie pause d'écriture : deux secondes relançaient l'IA au milieu d'une note.
+const AUTO_DELAY = 8000;
+const idle: Runtime = { busy: false, error: '', background: false };
 const reportContent = (report: FollowUpReportDraft) => JSON.stringify([
   report.status, report.summary, report.completed, report.next_steps, report.blockers, report.warnings,
 ]);
@@ -25,7 +27,7 @@ interface Control {
   refresh: (item: Item) => void;
   stop: (item: Item) => void;
 }
-const Context = createContext<Control | null>(null);
+export const FollowUpContext = createContext<Control | null>(null);
 
 /** Un ordonnanceur pour l'écran entier : une seule génération à la fois, même
  * quand une carte et son bilan sont visibles à deux endroits. */
@@ -47,6 +49,8 @@ export function FollowUpProvider({ state, onChanged, children }: {
   latest.current = items;
   // Une erreur ou « Arrêter » ne provoque pas une boucle sur la même version.
   const attempted = useRef(new Map<string, string>());
+  // Dernière activation vue : une relance explicite rouvre le droit à un essai.
+  const activations = useRef(new Map<string, string>());
   const queue = useRef(new Map<string, Job>());
   const active = useRef<{ key: string; sourceKey: string; controller: AbortController; manual: boolean } | null>(null);
   const configBusy = useRef(new Set<string>());
@@ -62,7 +66,7 @@ export function FollowUpProvider({ state, onChanged, children }: {
     const request = { key, sourceKey: job.item.follow_up_key ?? '', controller, manual: job.manual };
     active.current = request;
     attempted.current.set(key, request.sourceKey);
-    patch(key, { busy: true, error: '' });
+    patch(key, { busy: true, error: '', background: !job.manual });
     void (async () => {
       try {
         await flushPendingSaves();
@@ -102,12 +106,12 @@ export function FollowUpProvider({ state, onChanged, children }: {
           attempted.current.delete(key);
           await changed.current();
         } else if (!controller.signal.aborted && !(error instanceof AiCancelled)) {
-          patch(key, { busy: false, error: (error as Error).message || 'Impossible de préparer le bilan.' });
+          patch(key, { busy: false, error: (error as Error).message || 'Impossible de préparer le bilan.', background: false });
         }
       } finally {
         if (active.current === request) active.current = null;
         if (mounted.current) {
-          setRuntime((current) => ({ ...current, [key]: { ...(current[key] ?? idle), busy: false } }));
+          setRuntime((current) => ({ ...current, [key]: { ...(current[key] ?? idle), busy: false, background: false } }));
           setWake((value) => value + 1);
           drain.current();
         }
@@ -119,7 +123,7 @@ export function FollowUpProvider({ state, onChanged, children }: {
     if (configBusy.current.has(key) || active.current?.key === key || queue.current.has(key)) return;
     if (!manual && attempted.current.get(key) === item.follow_up_key) return;
     queue.current.set(key, { item, manual });
-    patch(key, { busy: true, error: '' });
+    patch(key, { busy: true, error: '', background: !manual });
     drain.current();
   }, [patch]);
   const stop = useCallback((item: Item) => {
@@ -134,7 +138,7 @@ export function FollowUpProvider({ state, onChanged, children }: {
     if (configBusy.current.has(key)) return;
     if (!enabled) stop(item);
     configBusy.current.add(key);
-    patch(key, { busy: true, error: '' });
+    patch(key, { busy: true, error: '', background: false });
     void (async () => {
       try {
         await flushPendingSaves();
@@ -147,7 +151,7 @@ export function FollowUpProvider({ state, onChanged, children }: {
           enqueue({ ...item, follow_up: snapshot.follow_up, follow_up_key: snapshot.source_key }, true);
         } else patch(key, idle);
       } catch (error) {
-        patch(key, { busy: false, error: (error as Error).message || 'Impossible de régler le suivi.' });
+        patch(key, { busy: false, error: (error as Error).message || 'Impossible de régler le suivi.', background: false });
       } finally {
         configBusy.current.delete(key);
       }
@@ -170,6 +174,21 @@ export function FollowUpProvider({ state, onChanged, children }: {
       if (!current || (!job.manual && (!current.follow_up?.enabled || current.follow_up_key !== job.item.follow_up_key))) {
         queue.current.delete(key);
         patch(key, idle);
+      }
+    }
+    // Une nouvelle activation (premier bilan, ou relance après « Désactiver »)
+    // repart malgré l'arrêt mémorisé pour la même version.
+    for (const [key, item] of latest.current) {
+      const stamp = item.follow_up?.enabled ? item.follow_up.enabled_at : '';
+      const seen = activations.current.get(key);
+      if (stamp && seen !== undefined && seen !== stamp) attempted.current.delete(key);
+      activations.current.set(key, stamp);
+    }
+    // Le premier bilan d'un suivi activé n'attend pas une pause d'écriture :
+    // la sélection « + Ajouter au suivi IA » doit le voir arriver tout de suite.
+    if (!hasPendingSaves()) {
+      for (const item of latest.current.values()) {
+        if (item.follow_up?.enabled && item.follow_up_key && !item.follow_up.report) enqueue(item, false);
       }
     }
     let timer: ReturnType<typeof setTimeout>;
@@ -195,11 +214,11 @@ export function FollowUpProvider({ state, onChanged, children }: {
     };
   }, []);
 
-  return <Context.Provider value={{ runtime, toggle, refresh: (item) => enqueue(item, true), stop }}>{children}</Context.Provider>;
+  return <FollowUpContext.Provider value={{ runtime, toggle, refresh: (item) => enqueue(item, true), stop }}>{children}</FollowUpContext.Provider>;
 }
 
 export function useFollowUp(kind: FollowUpKind, item: FollowUpItem) {
-  const context = useContext(Context);
+  const context = useContext(FollowUpContext);
   const value = context?.runtime[keyOf(kind, item.id)] ?? idle;
   const followUp = item.follow_up ?? null;
   return {

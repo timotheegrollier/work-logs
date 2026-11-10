@@ -5971,10 +5971,9 @@ describe('suivi IA des entrées et tâches', () => {
     const reports = await within(overview).findByRole('region', { name: 'Bilans et suivis IA' }, backend);
     fireEvent.click(within(reports).getByRole('button', { name: 'Ouvrir l’entrée Note évolutive' }));
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument(), backend);
-    const panel = await screen.findByRole('region', { name: 'Suivi IA de Note évolutive' }, backend);
-    // L’activation par la sélection ne génère qu’après la pause automatique :
-    // le bouton « Générer le bilan » force la première demande, comme avant.
-    fireEvent.click(within(panel).getByRole('button', { name: 'Actualiser le bilan de Note évolutive' }));
+    // L’activation par la sélection lance tout de suite la première demande :
+    // pas besoin d’attendre la pause automatique ni de cliquer « Actualiser ».
+    await screen.findByRole('region', { name: 'Suivi IA de Note évolutive' }, backend);
   };
 
   test('la sélection commune active plusieurs suivis et indique les notes déjà incluses avec leur tâche', async () => {

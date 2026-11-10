@@ -2710,10 +2710,18 @@ chargés, y compris ceux des tâches terminées. Aucun onglet ni routeur.
 **Automatisme choisi.** « Activer le suivi IA » active l’envoi au service déjà configuré pour
 cet élément, produit le premier bilan et autorise l’actualisation après enregistrement. Cela
 amende le principe historique « jamais d’appel automatique » du §17 pour ce seul geste,
-à la demande explicite de Timo. Un délai de deux secondes regroupe les sauvegardes ; un seul
-appel en vol pour l’écran, partagé entre les différents accès au bilan. Aucun appel pour les
-éléments non activés. Décocher garde le bilan ; Actualiser et Arrêter restent accessibles.
-L’application doit être ouverte et l’élément chargé ; il n’y a pas de service permanent.
+à la demande explicite de Timo. Une pause d’écriture de huit secondes regroupe les
+sauvegardes ; un seul appel en vol pour l’écran, partagé entre les différents accès au bilan.
+Aucun appel pour les éléments non activés. Décocher garde le bilan ; Actualiser et Arrêter
+restent accessibles. L’application doit être ouverte et l’élément chargé ; il n’y a pas de
+service permanent.
+
+**Amendé le 2026-11-10.** Deux secondes relançaient l’IA au milieu d’une note et faisaient
+sauter le panneau à chaque pause. Le regroupement attend désormais une vraie pause
+d’écriture (huit secondes). Une actualisation automatique reste discrète : le bilan en place
+demeure affiché, une simple mention « Actualisation en cours… » remplace « À actualiser »,
+et les listes comme les boutons ne se déplacent plus. Une demande manuelle garde l’attente
+visible sous le bilan.
 
 **Fidélité et courses.** L’entrée enregistrée est sa propre source ; une tâche lit ses seuls
 documents explicitement liés et ses champs. Le document riche fait autorité. Huit documents,

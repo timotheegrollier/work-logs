@@ -97,7 +97,12 @@ test('suivi IA : bilan conservé au rechargement, actualisé après la saisie et
     await saved;
     await savedState;
     await expect(editor.getByText('Enregistré', { exact: true })).toBeVisible();
-    await page.clock.fastForward(3000);
+    // Une pause courte ne relance pas l’IA : le bilan en place reste affiché.
+    await page.clock.fastForward(5000);
+    await expect(panel.getByText(firstSummary, { exact: true })).toBeVisible();
+    expect(prompts).toHaveLength(1);
+    // La pause d’écriture passée, le bilan se met à jour en arrière-plan.
+    await page.clock.fastForward(6000);
     await expect(panel.getByText(finalSummary, { exact: true })).toBeVisible();
     expect(prompts).toHaveLength(2);
     expect(prompts[1]).toContain('Joint posé, contrôle terminé.');

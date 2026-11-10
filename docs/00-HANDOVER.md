@@ -1,5 +1,18 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Ajustement du 2026-11-10 — actualisation du suivi IA plus calme (§64)
+
+Après une saisie, le bilan IA repartait deux secondes après l’enregistrement : l’IA se
+relançait au milieu d’une note et le panneau « Suivi IA » sautait à chaque pause. Le
+regroupement attend désormais huit secondes de vraie pause d’écriture. Une actualisation
+automatique reste en arrière-plan : le bilan précédent demeure lisible, seule une mention
+discrète « Actualisation en cours… » remplace « À actualiser », sans déplacer les listes ni
+les boutons. « Actualiser » garde l’attente visible sous le bilan. Première demande d’un
+suivi activé : immédiate, sans attendre la pause. Tests : rendu du panneau pour les deux
+chemins, parcours navigateur pour le délai et la mise à jour après la pause.
+`./scripts/check.sh` vert : **318 API, 856 front** (plus l’échec attendu), **49 desktop
+unitaires, 46 scripts, 8 Worker, 11 relais, 105 navigateur et 19 desktop e2e**.
+
 ## Ajustement du 2026-11-09 — vue d’ensemble allégée (§75)
 
 La vue ne montre plus que ce que l’IA a rédigé et la frise d’avancement. Liste des tâches,
