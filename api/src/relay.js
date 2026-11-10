@@ -74,15 +74,25 @@ export function createRelayApp({ shared, origins, version = null }) {
   return app;
 }
 
+/**
+ * Origines navigateur de la PWA WorkLogs : le Worker Cloudflare qui la sert, et
+ * GitHub Pages où elle reste ouverte (transition). Toujours acceptées ;
+ * `WORKLOGS_RELAY_ORIGINS` en ajoute (client personnel, autre déploiement).
+ */
+export const PWA_ORIGINS = [
+  'https://worklogs-google.cocodexcocoder.workers.dev',
+  'https://timotheegrollier.github.io',
+];
+
 /** Réglages lus dans l'environnement (fichier `/etc/worklogs-relais/env` sur la VM). */
 export function relayConfig(env = process.env) {
   const root = env.WORKLOGS_SHARED_ROOT ? path.resolve(env.WORKLOGS_SHARED_ROOT) : null;
   if (!root) throw new Error('WORKLOGS_SHARED_ROOT manquant : le dossier du partage monté (ex. /mnt/tse-d/Global/…/00. PROCEDURE).');
-  const origins = (env.WORKLOGS_RELAY_ORIGINS || 'https://worklogs-google.cocodexcocoder.workers.dev')
+  const extraOrigins = (env.WORKLOGS_RELAY_ORIGINS || '')
     .split(',').map((origin) => origin.trim()).filter(Boolean);
   return {
     root,
-    origins,
+    origins: [...new Set([...PWA_ORIGINS, ...extraOrigins])],
     dataDir: path.resolve(env.WORKLOGS_RELAY_DATA || '/var/lib/worklogs-relais'),
     host: env.HOST || '127.0.0.1',
     port: Number(env.PORT || 8420),

@@ -609,8 +609,27 @@ export const localApi: Api = {
     if (pageToken && pageToken.length < 5000) params.set('pageToken', pageToken);
     const result = (await webGoogleRequest(`/drive/v3/files?${params}`)) as { files?: { id: string; name: string; modifiedTime: string }[]; nextPageToken?: string };
     const local = await localDocuments();
+    const files = [...(result.files || [])];
+    if (!pageToken) {
+      // Un document créé ou ouvert ici peut manquer à l'index Drive un instant :
+      // sa copie locale le garde visible sans attendre un « Actualiser ».
+      for (const documentId of local.keys()) {
+        if (files.some((file) => file.id === documentId)) continue;
+        try {
+          const file = (await webGoogleRequest(`/drive/v3/files/${encodeURIComponent(documentId)}?fields=id,name,modifiedTime,mimeType,trashed&supportsAllDrives=true`)) as {
+            id: string; name: string; modifiedTime?: string; mimeType?: string; trashed?: boolean;
+          };
+          if (!file.trashed && file.mimeType === 'application/vnd.google-apps.document') {
+            files.push({ id: file.id, name: file.name, modifiedTime: file.modifiedTime || '' });
+          }
+        } catch {
+          // Un document local inaccessible ne doit pas masquer les autres.
+        }
+      }
+    }
+    files.sort((a, b) => String(b.modifiedTime || '').localeCompare(String(a.modifiedTime || '')));
     return {
-      files: (result.files || []).map((file) => ({ ...file, ...(local.get(file.id) ?? { linked: false, project_id: null }) })),
+      files: files.map((file) => ({ ...file, ...(local.get(file.id) ?? { linked: false, project_id: null }) })),
       ...(result.nextPageToken ? { nextPageToken: result.nextPageToken } : {}),
     };
   },

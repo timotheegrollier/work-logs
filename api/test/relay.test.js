@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { relayConfig, relayVersion, startRelay } from '../src/relay.js';
+import { PWA_ORIGINS, relayConfig, relayVersion, startRelay } from '../src/relay.js';
 
 const PWA = 'https://worklogs-google.cocodexcocoder.workers.dev';
+const PWA_GITHUB = 'https://timotheegrollier.github.io';
 
 describe('relais du dossier partagé (PWA)', () => {
   let share;
@@ -19,7 +20,7 @@ describe('relais du dossier partagé (PWA)', () => {
   beforeEach(async () => {
     share = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-relais-partage-'));
     data = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-relais-data-'));
-    relay = startRelay({ root: share, origins: [PWA], dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)', label: '00. PROCEDURE' });
+    relay = startRelay({ root: share, origins: PWA_ORIGINS, dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)', label: '00. PROCEDURE' });
     await new Promise((resolve) => relay.server.once('listening', resolve));
     base = `http://127.0.0.1:${relay.server.address().port}`;
   });
@@ -55,21 +56,23 @@ describe('relais du dossier partagé (PWA)', () => {
     // Un nom changé depuis le téléphone survit au redémarrage du relais.
     await call('/api/shared/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: 'T. G. (téléphone)' }) });
     await relay.stop();
-    relay = startRelay({ root: share, origins: [PWA], dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)', label: '00. PROCEDURE' });
+    relay = startRelay({ root: share, origins: PWA_ORIGINS, dataDir: data, host: '127.0.0.1', port: 0, displayName: 'Timothée (mobile)', label: '00. PROCEDURE' });
     await new Promise((resolve) => relay.server.once('listening', resolve));
     base = `http://127.0.0.1:${relay.server.address().port}`;
     assert.equal((await (await call('/api/shared/status')).json()).displayName, 'T. G. (téléphone)');
   });
 
-  test('CORS : la PWA seulement, préliminaire « réseau privé » compris', async () => {
-    const preflight = await fetch(base + '/api/shared/list', {
-      method: 'OPTIONS',
-      headers: { Origin: PWA, 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization', 'Access-Control-Request-Private-Network': 'true' },
-    });
-    assert.equal(preflight.status, 204);
-    assert.equal(preflight.headers.get('access-control-allow-origin'), PWA);
-    assert.match(preflight.headers.get('access-control-allow-headers'), /Authorization/);
-    assert.equal(preflight.headers.get('access-control-allow-private-network'), 'true');
+  test('CORS : les deux PWA seulement, préliminaire « réseau privé » compris', async () => {
+    for (const origin of [PWA, PWA_GITHUB]) {
+      const preflight = await fetch(base + '/api/shared/list', {
+        method: 'OPTIONS',
+        headers: { Origin: origin, 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization', 'Access-Control-Request-Private-Network': 'true' },
+      });
+      assert.equal(preflight.status, 204);
+      assert.equal(preflight.headers.get('access-control-allow-origin'), origin);
+      assert.match(preflight.headers.get('access-control-allow-headers'), /Authorization/);
+      assert.equal(preflight.headers.get('access-control-allow-private-network'), 'true');
+    }
     const other = await fetch(base + '/api/shared/list', { method: 'OPTIONS', headers: { Origin: 'https://ailleurs.example', 'Access-Control-Request-Method': 'GET' } });
     assert.equal(other.status, 403);
     assert.equal(other.headers.get('access-control-allow-origin'), null);
@@ -113,11 +116,14 @@ describe('relais du dossier partagé (PWA)', () => {
     assert.deepEqual(fs.readdirSync(share), []);
   });
 
-  test('réglages : racine obligatoire, pas de code, origine de la PWA par défaut', () => {
+  test('réglages : racine obligatoire, pas de code, origines des PWA par défaut', () => {
     assert.throws(() => relayConfig({}), /WORKLOGS_SHARED_ROOT/);
     // L'ancien réglage du code (env de la VM) reste lisible sans gêner le démarrage.
     const config = relayConfig({ WORKLOGS_SHARED_ROOT: share, WORKLOGS_RELAY_TOKEN_FILE: path.join(data, 'absent') });
-    assert.deepEqual(config.origins, [PWA]);
+    assert.deepEqual(PWA_ORIGINS, [PWA, PWA_GITHUB]);
+    assert.deepEqual(config.origins, PWA_ORIGINS);
+    const extra = relayConfig({ WORKLOGS_SHARED_ROOT: share, WORKLOGS_RELAY_ORIGINS: 'https://perso.example' });
+    assert.deepEqual(extra.origins, [...PWA_ORIGINS, 'https://perso.example']);
     assert.equal(config.host, '127.0.0.1', 'écoute locale : tailscale serve seul est exposé');
     assert.equal('token' in config, false);
   });

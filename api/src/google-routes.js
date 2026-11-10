@@ -569,8 +569,22 @@ export function registerGoogleRoutes(app, { db, google, uploadDir, autoSync = fa
           warnings.push('Un document sélectionné n’est plus accessible. Sélectionne-le à nouveau dans Drive.');
         }
       }
+      // Un document créé ou ouvert ici peut aussi manquer à l'index Drive un instant :
+      // sa copie locale le garde visible sans attendre un « Actualiser ».
+      const linkedIds = db.prepare('SELECT DISTINCT document_id FROM google_documents').all().map(row => row.document_id);
+      for (const id of linkedIds) {
+        fileId(id);
+        if (files.some(file => file.id === id)) continue;
+        try {
+          const file = await google.request(`/drive/v3/files/${id}?fields=id,name,modifiedTime,mimeType,trashed&supportsAllDrives=true`);
+          if (!file.trashed && file.mimeType === 'application/vnd.google-apps.document') files.push(file);
+        } catch (e) {
+          if (e.code || ![403, 404].includes(e.status)) throw e;
+        }
+      }
     }
-    files.sort((a, b) => Number(selectedIds.includes(b.id)) - Number(selectedIds.includes(a.id)));
+    files.sort((a, b) => Number(selectedIds.includes(b.id)) - Number(selectedIds.includes(a.id))
+      || String(b.modifiedTime || '').localeCompare(String(a.modifiedTime || '')));
     res.json({ ...result, files: files.map(file => ({ ...file, ...localDocument(file.id) })), warnings: [...new Set(warnings)] });
   });
   // Ranger un document dans un projet : toutes ses copies locales (une par onglet).

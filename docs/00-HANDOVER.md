@@ -1,5 +1,23 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Correctifs du 2026-11-10 — nouveau document Google visible et relais GitHub Pages
+
+- **Documents Google** : la liste complète le résultat de `files.list` avec les documents
+  déjà liés dans WorkLogs mais absents de l’index Drive (un document tout juste créé peut y
+  manquer un instant), puis trie par date de modification. Le sélecteur **Autoriser d’autres
+  documents** recharge aussi la liste tout seul au retour, sans cliquer **Actualiser**.
+  Côté desktop (`api/src/google-routes.js`) et PWA (`web/src/store/localApi.ts`).
+- **Relais du dossier partagé** : les deux origines de la PWA WorkLogs — Worker Cloudflare et
+  GitHub Pages — sont acceptées d’office ; `WORKLOGS_RELAY_ORIGINS` ajoute des origines au lieu
+  de remplacer la liste. La PWA ouverte sur `timotheegrollier.github.io` ne reçoit donc plus
+  `Failed to fetch` en joignant le relais. Pourquoi : `05-DECISIONS.md` §76 ; dépannage :
+  `09-RELAIS.md`.
+- **Attente de test** : le retour de la copie locale Google est une vraie attente asynchrone ;
+  elle accepte jusqu’à 10 s sous charge (`02-DEV.md`), sans changer l’assertion.
+- Aucune dépendance, migration ni changement de schéma. `./scripts/check.sh` vert : **319 API,
+  855 front** (dont l’échec attendu), **49 desktop unitaires, 46 scripts, 8 Worker, 11 relais,
+  105 navigateur et 19 desktop e2e**. Les nouveaux tests échouent sans les correctifs.
+
 ## Ajustement du 2026-11-09 — vue d’ensemble allégée (§75)
 
 La vue ne montre plus que ce que l’IA a rédigé et la frise d’avancement. Liste des tâches,

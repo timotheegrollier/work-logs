@@ -122,7 +122,11 @@ export function GoogleDocuments({ projects, onClose, onOpen, onChanged }: {
           <button type="button" className="ghost" disabled={busy} onClick={() => void run(() => refresh())}>Actualiser</button>
           {!isPwa && (
             <button type="button" className="ghost" disabled={busy} title="Accorder à WorkLogs l’accès à d’autres documents, dans le navigateur"
-              onClick={() => void run(async () => { await api.connectGoogle(true); setMessage('Choisis les documents dans ton navigateur, puis Actualiser.'); })}>
+              onClick={() => void run(async () => {
+                await api.connectGoogle(true);
+                await refresh();
+                setMessage('Documents autorisés mis à jour.');
+              })}>
               Autoriser d’autres documents
             </button>
           )}
