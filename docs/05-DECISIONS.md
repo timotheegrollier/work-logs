@@ -3412,7 +3412,7 @@ fait pour ce lot.** Restent à juger avec une vraie clé, selon `04-RECETTES.md`
 **Confirmé par la revue, non corrigé.** Tiptap reste dans le bloc d’entrée, contrairement au
 chargement à la demande du §47 : défaut antérieur, sans rapport avec l’IA. Les aperçus de
 proposition IA hors chat (`aiProposalHtml` d’`EntryEditor.tsx`, `ProcedureDraft.tsx`) passent par
-`renderMarkdown` sans le filtre de l’assistant et rendent encore les images.
+`renderMarkdown` sans le filtre de l’assistant et rendent encore les images. **Corrigé au §82.**
 
 **Rouvrir si** une mesure réelle montre qu’un effort bas dégrade un geste ou qu’un modèle refuse
 le paramètre ; si les 429 arrivent régulièrement avant le plafond (baisser le défaut) ou si le
@@ -3480,3 +3480,57 @@ Dans Electron, annuler la fermeture d’un Google Docs masqué pouvait rendre le
 vue native pendant la saisie d’une note. La restauration du focus choisit une vue visible aux
 dimensions utilisables et reprend le clavier si une notification tardive refocalise une vue
 masquée. Le test observe le focus des deux `WebContents` et vérifie la saisie.
+
+## 82. Un aperçu de proposition IA ne charge que les images du texte d’origine — 2026-11-10
+
+Trois aperçus affichent, avant tout clic, le Markdown écrit par le modèle : la proposition sur une
+entrée (`EntryEditor`), celle sur un fichier du partage (`SharedFileEditor`) et la procédure rédigée
+(`ProcedureDraft`). Le navigateur va chercher une image dès l’affichage, et la CSP desktop
+(`img-src https: http:`) le laisse faire : le tiers désigné par le modèle apprend l’adresse IP et le
+moment de la lecture. DOMPurify empêche un script de s’exécuter, pas une ressource de se charger.
+
+**Décision.** Les trois aperçus passent par `renderAiProposal(proposition, origine)` (`markdown.ts`).
+Une adresse ne se charge que si elle figure déjà, entière, dans le texte d’origine, comme image ou
+comme lien. Sinon, son texte alternatif prend sa place, ou `[image non chargée]`.
+
+- La comparaison se fait entre deux rendus du même moteur : une adresse accentuée, à parenthèses ou
+  par référence reste reconnue, et les images de l’utilisateur ressortent à l’identique (testé).
+- L’adresse doit être entière : son début peut désigner un autre site (`exemple.co` dans
+  `exemple.com/a.png`).
+- L’origine est le texte d’avant la demande : `source` pour une entrée, `FileAiProposal.original`
+  pour un fichier, `DraftedProcedure.source` pour une procédure (la note, ou les documents liés à la
+  tâche). Pour un fichier, c’est le fichier entier : le `# titre` d’un `.md` ne part pas à l’IA,
+  mais l’aperçu le montre.
+
+**`<img>` ne suffisait pas.** Le modèle peut écrire du HTML, et DOMPurify laisse passer `srcset`,
+`<picture>`, `poster`, `<video>`, `<audio>`, `<input type="image">`, l’attribut `background`, `url()`
+et `image-set()` en `style`, `<style>` et les images SVG. L’aperçu retire `<style>`, SVG et MathML
+(plus de contenu étranger au nouveau passage par le parseur), ainsi que `srcset`, `poster` et
+`background` ; tout `[src]` passe par la règle ci-dessus. Un attribut `style` ne saute que s’il
+contient une parenthèse : sans fonction CSS il ne peut rien charger, et la taille d’une image reste.
+
+Contrôle dans un vrai Chromium, sur le vrai `markdown.ts` : sur 49 vecteurs, y compris des
+contournements connus de DOMPurify, 31 appellent le traceur sans le correctif, aucun avec. Le calcul
+lui-même ne charge rien (document inerte).
+
+**Écartés.**
+
+- Refuser toute proposition avec une image (`hasHtmlOrImage`, comme l’assistant) : une mise en page
+  doit garder les images de la note.
+- Resserrer la CSP : elle vaut pour tout le document, donc aussi pour les images distantes des notes,
+  et la PWA n’en a pas.
+- Chercher l’adresse comme sous-chaîne du texte : un début d’adresse passerait, une adresse encodée non.
+
+**Limites.**
+
+- Seul l’aperçu est protégé. Après « Appliquer », le texte est celui de l’utilisateur et s’affiche
+  normalement : une image d’une adresse inconnue s’y chargerait. L’aperçu ne montre que son texte
+  alternatif, sans dire qu’une image a été écartée.
+- Une adresse présente seulement dans un bloc de code n’est pas reconnue : l’image reste écartée.
+- `srcset`, `poster` et `background` sont retirés même sur une adresse connue, dans l’aperçu seulement :
+  l’image reste, par son `src`.
+- Firefox et WebKit n’ont pas été essayés : les versions en cache ne démarrent pas avec ce Playwright.
+  Electron, Helium et Brave sont des Chromium.
+
+**Rouvrir si** une image doit aussi être écartée à l’application d’une proposition, ou si une mise à
+jour de DOMPurify autorise un nouvel attribut qui charge une ressource.

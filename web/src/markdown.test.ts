@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { hasHtmlOrImage, insertCodeFence, renderMarkdown, toggleChecklistItem } from './markdown';
+import { hasHtmlOrImage, insertCodeFence, renderAiProposal, renderMarkdown, toggleChecklistItem } from './markdown';
 
 describe('rendu Markdown', () => {
   test('produit les titres et le gras', () => {
@@ -113,6 +113,71 @@ describe('hasHtmlOrImage', () => {
     ['Markdown ordinaire', '## Bilan\n**Tout** va [bien](https://exemple.fr).\n\n- [x] fait'],
   ])('laisse passer : %s', (_name, source) => {
     expect(hasHtmlOrImage(source)).toBe(false);
+  });
+});
+
+describe('renderAiProposal', () => {
+  const connue = 'https://intranet.exemple/a.png';
+  const origine = `![plan](${connue})`;
+  const traceur = 'https://traceur.exemple';
+
+  test.each([
+    ['image Markdown', `![x](${traceur}/a.png)`],
+    ['image par référence', `![x][1]\n\n[1]: ${traceur}/a.png`],
+    ['balise img', `<img src="${traceur}/a.png">`],
+    ['srcset sur une image connue', `<img src="${connue}" srcset="${traceur}/a.png 2x">`],
+    ['source de picture', `<picture><source srcset="${traceur}/a.png"><img src="${connue}"></picture>`],
+    ['affiche de vidéo', `<video poster="${traceur}/a.png"></video>`],
+    ['vidéo', `<video src="${traceur}/a.mp4"></video>`],
+    ['source de vidéo', `<video><source src="${traceur}/a.mp4"></video>`],
+    ['audio', `<audio src="${traceur}/a.mp3"></audio>`],
+    ['bouton image', `<input type="image" src="${traceur}/a.png">`],
+    ['fond de tableau', `<table background="${traceur}/a.png"><tr><td background="${traceur}/b.png">x</td></tr></table>`],
+    ['url() en style', `<div style="background:url(${traceur}/a.png)">x</div>`],
+    ['url() échappée en style', `<div style="background:u\\72 l(${traceur}/a.png)">x</div>`],
+    ['image-set() en style', `<div style="background-image:image-set('${traceur}/a.png' 1x)">x</div>`],
+    ['feuille de style', `<div>x<style>div{background:url(${traceur}/a.png)}</style></div>`],
+    ['image SVG', `<div><svg><image href="${traceur}/a.png"/></svg></div>`],
+    ['peinture SVG', `<div><svg><rect fill="url(${traceur}/a.svg#a)"/></svg></div>`],
+    ['glyphe MathML', `<math><mglyph src="${traceur}/a.png"/></math>`],
+    ['lien MathML', `<math href="${traceur}/a"><mi>x</mi></math>`],
+  ])('ne garde aucune adresse choisie par le modèle : %s', (_name, proposal) => {
+    expect(renderAiProposal(proposal, origine)).not.toContain('traceur.exemple');
+  });
+
+  test('rend à l’identique un texte dont les images viennent de l’origine', () => {
+    const texte = [
+      `![plan](${connue} "Plan")`,
+      '![accent](<https://intranet.exemple/é t.png>)',
+      '![parenthèses](https://intranet.exemple/a_(b).png)',
+      '![requête](https://intranet.exemple/a.png?x=1&y=2)',
+      '![réf][1]',
+      `<img src="${connue}" width="200" style="width:50%">`,
+      '<a href="https://exemple.net" target="_blank">lien</a>',
+      '[1]: https://intranet.exemple/ref.png',
+    ].join('\n\n');
+    expect(renderMarkdown(texte).match(/<img/g)).toHaveLength(6);
+    expect(renderAiProposal(texte, texte)).toBe(renderMarkdown(texte));
+  });
+
+  test.each([
+    ['lien', `[plan](${connue})`],
+    ['adresse en clair', `voir ${connue} pour le plan`],
+    ['balise HTML', `<img src="${connue}">`],
+  ])('accepte une adresse déjà dans le texte : %s', (_name, original) => {
+    expect(renderAiProposal(origine, original)).toContain(`src="${connue}"`);
+  });
+
+  test('exige l’adresse entière : son début peut désigner un autre site', () => {
+    expect(renderAiProposal('![x](https://exemple.co)', 'https://exemple.com/a.png')).not.toContain('<img');
+    expect(renderAiProposal('![x](https://intranet.exemple/a)', origine)).not.toContain('<img');
+  });
+
+  test('met le texte alternatif, ou un libellé neutre, à la place', () => {
+    expect(renderAiProposal(`![Schéma](${traceur}/a.png)`, '')).toBe('<p>Schéma</p>\n');
+    expect(renderAiProposal(`![](${traceur}/a.png)`, '')).toBe('<p>[image non chargée]</p>\n');
+    // Du texte, jamais du balisage.
+    expect(renderAiProposal(`<img src="${traceur}/a.png" alt="<img src=x>">`, '')).not.toContain('<img');
   });
 });
 

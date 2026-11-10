@@ -129,7 +129,7 @@ function DocxEditorBody({ document, images, bytes, initialDraft, readOnly, onEdi
           prepare: (answer) => {
             const doc = docxFromAi(answer, source);
             // Une transaction de l'éditeur : comptée comme une frappe (brouillon, verrou), annulable par ↶.
-            return { preview: docxPreview(doc, document), previewFormat: 'markdown', warning: '', apply: () => { editor!.commands.setContent(doc); } };
+            return { preview: docxPreview(doc, document), previewFormat: 'markdown', original: source.markdown, warning: '', apply: () => { editor!.commands.setContent(doc); } };
           },
         };
       },

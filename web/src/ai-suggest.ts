@@ -901,6 +901,8 @@ export interface DraftedProcedure {
   markdown: string;
   /** La source dépassait le plafond : l'IA n'en a lu que le début. */
   truncated: boolean;
+  /** Le texte dont elle est tirée : l'aperçu ne charge que les images qu'il contient déjà. */
+  source: string;
 }
 
 /**
@@ -1009,7 +1011,7 @@ export async function draftProcedure(
     DOCUMENT_MAX_TOKENS, options.timeoutMs ?? AI_TIMEOUT_MS, { effort: 'low' });
   const drafted = parseDraftedProcedure(reply, source.title);
   if (!drafted.markdown) throw new AiError('Réponse IA illisible : réessaie.');
-  return { ...drafted, truncated: prompt.truncated };
+  return { ...drafted, truncated: prompt.truncated, source: [source.text, ...(source.documents ?? []).map((document) => document.text)].join('\n\n') };
 }
 
 /** Action explicitement encore à faire, avec son extrait exact dans la note. */

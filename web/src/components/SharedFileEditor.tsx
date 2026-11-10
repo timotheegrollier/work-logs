@@ -7,7 +7,7 @@ import { loadAiContext, selectedAiContext } from '../ai-context';
 import { AiContextDetails } from './AiContextDetails';
 import { AiMenu, AiPending } from './AiMenu';
 import { AiRefinement } from './AiRefinement';
-import { renderMarkdown } from '../markdown';
+import { renderAiProposal } from '../markdown';
 import { editorKind, MAX_EDITABLE_TEXT, type FileAiMode, type FileAiProposal, type FileEditorHandle } from '../file-formats';
 import { imageMime, looksLikePdf } from '../file-preview';
 import { toBase64 } from '../docx-preview';
@@ -517,7 +517,7 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
     setAiProposal(null);
   };
   const aiProposalHtml = useMemo(
-    () => (aiProposal?.proposal.previewFormat === 'markdown' ? renderMarkdown(aiProposal.proposal.preview) : ''),
+    () => (aiProposal?.proposal.previewFormat === 'markdown' ? renderAiProposal(aiProposal.proposal.preview, aiProposal.proposal.original) : ''),
     [aiProposal],
   );
   // Fichier rechargé (version du collègue, envoi) : la proposition portait sur l'ancien.

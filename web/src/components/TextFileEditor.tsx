@@ -42,6 +42,7 @@ export function TextFileEditor({ name, bytes, initialDraft, readOnly, onEdit, ha
             return {
               preview: next,
               previewFormat: markdown ? 'markdown' : 'text',
+              original: text,
               warning: encodingProblem(next, encoding) ?? '',
               apply: () => change(next),
             };

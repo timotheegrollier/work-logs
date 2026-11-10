@@ -1,5 +1,13 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Aperçus de proposition IA sans image tierce — 2026-11-13 (§82)
+
+Les trois aperçus d’une proposition IA (entrée, fichier du partage, procédure rédigée) ne chargent
+plus qu’une adresse déjà présente, entière, dans le texte d’origine ; sinon, son texte alternatif.
+Le HTML écrit par le modèle est couvert aussi (`srcset`, vidéo, `url()` en style, SVG…). Seul
+l’aperçu est protégé : après « Appliquer », la note s’affiche normalement. Pourquoi et limites :
+§82 de `05-DECISIONS.md`.
+
 ## Postes activés avant le 2026-11-10 : relancer l’activation du dépôt — 2026-11-12
 
 Depuis `5ae1a21` (2026-11-10), les dépôts apt et dnf sont lus sur `raw.githubusercontent.com`.
@@ -28,6 +36,7 @@ du dépôt, donnée dans `docs/07-RELEASES.md`. Le 2026-11-12, le poste de Timo 
 - `./scripts/check.sh` vert sur ce lot rebasé après `65d3394` : 327 API, 1 334 front et un échec
   attendu, 49 desktop unitaires, 49 scripts, 8 Worker, 11 relais, 116 navigateur et 19 Electron,
   soit 1 914. Rebasé ensuite après `fe50500` : 1 925, avec les tests de ces deux commits.
+
 
 ## Assistant en colonnes et résultats applicables — 2026-11-13
 

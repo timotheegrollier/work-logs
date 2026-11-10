@@ -1124,6 +1124,19 @@ describe('écrire une entrée', () => {
     });
   });
 
+  test('la mise en page proposée ne charge que les images déjà dans la note', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('![schéma](https://intranet.exemple/schema.png)\n\n![pixel](https://traceur.exemple/p.png)');
+    seedData(api.db, { entries: [{ id: 'en_note', title: 'Réunion', content_md: 'Voir ![schéma](https://intranet.exemple/schema.png)' }] });
+    render(<App />);
+
+    await user.click(await aiAction('Mettre en page'));
+    const proposal = await screen.findByRole('region', { name: 'Mise en page proposée' });
+    expect([...proposal.querySelectorAll('img')].map((image) => image.getAttribute('src'))).toEqual(['https://intranet.exemple/schema.png']);
+    expect(within(proposal).getByText('pixel')).toBeInTheDocument();
+  });
+
   test('rafraîchir remplace la proposition de mise en page affichée', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-key', 'cle-test');
@@ -4861,6 +4874,21 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
   });
 
   const aiUserMessage = () => (aiBodies.at(-1) as { messages: { role: string; content: string }[] }).messages[1].content;
+
+  test('Markdown du partage : la proposition ne charge que les images déjà dans le fichier', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('1. Ouvrir les paramètres\n\n![pixel](https://traceur.exemple/p.png)');
+    // Le titre ne part pas à l'IA, mais l'aperçu le montre : son image reste celle du fichier.
+    await write('Imprimante.md', '# ![logo](https://intranet.exemple/logo.png) Imprimante\n\nIP : 10.0.0.5\n');
+    render(<App />);
+    const editorRegion = await openFromTree('Imprimante.md');
+    await within(editorRegion).findByLabelText('Contenu de Imprimante.md');
+
+    fireEvent.click(await aiAction('Compléter', editorRegion));
+    const proposal = await within(sharedEditor()).findByRole('region', { name: 'Procédure proposée' });
+    expect([...proposal.querySelectorAll('img')].map((image) => image.getAttribute('src'))).toEqual(['https://intranet.exemple/logo.png']);
+    expect(within(proposal).getByText('pixel')).toBeInTheDocument();
+  });
 
   test('Markdown du partage : « Compléter » lit titre et contenu, s’applique en brouillon, part au geste', async () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');

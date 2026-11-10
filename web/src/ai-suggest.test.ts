@@ -890,7 +890,7 @@ describe('procédure tirée d’une entrée ou d’une tâche', () => {
     const fetch = vi.fn(async () => aiResponse('# Relancer la pompe\n\n1. Couper le disjoncteur'));
     vi.stubGlobal('fetch', fetch);
     await expect(draftProcedure({ ...settings, profile: 'Pisciculteur' }, { origin: 'entry', title: 'Panne', text: 'Coupé.' }))
-      .resolves.toEqual({ title: 'Relancer la pompe', markdown: '1. Couper le disjoncteur', truncated: false });
+      .resolves.toEqual({ title: 'Relancer la pompe', markdown: '1. Couper le disjoncteur', truncated: false, source: 'Coupé.' });
     expect(fetch).toHaveBeenCalledTimes(1);
     const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
     expect(body.messages[1].content).toBe('Profil : Pisciculteur\nEntrée du journal : Panne\nContenu :\nCoupé.');
@@ -919,6 +919,13 @@ describe('procédure tirée d’une entrée ou d’une tâche', () => {
     expect(fetch).not.toHaveBeenCalled();
     // « Sans titre », mais déjà du texte : l'IA a de quoi travailler.
     await expect(draftProcedure(settings, { origin: 'entry', title: 'Sans titre', text: 'Vider le bassin' })).resolves.toMatchObject({ title: 'T' });
+  });
+
+  test('une procédure tirée d’une tâche retient le texte de ses documents', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => aiResponse('# T\n\n1. Couper')));
+    const { source } = await draftProcedure(settings, { origin: 'task', title: 'Pompe', documents: [{ title: 'A', text: '![a](/a.png)' }, { title: 'G', google: true }, { title: 'B', text: '![b](/b.png)' }] });
+    expect(source).toContain('![a](/a.png)');
+    expect(source).toContain('![b](/b.png)');
   });
 });
 

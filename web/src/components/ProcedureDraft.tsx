@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, todayISO, type Entry } from '../lib';
 import type { DraftedProcedure } from '../ai-suggest';
-import { renderMarkdown } from '../markdown';
+import { renderAiProposal } from '../markdown';
 import { markdownToRich } from '../rich-markdown';
 import { AiRefinement } from './AiRefinement';
 
@@ -41,7 +41,7 @@ export function ProcedureDraft({
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
-  const html = useMemo(() => renderMarkdown(draft.markdown), [draft.markdown]);
+  const html = useMemo(() => renderAiProposal(draft.markdown, draft.source), [draft.markdown, draft.source]);
 
   const create = async () => {
     const name = title.trim();

@@ -25,6 +25,35 @@ export function renderMarkdown(source: string, options: { interactiveCheckboxes?
   return body.innerHTML;
 }
 
+/** DOM assaini d'un Markdown, dans un document inerte, sans ce qui charge autrement que par `src`. */
+function inertDom(markdown: string): HTMLElement {
+  const body = DOMPurify.sanitize(renderMarkdown(markdown), {
+    ADD_ATTR: ['target'],
+    FORBID_TAGS: ['style', 'svg', 'math'],
+    FORBID_ATTR: ['srcset', 'poster', 'background'],
+    RETURN_DOM: true,
+  }) as HTMLElement;
+  // Sans fonction CSS (`url()`, `image-set()`…), un style ne charge rien : les tailles restent.
+  body.querySelectorAll('[style*="("]').forEach((element) => element.removeAttribute('style'));
+  return body;
+}
+
+/**
+ * Aperçu d'un texte écrit par l'IA : le navigateur irait chercher ses images dès
+ * l'affichage, avant tout clic, et révélerait l'adresse IP et le moment de la
+ * lecture à qui le modèle désigne (§82). Seule se charge une adresse déjà
+ * présente, entière, dans le texte d'origine ; sinon, son texte alternatif.
+ */
+export function renderAiProposal(proposal: string, original: string): string {
+  const known = new Set([...inertDom(original).querySelectorAll('[src], [href]')]
+    .flatMap((element) => [element.getAttribute('src'), element.getAttribute('href')]));
+  const body = inertDom(proposal);
+  body.querySelectorAll('[src]').forEach((element) => {
+    if (!known.has(element.getAttribute('src'))) element.replaceWith(element.getAttribute('alt') || '[image non chargée]');
+  });
+  return body.innerHTML;
+}
+
 /** Sur les jetons : `<VirtualHost>` dans un bloc de code n'est pas du HTML. */
 export function hasHtmlOrImage(source: string): boolean {
   let found = false;

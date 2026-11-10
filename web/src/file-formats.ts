@@ -26,6 +26,8 @@ export interface FileAiProposal {
   /** Ce qui s'appliquera, à relire : Markdown, ou texte brut pour un `.txt`. */
   preview: string;
   previewFormat: 'markdown' | 'text';
+  /** Le texte avant la proposition : l'aperçu ne charge que les images qu'il contient déjà. */
+  original: string;
   /** Ce que l'enregistrement sur le partage refuserait (caractère hors encodage…), ou `''`. */
   warning: string;
   apply(): void;

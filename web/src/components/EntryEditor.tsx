@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { api, COLUMNS, PRIORITIES, dayLabel, formatSize, googleHelpUrl, isFollowed, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type Priority, type RichDocument, type Status, type Task } from '../lib';
 import { AiCancelled, completeNote, draftProcedure, noteCompletionContext, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
-import { insertCodeFence, renderMarkdown, toggleChecklistItem } from '../markdown';
+import { insertCodeFence, renderAiProposal, renderMarkdown, toggleChecklistItem } from '../markdown';
 import { markdownToRich, richToMarkdown } from '../rich-markdown';
 import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-download';
 import { Autosave } from '../autosave';
@@ -515,7 +515,7 @@ export function EntryEditor({
   const aiText = useMemo(() => (draft.content_json ? richToMarkdown(draft.content_json) : draft.content_md), [draft.content_json, draft.content_md]);
   const [aiBusy, setAiBusy] = useState<AiMode | null>(null);
   const [aiProposal, setAiProposal] = useState<{ mode: AiMode; snapshot: string; projectId: string; version: number; source: string; title: string; fixed: string } | null>(null);
-  const aiProposalHtml = useMemo(() => (aiProposal ? renderMarkdown(aiProposal.fixed) : ''), [aiProposal]);
+  const aiProposalHtml = useMemo(() => (aiProposal ? renderAiProposal(aiProposal.fixed, aiProposal.source) : ''), [aiProposal]);
   const requestAi = async (mode: AiMode, instruction?: string) => {
     if (aiWorking || syncing || !(mode === 'note' ? canDraftProcedure : aiAvailable)) return;
     const projectId = draftRef.current.project_id;

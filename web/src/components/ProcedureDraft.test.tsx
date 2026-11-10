@@ -7,7 +7,7 @@ import { ProcedureDraft } from './ProcedureDraft';
 const callbacks = () => ({ projectId: null, busy: false, onRefresh: vi.fn(), onCreated: vi.fn(), onClose: vi.fn() });
 
 test('une saisie avant les effets de montage garde le titre vidé', async () => {
-  const draft: DraftedProcedure = { title: 'Relancer la pompe', markdown: '1. Couper le courant', truncated: false };
+  const draft: DraftedProcedure = { title: 'Relancer la pompe', markdown: '1. Couper le courant', truncated: false, source: '' };
   function ImmediateEdit() {
     // Rejouer l'ordre qui perdait la suppression : champ affiché, saisie, puis
     // effets passifs de montage. Aucun délai ni modification du scheduler React.
@@ -26,7 +26,7 @@ test('une saisie avant les effets de montage garde le titre vidé', async () => 
 });
 
 test('une nouvelle proposition renouvelle le titre, un simple rendu garde sa correction', () => {
-  const draft: DraftedProcedure = { title: 'Relancer la pompe', markdown: '1. Couper le courant', truncated: false };
+  const draft: DraftedProcedure = { title: 'Relancer la pompe', markdown: '1. Couper le courant', truncated: false, source: '' };
   const props = callbacks();
   const { rerender } = render(<ProcedureDraft draft={draft} {...props} />);
   fireEvent.change(screen.getByLabelText('Titre de la procédure'), { target: { value: 'Pompe du bassin 3' } });
@@ -41,4 +41,13 @@ test('une nouvelle proposition renouvelle le titre, un simple rendu garde sa cor
   fireEvent.change(screen.getByLabelText('Titre de la procédure'), { target: { value: '' } });
   rerender(<ProcedureDraft draft={refreshed} {...props} />);
   expect(screen.getByLabelText('Titre de la procédure')).toHaveValue('');
+});
+
+test('la procédure rédigée ne charge que les images déjà dans sa source', () => {
+  const schema = 'https://intranet.exemple/schema.png';
+  const draft: DraftedProcedure = { title: 'Relancer la pompe', markdown: `![schéma](${schema})\n\n![pixel](https://traceur.exemple/p.png)`, truncated: false, source: `Voir ![schéma](${schema})` };
+  render(<ProcedureDraft draft={draft} {...callbacks()} />);
+  const form = screen.getByRole('form', { name: 'Procédure rédigée' });
+  expect([...form.querySelectorAll('img')].map((image) => image.getAttribute('src'))).toEqual([schema]);
+  expect(screen.getByText('pixel')).toBeInTheDocument();
 });
