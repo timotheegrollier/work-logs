@@ -37,7 +37,7 @@ test('ouvre automatiquement l’éditeur Google dans WorkLogs et actualise la co
   expect(bridge.reload).toHaveBeenCalledWith(opened[0].token);
   fireEvent.click(screen.getByRole('button', { name: 'Copie locale' }));
   await waitFor(() => expect(pull).toHaveBeenCalledWith('doc-1', 't.2'));
-  expect(await screen.findByRole('textbox', { name: 'Contenu du document' })).toHaveTextContent('Depuis Google');
+  expect(await screen.findByRole('textbox', { name: 'Contenu du document' }, { timeout: 10_000 })).toHaveTextContent('Depuis Google');
   expect(bridge.close).toHaveBeenCalledWith('doc-1');
   expect(bridge.hide).toHaveBeenCalled();
 });

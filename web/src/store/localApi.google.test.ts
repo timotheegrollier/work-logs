@@ -45,6 +45,9 @@ beforeEach(() => {
     if (target.includes('/drive/v3/files?')) {
       return Response.json({ files: [{ id: 'd1', name: 'Doc', modifiedTime: T }], nextPageToken: 'p2' });
     }
+    if (target.includes('/drive/v3/files/g-new?')) {
+      return Response.json({ id: 'g-new', name: 'Neuf', modifiedTime: '2026-09-19T10:00:00.000Z', mimeType: 'application/vnd.google-apps.document' });
+    }
     throw new Error(`appel inattendu : ${target}`);
   });
 });
@@ -141,8 +144,12 @@ describe('synchronisation Docs dans le navigateur', () => {
     expect(created.google_sync?.document_id).toBe('g-new');
     await expect(localApi.createGoogleDocument('   ')).rejects.toThrow('1 et 240');
     const listed = await localApi.googleDocuments();
+    // Le document créé manque encore à l'index Drive : sa copie locale le garde visible.
     // `d1` n'a jamais été ouvert ici : pas de copie locale, donc pas de projet.
-    expect(listed.files).toEqual([{ id: 'd1', name: 'Doc', modifiedTime: T, linked: false, project_id: null }]);
+    expect(listed.files).toEqual([
+      { id: 'g-new', name: 'Neuf', modifiedTime: '2026-09-19T10:00:00.000Z', linked: true, project_id: null },
+      { id: 'd1', name: 'Doc', modifiedTime: T, linked: false, project_id: null },
+    ]);
     expect(listed.nextPageToken).toBe('p2');
   });
 

@@ -7,8 +7,8 @@ mêmes routes que le desktop (`/api/shared/*`). Le téléphone le joint **par Ta
 HTTPS. Décision : `05-DECISIONS.md` §29.
 
 ```
-téléphone (PWA, https://worklogs-google…workers.dev)
-   │  fetch, sans code  (CORS : la seule origine de la PWA ; une autre page → 403)
+téléphone (PWA : https://worklogs-google…workers.dev ou https://timotheegrollier.github.io)
+   │  fetch, sans code  (CORS : les origines de la PWA ; une autre page → 403)
    ▼
 https://<vm>.<tailnet>.ts.net:8443   ← tailscale serve (certificat valide, réseau Tailscale seul)
    ▼
@@ -37,7 +37,9 @@ Fichiers prêts dans `relay/` : `worklogs-relais.service`, `env.exemple`, `fstab
 4. **Montage** : ligne de `fstab.exemple` dans `/etc/fstab`, `sudo mkdir -p /mnt/tse-procedures`,
    `sudo systemctl daemon-reload && sudo mount /mnt/tse-procedures && ls /mnt/tse-procedures`.
 5. **Réglages** : `env.exemple` → `/etc/worklogs-relais/env` (root:worklogs-relais, 0640).
-   Pas de code d'accès : seul le réseau Tailscale joint le relais (étape 7, §55).
+   Pas de code d'accès : seul le réseau Tailscale joint le relais (étape 7, §55). Les deux
+   adresses de la PWA (Worker Cloudflare et GitHub Pages) sont acceptées d'office ;
+   `WORKLOGS_RELAY_ORIGINS` ajoute d'autres origines si besoin.
 6. **Service** : `worklogs-relais.service` → `/etc/systemd/system/`, `sudo systemctl enable --now worklogs-relais`,
    `curl -s http://127.0.0.1:8420/health`.
 7. **Tailscale** : installer depuis le dépôt officiel (`pkgs.tailscale.com`), `sudo tailscale up`
@@ -151,9 +153,9 @@ une PWA qui n'a rien la met à la corbeille.
 |---|---|
 | « Le relais du dossier partagé ne répond pas » | Tailscale allumé sur le téléphone ? `systemctl status worklogs-relais`, `tailscale serve status` sur la VM |
 | « Le relais ne répond pas (Failed to fetch) », Tailscale allumé | Chrome › Paramètres du site de la PWA › accès au réseau local autorisé ? |
-| « appel refusé depuis une autre page que WorkLogs » | l'appel vient d'un autre site que la PWA (`WORKLOGS_RELAY_ORIGINS`) ; curl : sans en-têtes `Origin` ni `Sec-Fetch-Site` |
+| « appel refusé depuis une autre page que WorkLogs » | l'appel vient d'un autre site que les PWA (les deux origines WorkLogs sont toujours acceptées ; `WORKLOGS_RELAY_ORIGINS` en ajoute) ; curl : sans en-têtes `Origin` ni `Sec-Fetch-Site` |
 | « Non monté » / « Injoignable » | `ls /mnt/tse-procedures` sur la VM ; mot de passe du compte changé → mettre à jour `smb.cred` |
-| Erreur CORS dans la console du téléphone | `WORKLOGS_RELAY_ORIGINS` = l'adresse exacte de la PWA |
+| Erreur CORS dans la console du téléphone | l'origine est bien une PWA WorkLogs, ou `WORKLOGS_RELAY_ORIGINS` ajoute l'adresse exacte d'un autre client |
 | « Accès refusé » sur un dossier | droits NTFS du compte de `smb.cred` sur ce dossier |
 | « Introuvable. » sur un geste récent (le relais n'a pas la route) | version de `/health` ≠ celle de la PWA ? `journalctl -u worklogs-relais-maj` : release écartée, relais injoignable au passage, GitHub qui refuse… |
 

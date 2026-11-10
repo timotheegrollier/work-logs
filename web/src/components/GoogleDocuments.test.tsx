@@ -30,15 +30,18 @@ test('ouvre un document dans WorkLogs sans explorer ses onglets, puis se ferme',
   expect(scan).not.toHaveBeenCalled();
 });
 
-test('« Autoriser d’autres documents » ouvre le sélecteur de fichiers Google', async () => {
-  vi.spyOn(api, 'googleDocuments').mockResolvedValue({ files: [] });
+test('« Autoriser d’autres documents » ouvre le sélecteur puis met la liste à jour', async () => {
+  const list = vi.spyOn(api, 'googleDocuments').mockResolvedValueOnce({ files: [] })
+    .mockResolvedValue({ files: [{ id: 'doc-new', name: 'Document autorisé', modifiedTime: '' }] });
   const connect = vi.spyOn(api, 'connectGoogle').mockResolvedValue({} as GoogleStatus);
   show();
   const button = await screen.findByRole('button', { name: 'Autoriser d’autres documents' });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
-  expect(await screen.findByText('Choisis les documents dans ton navigateur, puis Actualiser.')).toBeVisible();
+  expect(await screen.findByText('Documents autorisés mis à jour.')).toBeVisible();
+  expect(await screen.findByText('Document autorisé')).toBeVisible();
   expect(connect).toHaveBeenCalledWith(true);
+  expect(list).toHaveBeenCalledTimes(2);
 });
 
 test('range un document dans un projet, en créant d’abord sa copie locale si besoin', async () => {

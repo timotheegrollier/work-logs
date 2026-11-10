@@ -146,6 +146,29 @@ test('création directe : titre validé, association immédiate, premier envoi p
   } finally { await api.close(); }
 });
 
+test('liste : un document créé reste visible même si l’index Drive ne le rend pas encore', async () => {
+  const google = stub(), original = google.request;
+  google.setSource({ documentId: 'new-google', title: 'Projet' });
+  google.request = async (url, options) => {
+    if (url.startsWith('/drive/v3/files?')) return { files: [] };
+    if (url.startsWith('/drive/v3/files/new-google?')) {
+      return { id: 'new-google', name: 'Projet', modifiedTime: '2026-11-10T09:00:00.000Z', mimeType: 'application/vnd.google-apps.document' };
+    }
+    return original(url, options);
+  };
+  const api = await startApi({ google });
+  try {
+    const created = await api.post('/api/google/documents', { title: 'Projet' });
+    assert.equal(created.status, 201);
+    const result = await api.get('/api/google/documents');
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body.files, [{
+      id: 'new-google', name: 'Projet', modifiedTime: '2026-11-10T09:00:00.000Z', mimeType: 'application/vnd.google-apps.document',
+      linked: true, project_id: null,
+    }]);
+  } finally { await api.close(); }
+});
+
 test('création sans révision : une modification distante avant le premier envoi conserve le brouillon', async () => {
   const google = stub();
   google.setSource({ documentId: 'new-google' });

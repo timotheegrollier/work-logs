@@ -3157,3 +3157,36 @@ seulement, validation/réouverture, archivage, refus et réponse perdue depuis u
 par un nœud. Navigateur : mise en page côte à côte à 1 440 px et empilée à 800 et 412 px, suite
 proposée visible et avancées repliées, cibles de 44 px et absence de débordement de 320 à 1 440 px
 et en paysage. Captures clair/sombre sur base jetable. Les réponses IA sont simulées.
+
+## 76. Un document Google tout neuf reste visible, et le relais accepte les deux PWA — 2026-11-10
+
+**Demande.** « Après avoir ajouté un nouveau document google je suis obligé de réactualiser la
+liste des documents google pour qu'il soit visible » ; et depuis la PWA GitHub Pages, le relais
+du dossier partagé répond « Failed to fetch », alors que la même adresse fonctionne depuis le
+Worker Cloudflare.
+
+**Choix.**
+- **Liste Google complétée par les copies locales.** `GET /api/google/documents` (desktop) et
+  `localApi.googleDocuments` (PWA) ajoutent au résultat de `files.list` les documents déjà liés
+  dans WorkLogs mais absents de l'index Drive, après lecture de leurs métadonnées une par une.
+  Le tri place toujours la sélection OAuth en tête, puis la date de modification décroissante.
+  **Autoriser d'autres documents** recharge la liste au retour du sélecteur.
+- **Deux origines PWA reconnues par le relais.** Le Worker Cloudflare et
+  `https://timotheegrollier.github.io` sont des origines intégrées, toujours acceptées ;
+  `WORKLOGS_RELAY_ORIGINS` ne remplace plus la liste, il ajoute des origines (client personnel,
+  autre déploiement). Le relais reste sans code, limité au réseau Tailscale.
+
+**Pourquoi.** `files.list` peut retarder l'apparition d'un fichier tout juste créé, alors que sa
+lecture directe répond déjà ; la liste le faisait disparaître jusqu'à **Actualiser**. Le relais
+avait la même liste d'origines figée que le Worker OAuth avant l'ajout de GitHub Pages, d'où le
+blocage CORS. Les deux adresses servent la même PWA WorkLogs : les accepter toutes deux ne
+change pas la protection contre les autres pages.
+
+**Écartés.** Attendre et réessayer la liste en boucle (délai arbitraire, appels en plus) ; faire
+confiance au seul titre local sans relire Drive (un document mis à la corbeille resterait
+affiché) ; ajouter un code d'accès au relais (retiré en §55).
+
+**Validation.** API : un document créé dont `files.list` ne rend encore rien apparaît lié dans
+la liste ; relais : les préliminaires CORS des deux origines passent, une origine étrangère
+reste refusée, `WORKLOGS_RELAY_ORIGINS` ajoute une origine. PWA : la liste rend le document créé
+absent de l'index local. Front : le sélecteur autorise puis recharge la liste sans **Actualiser**.

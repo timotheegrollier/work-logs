@@ -695,7 +695,8 @@ avec pour chacun **Ouvrir**, un choix de **projet**, et 🗑 (**corbeille Google
 récupérable 30 jours ; la copie dans WorkLogs est retirée). On y crée aussi un Google Docs.
 Un document qui n'y est pas encore — partagé avec toi, ou créé hors de WorkLogs : **Autoriser
 d'autres documents** ouvre le sélecteur Google dans le navigateur ; choisis-en un ou plusieurs,
-puis **Actualiser**.
+la liste se met à jour toute seule au retour. Un document créé dans WorkLogs reste visible même
+si Google Drive met quelques instants à l'indexer.
 **Ouvrir** bascule le filtre sur le projet du document, comme une carte de tâche ; le journal
 et le document affiché parlent alors du même projet.
 
