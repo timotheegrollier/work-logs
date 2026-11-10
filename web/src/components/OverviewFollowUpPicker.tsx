@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useContext, useRef, useState } from 'react';
 import { flushPendingSaves } from '../autosave';
+import { FollowUpContext } from '../follow-up-controller';
 import { api, isFollowed, overviewOrder, todayISO, type EntrySummary, type Project, type Task } from '../lib';
 
 /** Une sélection commune : suivre une tâche inclut déjà ses documents liés. */
@@ -12,6 +13,7 @@ export function OverviewFollowUpPicker({ tasks, entries, projects, onChanged }: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
+  const followUp = useContext(FollowUpContext);
   const trigger = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const submitting = useRef(false);
@@ -41,6 +43,9 @@ export function OverviewFollowUpPicker({ tasks, entries, projects, onChanged }: 
             const saved = await api.followUp(item.kind, item.id).catch(() => null);
             if (!saved?.follow_up?.enabled) throw cause;
           }
+          // L'activation explicite demande son premier bilan ici : l'ordonnanceur
+          // ne balaie plus les suivis au chargement.
+          followUp?.refresh({ id: item.id, title: item.title, follow_up: latest.follow_up, follow_up_key: latest.source_key, kind: item.kind });
         }
         count++;
         setSelected((value) => value.filter((key) => key !== item.kind + ':' + item.id));

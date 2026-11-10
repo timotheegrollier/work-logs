@@ -308,12 +308,14 @@ présente un bilan, un **état proposé**, les avancées, prochaines actions et 
 suivi d’une tâche est aussi visible dans ses entrées liées.
 
 L’activation produit le premier bilan puis coche **Actualiser automatiquement après
-enregistrement** : après une modification sauvegardée et une pause de deux secondes,
+enregistrement** : après une modification sauvegardée et une pause de huit secondes,
 WorkLogs actualise le suivi pendant que l’application est ouverte et les éléments chargés.
 Décocher conserve le dernier bilan et permet de continuer avec **Actualiser**. **Arrêter**
 coupe la demande en cours ; une prochaine modification pourra relancer le suivi automatique.
-Une version inchangée n’est pas réanalysée à chaque ouverture. Une erreur conserve le bilan
-précédent ; **À actualiser** signale que les sources ont changé.
+Un bilan déjà périmé au chargement ou après une synchro n’est pas recalculé tout seul : il
+reste marqué **À actualiser** jusqu’à un clic. Deux actualisations automatiques d’un même
+élément sont espacées d’au moins une minute ; une version inchangée n’est pas réanalysée.
+Une erreur conserve le bilan précédent ; **À actualiser** signale que les sources ont changé.
 
 **Désactiver**, à droite d’Actualiser, coupe le suivi d’une entrée (ou d’une tâche) qui n’en
 a pas besoin : l’automatisme et le bilan partent, le texte ne change pas, et pour une entrée

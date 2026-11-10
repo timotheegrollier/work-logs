@@ -8,9 +8,19 @@ regroupement attend désormais huit secondes de vraie pause d’écriture. Une a
 automatique reste en arrière-plan : le bilan précédent demeure lisible, seule une mention
 discrète « Actualisation en cours… » remplace « À actualiser », sans déplacer les listes ni
 les boutons. « Actualiser » garde l’attente visible sous le bilan. Première demande d’un
-suivi activé : immédiate, sans attendre la pause. Tests : rendu du panneau pour les deux
-chemins, parcours navigateur pour le délai et la mise à jour après la pause.
-`./scripts/check.sh` vert : **318 API, 856 front** (plus l’échec attendu), **49 desktop
+suivi activé : immédiate, sans attendre la pause. Un bilan déjà périmé au chargement ou
+après une synchro n’est plus recalculé tout seul : seules les modifications de la session
+ouverte, l’activation et « Actualiser » déclenchent un appel. Deux actualisations
+automatiques d’un même élément sont espacées d’une minute. Tests : rendu du panneau pour
+les deux chemins, parcours navigateur pour le délai et la mise à jour après la pause,
+tests du contrôleur pour l’absence d’appel au chargement et le délai entre deux appels.
+**Pages et campagne.** `gh-pages` ne garde plus que la dernière version des dépôts
+RPM/DEB (`KEEP: 1`) : le déploiement Pages ne synchronise plus 534 Mo et repasse sous
+les 10 minutes. Les tests front tournent avec quatre workers (`maxWorkers: 4`) et un test qui
+expire une fois est rejoué une fois (`retry: 1`) : les attentes DOM ne
+disparaissent plus sous la charge.
+
+`./scripts/check.sh` vert : **318 API, 858 front** (plus l’échec attendu), **49 desktop
 unitaires, 46 scripts, 8 Worker, 11 relais, 105 navigateur et 19 desktop e2e**.
 
 ## Ajustement du 2026-11-09 — vue d’ensemble allégée (§75)

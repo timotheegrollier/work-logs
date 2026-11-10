@@ -16,6 +16,8 @@ type Job = { item: Item; manual: boolean };
 const keyOf = (kind: FollowUpKind, id: string) => `${kind}:${id}`;
 // Une vraie pause d'écriture : deux secondes relançaient l'IA au milieu d'une note.
 const AUTO_DELAY = 8000;
+/** Deux actualisations automatiques du même élément ne partent pas plus rapprochées. */
+const AUTO_COOLDOWN = 60_000;
 const idle: Runtime = { busy: false, error: '', background: false };
 const reportContent = (report: FollowUpReportDraft) => JSON.stringify([
   report.status, report.summary, report.completed, report.next_steps, report.blockers, report.warnings,
@@ -49,8 +51,14 @@ export function FollowUpProvider({ state, onChanged, children }: {
   latest.current = items;
   // Une erreur ou « Arrêter » ne provoque pas une boucle sur la même version.
   const attempted = useRef(new Map<string, string>());
-  // Dernière activation vue : une relance explicite rouvre le droit à un essai.
-  const activations = useRef(new Map<string, string>());
+  // Versions vues pendant cette session : un bilan déjà périmé au chargement ou
+  // après une synchro ne doit pas partir tout seul. Une modification faite après
+  // l'ouverture, elle, autorise l'actualisation automatique.
+  const observed = useRef<{ ready: boolean; keys: Map<string, string>; changed: Map<string, string> }>({
+    ready: false, keys: new Map(), changed: new Map(),
+  });
+  // Le coût d'un appel automatique se limite aussi dans le temps.
+  const lastAutoAt = useRef(new Map<string, number>());
   const queue = useRef(new Map<string, Job>());
   const active = useRef<{ key: string; sourceKey: string; controller: AbortController; manual: boolean } | null>(null);
   const configBusy = useRef(new Set<string>());
@@ -62,6 +70,9 @@ export function FollowUpProvider({ state, onChanged, children }: {
     if (!mounted.current || active.current || queue.current.size === 0) return;
     const [key, job] = queue.current.entries().next().value!;
     queue.current.delete(key);
+    // Une demande explicite repart tout de suite ; une actualisation de fond
+    // n'ouvre la période de calme qu'au moment où elle appelle vraiment l'IA.
+    if (job.manual) lastAutoAt.current.delete(key);
     const controller = new AbortController();
     const request = { key, sourceKey: job.item.follow_up_key ?? '', controller, manual: job.manual };
     active.current = request;
@@ -77,6 +88,7 @@ export function FollowUpProvider({ state, onChanged, children }: {
         // Une file attendue peut déjà avoir été mise à jour sur un autre appareil.
         if (!job.manual && (!snapshot.follow_up?.enabled || snapshot.follow_up.report?.source_key === snapshot.source_key)) return;
         attempted.current.set(key, snapshot.source_key);
+        if (!job.manual) lastAutoAt.current.set(key, Date.now());
         const report = await generateFollowUp({ ...readAiSettings(), signal: controller.signal }, snapshot.source);
         if (controller.signal.aborted) return;
         // Les frappes arrivées pendant l'analyse doivent aussi participer au CAS
@@ -129,6 +141,8 @@ export function FollowUpProvider({ state, onChanged, children }: {
   const stop = useCallback((item: Item) => {
     const key = keyOf(item.kind, item.id);
     attempted.current.set(key, latest.current.get(key)?.follow_up_key ?? item.follow_up_key ?? '');
+    observed.current.changed.delete(key);
+    lastAutoAt.current.delete(key);
     queue.current.delete(key);
     if (active.current?.key === key) active.current.controller.abort();
     patch(key, idle);
@@ -176,34 +190,61 @@ export function FollowUpProvider({ state, onChanged, children }: {
         patch(key, idle);
       }
     }
-    // Une nouvelle activation (premier bilan, ou relance après « Désactiver »)
-    // repart malgré l'arrêt mémorisé pour la même version.
-    for (const [key, item] of latest.current) {
-      const stamp = item.follow_up?.enabled ? item.follow_up.enabled_at : '';
-      const seen = activations.current.get(key);
-      if (stamp && seen !== undefined && seen !== stamp) attempted.current.delete(key);
-      activations.current.set(key, stamp);
+    // L'état chargé au départ est la référence. Un bilan déjà périmé (relecture
+    // hors ligne, synchro d'un autre appareil) reste marqué « À actualiser » et
+    // n'est pas payé une deuxième fois sans geste. Seules les versions qui
+    // changent pendant la session ouverte déclenchent l'automatisme.
+    const watch = observed.current;
+    const present = new Set<string>();
+    for (const [key, item] of items) {
+      present.add(key);
+      const sourceKey = item.follow_up_key ?? '';
+      const previous = watch.keys.get(key);
+      if (watch.ready && previous && sourceKey && sourceKey !== previous) watch.changed.set(key, sourceKey);
+      if (!item.follow_up?.enabled || !sourceKey || item.follow_up.report?.source_key === sourceKey) watch.changed.delete(key);
+      watch.keys.set(key, sourceKey);
     }
-    // Le premier bilan d'un suivi activé n'attend pas une pause d'écriture :
-    // la sélection « + Ajouter au suivi IA » doit le voir arriver tout de suite.
-    if (!hasPendingSaves()) {
-      for (const item of latest.current.values()) {
-        if (item.follow_up?.enabled && item.follow_up_key && !item.follow_up.report) enqueue(item, false);
+    for (const key of watch.keys.keys()) {
+      if (!present.has(key)) {
+        watch.keys.delete(key);
+        watch.changed.delete(key);
+        attempted.current.delete(key);
+        lastAutoAt.current.delete(key);
       }
     }
-    let timer: ReturnType<typeof setTimeout>;
+    if (!watch.ready && items.size > 0) watch.ready = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const schedule = () => {
+      const changed = observed.current.changed;
+      if (!observed.current.ready || changed.size === 0) return;
+      // Chaque élément attend la pause d'écriture ; s'il vient d'être actualisé,
+      // il attend aussi la fin de la période de calme.
+      const now = Date.now();
+      let wait = Number.POSITIVE_INFINITY;
+      for (const key of changed.keys()) {
+        const last = lastAutoAt.current.get(key);
+        wait = Math.min(wait, last === undefined ? AUTO_DELAY : Math.max(AUTO_DELAY, last + AUTO_COOLDOWN - now));
+      }
+      if (!Number.isFinite(wait)) return;
       timer = setTimeout(() => {
         // Une sauvegarde en erreur reste en attente : pas d'envoi d'une copie
         // dépassée, et aucun appel IA déclenché par des frappes seules.
         if (hasPendingSaves()) { schedule(); return; }
-        for (const item of latest.current.values()) {
-          if (item.follow_up?.enabled && item.follow_up_key && item.follow_up.report?.source_key !== item.follow_up_key) enqueue(item, false);
+        const current = Date.now();
+        let cooling = false;
+        for (const [key, sourceKey] of [...observed.current.changed]) {
+          const item = latest.current.get(key);
+          if (!item || !item.follow_up?.enabled || item.follow_up_key !== sourceKey) continue;
+          if (item.follow_up.report?.source_key === sourceKey) { observed.current.changed.delete(key); continue; }
+          const last = lastAutoAt.current.get(key);
+          if (last !== undefined && current - last < AUTO_COOLDOWN) { cooling = true; continue; }
+          enqueue(item, false);
         }
-      }, AUTO_DELAY);
+        if (cooling) schedule();
+      }, wait);
     };
     schedule();
-    return () => clearTimeout(timer);
+    return () => { if (timer) clearTimeout(timer); };
   }, [items, wake, enqueue, patch]);
   useEffect(() => {
     mounted.current = true;

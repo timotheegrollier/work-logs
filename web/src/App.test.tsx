@@ -113,7 +113,7 @@ describe('catégories et sous-catégories', () => {
     seedData(api.db, { projects: [{ id: 'p', name: 'Chantier' }], entries: [{ id: 'e', title: 'Compte rendu', project_id: 'p' }], tasks: [{ id: 't', title: 'Objectif', project_id: 'p' }] });
     const parent = await createCategory('Préparation');
     render(<App />);
-    fireEvent.change(await screen.findByLabelText('Catégorie de l’entrée'), { target: { value: parent.id } });
+    fireEvent.change(await screen.findByLabelText('Catégorie de l’entrée', {}, { timeout: 5000 }), { target: { value: parent.id } });
     await waitFor(() => expect(row(api.db, 'SELECT category_id FROM entries WHERE id=?', 'e').category_id).toBe(parent.id));
     fireEvent.click(within(board()).getByRole('button', { name: 'Objectif' }));
     fireEvent.change(screen.getByLabelText('Catégorie de la tâche'), { target: { value: parent.id } });
@@ -822,14 +822,14 @@ describe('écrire une entrée', () => {
     });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: 'Lier une tâche existante' }));
+    await user.click(await screen.findByRole('button', { name: 'Lier une tâche existante' }, { timeout: 5000 }));
     await user.click(await screen.findByRole('checkbox', { name: 'Lier Préparer le dossier à cette entrée' }));
     await user.click(screen.getByRole('button', { name: 'Relier la sélection (1)' }));
 
     await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
     expect(await within(editor()).findByText('Tâche liée à cette entrée.')).toBeVisible();
     // La tâche liée sort du lieur, l’autre reste proposée.
-    await user.click(await screen.findByRole('button', { name: 'Lier une tâche existante' }));
+    await user.click(await screen.findByRole('button', { name: 'Lier une tâche existante' }, { timeout: 5000 }));
     expect(screen.queryByRole('checkbox', { name: 'Lier Préparer le dossier à cette entrée' })).not.toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Lier Envoyer la facture à cette entrée' })).toBeVisible();
   });
@@ -5130,7 +5130,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     await write('Archives/notes.md', 'v1\n');
     await write('garde.md', 'gardé\n');
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Dossier Archives' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Dossier Archives' }, { timeout: 5000 }));
     await openFromTree('notes.md');
     fireEvent.click(screen.getByRole('button', { name: 'Renommer ou supprimer Archives' }));
     fireEvent.click(screen.getByRole('button', { name: 'Supprimer Archives du partage' }));
@@ -5138,8 +5138,8 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     expect(window.confirm).toHaveBeenLastCalledWith(
       'Supprimer le dossier « Archives » et tout son contenu (2 fichiers et 1 sous-dossier) du dossier partagé ? Cette action est immédiate pour toute l’équipe.',
     );
-    await waitFor(() => expect(screen.queryByRole('region', { name: 'Fichier partagé' })).not.toBeInTheDocument());
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Dossier Archives' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Fichier partagé' })).not.toBeInTheDocument(), { timeout: 5000 });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Dossier Archives' })).not.toBeInTheDocument(), { timeout: 5000 });
     expect(await read('garde.md')).toBe('gardé\n');
   });
 

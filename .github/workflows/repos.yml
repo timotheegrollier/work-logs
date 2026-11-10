@@ -24,11 +24,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Nombre de versions gardées par dépôt. gh-pages sert un site limité à 1 Go :
-  # 3 versions × (83 Mo rpm + 121 Mo deb) ≈ 610 Mo, avec de la marge. Les versions
-  # plus anciennes restent téléchargeables depuis les releases GitHub, qui ne
-  # comptent pas dans cette limite.
-  KEEP: 3
+  # Nombre de versions gardées par dépôt. gh-pages doit rester petit : au-delà
+  # d'environ 10 min de synchronisation, GitHub Pages abandonne le déploiement.
+  # Une seule version suffit aux dépôts dnf/apt ; les anciennes restent
+  # téléchargeables depuis les releases GitHub, qui ne comptent pas ici.
+  KEEP: 1
 
 jobs:
   repos:

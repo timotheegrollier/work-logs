@@ -2723,6 +2723,14 @@ demeure affiché, une simple mention « Actualisation en cours… » remplace «
 et les listes comme les boutons ne se déplacent plus. Une demande manuelle garde l’attente
 visible sous le bilan.
 
+**Amendé le 2026-11-10 (jetons).** L’ordonnanceur ne balaie plus tous les suivis au
+chargement : un bilan déjà périmé (relecture hors ligne, synchro d’un autre appareil)
+reste marqué « À actualiser » et n’est recalculé qu’à la demande. Seules les versions
+modifiées pendant la session ouverte, l’activation explicite et « Actualiser »
+déclenchent un appel. Deux actualisations automatiques d’un même élément sont espacées
+d’au moins une minute ; le bilan en place reste affiché entre-temps. Le premier bilan
+d’une sélection multiple est demandé par la sélection elle-même.
+
 **Fidélité et courses.** L’entrée enregistrée est sa propre source ; une tâche lit ses seuls
 documents explicitement liés et ses champs. Le document riche fait autorité. Huit documents,
 24 000 caractères de texte au plus ; pour chacun, le début et la fin sont conservés afin de
