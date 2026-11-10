@@ -1,1 +1,1 @@
-deb [trusted=yes] https://timotheegrollier.github.io/work-logs/deb/ ./
+deb [trusted=yes] https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages/deb/ ./
