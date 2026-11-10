@@ -116,17 +116,18 @@ Trois circuits selon le format installé (détecté par `installKind()` dans
 | Paquet système sans dépôt activé | page de téléchargement, avec la commande d'activation du dépôt | paquet complet |
 
 Le workflow **« Dépôts »** (`repos.yml`, ex-`rpm-repo.yml`) publie les deux dépôts à chaque
-release et **ne garde que les 3 dernières versions** (`scripts/prune-repo.mjs`).
+release et **ne garde que la dernière version** (`scripts/prune-repo.mjs`).
 Après le push, il vérifie les URLs publiques avec `scripts/verify-repo.mjs` : `Packages`,
 `Packages.gz`, les sommes du `Release`, `repomd.xml`/`primary.xml` et les deux paquets,
-avec **10 minutes d'attente bornée**. Un 503 de propagation GitHub Pages fait donc échouer
-le run au lieu de le laisser vert alors que le dépôt n'est pas encore installable.
+avec **10 minutes d'attente bornée**. Un retard de propagation de
+`raw.githubusercontent.com` fait donc échouer le run au lieu de le laisser vert alors que
+le dépôt n'est pas encore installable.
 
 ### Dépôt apt (Debian, Ubuntu, Linux Mint)
 
 ```bash
 sudo curl -fsSL -o /etc/apt/sources.list.d/worklogs.list \
-  https://timotheegrollier.github.io/work-logs/deb/worklogs.list
+  https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages/deb/worklogs.list
 sudo apt update && sudo apt install --only-upgrade worklogs
 ```
 Dépôt **plat** (`Packages` + `Release` à la racine, d'où le `/` final dans le `.list`),
@@ -144,7 +145,9 @@ conteneur `ubuntu:24.04` (la base de Mint 22.x) à chaque release.
 ### Dépôt dnf
 
 - Contenu : tous les `.rpm` gardés + `repodata/` + `worklogs.repo`, sur la branche
-  `gh-pages` (servi par GitHub Pages : `https://timotheegrollier.github.io/work-logs/rpm/`).
+  `gh-pages`, servi en brut par
+  `https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages/rpm/`
+  (GitHub Pages ne déploie plus que la PWA, en artefact).
 - Construction : `scripts/build-rpm-repo.sh <dir>` (`createrepo_c --update`).
 - Workflow `rpm-repo.yml` : déclenché par la FIN de « Release Linux »
   (`workflow_run`, pas `release`) — voir pièges. Il télécharge le RPM de la
@@ -156,7 +159,7 @@ conteneur `ubuntu:24.04` (la base de Mint 22.x) à chaque release.
 - Dépôt non signé (`gpgcheck=0`, usage personnel) — la signature GPG reste une piste.
 - Activation côté utilisateur (une fois) :
   ```bash
-  sudo curl -o /etc/yum.repos.d/worklogs.repo https://timotheegrollier.github.io/work-logs/rpm/worklogs.repo
+  sudo curl -o /etc/yum.repos.d/worklogs.repo https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages/rpm/worklogs.repo
   sudo dnf update worklogs
   ```
 
@@ -237,9 +240,9 @@ conteneur `ubuntu:24.04` (la base de Mint 22.x) à chaque release.
   L'expression d'origine exigeait la révision `-1` et ne trouvait donc jamais rien sur
   Debian. Toute évolution du parseur doit couvrir les deux formats (tests dédiés).
 - **Rétention des dépôts** : sans purge, gh-pages avait atteint **1,3 Go** (16 RPM jamais
-  supprimés), au-delà de la limite d'1 Go d'un site GitHub Pages. `prune-repo.mjs` garde
-  les 3 dernières versions ; son tri est en semver, pas en texte (sinon `0.6.9` passerait
-  après `0.6.10` et la purge supprimerait la mauvaise).
+  supprimés), ce qui rendait chaque clone et chaque déploiement de branche très lents.
+  `prune-repo.mjs` garde la dernière version ; son tri est en semver, pas en texte (sinon
+  `0.6.9` passerait après `0.6.10` et la purge supprimerait la mauvaise).
 - **Déploiement Pages bloqué puis annulé** (vécu le 2026-11-06, v0.72.0) : le job `deploy`
   de `pages-build-deployment` est resté 10 min en `updating_pages` puis s'est annulé
   (« Timeout reached »). La taille du site (534 Mo) n'y était pour rien et GitHub ne
@@ -249,8 +252,11 @@ conteneur `ubuntu:24.04` (la base de Mint 22.x) à chaque release.
   suivant meurt en 12 s sur « Deployment cancelled ». Il faut donner un nouveau SHA à
   gh-pages, avec le même contenu :
   `git push origin "$(git commit-tree 'origin/gh-pages^{tree}' -p origin/gh-pages -m 'pages: redéploie')":refs/heads/gh-pages`,
-  puis `node scripts/verify-repo.mjs vX.Y.Z https://timotheegrollier.github.io/work-logs`.
+  puis `node scripts/verify-repo.mjs vX.Y.Z https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages`.
   Ne pas relancer « Dépôts » : les paquets sont déjà sur gh-pages, son run reste rouge.
+  **Changé le 2026-11-10** : la PWA est déployée par artefact (`pwa.yml`), les dépôts
+  restent sur `gh-pages` mais ne passent plus par Pages ; le déploiement de branche n'est
+  plus utilisé.
 - **Liste fermée de `stage-desktop.mjs`** : tout nouveau fichier sous `desktop/` doit y
   être ajouté, sinon l'app installée plante à l'import (fenêtres jamais ouvertes,
   timeouts `firstWindow` dans les 3 jobs paquets — vu sur la 0.3.0).
@@ -270,7 +276,7 @@ conteneur `ubuntu:24.04` (la base de Mint 22.x) à chaque release.
 ## 9. PWA Cloudflare : déployée par la CI, recette manuelle en secours (vécu le 2026-09-27)
 
 Le téléphone ouvre `https://worklogs-google.cocodexcocoder.workers.dev/` (PWA à `/`,
-relais à `/token`, option B). GitHub Pages reste déployé par la CI en transition, mais ce
+relais à `/token`, option B). GitHub Pages reste un miroir déployé par artefact, mais ce
 n'est plus lui que le téléphone consulte. Vécu : Cloudflare en 0.37.0 alors que GitHub
 servait déjà 0.41.x, zéro changement visible malgré CI verte — le Worker n'était déployé
 qu'à la main.

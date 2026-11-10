@@ -15,8 +15,11 @@ automatiques d’un même élément sont espacées d’une minute. Tests : rendu
 les deux chemins, parcours navigateur pour le délai et la mise à jour après la pause,
 tests du contrôleur pour l’absence d’appel au chargement et le délai entre deux appels.
 **Pages et campagne.** `gh-pages` ne garde plus que la dernière version des dépôts
-RPM/DEB (`KEEP: 1`) : le déploiement Pages ne synchronise plus 534 Mo et repasse sous
-les 10 minutes. Les tests front tournent avec quatre workers (`maxWorkers: 4`) et un test qui
+RPM/DEB (`KEEP: 1`). Surtout, la PWA est désormais publiée comme **artefact GitHub
+Actions** : le déploiement Pages ne synchronise plus les 179 Mo de paquets ; ils restent
+sur `gh-pages`, servis en brut par `raw.githubusercontent.com`. Le 2026-11-10, la
+synchronisation de branche expirait encore à 10 min malgré la purge, d'où ce changement.
+Les tests front tournent avec quatre workers (`maxWorkers: 4`) et un test qui
 expire une fois est rejoué une fois (`retry: 1`) : les attentes DOM ne
 disparaissent plus sous la charge.
 

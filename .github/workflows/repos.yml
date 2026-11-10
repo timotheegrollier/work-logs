@@ -4,6 +4,9 @@ name: Dépôts
 # GITHUB_TOKEN, dont les événements `release` ne redéclenchent jamais de workflow
 # (anti-boucle GitHub). `workflow_run`, lui, part dans tous les cas — on vérifie
 # ensuite que la release est vraiment publiée (pas un brouillon de dispatch).
+#
+# Seul « Dépôts » pousse encore sur gh-pages : la PWA est publiée comme artefact
+# Pages et les paquets sont lus en brut depuis la branche.
 on:
   workflow_run:
     workflows: ['Release Linux']
@@ -19,7 +22,7 @@ permissions:
   contents: write
 
 concurrency:
-  # Partagé avec « PWA » : les deux workflows poussent sur gh-pages.
+  # Seul « Dépôts » pousse sur gh-pages ; la PWA n'y touche plus.
   group: gh-pages
   cancel-in-progress: false
 
@@ -35,12 +38,12 @@ jobs:
     name: Construire, tester et publier les dépôts dnf et apt
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
-    # 25 min de construction/tests + jusqu'à 10 min d'attente de propagation Pages.
+    # 25 min de construction/tests + jusqu'à 10 min d'attente de propagation raw.
     timeout-minutes: 35
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
-      PAGES: https://timotheegrollier.github.io/work-logs
+      PAGES: https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -156,10 +159,9 @@ jobs:
           git push origin gh-pages
           du -sh rpm deb
 
-      # GitHub Pages sert la branche de façon asynchrone : le nouveau .deb a déjà
-      # répondu 503 quelques minutes après la v0.70.0 alors que l'index annonçait
-      # déjà la version. On attend que les URLs publiques répondent vraiment avant
-      # de déclarer le dépôt publié.
+      # raw.githubusercontent.com peut servir la branche avec un léger retard :
+      # on attend que les URLs publiques répondent vraiment avant de déclarer le
+      # dépôt publié.
       - name: Vérifier que les dépôts publics servent la version publiée
         run: |
           if [[ "$DEB_OK" == true ]]; then

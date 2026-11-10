@@ -42,12 +42,16 @@ après ta confirmation et ton mot de passe.
 ```bash
 # Debian, Ubuntu, Linux Mint
 sudo curl -fsSL -o /etc/apt/sources.list.d/worklogs.list \
-  https://timotheegrollier.github.io/work-logs/deb/worklogs.list
+  https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages/deb/worklogs.list
 
 # Fedora et dérivées RPM
 sudo curl -fsSL -o /etc/yum.repos.d/worklogs.repo \
-  https://timotheegrollier.github.io/work-logs/rpm/worklogs.repo
+  https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages/rpm/worklogs.repo
 ```
+
+Les dépôts de paquets sont servis en brut depuis la branche `gh-pages`. Si tu les as
+activés avant le 2026-11-10, relance la commande ci-dessus pour remplacer l'ancienne URL
+Pages.
 
 L'AppImage, elle, se met à jour seule et en différentiel — rien à activer.
 

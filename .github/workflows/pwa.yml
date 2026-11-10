@@ -1,8 +1,8 @@
 name: PWA
 
-# La PWA statique vit à la racine de gh-pages ; les dépôts rpm/ et deb/ restent
-# dans leurs sous-dossiers dédiés et ne sont jamais touchés ici. Même groupe de
-# concurrence que « Dépôts » : les deux workflows poussent sur gh-pages.
+# La PWA est publiée comme artefact GitHub Pages (quelques Mo). Les dépôts
+# rpm/ et deb/ restent sur gh-pages, servis en brut par raw.githubusercontent.com ;
+# ils ne passent plus par le déploiement Pages.
 on:
   push:
     branches: [master]
@@ -18,10 +18,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
-  group: gh-pages
+  group: pages
   cancel-in-progress: false
 
 jobs:
@@ -29,8 +31,9 @@ jobs:
     name: Construire et publier la PWA
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    env:
-      GH_TOKEN: ${{ github.token }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -48,25 +51,10 @@ jobs:
           # Relais de jetons (Cloudflare Worker `oauth-proxy/`) : il détient le secret du
           # client Web, que Google exige à l'échange du code. Absent : flux « jeton » d'une heure.
           VITE_GOOGLE_TOKEN_PROXY: ${{ vars.GOOGLE_TOKEN_PROXY_URL }}
-      - name: Publier la PWA à la racine sans toucher aux dépôts
-        run: |
-          git clone -q --branch gh-pages --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" .pages
-          # Retirer l'ancien emplacement et les seuls fichiers PWA de la racine.
-          # Les dossiers deb/ et rpm/ ne sont jamais supprimés ni remplacés.
-          rm -rf .pages/app .pages/assets .pages/icons
-          rm -f .pages/index.html .pages/manifest.webmanifest .pages/sw.js .pages/theme.js
-          cp -r web/dist/. .pages/
-          test -f .pages/index.html && test -f .pages/sw.js && test -f .pages/manifest.webmanifest
-          cd .pages
-          git add -A -- .
-          if git diff --cached --name-only -- deb rpm | grep -q .; then
-            echo 'Erreur : le déploiement PWA a modifié un dépôt deb/ ou rpm/'
-            exit 1
-          fi
-          git -c user.name='github-actions[bot]' -c user.email='github-actions[bot]@users.noreply.github.com' \
-            commit -m "pwa: ${GITHUB_SHA::12} (WorkLogs mobile à la racine)" || { echo "PWA inchangée"; exit 0; }
-          for attempt in 1 2 3; do
-            git push origin gh-pages && break
-            git pull --rebase origin gh-pages || break
-            sleep 5
-          done
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+      - name: Déployer l'artefact Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

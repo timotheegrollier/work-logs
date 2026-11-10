@@ -42,12 +42,15 @@ your confirmation and password.
 ```bash
 # Debian, Ubuntu, Linux Mint
 sudo curl -fsSL -o /etc/apt/sources.list.d/worklogs.list \
-  https://timotheegrollier.github.io/work-logs/deb/worklogs.list
+  https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages/deb/worklogs.list
 
 # Fedora and other RPM distros
 sudo curl -fsSL -o /etc/yum.repos.d/worklogs.repo \
-  https://timotheegrollier.github.io/work-logs/rpm/worklogs.repo
+  https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages/rpm/worklogs.repo
 ```
+
+The package repositories are served raw from the `gh-pages` branch. If you enabled
+them before 2026-11-10, rerun the command above to replace the former Pages URL.
 
 The AppImage updates itself, differentially — nothing to enable.
 

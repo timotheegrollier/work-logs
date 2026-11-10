@@ -11,8 +11,8 @@ import fs from 'node:fs';
 
 export const UPDATE_REPO = 'timotheegrollier/work-logs';
 export const RELEASES_URL = `https://github.com/${UPDATE_REPO}/releases`;
-export const RPM_REPO_URL = 'https://timotheegrollier.github.io/work-logs/rpm';
-export const DEB_REPO_URL = 'https://timotheegrollier.github.io/work-logs/deb';
+export const RPM_REPO_URL = 'https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages/rpm';
+export const DEB_REPO_URL = 'https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages/deb';
 /** Nom du paquet système (deb et rpm — vérifié : `rpm -q worklogs`, `--name worklogs` côté fpm). */
 export const SYSTEM_PACKAGE = 'worklogs';
 /** Revérification périodique en tâche de fond (l'ouverture vérifie déjà). */
