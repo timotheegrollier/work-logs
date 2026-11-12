@@ -118,6 +118,11 @@ describe('entrées/sorties bornées', () => {
     // avant que le worker ait pu démarrer ; l'ancien code, qui armait le délai dès l'envoi,
     // répondait alors SHARED_OFFLINE. Le résultat ne dépend plus de la charge.
     t.mock.timers.enable({ apis: ['setTimeout'] });
+    // Puis, dès que le worker tourne, 29 ms passent : le délai de 30 ms doit partir de là, entier.
+    // Notre écouteur précède ceux de shared-io : la microtâche avance l'horloge une fois le délai réarmé.
+    const { subscribe, unsubscribe } = await import('node:diagnostics_channel');
+    const onWorker = ({ worker }) => worker.once('online', () => queueMicrotask(() => t.mock.timers.tick(29)));
+    subscribe('worker_threads', onWorker);
     const io = createSharedIo({ timeoutMs: 30 });
     try {
       const pending = io.call('stat', [os.tmpdir()]);
@@ -126,6 +131,7 @@ describe('entrées/sorties bornées', () => {
       assert.equal(stat.isDir, true);
       assert.equal(io.state().breaker, 'closed');
     } finally {
+      unsubscribe('worker_threads', onWorker);
       t.mock.timers.reset();
       await io.close();
     }
