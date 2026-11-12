@@ -639,8 +639,8 @@ test('Google intégré : masquer le document rend le clavier aux champs WorkLogs
     .open({ documentId: 'focus-doc', tabId: '', token: 'focus', bounds: { x: 300, y: 300, width: 600, height: 300 } }));
   await expect.poll(() => application!.context().pages().some(p => p.url().includes('/document/d/focus-doc/'))).toBe(true);
 
-  await focusGoogle();
-  await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
+  // Un focus posé pendant le chargement de la vue peut se perdre (vu en CI sur Mint) : on le repose jusqu'à ce qu'il tienne.
+  await expect.poll(async () => { await focusGoogle(); return keyboard(); }).toEqual({ worklogs: false, google: true });
   // Le défaut : la vue masquée gardait le clavier et rien ne le rétablissait — seul
   // minimiser puis rouvrir la fenêtre rendait la main aux champs WorkLogs.
   await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.hide('focus'));
@@ -649,8 +649,7 @@ test('Google intégré : masquer le document rend le clavier aux champs WorkLogs
   // Masquage sans fermeture — une boîte de dialogue s'ouvre par-dessus le document.
   await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!
     .open({ documentId: 'focus-doc', tabId: '', token: 'focus', bounds: { x: 300, y: 300, width: 600, height: 300 } }));
-  await focusGoogle();
-  await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
+  await expect.poll(async () => { await focusGoogle(); return keyboard(); }).toEqual({ worklogs: false, google: true });
   await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!
     .bounds({ token: 'focus', bounds: { x: 300, y: 300, width: 600, height: 300 }, visible: false }));
   await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
@@ -663,7 +662,7 @@ test('Google intégré : masquer le document rend le clavier aux champs WorkLogs
   await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
 
   // Le document qui tenait le clavier le retrouve, lui, au retour de la fenêtre.
-  await focusGoogle();
+  await expect.poll(async () => { await focusGoogle(); return keyboard(); }).toEqual({ worklogs: false, google: true });
   await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit('focus'));
   await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
 });
@@ -685,8 +684,7 @@ test('Google intégré : claimKeyboard() depuis un champ rend le clavier aux cha
   await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.open({ documentId: 'focus-doc', tabId: '', token: 'focus', bounds: { x: 300, y: 300, width: 600, height: 300 } }));
   await expect.poll(() => application!.context().pages().some(p => p.url().includes('/document/d/focus-doc/'))).toBe(true);
 
-  await focusGoogle();
-  await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
+  await expect.poll(async () => { await focusGoogle(); return keyboard(); }).toEqual({ worklogs: false, google: true });
 
   // Le renderer déclare le clavier : un clic dans un champ éditable WorkLogs.
   await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.claimKeyboard?.());
@@ -716,8 +714,7 @@ test('Google intégré : le champ catégorie retrouve le clavier, ouvert par bou
   await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!
     .open({ documentId: 'category-focus', tabId: '', token: 'category-focus', bounds: { x: 600, y: 500, width: 300, height: 200 } }));
   await expect.poll(() => application!.context().pages().some(p => p.url().includes('/document/d/category-focus/'))).toBe(true);
-  await focusGoogle();
-  await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
+  await expect.poll(async () => { await focusGoogle(); return keyboard(); }).toEqual({ worklogs: false, google: true });
 
   await page.getByRole('button', { name: /^Catégories/ }).click();
   await page.getByRole('dialog', { name: /^Catégories/ }).getByRole('button', { name: '＋ Catégorie', exact: true }).click();
@@ -726,8 +723,7 @@ test('Google intégré : le champ catégorie retrouve le clavier, ouvert par bou
   await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
   await field.fill('Classement');
 
-  await focusGoogle();
-  await expect.poll(keyboard).toEqual({ worklogs: false, google: true });
+  await expect.poll(async () => { await focusGoogle(); return keyboard(); }).toEqual({ worklogs: false, google: true });
   // Le DOM garde le même champ ; isFocused ci-dessus vérifie qui reçoit le vrai clavier.
   expect(await field.evaluate((element) => document.activeElement === element)).toBe(true);
   await field.click();
