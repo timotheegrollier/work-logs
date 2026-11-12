@@ -59,7 +59,7 @@ De la poussée de la branche aux dépôts vérifiés, la v0.74.0 a pris 47 minut
   que par `npm version`. Un bump à la main dans `package.json` laisse le lockfile en arrière. Le
   2026-09-14, l'écart atteignait **huit versions** (lockfile en `0.4.2`, manifeste en `0.6.12`).
   `scripts/check-release.mjs` refuse désormais ce cas, et son message donne la commande de remède
-  (6 tests dans `scripts/check-release.test.mjs`).
+  (7 tests dans `scripts/check-release.test.mjs`).
 - `vX.Y.Z` : Y+1 pour une fonctionnalité, Z+1 pour des correctifs, de la documentation ou du
   processus. `check-release.mjs` refuse un tag différent de la version.
 - Seules les versions `X.Y.Z` traversent tout le pipeline. Une pré-release (`-rc.N`) casse le
@@ -585,6 +585,7 @@ se met à jour à la réouverture. Détail : `08-GOOGLE-DOCS.md`, « Relais de j
 | « Mise à jour refusée : autorisation administrateur non accordée. » | dialogue polkit fermé ou refusé | relancer et saisir le mot de passe, ou mettre à jour en console |
 | CI rouge sur un seul job « Installation et lancement » | instabilité d'un test Electron (`db6e5d6`, 2026-11-12), ou miroir Ubuntu (« Mirror sync in progress? », 06, D13) | `gh run view <id> --log-failed`, puis `gh run rerun <id> --failed` ; si la relance échoue au même endroit, c'est une régression |
 | CI rouge sur le seul test « un reclassement distant actualise projet et catégorie… » | test instable (06, D14) | relancer ; signaler s'il revient |
+| CI ou `check.sh` rouge à l'étape front alors que tous les tests passent : « Unhandled Errors », `TypeError: Cannot read properties of null (reading 'getBoundingClientRect')` dans `measure` (`GoogleDocsEditor.tsx`) | défaut du cadre Google, non corrigé : son rappel `requestAnimationFrame` peut passer entre le retrait du cadre et le nettoyage de son effet, qui l'annule ; vu sous charge dans le premier test de `GoogleDrive.test.tsx` (« Copie locale ») : 2 passages sur 30 avec 8 boucles sur 2 cœurs (2026-11-12) ; `retry: 1` ne rejoue pas une erreur non gérée | relancer ; signaler s'il revient |
 | `check.sh` local rouge, délais dépassés dans les parcours navigateur | une autre recette tourne en même temps ; ou le code d'un autre agent est intégré avant d'être fini (v0.75.0 : 6 échecs) | `pgrep -af '[c]heck\.sh'`, relancer seul ; intégrer un travail d'agent seulement une fois stable (§11) |
 | `precheck` : « No green CI for vX.Y.Z (`<sha>`) — full validation ahead. » | tag posé avant la fin de la CI de master, sur un commit validé seulement en branche ou en PR, ou tag annoté (§4) : `<sha>` est alors celui de l'objet tag, pas du commit | laisser tourner : le chemin plein valide tout, puis publie (environ 16 min, estimé) |
 | `release` échoue sur `check-release.mjs` : « Le tag vX.Y.Z doit correspondre à package.json » ou « package-lock.json désynchronisé » | tag sur le mauvais commit, ou version éditée à la main | rien n'est publié à cette étape ; corriger, supprimer le tag (`git push origin :refs/tags/vX.Y.Z`, puis `git tag -d vX.Y.Z`) et reprendre au pas 8 sur le bon commit ; un tag a déjà été reposé ainsi, pour la v0.13.0 le 2026-09-16, après un échec du chemin plein |
@@ -625,7 +626,7 @@ Copilot. L'autre copie est seulement lue, jamais modifiée.
    ```
 3. **Appliquer** ici, dans la copie de la release, puis copier les fichiers non suivis :
    ```bash
-   git apply --3way --index "$P"
+   git apply --3way --index --allow-empty "$P"   # diff vide si l'agent n'a créé que des fichiers
    (cd "$COPIE" && git ls-files --others --exclude-standard -z | tar --null -T - -cf -) | tar -xvf -
    ```
    Ces fichiers ne sont pas dans le diff : les ajouter ensuite au commit (`git add`).
@@ -636,8 +637,9 @@ Copilot. L'autre copie est seulement lue, jamais modifiée.
    Une différence signale un fichier que la branche avait déjà modifié : relire cette fusion à la
    main.
 5. **Lancer la recette** : `./scripts/check.sh`, seul sur la machine.
-6. **Revérifier l'empreinte** juste avant de pousser. Si elle a changé, l'agent a repris son
-   travail : retirer d'abord l'ancien diff (`git apply -R --index "$P"`, et les fichiers non suivis
+6. **Revérifier l'empreinte** juste avant de pousser, avec la commande du point 1 : celle du
+   point 2 ne couvre que le diff, et en diffère dès qu'il y a des fichiers non suivis. Si elle a
+   changé depuis le point 1, l'agent a repris son travail : retirer d'abord l'ancien diff (`git apply -R --index --allow-empty "$P"`, et les fichiers non suivis
    copiés), puis recommencer au point 1. Réappliquer le nouveau diff par-dessus l'ancien donne des
    conflits.
 

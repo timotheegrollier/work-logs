@@ -1876,7 +1876,7 @@ Décision : §25 (paragraphe « Lot 2 »).
 ### À vérifier par Timo (en plus de la liste du lot 1)
 
 1. Taper dans un fichier : un `.~lock.<nom>#` apparaît-il sur le TSE ? Un collègue qui ouvre
-   ce fichier dans **LibreOffice** voit-il « en cours d'utilisation par <ton nom> » ?
+   ce fichier dans **LibreOffice** voit-il « en cours d'utilisation par `<ton nom>` » ?
 2. Le même fichier ouvert dans **Word** par un collègue : WorkLogs refuse-t-il la main avec
    son nom ? (Word, lui, ne verra pas ton verrou : c'est attendu.)
 3. « Ouvrir avec… » sur un `.docx` du partage : LibreOffice l'ouvre-t-il **en écriture** sur le

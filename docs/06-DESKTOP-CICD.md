@@ -407,8 +407,9 @@ CI réutilisée reçoit un jour une ref de branche.
 6 minutes » (14,0 min mesurées). `electron-builder.yml:47` annonce « ~87 Mo » (93,7 Mio).
 `repos.yml:30-33` justifie `KEEP` par Pages, qui ne lit plus `gh-pages`. `pwa-cloudflare.yml:5-7`
 annonce le groupe de concurrence de « Dépôts » et « PWA », alors que `:33-35` en définit un
-propre. `desktop/main.mjs:226` parle du « workflow et Pages ». `scripts/workflows.test.mjs:22-23`
-dit que « PWA » déploie `gh-pages`, comme `:48` et `pwa-cloudflare.yml:31-32`. `repos.yml:5-6`
+propre. `desktop/main.mjs:226` parle du « workflow et Pages ». `pwa-cloudflare.yml:31-32`
+dit que « PWA » déploie `gh-pages` (les commentaires semblables de `scripts/workflows.test.mjs`,
+lignes 22-23 et 48 en `8e345d0`, sont corrigés depuis). `repos.yml:5-6`
 annonce que le garde-fou écarte les brouillons (D1). `scripts/appimage-blockmap.mjs:3-5` dit
 qu'electron-updater télécharge `{fichier}.blockmap` ; pour une AppImage, `AppImageUpdater` lit le
 blockmap embarqué dans l'AppImage (`blockMapSize` de `latest-linux.yml`), jamais le fichier publié
@@ -433,7 +434,7 @@ actualise projet et catégorie… »). Il a échoué dans les runs 40360827503 (
 ce test ne prouve pas une régression. *En attendant :* relancer, et signaler s'il revient.
 
 **D15. Les tests de workflows ne couvrent que deux fichiers sur cinq**
-(`scripts/workflows.test.mjs:11-86`). Rien ne teste `ci.yml`, `release.yml`, `pwa.yml`, ni le
+(`scripts/workflows.test.mjs:13-84`). Rien ne teste `ci.yml`, `release.yml`, `pwa.yml`, ni le
 garde-fou de « Dépôts ». *Effet :* une erreur dans ces fichiers n'apparaît qu'à l'exécution sur
 GitHub. *En attendant :* après toute modification d'un workflow, valider le YAML (07 §6) et suivre
 son premier run.
