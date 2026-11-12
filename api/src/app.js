@@ -12,7 +12,7 @@ import { attachmentHeader, inlineHeader } from './disposition.js';
 import { categoryFor, nextCategory, categoryDescendants, registerCategoryRoutes } from './categories.js';
 import { inheritTaskCategories } from './task-categories.js';
 import { createFollowUpAccess, registerFollowUpRoutes } from './follow-up-routes.js';
-import { assertExpectedTaskPlanning } from './task-planning.js';
+import { assertExpectedTaskPlanning, taskPlanningUsesDocuments } from './task-planning.js';
 import { assertExpectedEntryEdit } from './entry-edit.js';
 import { validateEntryMerge, assertEntryMergeSources, assertEntryMergeReplay, entryMergeTargetId, entryMergeClassification, isRewritableNote, assertTaskMergeSources, taskMergeTaskId, taskMergeAttributes } from './entry-merge.js';
 
@@ -475,17 +475,18 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   // Miroir de /api/entries/:id/task : une entrée créée depuis une tâche, liée
   // atomiquement. Le client y met sa liste de sous-tâches en Markdown.
   app.post('/api/tasks/:id/entry', (req, res) => {
-    const source = getTask(req.params.id);
-    if (!source) return notFound(res, 'tâche introuvable');
     const b = req.body || {};
-    const title = b.title === undefined ? source.title : str(b.title);
-    if (!title) return bad(res, 'titre requis');
-    const content = typeof b.content_md === 'string' ? b.content_md : '';
-
     const id = uid('en_');
-    const time = nowISO();
-    db.exec('BEGIN');
+    db.exec('BEGIN IMMEDIATE');
     try {
+      const source = taskPlanningUsesDocuments(b.expected_planning)
+        ? getTaskWithDocuments(req.params.id) : getTask(req.params.id);
+      if (!source) { db.exec('ROLLBACK'); return notFound(res, 'tâche introuvable'); }
+      assertExpectedTaskPlanning(b.expected_planning, source);
+      const title = b.title === undefined ? source.title : str(b.title);
+      if (!title) { db.exec('ROLLBACK'); return bad(res, 'titre requis'); }
+      const content = typeof b.content_md === 'string' ? b.content_md : '';
+      const time = nowISO();
       db.prepare(
         'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,created_at,updated_at,content_json,category_id) VALUES (?,?,?,?,?,?,?,?,?,?)'
       ).run(id, title, content, today(), source.project_id, 'note', time, time, null, source.category_id);
@@ -541,7 +542,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     // peut pas changer la tâche entre la comparaison et la nouvelle date.
     db.exec('BEGIN IMMEDIATE');
     try {
-      const cur = b.expected_planning?.active_document_ids !== undefined
+      const cur = taskPlanningUsesDocuments(b.expected_planning)
         ? getTaskWithDocuments(req.params.id) : getTask(req.params.id);
       if (!cur) { db.exec('ROLLBACK'); return notFound(res, 'tâche introuvable'); }
       assertExpectedTaskPlanning(b.expected_planning, cur);

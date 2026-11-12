@@ -1,5 +1,16 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Correctif après v0.75.0 — rédaction du contenu d’une tâche dans le chat
+
+Après la création d’une tâche, le chat conserve son identifiant dans la conversation et
+indique au modèle quelle entrée lui est liée. « Rédige le contenu de cette tâche » propose
+le texte dans cette même entrée, y compris si elle est vide. Pour une ancienne tâche sans
+entrée, le chat crée une note liée après validation et vérifie que les liens n’ont pas changé
+depuis la proposition. Le parcours navigateur vérifie aussi qu’une note homonyme indépendante
+garde son contenu.
+`./scripts/check.sh` vert avec 327 tests API, 1 334 front et un échec attendu, 49 desktop
+unitaires, 46 scripts, 8 Worker, 11 relais, 116 navigateur et 19 Electron. Build PWA vérifié.
+
 ## Assistant WorkLogs et entrée des tâches — 2026-11-12, v0.75.0 (§78, §79)
 
 - Plusieurs conversations dans le même panneau, avec brouillons, historiques et arrêts

@@ -73,6 +73,37 @@ test('PWA : la file locale compare chaque application au moment de l’écriture
   expect(await current(task.id)).toEqual(before);
 });
 
+test('PWA : la création d’une note compare le classement actuel avant d’écrire', async () => {
+  const project = await localApi.createProject({ name: 'Atelier' });
+  const category = await localApi.createCategory({ name: 'Planning', project_id: project.id });
+  const task = await localApi.createTask({ title: 'Tâche sans note', project_id: project.id });
+  await localApi.deleteEntry(task.documents[0].id);
+  await localApi.updateTask(task.id, { category_id: category.id });
+  await expect(localApi.createEntryFromTask(task.id, {
+    content_md: 'Texte proposé',
+    expected_planning: { ...expected(task), category_id: null, document_ids: [] },
+  })).rejects.toMatchObject({ code: 'TASK_PLANNING_STALE' });
+  expect((await current(task.id)).documents).toEqual([]);
+  expect((await localApi.state('', project.id)).entries).toEqual([]);
+});
+
+test('PWA : deux créations concurrentes n’ajoutent qu’une note, même si elle est archivée dès sa création', async () => {
+  const task = await localApi.createTask({ title: 'Ancienne tâche terminée', status: 'done' });
+  await localApi.deleteEntry(task.documents[0].id);
+  const body = {
+    content_md: '# Compte rendu',
+    expected_planning: { ...expected(task), document_ids: [], active_document_ids: [] },
+  };
+  const results = await Promise.allSettled([
+    localApi.createEntryFromTask(task.id, body),
+    localApi.createEntryFromTask(task.id, body),
+  ]);
+  expect(results.map(({ status }) => status)).toEqual(['fulfilled', 'rejected']);
+  expect(results[1]).toMatchObject({ reason: { code: 'TASK_PLANNING_STALE' } });
+  expect((await current(task.id)).documents).toMatchObject([{ archived: 1 }]);
+  expect((await localApi.state(task.title)).entries).toMatchObject([{ archived: 1, excerpt: body.content_md }]);
+});
+
 test('PWA : un instantané mal formé n’écrit rien, et la file accepte la mutation suivante', async () => {
   const task = await localApi.createTask({ title: 'Garder' });
   const before = await current(task.id);

@@ -292,6 +292,7 @@ confondre « le modèle répond » et « la proposition aide ».
 | Assistant : mot présent seulement au fond d’une vieille note | La note remonte par la recherche locale ou une lecture supplémentaire. Le message utilise jusqu’à quatre étapes IA, hors modèle de secours. Une recherche locale seule qui ne trouve rien de nouveau ne coûte pas d’autre appel. |
 | Assistant : « Crée une note avec cette image », ou avec du HTML | Action écartée et annoncée : ni image ni HTML ; une commande citant `<VirtualHost>` dans un bloc de code passe. |
 | Assistant : terminer une tâche ayant des documents liés | La proposition annonce leur archivage avant le clic. |
+| Assistant : créer une tâche, appliquer, puis « Rédige le contenu de cette tâche » | Le texte est proposé pour l’entrée déjà liée. Vérifier l’aperçu, appliquer et relire le texte depuis la carte. Une note homonyme indépendante garde son contenu. |
 | Assistant : « Supprime cette tâche » | Refus en clair. |
 | Assistant : « Complète cette note et marque-la terminée » | Une note Markdown courte est relue, le nouveau texte et le statut apparaissent dans la proposition. Après application, la note ouverte affiche ces changements et reste visible dans le journal. |
 | Assistant : chercher et rédiger une procédure sur le partage | Le fichier trouvé s’ouvre depuis le chat. Avec les extraits activés, l’assistant peut en tirer un nouveau Word et proposer un dossier repéré. Relire et appliquer sur un dossier de test, puis vérifier le fichier sur le serveur. |

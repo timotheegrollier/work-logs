@@ -220,6 +220,7 @@ export interface Task {
 export type TaskPlanningSnapshot = Pick<Task, 'status' | 'priority' | 'due_date'> & Partial<Pick<Task, 'title' | 'project_id' | 'category_id' | 'pinned'>> & {
   follow_up_key?: string | null;
   active_document_ids?: string[];
+  document_ids?: string[];
 };
 export interface Attachment {
   id: string;
@@ -573,7 +574,7 @@ export const remoteApi = {
   mergeTasks: (body: EntryMergeRequest) => send<Entry>('POST', '/api/tasks/merge', body),
   createTaskFromEntry: (entryId: string, body?: { title?: string; due_date?: string | null; priority?: Priority; status?: Status }) =>
     send<Task>('POST', `/api/entries/${entryId}/task`, body),
-  createEntryFromTask: (taskId: string, body?: { title?: string; content_md?: string }) =>
+  createEntryFromTask: (taskId: string, body?: { title?: string; content_md?: string; expected_planning?: TaskPlanningSnapshot }) =>
     send<Entry>('POST', `/api/tasks/${taskId}/entry`, body),
 
   createTask: (body: Partial<Task>) => send<Task>('POST', '/api/tasks', body),

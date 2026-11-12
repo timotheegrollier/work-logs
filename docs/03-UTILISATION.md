@@ -460,6 +460,10 @@ mémoire jusqu’à la fermeture de WorkLogs.
   L’assistant peut créer, renommer, planifier et classer les tâches, changer leur priorité ou
   leur statut et les épingler. Terminer une tâche archive ses documents liés, comme dans
   le tableau des tâches. La proposition annonce cet archivage.
+- Après **Appliquer** sur une nouvelle tâche, demande « Rédige le contenu de cette tâche »
+  dans la même conversation. L’assistant relit son entrée liée, même vide, puis propose le
+  texte à appliquer. Le résultat se lit dans la carte de la tâche. Pour une ancienne tâche
+  sans entrée, l’assistant propose une note directement liée.
 - « Classe cette note dans Contrôles et marque-la terminée. » L’assistant peut créer et classer
   les notes et les procédures locales, changer leur date, leur statut ou leur archivage.
   Une entrée terminée reste dans le journal jusqu’à son archivage. Il peut aussi proposer de
@@ -478,8 +482,8 @@ de destination. **Appliquer** valide une proposition, **Tout appliquer** lance l
 une nouvelle proposition. Le partage refuse la création si le nom du fichier est déjà pris.
 
 Le fournisseur reçoit la demande, les derniers échanges de la conversation, le profil, le
-projet et ses repères, les catégories et des résumés de tâches et d’entrées. Quand une demande
-en a besoin, l’assistant peut consulter le texte d’entrées locales et les noms du partage.
+projet et ses repères, les catégories et des résumés des tâches, des entrées et de leurs liens.
+Quand une demande en a besoin, l’assistant peut consulter le texte d’entrées locales et les noms du partage.
 Le contenu des documents Google et des pièces jointes reste hors de cette lecture.
 
 Un message comporte jusqu’à quatre étapes IA selon les lectures nécessaires. Le plafond

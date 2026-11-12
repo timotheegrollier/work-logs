@@ -89,11 +89,47 @@ describe('application atomique d’une replanification IA', () => {
     assert.deepEqual(current(task.id), before);
   });
 
+  test('la création d’une note compare le statut et le classement avant de reprendre ceux de la tâche', async () => {
+    const project = await make.project(api, 'Atelier');
+    const other = await make.project(api, 'Autre');
+    const { body: category } = await api.post('/api/categories', { name: 'Planning', project_id: project.id });
+    for (const patch of [{ status: 'done' }, { project_id: other.id }, { category_id: category.id }]) {
+      const task = await make.task(api, { title: 'Tâche sans note', project_id: project.id });
+      await api.del(`/api/entries/${task.documents[0].id}`);
+      await api.put(`/api/tasks/${task.id}`, patch);
+      const refused = await api.post(`/api/tasks/${task.id}/entry`, {
+        content_md: 'Texte proposé',
+        expected_planning: { ...expected(task), category_id: null, document_ids: [] },
+      });
+      assert.equal(refused.status, 409, JSON.stringify(patch));
+      assert.equal(refused.body.code, 'TASK_PLANNING_STALE');
+    }
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entries').get().n, 0);
+  });
+
+  test('une note archivée invalide le second essai concurrent sur une tâche terminée sans note', async () => {
+    const task = await make.task(api, { title: 'Ancienne tâche terminée', status: 'done' });
+    await api.del(`/api/entries/${task.documents[0].id}`);
+    const body = {
+      content_md: '# Compte rendu',
+      expected_planning: { ...expected(task), document_ids: [], active_document_ids: [] },
+    };
+    const url = `/api/tasks/${task.id}/entry`;
+    const results = await Promise.all([api.post(url, body), api.post(url, body)]);
+    assert.deepEqual(results.map(({ status }) => status).sort(), [201, 409]);
+    assert.equal(results.find(({ status }) => status === 409).body.code, 'TASK_PLANNING_STALE');
+    const created = results.find(({ status }) => status === 201).body;
+    assert.equal(created.archived, 1);
+    assert.equal(created.content_md, body.content_md);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entries').get().n, 1);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=? AND entry_id=?').get(task.id, created.id).n, 1);
+  });
+
   test('un instantané mal formé est refusé en 400 sans écriture et sans garder la transaction ouverte', async () => {
     const task = await make.task(api);
     const snapshot = expected(task);
     const before = current(task.id);
-    for (const invalid of [null, [], {}, { priority: 'normal', due_date: null }, { ...snapshot, status: 'blocked' }, { ...snapshot, priority: 'urgent' }, { ...snapshot, due_date: 8 }, { ...snapshot, pinned: true }, { ...snapshot, follow_up_key: '' }, { ...snapshot, project_id: 5 }, { ...snapshot, title: '' }, { ...snapshot, typo: 'ignored?' }]) {
+    for (const invalid of [null, [], {}, { priority: 'normal', due_date: null }, { ...snapshot, status: 'blocked' }, { ...snapshot, priority: 'urgent' }, { ...snapshot, due_date: 8 }, { ...snapshot, pinned: true }, { ...snapshot, follow_up_key: '' }, { ...snapshot, project_id: 5 }, { ...snapshot, title: '' }, { ...snapshot, document_ids: ['même', 'même'] }, { ...snapshot, typo: 'ignored?' }]) {
       const result = await api.put(`/api/tasks/${task.id}`, { due_date: '2026-11-07', expected_planning: invalid });
       assert.equal(result.status, 400, JSON.stringify(invalid));
       assert.deepEqual(current(task.id), before);

@@ -10,6 +10,7 @@ export interface ChatProposalItem {
   proposal: ChatProposal;
   status: 'open' | 'applying' | 'applied' | 'ignored' | 'failed';
   error?: string;
+  createdTaskId?: string;
   /** Horodatage du premier essai : un réessai ne recrée pas ce qui a abouti sans réponse. */
   since?: string;
 }
@@ -129,8 +130,11 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
       const { proposals, tasks, documents, sharedDocuments, reply, usedSharedContent } = turn.answer;
       const actions = proposals.map(({ status, proposal }) => `[${PROPOSAL_WORDS[status]}] ${proposal.label}`);
       const shown = [...tasks, ...documents, ...(sharedDocuments ?? [])].map(({ title }) => `[affiché] « ${title} »`);
+      const createdTasks = proposals.flatMap(({ createdTaskId, proposal }) =>
+        createdTaskId ? [{ id: createdTaskId, title: proposal.title }] : []);
       return [{ role: 'user', text: turn.question }, {
         role: 'assistant', text: [...actions, ...shown, reply].join('\n'), ...(usedSharedContent && { sharedContent: true }),
+        ...(createdTasks.length > 0 && { createdTasks }),
       }];
     });
     updateSession(sessionId, (session) => ({ ...session, draft: '', turns: [...session.turns, { id, question: text }] }));
@@ -190,8 +194,8 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
       for (const { item, index } of queued) {
         if (!item.since) patchProposal(turnId, index, { since: new Date().toISOString() });
         try {
-          await applyChatProposal(item.proposal, item.since ? { since: item.since } : undefined);
-          patchProposal(turnId, index, { status: 'applied' });
+          const result = await applyChatProposal(item.proposal, item.since ? { since: item.since } : undefined);
+          patchProposal(turnId, index, { status: 'applied', createdTaskId: result?.taskId });
         } catch (cause) {
           patchProposal(turnId, index, { status: 'failed', error: (cause as Error).message || 'Impossible d’appliquer cette proposition.' });
         } finally {

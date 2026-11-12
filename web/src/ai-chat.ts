@@ -14,9 +14,13 @@ export type ChatProposal =
   | { kind: 'create_task'; title: string; priority: Priority; status: Status; due_date: string | null; project_id: string | null; category_id?: string | null; label: string }
   | { kind: 'update_task'; taskId: string; title: string; changes: TaskChanges; expected: TaskPlanningSnapshot; label: string }
   | { kind: 'create_note' | 'create_procedure'; title: string; content_md: string; project_id: string | null; category_id?: string | null; status?: Status; entry_date?: string; label: string }
+  | { kind: 'create_task_note'; taskId: string; taskTitle: string; title: string; content_md: string; expected: TaskPlanningSnapshot; label: string }
   | { kind: 'update_entry'; entryId: string; title: string; changes: EntryChanges; expected: EntryEditSnapshot; label: string }
   | ChatSharedProposal;
-export interface ChatHistoryItem { role: 'user' | 'assistant'; text: string; sharedContent?: boolean }
+export interface ChatHistoryItem {
+  role: 'user' | 'assistant'; text: string; sharedContent?: boolean;
+  createdTasks?: Pick<Task, 'id' | 'title'>[];
+}
 export interface ChatAnswer {
   reply: string; notice: string; tasks: Task[]; documents: EntrySummary[]; proposals: ChatProposal[]; usedAi: boolean;
   sharedDocuments?: { path: string; title: string }[];
@@ -31,6 +35,7 @@ const MAX_OPEN_TASKS = 40;
 const MAX_DONE_TASKS = 10;
 const MAX_SEARCHED_TASKS = 10;
 const MAX_DOCUMENTS = 6;
+const MAX_LINKED_DOCUMENTS = 3;
 const MAX_PROJECTS = 30;
 const MAX_CATEGORIES = 40;
 const MAX_ACTIONS = 20;
@@ -59,14 +64,16 @@ Actions, avec les seuls champs utiles (status : todo, doing, done ; priority : l
 - {"kind":"update_task","n":3,"title":"…","status":"…","priority":"…","due_date":"…","project":"…","category":"…","pinned":true}
 - {"kind":"create_note","title":"…","content":"…","entry_date":"…","status":"…","project":"…","category":"…"}
 - {"kind":"create_procedure","title":"…","content":"…","project":"…","category":"…"}
+- {"kind":"create_task_note","n":3,"title":"…","content":"…"} : pour une tâche existante sans document lié. « n » désigne une tâche, le titre est facultatif.
 - {"kind":"update_entry","n":2,"title":"…","content":"…","entry_date":"…","status":"…","archived":true,"project":"…","category":"…"}
 - {"kind":"create_shared_procedure","title":"…","content":"…","directory":1} : fichier Word neuf, dans un dossier numéroté du partage, avec le dossier courant par défaut.
-Sans « project », une création va dans le projet affiché ou dans le projet de la catégorie demandée. Pour classer par catégorie, utilise les codes du projet correspondant. Une note ne contient ni image ni HTML. Dans « update_entry », « n » est un numéro de la liste Documents. Pour réécrire une note, lis d’abord son texte complet avec « read_entries » ; une note riche ou Google ne se réécrit pas ici. Le statut d’une entrée est indépendant de son archivage.
+Sans « project », crée dans le projet de la catégorie demandée ou dans le projet affiché. Une note ne contient ni image ni HTML. Pour « update_entry », utilise un numéro de Documents et lis d’abord le texte avec « read_entries » si tu le modifies. Seul le Markdown local se réécrit. Statut et archivage sont indépendants.
+Le texte d’une tâche est dans son entrée liée. « documents liés D2 » désigne le document 2, « D? » un lien hors liste. Lis l’entrée via « read_entries », même vide, puis propose « update_entry ». Pour « cette tâche » après une création, utilise « créée ici ». Si la cible est ambiguë, demande laquelle.
 Impossible, à dire dans « reply » sans proposer d’action : supprimer ou archiver une tâche ou un projet, lire un document Google ou une pièce jointe, remplacer un fichier partagé, agir hors de WorkLogs.
 Réponds uniquement par un objet JSON, sans commentaire :
 {"reply":"…","show_tasks":[n],"show_documents":[n],"actions":[…],"search":["mot"]}
-Autres champs de lecture : « shared_search » (jusqu’à 3 termes pour trouver des procédures ou dossiers par nom dans le partage configuré), « shared_list » (true pour lister les dossiers de destination), « read_entries » (numéros des notes ou procédures locales), « read_shared » (numéros des fichiers du partage, si les extraits sont autorisés) et « show_shared » (numéros des fichiers à afficher).
-Demande une lecture seulement si elle est nécessaire à la demande. Attends ses résultats pour proposer des actions. Pour un enregistrement sur le partage, repère d’abord le dossier avec « shared_list » ou « shared_search ». Vérifie que le dossier correspond à la demande.
+Lectures : « shared_search » (3 termes, noms du partage), « shared_list » (true, dossiers), « read_entries » (numéros des textes locaux), « read_shared » (numéros du partage, extraits autorisés), « show_shared » (numéros à afficher).
+Lis seulement si nécessaire, puis propose des actions. Pour créer sur le partage, repère la destination demandée avec « shared_list » ou « shared_search ».
 « reply » : réponse en français, en texte brut sans Markdown, 2 000 caractères au plus. « show_tasks », « show_documents » : numéros à afficher sous la réponse. « search » : 3 mots au plus pour trouver des tâches ou des documents locaux. Les numéros et les codes P1… sont internes : jamais dans « reply ».`;
 const SEARCH_DONE = 'La recherche a déjà été faite, ses résultats sont à la fin des listes. « search » est interdit désormais : réponds avec ce que tu as, et dis-le si cela ne suffit pas.';
 
@@ -76,6 +83,7 @@ interface ChatContext {
   projects: Project[];
   tasks: Task[];
   documents: EntrySummary[];
+  recentTaskIds: Set<string>;
   /** Catégorie filtrée, si elle appartient au projet affiché. */
   category: Category | null;
   categories: Category[];
@@ -92,6 +100,12 @@ interface ChatContext {
 }
 
 const unique = <T extends { id: string }>(items: T[]) => [...new Map(items.map((item) => [item.id, item])).values()];
+
+/** Garde les références pertinentes dans la limite du contexte, avec les numéros de la liste classée en premier. */
+function includeRequired<T extends { id: string }>(ranked: T[], required: T[], limit: number): T[] {
+  const selected = new Set([...new Set([...required, ...ranked].map(({ id }) => id))].slice(0, limit));
+  return unique([...ranked, ...required]).filter(({ id }) => selected.has(id));
+}
 
 /** Coupe sans aplatir : les sauts de ligne d'une demande ou d'une réponse ont un sens. */
 function clip(text: string, max: number): string {
@@ -130,6 +144,17 @@ function rankDocuments(entries: EntrySummary[], words: Set<string>, foundInBody:
     .slice(0, MAX_DOCUMENTS);
 }
 
+/** SQLite renvoie des métadonnées partielles dans les liens. Les résumés du journal complètent ces lignes. */
+function relevantTaskDocuments(tasks: Task[], entries: EntrySummary[], words: Set<string>, recentIds: Set<string>): EntrySummary[] {
+  const knownEntries = new Map(entries.map((entry) => [entry.id, entry]));
+  const relevant = tasks.filter(({ id, title }) => recentIds.has(id) || overlap(title, words) > 0)
+    .sort((a, b) => Number(recentIds.has(b.id)) - Number(recentIds.has(a.id)));
+  return unique(relevant.flatMap(({ documents }) => documents ?? [])).slice(0, MAX_LINKED_DOCUMENTS)
+    .map((document) => knownEntries.get(document.id) ?? {
+      ...document, kind: document.kind ?? 'note', excerpt: document.excerpt ?? '', attachments: document.attachments ?? 0,
+    });
+}
+
 function projectCode(id: string | null, projects: Project[]): string {
   const index = projects.findIndex((project) => project.id === id);
   return index >= 0 ? `P${index + 1}` : id ? 'autre projet' : '';
@@ -153,8 +178,19 @@ function categoryName(category: Category, categories: Category[]): string {
   return names.join(' / ');
 }
 
-function taskLine(task: Task, index: number, { projects, categories, today }: ChatContext): string {
-  const details = [task.status !== 'todo' && task.status, task.priority !== 'normal' && task.priority, task.due_date, projectCode(task.project_id, projects), categoryCode(task.category_id, categories), task.pinned && 'épinglée', isOverdue(task, today) && 'en retard'].filter(Boolean);
+function taskLine(task: Task, index: number, { projects, categories, today, documents, recentTaskIds }: ChatContext): string {
+  const taskDocuments = task.documents ?? [];
+  const linked = taskDocuments.flatMap(({ id }) => {
+    const index = documents.findIndex((document) => document.id === id);
+    return index >= 0 ? [`D${index + 1}`] : [];
+  });
+  const unlisted = taskDocuments.length - linked.length;
+  const details = [
+    task.status !== 'todo' && task.status, task.priority !== 'normal' && task.priority, task.due_date,
+    projectCode(task.project_id, projects), categoryCode(task.category_id, categories), task.pinned && 'épinglée',
+    isOverdue(task, today) && 'en retard', recentTaskIds.has(task.id) && 'créée ici',
+    linked.length > 0 && `documents liés ${linked.join(', ')}`, unlisted > 0 && 'D?',
+  ].filter(Boolean);
   return `${index + 1}. ${truncate(task.title, PROMPT_TITLE)}${details.length ? ` [${details.join(', ')}]` : ''}`;
 }
 
@@ -291,6 +327,24 @@ function readProposal(raw: unknown, context: ChatContext, shownProject: string |
     return { kind: 'create_task', title, priority, status, due_date, project_id, ...(category_id !== undefined && { category_id }), label: `Créer la tâche « ${title} » — ${details.filter(Boolean).join(', ')}` };
   }
 
+  if (action.kind === 'create_task_note') {
+    const task = Number.isInteger(action.n) ? context.tasks[(action.n as number) - 1] : undefined;
+    if (!task) return refuse('numéro de tâche inconnu');
+    if (task.documents?.length) return refuse('la tâche a déjà une entrée liée à compléter');
+    const title = action.title === undefined ? task.title : readTitle(action.title);
+    const content_md = readContent(action.content, 'note');
+    if (!content_md) return refuse('contenu de note manquant');
+    const target = title === task.title ? `l’entrée de la tâche « ${task.title} »` : `la note « ${title} » pour la tâche « ${task.title} »`;
+    return {
+      kind: 'create_task_note', taskId: task.id, taskTitle: task.title, title, content_md,
+      expected: {
+        title: task.title, status: task.status, priority: task.priority, due_date: task.due_date,
+        project_id: task.project_id, category_id: task.category_id ?? null, document_ids: [],
+      },
+      label: `Rédiger ${target}${task.status === 'done' ? ' (la note sera archivée)' : ''}`,
+    };
+  }
+
   if (action.kind === 'create_note' || action.kind === 'create_procedure') {
     const title = readTitle(action.title);
     const name = action.kind === 'create_procedure' ? 'procédure' : 'note';
@@ -412,7 +466,7 @@ function readAnswer(raw: string, context: ChatContext, shownProject: string | nu
       const proposal = readProposal(action, context, shownProject);
       // Deux écritures sur la même tâche : la seconde échouerait sur l'état attendu de la première.
       const key = proposal.kind === 'update_task' ? proposal.taskId : proposal.kind === 'update_entry' ? proposal.entryId
-        : proposal.kind === 'create_shared_procedure' ? proposal.path.toLowerCase()
+        : proposal.kind === 'create_task_note' ? `note ${proposal.taskId}` : proposal.kind === 'create_shared_procedure' ? proposal.path.toLowerCase()
           : JSON.stringify([proposal.kind, proposal.title.toLowerCase(), proposal.project_id, proposal.category_id ?? null]);
       if (seen.has(key)) refuse('action en double');
       seen.add(key);
@@ -446,11 +500,16 @@ const termsOf = (value: unknown) => [...new Set(listOf(value).flatMap((term) =>
 async function searchMoreLocal(context: ChatContext, terms: string[], projectId: string): Promise<boolean> {
   const found = await readStates(terms);
   const termWords = contextWords(terms.join(' '));
-  const tasks = unique(found.flatMap((item) => item.tasks)).filter((task) => !context.tasks.some(({ id }) => id === task.id));
+  const foundTasks = unique(found.flatMap((item) => item.tasks));
+  const tasks = foundTasks.filter((task) => !context.tasks.some(({ id }) => id === task.id));
   const entries = unique(found.flatMap((item) => item.entries)).filter((entry) => !context.documents.some(({ id }) => id === entry.id));
-  context.tasks.push(...rankTasks(tasks, termWords, projectId, context.today).slice(0, MAX_SEARCHED_TASKS).map(({ item }) => item));
-  context.documents.push(...rankDocuments(entries, termWords, new Set(entries.map(({ id }) => id))).map(({ item }) => item));
-  return tasks.length + entries.length > 0;
+  const addedTasks = rankTasks(tasks, termWords, projectId, context.today).slice(0, MAX_SEARCHED_TASKS).map(({ item }) => item);
+  context.tasks.push(...addedTasks);
+  const linked = relevantTaskDocuments(foundTasks.filter((task) => context.tasks.some(({ id }) => id === task.id)), entries, termWords, context.recentTaskIds)
+    .filter((entry) => !context.documents.some(({ id }) => id === entry.id));
+  const ranked = rankDocuments(entries, termWords, new Set(entries.map(({ id }) => id))).map(({ item }) => item);
+  context.documents.push(...includeRequired(ranked, linked, MAX_DOCUMENTS));
+  return tasks.length + entries.length + linked.length > 0;
 }
 
 async function readChatEntry(context: ChatContext, entry: EntrySummary): Promise<void> {
@@ -485,9 +544,16 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
   const searched = [...literal, ...[...words].sort((a, b) => Number(own.has(b)) - Number(own.has(a)) || b.length - a.length)].filter((word) => word.length <= MAX_SEARCH_TERM).slice(0, 3);
   const [state, ...searches] = await readStates(['', ...searched]);
   if (settings.signal?.aborted) throw new AiCancelled();
-  const read = [state, ...searches];
-  const rankedTasks = rankTasks(unique(read.flatMap((item) => item.tasks)), words, input.projectId, today, taskIds(searches.slice(0, literal.length)));
-  const rankedDocuments = rankDocuments(unique(read.flatMap((item) => item.entries)), words, new Set(searches.flatMap((item) => item.entries.map((entry) => entry.id))));
+  const recent = input.history.slice(-6).findLast(({ createdTasks }) => createdTasks?.length)?.createdTasks ?? [];
+  const recentTaskIds = new Set(recent.map(({ id }) => id));
+  const knownTaskIds = taskIds([state, ...searches]);
+  const missingTitles = [...new Set(recent.filter(({ id }) => !knownTaskIds.has(id)).map(({ title }) => title.slice(0, MAX_SEARCH_TERM)))].slice(0, 3);
+  const read = [state, ...searches, ...(missingTitles.length ? await readStates(missingTitles) : [])];
+  const allTasks = unique(read.flatMap((item) => item.tasks));
+  const allEntries = unique(read.flatMap((item) => item.entries));
+  const rankedTasks = rankTasks(allTasks, words, input.projectId, today, taskIds(searches.slice(0, literal.length))).map(({ item }) => item);
+  const tasks = includeRequired(rankedTasks, allTasks.filter(({ id }) => recentTaskIds.has(id)), MAX_OPEN_TASKS + MAX_DONE_TASKS);
+  const rankedEntries = rankDocuments(allEntries, words, new Set(searches.flatMap((item) => item.entries.map((entry) => entry.id)))).map(({ item }) => item);
   const projects = [...state.projects].sort((a, b) => Number(b.id === input.projectId) - Number(a.id === input.projectId)).slice(0, MAX_PROJECTS);
   const project = projects.find(({ id }) => id === input.projectId);
   const shownProject = project?.id ?? null;
@@ -496,7 +562,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
   const categories = (state.categories ?? []).filter(({ project_id }) => knownProjects.has(project_id))
     .map((item) => ({ item, score: 4 * overlap(item.name, words) + Number(item.project_id === shownProject) + (item.id === category?.id ? MAX_CATEGORIES : 0) }))
     .sort((a, b) => b.score - a.score).slice(0, MAX_CATEGORIES).map(({ item }) => item);
-  let openedEntry = input.openEntryId ? read.flatMap(({ entries }) => entries).find(({ id }) => id === input.openEntryId) : undefined;
+  let openedEntry = input.openEntryId ? allEntries.find(({ id }) => id === input.openEntryId) : undefined;
   if (!openedEntry && input.openEntryId) {
     const entry = await api.entry(input.openEntryId).catch(() => null);
     if (entry) openedEntry = {
@@ -505,11 +571,11 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
       google_document_id: entry.google_sync?.document_id, excerpt: '', attachments: entry.attachments.length,
     };
   }
-  const rankedEntries = rankedDocuments.map(({ item }) => item);
-  const documents = openedEntry && !rankedEntries.some(({ id }) => id === openedEntry.id)
-    ? [...rankedEntries.slice(0, MAX_DOCUMENTS - 1), openedEntry] : rankedEntries;
+  const linked = relevantTaskDocuments(tasks, allEntries, words, recentTaskIds);
+  const documents = includeRequired(rankedEntries, [...linked, ...(openedEntry ? [openedEntry] : [])], MAX_DOCUMENTS);
+  if (settings.signal?.aborted) throw new AiCancelled();
   const context: ChatContext = {
-    today, projects, tasks: rankedTasks.map(({ item }) => item), documents,
+    today, projects, tasks, documents, recentTaskIds,
     category, categories, openedEntryId: input.openEntryId,
     entriesRead: new Map(), sharedFiles: [], directories: [], sharedExcerpts: new Map(),
     sharedContentInHistory: input.history.some(({ sharedContent }) => sharedContent === true), readingNotices: [],
@@ -603,7 +669,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
 }
 
 /** `retry.since` : horodatage ISO du premier essai de cette proposition. */
-export async function applyChatProposal(proposal: ChatProposal, retry?: { since: string }): Promise<void> {
+export async function applyChatProposal(proposal: ChatProposal, retry?: { since: string }): Promise<void | { taskId: string }> {
   if (proposal.kind === 'create_shared_procedure') return applyChatSharedProcedure(api, proposal);
   if (proposal.kind === 'update_entry') {
     await flushPendingSaves().catch(() => { throw new Error('Enregistre le brouillon en cours avant d’appliquer cette proposition.'); });
@@ -625,6 +691,21 @@ export async function applyChatProposal(proposal: ChatProposal, retry?: { since:
     });
     return;
   }
+  if (proposal.kind === 'create_task_note') {
+    await api.createEntryFromTask(proposal.taskId, {
+      title: proposal.title, content_md: proposal.content_md, expected_planning: proposal.expected,
+    }).catch(async (cause: unknown) => {
+      if (!(cause instanceof ApiError && cause.code === 'TASK_PLANNING_STALE')) throw cause;
+      const task = retry && (await api.state(proposal.taskTitle)).tasks.find(({ id }) => id === proposal.taskId);
+      if (task && retry) {
+        const possible = task.documents.filter((document) => document.title === proposal.title && !googleDocument(document));
+        const notes = await Promise.all(possible.map(({ id }) => api.entry(id)));
+        if (notes.some((note) => note.created_at >= retry.since && note.kind === 'note' && note.content_md === proposal.content_md)) return;
+      }
+      throw new Error(STALE_PROPOSAL);
+    });
+    return;
+  }
   const { kind, title, project_id, category_id } = proposal;
   if (retry) {
     // Le premier essai a pu aboutir sans que sa réponse arrive.
@@ -632,8 +713,9 @@ export async function applyChatProposal(proposal: ChatProposal, retry?: { since:
     const samePlace = (item: Pick<Task, 'project_id' | 'category_id'>) =>
       item.project_id === project_id && (item.category_id ?? null) === (category_id ?? null);
     if (kind === 'create_task') {
-      if (tasks.some((task) => task.title === title && task.created_at >= retry.since && samePlace(task)
-        && task.status === proposal.status && task.priority === proposal.priority && task.due_date === proposal.due_date)) return;
+      const task = tasks.find((task) => task.title === title && task.created_at >= retry.since && samePlace(task)
+        && task.status === proposal.status && task.priority === proposal.priority && task.due_date === proposal.due_date);
+      if (task) return { taskId: task.id };
     } else {
       const possible = entries.filter((entry) => entry.title === title && entry.updated_at >= retry.since && samePlace(entry)
         && entry.kind === (kind === 'create_procedure' ? 'procedure' : 'note') && !googleDocument(entry));
@@ -643,7 +725,8 @@ export async function applyChatProposal(proposal: ChatProposal, retry?: { since:
     }
   }
   if (kind === 'create_task') {
-    await api.createTask({ title, priority: proposal.priority, status: proposal.status, due_date: proposal.due_date, project_id, category_id });
+    const task = await api.createTask({ title, priority: proposal.priority, status: proposal.status, due_date: proposal.due_date, project_id, category_id });
+    return { taskId: task.id };
   } else {
     await api.createEntry({
       title, content_md: proposal.content_md, entry_date: proposal.entry_date ?? localToday(), project_id,

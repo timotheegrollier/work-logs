@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import type { Task } from '../web/src/lib';
 import { readZip, readZipText } from '../web/src/zip';
 
 async function post(request: APIRequestContext, path: string, data: unknown) {
@@ -26,19 +27,22 @@ async function cleanProject(page: Page, request: APIRequestContext, id: string) 
 }
 
 /** Fournisseur simulé : joue les réponses données, garde les prompts reçus. */
-async function stubAssistant(page: Page, ...replies: object[]) {
+async function stubAssistant(page: Page, ...replies: (object | ((prompt: string) => object))[]) {
   const prompts: string[] = [];
   await page.route('**/chat/completions', async (route) => {
     const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
     if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    prompts.push(route.request().postDataJSON().messages[1].content);
-    return route.fulfill({ headers, json: { choices: [{ message: { content: JSON.stringify(replies.shift() ?? { reply: 'Rien de plus.' }) } }] } });
+    const prompt: string = route.request().postDataJSON().messages[1].content;
+    prompts.push(prompt);
+    const next = replies.shift();
+    const reply = typeof next === 'function' ? next(prompt) : next ?? { reply: 'Rien de plus.' };
+    return route.fulfill({ headers, json: { choices: [{ message: { content: JSON.stringify(reply) } }] } });
   });
   return prompts;
 }
 
 const tasksOf = async (request: APIRequestContext, project: string) =>
-  ((await (await request.get('/api/state')).json()).tasks as { title: string; status: string; priority: string; project_id: string }[]).filter((task) => task.project_id === project);
+  ((await (await request.get('/api/state')).json()).tasks as Task[]).filter((task) => task.project_id === project);
 
 const assistant = (page: Page) => page.getByRole('dialog', { name: 'Assistant IA', exact: true });
 const messageField = (page: Page) => assistant(page).getByRole('textbox', { name: 'Message pour l’assistant', exact: true });
@@ -237,6 +241,74 @@ test('deux conversations avancent en parallèle et reprennent après fermeture d
     await expect(chat.getByText('Second chantier prêt.')).toHaveCount(0);
   } finally {
     releaseFirst();
+  }
+});
+
+test('après la création d’une tâche, l’assistant rédige le contenu de son entrée liée', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Atelier contenu de tâche' });
+  const title = 'Préparer la revue du classeur';
+  const instruction = 'Comparer les deux relevés avant la revue.';
+  const content = `## Préparation\n\n${instruction}`;
+  const unrelatedContent = 'Ancienne note de réunion sans lien avec cette tâche.';
+  try {
+    const unrelated = await post(request, '/api/entries', { title, content_md: unrelatedContent, project_id: project.id });
+    await configure(page, project.id, '');
+    let taskNumber = 0;
+    let linkedNoteNumber = 0;
+    let taskLine: string | undefined;
+    const prompts = await stubAssistant(page,
+      { reply: 'La tâche est prête à créer.', actions: [{ kind: 'create_task', title }] },
+      (prompt) => {
+        taskLine = prompt.split('\n').find((line) => line.replace(/^\d+\. /, '').startsWith(`${title} [`));
+        taskNumber = Number(taskLine?.match(/^(\d+)\. /)?.[1]);
+        linkedNoteNumber = Number(taskLine?.match(/documents liés D(\d+)/)?.[1]);
+        return { read_entries: [linkedNoteNumber] };
+      },
+      () => ({
+        reply: 'Le contenu est prêt à relire.',
+        show_tasks: [taskNumber],
+        actions: [{ kind: 'update_entry', n: linkedNoteNumber, content }],
+      }),
+    );
+    await page.goto('/');
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    const chat = assistant(page);
+    const field = messageField(page);
+    await field.fill(`Crée la tâche « ${title} ».`);
+    await field.press('Enter');
+    await chat.getByRole('button', { name: /^Appliquer : Créer la tâche/ }).click();
+    await expect(chat.getByText('✓ Appliqué', { exact: true })).toHaveCount(1);
+
+    const [task] = await tasksOf(request, project.id);
+    expect(task).toMatchObject({ title, documents: [expect.objectContaining({ title })] });
+    const [note] = task.documents;
+    expect(note.id).not.toBe(unrelated.id);
+    const readEntry = async (id: string) => (await request.get(`/api/entries/${id}`)).json();
+
+    await field.fill('Rédige le contenu de cette tâche.');
+    await field.press('Enter');
+    await expect(chat.getByText('Le contenu est prêt à relire.')).toBeVisible();
+    expect(prompts).toHaveLength(3);
+    expect(taskLine).toContain('créée ici');
+    expect(taskLine).toMatch(/documents liés D\d+/);
+    const fullText = prompts[2].split('\n\n').find((block) => block.startsWith('Textes locaux'));
+    expect(fullText).toContain(`"n":${linkedNoteNumber},"content":"","editable":true`);
+    await chat.getByText('Relire le texte proposé', { exact: true }).click();
+    await expect(chat.locator('pre')).toContainText(instruction);
+    expect(await readEntry(note.id)).toMatchObject({ content_md: '' });
+
+    await chat.getByRole('button', { name: /^Appliquer/ }).click();
+    await expect(chat.getByText('✓ Appliqué', { exact: true })).toHaveCount(2);
+    const [savedTask] = await tasksOf(request, project.id);
+    expect(savedTask.documents.map(({ id }) => id)).toEqual([note.id]);
+    expect(await readEntry(note.id)).toMatchObject({ content_md: content });
+    expect(await readEntry(unrelated.id)).toMatchObject({ content_md: unrelatedContent });
+
+    await chat.getByRole('button', { name: `Ouvrir la tâche ${title}` }).click();
+    await page.locator(`#task-${task.id}`).getByRole('button', { name: `Ouvrir ${title}`, exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Entrée', exact: true }).getByText(instruction)).toBeVisible();
+  } finally {
+    await cleanProject(page, request, project.id);
   }
 });
 

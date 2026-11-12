@@ -15,6 +15,7 @@ import {
   type RichDocument,
   type Status,
   type Task,
+  type TaskPlanningSnapshot,
 } from '../lib';
 // @ts-expect-error — rich-document.js est du JavaScript pur partagé avec l'API (comme test/server.ts).
 import { decodeEntry, documentText, validateDocument } from '../../../api/src/rich-document.js';
@@ -33,7 +34,7 @@ import { TASK_CATEGORY_MIGRATION, inheritedTaskCategory } from '../../../api/src
 // @ts-expect-error — contrat pur partagé avec SQLite, sans accès disque/réseau.
 import { buildFollowUpSource, decodeFollowUpRow, followUpKey, readFollowUp, updateFollowUp } from '../../../api/src/follow-up.js';
 // @ts-expect-error — même comparaison pure de planification que dans l'API SQLite.
-import { assertExpectedTaskPlanning } from '../../../api/src/task-planning.js';
+import { assertExpectedTaskPlanning, taskPlanningUsesDocuments } from '../../../api/src/task-planning.js';
 // @ts-expect-error — même comparaison pure d'entrée que dans l'API SQLite.
 import { assertExpectedEntryEdit } from '../../../api/src/entry-edit.js';
 // @ts-expect-error — même contrat de fusion que dans l'API SQLite.
@@ -1149,6 +1150,7 @@ export const localApi: Api = {
   createEntryFromTask: async (taskId, body) => {
     const { entries, tasks, links } = await tables();
     const source = (await tasks.get(taskId)) ?? fail('tâche introuvable');
+    await assertLocalTaskPlanning(body?.expected_planning, source);
     const title = body?.title === undefined ? source.title : str(body.title);
     if (!title) fail('titre requis');
     const content = typeof body?.content_md === 'string' ? body.content_md : '';
@@ -1200,19 +1202,7 @@ export const localApi: Api = {
     const { tasks, projects } = await tables();
     const current = (await tasks.get(id)) ?? fail('tâche introuvable');
     const patch = (body ?? {}) as Record<string, unknown>;
-    try {
-      // updateTask et la synchro partagent localWrite : aucun autre changement
-      // local ne s'intercale pendant les lectures IndexedDB de cette comparaison.
-      if (patch.expected_planning !== undefined) {
-        const expected = body.expected_planning;
-        const snapshot = expected?.active_document_ids !== undefined
-          ? await taskWithDocuments(id) : await localFollowUpMetadata('task', current);
-        assertExpectedTaskPlanning(expected, snapshot);
-      }
-    } catch (cause) {
-      const error = cause as Error & { code?: string };
-      throw new ApiError(error.message, error.code);
-    }
+    await assertLocalTaskPlanning(body?.expected_planning, current);
     const title = pick(patch, 'title', current.title, (v) => str(v));
     if (!title) fail('titre requis');
     const status = pick(patch, 'status', current.status, (v) => (str(v) || current.status) as Status);
@@ -1730,4 +1720,17 @@ async function taskWithDocuments(id: string): Promise<Task> {
   const row = (await tasks.get(id)) ?? fail('tâche introuvable');
   const googleByEntry = new Map((await google.all()).map((link) => [link.entry_id, link]));
   return { ...await localFollowUpMetadata('task', row), documents: taskDocuments(id, await entries.all(), await links.all(), googleByEntry) };
+}
+
+/** Les mutations de tâche et la synchronisation appellent cette comparaison sous localWrite. */
+async function assertLocalTaskPlanning(expected: TaskPlanningSnapshot | undefined, task: TaskRow): Promise<void> {
+  if (expected === undefined) return;
+  try {
+    const snapshot = taskPlanningUsesDocuments(expected)
+      ? await taskWithDocuments(task.id) : await localFollowUpMetadata('task', task);
+    assertExpectedTaskPlanning(expected, snapshot);
+  } catch (cause) {
+    const error = cause as Error & { code?: string };
+    throw new ApiError(error.message, error.code);
+  }
 }

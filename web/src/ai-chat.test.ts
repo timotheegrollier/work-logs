@@ -68,6 +68,29 @@ const ask = (input: Partial<Parameters<typeof askAssistant>[1]> = {}, options = 
 const json = (value: unknown) => JSON.stringify(value);
 
 describe('lecture locale et classement', () => {
+  test('relie la tâche créée dans la conversation à son entrée, même après un renommage', async () => {
+    const linked = entry('liée', { title: 'Compte rendu sans mot commun' });
+    mockState({
+      tasks: [
+        task('autre', { title: 'Inspection' }),
+        task('créée', { title: 'Nouveau titre', documents: [linked] }),
+      ],
+      entries: [linked, entry('homonyme', { title: 'Inspection' })],
+    });
+    const calls = stubAi(json({ reply: 'Je vois la note.' }));
+    await ask({
+      text: 'Rédige le contenu de cette tâche.',
+      history: [{ role: 'assistant', text: '[appliquée] Créer la tâche « Inspection »', createdTasks: [{ id: 'créée', title: 'Inspection' }] }],
+    });
+    const prompt = user(calls[0]);
+    const documents = lines(prompt, 'Documents');
+    const linkedIndex = documents.findIndex((line) => line.includes(linked.title)) + 1;
+    expect(linkedIndex).toBeGreaterThan(0);
+    expect(lines(prompt, 'Tâches').find((line) => line.includes('Nouveau titre'))).toContain(`créée ici, documents liés D${linkedIndex}`);
+    expect(lines(prompt, 'Tâches').find((line) => line.includes('Inspection'))).not.toContain('créée ici');
+    expect(prompt).not.toContain('id":"créée');
+  });
+
   test('tâches ouvertes : titre ×3, chaque signal +1, à égalité l’échéance la plus proche', async () => {
     mockState({
       projects: [project('p1', 'Atelier')],
@@ -207,13 +230,15 @@ describe('lecture locale et classement', () => {
 
   test('prompt borné sous 18 000 caractères sur 60 tâches et 30 projets aux noms de 40 caractères, chaque champ coupé à sa limite', async () => {
     saveProjectAiBrief('p1', 'R'.repeat(2000));
+    const entries = Array.from({ length: 20 }, (_, index) => entry(`e${index}`, { title: `Remplacer ${index} `.repeat(30), excerpt: 'mot '.repeat(100) }));
     mockState({
       projects: Array.from({ length: 30 }, (_, index) => project(`p${index + 1}`, `Projet ${index + 1} `.padEnd(40, 'x'))),
       tasks: Array.from({ length: 60 }, (_, index) => task(`t${index}`, {
         title: `Remplacer la pièce numéro ${index} `.repeat(30), status: index >= 50 ? 'done' : index % 5 ? 'todo' : 'doing',
         priority: index % 4 ? 'normal' : 'high', pinned: index % 10 ? 0 : 1, due_date: '2099-12-01', project_id: 'p1',
+        documents: [entries[index % entries.length]],
       })),
-      entries: Array.from({ length: 20 }, (_, index) => entry(`e${index}`, { title: `Remplacer ${index} `.repeat(30), excerpt: 'mot '.repeat(100) })),
+      entries,
     });
     const calls = stubAi('{"reply":"Vu."}');
     await ask({
@@ -1123,6 +1148,27 @@ describe('application des propositions, sur la vraie API', () => {
     expect(await api.entry('e')).toMatchObject({ status: 'done', archived: 0, entry_date: '2030-01-15', category_id: 'c' });
     expect(row('SELECT category_id, status, priority FROM tasks WHERE id=?', 't')).toEqual({ category_id: 'c', status: 'doing', priority: 'high' });
     expect(row('SELECT kind, category_id FROM entries WHERE title=?', 'Contrôler l’atelier')).toEqual({ kind: 'procedure', category_id: 'c' });
+  });
+
+  test('rédige et lie la note d’une ancienne tâche sans entrée, sans doubler une écriture rejouée', async () => {
+    seedData(server.db, { tasks: [{ id: 't', title: 'Inspection ancienne', status: 'done' }] });
+    stubAi(json({ actions: [{ kind: 'create_task_note', n: 1, content: '## Contrôle\n\nVérifier le journal.' }] }));
+    const { proposals } = await ask({ text: 'Rédige le contenu de la tâche Inspection ancienne.' });
+    expect(proposals[0]).toMatchObject({ kind: 'create_task_note', taskId: 't', title: 'Inspection ancienne' });
+    expect(proposals[0].label).toContain('la note sera archivée');
+    const since = earlier();
+    await applyChatProposal(proposals[0]);
+    await applyChatProposal(proposals[0], { since });
+    const task = (await api.state('Inspection ancienne')).tasks[0];
+    expect(task.documents).toHaveLength(1);
+    expect(await api.entry(task.documents[0].id)).toMatchObject({
+      title: 'Inspection ancienne', content_md: '## Contrôle\n\nVérifier le journal.', archived: 1,
+    });
+
+    stubAi(json({ actions: [{ kind: 'create_task_note', n: 1, content: 'Un doublon.' }] }));
+    const answer = await ask({ text: 'Complète la tâche Inspection ancienne.' });
+    expect(answer.proposals).toEqual([]);
+    expect(answer.notice).toContain('la tâche a déjà une entrée liée à compléter');
   });
 
   test('relit l’entrée ouverte avant de modifier son texte et refuse une révision concurrente', async () => {
