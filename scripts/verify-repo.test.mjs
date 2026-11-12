@@ -11,7 +11,7 @@ const deb = `WorkLogs-${version}-linux-amd64.deb`;
 const rpm = `WorkLogs-${version}-linux-x86_64.rpm`;
 
 /** Réponses cohérentes d'un dépôt publié, avec de quoi simuler une panne. */
-function fixture({ packagesVersion = version, releaseMismatch = false } = {}) {
+function fixture({ packagesVersion = version, releaseMismatch = false, rpmVersion = version, primaryMismatch = false } = {}) {
   const packages = `Package: worklogs\nVersion: ${packagesVersion}\nFilename: ./WorkLogs-${packagesVersion}-linux-amd64.deb\n\n`;
   const packagesBytes = Buffer.from(packages);
   const packagesGz = gzipSync(packagesBytes);
@@ -27,7 +27,7 @@ function fixture({ packagesVersion = version, releaseMismatch = false } = {}) {
     '<metadata>',
     '<package type="rpm">',
     '<name>worklogs</name>',
-    `<version epoch="0" ver="${version}" rel="1"/>`,
+    `<version epoch="0" ver="${rpmVersion}" rel="1"/>`,
     `<location href="${rpm}"/>`,
     `<checksum type="sha256" pkgid="YES">${sha256(Buffer.from('rpm'))}</checksum>`,
     '</package>',
@@ -37,7 +37,7 @@ function fixture({ packagesVersion = version, releaseMismatch = false } = {}) {
   const repomd = [
     '<repomd>',
     '<data type="primary">',
-    `<checksum type="sha256">${sha256(primaryGz)}</checksum>`,
+    `<checksum type="sha256">${primaryMismatch ? '0'.repeat(64) : sha256(primaryGz)}</checksum>`,
     '<location href="repodata/primary.xml.gz"/>',
     '</data>',
     '</repomd>',
@@ -155,6 +155,30 @@ test('refuse un Release dont l’empreinte ne correspond pas aux index', async (
     await assert.rejects(
       verifyRepo({ tag: `v${version}`, baseUrl: depot.base, timeoutMs: 50, intervalMs: 10, log: () => {} }),
       /Release : empreinte de Packages incorrecte/,
+    );
+  } finally {
+    await depot.close();
+  }
+});
+
+test('refuse un index dnf qui ne liste pas la version publiée', async () => {
+  const depot = await startServer(fixture({ rpmVersion: '0.69.0' }));
+  try {
+    await assert.rejects(
+      verifyRepo({ tag: `v${version}`, baseUrl: depot.base, timeoutMs: 50, intervalMs: 10, log: () => {} }),
+      /primary\.xml ne liste pas worklogs 0\.70\.0/,
+    );
+  } finally {
+    await depot.close();
+  }
+});
+
+test('refuse un primary.xml dont l’empreinte ne correspond pas à repomd.xml', async () => {
+  const depot = await startServer(fixture({ primaryMismatch: true }));
+  try {
+    await assert.rejects(
+      verifyRepo({ tag: `v${version}`, baseUrl: depot.base, timeoutMs: 50, intervalMs: 10, log: () => {} }),
+      /repomd\.xml : empreinte du primary incorrecte/,
     );
   } finally {
     await depot.close();

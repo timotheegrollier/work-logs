@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { checkRelease } from './check-release.mjs';
 
 /** Cas nominal : manifeste, lock et tag alignés. */
@@ -42,4 +44,13 @@ test('la remédiation proposée met bien à jour les deux fichiers', () => {
 
 test('refuse un lock dont la version manque', () => {
   assert.throws(() => checkRelease({ ...aligned(), lockPackageVersion: undefined }), /désynchronisé/);
+});
+
+test('en ligne de commande, un tag qui ne correspond pas arrête l’étape (code non nul)', () => {
+  // La CI et le job `release` n'appellent que le script : sans cette exécution réelle, un
+  // garde-fou devenu muet (détection du lancement direct cassée) sortirait en 0.
+  const script = fileURLToPath(new URL('./check-release.mjs', import.meta.url));
+  const run = spawnSync(process.execPath, [script, 'v0.0.0'], { encoding: 'utf8' });
+  assert.notEqual(run.status, 0);
+  assert.match(run.stderr, /Le tag v0\.0\.0 doit correspondre à package\.json/);
 });

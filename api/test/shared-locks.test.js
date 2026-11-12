@@ -99,8 +99,9 @@ describe('entrées/sorties bornées', () => {
       const started = Date.now();
       await assert.rejects(io.call('stat', [os.tmpdir()]), { code: 'SHARED_OFFLINE' });
       assert.ok(Date.now() - started < 100);
-      // La sonde passe sur un nouveau worker et referme le disjoncteur.
-      const stat = await io.call('stat', [os.tmpdir()], { probe: true });
+      // La sonde passe sur un nouveau worker et referme le disjoncteur. Délai propre :
+      // sous charge, 150 ms ne suffisent pas toujours à un worker neuf pour répondre.
+      const stat = await io.call('stat', [os.tmpdir()], { probe: true, timeoutMs: 10_000 });
       assert.equal(stat.isDir, true);
       assert.equal(io.state().breaker, 'closed');
       // Le worker abandonné finit par rendre la main : il est libéré.
@@ -111,31 +112,32 @@ describe('entrées/sorties bornées', () => {
     }
   });
 
-  test('le démarrage d’un worker ne compte pas dans le délai : une machine chargée ne fait pas « injoignable »', async () => {
-    // Un worker met ~70 ms à démarrer, bien plus sous charge : avec un délai de 30 ms,
-    // compter son démarrage ferait croire le partage injoignable à chaque fois. Trois
-    // essais, chacun sur un worker neuf : l'ancien code échouait aux trois ; il suffit
-    // qu'un passe (l'appel lui-même peut traîner sur une machine très chargée).
-    const outcomes = [];
-    for (let attempt = 0; attempt < 3 && !outcomes.includes('ok'); attempt++) {
-      const io = createSharedIo({ timeoutMs: 30 });
-      try {
-        const stat = await io.call('stat', [os.tmpdir()]);
-        outcomes.push(stat.isDir && io.state().breaker === 'closed' ? 'ok' : 'faux');
-      } catch (error) {
-        outcomes.push(error.code);
-      } finally {
-        await io.close();
-      }
+  // Délai du test : avec l'horloge simulée, un worker qui ne démarrerait jamais ne serait plus borné.
+  test('le démarrage d’un worker ne compte pas dans le délai : une machine chargée ne fait pas « injoignable »', { timeout: 30_000 }, async (t) => {
+    // Horloge simulée : le délai de 30 ms n'expire que si on l'avance. Une seconde passe
+    // avant que le worker ait pu démarrer ; l'ancien code, qui armait le délai dès l'envoi,
+    // répondait alors SHARED_OFFLINE. Le résultat ne dépend plus de la charge.
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const io = createSharedIo({ timeoutMs: 30 });
+    try {
+      const pending = io.call('stat', [os.tmpdir()]);
+      t.mock.timers.tick(1000);
+      const stat = await pending;
+      assert.equal(stat.isDir, true);
+      assert.equal(io.state().breaker, 'closed');
+    } finally {
+      t.mock.timers.reset();
+      await io.close();
     }
-    assert.ok(outcomes.includes('ok'), `essais : ${outcomes.join(', ')}`);
   });
 
   test('au-delà de deux workers figés, l’état passe à « bloqué »', async () => {
     const io = createSharedIo({ timeoutMs: 100, maxStuck: 2 });
     try {
-      await assert.rejects(io.call('sleep', [500]), { code: 'SHARED_OFFLINE' });
-      await assert.rejects(io.call('sleep', [500], { probe: true }), { code: 'SHARED_OFFLINE' });
+      // Des appels figés plus longs que le test : sous charge, le premier worker rendait la
+      // main avant que le second expire, et l'état restait « open ». `close()` les termine.
+      await assert.rejects(io.call('sleep', [30_000]), { code: 'SHARED_OFFLINE' });
+      await assert.rejects(io.call('sleep', [30_000], { probe: true }), { code: 'SHARED_OFFLINE' });
       assert.equal(io.state().breaker, 'blocked');
       await assert.rejects(io.call('stat', [os.tmpdir()], { probe: true }), { code: 'SHARED_BLOCKED' });
     } finally {

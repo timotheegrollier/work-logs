@@ -144,9 +144,13 @@ describe('dossier partagé — verrous, projets, versions', () => {
     api.db.prepare("UPDATE shared_files SET lock_nonce='vieux', lock_renewed_at=? WHERE rel_path='notes.md'").run(new Date().toISOString());
     const { createSharedService } = await import('../src/shared-service.js');
     const again = createSharedService({ db: api.db, blobDir: path.join(api.dir, 'shared-blobs'), root: share, retryMs: 0, probeMs: 0, mountCheckMs: 0, instance: 'test-instance' });
-    for (let i = 0; i < 50 && fs.existsSync(lockFile('notes.md')); i++) await new Promise((resolve) => setTimeout(resolve, 20));
-    assert.equal(fs.existsSync(lockFile('notes.md')), false);
-    await again.stop();
+    try {
+      // Le verrou est rendu par le worker neuf de ce service : borne en temps, pas en tours (sous charge, 50 tours de 20 ms ne suffisaient pas).
+      for (const until = Date.now() + 10_000; fs.existsSync(lockFile('notes.md')) && Date.now() < until;) await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(fs.existsSync(lockFile('notes.md')), false);
+    } finally {
+      await again.stop();
+    }
   });
 
   test('LibreOffice ouvert sur cet ordinateur (« Ouvrir avec… ») met aussi l’envoi en attente', async () => {

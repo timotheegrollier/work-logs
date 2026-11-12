@@ -40,7 +40,9 @@ test('ouvre automatiquement l’éditeur Google dans WorkLogs et actualise la co
   expect(await screen.findByRole('textbox', { name: 'Contenu du document' }, { timeout: 10_000 })).toHaveTextContent('Depuis Google');
   expect(bridge.close).toHaveBeenCalledWith('doc-1');
   expect(bridge.hide).toHaveBeenCalled();
-});
+  // Premier test du fichier : il paie le premier rendu de jsdom et de l'éditeur (3,6 à 7,9 s
+  // mesurées sous charge). Sous le délai par défaut de 5 s, l'attente de 10 s ci-dessus ne servait pas.
+}, 30_000);
 
 test('conserve le brouillon avant l’éditeur complet et bloque l’ouverture si la fusion échoue', async () => {
   const bridge = integratedBridge();

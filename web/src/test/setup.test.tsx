@@ -15,7 +15,9 @@ describe('un afterEach qui lève', () => {
   });
 });
 
-test('le test suivant repart d’un écran vide', () => {
+// Sans rejeu : au second passage, le nettoyage du premier échec a déjà vidé l'écran, et la
+// régression que ce test garde (`afterEach(cleanup)` au lieu d'`onTestFinished`) passerait.
+test('le test suivant repart d’un écran vide', { retry: 0 }, () => {
   expect(rendered).toBe(true);
   expect(document.body).toBeEmptyDOMElement();
 });
