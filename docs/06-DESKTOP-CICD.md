@@ -275,9 +275,9 @@ répond normalement.
 | `scripts/workflows.test.mjs` | tests statiques de `pwa-cloudflare.yml` et de `repos.yml` seulement (D15) | `check.sh` |
 
 `check.sh` prend un écran virtuel avec metacity ou muffin s'ils sont installés, sinon l'écran
-courant, sinon `xvfb-run -a`. Sur `8e345d0` (v0.75.0), il a compté 325 tests API, 1 331 tests
-front (dont un échec attendu, `web/src/test/setup.test.tsx`), 49 desktop unitaires, 46 scripts,
-8 Worker, 11 relais, 115 navigateur et 19 Electron, soit 1 904 tests. Vitest tourne avec
+courant, sinon `xvfb-run -a`. Le 2026-11-12, après la v0.75.0, il a compté 329 tests API,
+1 342 tests front (dont un échec attendu, `web/src/test/setup.test.tsx`), 49 desktop unitaires,
+49 scripts, 8 Worker, 11 relais, 117 navigateur et 20 Electron, soit 1 925 tests. Vitest tourne avec
 `maxWorkers: 4` et `retry: 1` (`web/vite.config.ts`).
 
 ## 7. Packaging desktop
@@ -430,8 +430,16 @@ commit était vert sur master). Un miroir lent allonge aussi ce job sans le fair
 actualise projet et catégorie… »). Il a échoué dans les runs 40360827503 (2026-10-26) et
 42603062893 (2026-11-09). Ces runs n'ont pas été relancés (une seule tentative) ; le même commit
 était vert dans la CI `pull_request` lancée en même temps (40360836241, 42603072431). `retry: 1` de vitest, ajouté le
-2026-11-10 (`4b5e3c5`), le masque probablement ; non réévalué depuis. *Effet :* un échec isolé de
-ce test ne prouve pas une régression. *En attendant :* relancer, et signaler s'il revient.
+2026-11-10 (`4b5e3c5`), le masque probablement ; non réévalué depuis. Cause trouvée le
+2026-11-12, non corrigée : le test dit vrai. Dans `web/src/components/EntryEditor.tsx`,
+`autosave.onState` est branché par un `useEffect` passif (l. 272-278). Une frappe arrivée avant ce
+branchement laisse l'état à « enregistré » alors qu'une révision attend. L'effet de reclassement
+(l. 209-224) saute alors `autosave.update`, et l'envoi suivant réécrit l'ancien projet et
+l'ancienne catégorie, comme dans les deux runs (projet `p`, catégorie nulle). Un harnais
+déterministe, hors CI, l'a reproduit à chaque passage, et passe quand ce branchement se fait
+dans un `useLayoutEffect` (correctif non appliqué). *Effet :* un échec isolé de ce test ne
+prouve pas une régression du lot testé : il signale ce défaut existant. *En attendant :*
+relancer, et signaler s'il revient.
 
 **D15. Les tests de workflows ne couvrent que deux fichiers sur cinq**
 (`scripts/workflows.test.mjs:13-84`). Rien ne teste `ci.yml`, `release.yml`, `pwa.yml`, ni le

@@ -9,6 +9,26 @@ Aucune release ne peut le corriger seule : il faut relancer une fois la commande
 du dépôt, donnée dans `docs/07-RELEASES.md`. Le 2026-11-12, le poste de Timo restait ainsi en
 0.73.0 ; après la commande, apt a installé la 0.74.0.
 
+## Doc de publication et tests existants — 2026-11-12, après la v0.75.0 (sans version)
+
+- `docs/07-RELEASES.md` est le guide du geste de publier : pas à pas 0 à 10 avec les commandes
+  et les temps mesurés, vérifications par canal, tableau des pannes, intégration du travail
+  d’un autre agent. `docs/06-DESKTOP-CICD.md` est la référence du pipeline, avec seize défauts
+  connus (D1 à D16), décrits et non corrigés.
+- Chaque affirmation a été confrontée deux fois aux workflows, aux scripts et aux runs réels,
+  par des relecteurs chargés de la contredire.
+- Tests existants stabilisés sous charge, sans toucher au code de production : verrous du
+  partage, recherche riche, Google Drive, nettoyage entre tests. Ajoutés : deux cas dnf de
+  `verify-repo`, l’exécution réelle de `check-release`. `workflows.test.mjs` échoue désormais
+  sans js-yaml au lieu de sauter ses contrôles.
+- Deux défauts de production trouvés, à corriger dans un lot à part : la course d’`EntryEditor`
+  derrière le test instable D14 (`06-DESKTOP-CICD.md` §8), et le rappel `requestAnimationFrame`
+  de `GoogleDocsEditor.tsx`, qui peut faire sortir la suite front en code 1 alors que tous les
+  tests passent (`07-RELEASES.md` §10).
+- `./scripts/check.sh` vert sur ce lot rebasé après `65d3394` : 327 API, 1 334 front et un échec
+  attendu, 49 desktop unitaires, 49 scripts, 8 Worker, 11 relais, 116 navigateur et 19 Electron,
+  soit 1 914. Rebasé ensuite après `fe50500` : 1 925, avec les tests de ces deux commits.
+
 ## Assistant en colonnes et résultats applicables — 2026-11-13
 
 - L’assistant affiche une liste et des colonnes indépendantes sur ordinateur, une conversation
