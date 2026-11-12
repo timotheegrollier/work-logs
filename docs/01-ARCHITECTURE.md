@@ -11,8 +11,10 @@ exige un jeton aléatoire. Le protocole Electron `worklogs://app` relaie les req
 le `fetch` Node en ajoutant le jeton. Cette origine stable conserve le thème au redémarrage.
 Le renderer utilise `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`.
 
-Le preload expose seulement `window.worklogsDesktop.onBeforeClose()`. La fermeture attend
-`flushPendingSaves()` ; un échec garde la fenêtre ouverte. `web/src/autosave.ts` sérialise
+Le preload expose `window.worklogsDesktop` : `onBeforeClose`, la vue Google (`googleDocs`),
+`openAttachment`, le partage (`shared`) et les mises à jour (`checkUpdatesNow`,
+`onUpdateProgress`). La fermeture attend `flushPendingSaves()` ; un échec garde la fenêtre
+ouverte. `web/src/autosave.ts` sérialise
 les écritures et envoie le brouillon au changement d’entrée. Les sources et dépendances
 API sont préparées dans `.desktop-app/`, puis empaquetées dans `release/`.
 
@@ -32,11 +34,11 @@ En production, `npm start` construit le front et l'API le sert elle-même : **un
 ## PWA statique (mobile, sans serveur)
 
 Le même `web/dist/` (base relative `./`, donc rejouable à la racine comme dans
-un sous-dossier) est publié **à la racine** de gh-pages par le workflow `PWA`
-(`.github/workflows/pwa.yml`) : la PWA est donc disponible à la racine du site,
-et les dépôts Linux restent isolés dans `/deb/` et `/rpm/`. Le workflow partage
-son groupe de concurrence `gh-pages` avec « Dépôts » : les deux poussent sur la
-même branche sans toucher aux chemins de l'autre. Contenu PWA : `index.html`,
+un sous-dossier), construit avec `VITE_PWA=1`, est publié par deux workflows :
+`PWA Cloudflare` (`pwa-cloudflare.yml`, Worker, à la racine, avec le relais de jetons)
+et `PWA` (`pwa.yml`, artefact GitHub Pages, sous `/work-logs/`). Les dépôts Linux n'y
+passent pas : seul « Dépôts » pousse sur la branche gh-pages (`/deb/`, `/rpm/`), servie en
+brut par `raw.githubusercontent.com`. Contenu PWA : `index.html`,
 `manifest.webmanifest`, icônes 256/512 (`web/public/icons/`, dérivées de
 `desktop/icons/`) et `sw.js` émis au build (`scripts/emit-sw.mjs`, version =
 paquet racine, testé dans `scripts/pwa-sw.test.mjs`).
@@ -46,13 +48,13 @@ ressources même origine, **jamais `/api/`** ; les navigations sont réseau
 d'abord avec repli hors-ligne, et le changement de version purge l'ancien
 cache (`skipWaiting` + `clients.claim` : mise à jour transparente). Il ne
 s'enregistre qu'en production sur http(s) — jamais sur `worklogs://` ni en dev.
-Les données locales (IndexedDB) et la connexion directe à Google (client OAuth
-« Web », lots suivants) n'ont besoin d'aucun serveur.
+Les données locales (IndexedDB) n'ont besoin d'aucun serveur ; la connexion Google du
+client intégré (OAuth « Web ») passe par le relais de jetons `oauth-proxy/`, qui détient le secret.
 
 ## Base — tables synchronisées et tables de la machine
 
 ```sql
-projects(id, name, color, created_at)
+projects(id, name, color, shared_dir, created_at, updated_at)
 
 categories(id, name, project_id → projects ON DELETE CASCADE,
            parent_id → categories ON DELETE SET NULL, color, created_at, updated_at)
@@ -70,16 +72,18 @@ tasks(id, title, status ∈ {todo, doing, done}, due_date 'AAAA-MM-JJ'|NULL,
 task_entries(task_id → tasks ON DELETE CASCADE, entry_id → entries ON DELETE CASCADE,
              created_at, PRIMARY KEY(task_id, entry_id))
 
-attachments(id, filename, stored, mime, size,
+attachments(id, filename, stored, mime, size, drive_file_id DEFAULT '',
             entry_id → entries ON DELETE CASCADE, created_at)
 
 google_documents(entry_id → entries ON DELETE CASCADE PRIMARY KEY,
                  document_id, tab_id DEFAULT '', revision_id, synced_content_json, synced_at,
                  document_title, tab_title, tab_order, tab_depth DEFAULT 0, readonly_reason,
                  UNIQUE(document_id, tab_id))
+
+sync_tombstones(kind, id, deleted_at, PRIMARY KEY(kind, id))   -- suppressions à propager, oubliées après 60 jours
 ```
 
-- **IDs** : chaînes `préfixe + base36(horodatage) + 6 aléatoires` (`en_`, `tk_`, `pr_`, `at_`).
+- **IDs** : chaînes `préfixe + base36(horodatage) + 6 aléatoires` (`en_`, `tk_`, `pr_`, `at_`, `ca_`).
 - `entry_date` est une date pure, comparée en texte — pas de fuseau horaire, pas de surprise.
 - Le statut d’une entrée est indépendant de son archivage, de ses tâches liées et du bilan IA.
   Les anciennes bases et sauvegardes reviennent en `todo`.
@@ -172,6 +176,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | POST · PUT · DELETE | `/api/entries[/:id]` | créer · modifier (dont `status`) · supprimer |
 | POST | `/api/entries/:id/task` | crée une tâche `todo` et la lie atomiquement à l’entrée |
 | POST | `/api/entries/:id/copy` | copie locale indépendante, fichiers compris |
+| POST | `/api/entries/merge` | remplace les entrées sources par une note fusionnée, en une transaction (contrat `entry-merge.js`) |
 | GET · POST | `/api/google/*` | état, configuration desktop, connexion, déconnexion, liste et ouverture |
 | POST | `/api/google/documents` | crée un Google Docs nommé et son entrée locale associée |
 | GET · POST | `/api/google/backup/list`, `/api/google/backup/export` | liste ou enregistre un JSON WorkLogs dans Drive |
@@ -181,6 +186,8 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | POST · PUT · DELETE | `/api/tasks[/:id]` | créer avec une entrée liée et son `content_md` facultatif · modifier · supprimer |
 | POST | `/api/tasks/:id/entry` | crée et lie une entrée Markdown avec le projet et la catégorie de la tâche. Accepte `title`, `content_md` et un `expected_planning` facultatif avec `document_ids` pour vérifier tous les liens, archives comprises. Un écart renvoie `409 TASK_PLANNING_STALE` |
 | POST · DELETE | `/api/tasks/:id/documents/:entryId` | associer ou retirer une entrée (locale ou Google) ; à l'ajout, remplir la catégorie non ambiguë d'une tâche libre du même projet |
+| POST | `/api/tasks/:id/entry` | crée une entrée liée à la tâche (titre, projet et catégorie repris) |
+| POST | `/api/tasks/merge` | remplace les tâches sources par une tâche et sa note, en une transaction (contrat `entry-merge.js`) |
 | PATCH | `/api/tasks/:id/move` | `{status, position}` puis renumérotation |
 | POST · PUT · DELETE | `/api/projects[/:id]` | créer · renommer/recolorer · supprimer |
 | POST · PUT · DELETE | `/api/categories[/:id]` | créer · renommer/recolorer/reparent · supprimer en remontant contenu et enfants dans le parent |
@@ -258,8 +265,8 @@ les sauvegardes v2 (champ absent accepté), les boîtes mobiles et les fusions D
 avec suppression synchronisée `category`. IndexedDB passe à la version 2, alignée sur le SW.
 
 `/api/state` est le cœur du front : une seule requête alimente les trois colonnes, et le front
-la rejoue après chaque mutation. C'est ce qui permet à `App.tsx` de tenir en ~170 lignes. Chaque
-tâche porte `documents`, un tableau de résumés `{id, title, entry_date, project_id, updated_at,
+la rejoue après chaque mutation. Chaque tâche porte `documents`, un tableau de résumés
+`{id, title, entry_date, project_id, updated_at,
 google_document_id, google_tab_id, google_document_title, google_tab_title}`. Le filtre
 `project_id` filtre les tâches (et les entrées principales), mais pas les documents associés à
 une tâche : ils restent son contexte, même s'ils appartiennent à un autre projet.
@@ -291,7 +298,8 @@ une tâche, une entrée ou une association inconnue renvoie `404` avec un messag
 | `components/ProcedureList.tsx` | procédures du projet (entrées `kind='procedure'`) + pièces jointes rassemblées |
 | `components/EntryEditor.tsx` | titre, date, projet, Écrire/Lire (entrées Markdown et procédures locales), enregistrement auto, pièces jointes |
 | `components/RichEditor.tsx` | éditeur Tiptap et barre de mise en forme ; `readOnly` = mode Lire d'une procédure |
-| `components/GoogleDrive.tsx` | dialogue Drive dédié, configuration et documents autorisés |
+| `components/GoogleDrive.tsx` | dialogue Drive dédié : configuration, connexion, sauvegardes, pièces jointes, boîte mobile |
+| `components/GoogleDocuments.tsx` | fenêtre Documents Google : recherche, ouverture, projet, création, corbeille |
 | `components/TaskBoard.tsx` | ajout rapide, 3 colonnes (ou la liste rangée de « Tout », `overviewOrder`), glisser-déposer HTML5, ▶ en cours, édition en place, associations de documents, menu ✨ IA du panneau (priorités proposées, `prioritizeTasks`) et de la carte |
 | `components/ProjectOverview.tsx` | vue d'ensemble des projets au centre (`projectProgress`) : une voie par projet, terminées comptées, nœuds des tâches ouvertes, barre d'avancement, dernière note |
 | `components/AiMenu.tsx` | menu « ✨ IA » : les actions IA d'une note, d'un fichier du partage ou d'une carte derrière un bouton (clavier du menu du compte) |

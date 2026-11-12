@@ -1,6 +1,6 @@
 # Google Docs — éditeur natif dans WorkLogs, bilan du 2026-09-15
 
-**Branche `codex/google-docs-integrated-editor`, sur les sources 0.10.0, sans bump ni release.**
+**Branche `codex/google-docs-integrated-editor`, publiée en v0.12.0.**
 Aucune dépendance ajoutée. Ce bilan remplace les limites de la section suivante.
 
 ## Ce qui change
@@ -54,14 +54,13 @@ l’isolation, les dimensions suivies au pixel, l’impression et le refus de qu
 | Documents ouverts dans la session | Une seule vue Google vivante : ouvrir le document suivant libère le précédent. Une vue que Google déclare en cours d’enregistrement survit, sans dialogue, et finira son envoi |
 | Hors ligne | L’éditeur Google ne fonctionne pas ; la copie locale, si |
 | Fusion automatique | Corrections indépendantes seulement ; longueurs de document différentes = conflit |
-| Clavier avec la vue Google masquée | Bug connu : la vue Google conservée en mémoire (masquée ou réduite) conserve le focus système, donc taper dans un champ WorkLogs ne produit rien. Résolu par `fix/focus-clavier-vue-google` (déclaration du clavier au focus du renderer). Testée en e2e desktop. |
 
 ## Connexion Google dans la vue intégrée
 
 **Vérifiée par Timo le 2026-09-15**, sur sa session : Google accepte la connexion du
 compte dans la vue intégrée. C'était le risque qui pouvait condamner tout ce lot —
 Google refuse ses pages de connexion dans certains navigateurs embarqués, et WorkLogs
-ne déguise pas l'`userAgent` d'Electron (il annonce `Electron/44.3.0`). Si un futur
+ne déguise pas l'`userAgent` d'Electron (il annonce sa vraie version d'Electron). Si un futur
 durcissement de Google referme ce chemin, **ne pas contourner la détection** : c'est un
 contrôle de sécurité du fournisseur, et un déguisement casserait à leur mise à jour
 suivante. Consigner le refus et rouvrir la question du lien vers le navigateur.
@@ -191,7 +190,7 @@ Tiptap 3.31.3 et les neuf modules listés dans `AGENTS.md`.
   brouillon n’a pas changé pendant le réseau.
 - Supprimer une entrée WorkLogs ne supprime jamais le fichier Google.
 
-## Limites actuelles — ne pas promettre la parité Google Docs
+## Limites du lot initial — remplacées par le périmètre exact plus haut
 
 | Fonction | Local | Synchronisation Google |
 |---|---|---|
@@ -208,10 +207,8 @@ fournit l’édition du contenu, pas l’interface Google Docs. L’intégration
 [« Publier sur le Web »](https://support.google.com/docs/answer/183965?hl=fr) est une
 consultation publiée, qui ne répond pas à l’édition privée demandée.
 
-**Les tests Google utilisent des réponses simulées. Aucun vrai compte/client OAuth
-n’a été configuré dans cette session : la connexion réelle et l’aller-retour sur
-un document Google de test restent à valider.** Ne pas annoncer ce parcours comme
-validé en production avant la recette ci-dessous.
+Les tests Google utilisent des réponses simulées. La connexion réelle et l’aller-retour sur
+un document de test ont été validés à part, les 14 et 15/09 (voir plus haut et `00-HANDOVER.md`).
 
 ## Synchro automatique et Documents Google — depuis le 2026-09-22
 
@@ -311,16 +308,19 @@ npx wrangler deploy                            # → https://worklogs-google.coc
 npx wrangler secret put GOOGLE_CLIENT_SECRET   # secret du client « Application Web » (conservé entre déploiements)
 ```
 
-`wrangler` n'est pas une dépendance du projet : `npx` le télécharge le temps de la commande.
+`wrangler` est une dépendance de développement de la racine (`package.json`) : en local, `npx`
+lance la version installée ; la CI télécharge la même, lue dans `package-lock.json`.
 Le déploiement en production est **automatisé** par `.github/workflows/pwa-cloudflare.yml` :
 il reconstruit la PWA et redéploie le Worker à chaque changement sur master
-(`web/**`, `scripts/emit-sw.mjs`, `oauth-proxy/**`, `package.json`).
+(`web/**`, `scripts/emit-sw.mjs`, `oauth-proxy/**`, `package.json`, `package-lock.json`,
+le workflow lui-même).
 Le sous-domaine `workers.dev` se change dans le dashboard (Workers & Pages → Change) :
 il s'applique à tout le compte, penser à mettre à jour `ORIGINS`/`REDIRECTS`
 (`worker.mjs`), la console Google Cloud et la variable ci-dessous.
 GitHub → Settings → Secrets and variables → Actions → Variables : `GOOGLE_TOKEN_PROXY_URL`
-= l'adresse du Worker (= `VITE_GOOGLE_TOKEN_PROXY` au build), puis relancer le workflow **PWA**
-(le build lit la variable). Valeur actuelle : `https://worklogs-google.cocodexcocoder.workers.dev`.
+= l'adresse du Worker (= `VITE_GOOGLE_TOKEN_PROXY` au build), puis relancer les workflows **PWA**
+et **PWA Cloudflare** (leurs builds lisent la variable).
+Valeur actuelle : `https://worklogs-google.cocodexcocoder.workers.dev`.
 
 **Vérifier**
 - Ouvrir `https://worklogs-google.cocodexcocoder.workers.dev/token` :
@@ -352,9 +352,10 @@ invisible aux tests Node).
    `https://www.googleapis.com/auth/drive.file`.
 4. Créer un client OAuth de type **Application de bureau**, puis télécharger son JSON
    (objet `installed`, avec `client_id` et, si fourni, `client_secret`).
-5. Lancer `npm run desktop`, déplier **Google Drive**, puis **Importer la configuration
+5. Lancer `npm run desktop`, ouvrir **Paramètres › Gérer Google Drive** (client intégré
+   présent : d'abord **Utiliser mon propre client OAuth**), puis **Importer la configuration
    Google**. Ce fichier identifie le client desktop ; ce n’est pas un compte de service.
-6. **Connecter Google Drive** ouvre le navigateur système. Autoriser suffit : revenir dans
+6. **Se connecter avec Google** ouvre le navigateur système. Autoriser suffit : revenir dans
    WorkLogs finalise la connexion sans imposer de document. **Choisir des documents dans
    Drive** (Paramètres) ou **Autoriser d’autres documents** (fenêtre Documents Google) lance
    ensuite le Picker dans le navigateur, plusieurs documents à la fois, et accorde l’accès
@@ -394,7 +395,7 @@ sans elle, les données restent simplement sur l'appareil.
    (`…apps.googleusercontent.com`) **et le secret client** (fiche du client dans
    Google Cloud : un client « Web » est confidentiel, Google refuse l'échange du
    code sans lui — erreur `invalid_client` visible en console, message français
-   dans l'interface), **Connecter Google Drive**, autoriser, puis **Charger**
+   dans l'interface), **Se connecter avec Google**, autoriser, puis **Charger**
    une sauvegarde. Le contenu local est remplacé après confirmation.
 
 État : lecture des sauvegardes, chargement complet, envoi (boîte mobile +
@@ -445,15 +446,17 @@ téléchargées dans `uploads/`. Le réimport est idempotent (compteurs à zéro
   Le stockage Linux `basic_text` est refusé ; le trousseau de session doit être disponible.
 - Connexion annulable et expirant après cinq minutes, état aléatoire contrôlé,
   renouvellement des jetons sérialisé, effacement local à la déconnexion/révocation.
-- Les appels Google passent par Node. Le renderer reste isolé, sans jeton OAuth ni
-  nouveau bridge IPC. Le service Google n’est injecté que dans le serveur desktop
-  protégé par son jeton local ; le mode web annonce Drive indisponible.
+- Les appels Google passent par Node. Le renderer reste isolé, sans jeton OAuth ; côté
+  Google, son bridge IPC ne pilote que la vue intégrée (`googleDocs`). Le service Google
+  n’est injecté que dans le serveur desktop protégé par son jeton local ; le mode web
+  annonce Drive indisponible.
 
 | Fichier | Rôle |
 |---|---|
 | `web/src/components/RichEditor.tsx` | éditeur Tiptap et barre de mise en forme |
 | `web/src/components/EntryEditor.tsx` | sauvegarde locale, envoi/rechargement Drive, copie |
-| `web/src/components/GoogleDrive.tsx` | connexion, configuration et liste des documents |
+| `web/src/components/GoogleDrive.tsx` | connexion, configuration, sauvegardes, pièces jointes, boîte mobile |
+| `web/src/components/GoogleDocuments.tsx` | liste des documents : recherche, ouverture, projet, création, corbeille |
 | `api/src/rich-document.js` | validation JSON, extraction du texte, décodage SQLite |
 | `api/src/google-document.js` | conversion du sous-ensemble Google, opérations ciblées et `requiredRevisionId` |
 | `api/src/google-routes.js` | import, création, envoi, rechargement, conflits et sérialisation des opérations |
@@ -468,8 +471,9 @@ les tests de conservation correspondants ; ne pas enlever simplement les refus.
 
 ## Validation et reprise rapide
 
-`./scripts/check.sh` est vert : **188 tests** (71 API, 64 front, 21 desktop/OAuth,
+Au 2026-09-14, `./scripts/check.sh` était vert : **188 tests** (71 API, 64 front, 21 desktop/OAuth,
 10 scripts, 16 navigateur, 6 Electron). L’éditeur a aussi été inspecté visuellement.
+Décomptes actuels : en tête de `CLAUDE.md`.
 
 ```bash
 npm run install:all
@@ -483,7 +487,7 @@ Tests ajoutés : `api/test/rich-document.test.js`, `api/test/google-document.tes
 Ils couvrent migration, persistance, copie avec fichiers, OAuth/PKCE/refus/renouvellement,
 contenus incompatibles, conflits et absence d’écrasement local, édition et impression.
 
-Recette réelle Google à effectuer :
+Recette réelle Google (aller-retour validé le 14/09, voir `00-HANDOVER.md` ; points 4 et 5 non consignés) :
 
 1. Avec un client OAuth et un trousseau disponibles, connecter un compte de test et
    sélectionner un document avec texte, titre 2, gras, lien et liste simple.
@@ -495,5 +499,4 @@ Recette réelle Google à effectuer :
 5. Couper le réseau : la sauvegarde locale doit continuer, l’envoi doit signaler l’échec.
    Déconnecter puis reconnecter ; vérifier le renouvellement et les permissions.
 
-Une fois cette recette verte, décider si l’on élargit le sous-ensemble Google ou publie
-un premier lot. Le lot n’a créé ni tag ni release ; suivre `07-RELEASES.md` pour publier.
+Lot publié depuis (v0.7.x) ; périmètre actuel en tête de ce fichier, publication : `07-RELEASES.md`.

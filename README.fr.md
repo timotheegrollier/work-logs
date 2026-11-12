@@ -2,7 +2,7 @@
 
 Journal de travail enregistré localement par défaut. **Un seul écran** : le journal
 à gauche, l’écriture au centre, les tâches à droite. Aucun compte requis en usage local.
-La branche de développement ajoute les documents riches et Google Drive facultatif.
+Documents riches et Google Drive facultatif sont inclus.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
@@ -63,7 +63,7 @@ Politique de confidentialité :
 ## Développer
 
 ```bash
-cd /home/timo/dev/work-logs
+cd /home/timo/WorkLogs
 npm run install:all     # une seule fois
 npm run dev             # API :8410 + web :8411 → http://localhost:8411
 ```
@@ -98,14 +98,14 @@ avant d’appliquer les changements ou de créer un Word dans le dossier partag�
 [Utiliser l’assistant](docs/03-UTILISATION.md#lassistant).
 
 Les documents riches s’enregistrent automatiquement en local ; l’export JSON conserve
-leur mise en forme. En desktop, ouvre **Google Drive**, importe le JSON du client OAuth
-desktop créé dans Google Cloud, puis connecte-toi et autorise tes documents.
-L’édition se fait dans WorkLogs ; Google utilise le navigateur pour la connexion et
-l’autorisation des fichiers. **Enregistrer sur Drive** envoie les changements.
-La première synchronisation couvre texte, titres, styles usuels et listes simples.
-Les documents Google complexes sont refusés avant import/écriture ; tableaux et images
-fonctionnent localement. OAuth et les API sont testés avec des réponses simulées ;
-la recette sur un vrai compte reste à faire. [Configuration et limites](docs/08-GOOGLE-DOCS.md).
+leur mise en forme. En desktop, ouvre **Paramètres › Gérer Google Drive** et clique
+**Se connecter avec Google** (un client OAuth personnel reste possible), puis autorise tes documents.
+Un document lié s’ouvre dans le vrai éditeur Google, dans WorkLogs ; Google utilise le navigateur
+pour la connexion et l’autorisation des fichiers. La copie locale synchronise texte, titres,
+styles usuels et cellules de tableaux, et **Enregistrer sur Drive** envoie les changements.
+Les éléments natifs sont conservés ; la structure des tableaux et les nouvelles images restent
+à faire dans Google Docs. L’aller-retour sur un vrai compte a été validé le 2026-09-14.
+[Configuration et limites](docs/08-GOOGLE-DOCS.md).
 
 Dans le dialogue **Gérer Google Drive**, **Sauvegardes WorkLogs** enregistre le JSON de la base dans Drive et permet de le restaurer sur un autre PC connecté au même compte. La restauration remplace les données locales après confirmation ; les octets des pièces jointes locales ne font pas partie du JSON.
 
@@ -138,6 +138,8 @@ La plupart des docs sont en français ; les notes de release et le
 | `docs/05-DECISIONS.md` | dev / agent | **pourquoi** c'est comme ça, et ce qui a été retiré exprès |
 | `docs/06-DESKTOP-CICD.md` | dev / agent | dossier du desktop Linux : bugs trouvés, packaging, CI |
 | `docs/07-RELEASES.md` | dev / agent | **process de release** : versionnage, fast path, notes, check-list |
+| `docs/08-GOOGLE-DOCS.md` | dev / agent | documents riches, Google Docs et Drive : configuration, limites |
+| `docs/09-RELAIS.md` | dev / agent | relais du dossier partagé pour la PWA : installation, mise à jour, dépannage |
 | `AGENTS.md` · `CLAUDE.md` | agents | les règles, en une page |
 
 Données : `api/data/worklogs.db` (SQLite) et `api/data/uploads/` — jamais versionnées.

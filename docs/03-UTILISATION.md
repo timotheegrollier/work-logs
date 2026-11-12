@@ -1,12 +1,12 @@
 # 📖 WorkLogs — guide d'utilisation
 
-> Ce guide décrit le socle web. Le desktop Linux est publié depuis la v0.13.0 :
-> [état et reprise](06-DESKTOP-CICD.md). Il se lance avec `npm run desktop` et utilise un
-> dossier de données distinct. Les paquets exploratoires ne sont pas des releases validées.
+> Ce guide décrit l'application, web et desktop. Le desktop Linux est publié depuis la v0.2.0 :
+> [dossier technique](06-DESKTOP-CICD.md). En développement, il se lance avec `npm run desktop`.
+> Il utilise un dossier de données distinct.
 
 ## Les onglets Google Docs (2026-09-15)
 
-Dans **Gérer Google Drive**, ouvrir le dialogue dédié puis cliquer sur un document ouvre tous ses onglets. La liste verticale
+Dans **Documents Google** (menu du compte), ouvrir un document ouvre tous ses onglets. La liste verticale
 à côté de la page conserve les sous-onglets indentés ; la recherche apparaît à partir
 de six onglets. Les flèches haut/bas déplacent le focus, Entrée ouvre l’onglet. Le dernier
 onglet est retenu au redémarrage. **Afficher les tâches** rouvre le panneau latéral.
@@ -43,7 +43,7 @@ Une seule page, trois zones, jamais de navigation.
 
 | Zone | Ce qu'on y fait |
 |---|---|
-| **Gauche — Journal** | filtrer par projet, créer une entrée, retrouver les précédentes (groupées par jour), ouvrir la gestion Google Drive |
+| **Gauche — Journal** | créer une entrée, retrouver les précédentes (groupées par jour), déplier les archives |
 | **Centre — Écriture** | écrire l'entrée ouverte, la relire, l'imprimer, y joindre des fichiers ; ou lire la **vue d'ensemble** des projets |
 | **Droite — Tâches** | ajouter, avancer, terminer, relier les documents de contexte |
 
@@ -138,7 +138,7 @@ synchronisation Drive. Les anciennes sauvegardes reviennent sans catégorie.
 1. **+ Nouvelle entrée** — elle est créée à la date du jour, le curseur est dans le titre.
 2. Taper le titre, puis basculer sur **Écrire** : le texte à gauche, l'aperçu à droite (colonne
    étroite : le texte seul, **Lire** montre l'aperçu). La zone grandit avec le texte.
-3. **Rien à enregistrer** : ça part tout seul après une seconde d'arrêt. L'indicateur en haut
+3. **Rien à enregistrer** : ça part tout seul après 0,6 s d'arrêt. L'indicateur en haut
    à droite passe de « Modifications en cours… » à « Enregistré ». `Ctrl+S` force l'envoi.
 4. **Lire** repasse en pleine largeur pour relire sans le code Markdown.
 
@@ -760,14 +760,15 @@ tâches. Elle se combine avec le filtre projet.
 Sur Android, ouvre l'URL de la PWA dans Chrome puis « Ajouter à l'écran d'accueil » :
 l'application s'ouvre en plein écran, fonctionne hors-ligne (coquille en cache) et se met
 à jour toute seule au rechargement suivant. Aucun compte requis : sans connexion Google,
-les données restent sur l'appareil ; la synchronisation Drive arrive aux lots suivants.
+les données restent sur l'appareil ; connecté à Google, tout suit par Drive (voir « Gérer Google Drive »).
 
 ## Gérer Google Drive
 
-Le bouton **⚙ Paramètres** (en-tête) mène à **Gérer Google Drive**, qui ouvre un dialogue dédié. Toute la
-gestion Drive s'y trouve : configuration OAuth, connexion, choix des fichiers autorisés, création,
-recherche, ouverture, sauvegardes et déconnexion. Le dialogue est au premier plan ; fermer le dialogue
-ne ferme pas le document actuellement ouvert au centre.
+Le bouton **⚙ Paramètres** (en-tête) mène à **Gérer Google Drive**, qui ouvre un dialogue dédié :
+configuration OAuth, connexion, choix des fichiers autorisés, sauvegardes, pièces jointes, boîte mobile
+et déconnexion. Création, recherche et ouverture des documents sont dans **Documents Google**.
+Le dialogue est au premier plan ; fermer le dialogue ne ferme pas le document actuellement
+ouvert au centre.
 
 **Le menu du compte** (en haut à droite, à la place de ⚙) : déconnecté, il ouvre les
 **Paramètres** et propose **Se connecter avec Google** ; connecté, il montre ta photo, ton
@@ -835,7 +836,7 @@ La sauvegarde atterrit dans `~/WorkLogs-backups/worklogs-AAAAMMJJ-HHMMSS/`.
 
 ## Ce que l'app ne fait pas — et c'est voulu
 
-Pas de compte, pas d'écriture à plusieurs en même temps (le dossier partagé, c'est chacun son
-tour), pas de synchronisation avec un agenda externe, pas d'application mobile, pas de rappel
+Pas de compte WorkLogs (Google reste facultatif), pas d'écriture à plusieurs en même temps (le dossier partagé, c'est chacun son
+tour), pas de synchronisation avec un agenda externe, pas d'application mobile native (la PWA en tient lieu), pas de rappel
 sonore, pas de recherche plein texte avancée. Chaque ajout de ce genre
 ramènerait un onglet ; le raisonnement est dans `05-DECISIONS.md`.

@@ -41,7 +41,8 @@ Fichiers prêts dans `relay/` : `worklogs-relais.service`, `env.exemple`, `fstab
    adresses de la PWA (Worker Cloudflare et GitHub Pages) sont acceptées d'office ;
    `WORKLOGS_RELAY_ORIGINS` ajoute d'autres origines si besoin.
 6. **Service** : `worklogs-relais.service` → `/etc/systemd/system/`, `sudo systemctl enable --now worklogs-relais`,
-   `curl -s http://127.0.0.1:8420/health`.
+   `curl -s http://127.0.0.1:8420/health`. Son `ExecStart` appelle `/usr/bin/node` : l'adapter si
+   Node est installé ailleurs.
 7. **Tailscale** : installer depuis le dépôt officiel (`pkgs.tailscale.com`), `sudo tailscale up`
    (Timo ouvre l'adresse affichée pour ajouter la VM à son réseau), puis
    `sudo tailscale serve --bg --https=8443 http://127.0.0.1:8420`. Il faut « HTTPS Certificates »
@@ -152,7 +153,7 @@ une PWA qui n'a rien la met à la corbeille.
 | Ce qu'on voit | Où regarder |
 |---|---|
 | « Le relais du dossier partagé ne répond pas » | Tailscale allumé sur le téléphone ? `systemctl status worklogs-relais`, `tailscale serve status` sur la VM |
-| « Le relais ne répond pas (Failed to fetch) », Tailscale allumé | Chrome › Paramètres du site de la PWA › accès au réseau local autorisé ? |
+| « Le relais du dossier partagé ne répond pas (Failed to fetch) », Tailscale allumé | Chrome › Paramètres du site de la PWA › accès au réseau local autorisé ? |
 | « appel refusé depuis une autre page que WorkLogs » | l'appel vient d'un autre site que les PWA (les deux origines WorkLogs sont toujours acceptées ; `WORKLOGS_RELAY_ORIGINS` en ajoute) ; curl : sans en-têtes `Origin` ni `Sec-Fetch-Site` |
 | « Non monté » / « Injoignable » | `ls /mnt/tse-procedures` sur la VM ; mot de passe du compte changé → mettre à jour `smb.cred` |
 | Erreur CORS dans la console du téléphone | l'origine est bien une PWA WorkLogs, ou `WORKLOGS_RELAY_ORIGINS` ajoute l'adresse exacte d'un autre client |

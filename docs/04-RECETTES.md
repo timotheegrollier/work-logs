@@ -143,7 +143,7 @@ Tout est dans `web/src/styles.css`, découpé en sections commentées.
 | Largeur des colonnes | `.columns` en flex, variables des poignées et bornes de chaque panneau |
 | Catégories | bloc « Catégories » : bouton `.category-trigger` dans le bandeau des projets, fenêtre `.category-sheet` qui reprend `.project-sheet` (sous le bouton, feuille du bas sur téléphone, pleine hauteur en paysage), cibles tactiles 44 px |
 | Typographie du document | section `.prose` (taille, interligne, titres, tableaux, code) |
-| Rendu imprimé | le bloc `@media print` en fin de fichier |
+| Rendu imprimé | les deux blocs `@media print`, vers la fin du fichier |
 
 Pour vérifier l'impression sans imprimer : dans le navigateur, outils de développement →
 « Rendering » → *Emulate CSS media type: print*. C'est ce que fait le test
@@ -153,9 +153,11 @@ Pour vérifier l'impression sans imprimer : dans le navigateur, outils de dével
 
 ## 6. Changer un port
 
-Quatre endroits, tous obligatoires :
+Six endroits, tous obligatoires :
 `api/src/server.js` (défaut) · `web/vite.config.ts` (`server.port` **et** `proxy`) ·
-`playwright.config.ts` (`PORT`, `baseURL`) · `README.md` + `docs/`.
+`web/package.json` (`--port` de `dev` et `preview`) · `oauth-proxy/worker.mjs` (`ORIGINS` et
+`REDIRECTS`, pour le port web en dev) · `playwright.config.ts` (`PORT`, `baseURL`) ·
+`README.md` + `README.fr.md` + `docs/`.
 
 Sans toucher au code : `PORT=9000 npm run start:api`.
 
@@ -235,8 +237,8 @@ screen -r wl-api        # voir les logs · Ctrl+A puis D pour ressortir
 ## 12. Ajouter une dépendance
 
 C'est le seul point où il faut **demander avant**. Le socle est volontairement minuscule :
-`express`, `cors`, `multer` côté API ; `react`, `marked`, `dompurify` côté web ; `node:test`,
-`vitest`, `playwright` pour les tests.
+`express`, `cors`, `multer` côté API ; `react`, `marked`, `dompurify` et Tiptap côté web ;
+`electron`, `electron-updater` côté desktop ; `node:test`, `vitest`, `playwright` pour les tests.
 
 Avant de proposer un ajout, répondre à ces trois questions : qu'est-ce qui est impossible sans ?
 combien de poids en plus ? qu'est-ce que ça coûte le jour où la dépendance est abandonnée ?
@@ -348,5 +350,5 @@ service simulé (`05-DECISIONS.md` §77).
    Exporter/restaurer une sauvegarde : parents et affectations sont identiques. Mettre à
    jour tous les appareils synchronisés avant de contrôler l'aller-retour Drive réel.
 
-Les deux parcours `e2e/categories.spec.ts` couvrent desktop et mobile ; les tests API,
+Les parcours `e2e/categories.spec.ts` couvrent desktop et mobile ; les tests API,
 PWA et App couvrent aussi les suppressions et reclassements pendant un retour réseau.

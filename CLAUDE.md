@@ -1,7 +1,8 @@
 # WorkLogs
 
-**v0.13.0 :** poignées de redimensionnement des deux barres latérales et correction
-du focus clavier Google, fusionnées sur master. Bilan dans `docs/00-HANDOVER.md`.
+**État : v0.75.0** (`package.json` fait foi). `./scripts/check.sh` vert sur `8e345d0`,
+**1 904 tests**, échec attendu compris : 325 API · 1 330 front (plus un échec attendu) ·
+49 desktop · 46 scripts · 8 Worker · 11 relais · 115 navigateur · 19 desktop e2e.
 
 **Lot publié en v0.12.0 : éditeur Google Docs natif** (`codex/google-docs-integrated-editor`).
 Lire `docs/08-GOOGLE-DOCS.md` : la vraie page Google s'affiche dans la colonne centrale,
@@ -10,10 +11,9 @@ Tiptap 3.31.3 et ses extensions listées dans `AGENTS.md` ont été explicitemen
 La connexion d'un compte Google dans la vue intégrée a été vérifiée le 15/09. Ne jamais
 déguiser l'`userAgent` si Google referme ce chemin : consigner le refus à la place.
 
-**État au 2026-09-14 :** application desktop Linux **en production**, 19 releases publiées
-(`v0.2.0` → `v0.6.12`, DEB/RPM/AppImage avec mise à jour intégrée). `./scripts/check.sh` est
-vert, desktop compris. Lire `docs/00-HANDOVER.md`, puis **`docs/07-RELEASES.md`** avant toute
-publication. Electron 44.3.0 et electron-builder 26.15.3 ont été explicitement approuvés.
+Application desktop Linux **en production** depuis `v0.2.0` (DEB/RPM/AppImage avec mise à jour
+intégrée). Lire `docs/00-HANDOVER.md`, puis **`docs/07-RELEASES.md`** avant toute publication.
+Electron et electron-builder ont été explicitement approuvés (versions : `package.json`).
 Express reste en 4 (la 5 casse les téléchargements).
 
 Journal de travail personnel, local par défaut avec Drive facultatif, **sur un seul écran** : journal à gauche, écriture
@@ -31,11 +31,10 @@ au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + V
 
 - **Aucune fonctionnalité sans test.** Route API → test dans `api/test/`. Geste utilisateur →
   test dans `web/src/App.test.tsx`, ou dans `e2e/` si ça dépend d'un vrai navigateur.
-- **`./scripts/check.sh` vert avant et après.** Il enchaîne types, 301 tests API, 775 tests front
-  (dont un échec attendu), 49 tests desktop (serveur/OAuth/mise à jour/vue Google/dossier partagé),
-  32 tests des scripts de release, 8 tests du relais Google, 11 tests de la mise à jour du relais
-  de la VM, build, 94 parcours navigateur et 17 parcours de l'application desktop — **1287 tests**
-  (v0.68.0), et finit par `CHECK OK`.
+- **`./scripts/check.sh` vert avant et après.** Il enchaîne types, tests API, front (dont un échec
+  attendu), desktop (serveur/OAuth/mise à jour/vue Google/dossier partagé), scripts de release,
+  relais Google (Worker), mise à jour du relais de la VM, build, parcours navigateur et parcours
+  de l'application desktop, et finit par `CHECK OK`. Décomptes : en tête de ce fichier.
 - **Rien de nouveau sans accord** : ni dépendance, ni onglet, ni mode. La valeur de cette
   application est qu'elle tient sur un écran.
 
@@ -44,10 +43,10 @@ au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + V
 ```bash
 npm run dev          # API :8410 + web :8411 → http://localhost:8411
 npm run desktop      # l'application Electron
-npm test             # API + front (~20 s)
+npm test             # API + front
 npm run test:e2e     # build + Playwright (web)
 npm run test:desktop # parcours Electron (xvfb-run si pas d'affichage)
-./scripts/check.sh   # tout, 1287 tests (Electron dans Xvfb + metacity s'ils sont là)
+./scripts/check.sh   # tout (Electron dans Xvfb + metacity s'ils sont là)
 WORKLOGS_E2E_PORT=8432 ./scripts/check.sh  # si une autre copie de travail occupe le port 8412
 ./scripts/backup.sh  # sauvegarde base + fichiers joints
 ```
@@ -55,7 +54,8 @@ WORKLOGS_E2E_PORT=8432 ./scripts/check.sh  # si une autre copie de travail occup
 ## Repères
 
 - Base : `api/data/worklogs.db` — **jamais** commitée, jamais touchée par les tests.
-- Tables : `projects`, `entries`, `tasks`, `attachments`. Schéma dans `docs/01-ARCHITECTURE.md`.
+- Tables synchronisées : `projects`, `categories`, `entries`, `tasks`, `task_entries`, `attachments`,
+  `google_documents`, `sync_tombstones`. Schéma dans `docs/01-ARCHITECTURE.md`.
   Dossier partagé du TSE (§25) : tables **de la machine**, sans clé étrangère, jamais synchronisées.
   Sur la PWA, il passe par le **relais** de la VM du bureau (§29, `docs/09-RELAIS.md`), qui
   installe tout seul chaque release publiée dans les 5 minutes (§37) : `/health` dit sa version.
@@ -65,8 +65,8 @@ WORKLOGS_E2E_PORT=8432 ./scripts/check.sh  # si une autre copie de travail occup
 - Données desktop : `~/.local/share/worklogs/` (base + uploads), profil dans `~/.config/worklogs/`.
 - Publier = bumper avec `npm version X.Y.Z --no-git-tag-version` (synchronise le lockfile),
   pousser, attendre la CI verte, puis taguer. Détail et pièges : `docs/07-RELEASES.md`.
-- Deux dépôts de mise à jour sur gh-pages : **dnf** (Fedora) et **apt** (Debian/Mint), publiés
-  par `repos.yml`, rétention 3 versions. Ne jamais tester PackageKit sur le seul code de
+- Dépôts **dnf** (Fedora) et **apt** (Debian/Mint) sur la branche gh-pages, lus sur `raw.githubusercontent.com`,
+  publiés par `repos.yml`, rétention 1 version (`KEEP`). Ne jamais tester PackageKit sur le seul code de
   sortie : `pkcon get-updates` sort en 5 quand il n'y a rien à installer.
 - Mise à jour in-app : `pkcon` **lit** les mises à jour, `pkexec` + apt/dnf les **installe**.
   `pkcon update` ne peut pas fonctionner depuis une application graphique — pourquoi et

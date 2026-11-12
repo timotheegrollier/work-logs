@@ -14,7 +14,8 @@ npm start               # build + un seul serveur sur :8410
 npm run dev:api         # API seule
 npm run dev:web         # front seul
 ```
-Variables d'environnement : `PORT`, `DATA_DIR`, `DB_PATH`, `UPLOAD_DIR`.
+Variables d'environnement : `PORT`, `DATA_DIR`, `DB_PATH`, `UPLOAD_DIR`, `WORKLOGS_SHARED_ROOT`
+(dossier partagé en mode web).
 
 ## Tester
 
@@ -22,21 +23,27 @@ Variables d'environnement : `PORT`, `DATA_DIR`, `DB_PATH`, `UPLOAD_DIR`.
 npm test              # API + front
 npm run test:api      # node:test
 npm run test:web      # vitest
-npm run test:web -- --watch
+npm --prefix web run test:watch
 npm run test:e2e      # build + parcours navigateur Playwright
-./scripts/check.sh    # tout : types, tests, build, navigateur
+./scripts/check.sh    # tout : types, tests, build, navigateur, desktop
 ```
 
 | Étage | Outil | Où | Ce qui est couvert |
 |---|---|---|---|
 | API | `node:test` + `fetch` | `api/test/` | toutes les routes, validations, 404, positions kanban, fichiers sur disque, migration V1→V2 |
-| Front | vitest + Testing Library | `web/src/*.test.ts(x)` | helpers purs, rendu Markdown et assainissement, parcours complets dans jsdom |
+| Front | vitest + Testing Library | `web/src/**/*.test.ts(x)` | helpers purs, rendu Markdown et assainissement, parcours complets dans jsdom |
 | Navigateur | Playwright (Chromium) | `e2e/` | glisser-déposer réel, upload/téléchargement, impression, persistance après rechargement |
+| Serveur desktop | `node:test` | `desktop/test/` | serveur à jeton, OAuth, mises à jour, vue Google, ouverture de fichiers, montage du partage |
+| Scripts | `node:test` | `scripts/*.test.mjs` | contrôle de version, notes de release, rétention et vérification des dépôts, service worker, workflows, mesure des prompts IA |
+| Worker | `node:test` | `oauth-proxy/*.test.mjs` | relais de jetons Google |
+| Relais VM | `node:test` | `relay/*.test.mjs` | mise à jour automatique du relais |
+| Application desktop | Playwright (Electron) | `desktop/e2e/` | sources ou paquet installé (`WORKLOGS_EXECUTABLE`) |
 
 ### Ce qu'il faut savoir avant d'écrire un test
 - **Aucun test ne touche `api/data/`.** `api/test/helpers.js` et `web/src/test/server.ts`
   créent une base et un dossier d'uploads jetables dans `/tmp`, sur un port éphémère.
-  Playwright utilise `./.e2e-data` sur le port 8412, effacé à chaque campagne.
+  Playwright utilise `./.e2e-data` et `./.e2e-share` sur le port 8412 (`WORKLOGS_E2E_PORT`
+  pour en changer), effacés à chaque campagne.
 - **Les tests du front tapent sur la vraie API.** `useRealApi()` démarre `createApp()` en
   mémoire et détourne `fetch`. Aucun faux serveur à maintenir : si l'API change de contrat,
   les tests du front cassent tout de suite.
@@ -53,8 +60,9 @@ npm run test:e2e      # build + parcours navigateur Playwright
   `discardPendingSaves()`) et laisser l'erreur remonter : le test fautif reste rouge avec son
   vrai message, les suivants repartent d'un écran et d'une file de sauvegardes vides.
 - **Sous charge** (plusieurs copies de travail lancent vitest ensemble), un test dépasse ses
-  5 s par accumulation, pas sur une attente. Ce qui coûte dans jsdom : `getByRole` sur tout
-  l'écran de l'App (≈ 1 s ; cibler avec `within(...)`), la frappe touche par touche
+  5 s par accumulation, pas sur une attente. `web/vite.config.ts` borne à quatre workers
+  (`maxWorkers: 4`) et rejoue une fois un test en échec (`retry: 1`). Ce qui coûte dans
+  jsdom : `getByRole` sur tout l'écran de l'App (≈ 1 s ; cibler avec `within(...)`), la frappe touche par touche
   (`user.paste` quand la frappe n'est pas le geste testé ; `{Enter}` reste frappé s'il l'est),
   et le premier `getComputedStyle` du worker (≈ 0,8 s, payé par le premier test qui clique).
   Remède : `{ timeout: 10_000 }` sur les seules attentes vraiment asynchrones, délai explicite
@@ -112,6 +120,8 @@ EOF
 ```
 
 ## Dette connue
-- `express@4` entraîne `qs` avec deux avis de sécurité modérés. Sans effet ici (localhost,
-  mono-utilisateur, aucune entrée non fiable) ; le correctif est un passage à Express 5, à
-  faire dans un lot dédié avec `check.sh` en filet.
+- `npm --prefix api audit --omit=dev` (2026-11-12) signale 4 paquets : `proxy-addr` critique,
+  `body-parser` et `multer` élevés, `qs` modéré. `npm audit fix` propose un correctif sans
+  changement de version majeure, non essayé : à faire dans un lot dédié, avec `check.sh` en filet.
+  Le relais de la VM embarque les mêmes dépendances et `tailscale serve` l'expose au réseau
+  Tailscale : l'argument « localhost, mono-utilisateur » ne le couvre pas.

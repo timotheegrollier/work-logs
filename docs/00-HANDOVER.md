@@ -1,5 +1,14 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Postes activés avant le 2026-11-10 : relancer l’activation du dépôt — 2026-11-12
+
+Depuis `5ae1a21` (2026-11-10), les dépôts apt et dnf sont lus sur `raw.githubusercontent.com`.
+L’ancienne adresse GitHub Pages, `https://timotheegrollier.github.io/work-logs/deb/`, répond 404.
+Un poste activé avant le 2026-11-10 garde cette adresse et ne reçoit plus de mise à jour.
+Aucune release ne peut le corriger seule : il faut relancer une fois la commande d’activation
+du dépôt, donnée dans `docs/07-RELEASES.md`. Le 2026-11-12, le poste de Timo restait ainsi en
+0.73.0 ; après la commande, apt a installé la 0.74.0.
+
 ## Assistant en colonnes et résultats applicables — 2026-11-13
 
 - L’assistant affiche une liste et des colonnes indépendantes sur ordinateur, une conversation
@@ -71,8 +80,8 @@ limites : **§77** de `05-DECISIONS.md`.
 tout est simulé ; `reasoning_effort` n’a jamais atteint un vrai modèle ; l’ordre des modèles est à
 remesurer **avant le 2026-12-01**.
 
-`./scripts/check.sh` vert sur `acb62c3` : **320 API, 1 300 front** (plus l’échec attendu), **49 desktop
-unitaires, 46 scripts, 8 Worker, 11 relais, 111 navigateur et 19 desktop e2e**.
+`./scripts/check.sh` vert sur ce lot, posé sur `acb62c3` : **320 API, 1 300 front** (plus l’échec
+attendu), **49 desktop unitaires, 46 scripts, 8 Worker, 11 relais, 111 navigateur et 19 desktop e2e**.
 
 ## Correctifs du 2026-11-10 — nouveau document Google visible et relais GitHub Pages
 
@@ -106,6 +115,7 @@ ouverte, l’activation et « Actualiser » déclenchent un appel. Deux actualis
 automatiques d’un même élément sont espacées d’une minute. Tests : rendu du panneau pour
 les deux chemins, parcours navigateur pour le délai et la mise à jour après la pause,
 tests du contrôleur pour l’absence d’appel au chargement et le délai entre deux appels.
+
 **Pages et campagne.** `gh-pages` ne garde plus que la dernière version des dépôts
 RPM/DEB (`KEEP: 1`). Surtout, la PWA est désormais publiée comme **artefact GitHub
 Actions** : le déploiement Pages ne synchronise plus les 179 Mo de paquets ; ils restent
@@ -117,32 +127,6 @@ disparaissent plus sous la charge.
 
 `./scripts/check.sh` vert : **318 API, 858 front** (plus l’échec attendu), **49 desktop
 unitaires, 46 scripts, 8 Worker, 11 relais, 105 navigateur et 19 desktop e2e**.
-synchronisation de branche expirait encore à 10 min malgré la purge, d'où ce changement.
-Les tests front tournent avec quatre workers (`maxWorkers: 4`) et un test qui
-expire une fois est rejoué une fois (`retry: 1`) : les attentes DOM ne
-disparaissent plus sous la charge.
-
-`./scripts/check.sh` vert : **318 API, 858 front** (plus l’échec attendu), **49 desktop
-unitaires, 46 scripts, 8 Worker, 11 relais, 105 navigateur et 19 desktop e2e**.
-=======
-## Correctifs du 2026-11-10 — nouveau document Google visible et relais GitHub Pages
-
-- **Documents Google** : la liste complète le résultat de `files.list` avec les documents
-  déjà liés dans WorkLogs mais absents de l’index Drive (un document tout juste créé peut y
-  manquer un instant), puis trie par date de modification. Le sélecteur **Autoriser d’autres
-  documents** recharge aussi la liste tout seul au retour, sans cliquer **Actualiser**.
-  Côté desktop (`api/src/google-routes.js`) et PWA (`web/src/store/localApi.ts`).
-- **Relais du dossier partagé** : les deux origines de la PWA WorkLogs — Worker Cloudflare et
-  GitHub Pages — sont acceptées d’office ; `WORKLOGS_RELAY_ORIGINS` ajoute des origines au lieu
-  de remplacer la liste. La PWA ouverte sur `timotheegrollier.github.io` ne reçoit donc plus
-  `Failed to fetch` en joignant le relais. Pourquoi : `05-DECISIONS.md` §76 ; dépannage :
-  `09-RELAIS.md`.
-- **Attente de test** : le retour de la copie locale Google est une vraie attente asynchrone ;
-  elle accepte jusqu’à 10 s sous charge (`02-DEV.md`), sans changer l’assertion.
-- Aucune dépendance, migration ni changement de schéma. `./scripts/check.sh` vert : **319 API,
-  855 front** (dont l’échec attendu), **49 desktop unitaires, 46 scripts, 8 Worker, 11 relais,
-  105 navigateur et 19 desktop e2e**. Les nouveaux tests échouent sans les correctifs.
->>>>>>> origin/fix/google-docs-list-relay
 
 ## Ajustement du 2026-11-09 — vue d’ensemble allégée (§75)
 
@@ -2563,7 +2547,7 @@ Le bilan en tête de [08-GOOGLE-DOCS.md](08-GOOGLE-DOCS.md) remplace les limites
 Les menus déroulants, images, suggestions et changements de structure des tableaux
 passent encore par Google Docs. Ne pas annoncer une parité complète.
 
-## État vérifié du lot précédent
+## État vérifié au 2026-09-14 (v0.7.x)
 
 L’autre agent a publié v0.7.0 à v0.7.4 : documents riches/Drive, dépôt apt Mint,
 corrections des lockfiles, de l’amorçage des tests, des projets vides, de PackageKit
@@ -2571,7 +2555,7 @@ corrections des lockfiles, de l’amorçage des tests, des projets vides, de Pac
 Release Linux et Dépôts de v0.7.4 ont réussi. Ces changements sont conservés.
 DEB/RPM/AppImage, SHA256 et attestations restent distribués par la pipeline existante.
 
-Le lot courant ajoute :
+Ce lot du 2026-09-14 a ajouté :
 
 - Recherche/remplacement littéral avec casse, navigation, surbrillance et annulation ;
   titres 1–6, plan cliquable, couleurs, effacement du format, citations, code, séparateurs,
@@ -2601,17 +2585,18 @@ contenu privé n’a été ajouté au dépôt. La connexion desktop existante a 
 ## PWA Cloudflare — mise à jour automatique
 
 La PWA (avec le relais de jetons) vit sur un Cloudflare Worker (`worklogs-google`, option
-B) : elle n’est plus sur gh-pages. Le flux de mise à jour est le suivant, et ne dépend
-d’aucune action manuelle de Timo après la première configuration :
+B) ; GitHub Pages en sert une copie, publiée en artefact par `pwa.yml`. Le flux de mise à
+jour du Worker est le suivant, et ne dépend d’aucune action manuelle de Timo après la
+première configuration :
 
 1. Pousser un commit sur `master` (`web/**`, `scripts/emit-sw.mjs`, `oauth-proxy/**`,
-   `package.json`, `.github/workflows/pwa-cloudflare.yml`).
+   `package.json`, `package-lock.json`, `.github/workflows/pwa-cloudflare.yml`).
 2. `.github/workflows/pwa-cloudflare.yml` se déclenche : il reconstruit la PWA
    (`npm --prefix web run build` avec `VITE_PWA=1` et `VITE_GOOGLE_TOKEN_PROXY`,
    `VITE_GOOGLE_CLIENT_ID`) et redéploie le Worker (`npx wrangler deploy`) avec le
    nouveau `web/dist/` en assets.
 3. `https://worklogs-google.cocodexcocoder.workers.dev/` est instantanément à jour
-   (cache de Cloudflare sur `sw.js` et `index.html`, cf. `web/public/sw.js` — la PWA
+   (cache de Cloudflare sur `sw.js` et `index.html`, cf. `web/src/sw-template.js` — la PWA
    vérifie elle-même la disponibilité d’une version fraîche au chargement).
 
 Configuration requise (à faire une fois, hors git) :
@@ -2627,11 +2612,9 @@ Configuration requise (à faire une fois, hors git) :
 La variable de dépôt `GOOGLE_WEB_CLIENT_ID` (ou son équivalent secret) est lue par le
 build pour injecter l’ID du client « Web » dans la PWA (public par nature).
 
-**État au 2026-10-06.** Le workflow est sur `master` et son build est vert ; le **deploy
-échoue** avec `CLOUDFLARE_API_TOKEN` vide (erreurs « non-interactive… set a
-CLOUDFLARE_API_TOKEN »). Les deux secrets Cloudflare ci-dessus **ne sont pas encore
-créés** : les créer dans GitHub déverrouille le déploiement automatique. Le workflow
-« PWA » (gh-pages) ne doit plus être annulé par celui-ci (concurrency `pwa-cloudflare`).
+**État au 2026-11-12.** Le workflow est vert sur `master`, déploiement compris ; les deux
+secrets Cloudflare ci-dessus existent. « PWA Cloudflare » (concurrency `pwa-cloudflare`) et
+« PWA » (artefact Pages, concurrency `pages`) ne s’annulent pas.
 
 ## Ce qui reste à faire
 
@@ -2639,8 +2622,8 @@ créés** : les créer dans GitHub déverrouille le déploiement automatique. Le
    reproductible en local, toutes vues sous contention CPU sur agent CI :
    | Recette | Symptôme observé |
    |---|---|
-   | `e2e/rich-document.spec.ts:87` recherche/remplacement | « Remplacer » s'applique **deux fois**, avec l'ancienne puis la nouvelle valeur (`<b>$&</b> Salut BONJOUR` au lieu de `Salut bonjour BONJOUR`) |
-   | `desktop/e2e/desktop.spec.ts:105` document riche | le titre relu vaut `"Sans titrere"` au lieu de `"Sans titre"` |
+   | `e2e/rich-document.spec.ts`, test « recherche et remplacement… » | « Remplacer » s'applique **deux fois**, avec l'ancienne puis la nouvelle valeur (`<b>$&</b> Salut BONJOUR` au lieu de `Salut bonjour BONJOUR`) |
+   | `desktop/e2e/desktop.spec.ts`, test « document riche… » | le titre relu vaut `"Sans titrere"` au lieu de `"Sans titre"` |
 
    **Course du plan corrigée le 16/09.** Le run `35106209108` conservait déjà les deux
    textes fusionnés avant le rechargement. Tiptap `focus()` programme un callback dans
@@ -2673,18 +2656,16 @@ créés** : les créer dans GitHub déverrouille le déploiement automatique. Le
    commentaires et suggestions, avec tests de conservation. Ne jamais retirer les
    refus pour faire passer un import : plusieurs onglets du document réel contiennent
    des éléments encore incompatibles. La parité complète avec Google Docs n’est pas faite.
-2. Publier ce nouveau lot si demandé : suivre `07-RELEASES.md`. La v0.7.4 installée
-   ne contient pas ces améliorations ; `npm run desktop` utilise le code actuel.
+2. Publication de ce lot : faite depuis (version courante dans `package.json`).
 3. Recette manuelle de l’icône, des dialogues système, de l’impression et d’une mise à
    jour sur Mint/Fedora. Les corrections de focus/polkit viennent de v0.7.3–v0.7.4.
-4. Node local 24.13.0 reste inférieur au minimum annoncé par jsdom 30 (24.15.0),
-   `.nvmrc` demande 24.20.0. Licence UNLICENSED et signature des dépôts restent ouverts.
+4. Licence UNLICENSED et signature des dépôts restent ouverts.
 5. Express reste en 4 : la migration en 5 casse les téléchargements ; lot distinct.
 
 ## 1. C'est quoi ?
 Un journal de travail local. On y **écrit** ce qu'on a fait (Markdown, belle mise en page,
 impression PDF propre) et on y **suit** ses tâches. Tout tient sur un écran : journal à
-gauche, écriture au centre, tâches à droite. Ni onglet ni routeur ; aucun compte requis en local. Google Drive est facultatif en desktop.
+gauche, écriture au centre, tâches à droite. Ni onglet ni routeur ; aucun compte requis en local. Google Drive est facultatif.
 
 ## 2. Reprise en 3 commandes
 ```bash
@@ -2717,13 +2698,15 @@ WorkLogs/
 │   ├── update.mjs       format installé, pré-vol PackageKit, installation pkexec, electron-updater
 │   ├── google.mjs       OAuth desktop, trousseau, appels Google
 │   ├── google-view.mjs  vue Google Docs isolée dans le canevas : adresses, navigation, fermeture
-│   ├── preload.cjs      bridge minimal : fermeture après sauvegarde, vue Google
+│   ├── preload.cjs      bridge minimal : fermeture après sauvegarde, vue Google, fichiers, partage, mises à jour
 │   ├── test/            tests node:test (serveur + mises à jour + OAuth + vue Google)
-│   └── e2e/            10 parcours Playwright (sources ou paquet via WORKLOGS_EXECUTABLE)
-├── e2e/                 24 parcours Playwright (web)
-├── scripts/             check.sh · backup.sh · stage-desktop · verify-package ·
-│                        check-release · release-notes · blockmap  (+ 16 tests)
-├── .github/workflows/   ci.yml · release.yml · repos.yml
+│   └── e2e/            19 parcours Playwright (sources ou paquet via WORKLOGS_EXECUTABLE)
+├── e2e/                 115 parcours Playwright (web)
+├── oauth-proxy/         Worker Cloudflare : relais de jetons Google + PWA (8 tests)
+├── relay/               relais du dossier partagé sur la VM : unités, mise à jour (11 tests)
+├── scripts/             check.sh · backup.sh · stop.sh · stage-desktop · verify-package ·
+│                        check-release · release-notes · blockmap · dépôts · PWA  (+ 46 tests)
+├── .github/workflows/   ci.yml · release.yml · repos.yml · pwa.yml · pwa-cloudflare.yml
 └── docs/                cette doc
 ```
 
@@ -2769,13 +2752,14 @@ de tâches V1 deviennent des entrées de journal. Elle tourne à la première ou
 | `07-RELEASES.md` | **avant toute publication** : pipeline, versionnage, pièges vécus |
 | `06-DESKTOP-CICD.md` | dossier technique du desktop : Electron, packaging, bugs résolus |
 | `08-GOOGLE-DOCS.md` | documents riches/Drive : fonctionnement, configuration, limites et recette réelle validée |
+| `09-RELAIS.md` | relais du dossier partagé pour la PWA : installation, mise à jour automatique, dépannage |
 
 ## 7. Pistes suivantes (non engagées)
-Recherche plein texte FTS5 · import du JSON exporté · modèles d'entrée (compte rendu, décision) ·
+Recherche plein texte FTS5 · import du JSON exporté sur le desktop (la PWA l'a déjà) · modèles d'entrée (compte rendu, décision) ·
 export PDF sans passer par l'impression · rappels sur échéance.
 
 ## 8. Machine
-Linux Mint 22.3 · Node v24.13.0 (`.nvmrc` demande **24.20.0**, cf. point ouvert n°2) · npm 11.6.2.
+Linux Mint 22.3 · Node v24.20.0 (comme `.nvmrc`) · npm 11.19.0.
 L'application ne tourne dans aucun conteneur ; Docker/Podman ne sert qu'à **essayer les paquets**
 dans des images jetables (`scripts/test-linux-package.sh`, et la matrice de `ci.yml`).
 Services web lancés en `screen` (`wl-api`, `wl-web`) — ils ne survivent pas au redémarrage.

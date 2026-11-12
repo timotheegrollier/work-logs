@@ -2,7 +2,7 @@
 
 A work journal stored locally by default. **One screen**: journal on the left,
 writing in the center, tasks on the right. No account is required for local use.
-The development branch adds rich documents and optional Google Drive integration.
+Rich documents and optional Google Drive integration are included.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
@@ -63,7 +63,7 @@ Privacy policy:
 ## Develop
 
 ```bash
-cd /home/timo/dev/work-logs
+cd /home/timo/WorkLogs
 npm run install:all     # once
 npm run dev             # API :8410 + web :8411 → http://localhost:8411
 ```
@@ -98,12 +98,12 @@ applying changes or creating a Word document in your shared folder.
 [Assistant guide in French](docs/03-UTILISATION.md#lassistant).
 
 Rich documents autosave locally and retain formatting in JSON exports. In the desktop
-app, expand **Google Drive**, import your Google Cloud desktop OAuth client JSON, then
-connect and authorize documents. Editing happens inside WorkLogs; Google sign-in and
-file authorization use the system browser. **Save to Drive** sends changes explicitly.
-Initial Drive support covers text, headings, basic styles and flat lists; complex Google
-documents are rejected before import/write. Tables and images work locally. OAuth/API
-tests use simulated responses; a real-account round trip remains to be verified.
+app, open **Settings › Manage Google Drive** and sign in with Google (your own OAuth
+client JSON stays possible), then authorize documents. Linked documents open in Google's
+real editor inside WorkLogs; Google sign-in and file authorization use the system browser.
+The local copy syncs text, headings, common styles and table cells, and **Save to Drive**
+sends changes explicitly. Native elements are preserved; table structure changes and new
+images stay in Google Docs. A real-account round trip was verified on 2026-09-14.
 
 The **WorkLogs backups** section in the Google Drive dialog stores a versioned JSON file in Drive and restores it on another WorkLogs installation connected to the same account. Restore replaces local data after confirmation; local attachment bytes are not part of this JSON.
 [Setup, limitations and implementation](docs/08-GOOGLE-DOCS.md).
@@ -137,6 +137,8 @@ are in English. French version of this file: [`README.fr.md`](README.fr.md).
 | `docs/05-DECISIONS.md` | dev / agent | **why** things are the way they are, and what was removed on purpose |
 | `docs/06-DESKTOP-CICD.md` | dev / agent | Linux desktop record: bugs found, packaging, CI |
 | `docs/07-RELEASES.md` | dev / agent | **release process**: versioning, fast path, notes, checklist |
+| `docs/08-GOOGLE-DOCS.md` | dev / agent | rich documents, Google Docs and Drive: setup, limits |
+| `docs/09-RELAIS.md` | dev / agent | shared-folder relay for the PWA: install, auto-update, troubleshooting |
 | `AGENTS.md` · `CLAUDE.md` | agents | the rules, on one page |
 
 Data: `api/data/worklogs.db` (SQLite) and `api/data/uploads/` — never committed.
