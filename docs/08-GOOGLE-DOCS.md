@@ -166,7 +166,7 @@ Le périmètre et la validation ci-dessus remplacent les limites historiques ci-
 
 # Documents riches et Google Drive — reprise du 2026-09-14
 
-**Branche : `codex/integrated-documents`. Implémentation locale, pas de release publiée pour ce lot.**
+**Branche : `codex/integrated-documents`. Implémentation locale au 2026-09-14, publiée depuis en v0.7.0.**
 L’utilisateur a choisi « On fait tout dans worklogs » et a explicitement approuvé
 Tiptap 3.31.3 et les neuf modules listés dans `AGENTS.md`.
 
@@ -487,7 +487,7 @@ Tests ajoutés : `api/test/rich-document.test.js`, `api/test/google-document.tes
 Ils couvrent migration, persistance, copie avec fichiers, OAuth/PKCE/refus/renouvellement,
 contenus incompatibles, conflits et absence d’écrasement local, édition et impression.
 
-Recette réelle Google (aller-retour validé le 14/09, voir `00-HANDOVER.md` ; points 4 et 5 non consignés) :
+Recette réelle Google (aller-retour validé le 14/09, voir `00-HANDOVER.md` : document temporaire créé, édition locale, envoi, relecture texte/gras/titre, conflit après modification distante et rechargement ; lien, liste simple, persistance au redémarrage, copie locale et points 4 et 5 non consignés) :
 
 1. Avec un client OAuth et un trousseau disponibles, connecter un compte de test et
    sélectionner un document avec texte, titre 2, gras, lien et liste simple.

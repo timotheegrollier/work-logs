@@ -59,7 +59,8 @@ Fichiers prêts dans `relay/` : `worklogs-relais.service`, `env.exemple`, `fstab
 Le relais suit tout seul les **releases publiées** de WorkLogs, celles que la CI a validées :
 `worklogs-relais-maj.timer` lance `/opt/worklogs-relais/mise-a-jour.mjs` (copie de
 `relay/mise-a-jour.mjs`) toutes les 5 minutes, en root. Une release arrive donc sur le relais
-5 minutes au plus après sa publication. Décision : `05-DECISIONS.md` §37.
+au passage qui suit sa publication, plus le temps de la préparer : la v0.74.0, publiée à
+16:57 UTC le 2026-11-10, y était encore en 0.73.0 à 17:03. Décision : `05-DECISIONS.md` §37.
 
 À chaque passage, une requête à l'API GitHub (`releases/latest`) ; si la release est plus
 récente que `api/VERSION` :

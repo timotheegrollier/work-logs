@@ -2657,8 +2657,11 @@ secrets Cloudflare ci-dessus existent. « PWA Cloudflare » (concurrency `pwa-cl
    refus pour faire passer un import : plusieurs onglets du document réel contiennent
    des éléments encore incompatibles. La parité complète avec Google Docs n’est pas faite.
 2. Publication de ce lot : faite depuis (version courante dans `package.json`).
-3. Recette manuelle de l’icône, des dialogues système, de l’impression et d’une mise à
-   jour sur Mint/Fedora. Les corrections de focus/polkit viennent de v0.7.3–v0.7.4.
+3. Recette manuelle sur une vraie session graphique : icône, dialogues système (« Enregistrer
+   sous »), impression et persistance après fermeture ; mise à jour intégrée sur Fedora, non
+   vérifiée. Sur Mint, la commande de la mise à jour intégrée (`pkexec` + `apt-get`) a installé
+   la 0.72.0 le 2026-11-06, la 0.73.0 le 2026-11-09 et la 0.75.0 le 2026-11-12
+   (`/var/log/apt/history.log`). Les corrections de focus/polkit viennent de v0.7.3–v0.7.4.
 4. Licence UNLICENSED et signature des dépôts restent ouverts.
 5. Express reste en 4 : la migration en 5 casse les téléchargements ; lot distinct.
 
@@ -2749,8 +2752,8 @@ de tâches V1 deviennent des entrées de journal. Elle tourne à la première ou
 | `01-ARCHITECTURE.md` | pour le schéma de base, l'API, la carte du front |
 | `02-DEV.md` | pour les tests, les conventions, les pièges |
 | `03-UTILISATION.md` | pour comprendre l'usage attendu côté utilisateur |
-| `07-RELEASES.md` | **avant toute publication** : pipeline, versionnage, pièges vécus |
-| `06-DESKTOP-CICD.md` | dossier technique du desktop : Electron, packaging, bugs résolus |
+| `07-RELEASES.md` | **avant toute publication** : pas à pas, vérifications, remèdes, pièges vécus |
+| `06-DESKTOP-CICD.md` | référence du pipeline CI/CD (workflows, durées, secrets, défauts D1 à D16) et dossier technique du desktop : Electron, packaging, bugs résolus |
 | `08-GOOGLE-DOCS.md` | documents riches/Drive : fonctionnement, configuration, limites et recette réelle validée |
 | `09-RELAIS.md` | relais du dossier partagé pour la PWA : installation, mise à jour automatique, dépannage |
 

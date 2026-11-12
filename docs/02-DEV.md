@@ -1,8 +1,8 @@
 # 🛠️ WorkLogs — guide développeur
 
 > **Desktop inclus :** `check.sh` enchaîne types, tests API/front/desktop/scripts/Worker/relais,
-> build, parcours navigateur et Electron. Les derniers décomptes validés sont dans
-> [00-HANDOVER.md](00-HANDOVER.md). Sans affichage, Xvfb est nécessaire (`check.sh` bascule
+> build, parcours navigateur et Electron. Les derniers décomptes validés sont
+> en tête de [`CLAUDE.md`](../CLAUDE.md). Sans affichage, Xvfb est nécessaire (`check.sh` bascule
 > tout seul) ; `rpm` (Ubuntu/Mint) ou `rpm-build` (Fedora) est requis pour construire les RPM.
 > `npm run desktop` lance l'application. Publication : [07-RELEASES.md](07-RELEASES.md).
 
@@ -94,7 +94,7 @@ npm run test:e2e      # build + parcours navigateur Playwright
    `idx_attachments_entry` porte sur une colonne absente du schéma V1.
 3. **Positions kanban** : `move` pose la carte à `position - 0.5` puis renumérote. Si on
    supprime `renumber()`, l'ordre reste correct mais les positions dérivent.
-4. **`node:sqlite` expérimental** : l'avertissement au démarrage est normal. API synchrone,
+4. **`node:sqlite` expérimental** : sous Node 24.20.0 (`.nvmrc`), aucun avertissement n'apparaît plus au démarrage (vérifié le 2026-11-12). API synchrone,
    bloquante — sans conséquence en local.
 5. **WAL** : `worklogs.db-wal` / `-shm` apparaissent à l'usage. Ne pas les supprimer à chaud, et
    surtout **ne jamais copier `worklogs.db` tout seul** : tant que le journal n'est pas reporté,

@@ -58,7 +58,7 @@ WORKLOGS_E2E_PORT=8432 ./scripts/check.sh  # si une autre copie de travail occup
   `google_documents`, `sync_tombstones`. Schéma dans `docs/01-ARCHITECTURE.md`.
   Dossier partagé du TSE (§25) : tables **de la machine**, sans clé étrangère, jamais synchronisées.
   Sur la PWA, il passe par le **relais** de la VM du bureau (§29, `docs/09-RELAIS.md`), qui
-  installe tout seul chaque release publiée dans les 5 minutes (§37) : `/health` dit sa version.
+  regarde toutes les 5 minutes et installe tout seul chaque release publiée (§37) : `/health` dit sa version.
 - Lecture : tout l'écran vient de `GET /api/state`. Le front la rejoue après chaque mutation.
 - Les éléments interactifs portent un `aria-label` parlant : c'est l'accessibilité **et** la
   prise des tests.

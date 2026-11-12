@@ -37,7 +37,7 @@
 - Web : TS strict, styles dans `styles.css` uniquement, requêtes via `lib.ts`.
 - Ne jamais committer `api/data/*.db*` ni `api/data/uploads/*`.
 - Changer un port → mettre à jour `api/src/server.js`, `web/vite.config.ts`, `web/package.json`,
-  `oauth-proxy/worker.mjs` (port web), `playwright.config.ts`, `README.md`, `README.fr.md`, `docs/`.
+  `oauth-proxy/worker.mjs` (port web), `playwright.config.ts`, `README.md`, `README.fr.md`, `AGENTS.md`, `CLAUDE.md`, `docs/`.
 
 ## Commandes
 `npm run install:all` · `npm run dev` · `npm start` · `npm test` · `npm run test:e2e` ·

@@ -183,10 +183,9 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET · POST | `/api/google/backup/:id`, `/:id/import` | lit ou restaure une sauvegarde après validation transactionnelle |
 | GET | `/api/google/documents/:id/tabs` | onglets, imbrication et compatibilité d’édition |
 | POST | `/api/entries/:id/google/push` · `pull` | envoyer ou recharger avec contrôle de révision/brouillon |
-| POST · PUT · DELETE | `/api/tasks[/:id]` | créer avec une entrée liée et son `content_md` facultatif · modifier · supprimer |
+| POST · PUT · DELETE | `/api/tasks[/:id]` | créer, avec dans la même transaction une entrée Markdown liée (titre, projet et catégorie de la tâche ; `content_md` facultatif, vide par défaut, §79) · modifier · supprimer |
 | POST | `/api/tasks/:id/entry` | crée et lie une entrée Markdown avec le projet et la catégorie de la tâche. Accepte `title`, `content_md` et un `expected_planning` facultatif avec `document_ids` pour vérifier tous les liens, archives comprises. Un écart renvoie `409 TASK_PLANNING_STALE` |
 | POST · DELETE | `/api/tasks/:id/documents/:entryId` | associer ou retirer une entrée (locale ou Google) ; à l'ajout, remplir la catégorie non ambiguë d'une tâche libre du même projet |
-| POST | `/api/tasks/:id/entry` | crée une entrée liée à la tâche (titre, projet et catégorie repris) |
 | POST | `/api/tasks/merge` | remplace les tâches sources par une tâche et sa note, en une transaction (contrat `entry-merge.js`) |
 | PATCH | `/api/tasks/:id/move` | `{status, position}` puis renumérotation |
 | POST · PUT · DELETE | `/api/projects[/:id]` | créer · renommer/recolorer · supprimer |

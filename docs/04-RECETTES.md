@@ -154,10 +154,10 @@ Pour vérifier l'impression sans imprimer : dans le navigateur, outils de dével
 ## 6. Changer un port
 
 Six endroits, tous obligatoires :
-`api/src/server.js` (défaut) · `web/vite.config.ts` (`server.port` **et** `proxy`) ·
+`api/src/server.js` (défaut) · `web/vite.config.ts` (`server.port`, `preview.port` **et** `proxy`) ·
 `web/package.json` (`--port` de `dev` et `preview`) · `oauth-proxy/worker.mjs` (`ORIGINS` et
 `REDIRECTS`, pour le port web en dev) · `playwright.config.ts` (`PORT`, `baseURL`) ·
-`README.md` + `README.fr.md` + `docs/`.
+`README.md` + `README.fr.md` + `AGENTS.md` + `CLAUDE.md` + `docs/`.
 
 Sans toucher au code : `PORT=9000 npm run start:api`.
 

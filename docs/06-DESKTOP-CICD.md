@@ -5,8 +5,8 @@ workflows, leurs durées mesurées, ce qui est publié et où, les secrets, le p
 les défauts connus. Pour **publier**, suivre [07-RELEASES.md](07-RELEASES.md) : le pas à pas, les
 vérifications et les remèdes sont là-bas, pas ici.
 
-Au 2026-11-12, `gh release list` compte 97 releases, de `v0.2.0` à `v0.74.0`. La `v0.75.0` était
-en cours de publication pendant la rédaction. **`gh release list` fait foi.** Les faits ci-dessous
+Au 2026-11-12, `gh release list -L 200` compte 98 releases, de `v0.2.0` à `v0.75.0`, publiée à
+12:03 UTC (sans `-L`, la commande n'en affiche que 30). **`gh release list` fait foi.** Les faits ci-dessous
 viennent du code de `8e345d0` et de lectures seules sur GitHub, le 2026-11-10 puis le 2026-11-12.
 Les dossiers `.github/` et `scripts/` sont identiques entre `e3e2d10` (v0.74.0) et `8e345d0`
 (v0.75.0).
@@ -78,7 +78,7 @@ au plus, avec `WORKLOGS_TEST_NO_SANDBOX=1`. Ses étapes, dans l'ordre :
 10. envoi de l'artefact `linux-packages`, et de `test-reports` (`test-results/`,
     `playwright-report/`) en cas d'échec.
 
-Le job `packages` (« Installation et lancement — <distribution> ») attend `validate`. Il tourne
+Le job `packages` (« Installation et lancement — `<distribution>` ») attend `validate`. Il tourne
 sur `ubuntu-24.04`, 25 min au plus, sans `fail-fast`. Sa matrice : `mint-22-base` (image
 `ubuntu:24.04`, deb), `fedora-43` et `fedora-44` (rpm). Chaque job télécharge `linux-packages` et
 lance `./scripts/test-linux-package.sh <image> <format>`. Le script installe le vrai paquet dans
@@ -199,14 +199,18 @@ conteneur, le téléchargement des paquets Ubuntu s'est arrêté 267 s entre deu
 premier essai, en 5 s. De la poussée de la branche aux dépôts vérifiés, la v0.74.0 a pris
 47 minutes.
 
-Pour la v0.75.0 (`8e345d0`), la CI de la branche a tourné le 2026-11-12 de 11:34:00 à 11:45:40,
-verte (run 43210249477). La suite de cette publication était en cours pendant la rédaction.
+Publication de la v0.75.0 (`8e345d0`), le 2026-11-12 (heures UTC) : CI de la branche 11:34:00 →
+11:45:40 (run 43210249477, 11,7 min) ; CI de master 11:46:12 → 12:00:19 (run 43211980667,
+14,1 min) ; PWA et PWA Cloudflare 11:46:12 → 11:46:46 ; Release Linux, chemin rapide, 12:00:58 →
+12:03:42 (run 43214088962, 2,7 min, dont 130 s de checkout) ; Dépôts 12:03:45 → 12:07:51 (run
+43214501102, 4,1 min, `verify-repo` au premier essai, en 3 s). De la poussée de la branche aux
+dépôts vérifiés : 34 minutes.
 
 ## 4. Ce qui est publié, et où
 
 | Où | Quoi | Écrit par | Lu par |
 |---|---|---|---|
-| GitHub Release `vX.Y.Z` | `.deb`, `.rpm`, `.AppImage`, `.AppImage.blockmap`, `latest-linux.yml`, `SHA256SUMS`, et l'attestation des cinq premiers | Release Linux | téléchargement manuel ; electron-updater (AppImage) ; applications desktop et relais, par `releases/latest` |
+| GitHub Release `vX.Y.Z` | `.deb`, `.rpm`, `.AppImage`, `.AppImage.blockmap`, `latest-linux.yml`, `SHA256SUMS` ; l'attestation des cinq premiers n'est pas un fichier de la release : elle est rangée dans les attestations du dépôt, retrouvée par l'empreinte du fichier (`gh api repos/timotheegrollier/work-logs/attestations/sha256:<empreinte>`) | Release Linux | téléchargement manuel ; electron-updater (AppImage) ; applications desktop et relais, par `releases/latest` |
 | branche `gh-pages`, dossier `rpm/` | le `.rpm` de la dernière version, `repodata/`, `worklogs.repo` | Dépôts | dnf |
 | branche `gh-pages`, dossier `deb/` | le `.deb` de la dernière version, `Packages`, `Packages.gz`, `Release`, `worklogs.list` | Dépôts | apt |
 | `https://timotheegrollier.github.io/work-logs/` | la PWA | PWA | miroir de la PWA |
@@ -322,7 +326,8 @@ correction.
 le job. Chaque run affiche donc « pas de .rpm dans vX.Y.Z, arrêt », puis publie : c'était encore
 le cas pour la v0.74.0. Un brouillon, ou une ref qui n'est pas un tag, ne serait pas arrêté non
 plus. Après un dispatch de « Release Linux » lancé depuis master, `TAG` vaudrait `master`, la
-branche de ce run. Aucun de ces cas n'a été observé : `repos.yml` n'existait pas lors des deux
+branche de ce run : le garde-fou le laisserait passer, mais l'étape suivante échouerait sur
+`gh release download master` (« release not found »), sans rien publier. Aucun de ces cas n'a été observé : `repos.yml` n'existait pas lors des deux
 seuls dispatchs (2026-09-11).
 *Effet :* ce message n'indique aucune panne, et rien ne protège les dépôts d'un run déclenché à
 tort. *En attendant :* ignorer ce message ; ne pas lancer « Release Linux » en
@@ -373,7 +378,10 @@ main après un tel changement (`gh workflow run pwa-cloudflare.yml`).
 
 **D8. `fetch-depth: 0` télécharge l'historique binaire de `gh-pages`** (`release.yml:73,86`,
 `repos.yml:50`). Ce réglage récupère toutes les branches, et `gh-pages` porte les paquets de
-toutes les versions dans son historique. *Effet :* le checkout fait l'essentiel du chemin
+toutes les versions dans son historique. Le réglage n'est pas superflu pour autant : sans
+l'historique ni les tags, `scripts/release-notes.mjs` ne trouve pas `PREV`, et la note se réduit en
+silence au commit de version, avec un lien `compare/...vX.Y.Z` cassé. Une correction doit écarter
+`gh-pages`, pas l'historique de master ni les tags. *Effet :* le checkout fait l'essentiel du chemin
 rapide : 299 s sur les 338 s du job `release` de la v0.74.0, dont le délai est de 10 min ; 122 s
 dans « Dépôts ». *En attendant :* compter 5 à 6 min du tag à la release publiée. Si le job
 `release` expire au checkout, le relancer par `gh run rerun <id> --failed` (cas non observé).
@@ -381,7 +389,8 @@ dans « Dépôts ». *En attendant :* compter 5 à 6 min du tag à la release pu
 **D9. `precheck` ne vérifie pas que l'artefact existe encore** (`release.yml:45-51,98`,
 `ci.yml:85`). L'artefact `linux-packages` vit 14 jours. Lecture du code, non observé. *Effet :*
 un tag posé plus de 14 jours après la CI verte de master échouerait au téléchargement, au lieu de
-reconstruire. *En attendant :* taguer peu après la CI verte de master ; passé 14 jours, taguer un
+reconstruire. *En attendant :* taguer peu après la CI verte de master ; passé 14 jours, poser un
+tag annoté (`git tag -a`), qui force le chemin plein (vécu avec la v0.13.0, 07 §4), ou taguer un
 commit plus récent de master, après sa propre CI verte.
 
 **D10. L'entrée `force` de « PWA Cloudflare » n'est lue par aucune étape**
@@ -399,11 +408,18 @@ CI réutilisée reçoit un jour une ref de branche.
 `repos.yml:30-33` justifie `KEEP` par Pages, qui ne lit plus `gh-pages`. `pwa-cloudflare.yml:5-7`
 annonce le groupe de concurrence de « Dépôts » et « PWA », alors que `:33-35` en définit un
 propre. `desktop/main.mjs:226` parle du « workflow et Pages ». `scripts/workflows.test.mjs:22-23`
-dit que « PWA » déploie `gh-pages`. *Effet :* un lecteur du code est induit en erreur. *En
+dit que « PWA » déploie `gh-pages`, comme `:48` et `pwa-cloudflare.yml:31-32`. `repos.yml:5-6`
+annonce que le garde-fou écarte les brouillons (D1). `scripts/appimage-blockmap.mjs:3-5` dit
+qu'electron-updater télécharge `{fichier}.blockmap` ; pour une AppImage, `AppImageUpdater` lit le
+blockmap embarqué dans l'AppImage (`blockMapSize` de `latest-linux.yml`), jamais le fichier publié
+(lecture d'electron-updater 6.8.9, installé ici ; non vérifié en exécution). *Effet :* un lecteur
+du code est induit en erreur. *En
 attendant :* se fier au code et aux mesures du §3, pas à ces commentaires.
 
 **D13. `apt-get update` n'a pas de nouvelle tentative dans les conteneurs de test**
-(`scripts/test-linux-package.sh:18`). *Effet :* un miroir Ubuntu en cours de synchronisation rend
+(`scripts/test-linux-package.sh:18` ; aussi `repos.yml:142`, le test apt de « Dépôts », qui
+laisserait alors les dépôts non publiés après la release ; et sur les runners, `ci.yml:49` et
+`repos.yml:101` ; lecture du code). *Effet :* un miroir Ubuntu en cours de synchronisation rend
 le job `mint-22-base` rouge (run 42806355689 : « Mirror sync in progress? », alors que le même
 commit était vert sur master). Un miroir lent allonge aussi ce job sans le faire échouer (v0.74.0,
 §3). *En attendant :* lire `gh run view <id> --log-failed` ; si le miroir est en cause,
@@ -411,7 +427,8 @@ commit était vert sur master). Un miroir lent allonge aussi ce job sans le fair
 
 **D14. Un test front est instable** (`web/src/App.test.tsx:185`, « un reclassement distant
 actualise projet et catégorie… »). Il a échoué dans les runs 40360827503 (2026-10-26) et
-42603062893 (2026-11-09), puis est passé à la relance. `retry: 1` de vitest, ajouté le
+42603062893 (2026-11-09). Ces runs n'ont pas été relancés (une seule tentative) ; le même commit
+était vert dans la CI `pull_request` lancée en même temps (40360836241, 42603072431). `retry: 1` de vitest, ajouté le
 2026-11-10 (`4b5e3c5`), le masque probablement ; non réévalué depuis. *Effet :* un échec isolé de
 ce test ne prouve pas une régression. *En attendant :* relancer, et signaler s'il revient.
 
@@ -503,7 +520,9 @@ Le RPM n'est pas concerné : `alsa-lib` n'a pas cette ambiguïté sur Fedora 43 
 ## 10. Pièges du desktop (cumulatif)
 
 - **`app.whenReady()` et ESM** : un `await app.whenReady()` au niveau supérieur de `main.mjs`
-  bloquait le démarrage. Le code utilise `void app.whenReady().then(async () => ...)`.
+  bloquait le démarrage. Le code utilise `void app.whenReady().then(async () => ...)`. De même,
+  `electron-updater` est en CommonJS : `main.mjs` l'importe par défaut, puis prend `autoUpdater`
+  dans l'objet importé (`desktop/main.mjs:12-14`, electron-builder#7976).
 - **Relais HTTP** : `net.fetch` de Chromium, avec les en-têtes de la requête personnalisée,
   échouait en `net::ERR_FAILED`. Le handler de `worklogs://` utilise le `fetch` de Node, avec le
   jeton (`x-worklogs-token`) et le `Content-Type` nécessaire.

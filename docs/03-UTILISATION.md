@@ -208,7 +208,8 @@ rendu approximatif.
 ## Suivre ses tâches
 
 - **Ajouter** : taper dans « Nouvelle tâche… » puis `Entrée`. Si un projet est filtré, la tâche
-  lui est rattachée automatiquement.
+  lui est rattachée automatiquement. Une entrée vide liée, avec le titre, le projet et la
+  catégorie de la tâche, apparaît aussi dans le journal pour la rédiger (v0.75.0, `05-DECISIONS.md` §79).
 - **Avancer** : glisser la carte d'une colonne à l'autre (À faire → En cours → Terminé), ou,
   sans souris (téléphone, clavier), cliquer son titre et choisir son **Statut** : la carte va
   au bas de sa nouvelle colonne.

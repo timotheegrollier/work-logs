@@ -1,7 +1,7 @@
 # Releases — publier une version (lire avant de publier)
 
-Dernière mise à jour : **2026-11-12**. Au 2026-11-12, `gh release list` compte 97 releases, de
-`v0.2.0` à `v0.74.0`. La `v0.75.0` était en cours de publication pendant la rédaction.
+Dernière mise à jour : **2026-11-12**. Au 2026-11-12, `gh release list -L 200` compte 98 releases, de
+`v0.2.0` à `v0.75.0`, publiée à 12:03 UTC (sans `-L`, la commande n'en affiche que 30).
 **`gh release list` fait foi.** Les notes de release sont en anglais, générées par
 `scripts/release-notes.mjs`.
 
@@ -49,8 +49,8 @@ workflow, relevés le 2026-11-10 (06 §3). La dernière colonne donne la mesure 
 | dépôts publiés | cache de raw.githubusercontent.com (`max-age=300`) | jusqu'à 5 min | ancien index encore rendu à 17:03 |
 | release publiée | relais de la VM, applications desktop | minuteur de 5 min ; au lancement puis toutes les 5 min | relais encore en 0.73.0 à 17:03 |
 
-De la poussée de la branche aux dépôts vérifiés, la v0.74.0 a pris 47 minutes. La v0.75.0 suit le
-même chemin.
+De la poussée de la branche aux dépôts vérifiés, la v0.74.0 a pris 47 minutes, et la v0.75.0
+34 minutes (06 §3).
 
 ## 2. Versionnage et notes de release
 
@@ -106,8 +106,9 @@ Pour chaque copie de travail listée, regarder ce qui n'est pas sur master :
 ```bash
 git -C <copie> status --short --untracked-files=all
 git -C <copie> log --oneline origin/master..HEAD
-find <copie> -newermt "$(date -d '10 minutes ago' '+%Y-%m-%dT%H:%M:%S')" -type f \
-  -not -path '*/node_modules/*' -not -path '*/.git/*' | head
+# -prune : la copie principale contient les copies .claude/worktrees/* des autres agents
+find <copie> \( -name node_modules -o -name .git -o -path '<copie>/.claude/worktrees' \) -prune -o \
+  -type f -newermt "$(date -d '10 minutes ago' '+%Y-%m-%dT%H:%M:%S')" -print | head
 ```
 Un fichier modifié dans les dernières minutes signale un agent encore actif : ne rien prendre
 dans sa copie tant qu'il travaille (§11). Si master porte déjà la version prévue, ou une plus
@@ -116,7 +117,7 @@ haute, choisir le numéro suivant.
 **1. Rebaser, puis lancer la recette complète, seul sur la machine.**
 ```bash
 git rebase origin/master
-pgrep -af check.sh                          # aucune autre recette ne doit tourner
+pgrep -af '[c]heck\.sh'                     # aucune autre recette ne doit tourner ; [c] évite de se trouver soi-même
 ./scripts/check.sh                          # jusqu'à « CHECK OK — tout est vert. »
 WORKLOGS_E2E_PORT=8432 ./scripts/check.sh   # si une autre copie occupe le port 8412
 ```
@@ -138,13 +139,15 @@ commit finit dans les notes : choisir son préfixe en conséquence (§2).
 
 **3. Pousser la branche.**
 ```bash
-git push origin HEAD
+git branch --show-current                   # jamais master : depuis master, la ligne suivante pousse sur master
+git push origin HEAD                        # branche déjà poussée puis rebasée : git push --force-with-lease origin HEAD
 ```
-Cette poussée lance « CI Linux » et ne publie rien.
+Cette poussée lance « CI Linux » et ne publie rien. Depuis une copie sur `master` (la copie
+principale l'était le 2026-11-12), créer d'abord une branche : `git switch -c <branche>`.
 
 **4. Attendre la CI verte sur la branche** (13,8 min en médiane).
 ```bash
-gh run list --branch "$(git branch --show-current)" --workflow ci.yml -L 1
+gh run list --commit "$(git rev-parse HEAD)" --workflow ci.yml -L 1   # vide juste après la poussée : réessayer
 gh run watch <id> --exit-status
 gh run view <id> --log-failed         # si le run est rouge
 gh run rerun <id> --failed            # un seul job d'installation rouge : relancer d'abord
@@ -184,30 +187,35 @@ d'une minute (06, D6).
 
 **7. Attendre la CI verte sur master** (14,0 min en médiane ; 20,6 min pour la v0.74.0).
 ```bash
-gh run list --branch master --workflow ci.yml -L 1
+gh run list --commit <sha> --branch master --workflow ci.yml -L 1
 gh run watch <id> --exit-status
 ```
 Ne rien pousser d'autre sur master pendant ce temps. Un nouveau push annulerait ce run, et le tag
-partirait en chemin plein (§4).
+partirait en chemin plein (§4). Si un autre agent pousse quand même et que ce run finit en
+`cancelled`, taguer tout de même `<sha>` au pas 8 : le chemin plein le revalide sur le tag. Ne pas
+relancer le run annulé : il entrerait dans le groupe de concurrence de master (`ci.yml:16-18`)
+et pourrait annuler la CI en cours de l'autre agent (non essayé).
 
 **8. Taguer ce commit, et lui seul.**
 ```bash
 gh release list -L 3                        # aucune version plus haute en cours ailleurs ?
 gh run list --commit <sha> --workflow 'CI Linux' --json databaseId,conclusion,headBranch
                                             # attendu : un run "success" sur "master"
-git tag vX.Y.Z <sha>                        # tag léger : ni -a ni -s
+git tag vX.Y.Z <sha>                        # tag léger : ni -a, ni -s, ni -m (-m implique -a)
 git push origin vX.Y.Z
 ```
-Un tag annoté donnerait à `precheck` le SHA de l'objet tag, donc le chemin plein (§4).
+Un tag annoté donne à `precheck` le SHA de l'objet tag, donc le chemin plein (§4) : vécu avec la
+v0.13.0.
 
 **9. Surveiller « Release Linux », puis « Dépôts ».**
 ```bash
-gh run list --workflow release.yml -L 1
+gh run list --workflow release.yml --branch vX.Y.Z -L 1
 gh run watch <id> --exit-status       # 2,7 min en médiane ; 5,8 min pour la v0.74.0
-gh run list --workflow repos.yml -L 1 # démarre 2 à 4 s après la fin de Release Linux
+gh run list --workflow repos.yml -L 1 --json databaseId,createdAt
+                                      # créé 2 à 4 s après la fin de Release Linux : plus tôt, c'est le run précédent
 gh run watch <id> --exit-status       # 4,9 min en médiane
 ```
-Sur le chemin rapide, `precheck` journalise « already validated by run <id> — skipping
+Sur le chemin rapide, `precheck` journalise « already validated by run `<id>` — skipping
 rebuild », et `validate` apparaît sauté. Dans « Dépôts », les lignes « accepts at most 1 arg(s),
 received 2 » et « pas de .rpm dans vX.Y.Z, arrêt » sont attendues, et n'arrêtent rien (06, D1).
 Les deux PWA sont parties au pas 6.
@@ -230,10 +238,12 @@ ne prouve pas qu'un poste reçoit la version.
   par exemple, porte la date de sa construction (`releaseDate`).
 
 Le tag part en chemin plein dans trois cas :
-- la CI de master de ce commit n'est pas finie, ou a été annulée par un push suivant ;
+- la CI de master de ce commit n'est pas finie, a échoué, ou a été annulée par un push suivant ;
 - le commit n'a été validé que sur une branche ou une PR ;
-- le tag est annoté : `object.sha` désigne alors l'objet tag, pas le commit (lecture du code, non
-  exécuté).
+- le tag est annoté : `object.sha` désigne alors l'objet tag, pas le commit. Vécu le 2026-09-16 :
+  la v0.13.0, taguée en annoté, a pris le chemin plein (run 35113664670, « No green CI for v0.13.0
+  (94fcf0a…) »), alors que son commit `e6cf944` avait une CI verte sur master (run 35112767768,
+  finie 13 s avant).
 
 Le chemin rapide échouerait au lieu de sauter si l'artefact avait expiré, plus de 14 jours après
 la CI (06, D9).
@@ -251,8 +261,8 @@ ne pas réintroduire :
 | Canal | Commande ou geste | Attendu |
 |---|---|---|
 | GitHub Release | `gh release view vX.Y.Z --json assets --jq '.assets[].name'` puis `gh release list -L 3` | six fichiers (`.deb`, `.rpm`, `.AppImage`, `.AppImage.blockmap`, `latest-linux.yml`, `SHA256SUMS`) ; `vX.Y.Z` marquée « Latest » |
-| Intégrité | dans un dossier qui contient les fichiers de la release : `sha256sum -c SHA256SUMS` | chaque fichier « OK » |
-| Dépôts publics | `node scripts/verify-repo.mjs vX.Y.Z https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages` | « Dépôts publics vérifiés : X.Y.Z (deb X.Y.Z, rpm X.Y.Z) » ; 8 s pour la v0.74.0, rejoué le 2026-11-12 |
+| Intégrité | `gh release download vX.Y.Z -D <dossier vide>`, puis, dans ce dossier, `sha256sum -c SHA256SUMS` | chaque fichier « Réussi » (« OK » en locale anglaise) |
+| Dépôts publics | `node scripts/verify-repo.mjs vX.Y.Z https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages` | « Dépôts publics vérifiés : X.Y.Z (deb X.Y.Z, rpm X.Y.Z) en 1 essai(s), N s. » ; seule la dernière version passe (`KEEP: 1`) : depuis la v0.75.0, `v0.74.0` répond « Packages ne liste pas worklogs 0.74.0 » et réessaie jusqu'à 600 s |
 | Index apt brut | `curl -s https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages/deb/Packages \| grep '^Version:'` | `Version: X.Y.Z`, après jusqu'à 5 min de cache : à 17:03, l'ancien index de la v0.74.0 répondait encore |
 | Poste apt | `cat /etc/apt/sources.list.d/worklogs.list`, puis `sudo apt update && apt-cache policy worklogs` | une adresse `raw.githubusercontent.com` ; « Candidat : X.Y.Z » |
 | Poste apt, sans root | simulation du §6 | « Candidat : X.Y.Z » |
@@ -330,7 +340,7 @@ vérification s'inscrit dans `~/.local/share/worklogs/update.log`.
 |---|---|---|
 | `.rpm` et dépôt dnf | dialogue « Mettre à jour maintenant » ; pré-vol sans mot de passe, `pkcon --noninteractive refresh force` puis `pkcon --noninteractive --plain get-updates` ; installation `pkexec /usr/bin/dnf upgrade -y worklogs`, mot de passe demandé par polkit ; contrôle par `rpm -q` ; « Redémarrer » | paquet complet, 84,0 Mio |
 | `.deb` et dépôt apt | même circuit ; installation `pkexec /usr/bin/apt-get -o Dpkg::Use-Pty=0 install -y --only-upgrade worklogs` ; contrôle par `dpkg-query` | paquet complet, 93,7 Mio |
-| `.AppImage` | electron-updater lit `latest-linux.yml` de la dernière release ; dialogue « Mettre à jour » ; téléchargement différentiel par le `.blockmap` ; « Redémarrer » ; en cas d'erreur, repli sur le dialogue de téléchargement | les blocs modifiés ; taille non mesurée |
+| `.AppImage` | electron-updater lit `latest-linux.yml` de la dernière release ; dialogue « Mettre à jour » ; téléchargement différentiel d'après le blockmap embarqué dans l'AppImage (`blockMapSize` de `latest-linux.yml`), pas le `.blockmap` publié (lecture du code, 06, D12) ; « Redémarrer » ; en cas d'erreur, repli sur le dialogue de téléchargement | les blocs modifiés ; taille non mesurée |
 | paquet système sans candidat, ou sans `pkcon` et `pkexec` | dialogue « Télécharger la mise à jour », qui donne la commande de mise à jour et celle d'activation du dépôt | paquet complet |
 | sources (`npm run desktop`) | aucune vérification : l'application n'est pas empaquetée | — |
 
@@ -575,8 +585,8 @@ se met à jour à la réouverture. Détail : `08-GOOGLE-DOCS.md`, « Relais de j
 | « Mise à jour refusée : autorisation administrateur non accordée. » | dialogue polkit fermé ou refusé | relancer et saisir le mot de passe, ou mettre à jour en console |
 | CI rouge sur un seul job « Installation et lancement » | instabilité d'un test Electron (`db6e5d6`, 2026-11-12), ou miroir Ubuntu (« Mirror sync in progress? », 06, D13) | `gh run view <id> --log-failed`, puis `gh run rerun <id> --failed` ; si la relance échoue au même endroit, c'est une régression |
 | CI rouge sur le seul test « un reclassement distant actualise projet et catégorie… » | test instable (06, D14) | relancer ; signaler s'il revient |
-| `check.sh` local rouge, délais dépassés dans les parcours navigateur | une autre recette tourne en même temps ; ou le code d'un autre agent est intégré avant d'être fini (v0.75.0 : 6 échecs) | `pgrep -af check.sh`, relancer seul ; intégrer un travail d'agent seulement une fois stable (§11) |
-| `precheck` : « No green CI for vX.Y.Z — full validation ahead. » | tag posé avant la fin de la CI de master, sur un commit validé seulement en branche ou en PR, ou tag annoté (§4) | laisser tourner : le chemin plein valide tout, puis publie (environ 16 min, estimé) |
+| `check.sh` local rouge, délais dépassés dans les parcours navigateur | une autre recette tourne en même temps ; ou le code d'un autre agent est intégré avant d'être fini (v0.75.0 : 6 échecs) | `pgrep -af '[c]heck\.sh'`, relancer seul ; intégrer un travail d'agent seulement une fois stable (§11) |
+| `precheck` : « No green CI for vX.Y.Z (`<sha>`) — full validation ahead. » | tag posé avant la fin de la CI de master, sur un commit validé seulement en branche ou en PR, ou tag annoté (§4) : `<sha>` est alors celui de l'objet tag, pas du commit | laisser tourner : le chemin plein valide tout, puis publie (environ 16 min, estimé) |
 | `release` échoue sur `check-release.mjs` : « Le tag vX.Y.Z doit correspondre à package.json » ou « package-lock.json désynchronisé » | tag sur le mauvais commit, ou version éditée à la main | rien n'est publié à cette étape ; corriger, supprimer le tag (`git push origin :refs/tags/vX.Y.Z`, puis `git tag -d vX.Y.Z`) et reprendre au pas 8 sur le bon commit ; un tag a déjà été reposé ainsi, pour la v0.13.0 le 2026-09-16, après un échec du chemin plein |
 | `release` échoue sur « Une release publiée ne doit pas être remplacée. » | la release de ce tag est déjà publiée | ne rien réécrire ; publier une nouvelle version |
 | « Dépôts » rouge sur `verify-repo` : « Dépôts publics non prêts pour vX.Y.Z après 600 s » | adresse publique en retard, ou fichier manquant ; vécu le 2026-11-06, quand Pages servait encore les dépôts | relancer plus tard `node scripts/verify-repo.mjs vX.Y.Z https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages` ; s'il passe, les paquets sont servis ; sinon `gh workflow run repos.yml -f tag=vX.Y.Z` (un tel dispatch a republié la v0.73.0 sur raw le 2026-11-10, run 42810718995) |
@@ -603,18 +613,22 @@ Copilot. L'autre copie est seulement lue, jamais modifiée.
    ```bash
    COPIE=<chemin de la copie>
    git -C "$COPIE" status --short --untracked-files=all
-   git -C "$COPIE" diff --binary HEAD | sha256sum    # même empreinte pendant quatre minutes
+   { git -C "$COPIE" diff --binary HEAD
+     (cd "$COPIE" && git ls-files --others --exclude-standard -z | xargs -0r sha256sum); } | sha256sum
    ```
-   `HEAD` fait entrer dans le diff ce que l'agent a déjà indexé. Les fichiers non suivis n'y sont
-   pas : `status --untracked-files=all` les montre, et ils se traitent à part.
+   Même empreinte pendant quatre minutes. `HEAD` fait entrer dans le diff ce que l'agent a déjà
+   indexé ; la seconde ligne ajoute le contenu des fichiers non suivis, que le diff ignore : sans
+   elle, un fichier neuf que l'agent modifie encore ne change pas l'empreinte.
 2. **Capturer** le diff et son empreinte, hors de la copie de travail pour ne pas le commiter :
    ```bash
    P=$(mktemp) && git -C "$COPIE" diff --binary HEAD > "$P" && sha256sum "$P"
    ```
-3. **Appliquer** ici, dans la copie de la release :
+3. **Appliquer** ici, dans la copie de la release, puis copier les fichiers non suivis :
    ```bash
    git apply --3way --index "$P"
+   (cd "$COPIE" && git ls-files --others --exclude-standard -z | tar --null -T - -cf -) | tar -xvf -
    ```
+   Ces fichiers ne sont pas dans le diff : les ajouter ensuite au commit (`git add`).
 4. **Comparer** chaque fichier à celui de l'autre copie :
    ```bash
    git -C "$COPIE" diff --name-only HEAD | while read -r f; do cmp "$COPIE/$f" "$f"; done
@@ -623,7 +637,9 @@ Copilot. L'autre copie est seulement lue, jamais modifiée.
    main.
 5. **Lancer la recette** : `./scripts/check.sh`, seul sur la machine.
 6. **Revérifier l'empreinte** juste avant de pousser. Si elle a changé, l'agent a repris son
-   travail : recommencer au point 1.
+   travail : retirer d'abord l'ancien diff (`git apply -R --index "$P"`, et les fichiers non suivis
+   copiés), puis recommencer au point 1. Réappliquer le nouveau diff par-dessus l'ancien donne des
+   conflits.
 
 Leçon du 2026-11-12 : une première recette, lancée pendant celle de l'agent, a donné 6 échecs
 navigateur. Deux venaient de la charge, et quatre de son travail encore inachevé, qu'il a corrigé

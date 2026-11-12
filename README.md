@@ -82,7 +82,7 @@ Desktop app: `npm run desktop`.
 | **Print** (or `Ctrl+P`) | prints the entry alone, clean layout, PDF-ready |
 | 📎 **Attach a file** | attaches a document to the open entry |
 | 👁 **Preview** | reads the file inside WorkLogs (image, PDF, text) without downloading it |
-| Type + `Enter` in “New task” | adds a task to the Todo column |
+| Type + `Enter` in “New task” | adds a task to the Todo column, plus an empty linked entry in the journal to write it up |
 | Check a card · drag it | finishes it · moves it across columns |
 | Click a project | filters **journal and tasks** at the same time |
 | **Search** | searches entry titles, bodies and tasks |
