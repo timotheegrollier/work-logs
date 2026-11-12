@@ -512,14 +512,27 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const categoryId = categoryFor(db, orNull(b.project_id), b.category_id);
 
     const id = uid('tk_');
+    const entryId = uid('en_');
     const t = nowISO();
     const position = db
       .prepare('SELECT COALESCE(MAX(position),-1)+1 p FROM tasks WHERE status=?')
       .get(status).p;
-    db.prepare(
-      'INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(id, title, status, orNull(b.due_date), b.pinned ? 1 : 0, position, priority, orNull(b.project_id), t, t, categoryId);
-    res.status(201).json(getTask(id));
+    const projectId = orNull(b.project_id);
+    db.exec('BEGIN');
+    try {
+      db.prepare(
+        'INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+      ).run(id, title, status, orNull(b.due_date), b.pinned ? 1 : 0, position, priority, projectId, t, t, categoryId);
+      db.prepare(
+        'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,status,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?)'
+      ).run(entryId, title, '', today(), projectId, 'note', 'todo', t, t, categoryId);
+      db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run(id, entryId, t);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    res.status(201).json(getTaskWithDocuments(id));
   });
 
   app.put('/api/tasks/:id', (req, res) => {

@@ -58,12 +58,12 @@ describe('amorçage et état', () => {
     const note = await localApi.createEntry({ title: 'Procédure ÉLECTRICITÉ', content_md: 'Vétérinaire' });
     await localApi.createTask({ title: 'Relire la procédure' });
     const found = async (q: string) => (await localApi.state(q)).entries.map((e) => e.title);
-    expect(await found('procedure')).toEqual(['Procédure ÉLECTRICITÉ']);
+    expect((await found('procedure')).sort()).toEqual(['Procédure ÉLECTRICITÉ', 'Relire la procédure'].sort());
     expect(await found('electricite')).toEqual(['Procédure ÉLECTRICITÉ']);
     expect(await found('VETERINAIRE')).toEqual(['Procédure ÉLECTRICITÉ']);
     expect((await localApi.state('procedure')).tasks.map((t) => t.title)).toEqual(['Relire la procédure']);
     await localApi.updateEntry(note.id, { title: 'Pompe', content_md: 'Bassin' });
-    expect(await found('procedure')).toEqual([]);
+    expect(await found('procedure')).toEqual(['Relire la procédure']);
     expect(await found('bassin')).toEqual(['Pompe']);
   });
 });
@@ -80,7 +80,12 @@ describe('entrées', () => {
     expect(results[1]).toMatchObject({ status: 'rejected', reason: { code: 'ENTRY_EDIT_STALE' } });
     const state = await localApi.state();
     expect(state.entries.find(({ id }) => id === entry.id)?.status).toBe('done');
-    expect(state.tasks.find(({ id }) => id === task.id)).toMatchObject({ status: 'todo', documents: [{ id: entry.id, status: 'done' }] });
+    const updatedTask = state.tasks.find(({ id }) => id === task.id);
+    expect(updatedTask?.status).toBe('todo');
+    expect(updatedTask?.documents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: entry.id, status: 'done' }),
+      expect.objectContaining({ id: task.documents[0].id, status: 'todo' }),
+    ]));
     await expect(localApi.updateEntry(entry.id, { archived: 1 })).resolves.toMatchObject({ status: 'done', archived: 1 });
     await expect(localApi.updateEntry(entry.id, { status: 'blocked' as never })).rejects.toThrow('statut invalide');
     await expect(localApi.createEntry({ title: 'Invalide', status: 'blocked' as never })).rejects.toThrow('statut invalide');
@@ -134,6 +139,17 @@ describe('entrées', () => {
     expect(updated.title).toBe('Note 2');
     expect(await localApi.deleteEntry(created.id)).toEqual({ ok: true });
     await expect(localApi.entry(created.id)).rejects.toThrow('entrée introuvable');
+  });
+
+  test('une tâche créée localement reçoit une entrée de contenu liée', async () => {
+    clearLocalOutbox();
+    const project_id = await projectId();
+    const task = await localApi.createTask({ title: 'Préparer le devis', project_id });
+    expect(task.documents).toHaveLength(1);
+    const entry = await localApi.entry(task.documents[0].id);
+    expect(entry).toMatchObject({ title: task.title, project_id, content_md: '' });
+    expect((await localApi.state()).tasks.find(({ id }) => id === task.id)?.documents).toHaveLength(1);
+    clearLocalOutbox();
   });
 
   test('archivage visible par défaut, masquable et restaurable (miroir du serveur)', async () => {
@@ -194,7 +210,7 @@ describe('entrées', () => {
     expect((await localApi.mergeEntries(body)).id).toBe(merged.id);
     const state = await localApi.state();
     expect(state.entries.map((entry) => entry.title)).not.toContain('A');
-    expect(state.tasks.find((t) => t.id === task.id)?.documents?.map((d) => d.id)).toEqual([merged.id]);
+    expect(state.tasks.find((t) => t.id === task.id)?.documents?.map((d) => d.id).sort()).toEqual([merged.id, task.documents[0].id].sort());
     expect(readLocalOutbox().entries).toContain(merged.id);
   });
 
@@ -287,7 +303,7 @@ describe('tâches', () => {
     await localApi.updateTask(task.id, { status: 'done' });
     expect((await localApi.entry(entry.id)).archived).toBe(1);
     expect((await localApi.state()).entries.find((item) => item.id === entry.id)?.archived).toBe(1);
-    expect((await localApi.state()).tasks.find((item) => item.id === task.id)?.documents.map((item) => item.id)).toEqual([entry.id]);
+    expect((await localApi.state()).tasks.find((item) => item.id === task.id)?.documents.map((item) => item.id).sort()).toEqual([entry.id, task.documents[0].id].sort());
 
     await localApi.updateTask(task.id, { status: 'todo' });
     expect((await localApi.entry(entry.id)).archived).toBe(1);
@@ -372,7 +388,7 @@ describe('tâches', () => {
     const entry = await localApi.createEntryFromTask(task.id, { content_md: '## Sous-tâches\n- [ ] Relire\n' });
     expect(entry).toMatchObject({ title: 'Dossier', project_id: id, content_md: '## Sous-tâches\n- [ ] Relire\n' });
     expect(entry.entry_date).toBe(new Date().toISOString().slice(0, 10));
-    expect((await localApi.state()).tasks.find((t) => t.id === task.id)?.documents.map((d) => d.id)).toEqual([entry.id]);
+    expect((await localApi.state()).tasks.find((t) => t.id === task.id)?.documents.map((d) => d.id).sort()).toEqual([entry.id, task.documents[0].id].sort());
     await expect(localApi.createEntryFromTask('tk_x')).rejects.toThrow('tâche introuvable');
     await expect(localApi.createEntryFromTask(task.id, { title: ' ' })).rejects.toThrow('titre requis');
   });
@@ -437,10 +453,10 @@ describe('import de sauvegarde', () => {
 
     setLocalDatabase(createMemoryDatabase());
     const result = await importLocalBackup(JSON.parse(await blob.text()));
-    expect(result).toEqual({ ok: true, projects: 3, entries: 2, tasks: 4 });
+    expect(result).toEqual({ ok: true, projects: 3, entries: 3, tasks: 4 });
     const state = await localApi.state();
     expect(state.entries.map((e) => e.title)).toContain('Devis');
-    expect(state.tasks.find((t) => t.title === 'Relire')?.documents.map((d) => d.id)).toEqual([entry.id]);
+    expect(state.tasks.find((t) => t.title === 'Relire')?.documents.map((d) => d.id).sort()).toEqual([entry.id, task.documents[0].id].sort());
     const imported = await localApi.entry(entry.id);
     expect(imported.attachments).toHaveLength(1);
     expect(imported.attachments[0].filename).toBe('note.txt');
@@ -455,6 +471,7 @@ describe('import de sauvegarde', () => {
 
 describe('file d’envoi', () => {
   test('créations et modifications suivies, suppressions retirées', async () => {
+    clearLocalOutbox();
     expect(outboxSize()).toBe(0);
     const project = await localApi.createProject({ name: 'Suivi' });
     const entry = await localApi.createEntry({ title: 'Brouillon', project_id: project.id });
@@ -465,19 +482,20 @@ describe('file d’envoi', () => {
     const saved = await localApi.upload(file, entry.id);
     let outbox = readLocalOutbox();
     expect(outbox.projects).toEqual([project.id]);
-    expect(outbox.entries).toEqual([entry.id]);
+    expect(outbox.entries.sort()).toEqual([entry.id, task.documents[0].id].sort());
     expect(outbox.tasks).toEqual([task.id]);
     expect(outbox.attachments).toEqual([saved.id]);
-    expect(outbox.links).toHaveLength(1);
-    expect(outboxSize()).toBe(5);
+    expect(outbox.links).toHaveLength(2);
+    expect(outboxSize()).toBe(7);
 
     await localApi.unlinkTaskDocument(task.id, entry.id);
     await localApi.deleteAttachment(saved.id);
     outbox = readLocalOutbox();
-    expect(outbox.links).toEqual([]);
+    expect(outbox.links).toEqual([`${task.id}\0${task.documents[0].id}`]);
     expect(outbox.attachments).toEqual([]);
     await localApi.deleteTask(task.id);
     await localApi.deleteEntry(entry.id);
+    await localApi.deleteEntry(task.documents[0].id);
     await localApi.deleteProject(project.id);
     expect(outboxSize()).toBe(0);
   });

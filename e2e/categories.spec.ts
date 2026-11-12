@@ -153,6 +153,8 @@ test.describe('catégories desktop', () => {
       const updated = (await (await request.get('/api/state')).json()).tasks.find((item: { id: string }) => item.id === task.id);
       return { category_id: updated.category_id, title: updated.title };
     }).toEqual({ category_id: destination.id, title: 'Préparer déploiement vérifié' });
+    await journal(page).getByRole('button', { name: /^Bilan installation/ }).click();
+    await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Bilan installation');
     await page.getByLabel('Titre de l’entrée').fill('Bilan installation vérifié');
     await page.getByLabel('Titre de l’entrée').press('Control+s');
     await expect.poll(async () => {

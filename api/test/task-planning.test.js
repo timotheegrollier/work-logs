@@ -72,7 +72,7 @@ describe('application atomique d’une replanification IA', () => {
     assert.equal(current(task.id).status, 'todo');
     assert.equal((await api.get(`/api/entries/${entry.id}`)).body.archived, 0);
 
-    const finished = await api.put(url, { status: 'done', expected_planning: { ...snapshot, active_document_ids: [entry.id] } });
+    const finished = await api.put(url, { status: 'done', expected_planning: { ...snapshot, active_document_ids: [entry.id, task.documents[0].id] } });
     assert.equal(finished.status, 200);
     assert.equal((await api.get(`/api/entries/${entry.id}`)).body.archived, 1);
   });

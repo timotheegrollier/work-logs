@@ -42,7 +42,7 @@ test.describe('desktop', () => {
   test('tâches : la saisie reste en tête, la liste défile dessous sans jamais passer devant', async ({ page }) => {
     await page.goto('/');
     const board = page.getByRole('region', { name: 'Tâches', exact: true });
-    await expect(board.getByText('Contrôle 14 du parc')).toBeAttached();
+    await expect(board.getByRole('button', { name: 'Contrôle 14 du parc', exact: true })).toBeAttached();
     const quick = board.locator('.quick');
     const lists = board.locator('.board-lists');
     expect(await lists.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
@@ -95,7 +95,7 @@ test.describe('mobile', () => {
     await page.goto('/');
     await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true }).click();
     const board = page.getByRole('region', { name: 'Tâches', exact: true });
-    await expect(board.getByText('Contrôle 14 du parc')).toBeAttached();
+    await expect(board.getByRole('button', { name: 'Contrôle 14 du parc', exact: true })).toBeAttached();
     const app = page.locator('.app');
     const quick = board.locator('.quick');
     const top = await quick.evaluate((el) => {

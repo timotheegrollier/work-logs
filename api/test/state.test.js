@@ -28,7 +28,7 @@ describe('état global et recherche', () => {
     const { body } = await api.get('/api/state');
     assert.deepEqual(Object.keys(body).sort(), ['categories', 'entries', 'procedure_attachments', 'projects', 'stats', 'tasks']);
     assert.equal(body.projects.length, 1);
-    assert.equal(body.entries.length, 1);
+    assert.equal(body.entries.length, 2);
     assert.equal(body.tasks.length, 1);
     assert.deepEqual(body.procedure_attachments, []);
   });
@@ -59,7 +59,7 @@ describe('état global et recherche', () => {
     await make.task(api, { title: 'Autre tâche' });
 
     const { body } = await api.get('/api/state?q=toiture');
-    assert.deepEqual(body.entries.map((e) => e.title).sort(), ['Autre', 'Devis toiture']);
+    assert.deepEqual(body.entries.map((e) => e.title).sort(), ['Autre', 'Devis toiture', 'Relancer toiture']);
     assert.deepEqual(body.tasks.map((t) => t.title), ['Relancer toiture']);
   });
 
@@ -67,17 +67,17 @@ describe('état global et recherche', () => {
     const accented = await make.entry(api, { title: 'Procédure ÉLECTRICITÉ', content_md: 'Couper le disjoncteur.' });
     const plain = await make.entry(api, { title: 'Note', content_md: 'procedure sans accent, Vétérinaire' });
     await make.entry(api, { title: 'Sans rapport' });
-    await make.task(api, { title: 'Relire la procédure' });
+    const task = await make.task(api, { title: 'Relire la procédure' });
     const titles = async (q) => (await api.get(`/api/state?q=${encodeURIComponent(q)}`)).body;
     let body = await titles('procedure');
-    assert.deepEqual(body.entries.map((e) => e.title).sort(), ['Note', 'Procédure ÉLECTRICITÉ']);
+    assert.deepEqual(body.entries.map((e) => e.title).sort(), ['Note', 'Procédure ÉLECTRICITÉ', 'Relire la procédure']);
     assert.deepEqual(body.tasks.map((t) => t.title), ['Relire la procédure']);
     assert.deepEqual((await titles('électricité')).entries.map((e) => e.id), [accented.id]);
     assert.deepEqual((await titles('VETERINAIRE')).entries.map((e) => e.id), [plain.id]);
 
     // Modifiée par l'API, puis directement en base (synchronisation, restauration) : jamais périmée.
     await api.put(`/api/entries/${plain.id}`, { title: 'Note', content_md: 'Pompe du bassin' });
-    assert.deepEqual((await titles('procedure')).entries.map((e) => e.id), [accented.id]);
+    assert.deepEqual((await titles('procedure')).entries.map((e) => e.id).sort(), [accented.id, task.documents[0].id].sort());
     api.db.prepare('UPDATE entries SET content_md=? WHERE id=?').run('Alevins à trier', accented.id);
     assert.deepEqual((await titles('alevins')).entries.map((e) => e.id), [accented.id]);
     api.db.prepare('DELETE FROM entries WHERE id=?').run(accented.id);
@@ -94,7 +94,7 @@ describe('état global et recherche', () => {
     await make.task(api, { title: 'Tâche B', project_id: b.id });
 
     const { body } = await api.get(`/api/state?project_id=${a.id}`);
-    assert.deepEqual(body.entries.map((e) => e.title), ['Chez A']);
+    assert.deepEqual(body.entries.map((e) => e.title).sort(), ['Chez A', 'Tâche A']);
     assert.deepEqual(body.tasks.map((t) => t.title), ['Tâche A']);
   });
 
@@ -118,8 +118,8 @@ describe('état global et recherche', () => {
     await make.task(api, { title: 'Finie en retard', status: 'done', due_date: hier });
 
     const { body } = await api.get('/api/state');
-    assert.equal(body.stats.entries, 2);
-    assert.equal(body.stats.entriesThisWeek, 1);
+    assert.equal(body.stats.entries, 6);
+    assert.equal(body.stats.entriesThisWeek, 5);
     assert.deepEqual(body.stats.tasks, { todo: 1, doing: 1, done: 2 });
     assert.equal(body.stats.overdue, 1, 'une tâche terminée n’est jamais « en retard »');
   });
@@ -134,13 +134,12 @@ describe('état global et recherche', () => {
     assert.equal(status, 200);
     assert.equal(body.version, 2);
     assert.equal(body.projects.length, 1);
-    assert.equal(body.entries[0].title, 'Entrée exportée');
-    assert.equal(body.entries[0].content_md, '', 'l’export contient bien le corps');
+    assert.equal(body.entries.find((row) => row.id === entry.id).title, 'Entrée exportée');
+    assert.equal(body.entries.find((row) => row.id === entry.id).content_md, '', 'l’export contient bien le corps');
     assert.equal(body.tasks.length, 1);
-    assert.equal(body.task_entries.length, 1);
-    assert.equal(body.task_entries[0].task_id, task.id);
-    assert.equal(body.task_entries[0].entry_id, entry.id);
-    assert.ok(body.task_entries[0].created_at);
+    assert.equal(body.task_entries.length, 2);
+    assert.ok(body.task_entries.some((link) => link.task_id === task.id && link.entry_id === entry.id));
+    assert.ok(body.task_entries.every((link) => link.created_at));
   });
 });
 

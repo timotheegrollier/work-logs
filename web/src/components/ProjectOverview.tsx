@@ -23,7 +23,7 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
   entries: EntrySummary[];
   /** Le nom d'un projet le filtre. */
   onProject: (id: string) => void;
-  /** Ouvre une entrée liée, ou la carte de la tâche s'il n'y a aucun lien. */
+  /** Ouvre une entrée liée qui contient du contexte, sinon la carte de la tâche. */
   onTask: (task: Task) => void;
   onEntry: (entry: EntrySummary) => void;
   onClose: () => void;

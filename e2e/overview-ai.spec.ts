@@ -166,7 +166,7 @@ test('ajout groupé au suivi : recherche, sélection conservée et documents dé
     await overview.getByRole('button', { name: 'Ajouter au suivi IA', exact: true }).click();
     const picker = overview.getByRole('region', { name: 'Choisir les suivis IA', exact: true });
     await expect(picker.getByRole('searchbox', { name: 'Rechercher un élément à suivre', exact: true })).toBeFocused();
-    await picker.getByRole('checkbox', { name: new RegExp(`^${task.title}`) }).check();
+    await picker.getByRole('checkbox', { name: new RegExp(`^${task.title} Tâche ·`) }).check();
     await expect(picker.getByRole('checkbox', { name: new RegExp(`^${linked.title}`) })).toHaveAccessibleName(new RegExp('Déjà incluse avec'));
     await picker.getByRole('searchbox').fill('commander le joint');
     await picker.getByRole('checkbox', { name: new RegExp(`^${entry.title}`) }).check();

@@ -83,7 +83,7 @@ describe('catégories et sous-catégories de projet', () => {
     const state = (await api.get('/api/state')).body;
     assert.equal(state.entries[0].category_id, group.id);
     assert.equal(state.tasks[0].documents[0].category_id, group.id);
-    assert.equal(state.categories[0].entries, 1);
+    assert.equal(state.categories[0].entries, 2);
     assert.equal(state.categories[0].open_tasks, 1);
     await api.put(`/api/tasks/${task.id}`, { status: 'done' });
     assert.equal((await api.get('/api/state')).body.categories[0].open_tasks, 0);
@@ -126,10 +126,10 @@ describe('catégories et sous-catégories de projet', () => {
       await make.task(api, { title: `Plan ${index}`, project_id: project.id, category_id: group.id });
     }
     const state = (await api.get(`/api/state?category_id=${parent.id}`)).body;
-    assert.equal(state.entries.length, 3);
+    assert.equal(state.entries.length, 6);
     assert.equal(state.tasks.length, 3);
     const searched = (await api.get(`/api/state?category_id=${parent.id}&project_id=${project.id}&q=Plan%202`)).body;
-    assert.deepEqual(searched.entries.map((row) => row.title), ['Plan 2']);
+    assert.deepEqual(searched.entries.map((row) => row.title), ['Plan 2', 'Plan 2']);
     assert.deepEqual(searched.tasks.map((row) => row.title), ['Plan 2']);
     assert.equal((await api.get(`/api/state?category_id=${parent.id}&project_id=${otherProject.id}`)).body.entries.length, 0);
     assert.equal((await api.get('/api/state?category_id=absente')).body.entries.length, 0);
@@ -140,11 +140,11 @@ describe('catégories et sous-catégories de projet', () => {
     const classified = await make.entry(api, { title: 'Classée', project_id: project.id, category_id: group.id, kind: 'procedure' });
     const unclassified = await make.entry(api, { title: 'Libre', project_id: project.id, kind: 'procedure' });
     await make.task(api, { title: 'Classée', project_id: project.id, category_id: group.id });
-    await make.task(api, { title: 'Libre', project_id: project.id });
+    const unclassifiedTask = await make.task(api, { title: 'Libre', project_id: project.id });
     await api.upload('classée.txt', 'Texte', { entry_id: classified.id });
     await api.upload('libre.txt', 'Texte', { entry_id: unclassified.id });
     const state = (await api.get(`/api/state?category_id=__none__&project_id=${project.id}`)).body;
-    assert.deepEqual(state.entries.map((row) => row.id), [unclassified.id]);
+    assert.deepEqual(state.entries.map((row) => row.id).sort(), [unclassified.id, unclassifiedTask.documents[0].id].sort());
     assert.deepEqual(state.tasks.map((row) => row.title), ['Libre']);
     assert.deepEqual(state.procedure_attachments.map((row) => row.filename), ['libre.txt']);
     assert.equal((await api.get(`/api/state?category_id=${group.id}`)).body.procedure_attachments[0].filename, 'classée.txt');
@@ -179,7 +179,7 @@ describe('catégories et sous-catégories de projet', () => {
     await api.del(`/api/categories/${parent.id}`);
     assert.equal((await api.get(`/api/entries/${entry.id}`)).body.category_id, null);
     assert.equal(api.db.prepare('SELECT parent_id FROM categories WHERE id=?').get(child.id).parent_id, null);
-    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entries').get().n, 1);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entries').get().n, 2);
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM tasks').get().n, 1);
     assert.deepEqual(api.db.prepare('PRAGMA foreign_key_check').all(), []);
   });

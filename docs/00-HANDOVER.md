@@ -9,6 +9,8 @@
   statuts, créer des procédures locales, rechercher sur le partage et y préparer un Word.
   Les écritures restent validées au clic. Le statut des entrées est stocké sur desktop et
   dans la PWA, et conservé dans les sauvegardes et la synchro.
+- Toute nouvelle tâche reçoit aussi une entrée Markdown liée, prête à être complétée dans le
+  journal. Les tâches existantes sans entrée ne sont pas modifiées (§79).
 - Le partage réutilise le relais et le montage existants. La lecture d’extraits se règle
   par conversation. Le vrai relais a été testé avec un dossier temporaire et les appels
   au fournisseur IA sont simulés.

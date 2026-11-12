@@ -100,7 +100,10 @@ describe('catégories et sous-catégories', () => {
     fireEvent.change(screen.getByLabelText('Nouvelle tâche'), { target: { value: 'Nouvel objectif' } });
     fireEvent.click(within(board()).getByRole('button', { name: 'Ajouter' }));
     await within(board()).findByRole('button', { name: 'Nouvel objectif' });
+    await within(journal()).findByText('Nouvel objectif');
     expect(row(api.db, 'SELECT * FROM tasks WHERE title=?', 'Nouvel objectif')).toMatchObject({ project_id: 'p', category_id: parent.id });
+    const linked = row(api.db, 'SELECT te.entry_id FROM task_entries te JOIN tasks t ON t.id=te.task_id WHERE t.title=?', 'Nouvel objectif');
+    expect(linked).toBeTruthy();
     fireEvent.click(within(journal()).getByRole('button', { name: 'Nouvelle entrée' }));
     await waitFor(() => expect(screen.getByLabelText('Catégorie de l’entrée')).toHaveValue(parent.id));
     await showCategory('Sans catégorie');
@@ -2205,7 +2208,8 @@ describe('organiser les tâches', () => {
 
     await user.type(await screen.findByLabelText('Nouvelle tâche'), 'Rappeler le client{Enter}');
 
-    expect(await within(board()).findByText('Rappeler le client')).toBeInTheDocument();
+    expect(await within(board()).findByRole('button', { name: 'Rappeler le client' })).toBeInTheDocument();
+    expect(await within(journal()).findByText('Rappeler le client')).toBeInTheDocument();
     expect(screen.getByLabelText('Nouvelle tâche')).toHaveValue('');
     expect(row(api.db, 'SELECT * FROM tasks').status).toBe('todo');
   });
@@ -2451,7 +2455,7 @@ describe('organiser les tâches', () => {
       await user.click(await within(board()).findByRole('button', { name: 'En cours 1' }));
       await user.type(screen.getByLabelText('Nouvelle tâche'), 'Tâche neuve{Enter}');
 
-      expect(await within(board()).findByText('Tâche neuve')).toBeInTheDocument();
+      expect(await within(board()).findByRole('button', { name: 'Tâche neuve' })).toBeInTheDocument();
       expect(within(views()).getByRole('button', { name: 'Toutes' })).toHaveAttribute('aria-pressed', 'true');
     });
 
@@ -6564,7 +6568,7 @@ describe('assistant IA', () => {
     await within(chat).findByText('✓ Appliqué', undefined, backend);
     expect(row(api.db, 'SELECT status, priority, due_date, project_id FROM tasks WHERE title = ?', 'Commander le joint'))
       .toEqual({ status: 'todo', priority: 'high', due_date: '2026-12-01', project_id: 'pj_a' });
-    expect(await within(board()).findByText('Commander le joint', undefined, backend)).toBeInTheDocument();
+    expect(await within(board()).findByRole('button', { name: 'Commander le joint' }, backend)).toBeInTheDocument();
 
     fireEvent.click(within(chat).getByRole('button', { name: 'Tout appliquer (2)' }));
     await waitFor(() => expect(within(chat).getAllByText('✓ Appliqué')).toHaveLength(3), backend);
@@ -6727,7 +6731,7 @@ describe('assistant IA', () => {
     ask(chat, 'Ajoute le joint');
     fireEvent.click(await within(chat).findByRole('button', { name: /^Appliquer : Créer la tâche « Commander le joint »/ }, backend));
     await within(chat).findByText('✓ Appliqué', undefined, backend);
-    expect(await within(board()).findByText('Commander le joint', undefined, backend)).toBeInTheDocument();
+    expect(await within(board()).findByRole('button', { name: 'Commander le joint' }, backend)).toBeInTheDocument();
   }, 20_000);
 
   test('une création demandée sous une catégorie filtrée en hérite et reste affichée', async () => {
@@ -6749,7 +6753,7 @@ describe('assistant IA', () => {
 
     expect(row(api.db, 'SELECT category_id FROM tasks WHERE title = ?', 'Chiffrer le lot').category_id).toBe(category.id);
     expect(row(api.db, 'SELECT category_id FROM entries WHERE title = ?', 'Notes du lot').category_id).toBe(category.id);
-    expect(await within(board()).findByText('Chiffrer le lot', undefined, backend)).toBeInTheDocument();
+    expect(await within(board()).findByRole('button', { name: 'Chiffrer le lot' }, backend)).toBeInTheDocument();
     expect(await within(journal()).findByText('Notes du lot', undefined, backend)).toBeInTheDocument();
   }, 20_000);
 });

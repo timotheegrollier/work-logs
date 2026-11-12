@@ -277,11 +277,10 @@ export default function App() {
     setTaskReveal((current) => ({ id: task.id, sequence: current.sequence + 1 }));
     if (isPhone()) goTo('tasks');
   }, [goTo]);
-  /** Une tâche de la vue d'ensemble ouvre son entrée liée la plus récente.
-   * Les documents sont déjà ordonnés par date par l'API et la PWA ; sans lien,
-   * sa carte reste le point d'entrée, y compris pour une tâche terminée. */
+  /** Une tâche documentée ouvre son entrée liée la plus récente.
+   * Le brouillon vide créé avec la tâche ne détourne pas le nœud de sa carte. */
   const revealTask = useCallback((task: Task) => {
-    const document = task.documents[0];
+    const document = task.documents.find((item) => item.title !== task.title || Boolean(item.excerpt));
     if (document) {
       void openEntry(document.id, undefined);
       return;

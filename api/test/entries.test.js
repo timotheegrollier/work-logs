@@ -274,7 +274,7 @@ describe('entrées de journal', () => {
     const files = (await api.get(`/api/entries/${merged.id}`)).body.attachments;
     assert.deepEqual(files.map((file) => file.filename), ['photo.txt']);
     const state = (await api.get('/api/state')).body;
-    assert.deepEqual(state.tasks.find((t) => t.id === task.id).documents.map((d) => d.id), [merged.id]);
+    assert.deepEqual(state.tasks.find((t) => t.id === task.id).documents.map((d) => d.id).sort(), [merged.id, task.documents[0].id].sort());
     // Réponse perdue : revalider la même proposition ne crée rien de plus.
     const replay = await api.post('/api/entries/merge', body);
     assert.equal(replay.status, 200);

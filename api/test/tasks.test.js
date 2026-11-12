@@ -27,6 +27,11 @@ describe('tâches', () => {
     assert.equal(res.body.pinned, 0);
     assert.equal(res.body.due_date, null);
     assert.equal(res.body.position, 0);
+    assert.equal(res.body.documents.length, 1);
+    const document = api.db.prepare('SELECT * FROM entries WHERE id=?').get(res.body.documents[0].id);
+    assert.equal(document.title, 'Rappeler le client');
+    assert.equal(document.content_md, '');
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=? AND entry_id=?').get(res.body.id, document.id).n, 1);
   });
 
   test('refuse un titre vide et un statut inconnu', async () => {
@@ -68,12 +73,12 @@ describe('tâches', () => {
     assert.equal(completed.body.status, 'done');
     assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(local.id).archived, 1);
     assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(google.id).archived, 1);
-    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=?').get(task.id).n, 2);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=?').get(task.id).n, 3);
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM google_documents WHERE entry_id=?').get(google.id).n, 1);
 
     const state = await api.get('/api/state');
     assert.equal(state.body.entries.find((entry) => entry.id === local.id).archived, 1);
-    assert.equal(state.body.tasks.find((item) => item.id === task.id).documents.length, 2);
+    assert.equal(state.body.tasks.find((item) => item.id === task.id).documents.length, 3);
 
     // Rouvrir la tâche ne ressuscite pas une archive explicite/automatique.
     await api.put(`/api/tasks/${task.id}`, { status: 'todo' });
@@ -306,7 +311,7 @@ describe('tâches', () => {
     assert.equal((await api.post('/api/tasks/tk_nope/entry', {})).status, 404);
     const task = await make.task(api);
     assert.equal((await api.post(`/api/tasks/${task.id}/entry`, { title: ' ' })).status, 400);
-    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entries').get().n, 0);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entries').get().n, 1, 'seule l’entrée créée avec la tâche existe');
   });
 
   test('associe des entrées locales et Google, même hors du projet de la tâche', async () => {
@@ -333,7 +338,7 @@ describe('tâches', () => {
     const state = await api.get(`/api/state?project_id=${taskProject.id}`);
     assert.equal(state.status, 200);
     assert.equal(state.body.tasks.length, 1);
-    assert.deepEqual(state.body.tasks[0].documents.map((document) => document.id).sort(), [local.id, google.id].sort());
+    assert.deepEqual(state.body.tasks[0].documents.map((document) => document.id).sort(), [local.id, google.id, task.documents[0].id].sort());
     const googleSummary = state.body.tasks[0].documents.find((document) => document.id === google.id);
     assert.deepEqual(googleSummary, {
       id: google.id,
@@ -429,9 +434,9 @@ describe('tâches', () => {
       assert.equal(merged.priority, 'high');
       assert.equal(merged.pinned, 1);
       assert.equal(merged.project_id, project.id);
-      assert.deepEqual(merged.documents.map((document) => document.id).sort(), [res.body.id, procedure.id, google.id].sort());
+      assert.deepEqual(merged.documents.map((document) => document.id).sort(), [res.body.id, procedure.id, google.id].sort(), JSON.stringify(merged.documents.map(({ id, title, google_document_id }) => ({ id, title, google_document_id }))));
       // Une tâche non choisie qui partageait une note suit la nouvelle, comme à la fusion d'entrées.
-      assert.deepEqual(state.tasks.find((task) => task.id === other.id).documents.map((document) => document.id), [res.body.id]);
+      assert.deepEqual(state.tasks.find((task) => task.id === other.id).documents.map((document) => document.id).sort(), [res.body.id, other.documents[0].id].sort());
       assert.equal((await api.get(`/api/entries/${noteA.id}`)).status, 404);
       assert.equal((await api.get(`/api/entries/${noteB.id}`)).status, 404);
       assert.equal((await api.get(`/api/entries/${procedure.id}`)).status, 200);
@@ -445,6 +450,10 @@ describe('tâches', () => {
     test('des tâches sans document donnent quand même une tâche avec sa note', async () => {
       const a = await make.task(api, { title: 'A' });
       const b = await make.task(api, { title: 'B' });
+      for (const task of [a, b]) {
+        api.db.prepare('DELETE FROM task_entries WHERE task_id=?').run(task.id);
+        for (const document of task.documents) api.db.prepare('DELETE FROM entries WHERE id=?').run(document.id);
+      }
       const res = await api.post('/api/tasks/merge', await mergeRequest([a.id, b.id]));
       const merged = (await api.get('/api/state')).body.tasks.find((task) => task.title === 'Tâche commune');
       assert.deepEqual(merged.documents.map((document) => document.id), [res.body.id]);

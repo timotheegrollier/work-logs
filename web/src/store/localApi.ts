@@ -1166,7 +1166,7 @@ export const localApi: Api = {
   },
 
   createTask: async (body) => {
-    const { tasks, projects } = await tables();
+    const { tasks, projects, entries, links } = await tables();
     const title = str(body.title);
     if (!title) fail('titre requis');
     const status = (str(body.status) || 'todo') as Status;
@@ -1175,15 +1175,25 @@ export const localApi: Api = {
     if (!priority) fail('priorité invalide (basse, normale ou haute attendue)');
     if (orNull(body.project_id) && !(await projects.get(str(body.project_id)))) fail('projet introuvable');
     const id = uid('tk_');
+    const entryId = uid('en_');
     const t = nowISO();
     const position = Math.max(-1, ...(await tasks.all()).filter((task) => task.status === status).map((task) => task.position)) + 1;
+    const projectId = orNull(body.project_id);
+    const categoryId = await categoryFor(body.category_id, projectId);
     const row: TaskRow = {
       id, title, status, due_date: orNull(body.due_date), pinned: body.pinned ? 1 : 0, position,
-      priority: priority as TaskRow['priority'], project_id: orNull(body.project_id), category_id: await categoryFor(body.category_id, orNull(body.project_id)), created_at: t, updated_at: t,
+      priority: priority as TaskRow['priority'], project_id: projectId, category_id: categoryId, created_at: t, updated_at: t,
     };
     await tasks.put(row);
+    await entries.put({
+      id: entryId, title, content_md: '', content_json: null, entry_date: today(), project_id: projectId,
+      category_id: categoryId, archived: 0, kind: 'note', status: 'todo', created_at: t, updated_at: t,
+    });
+    await links.put({ id: linkId(id, entryId), task_id: id, entry_id: entryId, created_at: t });
     track('tasks', id);
-    return rowAsTask(row);
+    track('entries', entryId);
+    track('links', linkId(id, entryId));
+    return taskWithDocuments(id);
   },
 
   updateTask: async (id, body) => {

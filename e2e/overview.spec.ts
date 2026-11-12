@@ -307,7 +307,7 @@ test('une tâche documentée ouvre son entrée liée la plus récente depuis un 
   expect(followed.ok()).toBeTruthy();
   try {
     const state = await (await request.get('/api/state')).json();
-    expect(state.tasks.find((item: { id: string }) => item.id === task.id).documents.map((item: { id: string }) => item.id)).toEqual([latest.id, older.id]);
+    expect(state.tasks.find((item: { id: string }) => item.id === task.id).documents.map((item: { id: string }) => item.id)).toEqual([task.documents[0].id, latest.id, older.id]);
     await page.addInitScript(() => localStorage.setItem('worklogs-show-right', '0'));
     for (const viewport of [{ width: 1440, height: 900 }, { width: 800, height: 1000 }, { width: 375, height: 812 }]) {
       await page.setViewportSize(viewport);

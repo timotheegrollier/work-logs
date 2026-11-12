@@ -1171,7 +1171,7 @@ describe('application des propositions, sur la vraie API', () => {
     for (const proposal of proposals) await applyChatProposal(proposal);
     const filtered = await api.state('', 'p', 'c');
     expect(filtered.tasks.map(({ title }) => title)).toEqual(['Acheter un filtre']);
-    expect(filtered.entries.map(({ title }) => title)).toEqual(['Bilan de la pompe']);
+    expect(filtered.entries.map(({ title }) => title).sort()).toEqual(['Acheter un filtre', 'Bilan de la pompe'].sort());
   });
 
   test('un autre refus du serveur garde son message', async () => {

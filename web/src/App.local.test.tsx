@@ -68,8 +68,9 @@ describe('PWA locale (mêmes écrans, backend IndexedDB/mémoire)', () => {
     await user.click(tasks.getByLabelText('Nouvelle tâche'));
     await user.paste('Acheter des plants');
     await user.keyboard('{Enter}');
-    expect(await tasks.findByText('Acheter des plants', undefined, stockage)).toBeInTheDocument();
-    expect((await localApi.state()).stats.entries).toBe(2);
+    expect(tasks.getAllByText('Acheter des plants').length).toBeGreaterThan(0);
+    expect(await list.findByText('Acheter des plants', undefined, stockage)).toBeInTheDocument();
+    expect((await localApi.state()).stats.entries).toBe(3);
   }, 30_000);
 
   test('Exporter télécharge le JSON local', async () => {
@@ -359,7 +360,8 @@ describe('dossier partagé dans la PWA', () => {
       await user.click(chat.getByRole('button', { name: /^Appliquer : Créer la tâche « Acheter des graines »/ }));
       await chat.findByText('✓ Appliqué', undefined, stockage);
       expect((await localApi.state()).tasks.find((task) => task.title === 'Acheter des graines')).toMatchObject({ priority: 'high', status: 'todo' });
-      expect(await within(board()).findByText('Acheter des graines', undefined, stockage)).toBeInTheDocument();
+      expect(within(board()).getAllByText('Acheter des graines').length).toBeGreaterThan(0);
+      expect(await within(journal()).findByText('Acheter des graines', undefined, stockage)).toBeInTheDocument();
     } finally {
       vi.unstubAllGlobals();
     }

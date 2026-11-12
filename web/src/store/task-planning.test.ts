@@ -58,7 +58,7 @@ test('PWA : le classement et les documents que terminer la tâche archivera sont
   await expect(localApi.updateTask(task.id, { status: 'done', expected_planning: { ...snapshot, active_document_ids: [] } }))
     .rejects.toMatchObject({ code: 'TASK_PLANNING_STALE' });
   expect((await localApi.entry(entry.id)).archived).toBe(0);
-  await expect(localApi.updateTask(task.id, { status: 'done', expected_planning: { ...snapshot, active_document_ids: [entry.id] } }))
+  await expect(localApi.updateTask(task.id, { status: 'done', expected_planning: { ...snapshot, active_document_ids: [entry.id, task.documents[0].id].sort() } }))
     .resolves.toMatchObject({ status: 'done', category_id: category.id });
   expect((await localApi.entry(entry.id)).archived).toBe(1);
 });

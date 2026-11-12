@@ -3107,8 +3107,7 @@ reste ouverte, sinon une vieille échéance mettrait la nouvelle tâche en retar
 **Écartés.** Garder les notes sources à côté de la nouvelle (doublons dans le journal),
 réécrire les documents Google ou les procédures (ils ont leur vie propre), reprendre le
 suivi IA des sources (il décrit des tâches qui n’existent plus, on le relance sur la
-nouvelle). Imposer une entrée à toute tâche créée reste à décider à part : la création
-rapide et les tâches existantes sont concernées.
+nouvelle).
 
 **Validation.** API : remplacement, pièces jointes, Google et procédures, tombes de
 synchronisation, rejeu, trois causes de péremption, tâche terminée, tout terminé, demande
@@ -3450,3 +3449,14 @@ les octets du fichier pour confirmer la création.
 
 La recette couvre SQLite, la PWA, l’interface et un relais réel sur un dossier temporaire.
 Les réponses du fournisseur sont simulées.
+
+## 79. Une tâche créée a une entrée à compléter — 2026-11-12
+
+**Constat.** La création rapide et l’assistant pouvaient créer une tâche sans entrée associée,
+alors que le contenu d’une tâche se rédige dans une entrée.
+
+**Choix.** Toute nouvelle tâche créée seule reçoit, dans la même opération, une entrée Markdown
+locale vide portant son titre, son projet et sa catégorie. Elle apparaît dans le journal pour
+être complétée. Une tâche créée depuis une entrée continue de lier cette entrée existante.
+Les tâches déjà présentes sans lien restent lisibles ; aucune migration ne leur invente de
+contenu.

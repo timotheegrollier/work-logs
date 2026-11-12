@@ -38,7 +38,7 @@ describe('projets', () => {
 
     const { body } = await api.get('/api/state');
     assert.deepEqual(body.projects.map((p) => p.name), ['Alpha', 'Zèbre']);
-    assert.equal(body.projects[0].entries, 1);
+    assert.equal(body.projects[0].entries, 3);
     assert.equal(body.projects[0].open_tasks, 1, 'les tâches terminées ne comptent pas');
     assert.equal(body.projects[1].open_tasks, 1);
   });

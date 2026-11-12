@@ -47,7 +47,7 @@ describe('suivi IA enregistré', () => {
     assert.equal((await api.get(`/api/entries/${note.id}`)).body.updated_at, before, 'la préparation ne modifie rien');
 
     const taskSource = await snapshot('task', task.id);
-    assert.deepEqual(taskSource.source.documents.map((entry) => entry.id).sort(), [note.id, local.id].sort());
+    assert.deepEqual(taskSource.source.documents.map((entry) => entry.id).sort(), [note.id, local.id, task.documents[0].id].sort());
     assert.deepEqual(taskSource.source.documents.find((entry) => entry.id === local.id).content_json, rich);
     assert.equal(taskSource.source.documents.find((entry) => entry.id === local.id).google, true);
     assert.equal(JSON.stringify(taskSource).includes('Ne doit jamais être une source'), false);
@@ -127,7 +127,7 @@ describe('suivi IA enregistré', () => {
     await api.put(`/api/tasks/${task.id}`, { title: 'Nouveau titre' });
     assert.notEqual((await snapshot('task', task.id)).source_key, linked.source_key);
     await api.del(`/api/tasks/${task.id}/documents/${note.id}`);
-    assert.equal((await snapshot('task', task.id)).source.documents.length, 0);
+    assert.deepEqual((await snapshot('task', task.id)).source.documents.map((entry) => entry.id), [task.documents[0].id]);
   });
 
   test('distingue une procédure d’une note et invalide les bilans quand le type de leur source change', async () => {
@@ -199,11 +199,11 @@ describe('suivi IA enregistré', () => {
     assert.equal(typeof backup.entries[0].follow_up, 'object');
     assert.equal(typeof backup.tasks[0].follow_up, 'object');
     restoreBackup(api.db, backup);
-    assert.deepEqual((await snapshot('entry', note.id)).follow_up, backup.entries[0].follow_up);
+    assert.deepEqual((await snapshot('entry', note.id)).follow_up, backup.entries.find((entry) => entry.id === note.id).follow_up);
     assert.deepEqual((await snapshot('task', task.id)).follow_up, backup.tasks[0].follow_up);
 
     const invalid = structuredClone(backup);
-    invalid.entries[0].follow_up.report.status = 'inventé';
+    invalid.entries.find((entry) => entry.id === note.id).follow_up.report.status = 'inventé';
     assert.throws(() => restoreBackup(api.db, invalid), /suivi IA invalide/);
     assert.equal((await snapshot('entry', note.id)).follow_up.report.summary, REPORT.summary);
 

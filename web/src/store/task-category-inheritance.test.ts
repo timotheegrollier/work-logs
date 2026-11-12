@@ -168,7 +168,7 @@ test('PWA : une liaison persistée avant un héritage refusé reste en outbox et
   expect(interrupted.task_entries.map((link) => [link.task_id, link.entry_id])).toEqual([[task.id, note.id]]);
   expect(await classification(task.id)).toBeNull();
   const persisted = await memory.table<{ id: string; created_at: string }>('task_entries').all();
-  expect(persisted).toHaveLength(1);
+  expect(persisted).toHaveLength(2);
   await localApi.linkTaskDocument(task.id, note.id);
   expect(await classification(task.id)).toBe(first.id);
   expect((await exportLocalOutbox()).tasks.map((row) => row.id)).toEqual([task.id]);

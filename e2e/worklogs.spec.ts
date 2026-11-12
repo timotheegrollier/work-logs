@@ -194,13 +194,13 @@ test('la recherche filtre le journal et les tâches d’un coup', async ({ page 
   await newEntry(page, 'Dossier ravalement');
   await page.getByLabel('Nouvelle tâche').fill('Devis ravalement');
   await page.getByLabel('Nouvelle tâche').press('Enter');
-  await expect(board(page).getByText('Devis ravalement')).toBeVisible();
+  await expect(board(page).getByRole('button', { name: 'Devis ravalement', exact: true })).toBeVisible();
 
   await page.getByLabel('Rechercher').fill('ravalement');
 
   await expect(journal(page).getByText('Dossier ravalement')).toBeVisible();
   await expect(journal(page).getByText('Comment ça marche')).toBeHidden();
-  await expect(board(page).getByText('Devis ravalement')).toBeVisible();
+  await expect(board(page).getByRole('button', { name: 'Devis ravalement', exact: true })).toBeVisible();
   await expect(board(page).getByText('Créer mes projets')).toBeHidden();
 });
 

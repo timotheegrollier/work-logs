@@ -72,7 +72,7 @@ test('assistant sur ordinateur : panneau à droite, proposition appliquée en ba
     const prompts = await stubAssistant(page, {
       reply: 'La réparation reste à faire. Voici ce que je propose.',
       show_tasks: [1],
-      show_documents: [1],
+      show_documents: [2],
       actions: [
         { kind: 'create_task', title: 'Commander le joint', priority: 'high' },
         { kind: 'update_task', n: 1, status: 'doing' },

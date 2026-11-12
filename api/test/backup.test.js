@@ -72,9 +72,9 @@ describe('sauvegardes Google Drive', () => {
       await api.db.prepare('DELETE FROM tasks').run();
       const restored = await api.post('/api/google/backup/backup-1/import');
       assert.equal(restored.status, 200);
-      assert.deepEqual(restored.body, { ok: true, projects: 1, entries: 1, tasks: 1, binaries: 0, missingFiles: 0 });
-      assert.equal(api.db.prepare('SELECT title FROM entries').get().title, 'Contexte sauvegardé');
-      assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries').get().n, 1);
+      assert.deepEqual(restored.body, { ok: true, projects: 1, entries: 2, tasks: 1, binaries: 0, missingFiles: 0 });
+      assert.equal(api.db.prepare("SELECT title FROM entries WHERE title='Contexte sauvegardé'").get().title, 'Contexte sauvegardé');
+      assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries').get().n, 2);
       assert.equal(api.db.prepare('SELECT document_id FROM google_documents').get().document_id, 'google-backup-doc');
     } finally {
       await api.close();
