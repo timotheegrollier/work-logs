@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Assistant WorkLogs — 2026-11-12 (§78)
+## Assistant WorkLogs et entrée des tâches — 2026-11-12, v0.75.0 (§78, §79)
 
 - Plusieurs conversations dans le même panneau, avec brouillons, historiques et arrêts
   indépendants. Les requêtes continuent quand on ferme le panneau. Le quota tient compte
