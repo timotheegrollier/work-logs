@@ -3421,3 +3421,32 @@ plafond gêne un usage normal ; si Google publie ses chiffres gratuits ou si Wor
 consommation du projet ; si une minute entre deux actualisations épuise trop vite le tiers automatique ; si
 l’assistant doit écrire dans une note existante, à traiter à part à cause du brouillon de l’entrée
 ouverte, que la frappe suivante réécrirait.
+
+## 78. L’assistant prépare des changements sur le journal et le partage dans plusieurs conversations — 2026-11-12
+
+Une conversation peut poursuivre ses lectures pendant qu’une autre travaille ou pendant que
+le panneau est fermé. Chaque demande capture ses paramètres et le projet affiché à l’envoi.
+L’état de chaque conversation reste dans la mémoire de l’application. Le quota réserve une place
+aux appels en cours avant leur envoi et enregistre leur usage après la réponse.
+
+Le protocole JSON conserve la compatibilité avec les fournisseurs existants. Le modèle peut
+demander des lectures bornées et reçoit leurs résultats avant de préparer ses propositions.
+Les catégories, entrées, fichiers et dossiers proposés sont résolus à partir des listes du tour.
+Le texte d’un fichier partagé est lu depuis la version vue sur le serveur si l’option de la
+conversation l’autorise. L’historique garde cette provenance pour écarter de futurs envois
+les réponses qui utilisent ces extraits lorsque l’option est désactivée.
+
+Un clic applique les écritures avec les routes existantes. Le statut d’une entrée est stocké
+avec elle et distingue son avancement de son archivage. SQLite et IndexedDB comparent
+l’état attendu avant de modifier une entrée ou une tâche. Terminer une tâche compare aussi
+les documents actifs à archiver. Le texte d’une entrée existante s’édite en Markdown
+après lecture de sa version complète. L’éditeur enregistre les champs saisis pour préserver
+les changements faits par le chat sur les autres champs.
+
+Une procédure est une entrée locale ou un nouveau Word créé dans le dossier partagé. Le client
+réutilise l’export Word et la création exclusive du partage. Avant l’écriture, il vérifie
+le relais ou le montage et le dossier de destination. Après une réponse perdue, il compare
+les octets du fichier pour confirmer la création.
+
+La recette couvre SQLite, la PWA, l’interface et un relais réel sur un dossier temporaire.
+Les réponses du fournisseur sont simulées.

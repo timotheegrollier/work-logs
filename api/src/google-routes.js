@@ -164,7 +164,8 @@ const sameEntry = (current, next) =>
   current.title === next.title && current.content_md === next.content_md &&
   (current.content_json || null) === (next.content_json ? JSON.stringify(next.content_json) : null) &&
   current.entry_date === next.entry_date && (current.project_id || null) === (next.project_id || null) &&
-  (current.archived ?? 0) === (next.archived ?? 0) && (current.kind ?? 'note') === (next.kind ?? 'note') && (current.category_id || null) === (next.category_id || null);
+  (current.archived ?? 0) === (next.archived ?? 0) && (current.kind ?? 'note') === (next.kind ?? 'note') &&
+  (current.status ?? 'todo') === (next.status ?? 'todo') && (current.category_id || null) === (next.category_id || null);
 
 const sameTask = (current, next) =>
   current.title === next.title && current.status === next.status &&
@@ -223,12 +224,12 @@ export async function importOutbox(db, { google, uploadDir }, data) {
       const followUp = mergeFollowUp(current?.follow_up, next.follow_up);
       const serializedFollowUp = followUp ? JSON.stringify(followUp) : null;
       if (!current) {
-        db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,created_at,updated_at,category_id,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
-          .run(next.id, next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.created_at, next.updated_at, next.category_id ?? null, serializedFollowUp);
+        db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,status,created_at,updated_at,category_id,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+          .run(next.id, next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.status ?? 'todo', next.created_at, next.updated_at, next.category_id ?? null, serializedFollowUp);
         counts.entries++;
       } else if (next.updated_at > current.updated_at) {
-        db.prepare('UPDATE entries SET title=?,content_md=?,content_json=?,entry_date=?,project_id=?,archived=?,kind=?,updated_at=?,category_id=?,follow_up=? WHERE id=?')
-          .run(next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.updated_at, next.category_id ?? null, serializedFollowUp, next.id);
+        db.prepare('UPDATE entries SET title=?,content_md=?,content_json=?,entry_date=?,project_id=?,archived=?,kind=?,status=?,updated_at=?,category_id=?,follow_up=? WHERE id=?')
+          .run(next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.status ?? 'todo', next.updated_at, next.category_id ?? null, serializedFollowUp, next.id);
         counts.updated++;
       } else {
         if (JSON.stringify(readFollowUp(current.follow_up)) !== JSON.stringify(followUp)) {
@@ -300,7 +301,7 @@ export function googleLink(db, entry) {
     document_title: link.document_title, tab_title: link.tab_title, tab_order: link.tab_order, tab_depth: link.tab_depth,
     preserved_elements: entry.content_json ? googlePreservedCount(JSON.parse(entry.content_json)) : 0,
     sync_blocked: link.readonly_reason || '',
-    tabs: db.prepare(`SELECT e.id, e.title, e.entry_date, e.project_id, e.category_id, e.updated_at,
+    tabs: db.prepare(`SELECT e.id, e.title, e.entry_date, e.project_id, e.category_id, e.archived, e.kind, e.status, e.updated_at,
       '' excerpt, 0 attachments, g.document_id google_document_id, g.tab_id google_tab_id,
       g.tab_title google_tab_title, g.tab_order google_tab_order, g.tab_depth google_tab_depth,
       g.readonly_reason google_sync_blocked, (e.content_json != g.synced_content_json) google_dirty

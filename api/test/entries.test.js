@@ -8,6 +8,12 @@ import { openDb } from '../src/db.js';
 import { entryMergeSourceKey } from '../src/entry-merge.js';
 import crypto from 'node:crypto';
 
+const expected = (entry) => ({
+  title: entry.title, entry_date: entry.entry_date, project_id: entry.project_id, category_id: entry.category_id ?? null,
+  archived: entry.archived, kind: entry.kind, status: entry.status, updated_at: entry.updated_at,
+  google_document_id: entry.google_sync?.document_id ?? null,
+});
+
 describe('entrées de journal', () => {
   let api;
   before(async () => { api = await startApi(); });
@@ -20,6 +26,7 @@ describe('entrées de journal', () => {
     assert.equal(res.body.entry_date, new Date().toISOString().slice(0, 10));
     assert.equal(res.body.content_md, '');
     assert.equal(res.body.project_id, null);
+    assert.equal(res.body.status, 'todo');
   });
 
   test('refuse un titre vide ou absent', async () => {
@@ -101,6 +108,49 @@ describe('entrées de journal', () => {
     assert.equal(res.body.archived, 0);
   });
 
+  test('conserve un statut propre à l’entrée, séparé de son archivage et du statut de sa tâche', async () => {
+    const entry = await make.entry(api, { title: 'Déploiement', status: 'doing' });
+    assert.equal(entry.status, 'doing');
+    const task = await make.task(api, { status: 'doing' });
+    await api.post(`/api/tasks/${task.id}/documents/${entry.id}`);
+    const updated = await api.put(`/api/entries/${entry.id}`, { status: 'done', expected_entry: expected(entry) });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.body.status, 'done');
+    assert.equal(updated.body.archived, 0);
+    const state = (await api.get('/api/state')).body;
+    assert.equal(state.entries.find(({ id }) => id === entry.id).status, 'done');
+    assert.equal(state.tasks.find(({ id }) => id === task.id).status, 'doing');
+    assert.equal(state.tasks.find(({ id }) => id === task.id).documents[0].status, 'done');
+    const archived = await api.put(`/api/entries/${entry.id}`, { archived: 1 });
+    assert.equal(archived.body.status, 'done');
+    assert.equal((await api.put(`/api/entries/${entry.id}`, { status: 'blocked' })).status, 400);
+    assert.equal((await api.post('/api/entries', { title: 'Invalide', status: 'blocked' })).status, 400);
+    assert.equal((await api.get(`/api/entries/${entry.id}`)).body.status, 'done');
+  });
+
+  test('deux propositions sur la même version d’une entrée ne s’écrasent pas', async () => {
+    const entry = await make.entry(api, { title: 'Suivi chantier' });
+    const responses = await Promise.all(['doing', 'done'].map((status) => api.put(`/api/entries/${entry.id}`, { status, expected_entry: expected(entry) })));
+    assert.deepEqual(responses.map((res) => res.status).sort(), [200, 409]);
+    assert.equal(responses.find((res) => res.status === 409).body.code, 'ENTRY_EDIT_STALE');
+    assert.equal((await api.get(`/api/entries/${entry.id}`)).body.status, responses.find((res) => res.status === 200).body.status);
+  });
+
+  test('un corps édité à date égale est protégé par l’instantané du texte', async () => {
+    const entry = await make.entry(api, { title: 'Texte à réviser', content_md: 'Version initiale' });
+    const expected_entry = { ...expected(entry), source_key: entryMergeSourceKey(entry) };
+    const invalid = await api.put(`/api/entries/${entry.id}`, { content_md: 'Proposition', expected_entry: expected(entry) });
+    assert.equal(invalid.status, 400);
+    api.db.prepare('UPDATE entries SET content_md=? WHERE id=?').run('Saisie locale', entry.id);
+    const stale = await api.put(`/api/entries/${entry.id}`, { content_md: 'Proposition', expected_entry });
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.code, 'ENTRY_EDIT_STALE');
+    const current = (await api.get(`/api/entries/${entry.id}`)).body;
+    assert.equal(current.content_md, 'Saisie locale');
+    const applied = await api.put(`/api/entries/${entry.id}`, { content_md: 'Proposition relue', expected_entry: { ...expected(current), source_key: entryMergeSourceKey(current) } });
+    assert.equal(applied.body.content_md, 'Proposition relue');
+  });
+
   test('une base antérieure sans colonne reste visible sans perdre ses entrées', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'worklogs-archive-migration-'));
     const file = path.join(dir, 'old.db');
@@ -115,6 +165,7 @@ describe('entrées de journal', () => {
     try {
       const row = migrated.prepare('SELECT * FROM entries WHERE id=?').get('en_old');
       assert.equal(row.archived, 0);
+      assert.equal(row.status, 'todo');
       assert.equal(row.title, 'Ancienne');
       assert.deepEqual(migrated.prepare('PRAGMA foreign_key_check').all(), []);
     } finally {

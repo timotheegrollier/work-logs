@@ -78,6 +78,20 @@ describe('boîte mobile', () => {
     } finally { await api.close(); }
   });
 
+  test('importe le statut d’une entrée nouvelle puis modifiée depuis la PWA', async () => {
+    const payload = outbox({ attachments: [] });
+    payload.entries[0].status = 'doing';
+    const api = await startApi({ google: mockGoogle({ payload }) });
+    try {
+      assert.equal((await api.post('/api/google/outbox/ob-1/import')).body.entries, 1);
+      assert.equal((await api.get('/api/entries/en_mob')).body.status, 'doing');
+      payload.entries[0].status = 'done';
+      payload.entries[0].updated_at = T1;
+      assert.equal((await api.post('/api/google/outbox/ob-1/import')).body.updated, 1);
+      assert.equal((await api.get('/api/entries/en_mob')).body.status, 'done');
+    } finally { await api.close(); }
+  });
+
   test('fusionne les suivis IA avec leurs horloges sans rajeunir ni remplacer les sources du PC', async () => {
     const tracking = { enabled: true, enabled_at: T0, report: {
       status: 'doing', summary: 'Devis prêt.', completed: ['Devis préparé'], next_steps: ['Signer'],

@@ -1,5 +1,24 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Assistant WorkLogs — 2026-11-12 (§78)
+
+- Plusieurs conversations dans le même panneau, avec brouillons, historiques et arrêts
+  indépendants. Les requêtes continuent quand on ferme le panneau. Le quota tient compte
+  des appels simultanés.
+- L’assistant peut planifier et classer les tâches, créer ou modifier les entrées et leurs
+  statuts, créer des procédures locales, rechercher sur le partage et y préparer un Word.
+  Les écritures restent validées au clic. Le statut des entrées est stocké sur desktop et
+  dans la PWA, et conservé dans les sauvegardes et la synchro.
+- Le partage réutilise le relais et le montage existants. La lecture d’extraits se règle
+  par conversation. Le vrai relais a été testé avec un dossier temporaire et les appels
+  au fournisseur IA sont simulés.
+- `./scripts/check.sh` vert sur la base v0.74.0 et après le lot. Après le lot, 325 tests API,
+  1 329 front et un échec attendu, 49 desktop unitaires, 46 scripts, 8 Worker, 11 relais,
+  114 navigateur et 19 Electron. Build PWA vérifié.
+- Pour la publication, un parcours navigateur supplémentaire vérifie le parcours complet
+  depuis l’autorisation d’extraits jusqu’au Word sur le disque du partage. Il contrôle
+  l’absence du fichier avant validation et ouvre la source depuis le résultat du chat.
+
 ## Lot IA du 2026-11-10 (v0.74.0) — plafond quotidien, assistant, suivi plus sobre (§77)
 
 Les fonctions IA sont retravaillées, sans dépendance ni route nouvelle. Décisions, écartés et

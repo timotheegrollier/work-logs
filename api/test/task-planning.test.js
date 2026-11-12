@@ -54,6 +54,29 @@ describe('application atomique d’une replanification IA', () => {
     assert.deepEqual(current(task.id), before);
   });
 
+  test('un classement changé ou un nouveau document lié invalide la proposition', async () => {
+    const project = await make.project(api);
+    const { body: category } = await api.post('/api/categories', { name: 'Planning', project_id: project.id });
+    const task = await make.task(api, { project_id: project.id });
+    const url = `/api/tasks/${task.id}`;
+    await api.put(url, { category_id: category.id });
+    const staleCategory = await api.put(url, { category_id: null, expected_planning: { ...expected(task), category_id: null } });
+    assert.equal(staleCategory.status, 409);
+    assert.equal(current(task.id).category_id, category.id);
+
+    const entry = await make.entry(api, { project_id: project.id });
+    await api.post(`${url}/documents/${entry.id}`);
+    const snapshot = { ...expected(task), category_id: category.id };
+    const staleDocuments = await api.put(url, { status: 'done', expected_planning: { ...snapshot, active_document_ids: [] } });
+    assert.equal(staleDocuments.status, 409);
+    assert.equal(current(task.id).status, 'todo');
+    assert.equal((await api.get(`/api/entries/${entry.id}`)).body.archived, 0);
+
+    const finished = await api.put(url, { status: 'done', expected_planning: { ...snapshot, active_document_ids: [entry.id] } });
+    assert.equal(finished.status, 200);
+    assert.equal((await api.get(`/api/entries/${entry.id}`)).body.archived, 1);
+  });
+
   test('deux applications concurrentes du même instantané ne peuvent pas toutes deux écrire', async () => {
     const task = await make.task(api);
     const results = await Promise.all(['2026-11-06', '2026-11-07'].map((due_date) => api.put(`/api/tasks/${task.id}`, { priority: 'high', due_date, expected_planning: expected(task) })));

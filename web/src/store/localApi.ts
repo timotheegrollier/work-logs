@@ -34,6 +34,8 @@ import { TASK_CATEGORY_MIGRATION, inheritedTaskCategory } from '../../../api/src
 import { buildFollowUpSource, decodeFollowUpRow, followUpKey, readFollowUp, updateFollowUp } from '../../../api/src/follow-up.js';
 // @ts-expect-error — même comparaison pure de planification que dans l'API SQLite.
 import { assertExpectedTaskPlanning } from '../../../api/src/task-planning.js';
+// @ts-expect-error — même comparaison pure d'entrée que dans l'API SQLite.
+import { assertExpectedEntryEdit } from '../../../api/src/entry-edit.js';
 // @ts-expect-error — même contrat de fusion que dans l'API SQLite.
 import { assertEntryMergeReplay, assertEntryMergeSources, assertTaskMergeSources, isRewritableNote, taskMergeAttributes, taskMergeTaskId, entryMergeClassification, entryMergeTargetId, validateEntryMerge } from '../../../api/src/entry-merge.js';
 import { readRelay } from '../relay-settings';
@@ -126,6 +128,7 @@ const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 interface EntryRow {
   id: string; title: string; content_md: string; content_json: string | null;
   entry_date: string; project_id: string | null; category_id?: string | null; archived: 0 | 1; kind: 'note' | 'procedure';
+  status?: Status;
   created_at: string; updated_at: string;
   follow_up?: FollowUp | null;
 }
@@ -416,7 +419,7 @@ async function googleSync(entryId: string, contentJson: string | null): Promise<
     if (!target) continue;
     tabs.push({
       id: target.id, title: target.title, entry_date: target.entry_date, project_id: target.project_id, category_id: target.category_id ?? null,
-      archived: target.archived ?? 0, kind: target.kind ?? 'note',
+      archived: target.archived ?? 0, kind: target.kind ?? 'note', status: target.status ?? 'todo',
       updated_at: target.updated_at, excerpt: '', attachments: 0,
       google_document_id: sibling.document_id, google_tab_id: sibling.tab_id,
       google_tab_title: sibling.tab_title, google_tab_order: sibling.tab_order,
@@ -475,7 +478,7 @@ function taskDocuments(taskId: string, entries: EntryRow[], links: LinkRow[], go
       const link = googleByEntry.get(entry.id);
       return {
         id: entry.id, title: entry.title, entry_date: entry.entry_date,
-        project_id: entry.project_id, category_id: entry.category_id ?? null, archived: entry.archived ?? 0, kind: entry.kind ?? 'note', updated_at: entry.updated_at,
+        project_id: entry.project_id, category_id: entry.category_id ?? null, archived: entry.archived ?? 0, kind: entry.kind ?? 'note', status: entry.status ?? 'todo', updated_at: entry.updated_at,
         excerpt: '', attachments: 0,
         google_document_id: link?.document_id ?? null, google_tab_id: link?.tab_id ?? null,
         google_document_title: link?.document_title ?? null, google_tab_title: link?.tab_title ?? null,
@@ -875,7 +878,7 @@ export const localApi: Api = {
       const link = googleByEntry.get(entry.id);
       return {
         id: entry.id, title: entry.title, entry_date: entry.entry_date, project_id: entry.project_id, category_id: entry.category_id ?? null,
-        archived: entry.archived ?? 0, kind: entry.kind ?? 'note',
+        archived: entry.archived ?? 0, kind: entry.kind ?? 'note', status: entry.status ?? 'todo',
         updated_at: entry.updated_at, excerpt: entry.content_md.slice(0, 240),
         attachments: counts.get(entry.id) ?? 0,
         google_document_id: link?.document_id ?? null, google_tab_id: link?.tab_id ?? null,
@@ -937,12 +940,14 @@ export const localApi: Api = {
     if (!DATE_RE.test(date)) fail('date invalide (AAAA-MM-JJ attendu)');
     if (orNull(body.project_id) && !(await projects.get(str(body.project_id)))) fail('projet introuvable');
     const kind: 'note' | 'procedure' = kindOf(body.kind) ?? fail('type de document invalide (note ou procédure attendu)');
+    const status = body.status === undefined ? 'todo' : body.status;
+    if (!STATUSES.includes(status)) fail('statut invalide');
     const id = uid('en_');
     const t = nowISO();
     const rich = body.content_json == null ? null : validateDocument(body.content_json);
     await entries.put({
       id, title, content_md: rich ? documentText(rich) : typeof body.content_md === 'string' ? body.content_md : '',
-      entry_date: date, project_id: orNull(body.project_id), category_id: await categoryFor(body.category_id, orNull(body.project_id)), archived: 0, kind, created_at: t, updated_at: t,
+      entry_date: date, project_id: orNull(body.project_id), category_id: await categoryFor(body.category_id, orNull(body.project_id)), archived: 0, kind, status, created_at: t, updated_at: t,
       content_json: rich ? JSON.stringify(rich) : null,
     });
     track('entries', id);
@@ -954,6 +959,12 @@ export const localApi: Api = {
     const { entries, projects } = t;
     const current = await fullEntry(id);
     const patch = (body ?? {}) as Record<string, unknown>;
+    try {
+      assertExpectedEntryEdit(patch.expected_entry, current, patch.content_md !== undefined || patch.content_json !== undefined);
+    } catch (cause) {
+      const error = cause as Error & { code?: string };
+      throw new ApiError(error.message, error.code);
+    }
     const title = pick(patch, 'title', current.title, (v) => str(v));
     if (!title) fail('titre requis');
     const date = pick(patch, 'entry_date', current.entry_date, (v) => str(v) || current.entry_date);
@@ -967,12 +978,14 @@ export const localApi: Api = {
     const archived = pick(patch, 'archived', row.archived ?? 0, (v) => (v ? 1 : 0));
     const kind: 'note' | 'procedure' = pick(patch, 'kind', row.kind ?? 'note', (v) => kindOf(v, row.kind ?? 'note'))
       ?? fail('type de document invalide (note ou procédure attendu)');
+    const status = pick(patch, 'status', current.status ?? 'todo');
+    if (!STATUSES.includes(status)) fail('statut invalide');
     const categoryId = await categoryForPatch(patch, current, projectId);
     const time = nowISO();
     await entries.put({
       ...row, title,
       content_md: rich ? documentText(rich) : pick(patch, 'content_md', current.content_md, (v) => (typeof v === 'string' ? v : current.content_md)),
-      entry_date: date, project_id: projectId, category_id: categoryId, archived, kind, updated_at: time,
+      entry_date: date, project_id: projectId, category_id: categoryId, archived, kind, status, updated_at: time,
       content_json: rich ? JSON.stringify(rich) : null,
     });
     track('entries', id, false);
@@ -1180,7 +1193,12 @@ export const localApi: Api = {
     try {
       // updateTask et la synchro partagent localWrite : aucun autre changement
       // local ne s'intercale pendant les lectures IndexedDB de cette comparaison.
-      if (patch.expected_planning !== undefined) assertExpectedTaskPlanning(patch.expected_planning, await localFollowUpMetadata('task', current));
+      if (patch.expected_planning !== undefined) {
+        const expected = body.expected_planning;
+        const snapshot = expected?.active_document_ids !== undefined
+          ? await taskWithDocuments(id) : await localFollowUpMetadata('task', current);
+        assertExpectedTaskPlanning(expected, snapshot);
+      }
     } catch (cause) {
       const error = cause as Error & { code?: string };
       throw new ApiError(error.message, error.code);
@@ -1518,7 +1536,10 @@ async function applySyncSnapshotUnlocked(merged: SyncSnapshot, base: SyncSnapsho
       const now = current.get(id) as Record<string, unknown> | undefined;
       const was = baseMap.get(id) ? (toRow(baseMap.get(id) as Wanted) as Record<string, unknown>) : undefined;
       if (stampOf(now as never) !== stampOf(was as never)) return true;
-      return fields.some((field) => JSON.stringify(now?.[field] ?? null) !== JSON.stringify(was?.[field] ?? null));
+      return fields.some((field) => {
+        const fallback = field === 'status' ? 'todo' : null;
+        return JSON.stringify(now?.[field] ?? fallback) !== JSON.stringify(was?.[field] ?? fallback);
+      });
     };
     for (const [id, row] of wantedMap) {
       if (same(row, baseMap.get(id))) continue;
@@ -1537,7 +1558,7 @@ async function applySyncSnapshotUnlocked(merged: SyncSnapshot, base: SyncSnapsho
   await sync(t.categories, merged.categories || [], base.categories || [], (row) => (row as CategoryRow).id, (row) => ({ ...row }), ['name', 'color', 'project_id', 'parent_id']);
   await sync(t.entries, merged.entries, base.entries, (row) => (row as EntryRow).id,
     (row) => ({ ...row, content_json: row.content_json ? JSON.stringify(row.content_json) : null }) as EntryRow,
-    ['title', 'content_md', 'content_json', 'entry_date', 'project_id', 'category_id', 'archived', 'kind', 'follow_up']);
+    ['title', 'content_md', 'content_json', 'entry_date', 'project_id', 'category_id', 'archived', 'kind', 'status', 'follow_up']);
   await sync(t.tasks, merged.tasks, base.tasks, (row) => (row as TaskRow).id, (row) => ({ ...row }),
     ['title', 'status', 'due_date', 'pinned', 'position', 'priority', 'project_id', 'category_id', 'follow_up']);
   await sync(t.links, merged.task_entries, base.task_entries, (row) => linkId(row.task_id, row.entry_id),
@@ -1641,7 +1662,7 @@ async function exportLocalOutboxUnlocked(baseExportedAt: string | null): Promise
     device: 'pwa',
     projects: await take(t.projects, [...projectIds]),
     categories,
-    entries: entries.map((row) => ({ ...row, content_json: row.content_json ? (JSON.parse(row.content_json) as RichDocument) : null })),
+    entries: entries.map((row) => ({ ...row, status: row.status ?? 'todo', content_json: row.content_json ? (JSON.parse(row.content_json) as RichDocument) : null })),
     tasks,
     task_entries: links.map(({ task_id, entry_id, created_at }) => ({ task_id, entry_id, created_at })),
     attachments: files.map(({ blob: _blob, driveFileId, ...meta }) => ({ ...meta, driveFileId: driveFileId ?? null })),

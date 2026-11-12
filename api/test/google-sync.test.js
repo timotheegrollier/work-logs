@@ -53,11 +53,12 @@ test('synchro desktop : envoi initial, réception du téléphone, suppression pr
   const drive = fakeDrive();
   const api = await startApi({ google: drive.google, autoSync: true });
   try {
-    const pc = await make.entry(api, { title: 'Note du PC' });
+    const pc = await make.entry(api, { title: 'Note du PC', status: 'doing' });
     let status = (await api.post('/api/google/sync')).body;
     assert.equal(status.state, 'idle');
     assert.ok(status.lastSyncedAt);
     assert.deepEqual(drive.json().entries.map((e) => e.title), ['Note du PC']);
+    assert.equal(drive.json().entries[0].status, 'doing');
     const writes = drive.writes;
 
     // Rien de neuf : ni réécriture ni changement local.
@@ -66,10 +67,11 @@ test('synchro desktop : envoi initial, réception du téléphone, suppression pr
     const revision = status.revision;
 
     // Le téléphone ajoute une note.
-    drive.phoneWrites((data) => data.entries.push({ ...data.entries[0], id: 'en_phone', title: 'Note du téléphone', updated_at: new Date().toISOString() }));
+    drive.phoneWrites((data) => data.entries.push({ ...data.entries[0], id: 'en_phone', title: 'Note du téléphone', status: 'done', updated_at: new Date().toISOString() }));
     status = (await api.post('/api/google/sync')).body;
     assert.equal(status.revision, revision + 1, 'le front sait qu’il doit recharger');
     assert.equal((await api.get('/api/entries/en_phone')).body.title, 'Note du téléphone');
+    assert.equal((await api.get('/api/entries/en_phone')).body.status, 'done');
     assert.equal(drive.writes, writes, 'déjà à jour sur Drive : pas de réécriture');
 
     // Suppression sur le PC : elle part avec sa pierre tombale.

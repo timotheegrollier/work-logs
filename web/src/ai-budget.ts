@@ -20,6 +20,7 @@ export interface AiUsage {
 const LS_USAGE = 'worklogs-ai-usage';
 const LS_LIMIT = 'worklogs-ai-daily-limit';
 const PACIFIC_DATE = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' });
+const requestsInFlight = new Set<{ background: boolean; tokens: number }>();
 
 /** AAAA-MM-JJ à Los Angeles : le jour du quota, pas celui de l'utilisateur. */
 export function pacificDay(now = new Date()): string {
@@ -77,8 +78,10 @@ const formatted = (count: number) => count.toLocaleString('fr-FR').replace(/\s/g
 
 /** Motif du refus, ou null : le suivi automatique ne peut pas assécher les gestes explicites. */
 export function aiBudgetRefusal(background: boolean): string | null {
-  const usage = readAiUsage();
-  const limit = readDailyLimit();
+  return budgetRefusal(readAiUsage(), readDailyLimit(), background);
+}
+
+function budgetRefusal(usage: AiUsage, limit: number, background: boolean): string | null {
   const tokens = limit * TOKENS_PER_REQUEST;
   const reached = usage.requests >= limit ? `${formatted(limit)} requêtes`
     : usage.tokens >= tokens ? `${formatted(tokens)} jetons` : '';
@@ -86,6 +89,27 @@ export function aiBudgetRefusal(background: boolean): string | null {
   return background && usage.background >= Math.ceil(limit / 3)
     ? 'Actualisation automatique suspendue pour aujourd’hui : elle ne prend qu’un tiers du plafond quotidien. « Actualiser » reste disponible.'
     : null;
+}
+
+/** Garde une place pendant l’appel. Seule une réponse facturable alimente le compteur persistant. */
+export function reserveAiRequest(background: boolean, estimatedTokens: number): { release: () => void } | { reason: string; temporary: boolean } {
+  const usage = readAiUsage();
+  const limit = readDailyLimit();
+  const refusal = budgetRefusal(usage, limit, background);
+  if (refusal) return { reason: refusal, temporary: false };
+
+  for (const pending of requestsInFlight) {
+    usage.requests += 1;
+    usage.tokens += pending.tokens;
+    usage.background += Number(pending.background);
+  }
+  if (budgetRefusal(usage, limit, background)) {
+    return { reason: 'Les demandes IA en cours occupent le quota disponible. Réessaie après leur réponse.', temporary: true };
+  }
+
+  const request = { background, tokens: estimatedTokens };
+  requestsInFlight.add(request);
+  return { release: () => { requestsInFlight.delete(request); } };
 }
 
 export function recordAiUsage(tokens: number, background: boolean): void {

@@ -79,6 +79,7 @@ export interface EntrySummary {
   archived: 0 | 1;
   /** `procedure` = mode d'emploi du projet, rassemblé dans le panneau Procédures. */
   kind: 'note' | 'procedure';
+  status?: Status;
   updated_at: string;
   follow_up?: FollowUp | null;
   follow_up_key?: string;
@@ -154,12 +155,20 @@ export interface Entry {
   category_id?: string | null;
   archived: 0 | 1;
   kind: 'note' | 'procedure';
+  status?: Status;
   created_at: string;
   updated_at: string;
   follow_up?: FollowUp | null;
   follow_up_key?: string;
   attachments: Attachment[];
 }
+export type EntryEditSnapshot = Pick<Entry, 'title' | 'entry_date' | 'project_id' | 'archived' | 'kind' | 'updated_at'> & {
+  category_id: string | null;
+  google_document_id: string | null;
+  status: Status;
+  /** Empreinte du corps enregistré, obligatoire si la proposition modifie son texte. */
+  source_key?: string;
+};
 export interface GoogleSync {
   document_id: string; tab_id?: string; synced_at: string | null; dirty: boolean;
   document_title?: string; tab_title?: string; tab_order?: number; tab_depth?: number; sync_blocked?: string;
@@ -208,7 +217,10 @@ export interface Task {
   documents: EntrySummary[];
 }
 /** Compare les champs relus avant d'appliquer une proposition IA, dans la même écriture. */
-export type TaskPlanningSnapshot = Pick<Task, 'status' | 'priority' | 'due_date'> & Partial<Pick<Task, 'title' | 'project_id' | 'pinned'>> & { follow_up_key?: string | null };
+export type TaskPlanningSnapshot = Pick<Task, 'status' | 'priority' | 'due_date'> & Partial<Pick<Task, 'title' | 'project_id' | 'category_id' | 'pinned'>> & {
+  follow_up_key?: string | null;
+  active_document_ids?: string[];
+};
 export interface Attachment {
   id: string;
   filename: string;
@@ -554,7 +566,7 @@ export const remoteApi = {
   deleteCategory: (id: string) => send<{ ok: true }>('DELETE', `/api/categories/${encodeURIComponent(id)}`),
   entry: (id: string) => req<Entry>(`/api/entries/${id}`),
   createEntry: (body: Partial<Entry>) => send<Entry>('POST', '/api/entries', body),
-  updateEntry: (id: string, body: Partial<Entry>) => send<Entry>('PUT', `/api/entries/${id}`, body),
+  updateEntry: (id: string, body: Partial<Entry> & { expected_entry?: EntryEditSnapshot }) => send<Entry>('PUT', `/api/entries/${id}`, body),
   deleteEntry: (id: string) => send<{ ok: true }>('DELETE', `/api/entries/${id}`),
   copyEntry: (id: string) => send<Entry>('POST', `/api/entries/${id}/copy`),
   mergeEntries: (body: EntryMergeRequest) => send<Entry>('POST', '/api/entries/merge', body),

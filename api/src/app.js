@@ -13,6 +13,7 @@ import { categoryFor, nextCategory, categoryDescendants, registerCategoryRoutes 
 import { inheritTaskCategories } from './task-categories.js';
 import { createFollowUpAccess, registerFollowUpRoutes } from './follow-up-routes.js';
 import { assertExpectedTaskPlanning } from './task-planning.js';
+import { assertExpectedEntryEdit } from './entry-edit.js';
 import { validateEntryMerge, assertEntryMergeSources, assertEntryMergeReplay, entryMergeTargetId, entryMergeClassification, isRewritableNote, assertTaskMergeSources, taskMergeTaskId, taskMergeAttributes } from './entry-merge.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
@@ -88,7 +89,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const task = getTask(id);
     if (!task) return task;
     const documents = db.prepare(
-      `SELECT e.id, e.title, e.entry_date, e.project_id, e.category_id, e.archived, e.updated_at,
+      `SELECT e.id, e.title, e.entry_date, e.project_id, e.category_id, e.archived, e.status, e.updated_at,
               '' excerpt, 0 attachments,
               g.document_id google_document_id, g.tab_id google_tab_id,
               g.document_title google_document_title, g.tab_title google_tab_title
@@ -137,7 +138,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     }
     const entries = db
       .prepare(
-        `SELECT entries.id, entries.title, entries.entry_date, entries.project_id, entries.category_id, entries.archived, entries.kind, entries.updated_at, entries.follow_up,
+        `SELECT entries.id, entries.title, entries.entry_date, entries.project_id, entries.category_id, entries.archived, entries.kind, entries.status, entries.updated_at, entries.follow_up,
                 substr(entries.content_md, 1, 240) excerpt,
                 (SELECT COUNT(*) FROM attachments a WHERE a.entry_id = entries.id) attachments,
                 g.document_id google_document_id, g.tab_id google_tab_id,
@@ -158,7 +159,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       taskArgs.push(`%${fold(q)}%`);
     }
     const taskDocuments = db.prepare(
-      `SELECT te.task_id, e.id, e.title, e.entry_date, e.project_id, e.category_id, e.archived, e.updated_at,
+      `SELECT te.task_id, e.id, e.title, e.entry_date, e.project_id, e.category_id, e.archived, e.status, e.updated_at,
               g.document_id google_document_id, g.tab_id google_tab_id,
               g.document_title google_document_title, g.tab_title google_tab_title
        FROM task_entries te
@@ -239,42 +240,47 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       return bad(res, 'projet introuvable');
     const kind = kindOf(b.kind);
     if (!kind) return bad(res, 'type de document invalide (note ou procédure attendu)');
+    const status = b.status === undefined ? 'todo' : b.status;
+    if (!STATUSES.includes(status)) return bad(res, 'statut invalide');
     const categoryId = categoryFor(db, orNull(b.project_id), b.category_id);
 
     const id = uid('en_');
     const t = nowISO();
     const rich = b.content_json == null ? null : validateDocument(b.content_json);
     db.prepare(
-      'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,created_at,updated_at,content_json,category_id) VALUES (?,?,?,?,?,?,?,?,?,?)'
-    ).run(id, title, rich ? documentText(rich) : typeof b.content_md === 'string' ? b.content_md : '', date, orNull(b.project_id), kind, t, t, rich ? JSON.stringify(rich) : null, categoryId);
+      'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,status,created_at,updated_at,content_json,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(id, title, rich ? documentText(rich) : typeof b.content_md === 'string' ? b.content_md : '', date, orNull(b.project_id), kind, status, t, t, rich ? JSON.stringify(rich) : null, categoryId);
     res.status(201).json(getEntry(id));
   });
 
   app.put('/api/entries/:id', (req, res) => {
-    const cur = getEntry(req.params.id);
-    if (!cur) return notFound(res, 'entrée introuvable');
     const b = req.body || {};
-
-    const title = pick(b, 'title', cur.title, str);
-    if (!title) return bad(res, 'titre requis');
-    const date = pick(b, 'entry_date', cur.entry_date, (v) => str(v) || cur.entry_date);
-    if (!DATE_RE.test(date)) return bad(res, 'date invalide (AAAA-MM-JJ attendu)');
-    const projectId = pick(b, 'project_id', cur.project_id, orNull);
-    if (projectId && !getProject(projectId)) return bad(res, 'projet introuvable');
-    const categoryId = nextCategory(db, b, cur, projectId);
-    const archived = pick(b, 'archived', cur.archived ?? 0, (v) => (v ? 1 : 0));
-    const kind = pick(b, 'kind', cur.kind ?? 'note', (v) => kindOf(v, cur.kind ?? 'note'));
-    if (!kind) return bad(res, 'type de document invalide (note ou procédure attendu)');
-
-    const rich = b.content_json === undefined ? cur.content_json : b.content_json;
-    if (rich !== null) validateDocument(rich);
-    if (cur.content_json && rich === null) return bad(res, 'la conversion d’un document riche en Markdown n’est pas prise en charge');
-
-    const time = nowISO();
-    db.exec('BEGIN');
+    db.exec('BEGIN IMMEDIATE');
     try {
+      const cur = getEntry(req.params.id);
+      if (!cur) { db.exec('ROLLBACK'); return notFound(res, 'entrée introuvable'); }
+      assertExpectedEntryEdit(b.expected_entry, cur, b.content_md !== undefined || b.content_json !== undefined);
+      const reject = (message) => { db.exec('ROLLBACK'); return bad(res, message); };
+      const title = pick(b, 'title', cur.title, str);
+      if (!title) return reject('titre requis');
+      const date = pick(b, 'entry_date', cur.entry_date, (v) => str(v) || cur.entry_date);
+      if (!DATE_RE.test(date)) return reject('date invalide (AAAA-MM-JJ attendu)');
+      const projectId = pick(b, 'project_id', cur.project_id, orNull);
+      if (projectId && !getProject(projectId)) return reject('projet introuvable');
+      const categoryId = nextCategory(db, b, cur, projectId);
+      const archived = pick(b, 'archived', cur.archived ?? 0, (v) => (v ? 1 : 0));
+      const kind = pick(b, 'kind', cur.kind ?? 'note', (v) => kindOf(v, cur.kind ?? 'note'));
+      if (!kind) return reject('type de document invalide (note ou procédure attendu)');
+      const status = pick(b, 'status', cur.status);
+      if (!STATUSES.includes(status)) return reject('statut invalide');
+
+      const rich = b.content_json === undefined ? cur.content_json : b.content_json;
+      if (rich !== null) validateDocument(rich);
+      if (cur.content_json && rich === null) return reject('la conversion d’un document riche en Markdown n’est pas prise en charge');
+
+      const time = nowISO();
       db.prepare(
-        'UPDATE entries SET title=?, content_md=?, entry_date=?, project_id=?, archived=?, kind=?, updated_at=?, content_json=?, category_id=? WHERE id=?'
+        'UPDATE entries SET title=?, content_md=?, entry_date=?, project_id=?, archived=?, kind=?, status=?, updated_at=?, content_json=?, category_id=? WHERE id=?'
       ).run(
         title,
         rich ? documentText(rich) : pick(b, 'content_md', cur.content_md, (v) => (typeof v === 'string' ? v : cur.content_md)),
@@ -282,6 +288,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
         projectId,
         archived,
         kind,
+        status,
         time,
         rich ? JSON.stringify(rich) : null,
         categoryId,
@@ -290,7 +297,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       if (categoryId !== cur.category_id || projectId !== cur.project_id) inheritTaskCategories(db, time, { entryId: cur.id });
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); throw error; }
-    res.json(getEntry(cur.id));
+    res.json(getEntry(req.params.id));
   });
 
   app.delete('/api/entries/:id', (req, res) => {
@@ -521,7 +528,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     // peut pas changer la tâche entre la comparaison et la nouvelle date.
     db.exec('BEGIN IMMEDIATE');
     try {
-      const cur = getTask(req.params.id);
+      const cur = b.expected_planning?.active_document_ids !== undefined
+        ? getTaskWithDocuments(req.params.id) : getTask(req.params.id);
       if (!cur) { db.exec('ROLLBACK'); return notFound(res, 'tâche introuvable'); }
       assertExpectedTaskPlanning(b.expected_planning, cur);
       const reject = (message) => { db.exec('ROLLBACK'); return bad(res, message); };
@@ -800,7 +808,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   app.use((err, _req, res, _next) => {
     const status = err.status || (err.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
     res.status(status).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'fichier trop volumineux (100 Mo max)' : err.message,
-      ...(err.code?.startsWith('GOOGLE_') || err.code === 'FOLLOW_UP_STALE' || err.code === 'TASK_PLANNING_STALE' ? { code: err.code, ...(err.help_url ? { help_url: err.help_url } : {}) } : {}) });
+      ...(err.code?.startsWith('GOOGLE_') || ['FOLLOW_UP_STALE', 'TASK_PLANNING_STALE', 'ENTRY_EDIT_STALE'].includes(err.code) ? { code: err.code, ...(err.help_url ? { help_url: err.help_url } : {}) } : {}) });
   });
 
   return app;

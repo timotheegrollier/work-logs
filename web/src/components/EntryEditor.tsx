@@ -31,6 +31,8 @@ const LABELS: Record<SaveState, string> = {
   saving: 'Enregistrement…',
   error: 'Échec de l’enregistrement',
 };
+const EDITED_FIELDS = ['title', 'entry_date', 'content_md', 'content_json'] as const;
+type EditedField = typeof EDITED_FIELDS[number];
 
 /** Proposition IA à relire : mise en page de l'entrée, procédure ou note complétée. */
 type AiMode = 'layout' | 'procedure' | 'note';
@@ -139,19 +141,53 @@ export function EntryEditor({
   // champ) et le reste du brouillon s'enregistre. Le refuser laissait, une fois
   // l'entrée quittée, un brouillon en échec que la fermeture rejouait sans fin.
   const [savedTitle, setSavedTitle] = useState(entry.title);
+  const entryStatus = entry.status === 'done' ? 'Terminée' : entry.status === 'doing' ? 'En cours' : undefined;
   const serverClassification = useRef({ project: entry.project_id || '', category: entry.category_id || '' });
-  const [autosave] = useState(() => new Autosave<typeof draft>(async ({ title, project_id, category_id, ...body }) => {
+  const editRevision = useRef(0);
+  const editedFields = useRef(new Map<EditedField, number>());
+  const [autosave] = useState(() => new Autosave<typeof draft>(async ({ title, entry_date, content_md, content_json, project_id, category_id }) => {
     // Une frappe n'est pas un choix de classement : ne pas renvoyer un ancien
     // couple projet/catégorie si celui-ci a changé pendant l'envoi du texte.
     const classification = serverClassification.current;
     const changedClassification = project_id !== classification.project || category_id !== classification.category;
+    // Une autre conversation peut avoir changé un champ pendant qu’on en édite un autre.
+    const sent = new Map(editedFields.current);
+    const changedTitle = sent.has('title') && title.trim();
     await api.updateEntry(entry.id, {
-      ...body, ...(title.trim() ? { title } : {}),
+      ...(changedTitle ? { title } : {}),
+      ...(sent.has('entry_date') && { entry_date }),
+      ...(sent.has('content_md') && { content_md }),
+      ...(sent.has('content_json') && { content_json }),
       ...(changedClassification ? { project_id: project_id || null, category_id: category_id || null } : {}),
     });
-    if (title.trim()) setSavedTitle(title);
+    for (const [field, revision] of sent) {
+      if (editedFields.current.get(field) === revision) editedFields.current.delete(field);
+    }
+    if (changedTitle) setSavedTitle(title);
     changedRef.current();
   }));
+
+  // Une écriture de l’assistant peut actualiser cette même entrée pendant qu’elle est ouverte.
+  useEffect(() => {
+    const current = draftRef.current;
+    const edited = editedFields.current;
+    const incomingRich = entry.content_json ?? null;
+    const keepRich = edited.has('content_json') || (current.content_json && incomingRich &&
+      JSON.stringify(current.content_json) === JSON.stringify(incomingRich));
+    const next = {
+      ...current,
+      title: edited.has('title') ? current.title : entry.title,
+      entry_date: edited.has('entry_date') ? current.entry_date : entry.entry_date,
+      content_md: edited.has('content_md') ? current.content_md : entry.content_md,
+      content_json: keepRich ? current.content_json : incomingRich,
+    };
+    if (EDITED_FIELDS.every((field) => next[field] === current[field])) return;
+    draftRef.current = next;
+    setDraft(next);
+    setSavedTitle(entry.title);
+    if (next.content_json !== current.content_json) setRichVersion((version) => version + 1);
+    if (saveRef.current !== 'saved') autosave.update(next);
+  }, [entry.title, entry.content_md, entry.content_json, entry.entry_date, autosave]);
 
   const update = (patch: Partial<typeof draft>) => {
     if (patch.project_id !== undefined && patch.project_id !== draftRef.current.project_id) {
@@ -159,6 +195,9 @@ export function EntryEditor({
       patch.category_id = '';
     }
     const next = { ...draftRef.current, ...patch };
+    for (const field of EDITED_FIELDS) {
+      if (patch[field] !== undefined) editedFields.current.set(field, ++editRevision.current);
+    }
     draftRef.current = next;
     setDraft(next);
     autosave.update(next);
@@ -327,6 +366,7 @@ export function EntryEditor({
       if (pull || (draftRef.current.content_json === expected && JSON.stringify(updated.content_json) !== JSON.stringify(expected))) {
         // Les frappes arrivées pendant le réseau restent prioritaires côté interface.
         if (draftRef.current.content_json !== expected) {
+          editedFields.current.set('content_json', ++editRevision.current);
           autosave.update(draftRef.current);
           await autosave.flush();
           throw new Error('Ton brouillon a changé pendant le rechargement et a été conservé.');
@@ -839,6 +879,7 @@ export function EntryEditor({
           placeholder={savedTitle || 'Titre de l’entrée'}
           onChange={(e) => update({ title: e.target.value })}
         />
+        {entryStatus && <span className="entry-work-status" role="status" aria-label={`Statut de l’entrée : ${entryStatus}`}>{entryStatus}</span>}
         <span className={'save save-' + save}>{LABELS[save]}</span>
       </div>
 

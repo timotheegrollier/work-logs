@@ -114,5 +114,5 @@ export function documentText(node) {
 }
 
 export function decodeEntry(entry) {
-  return entry ? { ...decodeFollowUpRow(entry), content_json: entry.content_json ? JSON.parse(entry.content_json) : null } : entry;
+  return entry ? { ...decodeFollowUpRow(entry), status: entry.status ?? 'todo', content_json: entry.content_json ? JSON.parse(entry.content_json) : null } : entry;
 }

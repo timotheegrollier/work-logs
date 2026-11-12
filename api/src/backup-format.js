@@ -128,6 +128,8 @@ export function validateBackup(input) {
     if (entry.archived !== undefined && ![0, 1].includes(Number(entry.archived))) fail('Archivage d’entrée invalide.');
     // Idem pour le type : une ancienne sauvegarde ne connaît que des notes.
     if (entry.kind !== undefined && !['note', 'procedure'].includes(entry.kind)) fail('Type de document invalide.');
+    const status = entry.status === undefined ? 'todo' : entry.status;
+    if (!STATUSES.has(status)) fail('Statut d’entrée invalide.');
     return {
       id: id(entry.id, 'Identifiant d’entrée'),
       title: requiredText(entry.title, 'Titre d’entrée', 500),
@@ -139,6 +141,7 @@ export function validateBackup(input) {
       category_id: categoryOf(entry.category_id, projectId),
       archived: entry.archived === undefined ? 0 : Number(entry.archived),
       kind: entry.kind === undefined ? 'note' : entry.kind,
+      status,
       created_at: timestamp(entry.created_at, 'Date de création de l’entrée'),
       updated_at: timestamp(entry.updated_at, 'Date de modification de l’entrée'),
     };

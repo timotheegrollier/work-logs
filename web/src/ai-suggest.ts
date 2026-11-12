@@ -124,7 +124,7 @@ export function saveAiSettings(settings: AiSettings): void {
   }
 }
 
-import { aiBudgetRefusal, aiResetTime, estimateTokens, recordAiUsage } from './ai-budget';
+import { aiBudgetRefusal, aiResetTime, estimateTokens, recordAiUsage, reserveAiRequest } from './ai-budget';
 import { isFollowed, type EntrySummary, type FollowUp, type FollowUpReportDraft, type FollowUpSource, type Priority, type Project, type Status, type Task } from './lib';
 
 /** Repères partagés par les gestes IA, limités au projet et aux sources choisies. */
@@ -490,6 +490,25 @@ async function postOnce(
   timeoutMs: number,
   effort?: 'minimal' | 'low'
 ): Promise<string> {
+  const reservation = reserveAiRequest(Boolean(settings.background), estimateTokens(system + user) + maxTokens);
+  if ('reason' in reservation) throw new (reservation.temporary ? AiError : AiBudgetError)(reservation.reason);
+  try {
+    return await postReserved(settings, model, key, system, user, maxTokens, timeoutMs, effort);
+  } finally {
+    reservation.release();
+  }
+}
+
+async function postReserved(
+  settings: AiSettings,
+  model: string,
+  key: string,
+  system: string,
+  user: string,
+  maxTokens: number,
+  timeoutMs: number,
+  effort?: 'minimal' | 'low'
+): Promise<string> {
   const background = Boolean(settings.background);
   const gemini = GEMINI_ENDPOINT.test(settings.endpoint.trim());
   // « none » coupe la réflexion des 2.5 Flash ; 2.5 Pro ne la coupe pas, « minimal » la réduit.
@@ -545,7 +564,7 @@ async function postOnce(
     if (res.status === 400 && reasoning) {
       effortRefused.add(model);
       if (settings.signal?.aborted) throw new AiCancelled();
-      return postOnce(settings, model, key, system, user, maxTokens, timeoutMs);
+      return postReserved(settings, model, key, system, user, maxTokens, timeoutMs);
     }
     // 404 : modèle absent pour cette clé ; le suivant a sa chance.
     throw new (res.status === 404 ? AiTryNext : AiError)(

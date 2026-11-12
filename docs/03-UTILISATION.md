@@ -449,46 +449,42 @@ créées en **À faire**.
 
 ### L’assistant
 
-**Assistant**, dans l’en-tête (sur téléphone, dans le bandeau du projet), ouvre une conversation
-sur les tâches et les notes : un panneau à droite sur ordinateur, une feuille plein écran sur
-téléphone. **Entrée** envoie, **Maj+Entrée** va à la ligne, **Arrêter** coupe la demande.
-**Échap** ou **Fermer** referme le panneau et coupe une demande en cours ; la conversation reste
-là tant que l’application est ouverte, mais n’est enregistrée nulle part.
-**Nouvelle conversation** repart de zéro.
+**Assistant**, dans l’en-tête (sur téléphone, dans le bandeau du projet), ouvre le chat.
+**Nouvelle conversation** garde la précédente. Le sélecteur permet de passer entre les
+conversations, qui ont chacune leur historique, leur brouillon et leur demande en cours.
+**Entrée** envoie, **Maj+Entrée** va à la ligne et **Arrêter** coupe la demande de la conversation
+affichée. Les demandes continuent quand le panneau est fermé. Les conversations restent en
+mémoire jusqu’à la fermeture de WorkLogs.
 
-Il répond sur ce qui existe (« qu’est-ce qui est en retard sur ce projet ? », « retrouve la
-procédure de sauvegarde ») et place sous sa réponse les tâches et les documents trouvés. Un clic
-referme le panneau et les ouvre, en levant filtres et recherche si la tâche était masquée.
+- « Mets la tâche de contrôle en cours, donne-lui une échéance vendredi et classe-la dans Infra. »
+  L’assistant peut créer, renommer, planifier et classer les tâches, changer leur priorité ou
+  leur statut et les épingler. Terminer une tâche archive ses documents liés, comme dans
+  le tableau des tâches. La proposition annonce cet archivage.
+- « Classe cette note dans Contrôles et marque-la terminée. » L’assistant peut créer et classer
+  les notes et les procédures locales, changer leur date, leur statut ou leur archivage.
+  Une entrée terminée reste dans le journal jusqu’à son archivage. Il peut aussi proposer de
+  réécrire une entrée Markdown après en avoir lu le texte complet.
+- « Retrouve la procédure de sauvegarde sur le serveur et rédige un Word dans le dossier Infra. »
+  L’assistant cherche par nom dans le dossier partagé configuré, sous le dossier relié au projet
+  s’il existe. Les résultats ouvrent les fichiers dans WorkLogs. Il peut créer un nouveau
+  fichier Word dans un dossier trouvé. Pour qu’il puisse utiliser le texte d’un fichier Word,
+  Markdown ou texte comme source, ouvre **Données envoyées au service IA** et coche
+  **Autoriser l’envoi d’extraits des fichiers partagés dans cette conversation** avant d’envoyer
+  le message.
 
-Il prépare aussi des écritures, **jamais appliquées sans clic** : créer une tâche (titre,
-priorité, échéance, statut, projet), modifier une tâche (les mêmes champs et l’épingle), créer
-une note. Chaque proposition dit ce qui changera, avec **Appliquer** et **Ignorer** ;
-**Tout appliquer** apparaît à partir de deux. Une création va dans le projet affiché, sauf
-demande contraire, et y hérite de la catégorie filtrée. Terminer une tâche archive ses documents
-liés : la proposition l’annonce.
-Si la tâche a changé depuis la proposition, l’écriture est refusée : redemander à l’assistant.
-**Réessayer** après un échec ne crée pas de doublon.
+Les propositions affichent les changements, le texte rédigé et, pour un Word, son chemin
+de destination. **Appliquer** valide une proposition, **Tout appliquer** lance le lot et
+**Ignorer** écarte une proposition. Une tâche ou une entrée modifiée entre-temps peut nécessiter
+une nouvelle proposition. Le partage refuse la création si le nom du fichier est déjà pris.
 
-Il ne sait ni supprimer ni archiver, ni modifier le texte d’une note existante, ni lire un
-document Google ou une pièce jointe, ni agir hors de WorkLogs : il le dit. Une note proposée ne
-peut contenir ni image ni HTML, et l’assistant répond en texte simple.
+Le fournisseur reçoit la demande, les derniers échanges de la conversation, le profil, le
+projet et ses repères, les catégories et des résumés de tâches et d’entrées. Quand une demande
+en a besoin, l’assistant peut consulter le texte d’entrées locales et les noms du partage.
+Le contenu des documents Google et des pièces jointes reste hors de cette lecture.
 
-La recherche se fait d’abord sur l’appareil. Chaque message envoie ensuite au service IA la
-demande, les six derniers messages, le profil, le projet affiché et ses repères, le titre de la
-note ouverte, le nom des projets, les champs des tâches les plus proches de la demande (40
-ouvertes et 10 terminées au plus), et le type, le titre, la date et 200 caractères de six notes
-ou procédures au plus ; pour un document Google, son titre et sa date seulement. Aucune pièce
-jointe. Si le modèle demande à chercher davantage, le second appel ajoute au plus 10 tâches et
-6 documents.
-
-Un message coûte un appel au modèle, deux s’il demande à chercher davantage ; si la recherche
-n’apporte rien de nouveau, il n’y a pas de second appel. Une réponse vide ou bloquée par le filtre
-du fournisseur n’a droit qu’à un seul autre modèle, et les essais refusés (429, 5xx) n’entrent pas
-dans ce compte.
-
-Sans clé, au plafond quotidien ou si le service IA est en panne, l’assistant répond par une
-**recherche locale** : il en donne la raison, montre les tâches et les documents les plus proches
-et ne propose aucune écriture.
+Un message comporte jusqu’à quatre étapes IA selon les lectures nécessaires. Le plafond
+quotidien s’applique aux conversations en parallèle. Si le service est indisponible ou que
+le plafond est atteint, l’assistant affiche les résultats de recherche qu’il a pu obtenir.
 
 ### Plafond quotidien et gratuité
 

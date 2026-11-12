@@ -86,11 +86,16 @@ Desktop app: `npm run desktop`.
 | Check a card · drag it | finishes it · moves it across columns |
 | Click a project | filters **journal and tasks** at the same time |
 | **Search** | searches entry titles, bodies and tasks |
+| **Assistant** | opens parallel conversations to organize tasks and entries, search shared files and draft Word procedures |
 | **Create linked task** in an entry | creates a task with that entry as context |
 | **Export** | downloads the whole database as JSON |
 
 Supported Markdown: headings, bold/italic, lists, **check boxes**, **tables**,
 quotes, code blocks, links, images.
+
+The assistant uses the AI key configured in Settings. Review its proposals before
+applying changes or creating a Word document in your shared folder.
+[Assistant guide in French](docs/03-UTILISATION.md#lassistant).
 
 Rich documents autosave locally and retain formatting in JSON exports. In the desktop
 app, expand **Google Drive**, import your Google Cloud desktop OAuth client JSON, then

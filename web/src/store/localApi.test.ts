@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { ApiError } from '../lib';
+import { ApiError, type Entry, type EntryEditSnapshot } from '../lib';
 import {
+  applySyncSnapshot,
   clearLocalOutbox,
   exportLocalOutbox,
   fetchMissingDriveAttachments,
   importLocalBackup,
   listPendingUploads,
   localApi,
+  localSyncSnapshot,
   markAttachmentUploaded,
   outboxSize,
   readLocalOutbox,
@@ -23,6 +25,12 @@ beforeEach(() => {
 async function projectId(name = 'Chantier'): Promise<string> {
   return (await localApi.createProject({ name })).id;
 }
+
+const expectedEntry = (entry: Entry): EntryEditSnapshot => ({
+  title: entry.title, entry_date: entry.entry_date, project_id: entry.project_id, category_id: entry.category_id ?? null,
+  archived: entry.archived, kind: entry.kind, status: entry.status ?? 'todo', updated_at: entry.updated_at,
+  google_document_id: entry.google_sync?.document_id ?? null,
+});
 
 describe('amorçage et état', () => {
   test('même amorçage que le serveur : 2 projets, le mode d’emploi, 3 tâches', async () => {
@@ -61,6 +69,59 @@ describe('amorçage et état', () => {
 });
 
 describe('entrées', () => {
+  test('les propositions de statut concurrentes sont comparées à la version en cours dans IndexedDB', async () => {
+    const entry = await localApi.createEntry({ title: 'Bilan', status: 'doing' });
+    expect(entry.status).toBe('doing');
+    const task = await localApi.createTask({ title: 'Préparer le bilan' });
+    await localApi.linkTaskDocument(task.id, entry.id);
+    const results = await Promise.allSettled((['done', 'todo'] as const).map((status) =>
+      localApi.updateEntry(entry.id, { status, expected_entry: expectedEntry(entry) })));
+    expect(results[0]).toMatchObject({ status: 'fulfilled', value: { status: 'done', archived: 0 } });
+    expect(results[1]).toMatchObject({ status: 'rejected', reason: { code: 'ENTRY_EDIT_STALE' } });
+    const state = await localApi.state();
+    expect(state.entries.find(({ id }) => id === entry.id)?.status).toBe('done');
+    expect(state.tasks.find(({ id }) => id === task.id)).toMatchObject({ status: 'todo', documents: [{ id: entry.id, status: 'done' }] });
+    await expect(localApi.updateEntry(entry.id, { archived: 1 })).resolves.toMatchObject({ status: 'done', archived: 1 });
+    await expect(localApi.updateEntry(entry.id, { status: 'blocked' as never })).rejects.toThrow('statut invalide');
+    await expect(localApi.createEntry({ title: 'Invalide', status: 'blocked' as never })).rejects.toThrow('statut invalide');
+  });
+
+  test('une édition du corps compare le texte complet même à date égale', async () => {
+    const database = createMemoryDatabase();
+    setLocalDatabase(database);
+    const entry = await localApi.createEntry({ title: 'Compte-rendu', content_md: 'Texte initial' });
+    const entries = database.table<{ id: string; content_md: string }>('entries');
+    const initial = (await entries.get(entry.id))!;
+    await entries.put({ ...initial, content_md: 'Modification locale' });
+    await expect(localApi.updateEntry(entry.id, { content_md: 'Texte proposé', expected_entry: expectedEntry(entry) }))
+      .rejects.toThrow('état attendu de l’entrée invalide');
+    await expect(localApi.updateEntry(entry.id, { content_md: 'Texte proposé', expected_entry: { ...expectedEntry(entry), source_key: entryMergeSourceKey(entry) } }))
+      .rejects.toMatchObject({ code: 'ENTRY_EDIT_STALE' });
+    const current = await localApi.entry(entry.id);
+    expect(current.content_md).toBe('Modification locale');
+    await expect(localApi.updateEntry(entry.id, { content_md: 'Texte relu', expected_entry: { ...expectedEntry(current), source_key: entryMergeSourceKey(current) } }))
+      .resolves.toMatchObject({ content_md: 'Texte relu' });
+  });
+
+  test('la synchro et la sauvegarde gardent le statut et reconnaissent une entrée IndexedDB ancienne', async () => {
+    const database = createMemoryDatabase();
+    setLocalDatabase(database);
+    const { id } = await localApi.createEntry({ title: 'Compte-rendu' });
+    const entries = database.table<{ id: string; status?: string }>('entries');
+    const legacy = (await entries.get(id))!;
+    delete legacy.status;
+    await entries.put(legacy);
+    expect((await localApi.entry(id)).status).toBe('todo');
+    const base = await localSyncSnapshot();
+    const merged = { ...base, entries: base.entries.map((entry) => entry.id === id ? { ...entry, status: 'doing' as const } : entry) };
+    await expect(applySyncSnapshot(merged, base)).resolves.toMatchObject({ changed: 1, skipped: 0 });
+    const exported = JSON.parse(await (await localApi.exportBackup()).blob.text());
+    expect(exported.entries.find((entry: Entry) => entry.id === id).status).toBe('doing');
+    await localApi.updateEntry(id, { status: 'done' });
+    await importLocalBackup(exported);
+    expect((await localApi.entry(id)).status).toBe('doing');
+  });
+
   test('création, relecture, modification, suppression et erreurs en français', async () => {
     await expect(localApi.createEntry({ title: '  ' })).rejects.toThrow('titre requis');
     await expect(localApi.createEntry({ title: 'X', entry_date: '10/09/2026' })).rejects.toThrow('date invalide');

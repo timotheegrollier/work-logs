@@ -44,6 +44,25 @@ test('PWA : la nouvelle source d’un suivi est comparée et la réponse réussi
   expect(updated.follow_up_key).not.toBe(before.follow_up_key);
 });
 
+test('PWA : le classement et les documents que terminer la tâche archivera sont comparés', async () => {
+  const project = await localApi.createProject({ name: 'Atelier' });
+  const category = await localApi.createCategory({ name: 'Planning', project_id: project.id });
+  const task = await localApi.createTask({ title: 'Ranger', project_id: project.id });
+  await localApi.updateTask(task.id, { category_id: category.id });
+  await expect(localApi.updateTask(task.id, { category_id: null, expected_planning: { ...expected(task), category_id: null } }))
+    .rejects.toMatchObject({ code: 'TASK_PLANNING_STALE' });
+
+  const entry = await localApi.createEntry({ title: 'Note liée', project_id: project.id });
+  await localApi.linkTaskDocument(task.id, entry.id);
+  const snapshot = { ...expected(task), category_id: category.id };
+  await expect(localApi.updateTask(task.id, { status: 'done', expected_planning: { ...snapshot, active_document_ids: [] } }))
+    .rejects.toMatchObject({ code: 'TASK_PLANNING_STALE' });
+  expect((await localApi.entry(entry.id)).archived).toBe(0);
+  await expect(localApi.updateTask(task.id, { status: 'done', expected_planning: { ...snapshot, active_document_ids: [entry.id] } }))
+    .resolves.toMatchObject({ status: 'done', category_id: category.id });
+  expect((await localApi.entry(entry.id)).archived).toBe(1);
+});
+
 test('PWA : la file locale compare chaque application au moment de l’écriture et refuse de rejouer un instantané utilisé', async () => {
   const task = await localApi.createTask({ title: 'Tâche unique' });
   const results = await Promise.allSettled(['2026-11-06', '2026-11-07'].map((due_date) => localApi.updateTask(task.id, { priority: 'high', due_date, expected_planning: expected(task) })));

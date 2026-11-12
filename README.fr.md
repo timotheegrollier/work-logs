@@ -86,11 +86,16 @@ http://localhost:8410. Application desktop : `npm run desktop`.
 | Cocher une carte · la glisser | la termine · la change de colonne |
 | Clic sur un projet | filtre **le journal et les tâches** en même temps |
 | **Rechercher** | cherche dans les titres, le corps des entrées et les tâches |
+| **Assistant** | ouvre des conversations parallèles pour organiser le journal et les tâches, chercher sur le partage et préparer des procédures Word |
 | **Créer une tâche liée** dans une entrée | crée une tâche avec cette entrée comme contexte |
 | **Exporter** | télécharge toute la base en JSON |
 
 Markdown géré : titres, gras/italique, listes, **cases à cocher**, **tableaux**,
 citations, blocs de code, liens, images.
+
+L’assistant utilise la clé IA configurée dans les paramètres. Relis ses propositions
+avant d’appliquer les changements ou de créer un Word dans le dossier partagé.
+[Utiliser l’assistant](docs/03-UTILISATION.md#lassistant).
 
 Les documents riches s’enregistrent automatiquement en local ; l’export JSON conserve
 leur mise en forme. En desktop, ouvre **Google Drive**, importe le JSON du client OAuth

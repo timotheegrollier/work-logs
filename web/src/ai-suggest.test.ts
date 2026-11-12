@@ -1340,6 +1340,31 @@ describe('plafond quotidien et comptage', () => {
     expect(readAiUsage()).toMatchObject({ requests: 2, tokens: 1234 + estimateTokens(`${inputOf(fetch.mock.calls[0])}Relire`), background: 1 });
   });
 
+  test('les appels parallèles réservent les dernières requêtes et un refus réseau libère sa place', async () => {
+    seedUsage({ requests: 148 });
+    const complete: ((response: Response) => void)[] = [];
+    const fetch = vi.fn(() => new Promise<Response>((resolve) => complete.push(resolve)));
+    vi.stubGlobal('fetch', fetch);
+
+    const first = suggestSubtasks(settings, 'Premier');
+    const second = suggestSubtasks(settings, 'Deuxième');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await expect(suggestSubtasks(settings, 'Troisième')).rejects.toThrow(/demandes IA en cours occupent le quota/);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(readAiUsage().requests).toBe(148);
+
+    complete[1](aiResponse('x', 503));
+    await expect(second).rejects.toThrow(/surchargé/);
+    const third = suggestSubtasks(settings, 'Troisième');
+    expect(fetch).toHaveBeenCalledTimes(3);
+    complete[2](aiResponse('Valider'));
+    complete[0](aiResponse('Relire'));
+    await expect(Promise.all([first, third])).resolves.toEqual(['Relire', 'Valider']);
+    expect(readAiUsage().requests).toBe(150);
+    await expect(suggestSubtasks(settings, 'Quatrième')).rejects.toBeInstanceOf(AiBudgetError);
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
   test('une réponse vide, illisible ou coupée a été produite : elle compte aussi', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => aiResponse('   ')));
     await expect(suggestSubtasks(settings, 'T')).rejects.toThrow(/illisible/);

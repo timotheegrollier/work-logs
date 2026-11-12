@@ -342,6 +342,7 @@ describe('tâches', () => {
       project_id: documentProject.id,
       category_id: null,
       archived: 0,
+      status: 'todo',
       updated_at: google.updated_at,
       google_document_id: 'google-doc',
       google_tab_id: 'tab-1',

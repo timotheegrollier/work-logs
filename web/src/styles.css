@@ -1961,6 +1961,14 @@ button:disabled {
 .editor-meta select:hover {
   border-color: var(--line);
 }
+.entry-work-status {
+  flex: none;
+  border-radius: 8px;
+  padding: 3px 7px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 11.5px;
+}
 /* Colonnes côte à côte : un sélecteur prend la largeur de son choix, pas celle du plus
    long chemin de catégorie ; la rangée tient ainsi sur moins de lignes. */
 @media (min-width: 901px) {
@@ -7288,6 +7296,37 @@ button.lane-name:hover {
 .ai-chat-new-short {
   display: none;
 }
+.ai-chat-sessions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  padding: 10px 14px 0;
+}
+.ai-chat-sessions label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-chat-sessions select,
+.ai-chat-sessions button {
+  min-width: 0;
+  min-height: 36px;
+}
+.ai-chat-session-status {
+  margin: 4px 14px 0;
+}
+.ai-chat-content-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.ai-chat-content-setting input {
+  flex: none;
+}
 .ai-chat-log {
   flex: 1 1 auto;
   min-height: 0;
@@ -7354,6 +7393,23 @@ button.lane-name:hover {
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+.ai-chat-review {
+  min-width: 0;
+  font-size: 12.5px;
+}
+.ai-chat-review summary {
+  width: fit-content;
+  cursor: pointer;
+}
+.ai-chat-review pre {
+  max-height: 30vh;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .ai-action-row.is-ignored .ai-chat-proposal {
   color: var(--muted);
 }
@@ -7397,7 +7453,11 @@ button.lane-name:hover {
   .ai-chat-dialog summary {
     align-content: center;
   }
+  .ai-chat-content-setting {
+    min-height: 44px;
+  }
   .ai-chat-composer textarea,
+  .ai-chat-sessions select,
   .ai-settings input[type='number'] {
     min-height: 44px;
     font-size: 16px;

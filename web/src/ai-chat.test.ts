@@ -4,7 +4,7 @@ import { applyChatProposal, askAssistant, type ChatProposal } from './ai-chat';
 import { saveProjectAiBrief } from './ai-context';
 import { AiCancelled, DEFAULT_AI_ENDPOINT, DEFAULT_AI_MODEL, localToday, resetAiFallbackMemory } from './ai-suggest';
 import { Autosave, discardPendingSaves } from './autosave';
-import { api, type AppState, type Category, type EntrySummary, type Project, type Task } from './lib';
+import { api, type AppState, type Category, type EntrySummary, type Project, type SharedFile, type SharedSearchResult, type Task } from './lib';
 import { seedData, useRealApi } from './test/server';
 
 const settings = { endpoint: 'https://ia.example/v1', model: 'flash', key: 'cle-test', profile: '' };
@@ -658,7 +658,7 @@ describe('validation des actions', () => {
     expect(proposal).toEqual({
       kind: 'update_task', taskId: 't1', title: 'Pompe',
       changes: { title: 'Pompe neuve', status: 'done', priority: 'high', due_date: null, project_id: 'p2', pinned: 1 },
-      expected: { title: 'Pompe', status: 'todo', priority: 'normal', due_date: '2026-11-20', project_id: 'p1', pinned: 0, follow_up_key: 'cle-suivi' },
+      expected: { title: 'Pompe', status: 'todo', priority: 'normal', due_date: '2026-11-20', project_id: 'p1', pinned: 0, follow_up_key: 'cle-suivi', active_document_ids: ['a', 'b'] },
       label: '« Pompe » : titre → « Pompe neuve » ; statut → Terminée ; priorité → Haute ; échéance → aucune ; projet → Serre ; épinglée → oui (ses 2 documents liés seront archivés)',
     });
   });
@@ -935,6 +935,86 @@ describe('Arrêter', () => {
   });
 });
 
+describe('lecture et préparation des procédures du partage', () => {
+  const file: SharedSearchResult = { path: 'Infra/Sauvegarde.md', name: 'Sauvegarde.md', dir: 'Infra', type: 'file', ext: 'md' };
+  const setupShare = () => {
+    mockState();
+    vi.spyOn(api, 'sharedStatus').mockResolvedValue({ available: true, root: '/procédures', reach: 'ok' });
+    vi.spyOn(api, 'searchShared').mockResolvedValue({ dir: '', query: 'sauvegarde', results: [file], offline: false, partial: false, denied: 0 });
+    vi.spyOn(api, 'sharedList').mockImplementation(async (dir = '') => ({
+      dir, reach: 'ok', truncated: false, entries: [{ ...file, size: 60, mtime: null, lock: null, local: null }],
+    }));
+    const remote: SharedFile = {
+      path: file.path, name: file.name, ext: file.ext, hash: 'vu', size: 60, source: 'share',
+      mtime: null, base_hash: null, draft: null, state: '', note: '', theirs: null,
+      send: { hash: null, requested: false }, lock: null,
+    };
+    vi.spyOn(api, 'sharedFile').mockResolvedValue(remote);
+    const content = vi.spyOn(api, 'sharedContent').mockResolvedValue(new TextEncoder().encode('Vérifier le journal avant de restaurer.'));
+    const create = vi.spyOn(api, 'createShared').mockResolvedValue(remote);
+    return { content, create };
+  };
+
+  test('enchaîne la recherche, la lecture autorisée et la préparation d’un Word dans le dossier trouvé', async () => {
+    const { content, create } = setupShare();
+    const calls = stubAi(
+      json({ shared_search: ['sauvegarde'] }),
+      json({ read_shared: [1, 999] }),
+      json({ reply: 'Procédure prête à relire.', show_shared: [1], actions: [
+        { kind: 'create_shared_procedure', title: 'Restaurer le journal', content: '## Contrôle\n\nVérifier le journal.', directory: 2 },
+      ] }),
+    );
+    const answer = await ask({ text: 'Cherche la procédure de sauvegarde sur le serveur et prépare un Word dans son dossier.', allowSharedContent: true });
+    expect(calls).toHaveLength(3);
+    expect(user(calls[1])).toContain('Infra/Sauvegarde.md');
+    expect(user(calls[1])).not.toContain('avant de restaurer');
+    expect(user(calls[2])).toContain('Vérifier le journal avant de restaurer.');
+    expect(content).toHaveBeenCalledExactlyOnceWith('vu');
+    expect(answer.sharedDocuments).toEqual([{ path: file.path, title: file.name }]);
+    expect(answer.usedSharedContent).toBe(true);
+    expect(answer.proposals[0]).toMatchObject({ kind: 'create_shared_procedure', path: 'Infra/Restaurer le journal.docx' });
+    expect(create).not.toHaveBeenCalled();
+    await applyChatProposal(answer.proposals[0]);
+    expect(create).toHaveBeenCalledExactlyOnceWith('Infra/Restaurer le journal.docx', expect.any(Uint8Array));
+  });
+
+  test('garde les résultats par nom et signale que la lecture du contenu attend l’accord de la conversation', async () => {
+    const { content } = setupShare();
+    const calls = stubAi(json({ shared_search: ['sauvegarde'] }), json({ read_shared: [1] }), json({ reply: 'J’ai trouvé ce fichier.', show_shared: [1] }));
+    const answer = await ask({ text: 'Retrouve la procédure de sauvegarde.' });
+    expect(answer.sharedDocuments).toHaveLength(1);
+    expect(answer.notice).toContain('Autoriser l’envoi d’extraits');
+    expect(user(calls[2])).not.toContain('avant de restaurer');
+    expect(content).not.toHaveBeenCalled();
+  });
+
+  test('borne les recherches successives et écarte le chemin de destination inventé', async () => {
+    const { create } = setupShare();
+    const calls = stubAi(
+      json({ shared_search: ['première'] }), json({ shared_search: ['seconde'] }), json({ shared_search: ['troisième'] }),
+      json({ actions: [{ kind: 'create_shared_procedure', title: 'Document', content: 'Texte', directory: '../ailleurs' }] }),
+    );
+    const answer = await ask({ text: 'Trouve le dossier où ranger ce document.' });
+    expect(calls).toHaveLength(4);
+    expect(answer.proposals).toEqual([]);
+    expect(answer.notice).toContain('Dossier de destination inconnu.');
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  test('écarte de la demande les réponses tirées du partage quand les extraits sont désactivés', async () => {
+    mockState();
+    const calls = stubAi(json({ reply: 'D’accord.' }), json({ reply: 'Compris.' }));
+    const history = [
+      { role: 'user' as const, text: 'Cherche la procédure' },
+      { role: 'assistant' as const, text: 'Le texte confidentiel contient le plan de reprise.', sharedContent: true },
+    ];
+    expect((await ask({ history })).usedSharedContent).toBeUndefined();
+    expect(user(calls[0])).not.toContain('plan de reprise');
+    expect((await ask({ history, allowSharedContent: true })).usedSharedContent).toBe(true);
+    expect(user(calls[1])).toContain('plan de reprise');
+  });
+});
+
 describe('application des propositions, sur la vraie API', () => {
   let server: Awaited<ReturnType<typeof useRealApi>>;
   beforeEach(async () => { server = await useRealApi(); });
@@ -1020,6 +1100,43 @@ describe('application des propositions, sur la vraie API', () => {
     server.db.prepare('UPDATE tasks SET due_date=? WHERE id=?').run('2031-01-01', 't1');
     await expect(applyChatProposal(proposals[0])).rejects.toThrow('Cette tâche a changé depuis la proposition : redemande à l’assistant.');
     expect(row('SELECT status FROM tasks WHERE id=?', 't1')).toEqual({ status: 'todo' });
+  });
+
+  test('met à jour le statut et la date d’une note et classe la tâche et la procédure', async () => {
+    const now = new Date().toISOString();
+    seedData(server.db, {
+      projects: [{ id: 'p', name: 'Atelier' }], entries: [{ id: 'e', title: 'Note atelier', project_id: 'p' }],
+      tasks: [{ id: 't', title: 'Tâche atelier', project_id: 'p' }],
+    });
+    server.db.prepare('INSERT INTO categories (id,name,project_id,parent_id,color,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
+      .run('c', 'Contrôles', 'p', null, '#123456', now, now);
+    stubAi(json({ actions: [
+      { kind: 'update_entry', n: 1, status: 'done', entry_date: '2030-01-15', category: 'C1' },
+      { kind: 'update_task', n: 1, category: 'C1', priority: 'high', status: 'doing' },
+      { kind: 'create_procedure', title: 'Contrôler l’atelier', content: '# Contrôles\n\nVérifier le journal.', category: 'C1' },
+    ] }));
+    const { proposals, notice } = await ask({ text: 'Organise le travail de l’atelier.', projectId: 'p', openEntryId: 'e' });
+    expect(notice).toBe('');
+    expect(proposals).toHaveLength(3);
+    expect((await api.entry('e')).status).toBe('todo');
+    for (const proposal of proposals) await applyChatProposal(proposal);
+    expect(await api.entry('e')).toMatchObject({ status: 'done', archived: 0, entry_date: '2030-01-15', category_id: 'c' });
+    expect(row('SELECT category_id, status, priority FROM tasks WHERE id=?', 't')).toEqual({ category_id: 'c', status: 'doing', priority: 'high' });
+    expect(row('SELECT kind, category_id FROM entries WHERE title=?', 'Contrôler l’atelier')).toEqual({ kind: 'procedure', category_id: 'c' });
+  });
+
+  test('relit l’entrée ouverte avant de modifier son texte et refuse une révision concurrente', async () => {
+    seedData(server.db, { entries: [{ id: 'e', title: 'Contrôle', content_md: 'Corps original.' }] });
+    const calls = stubAi(
+      json({ read_entries: [1] }),
+      json({ actions: [{ kind: 'update_entry', n: 1, content: 'Corps complété.' }] }),
+    );
+    const { proposals } = await ask({ text: 'Complète cette note.', openEntryId: 'e' });
+    expect(user(calls[1])).toContain('"content":"Corps original."');
+    expect(proposals[0]).toMatchObject({ kind: 'update_entry', expected: { source_key: expect.any(String) } });
+    await api.updateEntry('e', { content_md: 'Corps saisi ailleurs.' });
+    await expect(applyChatProposal(proposals[0])).rejects.toThrow('Cette entrée a changé depuis la proposition');
+    expect((await api.entry('e')).content_md).toBe('Corps saisi ailleurs.');
   });
 
   test('réessai d’une modification déjà appliquée, réponse perdue : acceptée, sans fausse erreur', async () => {

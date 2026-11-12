@@ -1,10 +1,10 @@
-import { useRef, useState, type ComponentProps } from 'react';
+import { useRef, type ComponentProps } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { applyChatProposal, askAssistant, type ChatAnswer, type ChatProposal } from '../ai-chat';
 import { AiCancelled } from '../ai-suggest';
 import type { EntrySummary, Task } from '../lib';
-import { AiChat, type ChatTurn } from './AiChat';
+import { AiChat } from './AiChat';
 
 vi.mock('../ai-chat', () => ({ askAssistant: vi.fn(), applyChatProposal: vi.fn() }));
 const ask = vi.mocked(askAssistant);
@@ -23,21 +23,23 @@ const onChanged = vi.fn();
 const onClose = vi.fn();
 const onTask = vi.fn();
 const onDocument = vi.fn();
+const onSharedDocument = vi.fn();
 
-/** `App` en réduction : la conversation et le brouillon survivent au dialogue. */
+/** `App` en réduction : le contrôleur reste monté quand son dialogue se ferme. */
 function Host({ open = true, ...props }: { open?: boolean } & Partial<ComponentProps<typeof AiChat>>) {
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
-  const draft = useRef('');
   const opener = useRef<HTMLButtonElement>(null);
   return <>
     <button ref={opener}>Ouvrir</button>
-    {open && <AiChat turns={turns} onTurns={setTurns} draftStore={draft} projectId="pj_1" openTitle="Note ouverte" compact={false} opener={opener} onClose={onClose} onChanged={onChanged} onTask={onTask} onDocument={onDocument} {...props} />}
+    <AiChat open={open} projectId="pj_1" openTitle="Note ouverte" compact={false} opener={opener} onClose={onClose} onChanged={onChanged} onTask={onTask} onDocument={onDocument} onSharedDocument={onSharedDocument} {...props} />
   </>;
 }
 
 const dialog = () => screen.getByRole('dialog', { name: 'Assistant IA' });
 const chat = () => within(dialog());
 const field = () => chat().getByRole('textbox', { name: 'Message pour l’assistant' });
+const conversations = () => chat().getByRole('combobox', { name: 'Conversation active' });
+const newConversation = () => fireEvent.click(chat().getByRole('button', { name: 'Nouvelle conversation' }));
+const switchConversation = (value: string) => fireEvent.change(conversations(), { target: { value } });
 function say(text: string) {
   fireEvent.change(field(), { target: { value: text } });
   fireEvent.keyDown(field(), { key: 'Enter' });
@@ -156,40 +158,105 @@ describe('assistant : conversation', () => {
     expect(chat().getByRole('button', { name: 'Envoyer' })).toBeDisabled();
   });
 
-  test('refermer coupe la demande en vol, garde la conversation et le brouillon', async () => {
+  test('refermer laisse finir la demande en arrière-plan et garde le brouillon', async () => {
     const view = render(<Host />);
-    pendingAnswer();
+    const pending = pendingAnswer();
     say('Une question');
     const signal = ask.mock.calls[0][0].signal!;
     fireEvent.change(field(), { target: { value: 'Brouillon à garder' } });
 
     view.rerender(<Host open={false} />);
-    expect(signal.aborted).toBe(true);
+    expect(signal.aborted).toBe(false);
     expect(screen.getByRole('button', { name: 'Ouvrir' })).toHaveFocus();
-    await act(async () => {});
+    await pending.resolve(answer({ reply: 'Finie en arrière-plan.' }));
 
     view.rerender(<Host />);
     expect(chat().getByText('Une question')).toBeInTheDocument();
-    expect(chat().getByText('Demande arrêtée.')).toBeInTheDocument();
+    expect(chat().getByText('Finie en arrière-plan.')).toBeInTheDocument();
     expect(field()).toHaveValue('Brouillon à garder');
   });
 
-  test('« Nouvelle conversation » efface tout, coupe la demande et ignore une réponse tardive', async () => {
+  test('deux conversations travaillent en parallèle, chacune avec son brouillon et son historique', async () => {
+    const view = render(<Host openEntryId="en_1" />);
+    await answered(answer({ reply: 'Un premier échange.' }), 'Question A');
+    const first = pendingAnswer();
+    say('Suite de A');
+    fireEvent.change(field(), { target: { value: 'Brouillon de A' } });
+    const firstSignal = ask.mock.calls[1][0].signal!;
+    expect(ask.mock.calls[1][1]).toMatchObject({
+      projectId: 'pj_1', openEntryId: 'en_1',
+      history: [{ role: 'user', text: 'Question A' }, { role: 'assistant', text: 'Un premier échange.' }],
+    });
+
+    newConversation();
+    view.rerender(<Host projectId="pj_2" openEntryId="en_2" />);
+    expect(field()).toHaveValue('');
+    expect(chat().queryByText('Un premier échange.')).not.toBeInTheDocument();
+    const second = pendingAnswer();
+    say('Question B');
+    const secondSignal = ask.mock.calls[2][0].signal!;
+    expect(ask.mock.calls[2][1]).toMatchObject({ projectId: 'pj_2', openEntryId: 'en_2', history: [] });
+    expect(firstSignal.aborted).toBe(false);
+    expect(chat().getByText('2 conversations en cours')).toBeInTheDocument();
+    fireEvent.change(field(), { target: { value: 'Brouillon de B' } });
+
+    await second.resolve(answer({ reply: 'B a fini.' }));
+    expect(chat().getByText('B a fini.')).toBeInTheDocument();
+    expect(chat().getByText('1 conversation en cours')).toBeInTheDocument();
+    switchConversation('1');
+    expect(field()).toHaveValue('Brouillon de A');
+    expect(chat().queryByText('B a fini.')).not.toBeInTheDocument();
+    await first.resolve(answer({ reply: 'A a fini.' }));
+    expect(chat().getByText('A a fini.')).toBeInTheDocument();
+    switchConversation('2');
+    expect(secondSignal.aborted).toBe(false);
+    expect(field()).toHaveValue('Brouillon de B');
+    expect(chat().queryByText('A a fini.')).not.toBeInTheDocument();
+  });
+
+  test('arrêter puis effacer une conversation ne touche pas à l’autre et ignore les réponses tardives', async () => {
     render(<Host />);
-    const reset = () => chat().getByRole('button', { name: 'Nouvelle conversation' });
-    expect(reset()).toBeDisabled();
-    await answered(answer({ reply: 'Ancienne réponse.' }));
-    const pending = pendingAnswer();
-    say('En vol');
-    const signal = ask.mock.calls.at(-1)![0].signal!;
-    fireEvent.click(reset());
+    const first = pendingAnswer();
+    say('Recherche à garder');
+    const firstSignal = ask.mock.calls[0][0].signal!;
+    newConversation();
+    // Un fournisseur qui ignore le signal ne doit pas réinjecter une réponse après Arrêter.
+    let resolve!: (value: ChatAnswer) => void;
+    ask.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    say('Recherche à arrêter');
+    const signal = ask.mock.calls[1][0].signal!;
+    fireEvent.click(chat().getByRole('button', { name: 'Arrêter la demande IA' }));
     expect(signal.aborted).toBe(true);
-    expect(chat().queryByText('Ancienne réponse.')).not.toBeInTheDocument();
-    expect(chat().queryByText('En vol')).not.toBeInTheDocument();
-    expect(chat().queryByRole('button', { name: 'Arrêter la demande IA' })).not.toBeInTheDocument();
-    await pending.resolve(answer({ reply: 'Trop tard.' }));
+    expect(firstSignal.aborted).toBe(false);
+    expect(chat().getByText('Demande arrêtée.')).toBeInTheDocument();
+    await act(async () => resolve(answer({ reply: 'Trop tard.' })));
     expect(chat().queryByText('Trop tard.')).not.toBeInTheDocument();
-    expect(chat().queryByText('Demande arrêtée.')).not.toBeInTheDocument();
+    fireEvent.click(chat().getByRole('button', { name: 'Effacer la conversation active' }));
+    expect(chat().queryByText('Recherche à arrêter')).not.toBeInTheDocument();
+    expect(chat().getByText('Recherche à garder')).toBeInTheDocument();
+    await first.resolve(answer({ reply: 'Résultat à garder.' }));
+    expect(chat().getByText('Résultat à garder.')).toBeInTheDocument();
+  });
+
+  test('l’autorisation de lire des extraits du partage reste propre à la conversation', async () => {
+    render(<Host />);
+    const permission = () => chat().getByRole('checkbox', { name: /Autoriser l’envoi d’extraits/, hidden: true });
+    expect(permission()).not.toBeChecked();
+    fireEvent.click(permission());
+    await answered(answer({ usedSharedContent: true, reply: 'Réponse issue du fichier.' }), 'Recherche A');
+    expect(ask.mock.calls[0][1].allowSharedContent).toBe(true);
+    newConversation();
+    expect(permission()).not.toBeChecked();
+    await answered(answer(), 'Recherche B');
+    expect(ask.mock.calls[1][1].allowSharedContent).toBeUndefined();
+    switchConversation('1');
+    expect(permission()).toBeChecked();
+    await answered(answer({ usedSharedContent: true, reply: 'Suite issue du fichier.' }), 'Et ensuite ?');
+    expect(ask.mock.calls[2][1].history[1]).toEqual({ role: 'assistant', text: 'Réponse issue du fichier.', sharedContent: true });
+    fireEvent.click(permission());
+    await answered(answer({ reply: 'Réponse sans les extraits.' }), 'Une autre recherche');
+    expect(ask.mock.calls[3][1].history).toEqual([]);
+    expect(chat().getByText('Réponse issue du fichier.')).toBeInTheDocument();
   });
 
   test('le téléphone n’ouvre pas le clavier tout seul', () => {
@@ -232,6 +299,13 @@ describe('assistant : conversation', () => {
     expect(onDocument).toHaveBeenCalledWith('en_1');
   });
 
+  test('un résultat du partage ouvre le chemin que la recherche a trouvé', async () => {
+    render(<Host />);
+    await answered(answer({ sharedDocuments: [{ path: 'Atelier/Pompe.docx', title: 'Pompe.docx' }] }));
+    fireEvent.click(chat().getByRole('button', { name: 'Ouvrir le fichier partagé Atelier/Pompe.docx' }));
+    expect(onSharedDocument).toHaveBeenCalledExactlyOnceWith('Atelier/Pompe.docx');
+  });
+
   test('un document Google n’est pas étiqueté comme une note', async () => {
     render(<Host />);
     await answered(answer({ documents: [
@@ -248,7 +322,8 @@ describe('assistant : conversation', () => {
 
   test('le pied dit ce qui part et la consommation, et rien n’est gardé dans localStorage', async () => {
     render(<Host />);
-    expect(chat().getByText(/le titre et la date seuls pour un document Google/)).toBeInTheDocument();
+    expect(chat().getByText(/Pour un document Google, il reçoit le titre et la date seuls/)).toBeInTheDocument();
+    expect(chat().getByText(/le texte de notes et procédures locales dans une limite de taille/)).toBeInTheDocument();
     expect(chat().getByText(/^Aujourd’hui : 0 \/ 150 requêtes/)).toBeInTheDocument();
     await answered(answer(), 'Une question confidentielle');
     expect(localStorage.length).toBe(0);
@@ -278,15 +353,16 @@ describe('assistant : propositions', () => {
     expect(field()).toHaveFocus();
   });
 
-  test('seule une tâche créée demande de lever la vue rapide', async () => {
+  test('la mise à jour de l’application reçoit le type de chaque écriture', async () => {
     render(<Host />);
     const note: ChatProposal = { kind: 'create_note', title: 'N', content_md: '', project_id: null, label: 'Créer la note « N »' };
-    await answered(answer({ proposals: [createTask('A'), note] }));
+    const task = createTask('A');
+    await answered(answer({ proposals: [task, note] }));
     applyProposal.mockResolvedValue();
     fireEvent.click(proposalButton('Appliquer : Créer la note « N »'));
-    await waitFor(() => expect(onChanged).toHaveBeenLastCalledWith(false));
+    await waitFor(() => expect(onChanged).toHaveBeenLastCalledWith([note]));
     fireEvent.click(proposalButton(`Appliquer : ${label('A')}`));
-    await waitFor(() => expect(onChanged).toHaveBeenLastCalledWith(true));
+    await waitFor(() => expect(onChanged).toHaveBeenLastCalledWith([task]));
   });
 
   test('l’historique garde les propositions et leur état : « mets-la en priorité haute » a un référent', async () => {
@@ -307,18 +383,35 @@ describe('assistant : propositions', () => {
     ]);
   });
 
-  test('« Nouvelle conversation » attend la fin des écritures en cours', async () => {
+  test('une autre conversation peut travailler pendant une écriture, les écritures validées restent sérielles', async () => {
     render(<Host />);
     await answered(answer({ proposals: [createTask('A'), createTask('B')] }));
     const finished: (() => void)[] = [];
     applyProposal.mockImplementation(() => new Promise<void>((done) => { finished.push(done); }));
     fireEvent.click(chat().getByRole('button', { name: 'Tout appliquer (2)' }));
-    const reset = chat().getByRole('button', { name: 'Nouvelle conversation' });
-    expect(reset).toBeDisabled();
+    expect(chat().getByRole('button', { name: 'Effacer la conversation active' })).toBeDisabled();
+    newConversation();
+    await answered(answer({ proposals: [createTask('C')] }));
+    fireEvent.click(proposalButton(`Appliquer : ${label('C')}`));
+    expect(applyProposal).toHaveBeenCalledTimes(1);
     await act(async () => finished[0]());
-    expect(reset).toBeDisabled();
+    expect(applyProposal).toHaveBeenCalledTimes(2);
     await act(async () => finished[1]());
-    expect(reset).toBeEnabled();
+    expect(applyProposal).toHaveBeenCalledTimes(3);
+    await act(async () => finished[2]());
+    expect(chat().getByText('✓ Appliqué')).toBeInTheDocument();
+    switchConversation('1');
+    expect(chat().getAllByText('✓ Appliqué')).toHaveLength(2);
+  });
+
+  test('le texte complet d’une note se relit avant d’appliquer', async () => {
+    render(<Host />);
+    const content = '# La procédure\n\nVérifier tous les raccords.\n\nEnsuite, reprendre la mesure.';
+    const note: ChatProposal = { kind: 'create_note', title: 'N', content_md: content, project_id: null, label: 'Créer la note « N »' };
+    await answered(answer({ proposals: [note] }));
+    fireEvent.click(chat().getByText('Relire le texte proposé'));
+    expect(dialog().querySelector('pre')?.textContent).toBe(content);
+    expect(applyProposal).not.toHaveBeenCalled();
   });
 
   test('Ignorer écarte la proposition sans rien écrire', async () => {

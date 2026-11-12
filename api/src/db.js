@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS entries (
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   archived INTEGER NOT NULL DEFAULT 0,
   kind TEXT NOT NULL DEFAULT 'note',
+  status TEXT NOT NULL DEFAULT 'todo',
   follow_up TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -279,6 +280,7 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   if (!columns(db, 'entries').includes('archived')) db.exec('ALTER TABLE entries ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
   // Procédures : les anciennes entrées restent des notes, sans rien changer d'autre.
   if (!columns(db, 'entries').includes('kind')) db.exec("ALTER TABLE entries ADD COLUMN kind TEXT NOT NULL DEFAULT 'note'");
+  if (!columns(db, 'entries').includes('status')) db.exec("ALTER TABLE entries ADD COLUMN status TEXT NOT NULL DEFAULT 'todo'");
   // Priorités (2026-09-18) : les tâches existantes deviennent « normale », sans toucher
   // à l'ordre des colonnes — la position et l'épingle gardent leur rôle.
   if (!columns(db, 'tasks').includes('priority')) db.exec("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'");

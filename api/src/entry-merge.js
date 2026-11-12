@@ -11,6 +11,7 @@ export function entryMergeSourceKey(entry) {
     'entry-merge-v1', entry.id, entry.title, entry.entry_date, entry.project_id ?? null, entry.category_id ?? null,
     entry.archived ?? 0, entry.kind ?? 'note', entry.created_at, entry.updated_at,
     entry.content_md ?? '', decoded(entry.content_json),
+    ...(entry.status && entry.status !== 'todo' ? [entry.status] : []),
   ]));
 }
 

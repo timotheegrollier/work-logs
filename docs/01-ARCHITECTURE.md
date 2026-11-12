@@ -59,7 +59,7 @@ categories(id, name, project_id → projects ON DELETE CASCADE,
 
 entries(id, title, content_md, content_json JSON|NULL, entry_date 'AAAA-MM-JJ',
         project_id → projects ON DELETE SET NULL, category_id → categories ON DELETE SET NULL,
-        archived 0|1 DEFAULT 0,
+        archived 0|1 DEFAULT 0, status ∈ {todo, doing, done} DEFAULT 'todo',
         kind ∈ {'note','procedure'} DEFAULT 'note', follow_up JSON|NULL, created_at, updated_at)
 
 tasks(id, title, status ∈ {todo, doing, done}, due_date 'AAAA-MM-JJ'|NULL,
@@ -81,6 +81,8 @@ google_documents(entry_id → entries ON DELETE CASCADE PRIMARY KEY,
 
 - **IDs** : chaînes `préfixe + base36(horodatage) + 6 aléatoires` (`en_`, `tk_`, `pr_`, `at_`).
 - `entry_date` est une date pure, comparée en texte — pas de fuseau horaire, pas de surprise.
+- Le statut d’une entrée est indépendant de son archivage, de ses tâches liées et du bilan IA.
+  Les anciennes bases et sauvegardes reviennent en `todo`.
 - `position` : ordre dans une colonne. Après chaque déplacement ou suppression, la colonne est
   **renumérotée 0,1,2…** (`renumber()` dans `app.js`) : jamais de trou ni de doublon.
 - Supprimer un projet **détache** entrées et tâches (`SET NULL`), il ne les perd pas.
@@ -167,7 +169,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET | `/api/entries/:id` | l'entrée complète + ses pièces jointes |
 | GET | `/api/follow-up/:kind/:id` | `kind=entry\|task` : configuration, bilan, empreinte courante et sources enregistrées (entrée seule ou documents explicitement liés) |
 | PUT | `/api/follow-up/:kind/:id` | `{enabled?}` règle l’automatisme ; `{report, source_key}` conserve un bilan daté par le serveur, refusé en 409 si les sources ont changé ; `{enabled: false, report: null}` désactive, retire le bilan et date le retrait (`cleared_at`, §65) ; ne modifie ni texte ni statut |
-| POST · PUT · DELETE | `/api/entries[/:id]` | créer · modifier · supprimer |
+| POST · PUT · DELETE | `/api/entries[/:id]` | créer · modifier (dont `status`) · supprimer |
 | POST | `/api/entries/:id/task` | crée une tâche `todo` et la lie atomiquement à l’entrée |
 | POST | `/api/entries/:id/copy` | copie locale indépendante, fichiers compris |
 | GET · POST | `/api/google/*` | état, configuration desktop, connexion, déconnexion, liste et ouverture |
@@ -207,14 +209,19 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | POST · DELETE | `/api/shared/lock?path=` | prendre/renouveler la main (`{take_over}`) · la rendre ; `409 SHARED_LOCKED` / `SHARED_LOCK_STALE` + `{lock}` |
 | PUT · DELETE | `/api/shared/projects/:id/folder` | relier un projet à un sous-dossier (`{dir}`) · le délier |
 
-`PUT /api/tasks/:id` accepte aussi `expected_planning`, instantané facultatif utilisé lors
-de l’application d’une replanification IA : `{status, priority, due_date}` requis ; `title`,
-`project_id`, `pinned` et `follow_up_key` facultatifs (ce dernier vaut `null` sans suivi).
-La comparaison et l’écriture sont sous le même verrou SQLite ; la PWA les sérialise avec ses
-autres mutations et la synchronisation locale. Une différence refuse toute écriture avec
-`409 {error, code: "TASK_PLANNING_STALE"}` ; un instantané mal formé est refusé en 400.
-L’empreinte du suivi permet aussi de refuser un planning établi avant une modification de ses
-documents liés. Sans ce champ, le comportement habituel de modification reste identique.
+`PUT /api/tasks/:id` accepte l’instantané facultatif `expected_planning` avec `status`, `priority`
+et `due_date`. `title`, `project_id`, `category_id`, `pinned` et `follow_up_key` sont facultatifs.
+`active_document_ids` compare les documents liés qui seront archivés si la tâche est terminée.
+Une différence refuse l’écriture en 409 avec le code `TASK_PLANNING_STALE`.
+
+`PUT /api/entries/:id` accepte l’instantané facultatif `expected_entry` avec `title`,
+`entry_date`, `project_id`, `category_id`, `archived`, `kind`, `status`, `updated_at` et
+`google_document_id`. Si la modification inclut le corps de l’entrée, `source_key` compare aussi
+le texte enregistré, y compris après une modification dans la même milliseconde. Une différence
+refuse l’écriture en 409 avec le code `ENTRY_EDIT_STALE`.
+
+Un instantané invalide reçoit un 400. La comparaison et l’écriture sont sous le même verrou SQLite.
+La PWA les sérialise avec les autres mutations et la synchronisation locale.
 
 Formats du dossier partagé, côté front (le serveur ne voit que des octets) : `text-codec.ts`,
 `text-file.ts`, `csv-file.ts`, `zip.ts` (archive, réécriture fidèle), `xml-scan.ts` (XML à
@@ -274,9 +281,10 @@ une tâche, une entrée ou une association inconnue renvoie `404` avec un messag
 | `markdown.ts` | `marked` (GFM, `breaks`) puis `DOMPurify` — le rendu part en `dangerouslySetInnerHTML` ; clôtures du bouton « Bloc de code » |
 | `rich-code.ts` | « Bloc de code » de l'éditeur riche : plusieurs lignes sélectionnées → un seul bloc |
 | `ai-suggest.ts` | client IA compatible OpenAI (Gemini par défaut, chaîne de secours) : sous-tâches, mise en page, procédures — dont `draftProcedure`, une procédure tirée d'une entrée ou d'une tâche |
-| `ai-budget.ts` | plafond quotidien de l’IA, par appareil (`localStorage`) : requêtes, jetons, jour de Los Angeles, un tiers au plus pour le suivi automatique |
-| `ai-chat.ts` | assistant : lecture locale, prompt borné, réponse JSON validée en propositions, application au clic ; aucune route nouvelle |
-| `components/AiChat.tsx` | dialogue de l’assistant : journal, propositions à appliquer, consommation du jour |
+| `ai-budget.ts` | plafond quotidien par appareil (`localStorage`), jour de Los Angeles, réservations en mémoire pour les appels parallèles, un tiers au plus pour le suivi automatique |
+| `ai-chat.ts` | lectures bornées par message, propositions validées à partir du JSON du fournisseur, application au clic |
+| `ai-chat-shared.ts` | recherche et extraits bornés dans le partage configuré, création exclusive de procédures Word |
+| `components/AiChat.tsx` | conversations parallèles en mémoire, annulation par conversation, file commune des écritures validées |
 | `components/ProcedureDraft.tsx` | relecture d'une procédure rédigée par l'IA (titre modifiable, aperçu), puis création par `POST /api/entries` |
 | `components/EntryList.tsx` | journal groupé par jour, extrait sur une ligne |
 | `components/ProcedureList.tsx` | procédures du projet (entrées `kind='procedure'`) + pièces jointes rassemblées |

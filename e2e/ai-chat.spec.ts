@@ -1,4 +1,7 @@
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { readZip, readZipText } from '../web/src/zip';
 
 async function post(request: APIRequestContext, path: string, data: unknown) {
   const response = await request.post(path, { data });
@@ -42,7 +45,7 @@ const messageField = (page: Page) => assistant(page).getByRole('textbox', { name
 
 async function expectNoOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
-  expect(await assistant(page).evaluate((dialog) => [dialog, ...dialog.querySelectorAll('.ai-chat-log, .ai-chat-composer, .ai-chat-footer')]
+  expect(await assistant(page).evaluate((dialog) => [dialog, ...dialog.querySelectorAll('.ai-chat-log, .ai-chat-sessions, .ai-chat-composer, .ai-chat-footer')]
     .filter((box) => box.scrollWidth > box.clientWidth).map((box) => box.className))).toEqual([]);
 }
 
@@ -159,7 +162,7 @@ test('assistant sur téléphone : feuille plein écran, cibles au doigt, tout ap
     const applyAll = chat.getByRole('button', { name: 'Tout appliquer (2)', exact: true });
     await expect(applyAll).toBeVisible();
 
-    expect(await chat.evaluate((dialog) => [...dialog.querySelectorAll('button, summary, textarea')]
+    expect(await chat.evaluate((dialog) => [...dialog.querySelectorAll('button, summary, textarea, select')]
       .filter((target) => { const { width, height } = target.getBoundingClientRect(); return width > 0 && (width < 44 || height < 44); })
       .map((target) => target.getAttribute('aria-label') ?? target.textContent))).toEqual([]);
     await expectNoOverflow(page);
@@ -187,6 +190,193 @@ test('assistant sur téléphone : feuille plein écran, cibles au doigt, tout ap
   }
 });
 
+test('deux conversations avancent en parallèle et reprennent après fermeture du panneau', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('worklogs-ai-key', 'cle-e2e'));
+  let releaseFirst!: () => void;
+  const firstReply = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  const received: string[] = [];
+  await page.route('**/chat/completions', async (route) => {
+    const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const prompt = route.request().postDataJSON().messages[1].content as string;
+    received.push(prompt);
+    const first = prompt.includes('Liste du premier chantier');
+    if (first) await firstReply;
+    const reply = first ? 'Premier chantier prêt.' : 'Second chantier prêt.';
+    return route.fulfill({ headers, json: { choices: [{ message: { content: JSON.stringify({ reply }) } }] } });
+  });
+  try {
+    await page.goto('/');
+    const opener = page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true });
+    const chat = assistant(page);
+    const field = messageField(page);
+    const sessions = chat.getByRole('combobox', { name: 'Conversation active' });
+    await opener.click();
+    await field.fill('Liste du premier chantier');
+    await field.press('Enter');
+    await expect.poll(() => received.length).toBe(1);
+    await field.fill('Brouillon à garder');
+
+    await chat.getByRole('button', { name: 'Nouvelle conversation' }).click();
+    await expect(field).toHaveValue('');
+    await field.fill('Liste du second chantier');
+    await field.press('Enter');
+    await expect(chat.getByText('Second chantier prêt.')).toBeVisible();
+    expect(received).toHaveLength(2);
+    expect(received[1]).not.toContain('Liste du premier chantier');
+    await expect(sessions.getByRole('option', { name: /Liste du premier chantier.*Recherche en cours/ })).toHaveCount(1);
+
+    await page.keyboard.press('Escape');
+    await expect(chat).toBeHidden();
+    releaseFirst();
+    await opener.click();
+    await expect(chat.getByText('Second chantier prêt.')).toBeVisible();
+    await sessions.selectOption('1');
+    await expect(field).toHaveValue('Brouillon à garder');
+    await expect(chat.getByText('Premier chantier prêt.')).toBeVisible();
+    await expect(chat.getByText('Second chantier prêt.')).toHaveCount(0);
+  } finally {
+    releaseFirst();
+  }
+});
+
+test('une note ouverte révisée depuis l’assistant affiche son nouveau texte et son statut', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Atelier révision de note' });
+  try {
+    const note = await post(request, '/api/entries', {
+      title: 'Vérification du filtre',
+      project_id: project.id,
+      content_md: `${'Compte rendu de la vérification. '.repeat(12)}\n\nDétail après l’extrait.`,
+    });
+    await configure(page, project.id, note.id);
+    const body = '# Intervention validée\n\nPièces contrôlées, intervention clôturée.';
+    const prompts = await stubAssistant(page,
+      { read_entries: [1] },
+      { reply: 'La mise à jour est prête.', actions: [{ kind: 'update_entry', n: 1, title: 'Vérification validée', content: body, status: 'done', entry_date: '2026-12-10' }] },
+    );
+    await page.goto('/');
+    const editor = page.getByRole('region', { name: 'Entrée', exact: true });
+    await expect(editor.getByLabel('Titre de l’entrée')).toHaveValue('Vérification du filtre');
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    const chat = assistant(page);
+    await messageField(page).fill('Réécris la note ouverte sur la vérification du filtre et marque-la terminée.');
+    await messageField(page).press('Enter');
+    await expect(chat.getByText('La mise à jour est prête.')).toBeVisible();
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).not.toContain('Détail après l’extrait.');
+    expect(prompts[1]).toContain('Détail après l’extrait.');
+    await chat.getByText('Relire le texte proposé', { exact: true }).click();
+    await expect(chat.locator('pre')).toContainText('Pièces contrôlées, intervention clôturée.');
+    const readEntry = async () => (await request.get(`/api/entries/${note.id}`)).json();
+    expect(await readEntry()).toMatchObject({ title: 'Vérification du filtre', status: 'todo' });
+
+    await chat.getByRole('button', { name: /^Appliquer/ }).click();
+    await expect(chat.getByText('✓ Appliqué')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(editor.getByLabel('Titre de l’entrée')).toHaveValue('Vérification validée');
+    await expect(editor.getByLabel('Date de l’entrée')).toHaveValue('2026-12-10');
+    await expect(editor.getByLabel('Statut de l’entrée : Terminée')).toBeVisible();
+    await expect(editor.getByText('Pièces contrôlées, intervention clôturée.')).toBeVisible();
+    expect(await readEntry()).toMatchObject({ title: 'Vérification validée', content_md: body, status: 'done', archived: 0 });
+  } finally {
+    await cleanProject(page, request, project.id);
+  }
+});
+
+test('la saisie dans la note pendant une écriture de l’assistant conserve les deux modifications', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Atelier modifications simultanées' });
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  try {
+    const note = await post(request, '/api/entries', { title: 'Note du filtre', project_id: project.id, content_md: 'Corps initial.' });
+    await configure(page, project.id, note.id);
+    await stubAssistant(page, {
+      reply: 'Le changement de titre est prêt.',
+      actions: [{ kind: 'update_entry', n: 1, title: 'Rapport du filtre', status: 'doing' }],
+    });
+    await page.route(`**/api/entries/${note.id}`, async (route) => {
+      if (route.request().method() !== 'PUT' || !route.request().postDataJSON().expected_entry) return route.continue();
+      const response = await route.fetch();
+      await held;
+      return route.fulfill({ response });
+    });
+    const readEntry = async () => (await request.get(`/api/entries/${note.id}`)).json();
+    await page.goto('/');
+    const editor = page.getByRole('region', { name: 'Entrée', exact: true });
+    await expect(editor.getByLabel('Titre de l’entrée')).toHaveValue('Note du filtre');
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    const chat = assistant(page);
+    await messageField(page).fill('Renomme la note du filtre et marque-la en cours.');
+    await messageField(page).press('Enter');
+    await chat.getByRole('button', { name: /^Appliquer/ }).click();
+    await expect.poll(readEntry).toMatchObject({ title: 'Rapport du filtre', status: 'doing' });
+
+    await page.keyboard.press('Escape');
+    await expect(editor.getByLabel('Titre de l’entrée')).toHaveValue('Note du filtre');
+    await editor.getByRole('button', { name: 'Écrire', exact: true }).click();
+    const source = editor.getByLabel('Contenu en Markdown');
+    await source.fill('Observation saisie à la main.');
+    await expect.poll(readEntry).toMatchObject({ title: 'Rapport du filtre', status: 'doing', content_md: 'Observation saisie à la main.' });
+    release();
+    await expect(editor.getByLabel('Titre de l’entrée')).toHaveValue('Rapport du filtre');
+    await expect(source).toHaveValue('Observation saisie à la main.');
+  } finally {
+    release();
+    await cleanProject(page, request, project.id);
+  }
+});
+
+test('l’assistant lit une procédure du partage avec accord et y crée un Word après validation', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Atelier procédure partagée' });
+  const folder = await mkdtemp(path.resolve('.e2e-share', 'assistant-procedure-'));
+  const directory = path.basename(folder);
+  const source = 'Sauvegarde du classeur.md';
+  const excerpt = 'Comparer le total du journal à celui du classeur.';
+  const target = path.join(folder, 'Contrôle après restauration.docx');
+  try {
+    await writeFile(path.join(folder, source), `# Sauvegarde\n\n${excerpt}\n`);
+    await configure(page, project.id, '');
+    const prompts = await stubAssistant(page,
+      { shared_search: ['Sauvegarde du classeur'] },
+      { read_shared: [1] },
+      {
+        reply: 'Le document est prêt à relire.',
+        show_shared: [1],
+        actions: [{ kind: 'create_shared_procedure', title: 'Contrôle après restauration', directory: 2, content: `## Contrôle\n\n${excerpt}` }],
+      },
+    );
+    await page.goto('/');
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    const chat = assistant(page);
+    await chat.getByText('Données envoyées au service IA', { exact: true }).click();
+    const consent = chat.getByRole('checkbox', { name: 'Autoriser l’envoi d’extraits des fichiers partagés dans cette conversation' });
+    await expect(consent).not.toBeChecked();
+    await consent.check();
+    await messageField(page).fill('Cherche la sauvegarde du classeur et prépare la procédure de contrôle dans le même dossier.');
+    await messageField(page).press('Enter');
+
+    await expect(chat.getByText('Le document est prêt à relire.')).toBeVisible();
+    expect(prompts).toHaveLength(3);
+    expect(prompts[1]).toContain(`${directory}/${source}`);
+    expect(prompts[1]).not.toContain(excerpt);
+    expect(prompts[2]).toContain(excerpt);
+    await chat.getByText('Relire le texte proposé', { exact: true }).click();
+    await expect(chat.locator('pre')).toContainText(excerpt);
+    await expect(stat(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    await chat.getByRole('button', { name: `Appliquer : Créer la procédure Word « ${directory}/Contrôle après restauration.docx » sur le partage` }).click();
+    await expect(chat.getByText('✓ Appliqué')).toBeVisible();
+    const word = await readZip(await readFile(target));
+    expect(await readZipText(word, 'word/document.xml')).toContain(excerpt);
+    expect(await readFile(path.join(folder, source), 'utf8')).toContain(excerpt);
+
+    await chat.getByRole('button', { name: `Ouvrir le fichier partagé ${directory}/${source}` }).click();
+    await expect(page.getByRole('region', { name: 'Fichier partagé' }).getByRole('heading', { name: source })).toBeVisible();
+  } finally {
+    await cleanProject(page, request, project.id);
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
 test('en-tête avec statistiques : le bouton Assistant ne fait pas déborder la page', async ({ page, request }) => {
   const project = await post(request, '/api/projects', { name: 'Atelier en-tête' });
   try {
@@ -209,7 +399,7 @@ test('à l’ouverture, la consigne se lit dans les deux thèmes ; l’impressio
   await page.goto('/');
   const opener = page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true });
   await opener.click();
-  const hint = assistant(page).getByText(/rien n’est écrit sans ton clic/);
+  const hint = assistant(page).getByText(/rien n’est écrit sans ton clic/i);
   expect(await contrastInDialog(hint)).toBeGreaterThanOrEqual(4.5);
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Changer de thème', exact: true }).click();

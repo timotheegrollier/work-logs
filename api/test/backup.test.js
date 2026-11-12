@@ -164,25 +164,34 @@ describe('sauvegardes Google Drive', () => {
     }
   });
 
-  test('l’archivage survit à l’export et les anciens exports restent visibles', async () => {
+  test('statut et archivage survivent à l’export et se normalisent pour les anciens exports', async () => {
     const { restoreBackup } = await import('../src/backup.js');
     const api = await startApi();
     try {
       const entry = await make.entry(api, { title: 'À archiver' });
-      await api.put(`/api/entries/${entry.id}`, { archived: 1 });
+      await api.put(`/api/entries/${entry.id}`, { archived: 1, status: 'done' });
       const exported = (await api.get('/api/export')).body;
       assert.equal(exported.entries.find((row) => row.id === entry.id).archived, 1);
+      assert.equal(exported.entries.find((row) => row.id === entry.id).status, 'done');
 
       await api.del(`/api/entries/${entry.id}`);
       restoreBackup(api.db, exported);
       assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(entry.id).archived, 1);
+      assert.equal(api.db.prepare('SELECT status FROM entries WHERE id=?').get(entry.id).status, 'done');
 
       const legacy = structuredClone(exported);
-      for (const row of legacy.entries) delete row.archived;
+      for (const row of legacy.entries) {
+        delete row.archived;
+        delete row.status;
+      }
       await api.del(`/api/entries/${entry.id}`);
       restoreBackup(api.db, legacy);
       assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(entry.id).archived, 0);
+      assert.equal(api.db.prepare('SELECT status FROM entries WHERE id=?').get(entry.id).status, 'todo');
 
+      legacy.entries[0].status = 'blocked';
+      assert.throws(() => restoreBackup(api.db, legacy), /Statut d’entrée invalide/);
+      delete legacy.entries[0].status;
       legacy.entries[0].archived = 2;
       assert.throws(() => restoreBackup(api.db, legacy), /Archivage d’entrée invalide/);
     } finally {

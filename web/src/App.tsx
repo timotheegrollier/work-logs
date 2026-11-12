@@ -17,7 +17,8 @@ import { ProjectBar } from './components/ProjectBar';
 import { CategoryBar } from './components/CategoryBar';
 import { categoryDescendants, UNCATEGORIZED } from './categories';
 import { AiSettings } from './components/AiSettings';
-import { AiChat, type ChatTurn } from './components/AiChat';
+import { AiChat } from './components/AiChat';
+import type { ChatProposal } from './ai-chat';
 import { AccountMenu } from './components/AccountMenu';
 import { ColumnResizer } from './components/ColumnResizer';
 import { SharedFolder } from './components/SharedFolder';
@@ -94,10 +95,7 @@ export default function App() {
   const [showProcedures, setShowProcedures] = usePersisted('worklogs-show-procedures', readPanel(false), writePanel);
   const [showSettings, setShowSettings] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
-  // L'assistant : sa conversation survit au dialogue, pas au redémarrage.
   const [showChat, setShowChat] = useState(false);
-  const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
-  const chatDraft = useRef('');
   const chatOpener = useRef<HTMLButtonElement>(null);
   // Compte Google au niveau de l'app : le menu de l'en-tête le montre partout.
   const [google, setGoogle] = useState<GoogleStatus | null>(null);
@@ -144,6 +142,7 @@ export default function App() {
   const settingsRef = useRef<HTMLDialogElement>(null);
   const selectedRef = useRef<string | null>(null);
   const reloadSequence = useRef(0);
+  const entryWriteSequence = useRef(0);
   selectedRef.current = selectedId;
 
   // Téléphone : un panneau à la fois, choisi par la barre du bas (§53). Le journal est
@@ -401,7 +400,7 @@ export default function App() {
       if (selectedSummary) {
         setEntry((current) => current && current.id === selectedSummary.id
           ? { ...current, archived: selectedSummary.archived, project_id: selectedSummary.project_id, category_id: selectedSummary.category_id, updated_at: selectedSummary.updated_at,
-              follow_up: selectedSummary.follow_up, follow_up_key: selectedSummary.follow_up_key,
+              status: selectedSummary.status, follow_up: selectedSummary.follow_up, follow_up_key: selectedSummary.follow_up_key,
               ...(selectedSummary.kind === 'procedure' ? { attachments: next.procedure_attachments.filter((file) => file.entry_id === current.id) } : {}) }
           : current);
       }
@@ -417,6 +416,10 @@ export default function App() {
     }
   }, [query, projectId, categoryId]);
   latestReload.current = reload;
+  const entryEditorChanged = useCallback(() => {
+    entryWriteSequence.current += 1;
+    return reload();
+  }, [reload]);
 
   const switchCategory = async (next: string) => {
     if (currentFilters.current.projectId !== projectId || currentFilters.current.categoryId !== categoryId) return;
@@ -713,8 +716,27 @@ export default function App() {
     setShowChat(false);
     void api.entry(id).then(openDriveEntry).catch((e) => setError((e as Error).message));
   };
+  const openChatShared = (path: string) => {
+    setShowChat(false);
+    void openShared(path);
+  };
+  const chatChanged = async (proposals: ChatProposal[]) => {
+    if (proposals.some(({ kind }) => kind === 'create_task')) setTaskView(null);
+    if (proposals.some(({ kind }) => kind === 'create_shared_procedure')) bumpShared();
+    await reload();
+    const id = selectedRef.current;
+    if (!id || !proposals.some((proposal) => proposal.kind === 'update_entry' && proposal.entryId === id)) return;
+    while (selectedRef.current === id) {
+      const sequence = entryWriteSequence.current;
+      const refreshed = await api.entry(id).catch(() => null);
+      if (!refreshed || selectedRef.current !== id) return;
+      if (sequence !== entryWriteSequence.current) continue;
+      setEntry((current) => current?.id === id && sequence === entryWriteSequence.current ? refreshed : current);
+      return;
+    }
+  };
   // Le titre relu, pas celui du chargement : l'entrée a pu être renommée depuis.
-  const openNote = overview || sharedPath ? undefined : entry;
+  const openNote = showEditor && !overview && !sharedPath && !merging && !mergingTasks ? entry : undefined;
   const openNoteTitle = state?.entries.find((candidate) => candidate.id === openNote?.id)?.title ?? openNote?.title;
 
   useEffect(() => {
@@ -750,7 +772,7 @@ export default function App() {
       ref={chatOpener}
       aria-label="Ouvrir l’assistant IA"
       aria-haspopup="dialog"
-      title="Chercher dans les tâches et les notes, préparer des créations et des modifications"
+      title="Chercher des tâches, notes et procédures, préparer des créations et des modifications"
       onClick={() => setShowChat(true)}
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20.5 11.5a8 8 0 0 1-11.8 7L4 20l1.5-4.6a8 8 0 1 1 15-3.9z" /><path d="m12.5 7.7 1 2.8 2.8 1-2.8 1-1 2.8-1-2.8-2.8-1 2.8-1z" /></svg>
@@ -953,7 +975,7 @@ export default function App() {
               autoFocusTitle={freshEntry}
               compact={phone}
               editRequest={procedureEdit.id === entry.id ? procedureEdit.sequence : 0}
-              onChanged={reload}
+              onChanged={entryEditorChanged}
               onTaskCreated={reload}
               onProcedureCreated={openCreatedProcedure}
               onDeleted={() => {
@@ -1131,26 +1153,20 @@ export default function App() {
           </footer>
         </dialog>
       ), document.body)}
-      {showChat && (
-        <AiChat
-          turns={chatTurns}
-          onTurns={setChatTurns}
-          draftStore={chatDraft}
-          projectId={creationProjectId ?? ''}
-          categoryId={creationCategoryId}
-          openTitle={openNoteTitle}
-          compact={phone}
-          opener={chatOpener}
-          onClose={() => setShowChat(false)}
-          onChanged={(createdTask) => {
-            // Comme à l'ajout à la main : une tâche neuve n'entre dans aucune vue, on la lève pour la voir arriver.
-            if (createdTask) setTaskView(null);
-            return reload();
-          }}
-          onTask={openChatTask}
-          onDocument={openChatDocument}
-        />
-      )}
+      <AiChat
+        open={showChat}
+        projectId={creationProjectId ?? ''}
+        categoryId={creationCategoryId}
+        openTitle={openNoteTitle}
+        openEntryId={openNote?.id}
+        compact={phone}
+        opener={chatOpener}
+        onClose={() => setShowChat(false)}
+        onChanged={chatChanged}
+        onTask={openChatTask}
+        onDocument={openChatDocument}
+        onSharedDocument={openChatShared}
+      />
       {showDocuments && (
         <Suspense fallback={loading}>
           <GoogleDocuments
