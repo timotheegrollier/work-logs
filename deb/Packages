@@ -1,14 +1,14 @@
 Package: worklogs
-Version: 0.76.0
+Version: 0.77.0
 Architecture: amd64
 Maintainer: Timothée Grollier <timotheegrollier@gmail.com>
-Installed-Size: 286807
+Installed-Size: 286845
 Depends: libgtk-3-0, libnss3, libxss1, libxtst6, libatspi2.0-0, libdrm2, libgbm1, libasound2t64 | libasound2, xdg-utils
-Filename: ./WorkLogs-0.76.0-linux-amd64.deb
-Size: 98233496
-MD5sum: 1f772d7cbe2aa82d23e677396df51f31
-SHA1: 06f02d451471cb36d1e90fc2caa60afba7df34b9
-SHA256: 6b96d2f7c79942d2ab49327821fe05a34de8d7c8a2cacb4fb075940a371ee11f
+Filename: ./WorkLogs-0.77.0-linux-amd64.deb
+Size: 98243048
+MD5sum: a7b78a233d3451c085e80a1bd58ec4a7
+SHA1: 020334b0485fd54d762e251ce9d16a04d72d719a
+SHA256: f6918b9c788ca633014ebbc792e2cda469046784ff7b634e2c86ea4b0c62bf0d
 Section: default
 Priority: optional
 Homepage: https://github.com/timotheegrollier/work-logs
