@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Une tâche se rédige dans sa note — 2026-11-13 (§83)
+## Une tâche se rédige dans sa note — 2026-11-13, v0.77.0 (§83)
 
 - **Suivre comme tâche** conserve l’entrée ouverte. **Nouvelle tâche** crée et ouvre la note
   correspondante. Le tableau, la vue d’ensemble et l’assistant ouvrent cette même note.
@@ -8,6 +8,8 @@
   Retirer le suivi garde la note, son texte et ses fichiers.
 - La migration rattache les tâches existantes à une note principale et conserve les références.
   SQLite, la PWA et les sauvegardes conservent l’avancement et les liens.
+- `./scripts/check.sh` vert sur le lot : 346 API, 1 375 front et un échec attendu,
+  49 desktop unitaires, 49 scripts, 8 Worker, 11 relais, 117 navigateur et 20 Electron.
 
 ## Aperçus de proposition IA sans image tierce — 2026-11-13, v0.76.0 (§82)
 
