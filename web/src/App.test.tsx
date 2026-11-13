@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createRoot } from 'react-dom/client';
 import App from './App';
+import { EntryEditor } from './components/EntryEditor';
 import { seedData, useRealApi } from './test/server';
 import { discardPendingSaves, flushPendingSaves, hasPendingSaves } from './autosave';
 import { setLeaveGuard } from './shared-leave';
-import { api as clientApi } from './lib';
+import { api as clientApi, type Project } from './lib';
 import { TaskAdvice } from './components/TaskAdvice';
 
 let api: Awaited<ReturnType<typeof useRealApi>>;
@@ -183,9 +185,6 @@ describe('catégories et sous-catégories', () => {
   });
 
   test('un reclassement distant actualise projet et catégorie ensemble en gardant le texte saisi', async () => {
-    const originalProbe = clientApi.updateEntry;
-    const callsProbe: unknown[] = [];
-    vi.spyOn(clientApi, 'updateEntry').mockImplementation(async (id, body) => { callsProbe.push(body); return originalProbe(id, body); });
     seedData(api.db, { projects: [{ id: 'p', name: 'Projet P' }, { id: 'q', name: 'Projet Q' }], entries: [{ id: 'e', title: 'Note initiale', project_id: 'p' }], tasks: [{ id: 't', title: 'Relire', project_id: 'p' }] });
     const destination = await clientApi.createCategory({ name: 'Destination', project_id: 'q' });
     render(<App />);
@@ -197,8 +196,35 @@ describe('catégories et sous-catégories', () => {
     expect(screen.getByLabelText('Catégorie de l’entrée')).toHaveValue(destination.id);
     expect(title).toHaveValue('Texte en cours');
     await flushPendingSaves();
-    console.error('CLASSEMENT_PROBE', JSON.stringify(callsProbe));
     expect(await clientApi.entry('e')).toMatchObject({ title: 'Texte en cours', project_id: 'q', category_id: destination.id });
+  });
+
+  test('une frappe avant les effets de l’éditeur ne réécrit pas un reclassement distant', async () => {
+    seedData(api.db, { projects: [{ id: 'p', name: 'Projet P' }, { id: 'q', name: 'Projet Q' }], entries: [{ id: 'e', title: 'Note initiale', project_id: 'p' }] });
+    const destination = await clientApi.createCategory({ name: 'Destination', project_id: 'q' });
+    const projects = [{ id: 'p', name: 'Projet P' }, { id: 'q', name: 'Projet Q' }] as Project[];
+    const editor = async () => <EntryEditor key="e" entry={await clientApi.entry('e')} projects={projects} categories={[destination]} onChanged={() => {}} onDeleted={() => {}} />;
+    // Hors act, comme dans l'application : la frappe arrive après la pose du DOM, avant les effets.
+    const env = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const previous = env.IS_REACT_ACT_ENVIRONMENT;
+    env.IS_REACT_ACT_ENVIRONMENT = false;
+    const container = document.body.appendChild(document.createElement('div'));
+    const root = createRoot(container);
+    try {
+      const committed = new Promise<void>((resolve) => new MutationObserver((_, observer) => { observer.disconnect(); resolve(); }).observe(container, { childList: true }));
+      root.render(await editor());
+      await committed;
+      fireEvent.change(container.querySelector('input[aria-label="Titre de l’entrée"]')!, { target: { value: 'Texte en cours' } });
+      await clientApi.updateEntry('e', { project_id: 'q', category_id: destination.id });
+      root.render(await editor());
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await flushPendingSaves();
+      expect(await clientApi.entry('e')).toMatchObject({ title: 'Texte en cours', project_id: 'q', category_id: destination.id });
+    } finally {
+      root.unmount();
+      container.remove();
+      env.IS_REACT_ACT_ENVIRONMENT = previous;
+    }
   });
 
   test('une sauvegarde de texte en vol ne réécrit pas le classement changé à distance', async () => {

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { api, COLUMNS, PRIORITIES, dayLabel, formatSize, googleHelpUrl, isFollowed, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type Priority, type RichDocument, type Status, type Task, type TaskMetadata } from '../lib';
 import { AiCancelled, completeNote, draftProcedure, noteCompletionContext, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
@@ -269,8 +269,10 @@ export function EntryEditor({
     await autosave.flush().catch(() => {});
   };
 
-  // Changer d’entrée termine aussi l’écriture du brouillon précédent.
-  useEffect(() => {
+  // Changer d’entrée termine aussi l’écriture du brouillon précédent. Branché avant toute frappe
+  // (layout, pas passif) : sinon `save` resterait « saved » avec une révision en attente, et un
+  // reclassement distant arrivé entre-temps serait écrasé par l’envoi suivant.
+  useLayoutEffect(() => {
     autosave.onState = (state, message) => { setSave(state); setError(message || ''); };
     return () => {
       autosave.onState = () => {};

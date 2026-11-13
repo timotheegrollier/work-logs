@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { act, useState } from 'react';
+import { createRoot } from 'react-dom/client';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { GoogleDocsEditor } from './components/GoogleDocsEditor';
 import { GoogleDrive } from './components/GoogleDrive';
 import { EntryEditor } from './components/EntryEditor';
 import { api, ApiError, emptyDocument, type Entry } from './lib';
@@ -21,6 +24,40 @@ function integratedBridge() {
   window.worklogsDesktop = { onBeforeClose: () => () => {}, googleDocs: bridge };
   return bridge;
 }
+
+test('une mesure prévue juste avant le démontage ne lit pas le cadre déjà retiré', async () => {
+  integratedBridge();
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal('requestAnimationFrame', (run: FrameRequestCallback) => frames.push(run));
+  vi.stubGlobal('cancelAnimationFrame', () => {});
+  let hide = () => {};
+  function Host() {
+    const [shown, setShown] = useState(true);
+    hide = () => setShown(false);
+    return shown ? <GoogleDocsEditor documentId="doc-1" tabId="" onLocalCopy={async () => {}} /> : null;
+  }
+  const env = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+  const previous = env.IS_REACT_ACT_ENVIRONMENT;
+  const container = document.body.appendChild(document.createElement('div'));
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<Host />));
+    await waitFor(() => expect(frames.length).toBeGreaterThan(0));
+    // Hors act, comme dans l'application : React retire le cadre, puis nettoie l'effet plus tard.
+    // La frame déjà demandée passe entre les deux.
+    env.IS_REACT_ACT_ENVIRONMENT = false;
+    const between = new Promise<unknown>((resolve) => new MutationObserver((_, observer) => {
+      observer.disconnect();
+      try { frames.forEach((run) => run(0)); resolve(null); } catch (error) { resolve(error); }
+    }).observe(container, { childList: true }));
+    hide();
+    expect(await between).toBeNull();
+  } finally {
+    root.unmount();
+    env.IS_REACT_ACT_ENVIRONMENT = previous;
+    container.remove();
+  }
+});
 
 test('ouvre automatiquement l’éditeur Google dans WorkLogs et actualise la copie locale au retour', async () => {
   const bridge = integratedBridge();

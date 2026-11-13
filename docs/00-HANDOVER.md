@@ -1,5 +1,16 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Deux défauts corrigés : reclassement écrasé, cadre Google démonté — 2026-11-13
+
+- **Reclassement écrasé** (06, D14). Une frappe arrivée avant les effets de l’éditeur laissait
+  l’état à « enregistré » alors qu’une révision attendait. Un reclassement distant était alors
+  réécrit par l’ancien projet et l’ancienne catégorie. `autosave.onState` est branché par un
+  `useLayoutEffect`. Test déterministe dans `App.test.tsx`, rouge avant ; la sonde
+  `CLASSEMENT_PROBE` est retirée.
+- **Cadre Google démonté.** Une mesure prévue juste avant le démontage lisait la ref déjà remise
+  à `null` : erreur non gérée, et suite front en code 1 alors que tous les tests passaient.
+  L’effet garde l’élément qu’il mesure. Test dans `GoogleDrive.test.tsx`, rouge avant.
+
 ## Une tâche se rédige dans sa note — 2026-11-13, v0.77.0 (§83)
 
 - **Suivre comme tâche** conserve l’entrée ouverte. **Nouvelle tâche** crée et ouvre la note

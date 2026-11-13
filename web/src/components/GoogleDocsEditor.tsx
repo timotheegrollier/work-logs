@@ -10,12 +10,14 @@ export function GoogleDocsEditor({ documentId, tabId, onLocalCopy }: {
   const [leaving, setLeaving] = useState(false);
   useEffect(() => {
     const bridge = window.worklogsDesktop?.googleDocs;
-    if (!bridge || !host.current) return;
+    // L'élément, pas la ref : React la remet à null au démontage, avant le nettoyage de l'effet.
+    const element = host.current;
+    if (!bridge || !element) return;
     let disposed = false;
     let frame = 0;
     const measure = () => {
-      const rect = host.current!.getBoundingClientRect();
-      const center = host.current!.closest('.center')?.getBoundingClientRect();
+      const rect = element.getBoundingClientRect();
+      const center = element.closest('.center')?.getBoundingClientRect();
       const top = Math.max(0, rect.top, center?.top ?? 0);
       const left = Math.max(0, rect.left);
       const bottom = Math.min(window.innerHeight, rect.bottom, center?.bottom ?? window.innerHeight);
@@ -35,7 +37,7 @@ export function GoogleDocsEditor({ documentId, tabId, onLocalCopy }: {
       if (!disposed) { setState(next); position(); }
     }, error => { if (!disposed) setState({ phase: 'error', message: (error as Error).message }); });
     const observer = new ResizeObserver(position);
-    observer.observe(host.current);
+    observer.observe(element);
     const mutations = new MutationObserver(position);
     mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['open', 'role', 'aria-modal'] });
     window.addEventListener('resize', position);
