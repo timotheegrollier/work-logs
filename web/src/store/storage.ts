@@ -11,6 +11,7 @@ export interface Table<T extends object> {
 
 export interface Database {
   table<T extends object>(name: string): Table<T>;
+  addAll(rows: { table: string; value: object }[]): Promise<void>;
 }
 
 function keyOf(table: string, value: object): string {
@@ -34,6 +35,20 @@ export function createMemoryDatabase(): Database {
     return map;
   };
   return {
+    async addAll(rows) {
+      const pending = new Map<string, Map<string, Record<string, unknown>>>();
+      for (const { table, value } of rows) {
+        const key = keyOf(table, value);
+        const batch = pending.get(table) ?? new Map();
+        if (store(table).has(key) || batch.has(key)) throw new Error(`Clé déjà présente dans ${table}.`);
+        batch.set(key, { ...value });
+        pending.set(table, batch);
+      }
+      for (const [table, batch] of pending) {
+        const target = store(table);
+        for (const [key, value] of batch) target.set(key, value);
+      }
+    },
     table<T extends object>(name: string): Table<T> {
       const map = store(name);
       return {
@@ -90,6 +105,25 @@ export function createIndexedDbDatabase(): Database {
   const store = async (name: string, mode: IDBTransactionMode) =>
     (await db()).transaction(name, mode).objectStore(name);
   return {
+    async addAll(rows) {
+      if (!rows.length) return;
+      const values = rows.map(({ table, value }) => {
+        keyOf(table, value);
+        return { table, value: structuredClone(value) };
+      });
+      const database = await db();
+      const transaction = database.transaction([...new Set(values.map(({ table }) => table))], 'readwrite');
+      return new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = () => reject(transaction.error ?? new Error('Écriture IndexedDB annulée.'));
+        try {
+          for (const { table, value } of values) transaction.objectStore(table).add(value);
+        } catch (error) {
+          transaction.abort();
+          reject(error);
+        }
+      });
+    },
     table<T extends object>(name: string): Table<T> {
       if (!(name in LOCAL_STORES)) throw new Error(`Table inconnue : ${name}.`);
       return {

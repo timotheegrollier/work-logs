@@ -28,6 +28,22 @@ describe('base mémoire', () => {
     row.name = 'Modifié';
     expect((await db.table<{ id: string; name: string }>('projects').get('pr_1'))?.name).toBe('Perso');
   });
+
+  test('les insertions sur plusieurs tables sont atomiques', async () => {
+    const db = createMemoryDatabase();
+    const rows = [
+      { table: 'tasks', value: { id: 'tk_1' } },
+      { table: 'entries', value: { id: 'en_1' } },
+      { table: 'task_entries', value: { id: 'tk_1\0en_1' } },
+    ];
+    await db.table('task_entries').put(rows[2].value);
+    await expect(db.addAll(rows)).rejects.toThrow('Clé déjà présente');
+    expect(await db.table('tasks').all()).toEqual([]);
+    expect(await db.table('entries').all()).toEqual([]);
+    await db.table('task_entries').clear();
+    await db.addAll(rows);
+    for (const { table, value } of rows) expect(await db.table(table).all()).toEqual([value]);
+  });
 });
 
 describe("repli sans IndexedDB", () => {

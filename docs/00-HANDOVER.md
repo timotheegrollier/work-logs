@@ -1,5 +1,16 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Assistant en colonnes et résultats applicables — 2026-11-13
+
+- L’assistant affiche une liste et des colonnes indépendantes sur ordinateur, une conversation
+  à la fois sur téléphone. Un indicateur animé signale l’activité de chaque conversation.
+- Les propositions appliquées ouvrent leurs résultats directement. Une tâche créée par le chat
+  enregistre son brouillon Markdown dans l’entrée liée dès la création. Les notes et procédures
+  reçoivent aussi une structure si le modèle rend un texte vide.
+- `./scripts/check.sh` vert sur le lot complet : 329 tests API, 1 341 front et un échec attendu,
+  49 desktop unitaires, 46 scripts, 8 Worker, 11 relais, 117 navigateur et 20 Electron.
+  Build PWA vérifié.
+
 ## Correctif après v0.75.0 — rédaction du contenu d’une tâche dans le chat
 
 Après la création d’une tâche, le chat conserve son identifiant dans la conversation et

@@ -6540,7 +6540,8 @@ describe('assistant IA', () => {
     expect(opener).toHaveFocus();
 
     fireEvent.click(opener);
-    expect(await within(await chatDialog()).findByText('Où en est la pompe ?')).toBeInTheDocument();
+    const log = within(await chatDialog()).getByRole('log');
+    expect(await within(log).findByText('Où en est la pompe ?')).toBeInTheDocument();
     expect(JSON.stringify({ ...localStorage })).not.toContain('Où en est la pompe');
   }, 20_000);
 

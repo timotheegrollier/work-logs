@@ -577,7 +577,7 @@ export const remoteApi = {
   createEntryFromTask: (taskId: string, body?: { title?: string; content_md?: string; expected_planning?: TaskPlanningSnapshot }) =>
     send<Entry>('POST', `/api/tasks/${taskId}/entry`, body),
 
-  createTask: (body: Partial<Task>) => send<Task>('POST', '/api/tasks', body),
+  createTask: (body: Partial<Task> & { content_md?: string }) => send<Task>('POST', '/api/tasks', body),
   // La réponse de mutation ne joint pas les documents, disponibles dans state().
   updateTask: (id: string, body: Partial<Task> & { expected_planning?: TaskPlanningSnapshot }) => send<Omit<Task, 'documents'>>('PUT', `/api/tasks/${id}`, body),
   moveTask: (id: string, status: Status, position: number) =>

@@ -22,6 +22,7 @@ const documentSummary = { id: 'en_1', title: 'Réglage de la pompe', kind: 'note
 const onChanged = vi.fn();
 const onClose = vi.fn();
 const onTask = vi.fn();
+const onAppliedTask = vi.fn();
 const onDocument = vi.fn();
 const onSharedDocument = vi.fn();
 
@@ -30,16 +31,23 @@ function Host({ open = true, ...props }: { open?: boolean } & Partial<ComponentP
   const opener = useRef<HTMLButtonElement>(null);
   return <>
     <button ref={opener}>Ouvrir</button>
-    <AiChat open={open} projectId="pj_1" openTitle="Note ouverte" compact={false} opener={opener} onClose={onClose} onChanged={onChanged} onTask={onTask} onDocument={onDocument} onSharedDocument={onSharedDocument} {...props} />
+    <AiChat open={open} projectId="pj_1" openTitle="Note ouverte" compact={false} opener={opener} onClose={onClose} onChanged={onChanged} onTask={onTask} onAppliedTask={onAppliedTask} onDocument={onDocument} onSharedDocument={onSharedDocument} {...props} />
   </>;
 }
 
 const dialog = () => screen.getByRole('dialog', { name: 'Assistant IA' });
-const chat = () => within(dialog());
+const workspace = () => within(dialog());
+const conversations = () => within(workspace().getByRole('navigation', { name: 'Conversations' }));
+const pane = (id: string) => workspace().getByRole('region', { name: `Conversation ${id}` });
+const chat = () => {
+  const selected = workspace().queryByRole('navigation')?.querySelector('[aria-current="true"]')?.getAttribute('aria-label');
+  const id = /^Conversation (\d+)/.exec(selected ?? '')?.[1];
+  return within(id ? pane(id) : workspace().getByRole('region', { name: /^Conversation \d+/ }));
+};
+const log = () => within(chat().getByRole('log'));
 const field = () => chat().getByRole('textbox', { name: 'Message pour l’assistant' });
-const conversations = () => chat().getByRole('combobox', { name: 'Conversation active' });
-const newConversation = () => fireEvent.click(chat().getByRole('button', { name: 'Nouvelle conversation' }));
-const switchConversation = (value: string) => fireEvent.change(conversations(), { target: { value } });
+const newConversation = () => fireEvent.click(conversations().getByRole('button', { name: 'Nouvelle conversation' }));
+const switchConversation = (id: string) => fireEvent.click(conversations().getByRole('button', { name: new RegExp(`^Conversation ${id}(?: ·|$)`) }));
 function say(text: string) {
   fireEvent.change(field(), { target: { value: text } });
   fireEvent.keyDown(field(), { key: 'Enter' });
@@ -146,7 +154,7 @@ describe('assistant : conversation', () => {
     expect(chat().queryByRole('alert')).not.toBeInTheDocument();
     expect(chat().queryByRole('button', { name: 'Arrêter la demande IA' })).not.toBeInTheDocument();
     expect(field()).toHaveFocus();
-    expect(chat().getByText('Une question')).toBeInTheDocument();
+    expect(log().getByText('Une question')).toBeInTheDocument();
   });
 
   test('une erreur de lecture s’affiche dans le journal', async () => {
@@ -171,7 +179,7 @@ describe('assistant : conversation', () => {
     await pending.resolve(answer({ reply: 'Finie en arrière-plan.' }));
 
     view.rerender(<Host />);
-    expect(chat().getByText('Une question')).toBeInTheDocument();
+    expect(log().getByText('Une question')).toBeInTheDocument();
     expect(chat().getByText('Finie en arrière-plan.')).toBeInTheDocument();
     expect(field()).toHaveValue('Brouillon à garder');
   });
@@ -190,6 +198,7 @@ describe('assistant : conversation', () => {
 
     newConversation();
     view.rerender(<Host projectId="pj_2" openEntryId="en_2" />);
+    expect(workspace().getAllByRole('region', { name: /^Conversation \d/ })).toHaveLength(2);
     expect(field()).toHaveValue('');
     expect(chat().queryByText('Un premier échange.')).not.toBeInTheDocument();
     const second = pendingAnswer();
@@ -197,12 +206,17 @@ describe('assistant : conversation', () => {
     const secondSignal = ask.mock.calls[2][0].signal!;
     expect(ask.mock.calls[2][1]).toMatchObject({ projectId: 'pj_2', openEntryId: 'en_2', history: [] });
     expect(firstSignal.aborted).toBe(false);
-    expect(chat().getByText('2 conversations en cours')).toBeInTheDocument();
+    expect(workspace().getByText('2 conversations en cours')).toBeInTheDocument();
+    expect(within(pane('1')).getByRole('status')).toHaveTextContent('L’assistant cherche');
+    expect(within(pane('2')).getByRole('status')).toHaveTextContent('L’assistant cherche');
+    expect(conversations().getAllByText('Recherche en cours')).toHaveLength(2);
     fireEvent.change(field(), { target: { value: 'Brouillon de B' } });
 
     await second.resolve(answer({ reply: 'B a fini.' }));
     expect(chat().getByText('B a fini.')).toBeInTheDocument();
-    expect(chat().getByText('1 conversation en cours')).toBeInTheDocument();
+    expect(workspace().getByText('1 conversation en cours')).toBeInTheDocument();
+    expect(within(pane('1')).getByRole('status')).toBeInTheDocument();
+    expect(within(pane('2')).queryByRole('status')).not.toBeInTheDocument();
     switchConversation('1');
     expect(field()).toHaveValue('Brouillon de A');
     expect(chat().queryByText('B a fini.')).not.toBeInTheDocument();
@@ -231,9 +245,9 @@ describe('assistant : conversation', () => {
     expect(chat().getByText('Demande arrêtée.')).toBeInTheDocument();
     await act(async () => resolve(answer({ reply: 'Trop tard.' })));
     expect(chat().queryByText('Trop tard.')).not.toBeInTheDocument();
-    fireEvent.click(chat().getByRole('button', { name: 'Effacer la conversation active' }));
+    fireEvent.click(chat().getByRole('button', { name: 'Effacer la conversation' }));
     expect(chat().queryByText('Recherche à arrêter')).not.toBeInTheDocument();
-    expect(chat().getByText('Recherche à garder')).toBeInTheDocument();
+    expect(log().getByText('Recherche à garder')).toBeInTheDocument();
     await first.resolve(answer({ reply: 'Résultat à garder.' }));
     expect(chat().getByText('Résultat à garder.')).toBeInTheDocument();
   });
@@ -264,12 +278,32 @@ describe('assistant : conversation', () => {
     expect(field()).not.toHaveFocus();
   });
 
+  test('sur téléphone, le volet sélectionne une seule conversation en conservant son brouillon', async () => {
+    render(<Host compact />);
+    await answered(answer({ reply: 'Première réponse.' }), 'Premier chantier');
+    fireEvent.change(field(), { target: { value: 'Brouillon du chantier' } });
+    const toggle = () => workspace().getByRole('button', { name: 'Conversations' });
+    expect(workspace().queryByRole('navigation')).not.toBeInTheDocument();
+    fireEvent.click(toggle());
+    expect(workspace().queryByRole('region', { name: 'Conversation 1' })).not.toBeInTheDocument();
+    newConversation();
+    expect(toggle()).toHaveFocus();
+    await answered(answer({ reply: 'Deuxième réponse.' }), 'Deuxième chantier');
+    expect(workspace().getAllByRole('region', { name: /^Conversation \d/ })).toHaveLength(1);
+    fireEvent.click(toggle());
+    switchConversation('1');
+    expect(field()).toHaveValue('Brouillon du chantier');
+    expect(field()).not.toHaveFocus();
+    expect(log().getByText('Première réponse.')).toBeInTheDocument();
+    expect(workspace().queryByText('Deuxième réponse.')).not.toBeInTheDocument();
+  });
+
   test('sur téléphone, rouvrir une conversation place le focus sur « Fermer », pas sur « Nouvelle conversation »', async () => {
     const view = render(<Host compact />);
     await answered(answer());
     view.rerender(<Host compact open={false} />);
     view.rerender(<Host compact />);
-    expect(chat().getByRole('button', { name: 'Fermer l’assistant' })).toHaveFocus();
+    expect(workspace().getByRole('button', { name: 'Fermer l’assistant' })).toHaveFocus();
   });
 
   test('rouvrir reprend le brouillon à sa suite', () => {
@@ -284,7 +318,7 @@ describe('assistant : conversation', () => {
   test('Échap et « Fermer » referment, le focus revient au bouton d’ouverture', () => {
     const view = render(<Host />);
     fireEvent(dialog(), new Event('cancel', { cancelable: true }));
-    fireEvent.click(chat().getByRole('button', { name: 'Fermer l’assistant' }));
+    fireEvent.click(workspace().getByRole('button', { name: 'Fermer l’assistant' }));
     expect(onClose).toHaveBeenCalledTimes(2);
     view.rerender(<Host open={false} />);
     expect(screen.getByRole('button', { name: 'Ouvrir' })).toHaveFocus();
@@ -324,7 +358,7 @@ describe('assistant : conversation', () => {
     render(<Host />);
     expect(chat().getByText(/Pour un document Google, il reçoit le titre et la date seuls/)).toBeInTheDocument();
     expect(chat().getByText(/le texte de notes et procédures locales dans une limite de taille/)).toBeInTheDocument();
-    expect(chat().getByText(/^Aujourd’hui : 0 \/ 150 requêtes/)).toBeInTheDocument();
+    expect(conversations().getByText(/^Aujourd’hui : 0 \/ 150 requêtes/)).toBeInTheDocument();
     await answered(answer(), 'Une question confidentielle');
     expect(localStorage.length).toBe(0);
   });
@@ -365,6 +399,20 @@ describe('assistant : propositions', () => {
     await waitFor(() => expect(onChanged).toHaveBeenLastCalledWith([task]));
   });
 
+  test('une tâche et sa note s’ouvrent depuis le résultat appliqué et restent liées dans le fil', async () => {
+    render(<Host />);
+    await answered(answer({ proposals: [createTask('Contrôler le filtre')] }));
+    expect(chat().queryByRole('button', { name: 'Ouvrir la tâche' })).not.toBeInTheDocument();
+    applyProposal.mockResolvedValueOnce({ taskId: 'tk_nouvelle', entryId: 'en_liee' });
+    fireEvent.click(proposalButton(`Appliquer : ${label('Contrôler le filtre')}`));
+    fireEvent.click(await chat().findByRole('button', { name: 'Ouvrir la tâche' }));
+    fireEvent.click(chat().getByRole('button', { name: 'Ouvrir la note' }));
+    expect(onAppliedTask).toHaveBeenCalledExactlyOnceWith('tk_nouvelle', 'Contrôler le filtre');
+    expect(onDocument).toHaveBeenCalledExactlyOnceWith('en_liee');
+    await answered(answer({ reply: 'Suite.' }), 'Complète sa note.');
+    expect(ask.mock.calls[1][1].history[1].createdTasks).toEqual([{ id: 'tk_nouvelle', title: 'Contrôler le filtre' }]);
+  });
+
   test('l’historique garde les propositions et leur état : « mets-la en priorité haute » a un référent', async () => {
     render(<Host />);
     await answered(answer({ reply: 'Voici ce que je te propose.', proposals: ['Acheter un filtre', 'Nettoyer', 'Vidanger', 'Purger'].map(createTask) }), 'Prépare l’entretien');
@@ -389,7 +437,7 @@ describe('assistant : propositions', () => {
     const finished: (() => void)[] = [];
     applyProposal.mockImplementation(() => new Promise<void>((done) => { finished.push(done); }));
     fireEvent.click(chat().getByRole('button', { name: 'Tout appliquer (2)' }));
-    expect(chat().getByRole('button', { name: 'Effacer la conversation active' })).toBeDisabled();
+    expect(chat().getByRole('button', { name: 'Effacer la conversation' })).toBeDisabled();
     newConversation();
     await answered(answer({ proposals: [createTask('C')] }));
     fireEvent.click(proposalButton(`Appliquer : ${label('C')}`));

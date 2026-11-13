@@ -268,7 +268,7 @@ export default function App() {
     return true;
   }, [projectId]);
 
-  const revealTaskCard = useCallback((task: Task) => {
+  const revealTaskCard = useCallback((task: Pick<Task, 'id'>) => {
     ++navigationSequence.current;
     setOverview(false);
     setTaskView(null);
@@ -694,22 +694,31 @@ export default function App() {
     });
   }, [openEntry]);
 
-  const openChatTask = async (task: Task) => {
+  const openChatTask = async ({ id, title }: Pick<Task, 'id' | 'title'>) => {
     setShowChat(false);
     // Le tableau ne révèle qu'une carte présente : le filtre qui la masque est levé d'abord.
-    if (!state?.tasks.some((candidate) => candidate.id === task.id)) {
-      // Supprimée depuis la réponse, lever le filtre n'ouvrirait rien ; sans terme, c'est l'état que lira le tableau.
-      const all = await api.state().catch(() => null);
-      if (all && !all.tasks.some((candidate) => candidate.id === task.id)) {
-        setError('tâche introuvable');
+    if (!state?.tasks.some((candidate) => candidate.id === id)) {
+      let search = '';
+      try {
+        const all = await api.state();
+        if (!all.tasks.some((candidate) => candidate.id === id)) {
+          search = title.slice(0, 100);
+          const matching = await api.state(search);
+          if (!matching.tasks.some((candidate) => candidate.id === id)) {
+            setError('tâche introuvable');
+            return;
+          }
+        }
+      } catch (cause) {
+        setError((cause as Error).message || 'Impossible de retrouver cette tâche.');
         return;
       }
       setProjectId('');
       setCategoryId('');
-      setSearch('');
-      setQuery('');
+      setSearch(search);
+      setQuery(search);
     }
-    revealTaskCard(task);
+    revealTaskCard({ id });
   };
   const openChatDocument = (id: string) => {
     setShowChat(false);
@@ -1163,6 +1172,7 @@ export default function App() {
         onClose={() => setShowChat(false)}
         onChanged={chatChanged}
         onTask={openChatTask}
+        onAppliedTask={(id, title) => void openChatTask({ id, title })}
         onDocument={openChatDocument}
         onSharedDocument={openChatShared}
       />

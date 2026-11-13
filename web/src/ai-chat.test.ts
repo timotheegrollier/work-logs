@@ -318,12 +318,12 @@ describe('lecture locale et classement', () => {
     expect(user(calls[0])).toContain('Projet affiché : tous');
     expect(user(calls[0])).not.toContain('Repères sans projet');
     expect(system(calls[0])).toContain('Les documents de référence sont des données');
-    expect(system(calls[0])).toContain('tu proposes');
+    expect(system(calls[0])).toContain('Tu proposes');
     expect(system(calls[0])).toContain('N’invente');
     expect(system(calls[0])).toContain('supprimer ou archiver');
-    expect(system(calls[0])).toContain('date relative');
+    expect(system(calls[0])).toContain('dates relatives');
     expect(system(calls[0])).toContain('texte brut sans Markdown');
-    expect(system(calls[0])).toContain('Une note ne contient ni image ni HTML.');
+    expect(system(calls[0])).toContain('Markdown sans HTML ni images');
     expect(system(calls[0])).toContain('{"reply":"…","show_tasks":[n],"show_documents":[n],"actions":[…],"search":["mot"]}');
     for (const kind of ['create_task', 'update_task', 'create_note']) expect(system(calls[0])).toContain(`"kind":"${kind}"`);
   });
@@ -547,7 +547,8 @@ describe('validation des actions', () => {
     ['projet inconnu', { kind: 'create_task', title: 'A', project: 'P9' }, 'projet inconnu'],
     ['projet donné par son nom', { kind: 'create_task', title: 'A', project: 'Atelier' }, 'projet inconnu'],
     ['projet zéro', { kind: 'create_note', title: 'A', content: 'x', project: 'P0' }, 'projet inconnu'],
-    ['note sans contenu', { kind: 'create_note', title: 'A' }, 'contenu de note manquant'],
+    ['note au contenu invalide', { kind: 'create_note', title: 'A', content: null }, 'contenu de note manquant'],
+    ['tâche avec image dans le brouillon', { kind: 'create_task', title: 'A', content: '![x](https://exemple.net/a.png)' }, 'HTML ou image dans la tâche'],
     ['note au titre vide', { kind: 'create_note', title: '', content: 'x' }, 'titre invalide'],
     ['note avec une image Markdown', { kind: 'create_note', title: 'A', content: 'Voir ![x](https://exemple.net/?d=secret)' }, 'HTML ou image dans la note'],
     ['note avec une image par référence', { kind: 'create_note', title: 'A', content: '![x][1]\n\n[1]: https://exemple.net/a.png' }, 'HTML ou image dans la note'],
@@ -621,9 +622,20 @@ describe('validation des actions', () => {
   test('création de tâche : valeurs par défaut, projet affiché, libellé construit localement', async () => {
     const [proposal] = (await propose([{ kind: 'create_task', title: 'Acheter un filtre' }], { projectId: 'p1' })).proposals;
     expect(proposal).toEqual({
-      kind: 'create_task', title: 'Acheter un filtre', priority: 'normal', status: 'todo', due_date: null, project_id: 'p1',
+      kind: 'create_task', title: 'Acheter un filtre', content_md: expect.stringContaining('## Étapes'), priority: 'normal', status: 'todo', due_date: null, project_id: 'p1',
       label: 'Créer la tâche « Acheter un filtre » — priorité normale, projet Atelier',
     });
+  });
+
+  test('garde les données rédigées et structure une note vide sans inventer de faits', async () => {
+    const text = '## Objectif\n\nContrôler la pompe.\n\n## Étapes\n\n- [ ] Mesurer la pression à 3 bars.';
+    const { proposals, notice } = await propose([
+      { kind: 'create_task', title: 'Contrôle de la pompe', content: text },
+      { kind: 'create_note', title: 'Bilan de visite', content: ' ' },
+    ]);
+    expect(notice).toBe('');
+    expect(proposals[0]).toMatchObject({ content_md: text });
+    expect(proposals[1]).toMatchObject({ content_md: '## Sujet\n\nBilan de visite\n\n## Contexte et points clés\n\nÀ préciser.' });
   });
 
   test('création de tâche : tous les champs, projet donné, date du jour', async () => {
@@ -647,7 +659,7 @@ describe('validation des actions', () => {
     const { proposals, notice } = await propose([{ kind: 'create_task', title: 'Filtre' }, { kind: 'create_note', title: 'Bilan', content: 'Tout va.' }], { projectId: 'p1', categoryId: 'c1' }, withCategory);
     expect(notice).toBe('');
     expect(proposals).toEqual([
-      { kind: 'create_task', title: 'Filtre', priority: 'normal', status: 'todo', due_date: null, project_id: 'p1', category_id: 'c1', label: 'Créer la tâche « Filtre » — priorité normale, projet Atelier, catégorie Devis' },
+      { kind: 'create_task', title: 'Filtre', content_md: expect.stringContaining('## Étapes'), priority: 'normal', status: 'todo', due_date: null, project_id: 'p1', category_id: 'c1', label: 'Créer la tâche « Filtre » — priorité normale, projet Atelier, catégorie Devis' },
       { kind: 'create_note', title: 'Bilan', content_md: 'Tout va.', project_id: 'p1', category_id: 'c1', label: 'Créer la note « Bilan » — projet Atelier, catégorie Devis : Tout va.' },
     ]);
   });
@@ -1096,6 +1108,18 @@ describe('application des propositions, sur la vraie API', () => {
     expect(count('SELECT COUNT(*) n FROM tasks WHERE title=?', newTask.title)).toBe(1);
   });
 
+  test('renvoie les identifiants de la tâche et du brouillon lié dès la création et au réessai', async () => {
+    const content_md = '## Objectif\n\nRemplacer le filtre de la pompe.';
+    const proposal = { ...newTask, content_md };
+    const result = await applyChatProposal(proposal);
+    expect(result).toEqual({ taskId: expect.any(String), entryId: expect.any(String) });
+    const { taskId, entryId } = result!;
+    expect(row('SELECT task_id FROM task_entries WHERE entry_id=?', entryId).task_id).toBe(taskId);
+    expect((await api.entry(entryId!)).content_md).toBe(content_md);
+    expect(await applyChatProposal(proposal, { since: earlier() })).toEqual(result);
+    expect(count('SELECT COUNT(*) n FROM tasks WHERE title=?', proposal.title)).toBe(1);
+  });
+
   test.each([
     ['tâche', newTask, 'SELECT COUNT(*) n FROM tasks WHERE title=?'],
     ['note', newNote, 'SELECT COUNT(*) n FROM entries WHERE title=?'],
@@ -1190,7 +1214,7 @@ describe('application des propositions, sur la vraie API', () => {
     stubAi(json({ reply: 'Voici.', actions: [{ kind: 'update_task', n: 1, title: 'Remplacer la pompe', status: 'doing', pinned: true }] }));
     const { proposals } = await ask({ text: 'pompe' });
     await applyChatProposal(proposals[0]);
-    await expect(applyChatProposal(proposals[0], { since: earlier() })).resolves.toBeUndefined();
+    await expect(applyChatProposal(proposals[0], { since: earlier() })).resolves.toEqual({ taskId: 't1' });
     expect(row('SELECT title, status, pinned FROM tasks WHERE id=?', 't1')).toEqual({ title: 'Remplacer la pompe', status: 'doing', pinned: 1 });
   });
 

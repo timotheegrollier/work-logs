@@ -450,8 +450,10 @@ créées en **À faire**.
 ### L’assistant
 
 **Assistant**, dans l’en-tête (sur téléphone, dans le bandeau du projet), ouvre le chat.
-**Nouvelle conversation** garde la précédente. Le sélecteur permet de passer entre les
-conversations, qui ont chacune leur historique, leur brouillon et leur demande en cours.
+**Nouvelle conversation** garde la précédente. Sur ordinateur, les conversations s’affichent
+côte à côte. La liste à gauche permet de rejoindre une colonne si elle est hors écran.
+Sur téléphone, **Conversations** ouvre la liste et affiche ensuite la conversation choisie.
+Chaque conversation garde son historique, son brouillon et son indicateur d’activité animé.
 **Entrée** envoie, **Maj+Entrée** va à la ligne et **Arrêter** coupe la demande de la conversation
 affichée. Les demandes continuent quand le panneau est fermé. Les conversations restent en
 mémoire jusqu’à la fermeture de WorkLogs.
@@ -460,10 +462,11 @@ mémoire jusqu’à la fermeture de WorkLogs.
   L’assistant peut créer, renommer, planifier et classer les tâches, changer leur priorité ou
   leur statut et les épingler. Terminer une tâche archive ses documents liés, comme dans
   le tableau des tâches. La proposition annonce cet archivage.
-- Après **Appliquer** sur une nouvelle tâche, demande « Rédige le contenu de cette tâche »
-  dans la même conversation. L’assistant relit son entrée liée, même vide, puis propose le
-  texte à appliquer. Le résultat se lit dans la carte de la tâche. Pour une ancienne tâche
-  sans entrée, l’assistant propose une note directement liée.
+- À la création d’une tâche, d’une note ou d’une procédure, l’assistant prépare un brouillon
+  avec une structure et les informations disponibles. Les détails inconnus sont à préciser.
+  Le brouillon de la tâche est enregistré dans son entrée liée. Dans la même conversation,
+  « Complète le contenu de cette tâche » propose de modifier cette entrée. Pour une ancienne
+  tâche sans entrée, l’assistant propose une note directement liée.
 - « Classe cette note dans Contrôles et marque-la terminée. » L’assistant peut créer et classer
   les notes et les procédures locales, changer leur date, leur statut ou leur archivage.
   Une entrée terminée reste dans le journal jusqu’à son archivage. Il peut aussi proposer de
@@ -480,6 +483,8 @@ Les propositions affichent les changements, le texte rédigé et, pour un Word, 
 de destination. **Appliquer** valide une proposition, **Tout appliquer** lance le lot et
 **Ignorer** écarte une proposition. Une tâche ou une entrée modifiée entre-temps peut nécessiter
 une nouvelle proposition. Le partage refuse la création si le nom du fichier est déjà pris.
+Une proposition appliquée affiche un bouton pour ouvrir le résultat dans WorkLogs. Une tâche
+créée donne accès à sa carte et à son brouillon lié.
 
 Le fournisseur reçoit la demande, les derniers échanges de la conversation, le profil, le
 projet et ses repères, les catégories et des résumés des tâches, des entrées et de leurs liens.

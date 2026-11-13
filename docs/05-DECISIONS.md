@@ -3460,3 +3460,16 @@ locale vide portant son titre, son projet et sa catégorie. Elle apparaît dans 
 être complétée. Une tâche créée depuis une entrée continue de lier cette entrée existante.
 Les tâches déjà présentes sans lien restent lisibles ; aucune migration ne leur invente de
 contenu.
+
+## 80. L’assistant affiche ses conversations et ouvre les résultats — 2026-11-13
+
+La liste des conversations permet de rejoindre une colonne sur ordinateur et de choisir la
+conversation visible sur téléphone. Chaque colonne a son journal, son champ de saisie, son
+indicateur d’activité et son arrêt. Le contrôleur reste monté si on ferme le dialogue.
+
+Une création prépare le texte dans la même réponse que les autres champs. Si le modèle omet
+le texte d’une tâche, d’une note ou d’une procédure, WorkLogs prépare une structure
+Markdown avec le sujet et les points à préciser. Le texte fourni dans `content_md` de
+`POST /api/tasks` remplit l’entrée liée à la création. SQLite et IndexedDB enregistrent
+ensemble la tâche, l’entrée et le lien. Les résultats appliqués utilisent les identifiants
+renvoyés par les écritures et ouvrent le document ou la carte dans l’application.

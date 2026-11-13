@@ -20,6 +20,7 @@ const classification = async (id: string) => (await localApi.state()).tasks.find
 function rejectTaskWriteOnce(memory: Database, taskId: string): Database {
   let rejectWrite = true;
   return {
+    ...memory,
     table<T extends object>(name: string) {
       const table = memory.table<T>(name);
       return {

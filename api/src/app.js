@@ -504,6 +504,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const b = req.body || {};
     const title = str(b.title);
     if (!title) return bad(res, 'titre requis');
+    if (b.content_md !== undefined && typeof b.content_md !== 'string') return bad(res, 'contenu Markdown invalide');
     const status = str(b.status) || 'todo';
     if (!STATUSES.includes(status)) return bad(res, 'statut invalide');
     const priority = priorityOf(b.priority);
@@ -526,7 +527,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       ).run(id, title, status, orNull(b.due_date), b.pinned ? 1 : 0, position, priority, projectId, t, t, categoryId);
       db.prepare(
         'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,status,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?)'
-      ).run(entryId, title, '', today(), projectId, 'note', 'todo', t, t, categoryId);
+      ).run(entryId, title, b.content_md ?? '', today(), projectId, 'note', 'todo', t, t, categoryId);
       db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run(id, entryId, t);
       db.exec('COMMIT');
     } catch (error) {

@@ -284,12 +284,32 @@ describe('procédures', () => {
 });
 
 describe('tâches', () => {
+  test('la note liée conserve le Markdown de création et les trois lignes partent ensemble', async () => {
+    clearLocalOutbox();
+    const id = await projectId();
+    const category = await localApi.createCategory({ name: 'Préparation', project_id: id });
+    const content_md = '## Préparation\n\n- [ ] Relire les journaux\n';
+    const task = await localApi.createTask({ title: 'Déployer', content_md, project_id: id, category_id: category.id });
+    expect(task.documents).toHaveLength(1);
+    const note = await localApi.entry(task.documents[0].id);
+    expect(note).toMatchObject({ title: task.title, project_id: id, category_id: category.id, content_md });
+    const outbox = await exportLocalOutbox(null);
+    expect(outbox).toMatchObject({ tasks: [{ id: task.id }], entries: [{ id: note.id, content_md }], task_entries: [{ task_id: task.id, entry_id: note.id }] });
+
+    const prior = await localApi.state();
+    await expect(localApi.createTask({ title: 'Invalide', content_md: null as never })).rejects.toThrow('contenu Markdown invalide');
+    const state = await localApi.state();
+    expect(state.entries).toEqual(prior.entries);
+    expect(state.tasks).toEqual(prior.tasks);
+  });
+
   test('création, priorités, statuts et erreurs', async () => {
     await expect(localApi.createTask({ title: '' })).rejects.toThrow('titre requis');
     await expect(localApi.createTask({ title: 'X', status: 'zzz' as never })).rejects.toThrow('statut invalide');
     await expect(localApi.createTask({ title: 'X', priority: 'urgente' as never })).rejects.toThrow('priorité invalide');
     const task = await localApi.createTask({ title: 'Faire', priority: 'high', pinned: 1 });
     expect(task).toMatchObject({ status: 'todo', priority: 'high', pinned: 1, position: 2 });
+    expect((await localApi.entry(task.documents[0].id)).content_md).toBe('');
     const updated = await localApi.updateTask(task.id, { status: 'doing', priority: 'low' });
     expect(updated).toMatchObject({ status: 'doing', priority: 'low' });
     await expect(localApi.updateTask('tk_inconnu', { title: 'X' })).rejects.toThrow('tâche introuvable');

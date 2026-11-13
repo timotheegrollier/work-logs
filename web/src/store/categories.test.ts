@@ -96,6 +96,7 @@ test('PWA : un classement attend la fin des écritures de synchro puis valide la
   const waiting = new Promise<void>((resolve) => { removed = resolve; });
   const gate = new Promise<void>((resolve) => { release = resolve; });
   setLocalDatabase({
+    ...memory,
     table<T extends object>(name: string) {
       const table = memory.table<T>(name);
       return {

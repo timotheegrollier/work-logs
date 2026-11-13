@@ -49,7 +49,7 @@ const messageField = (page: Page) => assistant(page).getByRole('textbox', { name
 
 async function expectNoOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
-  expect(await assistant(page).evaluate((dialog) => [dialog, ...dialog.querySelectorAll('.ai-chat-log, .ai-chat-sessions, .ai-chat-composer, .ai-chat-footer')]
+  expect(await assistant(page).evaluate((dialog) => [dialog, ...dialog.querySelectorAll('.ai-chat-log, .ai-chat-sidebar, .ai-chat-composer, .ai-chat-footer')]
     .filter((box) => box.scrollWidth > box.clientWidth).map((box) => box.className))).toEqual([]);
 }
 
@@ -66,7 +66,7 @@ const contrastInDialog = (element: Locator) => element.evaluate((node) => {
   return (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05);
 });
 
-test('assistant sur ordinateur : panneau à droite, proposition appliquée en base, Échap et focus', async ({ page, request }) => {
+test('assistant sur ordinateur : espace de travail, proposition appliquée en base, Échap et focus', async ({ page, request }) => {
   const project = await post(request, '/api/projects', { name: 'Atelier assistant' });
   try {
     const opened = await post(request, '/api/entries', { title: 'Journal du matin', project_id: project.id, content_md: 'Rien à signaler.' });
@@ -92,7 +92,8 @@ test('assistant sur ordinateur : panneau à droite, proposition appliquée en ba
     const panel = (await chat.boundingBox())!;
     expect(Math.round(panel.x + panel.width)).toBe(viewport.width);
     expect(Math.round(panel.height)).toBe(viewport.height);
-    expect(panel.width).toBeLessThan(viewport.width / 2);
+    expect(panel.width).toBeGreaterThanOrEqual(viewport.width * 0.75);
+    await expect(chat.getByRole('navigation', { name: 'Conversations' })).toBeVisible();
 
     const field = messageField(page);
     await expect(field).toBeFocused();
@@ -213,40 +214,44 @@ test('deux conversations avancent en parallèle et reprennent après fermeture d
     await page.goto('/');
     const opener = page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true });
     const chat = assistant(page);
-    const field = messageField(page);
-    const sessions = chat.getByRole('combobox', { name: 'Conversation active' });
     await opener.click();
-    await field.fill('Liste du premier chantier');
-    await field.press('Enter');
+    const firstPane = chat.getByRole('region', { name: 'Conversation 1', exact: true });
+    const firstField = firstPane.getByRole('textbox', { name: 'Message pour l’assistant' });
+    await firstField.fill('Liste du premier chantier');
+    await firstField.press('Enter');
     await expect.poll(() => received.length).toBe(1);
-    await field.fill('Brouillon à garder');
+    await firstField.fill('Brouillon à garder');
 
     await chat.getByRole('button', { name: 'Nouvelle conversation' }).click();
-    await expect(field).toHaveValue('');
-    await field.fill('Liste du second chantier');
-    await field.press('Enter');
-    await expect(chat.getByText('Second chantier prêt.')).toBeVisible();
+    const secondPane = chat.getByRole('region', { name: 'Conversation 2', exact: true });
+    const secondField = secondPane.getByRole('textbox', { name: 'Message pour l’assistant' });
+    await expect(secondField).toHaveValue('');
+    await secondField.fill('Liste du second chantier');
+    await secondField.press('Enter');
+    await expect(secondPane.getByText('Second chantier prêt.')).toBeVisible();
     expect(received).toHaveLength(2);
     expect(received[1]).not.toContain('Liste du premier chantier');
-    await expect(sessions.getByRole('option', { name: /Liste du premier chantier.*Recherche en cours/ })).toHaveCount(1);
+    await expect(firstPane.getByRole('button', { name: 'Arrêter la demande IA' })).toBeVisible();
+    await expect(firstPane.locator('.ai-chat-working').locator('.ai-chat-working-icon')).toHaveCSS('animation-name', 'ai-chat-spin');
+    expect((await secondPane.boundingBox())!.x).toBeGreaterThan((await firstPane.boundingBox())!.x);
 
     await page.keyboard.press('Escape');
     await expect(chat).toBeHidden();
     releaseFirst();
     await opener.click();
-    await expect(chat.getByText('Second chantier prêt.')).toBeVisible();
-    await sessions.selectOption('1');
-    await expect(field).toHaveValue('Brouillon à garder');
-    await expect(chat.getByText('Premier chantier prêt.')).toBeVisible();
-    await expect(chat.getByText('Second chantier prêt.')).toHaveCount(0);
+    await expect(secondPane.getByText('Second chantier prêt.')).toBeVisible();
+    await expect(firstField).toHaveValue('Brouillon à garder');
+    await expect(firstPane.getByText('Premier chantier prêt.')).toBeVisible();
+    await expect(firstPane.getByText('Second chantier prêt.')).toHaveCount(0);
   } finally {
     releaseFirst();
   }
 });
 
-test('après la création d’une tâche, l’assistant rédige le contenu de son entrée liée', async ({ page, request }) => {
+test('l’assistant crée un brouillon lié, le complète ensuite et ouvre le résultat appliqué', async ({ page, request }) => {
   const project = await post(request, '/api/projects', { name: 'Atelier contenu de tâche' });
   const title = 'Préparer la revue du classeur';
+  const initialContent = '## Objectif\n\nPréparer la revue du classeur.\n\n## Étapes\n\n- [ ] À préciser.';
   const instruction = 'Comparer les deux relevés avant la revue.';
   const content = `## Préparation\n\n${instruction}`;
   const unrelatedContent = 'Ancienne note de réunion sans lien avec cette tâche.';
@@ -257,7 +262,7 @@ test('après la création d’une tâche, l’assistant rédige le contenu de so
     let linkedNoteNumber = 0;
     let taskLine: string | undefined;
     const prompts = await stubAssistant(page,
-      { reply: 'La tâche est prête à créer.', actions: [{ kind: 'create_task', title }] },
+      { reply: 'La tâche est prête à créer.', actions: [{ kind: 'create_task', title, content: initialContent }] },
       (prompt) => {
         taskLine = prompt.split('\n').find((line) => line.replace(/^\d+\. /, '').startsWith(`${title} [`));
         taskNumber = Number(taskLine?.match(/^(\d+)\. /)?.[1]);
@@ -276,6 +281,10 @@ test('après la création d’une tâche, l’assistant rédige le contenu de so
     const field = messageField(page);
     await field.fill(`Crée la tâche « ${title} ».`);
     await field.press('Enter');
+    const creation = chat.locator('.ai-action-row').filter({ hasText: 'Créer la tâche' });
+    await creation.getByText('Relire le texte proposé', { exact: true }).click();
+    await expect(creation.locator('pre')).toContainText('Préparer la revue du classeur.');
+    expect(await tasksOf(request, project.id)).toHaveLength(0);
     await chat.getByRole('button', { name: /^Appliquer : Créer la tâche/ }).click();
     await expect(chat.getByText('✓ Appliqué', { exact: true })).toHaveCount(1);
 
@@ -284,7 +293,7 @@ test('après la création d’une tâche, l’assistant rédige le contenu de so
     const [note] = task.documents;
     expect(note.id).not.toBe(unrelated.id);
     const readEntry = async (id: string) => (await request.get(`/api/entries/${id}`)).json();
-
+    expect(await readEntry(note.id)).toMatchObject({ content_md: initialContent });
     await field.fill('Rédige le contenu de cette tâche.');
     await field.press('Enter');
     await expect(chat.getByText('Le contenu est prêt à relire.')).toBeVisible();
@@ -292,10 +301,10 @@ test('après la création d’une tâche, l’assistant rédige le contenu de so
     expect(taskLine).toContain('créée ici');
     expect(taskLine).toMatch(/documents liés D\d+/);
     const fullText = prompts[2].split('\n\n').find((block) => block.startsWith('Textes locaux'));
-    expect(fullText).toContain(`"n":${linkedNoteNumber},"content":"","editable":true`);
-    await chat.getByText('Relire le texte proposé', { exact: true }).click();
-    await expect(chat.locator('pre')).toContainText(instruction);
-    expect(await readEntry(note.id)).toMatchObject({ content_md: '' });
+    expect(fullText).toContain(`"n":${linkedNoteNumber},"content":"## Objectif`);
+    await chat.locator('.ai-action-row').filter({ hasText: 'remplacer le texte' }).getByText('Relire le texte proposé', { exact: true }).click();
+    await expect(chat.locator('.ai-action-row').filter({ hasText: 'remplacer le texte' }).locator('pre')).toContainText(instruction);
+    expect(await readEntry(note.id)).toMatchObject({ content_md: expect.stringContaining('## Étapes') });
 
     await chat.getByRole('button', { name: /^Appliquer/ }).click();
     await expect(chat.getByText('✓ Appliqué', { exact: true })).toHaveCount(2);
@@ -304,12 +313,36 @@ test('après la création d’une tâche, l’assistant rédige le contenu de so
     expect(await readEntry(note.id)).toMatchObject({ content_md: content });
     expect(await readEntry(unrelated.id)).toMatchObject({ content_md: unrelatedContent });
 
-    await chat.getByRole('button', { name: `Ouvrir la tâche ${title}` }).click();
-    await page.locator(`#task-${task.id}`).getByRole('button', { name: `Ouvrir ${title}`, exact: true }).click();
+    await creation.getByRole('button', { name: 'Ouvrir la note', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Entrée', exact: true }).getByText(instruction)).toBeVisible();
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    await chat.getByRole('button', { name: 'Ouvrir la tâche', exact: true }).click();
+    await expect(page.locator(`#task-${task.id}`)).toBeInViewport();
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    await chat.getByRole('button', { name: 'Ouvrir le document', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Entrée', exact: true }).getByText(instruction)).toBeVisible();
   } finally {
     await cleanProject(page, request, project.id);
   }
+});
+
+test('sur téléphone, la liste ouvre une seule conversation et conserve les brouillons', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto('/');
+  await page.locator('.project-strip').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+  const chat = assistant(page);
+  await messageField(page).fill('Brouillon de la première');
+  await chat.getByRole('button', { name: 'Conversations', exact: true }).click();
+  const list = chat.getByRole('navigation', { name: 'Conversations' });
+  await list.getByRole('button', { name: 'Nouvelle conversation' }).click();
+  await expect(chat.getByRole('region', { name: 'Conversation 1' })).toHaveCount(0);
+  await expect(chat.getByRole('region', { name: 'Conversation 2' })).toBeVisible();
+  await expect(messageField(page)).toHaveValue('');
+  await messageField(page).fill('Brouillon de la deuxième');
+  await chat.getByRole('button', { name: 'Conversations', exact: true }).click();
+  await list.getByRole('button', { name: 'Conversation 1', exact: true }).click();
+  await expect(messageField(page)).toHaveValue('Brouillon de la première');
+  await expectNoOverflow(page);
 });
 
 test('une note ouverte révisée depuis l’assistant affiche son nouveau texte et son statut', async ({ page, request }) => {
@@ -443,6 +476,9 @@ test('l’assistant lit une procédure du partage avec accord et y crée un Word
 
     await chat.getByRole('button', { name: `Ouvrir le fichier partagé ${directory}/${source}` }).click();
     await expect(page.getByRole('region', { name: 'Fichier partagé' }).getByRole('heading', { name: source })).toBeVisible();
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    await chat.getByRole('button', { name: 'Ouvrir le fichier partagé', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Fichier partagé' }).getByRole('heading', { name: path.basename(target) })).toBeVisible();
   } finally {
     await cleanProject(page, request, project.id);
     await rm(folder, { recursive: true, force: true });

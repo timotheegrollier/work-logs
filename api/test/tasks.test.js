@@ -34,6 +34,38 @@ describe('tâches', () => {
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=? AND entry_id=?').get(res.body.id, document.id).n, 1);
   });
 
+  test('crée une tâche et son entrée liée avec le Markdown fourni', async () => {
+    const project = await make.project(api, 'Livraison');
+    const { body: category } = await api.post('/api/categories', { name: 'Recette', project_id: project.id });
+    const content_md = '## Préparation\n\n- [ ] Vérifier les journaux\n';
+    const created = await api.post('/api/tasks', { title: 'Livrer', project_id: project.id, category_id: category.id, content_md });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.documents.length, 1);
+    const document = await api.get(`/api/entries/${created.body.documents[0].id}`);
+    assert.equal(document.body.content_md, content_md);
+    assert.equal(document.body.title, 'Livrer');
+    assert.equal(document.body.project_id, project.id);
+    assert.equal(document.body.category_id, category.id);
+  });
+
+  test('refuse un corps invalide et annule tâche et note si leur liaison échoue', async () => {
+    const counts = () => ['tasks', 'entries', 'task_entries'].map((table) => api.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get().n);
+    const invalid = await api.post('/api/tasks', { title: 'Corps invalide', content_md: null });
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.body.error, 'contenu Markdown invalide');
+    assert.deepEqual(counts(), [0, 0, 0]);
+
+    api.db.exec(`CREATE TRIGGER refuse_task_link BEFORE INSERT ON task_entries
+      BEGIN SELECT RAISE(ABORT, 'liaison indisponible'); END`);
+    try {
+      const failure = await api.post('/api/tasks', { title: 'Liaison invalide', content_md: 'Texte à conserver' });
+      assert.equal(failure.status, 500);
+      assert.deepEqual(counts(), [0, 0, 0]);
+    } finally {
+      api.db.exec('DROP TRIGGER refuse_task_link');
+    }
+  });
+
   test('refuse un titre vide et un statut inconnu', async () => {
     assert.equal((await api.post('/api/tasks', { title: ' ' })).body.error, 'titre requis');
     const res = await api.post('/api/tasks', { title: 'x', status: 'in_progress' });

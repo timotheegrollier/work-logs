@@ -205,6 +205,7 @@ async function tables() {
   const ready = initialization ??= initializeDatabase(database);
   try { await ready; } catch (error) { if (initialization === ready) initialization = null; throw error; }
   return {
+    database,
     projects: database.table<ProjectRow>('projects'),
     categories: database.table<CategoryRow>('categories'),
     entries: database.table<EntryRow>('entries'),
@@ -1168,9 +1169,10 @@ export const localApi: Api = {
   },
 
   createTask: async (body) => {
-    const { tasks, projects, entries, links } = await tables();
+    const { database, tasks, projects } = await tables();
     const title = str(body.title);
     if (!title) fail('titre requis');
+    if (body.content_md !== undefined && typeof body.content_md !== 'string') fail('contenu Markdown invalide');
     const status = (str(body.status) || 'todo') as Status;
     if (!STATUSES.includes(status)) fail('statut invalide');
     const priority = priorityOf(body.priority);
@@ -1186,15 +1188,19 @@ export const localApi: Api = {
       id, title, status, due_date: orNull(body.due_date), pinned: body.pinned ? 1 : 0, position,
       priority: priority as TaskRow['priority'], project_id: projectId, category_id: categoryId, created_at: t, updated_at: t,
     };
-    await tasks.put(row);
-    await entries.put({
-      id: entryId, title, content_md: '', content_json: null, entry_date: today(), project_id: projectId,
+    const note: EntryRow = {
+      id: entryId, title, content_md: body.content_md ?? '', content_json: null, entry_date: today(), project_id: projectId,
       category_id: categoryId, archived: 0, kind: 'note', status: 'todo', created_at: t, updated_at: t,
-    });
-    await links.put({ id: linkId(id, entryId), task_id: id, entry_id: entryId, created_at: t });
-    track('tasks', id);
-    track('entries', entryId);
-    track('links', linkId(id, entryId));
+    };
+    const link: LinkRow = { id: linkId(id, entryId), task_id: id, entry_id: entryId, created_at: t };
+    await database.addAll([
+      { table: 'tasks', value: row },
+      { table: 'entries', value: note },
+      { table: 'task_entries', value: link },
+    ]);
+    track('tasks', id, false);
+    track('entries', entryId, false);
+    track('links', link.id);
     return taskWithDocuments(id);
   },
 
