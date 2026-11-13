@@ -9,6 +9,7 @@ import { decodeText } from './text-codec';
 
 const UNAVAILABLE = 'Dossier partagé indisponible.';
 const OFFLINE = 'Partage hors ligne : seules les dernières listes vues sont disponibles.';
+const UNMOUNTED = 'Partage non monté sur cet ordinateur, souvent après un redémarrage : « Se reconnecter » dans le dossier partagé, puis redemande. Seules les dernières listes vues sont disponibles.';
 const PARTIAL = 'Partage : recherche partielle.';
 const MOVED = 'Le dossier partagé a changé depuis la proposition. Redemande à l’assistant.';
 const OCCUPIED = 'Un autre fichier occupe ce nom sur le partage.';
@@ -50,6 +51,8 @@ const relayUrl = (client: SharedClient) => client === api && import.meta.env.VIT
 const identify = (status: SharedStatus, relay: string | null): ShareIdentity | null =>
   status.available && status.root && !status.relayError ? { root: status.root, address: status.address ?? null, relay } : null;
 const isOnline = (status: SharedStatus) => !status.reach || status.reach === 'ok';
+// « Se reconnecter » n'existe que sur le desktop : derrière le relais, le montage est celui de la VM.
+const offlineNotice = (status: SharedStatus | null, relay: string | null) => status?.reach === 'unmounted' && !relay ? UNMOUNTED : OFFLINE;
 const sameShare = (left: ShareIdentity, right: ShareIdentity | null) =>
   left.root === right?.root && left.address === right.address && left.relay === right.relay;
 const validPath = (path: string) => path === '' || (path.length <= 1024 && !/[\\\x00-\x1f\x7f]/.test(path) && path.split('/').every((part) => part && part !== '.' && part !== '..'));
@@ -89,7 +92,7 @@ export async function readChatShare(client: SharedClient, projectSharedDir?: str
   const dir = linked ?? '';
   return {
     client: bound, dir, available, online, identity,
-    notice: !identity ? UNAVAILABLE : !compatible ? 'Le dossier relié au projet est en dehors du partage configuré.' : online ? '' : OFFLINE,
+    notice: !identity ? UNAVAILABLE : !compatible ? 'Le dossier relié au projet est en dehors du partage configuré.' : online ? '' : offlineNotice(status, relay),
     indexedFiles: new Set(), indexedDirectories: new Set(online ? [dir] : []),
   };
 }
@@ -124,7 +127,7 @@ export async function searchChatShare(share: ChatShare, terms: string[], signal?
     try {
       const search = await readWithin(() => share.client.searchShared(query, share.dir), signal, remaining);
       if (search.offline) {
-        notice = OFFLINE;
+        notice = share.notice || OFFLINE;
         directories.clear();
         fileParents.clear();
       } else if (search.partial || search.denied > 0) notice ||= PARTIAL;
@@ -152,7 +155,7 @@ export async function searchChatShare(share: ChatShare, terms: string[], signal?
 
 /** Extrait de la version visible sur le serveur. Les brouillons, envois et versions en cache restent locaux. */
 export async function readChatSharedExcerpt(share: ChatShare, file: SharedSearchResult, signal?: AbortSignal): Promise<string> {
-  if (!share.online || !share.identity) throw new Error(OFFLINE);
+  if (!share.online || !share.identity) throw new Error(share.notice || OFFLINE);
   if (!share.indexedFiles.has(file.path) || file.type !== 'file' || file.dir !== parentOf(file.path)) throw new Error('Fichier partagé inconnu.');
   const kind = editorKind(file.ext);
   if (kind !== 'text' && kind !== 'markdown' && kind !== 'docx') throw new Error('L’assistant peut lire le texte des documents Word, Markdown et texte.');
@@ -166,7 +169,7 @@ export async function readChatSharedExcerpt(share: ChatShare, file: SharedSearch
 
   const status = await read(() => share.client.sharedStatus());
   if (!sameShare(share.identity, identify(status, share.identity.relay))) throw new Error(MOVED);
-  if (!isOnline(status)) throw new Error(OFFLINE);
+  if (!isOnline(status)) throw new Error(offlineNotice(status, share.identity.relay));
   const listing = await read(() => share.client.sharedList(file.dir));
   if (listing.offline || listing.reach !== 'ok') throw new Error(OFFLINE);
   const listed = listing.entries.find((item) => item.path === file.path && item.type === 'file');
@@ -243,7 +246,7 @@ export async function applyChatSharedProcedure(client: SharedClient, proposal: C
   const bound = relay ? sharedClient(relay) : client;
   const status = await readWithin(() => bound.sharedStatus());
   if (!sameShare(proposal.identity, identify(status, relay))) throw new Error(MOVED);
-  if (!isOnline(status)) throw new Error(OFFLINE);
+  if (!isOnline(status)) throw new Error(offlineNotice(status, relay));
   const listing = await readWithin(() => bound.sharedList(parentOf(proposal.path)));
   if (listing.offline || listing.reach !== 'ok') throw new Error(OFFLINE);
   const previous = unconfirmed.get(proposal);

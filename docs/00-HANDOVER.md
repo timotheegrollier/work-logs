@@ -25,6 +25,14 @@ Aucune release ne peut le corriger seule : il faut relancer une fois la commande
 du dépôt, donnée dans `docs/07-RELEASES.md`. Le 2026-11-12, le poste de Timo restait ainsi en
 0.73.0 ; après la commande, apt a installé la 0.74.0.
 
+## Assistant : un partage non monté se dit tel quel — 2026-11-13
+
+Après un redémarrage, le montage GVFS du partage disparaît. L’assistant répondait alors
+« Partage hors ligne », sans remède, alors que le serveur répondait. Il dit maintenant que
+le partage n’est pas monté sur cet ordinateur et renvoie à « Se reconnecter » dans le dossier
+partagé. Derrière le relais de la PWA, le message reste « hors ligne » : ce bouton n’y existe
+pas. Test : `web/src/ai-chat-shared.test.ts`.
+
 ## Doc de publication et tests existants — 2026-11-12, après la v0.75.0 (sans version)
 
 - `docs/07-RELEASES.md` est le guide du geste de publier : pas à pas 0 à 10 avec les commandes

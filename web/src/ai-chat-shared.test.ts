@@ -65,6 +65,17 @@ describe('procédures du partage dans l’assistant', () => {
     await expect(prepareFor(client, 'Autre')).rejects.toThrow(/hors ligne/);
   });
 
+  it('dit qu’un partage non monté se reconnecte, au lieu de le dire hors ligne', async () => {
+    const client = mockShare();
+    client.sharedStatus.mockResolvedValue({ ...status, reach: 'unmounted' });
+    client.searchShared.mockResolvedValue({ query: 'sauvegarde', dir: 'Équipe', results: [], offline: true, partial: true, denied: 0 });
+    const share = await readChatShare(client, projectDir);
+    const results = await searchChatShare(share, ['sauvegarde']);
+    expect(results.notice).toMatch(/non monté.*« Se reconnecter »/);
+    expect(results.notice).not.toMatch(/hors ligne/);
+    await expect(readChatSharedExcerpt(share, word)).rejects.toThrow(/non monté/);
+  });
+
   it('ne se rabat pas sur la racine quand le projet pointe vers un autre partage', async () => {
     const client = mockShare();
     const share = await readChatShare(client, '\\\\serveur\\ailleurs\\Équipe');

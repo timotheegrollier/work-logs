@@ -275,9 +275,9 @@ répond normalement.
 | `scripts/workflows.test.mjs` | tests statiques de `pwa-cloudflare.yml` et de `repos.yml` seulement (D15) | `check.sh` |
 
 `check.sh` prend un écran virtuel avec metacity ou muffin s'ils sont installés, sinon l'écran
-courant, sinon `xvfb-run -a`. Le 2026-11-12, après la v0.75.0, il a compté 329 tests API,
-1 342 tests front (dont un échec attendu, `web/src/test/setup.test.tsx`), 49 desktop unitaires,
-49 scripts, 8 Worker, 11 relais, 117 navigateur et 20 Electron, soit 1 925 tests. Vitest tourne avec
+courant, sinon `xvfb-run -a`. Le 2026-11-13, après la v0.75.0, il a compté 329 tests API,
+1 372 tests front (dont un échec attendu, `web/src/test/setup.test.tsx`), 49 desktop unitaires,
+49 scripts, 8 Worker, 11 relais, 117 navigateur et 20 Electron, soit 1 954 tests. Vitest tourne avec
 `maxWorkers: 4` et `retry: 1` (`web/vite.config.ts`).
 
 ## 7. Packaging desktop
