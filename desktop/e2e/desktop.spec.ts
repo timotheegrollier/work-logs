@@ -646,18 +646,24 @@ test('Google intégré : masquer le document rend le clavier aux champs WorkLogs
   await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!.hide('focus'));
   await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
 
-  // Masquage sans fermeture — une boîte de dialogue s'ouvre par-dessus le document.
+  // Masquage sans fermeture : boîte de dialogue, puis zone ramenée à zéro.
+  const position = (visible: boolean, height: number) => page.evaluate(({ visible, height }) =>
+    (window as unknown as DesktopWindow).worklogsDesktop.googleDocs.bounds({
+      token: 'focus', bounds: { x: 300, y: 300, width: 600, height }, visible,
+    }), { visible, height });
   await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!
     .open({ documentId: 'focus-doc', tabId: '', token: 'focus', bounds: { x: 300, y: 300, width: 600, height: 300 } }));
-  await expect.poll(async () => { await focusGoogle(); return keyboard(); }).toEqual({ worklogs: false, google: true });
-  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!
-    .bounds({ token: 'focus', bounds: { x: 300, y: 300, width: 600, height: 300 }, visible: false }));
-  await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
+  for (const [visible, height] of [[false, 300], [true, 0]] as const) {
+    await expect.poll(async () => { await focusGoogle(); return keyboard(); }).toEqual({ worklogs: false, google: true });
+    await position(visible, height);
+    await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
+    await expect.poll(() => application!.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].contentView.children.at(-1)!.getVisible())).toBe(false);
+    await position(true, 300);
+  }
 
   // Document réaffiché mais clavier aux champs WorkLogs : le retour de la fenêtre ne
   // doit pas le lui reprendre, sinon la frappe de l'utilisateur part dans le document.
-  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop!.googleDocs!
-    .bounds({ token: 'focus', bounds: { x: 300, y: 300, width: 600, height: 300 }, visible: true }));
   await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit('focus'));
   await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
 
@@ -731,4 +737,61 @@ test('Google intégré : le champ catégorie retrouve le clavier, ouvert par bou
   await field.press('End');
   await field.pressSequentially(' retrouvé');
   await expect(field).toHaveValue('Classement retrouvé');
+});
+
+test('Google intégré : annuler la fermeture depuis une note locale conserve son clavier', async () => {
+  await application!.evaluate(({ session, dialog }) => {
+    session.fromPartition('persist:google-docs').protocol.handle('https', () => new Response(
+      '<button onclick="window.onbeforeunload=e=>{e.preventDefault();e.returnValue=true;}">Modifier</button>'
+        + '<script>addEventListener("keydown",event=>{if(event.ctrlKey&&event.key.toLowerCase()==="p")document.body.dataset.printed="yes"})</script>',
+      { headers: { 'content-type': 'text/html' } },
+    ));
+    dialog.showMessageBoxSync = () => 0;
+  });
+  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop.googleDocs.open({
+    documentId: 'background-close', tabId: '', token: 'background-close',
+    bounds: { x: 350, y: 250, width: 600, height: 400 },
+  }));
+  const google = () => application!.context().pages().find(candidate => candidate.url().includes('/document/d/background-close/'));
+  await expect.poll(() => Boolean(google())).toBe(true);
+  const document = google()!;
+  document.on('dialog', () => {});
+  await document.getByRole('button', { name: 'Modifier' }).click();
+  await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop.googleDocs.bounds({
+    token: 'background-close', bounds: { x: 350, y: 250, width: 600, height: 400 }, visible: false,
+  }));
+  const title = page.getByLabel('Titre de l’entrée', { exact: true });
+  await title.click();
+  await expect(title).toBeFocused();
+  const keyboard = () => application!.evaluate(({ BrowserWindow, webContents }) => ({
+    worklogs: BrowserWindow.getAllWindows()[0].webContents.isFocused(),
+    google: webContents.getAllWebContents().find(contents => contents.getURL().includes('/document/d/background-close/'))?.isFocused(),
+  }));
+  await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
+
+  const closed = await page.evaluate(() => (window as unknown as DesktopWindow).worklogsDesktop.googleDocs.close('background-close'));
+  expect(closed).toBe(false);
+  expect(document.isClosed()).toBe(false);
+  await expect(title).toBeFocused();
+  await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
+
+  // Un focus natif arrivé après le masquage ne doit pas attendre un nouveau clic.
+  await application!.evaluate(({ webContents }) => {
+    webContents.getAllWebContents().find(contents => contents.getURL().includes('/document/d/background-close/'))!.focus();
+  });
+  await expect.poll(keyboard).toEqual({ worklogs: true, google: false });
+  await title.press('End');
+  await title.pressSequentially(' avec le clavier');
+  await expect(title).toHaveValue('Comment ça marche avec le clavier');
+
+  // Une boîte WorkLogs masque Google sans le fermer. Son raccourci d'impression
+  // reste dans WorkLogs tant que le document ne revient pas à l'écran.
+  await application!.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    window.webContents.print = () => { window.setTitle('Impression WorkLogs'); };
+    window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'P', modifiers: ['control'] });
+    window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'P', modifiers: ['control'] });
+  });
+  await expect.poll(() => application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle())).toBe('Impression WorkLogs');
+  await expect(document.locator('body')).not.toHaveAttribute('data-printed', 'yes');
 });

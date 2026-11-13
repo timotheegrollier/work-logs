@@ -36,7 +36,7 @@ export function allowedGoogleNavigation(value) {
  * (`ask` dans `main.mjs`) : Playwright injecte les frappes sans traverser cette couche.
  */
 export function focusTarget({ windowFocused, viewFocused, viewVisible, holder }) {
-  if (windowFocused || viewFocused) return 'none';
+  if (windowFocused || viewVisible && viewFocused) return 'none';
   return viewVisible && holder === 'view' ? 'view' : 'window';
 }
 
@@ -74,6 +74,11 @@ export function installGoogleView(window) {
   const holdsKeyboard = record => {
     const contents = record?.view.webContents;
     return Boolean(contents) && !contents.isDestroyed() && contents.isFocused();
+  };
+  const acceptsKeyboard = record => {
+    if (!record || active?.record !== record || !record.view.getVisible()) return false;
+    const { width, height } = record.view.getBounds();
+    return width > 0 && height > 0 && !record.view.webContents.isDestroyed();
   };
   /** Une vue Google qui disparaît emporte le clavier avec elle : le reprendre. */
   const takeBackKeyboard = () => {
@@ -121,7 +126,16 @@ export function installGoogleView(window) {
     };
     contents.on('will-navigate', navigate);
     contents.on('will-redirect', (event, url, _inPlace, isMainFrame) => { if (isMainFrame) navigate(event, url); });
-    contents.on('focus', () => { holder = 'view'; });
+    contents.on('focus', () => {
+      if (acceptsKeyboard(record)) {
+        holder = 'view';
+        return;
+      }
+      // Le transfert natif peut terminer après la notification de focus.
+      setImmediate(() => {
+        if (!window.isDestroyed() && window.isFocused() && holdsKeyboard(record) && !acceptsKeyboard(record)) restoreFocus();
+      });
+    });
     contents.on('will-attach-webview', event => event.preventDefault());
     contents.setWindowOpenHandler(({ url }) => {
       if (sameDocument(url)) void contents.loadURL(url).catch(() => {});
@@ -156,9 +170,9 @@ export function installGoogleView(window) {
       else record.cancelClose?.();
       if (window.isDestroyed()) return;
       window.focus();
-      // Le document ne reprend le clavier que s'il reste : sinon il l'emporterait.
-      if (choice === 1) window.webContents.focus();
-      else contents.focus();
+      // Annuler peut laisser Google en arrière-plan pendant la saisie d'une note.
+      if (choice === 1 && active?.record === record) takeBackKeyboard();
+      else restoreFocus();
     });
     contents.on('destroyed', () => {
       if (views.get(documentId) === record) views.delete(documentId);
@@ -182,7 +196,7 @@ export function installGoogleView(window) {
     record.closePromise = new Promise(resolve => {
       const contents = record.view.webContents;
       const done = result => { contents.removeListener('destroyed', destroyed); record.cancelClose = undefined; resolve(result); };
-      const destroyed = () => { if (hadKeyboard) takeBackKeyboard(); done(true); };
+      const destroyed = () => { if (hadKeyboard && !window.isDestroyed() && window.isFocused()) restoreFocus(); done(true); };
       record.cancelClose = () => done(false);
       contents.once('destroyed', destroyed);
       contents.close({ waitForBeforeUnload: true });
@@ -200,7 +214,7 @@ export function installGoogleView(window) {
     active = { record, token: request.token };
     evict(record);
     record.view.setBounds(bounds);
-    record.view.setVisible(true);
+    setVisible(record, bounds.width > 0 && bounds.height > 0);
     if (record.tabId !== (request.tabId ?? '')) {
       const previousTab = record.tabId;
       record.tabId = request.tabId ?? '';
@@ -212,8 +226,11 @@ export function installGoogleView(window) {
   ipcMain.on(`${channel}:bounds`, (event, request) => {
     if (!trusted(event) || active?.token !== request?.token) return;
     try {
-      active.record.view.setBounds(viewBounds(request.bounds, window.getContentSize()));
-      setVisible(active.record, Boolean(request.visible));
+      const bounds = viewBounds(request.bounds, window.getContentSize());
+      const visible = request.visible && bounds.width > 0 && bounds.height > 0;
+      if (!visible) setVisible(active.record, false);
+      active.record.view.setBounds(bounds);
+      if (visible) setVisible(active.record, true);
     } catch { /* Les dimensions périmées ne doivent pas fermer le document. */ }
   });
   ipcMain.on(`${channel}:hide`, (event, token) => { if (trusted(event) && active?.token === token) hide(); });
@@ -231,9 +248,8 @@ export function installGoogleView(window) {
   });
   /** Rendre le clavier à qui l'avait — sans écraser un clic qui a tranché avant nous. */
   function restoreFocus() {
-    if (window.isDestroyed()) return 'none';
-    const contents = active?.record.view.getVisible() ? active.record.view.webContents : undefined;
-    const live = contents && !contents.isDestroyed() ? contents : undefined;
+    if (window.isDestroyed() || window.isMinimized() || !window.isVisible()) return 'none';
+    const live = acceptsKeyboard(active?.record) ? active.record.view.webContents : undefined;
     const target = focusTarget({
       windowFocused: window.webContents.isFocused(),
       viewFocused: Boolean(live?.isFocused()),
@@ -245,7 +261,7 @@ export function installGoogleView(window) {
     return target;
   }
   function print() {
-    if (!active) return false;
+    if (!acceptsKeyboard(active?.record)) return false;
     const contents = active.record.view.webContents;
     contents.focus();
     // Google prépare lui-même le document entier avant l’impression.

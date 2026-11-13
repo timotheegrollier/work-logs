@@ -3473,3 +3473,10 @@ Markdown avec le sujet et les points à préciser. Le texte fourni dans `content
 `POST /api/tasks` remplit l’entrée liée à la création. SQLite et IndexedDB enregistrent
 ensemble la tâche, l’entrée et le lien. Les résultats appliqués utilisent les identifiants
 renvoyés par les écritures et ouvrent le document ou la carte dans l’application.
+
+## 81. Le clavier revient aux champs WorkLogs après un Google Docs masqué — 2026-11-13
+
+Dans Electron, annuler la fermeture d’un Google Docs masqué pouvait rendre les frappes à cette
+vue native pendant la saisie d’une note. La restauration du focus choisit une vue visible aux
+dimensions utilisables et reprend le clavier si une notification tardive refocalise une vue
+masquée. Le test observe le focus des deux `WebContents` et vérifie la saisie.

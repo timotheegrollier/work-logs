@@ -11,6 +11,13 @@
   49 desktop unitaires, 46 scripts, 8 Worker, 11 relais, 117 navigateur et 20 Electron.
   Build PWA vérifié.
 
+## Clavier Electron après un Google Docs masqué — 2026-11-13
+
+- Annuler la fermeture d’un Google Docs masqué pouvait rendre le clavier à la vue native
+  invisible. Le test Electron vérifie le focus natif et une frappe dans la note WorkLogs.
+- Même passage complet vert : 329 tests API, 1 341 front et un échec attendu, 49 desktop
+  unitaires, 46 scripts, 8 Worker, 11 relais, 117 navigateur et 20 Electron.
+
 ## Correctif après v0.75.0 — rédaction du contenu d’une tâche dans le chat
 
 Après la création d’une tâche, le chat conserve son identifiant dans la conversation et

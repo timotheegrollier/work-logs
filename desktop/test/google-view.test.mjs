@@ -51,6 +51,7 @@ test('focusTarget rend le clavier aux champs WorkLogs dès que Google ne l’a p
   // Un clic a déjà tranché avant nous : ne jamais écraser le choix de l'utilisateur.
   assert.equal(focusTarget({ ...base, windowFocused: true }), 'none');
   assert.equal(focusTarget({ ...base, viewFocused: true }), 'none');
+  assert.equal(focusTarget({ ...base, viewVisible: false, viewFocused: true }), 'window');
   assert.equal(focusTarget({ ...base, holder: 'window', windowFocused: true }), 'none');
   // Sans document affiché, la fenêtre reprend toujours la main.
   assert.equal(focusTarget({ windowFocused: false, viewFocused: false, viewVisible: false, holder: 'window' }), 'window');
