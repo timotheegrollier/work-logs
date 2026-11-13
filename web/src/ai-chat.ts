@@ -446,9 +446,13 @@ function readProposal(raw: unknown, context: ChatContext, shownProject: string |
     changes.pinned !== undefined && `épinglée → ${changes.pinned ? 'oui' : 'non'}`,
   ];
   const activeIds = changes.status === 'done' ? task.documents.filter((document) => !document.archived).map(({ id }) => id) : undefined;
-  const taskNotes = new Set(context.tasks.map(({ entry_id }) => entry_id));
-  const archived = activeIds?.filter((id) => !taskNotes.has(id)).length ?? 0;
-  const warning = archived > 1 ? ` (ses ${archived} documents liés seront archivés)` : archived ? ' (son document lié sera archivé)' : '';
+  // Sa propre note part aux archives avec ses références ; les notes d’autres tâches restent.
+  const otherNotes = new Set(context.tasks.filter(({ id }) => id !== task.id).map(({ entry_id }) => entry_id));
+  const archived = activeIds?.filter((id) => id !== task.entry_id && !otherNotes.has(id)).length ?? 0;
+  const note = activeIds?.includes(task.entry_id) ? 'sa note' : '';
+  const references = archived > 1 ? `ses ${archived} documents liés` : archived ? 'son document lié' : '';
+  const both = [note, references].filter(Boolean);
+  const warning = both.length ? ` (${both.join(' et ')} ${both.length > 1 || archived > 1 ? 'seront archivés' : note ? 'sera archivée' : 'sera archivé'})` : '';
   return {
     kind: 'update_task', taskId: task.id, title: task.title, changes,
     expected: {

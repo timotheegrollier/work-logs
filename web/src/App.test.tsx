@@ -855,13 +855,32 @@ describe('écrire une entrée', () => {
 
     await user.selectOptions(status, 'done');
     await waitFor(() => expect(within(taskProgress).getByRole('progressbar')).toHaveAttribute('value', '100'));
-    expect(row(api.db, 'SELECT status, archived FROM entries WHERE id=?', 'en_context')).toEqual({ status: 'done', archived: 0 });
-    expect(within(journal()).getByText('Contexte de réunion')).toBeVisible();
+    // Terminer archive la note de la tâche ; la rouvrir la fait revenir.
+    expect(row(api.db, 'SELECT status, archived FROM entries WHERE id=?', 'en_context')).toEqual({ status: 'done', archived: 1 });
+    await user.selectOptions(status, 'doing');
+    await waitFor(() => expect(row(api.db, 'SELECT status, archived FROM entries WHERE id=?', 'en_context')).toEqual({ status: 'doing', archived: 0 }));
 
     await user.click(within(taskProgress).getByRole('button', { name: 'Retirer le suivi de tâche' }));
     expect(await within(editor()).findByRole('button', { name: 'Suivre comme tâche' })).toBeVisible();
     expect(row(api.db, 'SELECT COUNT(*) n FROM tasks').n).toBe(0);
     expect(within(editor()).getByText('Relire le compte rendu.')).toBeVisible();
+  });
+
+  test('les cases cochées de la note de tâche règlent son avancement, sans IA', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_pompe', title: 'Contrôle pompe', content_md: '- [x] Démonter\n- [ ] Remonter\n- [ ] Tester' }] });
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Suivre comme tâche' }));
+    const taskProgress = await within(editor()).findByRole('region', { name: 'Suivi de tâche' });
+    await waitFor(() => expect(within(taskProgress).getByRole('progressbar')).toHaveAttribute('value', '33'), { timeout: 4000 });
+    expect(within(taskProgress).getByText('Suit les cases cochées de la note.')).toBeVisible();
+    expect(row(api.db, 'SELECT status, progress FROM tasks')).toEqual({ status: 'doing', progress: 33 });
+
+    await user.click(within(screen.getByRole('article', { name: 'Aperçu' })).getAllByRole('checkbox')[1]);
+    await waitFor(() => expect(row(api.db, 'SELECT status, progress FROM tasks')).toEqual({ status: 'doing', progress: 67 }), { timeout: 4000 });
+    // Tout cocher ne termine pas la tâche : terminer reste un geste, qui archive la note.
+    await user.click(within(screen.getByRole('article', { name: 'Aperçu' })).getAllByRole('checkbox')[2]);
+    await waitFor(() => expect(row(api.db, 'SELECT status, progress FROM tasks')).toEqual({ status: 'doing', progress: 99 }), { timeout: 4000 });
   });
 
   test('lie l’entrée ouverte à une tâche existante, sans en créer', async () => {

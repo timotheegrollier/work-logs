@@ -554,9 +554,17 @@ async function taskReferencesToArchive(taskId: string, time: string): Promise<En
     .map((entry) => ({ ...entry, archived: 1, updated_at: time }));
 }
 
-async function archiveTaskDocuments(taskId: string): Promise<void> {
-  const { database } = await tables();
-  const archived = await taskReferencesToArchive(taskId, nowISO());
+/** Terminer archive la note de la tâche ; la rouvrir la fait revenir. Sinon, l’archivage choisi reste. */
+function taskNoteArchived(from: Status, to: Status, archived: 0 | 1): 0 | 1 {
+  return from !== 'done' && to === 'done' ? 1 : from === 'done' && to !== 'done' ? 0 : archived;
+}
+
+async function archiveTaskDocuments(taskId: string, withNote = false): Promise<void> {
+  const { database, entries, tasks } = await tables();
+  const time = nowISO();
+  const archived = await taskReferencesToArchive(taskId, time);
+  const note = withNote ? await entries.get((await tasks.get(taskId))?.entry_id ?? '') : undefined;
+  if (note && !note.archived) archived.push({ ...note, archived: 1, updated_at: time });
   await database.writeAll(archived.map((value) => ({ table: 'entries', value })));
   for (const entry of archived) track('entries', entry.id);
 }
@@ -581,8 +589,9 @@ function taskLink(taskId: string, entryId: string, time: string): LinkRow {
   return { id: linkId(taskId, entryId), task_id: taskId, entry_id: entryId, created_at: time };
 }
 
-async function addTaskNote(task: TaskRow, note: EntryRow, source?: EntryRow, convert = false): Promise<Task> {
+async function addTaskNote(task: TaskRow, created: EntryRow, source?: EntryRow, convert = false): Promise<Task> {
   const { database, tasks } = await tables();
+  const note = task.status === 'done' && !created.archived ? { ...created, archived: 1 as const } : created;
   const primary = taskLink(task.id, note.id, task.created_at);
   const reference = source && taskLink(task.id, source.id, task.created_at);
   const archived = reference && task.status === 'done' && !source.archived
@@ -610,10 +619,11 @@ async function writeTaskUpdate(current: TaskRow, next: TaskRow): Promise<void> {
   const noteChanged = note && (note.title !== next.title || note.project_id !== next.project_id || (note.category_id ?? null) !== (next.category_id ?? null));
   const archived = current.status !== 'done' && next.status === 'done' ? await taskReferencesToArchive(current.id, next.updated_at) : [];
   const noteUpdates = [...archived];
-  if (note && (noteChanged || note.status !== next.status)) {
+  const noteArchived = note && taskNoteArchived(current.status, next.status, note.archived);
+  if (note && (noteChanged || note.status !== next.status || noteArchived !== note.archived)) {
     noteUpdates.push({
       ...note, title: next.title, project_id: next.project_id, category_id: next.category_id, status: next.status,
-      updated_at: noteChanged ? nowISO() : note.updated_at,
+      archived: noteArchived as 0 | 1, updated_at: noteChanged || noteArchived !== note.archived ? nowISO() : note.updated_at,
     });
   }
   await database.writeAll([
@@ -1135,7 +1145,9 @@ export const localApi: Api = {
     if (rich !== null) validateDocument(rich);
     if (current.content_json && rich === null) fail('la conversion d’un document riche en Markdown n’est pas prise en charge');
     const row = (await entries.get(id)) as EntryRow;
-    const archived = pick(patch, 'archived', row.archived ?? 0, (v) => (v ? 1 : 0));
+    const nextStatus = pick(patch, 'status', current.status ?? 'todo');
+    const chosen = pick(patch, 'archived', row.archived ?? 0, (v) => (v ? 1 : 0));
+    const archived = current.task ? taskNoteArchived(current.task.status, nextStatus, chosen) : chosen;
     const kind: 'note' | 'procedure' = pick(patch, 'kind', row.kind ?? 'note', (v) => kindOf(v, row.kind ?? 'note'))
       ?? fail('type de document invalide (note ou procédure attendu)');
     if (current.task && kind !== 'note') fail('Retire le suivi de la tâche avant de transformer la note en procédure.');
@@ -1308,7 +1320,7 @@ export const localApi: Api = {
     const absorbedIds = new Set(absorbed.map(({ id }) => id));
     await mergeLocalNotes(taskNote(task, body.content_md), absorbed, task, found, all.filter(({ id }) => !absorbedIds.has(id)));
     for (const changed of new Set<Status>([status, ...found.map((task) => task.status)])) await renumber(changed);
-    if (status === 'done') await archiveTaskDocuments(taskId);
+    if (status === 'done') await archiveTaskDocuments(taskId, true);
     return fullEntry(entryId);
   },
 

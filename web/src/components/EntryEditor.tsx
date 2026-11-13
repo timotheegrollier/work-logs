@@ -3,7 +3,8 @@ import { flushSync } from 'react-dom';
 import { api, COLUMNS, PRIORITIES, dayLabel, formatSize, googleHelpUrl, isFollowed, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type Priority, type RichDocument, type Status, type Task, type TaskMetadata } from '../lib';
 import { AiCancelled, completeNote, draftProcedure, noteCompletionContext, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
-import { insertCodeFence, renderAiProposal, renderMarkdown, toggleChecklistItem } from '../markdown';
+import { checklistProgress, insertCodeFence, renderAiProposal, renderMarkdown, toggleChecklistItem } from '../markdown';
+import { refreshTaskProgress } from '../task-progress';
 import { markdownToRich, richToMarkdown } from '../rich-markdown';
 import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-download';
 import { Autosave } from '../autosave';
@@ -47,6 +48,10 @@ type ActionChoice = ExtractedAction & { selected: boolean; created: boolean };
  * d'entrée remonte le composant, donc aucun brouillon ne peut fuir d'une
  * entrée à l'autre.
  */
+/** Cases cochées : presque aussitôt. IA : après un moment sans frappe, pour ne pas payer chaque brouillon. */
+const CHECKLIST_PROGRESS_DELAY = 800;
+const AI_PROGRESS_DELAY = 15_000;
+
 export function EntryEditor({
   tabs = [],
   onSelectTab = () => {},
@@ -787,6 +792,19 @@ export function EntryEditor({
       if (mounted.current) setTaskBusy(false);
     }
   };
+  // Avancement d'après la note enregistrée : les cases cochées aussitôt, l'IA après un moment sans frappe.
+  const progressNote = task && task.status !== 'done' && save === 'saved' ? aiText : null;
+  const fromChecklist = checklistProgress(aiText) !== null;
+  useEffect(() => {
+    if (!task || progressNote === null) return;
+    const timer = setTimeout(() => {
+      void refreshTaskProgress(task, draftRef.current.title, progressNote).then((state) => {
+        if (state && mounted.current) void changeTask(() => api.updateTask(task.id, state));
+      });
+    }, fromChecklist ? CHECKLIST_PROGRESS_DELAY : AI_PROGRESS_DELAY);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- relancé quand la note ou la tâche change, pas à chaque rendu
+  }, [task?.id, task?.status, task?.progress, progressNote, fromChecklist]);
   const startTracking = () => changeTask(async () => {
     const { documents: _documents, ...created } = await api.createTaskFromEntry(entry.id);
     return created.entry_id === entry.id ? created : null;
@@ -1003,6 +1021,7 @@ export function EntryEditor({
           }
         }}>
           <progress className="task-progress-bar" aria-label="Avancement de la tâche" value={task.progress} max={100} />
+          {task.status !== 'done' && <small className="task-progress-source">{fromChecklist ? 'Suit les cases cochées de la note.' : 'Estimé par l’IA quand la note change, si elle est configurée.'}</small>}
           <label>Avancement (%)
             <input type="number" min={0} max={100} step={1} required disabled={taskBusy}
               value={progressInput ?? String(task.progress)} onChange={(event) => setProgressInput(event.target.value)} />

@@ -95,12 +95,20 @@ export function insertCodeFence(source: string, start: number, end: number): { t
  * des `<input type="checkbox">` dans le HTML rendu. Index inconnu ou texte
  * sans case : le contenu est renvoyé tel quel.
  */
+const CHECKLIST_ITEM = /^\s*(?:[-*•]\s*)?\[([ xX])\]/;
+
+/** Part des cases cochées, en pourcentage arrondi ; null sans case à cocher. */
+export function checklistProgress(source: string): number | null {
+  const items = source.split('\n').map((line) => CHECKLIST_ITEM.exec(line)?.[1]).filter((mark) => mark !== undefined);
+  return items.length ? Math.round((items.filter((mark) => mark !== ' ').length / items.length) * 100) : null;
+}
+
 export function toggleChecklistItem(source: string, index: number): string {
   if (!Number.isInteger(index) || index < 0) return source;
   const lines = source.split('\n');
   let seen = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (!/^\s*(?:[-*•]\s*)?\[[ xX]\]/.test(lines[i])) continue;
+    if (!CHECKLIST_ITEM.test(lines[i])) continue;
     seen += 1;
     if (seen !== index) continue;
     lines[i] = lines[i].replace(/\[[ xX]\]/, (match) => (match.toLowerCase() === '[x]' ? '[ ]' : '[x]'));

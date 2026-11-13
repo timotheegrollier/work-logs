@@ -430,7 +430,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     db.prepare('UPDATE tasks SET position=? WHERE id=?').run(nextTaskPosition.get(status).p, task.id);
     renumber(db, task.status);
     renumber(db, status);
-    if (status === 'done') archiveTaskDocuments(db, task.id, time);
+    if (status === 'done') archiveTaskDocuments(db, task.id, time, { withNote: true });
+    else if (task.status === 'done') restoreTaskNote(db, task.id, time);
   };
   const removeTask = (task) => {
     for (const { entry_id } of db.prepare('SELECT entry_id FROM task_entries WHERE task_id=?').all(task.id)) {
@@ -472,7 +473,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       }
       addTask({ id, entryId, title, status, progress, dueDate, pinned: 0, priority, projectId: source.project_id, categoryId: source.category_id, time });
       if (!convert) linkTaskEntry.run(id, source.id, time);
-      if (status === 'done') archiveTaskDocuments(db, id, time);
+      if (status === 'done') archiveTaskDocuments(db, id, time, { withNote: true });
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
@@ -511,7 +512,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
         }
         for (const task of sources) removeTask(task);
         renumber(db, status);
-        if (status === 'done') archiveTaskDocuments(db, taskId, time);
+        if (status === 'done') archiveTaskDocuments(db, taskId, time, { withNote: true });
         db.exec('COMMIT');
       } catch (error) {
         db.exec('ROLLBACK');
@@ -648,7 +649,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       if (cur.status !== status) db.prepare('UPDATE entries SET status=? WHERE id=?').run(status, cur.entry_id);
       renumber(db, status);
       if (cur.status !== status) renumber(db, cur.status);
-      if (cur.status !== 'done' && status === 'done') archiveTaskDocuments(db, cur.id, time);
+      if (cur.status !== 'done' && status === 'done') archiveTaskDocuments(db, cur.id, time, { withNote: true });
+      else if (cur.status === 'done' && status !== 'done') restoreTaskNote(db, cur.id, time);
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
@@ -881,13 +883,21 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   return app;
 }
 
-/** Archive les références d’une tâche terminée. Les notes suivies restent visibles. */
-function archiveTaskDocuments(db, taskId, time = nowISO()) {
+/**
+ * Archive les références d’une tâche terminée, et sa propre note quand elle vient d’être terminée.
+ * Les notes d’autres tâches restent visibles : elles suivent leur propre tâche.
+ */
+function archiveTaskDocuments(db, taskId, time = nowISO(), { withNote = false } = {}) {
   db.prepare(
     `UPDATE entries SET archived=1, updated_at=?
      WHERE archived=0 AND id IN (SELECT entry_id FROM task_entries WHERE task_id=?)
-     AND NOT EXISTS (SELECT 1 FROM tasks WHERE entry_id=entries.id)`
-  ).run(time, taskId);
+     AND NOT EXISTS (SELECT 1 FROM tasks WHERE entry_id=entries.id AND (id<>? OR ?=0))`
+  ).run(time, taskId, taskId, withNote ? 1 : 0);
+}
+
+/** Une tâche rouverte fait revenir sa note dans le journal ; ses références restent archivées. */
+function restoreTaskNote(db, taskId, time = nowISO()) {
+  db.prepare('UPDATE entries SET archived=0, updated_at=? WHERE archived=1 AND id=(SELECT entry_id FROM tasks WHERE id=?)').run(time, taskId);
 }
 
 /** Réécrit les positions d'une colonne en 0,1,2… (ordre courant conservé). */

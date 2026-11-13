@@ -731,6 +731,12 @@ describe('validation des actions', () => {
     const withDocument = { ...base, tasks: [task('t1', { title: 'Pompe', documents: [entry('a')] })] };
     expect((await propose([{ kind: 'update_task', n: 1, status: 'done' }], {}, withDocument)).proposals[0].label).toBe('« Pompe » : statut → Terminée (son document lié sera archivé)');
     expect((await propose([{ kind: 'update_task', n: 1, status: 'doing' }], {}, withDocument)).proposals[0].label).toBe('« Pompe » : statut → En cours');
+    // Sa propre note part aux archives avec lui ; la note d'une autre tâche reste.
+    const withNotes = { ...base, tasks: [
+      task('t1', { title: 'Pompe', entry_id: 'note', documents: [entry('note'), entry('a'), entry('autre')] }),
+      task('t2', { title: 'Joint', entry_id: 'autre', documents: [entry('autre')] }),
+    ] };
+    expect((await propose([{ kind: 'update_task', n: 1, status: 'done' }], {}, withNotes)).proposals[0].label).toBe('« Pompe » : statut → Terminée (sa note et son document lié seront archivés)');
     expect((await propose([{ kind: 'update_task', n: 1, status: 'done' }])).proposals[0].label).toBe('« Réparer la pompe » : statut → Terminée');
   });
 });

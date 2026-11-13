@@ -279,8 +279,9 @@ garde l’identifiant de l’entrée. Une action extraite ou issue d’une proc�
 Google possède une note locale et conserve sa source comme référence.
 
 `progress` est un entier. À faire correspond à 0 %, terminé à 100 %, en cours accepte 0 à 99 %.
-Une modification du pourcentage seul déduit le statut. Une tâche terminée conserve sa note dans
-le journal, sauf archivage manuel.
+Une modification du pourcentage seul déduit le statut. Terminer une tâche archive sa note et ses
+références (`archiveTaskDocuments`), sauf les notes d’autres tâches ; la rouvrir désarchive sa
+note (`restoreTaskNote`). L’avancement automatique (`web/src/task-progress.ts`) s’arrête à 99 %.
 
 Les associations sont créées avec `POST /api/tasks/:id/documents/:entryId` : `201` à la première
 création, puis `200` avec la ligne existante en cas de doublon. La suppression renvoie `200` ;

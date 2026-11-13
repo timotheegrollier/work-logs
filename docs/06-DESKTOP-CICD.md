@@ -276,8 +276,8 @@ répond normalement.
 
 `check.sh` prend un écran virtuel avec metacity ou muffin s'ils sont installés, sinon l'écran
 courant, sinon `xvfb-run -a`. Le 2026-11-13, après la v0.77.0, il a compté 346 tests API,
-1 378 tests front (dont un échec attendu, `web/src/test/setup.test.tsx`), 49 desktop unitaires,
-49 scripts, 8 Worker, 11 relais, 117 navigateur et 20 Electron, soit 1 978 tests. Vitest tourne avec
+1 384 tests front (dont un échec attendu, `web/src/test/setup.test.tsx`), 49 desktop unitaires,
+49 scripts, 8 Worker, 11 relais, 117 navigateur et 20 Electron, soit 1 984 tests. Vitest tourne avec
 `maxWorkers: 4` et `retry: 1` (`web/vite.config.ts`).
 
 ## 7. Packaging desktop

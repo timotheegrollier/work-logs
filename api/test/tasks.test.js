@@ -102,7 +102,7 @@ describe('tâches', () => {
     assert.deepEqual(await column(api, 'done'), ['A']);
   });
 
-  test('termine une tâche et archive ses références en gardant sa note visible', async () => {
+  test('termine une tâche et archive sa note et ses références ; la rouvrir fait revenir sa note', async () => {
     const local = await make.entry(api, { title: 'Compte rendu local' });
     const google = await make.entry(api, { title: 'Onglet Google' });
     api.db.prepare(`INSERT INTO google_documents
@@ -116,7 +116,7 @@ describe('tâches', () => {
     assert.equal(completed.body.status, 'done');
     assert.equal(completed.body.progress, 100);
     const primary = (await api.get(`/api/entries/${task.entry_id}`)).body;
-    assert.equal(primary.archived, 0);
+    assert.equal(primary.archived, 1);
     assert.equal(primary.status, 'done');
     assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(local.id).archived, 1);
     assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(google.id).archived, 1);
@@ -127,8 +127,9 @@ describe('tâches', () => {
     assert.equal(state.body.entries.find((entry) => entry.id === local.id).archived, 1);
     assert.equal(state.body.tasks.find((item) => item.id === task.id).documents.length, 3);
 
-    // Rouvrir la tâche ne ressuscite pas une archive explicite/automatique.
+    // Rouvrir la tâche fait revenir sa note ; ses références restent archivées.
     await api.put(`/api/tasks/${task.id}`, { status: 'todo' });
+    assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(task.entry_id).archived, 0);
     assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(local.id).archived, 1);
   });
 
@@ -640,14 +641,14 @@ describe('tâches', () => {
       assert.equal(merged.priority, 'normal');
     });
 
-    test('tout terminé : la tâche reste à 100 % et sa note est visible', async () => {
+    test('tout terminé : la tâche reste à 100 % et sa note part aux archives', async () => {
       const a = await make.task(api, { title: 'A', status: 'done' });
       const b = await make.task(api, { title: 'B', status: 'done' });
       const res = await api.post('/api/tasks/merge', await mergeRequest([a.id, b.id]));
       assert.equal((await api.get('/api/state')).body.tasks[0].status, 'done');
       const note = (await api.get(`/api/entries/${res.body.id}`)).body;
       assert.equal(note.task.progress, 100);
-      assert.equal(note.archived, 0);
+      assert.equal(note.archived, 1);
     });
 
     test('refuse moins de deux tâches', async () => {

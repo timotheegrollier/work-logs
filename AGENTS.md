@@ -2,7 +2,7 @@
 
 ## Reprise
 - **État : v0.77.0** (`package.json` fait foi). `./scripts/check.sh` vert le 2026-11-13, après la v0.77.0,
-  **1 978 tests**, échec attendu compris : 346 API · 1 377 front (plus un échec attendu) ·
+  **1 984 tests**, échec attendu compris : 346 API · 1 383 front (plus un échec attendu) ·
   49 desktop · 49 scripts · 8 Worker · 11 relais · 117 navigateur · 20 desktop e2e.
   Lots et bilans : `docs/00-HANDOVER.md`.
 - Publication : `docs/07-RELEASES.md`. `./scripts/check.sh` reste la validation requise (desktop compris).

@@ -1,5 +1,12 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Terminer archive la note ; l’avancement suit la note — 2026-11-13 (§84)
+
+- Cocher une tâche archive sa note et ses références (API, PWA, annonce de l’assistant). La
+  rouvrir fait revenir sa note. Les notes d’autres tâches restent visibles.
+- La barre d’avancement suit les cases cochées de la note, sans IA. Sans case, l’IA estime
+  l’avancement en appel de fond, une fois par texte, jamais au-delà de 99 %.
+
 ## Deux défauts corrigés : reclassement écrasé, cadre Google démonté — 2026-11-13
 
 - **Reclassement écrasé** (06, D14). Une frappe arrivée avant les effets de l’éditeur laissait

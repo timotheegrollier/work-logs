@@ -427,7 +427,11 @@ describe('tâches', () => {
     expect((await localApi.state('joint')).tasks[0]).toMatchObject({ id: task.id, progress: 35 });
     await expect(localApi.unlinkTaskDocument(task.id, entry.id)).rejects.toThrow(/cette note contient la tâche/i);
     await localApi.updateEntry(entry.id, { status: 'done' });
-    expect(await localApi.entry(entry.id)).toMatchObject({ status: 'done', archived: 0, task: { progress: 100 }, attachments: [{ id: attachment.id }] });
+    expect(await localApi.entry(entry.id)).toMatchObject({ status: 'done', archived: 1, task: { progress: 100 }, attachments: [{ id: attachment.id }] });
+    await localApi.updateTask(task.id, { status: 'doing' });
+    expect(await localApi.entry(entry.id)).toMatchObject({ status: 'doing', archived: 0 });
+    await localApi.moveTask(task.id, 'done', 0);
+    expect(await localApi.entry(entry.id)).toMatchObject({ status: 'done', archived: 1 });
     await localApi.deleteTask(task.id);
     expect(await localApi.entry(entry.id)).toMatchObject({ content_md: 'Contrôler le joint', task: null });
     const trackedAgain = await localApi.createTaskFromEntry(entry.id);

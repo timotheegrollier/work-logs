@@ -151,8 +151,9 @@ et un **projet** (facultatif).
 
 **Archiver** (bouton dans la barre de l'entrée) range un document hors du journal sans
 rien détruire : les tâches liées gardent leur contexte et **Supprimer** n'est pas appelé.
-Terminer une tâche garde sa note visible dans le journal. Les documents de référence sont
-archivés, sauf s’ils portent eux-mêmes le suivi d’une autre tâche. Les archives se déplient
+Terminer une tâche archive sa note et ses documents de référence, sauf ceux qui portent
+eux-mêmes le suivi d’une autre tâche. La rouvrir fait revenir sa note dans le journal ; les
+références restent archivées. Les archives se déplient
 en bas de la colonne de gauche, par jour comme le journal ;
 **Désarchiver** remet le document à sa place. Même geste pour un document Google :
 l'archiver le masque de l'application locale en conservant le fichier distant, tandis
@@ -214,6 +215,11 @@ rendu approximatif.
   fichiers et son classement. **Retirer le suivi de tâche** conserve la note dans le journal.
 - **Avancer** : choisir le **Statut de la tâche** dans la note, ou saisir un **Avancement (%)**
   puis cliquer **Appliquer**. 0 % remet à faire, 1 à 99 % passe en cours et 100 % termine.
+  L’avancement suit aussi la note : avec des cases à cocher (`- [ ]`), il vaut la part des
+  cases cochées ; sans case, l’IA l’estime d’après le texte quand la note a changé et
+  qu’aucune frappe n’a eu lieu depuis 15 s. Ce réglage automatique ne dépasse jamais 99 % :
+  terminer reste un geste, qui archive la note. Un pourcentage saisi à la main tient jusqu’à
+  la prochaine modification de la note.
   Le tableau reprend le statut et le pourcentage. Tu peux aussi déplacer la carte entre les
   colonnes ou utiliser son bouton **Planifier**.
 - **▶ Mettre en cours** : le bouton avant ★ met la tâche en cours d'un clic (elle va au bas
@@ -278,7 +284,8 @@ rendu approximatif.
   l’API fournit au plus 500 tâches : la vue signale les éléments manquants et refuse de
   présenter une analyse incomplète comme globale. Le filtre de projet de l’analyse permet
   de travailler sur un seul projet sans fermer la vue.
-- **Terminer** : cocher la case. Le titre se barre et la carte rejoint Terminé.
+- **Terminer** : cocher la case. Le titre se barre, la carte rejoint Terminé, et la note de la
+  tâche part aux archives avec ses références. Décocher la rouvre et fait revenir sa note.
 - **Modifier** : cliquer sur le titre ouvre le nom, l'échéance et la priorité. `Entrée` valide, `Échap` annule.
 - **Priorité** : chaque carte affiche sa pastille — Basse, Normale ou Haute (▲ rouge). Elle ne réordonne pas la colonne : l'ordre reste celui du glisser-déposer.
 - **★** met la tâche en avant (liseré ambré à gauche), indépendamment de sa priorité. Sur

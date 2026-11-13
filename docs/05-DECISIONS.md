@@ -3555,3 +3555,27 @@ anciens identifiants restent valides. Une tâche déjà terminée reçoit 100 %,
 En synchronisation, le contenu et le classement suivent l’horloge de la note, le statut
 et l’avancement celle de la tâche. Une modification du texte sur un appareil peut ainsi
 être fusionnée avec un changement d’avancement sur un autre.
+
+## 84. Terminer archive la note ; l’avancement suit la note — 2026-11-13
+
+Demande de Timo : cocher une tâche doit archiver ses entrées associées. Le §83 gardait la note
+de la tâche dans le journal à 100 % ; depuis la migration, chaque tâche a sa note principale,
+et cocher laissait donc le journal encombré. Terminer archive maintenant la note de la tâche
+avec ses références, sur desktop (`archiveTaskDocuments(…, { withNote })`) comme dans la PWA.
+Les notes d’autres tâches restent exclues : elles suivent leur propre tâche. Rouvrir la tâche
+désarchive sa seule note, pour qu’une tâche active ne se cache pas dans les archives ; ses
+références restent archivées, comme avant. L’assistant annonce « sa note et ses documents liés ».
+
+Demande de Timo : la barre d’avancement suit le contenu de la note, réactualisée par l’IA, en
+restant juste et sobre en jetons (`web/src/task-progress.ts`).
+- Les cases à cocher font foi, sans IA : part des cases cochées.
+- Sans case, l’IA estime en appel de fond : deux modèles au plus, dans le tiers du plafond
+  quotidien réservé au fond, avec la note tronquée à 2 000 caractères et une réponse JSON de
+  quelques jetons. Elle répond `null` quand la note ne permet pas de juger : rien ne change.
+- Une empreinte du titre et du texte, par tâche et par appareil, évite de payer deux fois le
+  même texte. L’estimation attend 15 s sans frappe ; les cases, moins d’une seconde.
+- Le réglage automatique ne dépasse jamais 99 % et ne touche pas une tâche terminée : terminer
+  archive la note et reste un geste. Une tâche à faire qui avance passe « En cours ».
+- Écartés : estimer à chaque frappe (coût), laisser l’IA terminer une tâche (archivage
+  surprise), un réglage pour couper l’estimation (nouveau mode, non demandé ; l’IA non
+  configurée suffit à l’éteindre).
