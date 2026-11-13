@@ -7,6 +7,9 @@ plus qu’une adresse déjà présente, entière, dans le texte d’origine ; si
 Le HTML écrit par le modèle est couvert aussi (`srcset`, vidéo, `url()` en style, SVG…). Seul
 l’aperçu est protégé : après « Appliquer », la note s’affiche normalement. Pourquoi et limites :
 §82 de `05-DECISIONS.md`.
+- `./scripts/check.sh` vert sur ce lot rebasé après `f608a06` : 329 API, 1 370 front et un échec
+  attendu, 49 desktop unitaires, 49 scripts, 8 Worker, 11 relais, 117 navigateur et 20 Electron,
+  soit 1 953.
 
 ## Postes activés avant le 2026-11-10 : relancer l’activation du dépôt — 2026-11-12
 
