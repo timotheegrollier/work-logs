@@ -1,6 +1,8 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Aperçus de proposition IA sans image tierce — 2026-11-13 (§82)
+## Aperçus de proposition IA sans image tierce — 2026-11-13, v0.76.0 (§82)
+
+Cette version réunit aussi l’assistant en colonnes (§80) et le clavier Electron (§81).
 
 Les trois aperçus d’une proposition IA (entrée, fichier du partage, procédure rédigée) ne chargent
 plus qu’une adresse déjà présente, entière, dans le texte d’origine ; sinon, son texte alternatif.
