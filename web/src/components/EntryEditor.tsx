@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { api, COLUMNS, PRIORITIES, dayLabel, formatSize, googleHelpUrl, isFollowed, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type Priority, type RichDocument, type Status, type Task } from '../lib';
+import { api, COLUMNS, PRIORITIES, dayLabel, formatSize, googleHelpUrl, isFollowed, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type Priority, type RichDocument, type Status, type Task, type TaskMetadata } from '../lib';
 import { AiCancelled, completeNote, draftProcedure, noteCompletionContext, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
 import { insertCodeFence, renderAiProposal, renderMarkdown, toggleChecklistItem } from '../markdown';
@@ -58,6 +58,7 @@ export function EntryEditor({
   onChanged,
   onDeleted,
   onTaskCreated,
+  onTaskChanged,
   onProcedureCreated,
   autoFocusTitle = false,
   editRequest = 0,
@@ -74,6 +75,7 @@ export function EntryEditor({
   onChanged: () => void;
   onDeleted: () => void;
   onTaskCreated?: () => void;
+  onTaskChanged?: (entryId: string, task: TaskMetadata | null) => void;
   /** Procédure tirée de cette entrée par l'IA, créée : l'app l'ouvre. */
   onProcedureCreated?: (procedure: Entry) => void;
   autoFocusTitle?: boolean;
@@ -113,10 +115,8 @@ export function EntryEditor({
   const [syncMessage, setSyncMessage] = useState('');
   const [snapshotStale, setSnapshotStale] = useState(false);
   const [googleHelp, setGoogleHelp] = useState('');
-  const [taskCreator, setTaskCreator] = useState(false);
-  const [taskTitle, setTaskTitle] = useState(entry.title);
-  const [taskDueDate, setTaskDueDate] = useState('');
-  const [taskCreating, setTaskCreating] = useState(false);
+  const [taskBusy, setTaskBusy] = useState(false);
+  const [progressInput, setProgressInput] = useState<string | null>(null);
   const [taskMessage, setTaskMessage] = useState('');
   // Lier à des tâches existantes : même geste que le lieur de documents de la
   // carte (recherche + sélection multiple), dans l'autre sens.
@@ -141,6 +141,7 @@ export function EntryEditor({
   // champ) et le reste du brouillon s'enregistre. Le refuser laissait, une fois
   // l'entrée quittée, un brouillon en échec que la fermeture rejouait sans fin.
   const [savedTitle, setSavedTitle] = useState(entry.title);
+  const task = entry.task;
   const entryStatus = entry.status === 'done' ? 'Terminée' : entry.status === 'doing' ? 'En cours' : undefined;
   const serverClassification = useRef({ project: entry.project_id || '', category: entry.category_id || '' });
   const editRevision = useRef(0);
@@ -334,7 +335,8 @@ export function EntryEditor({
   };
 
   const remove = async () => {
-    if (!confirm(`Supprimer l’entrée « ${draft.title.trim() ? draft.title : savedTitle} » et ses fichiers ?`)) return;
+    const title = draft.title.trim() || savedTitle;
+    if (!confirm(`Supprimer ${task ? 'la note de tâche' : 'l’entrée'} « ${title} » et ses fichiers ?`)) return;
     await autosave.flush();
     await api.deleteEntry(entry.id);
     onDeleted();
@@ -390,13 +392,6 @@ export function EntryEditor({
     } catch (e) { setError((e as Error).message); }
   };
 
-    const openTaskCreator = () => {
-    setTaskTitle(draftRef.current.title);
-    setTaskDueDate('');
-    setTaskMessage('');
-    setError('');
-    setTaskCreator(true);
-  };
   // Suggestion IA : un clic = un envoi du titre et du contenu de l'entrée au
   // service configuré en Paramètres. Markdown seul : les documents riches
   // n'ont pas de cases. Le bloc inséré est suivi pour pouvoir le régénérer
@@ -425,7 +420,13 @@ export function EntryEditor({
     return { ...settings, signal: aiRequest.current.signal };
   };
   const contextForAi = async (current: typeof draft, version: number, contextVersion: number, purpose: 'general' | 'planning' | 'note' | 'layout' = 'general') => {
-    const loaded = await loadAiContext({ projectId: current.project_id || null, title: current.title, text: current.content_json ? richToMarkdown(current.content_json) : current.content_md, entryId: entry.id });
+    const loaded = await loadAiContext({
+      projectId: current.project_id || null,
+      title: current.title,
+      text: current.content_json ? richToMarkdown(current.content_json) : current.content_md,
+      entryId: entry.id,
+      taskId: task?.id,
+    });
     const context = purpose === 'note' ? noteCompletionContext(loaded) : loaded;
     if (!sameProject(current.project_id) || projectVersion.current !== version || aiContextVersion.current !== contextVersion) return null;
     setAiContext(context);
@@ -738,6 +739,7 @@ export function EntryEditor({
         try {
           await api.createTaskFromEntry(entry.id, {
             title: action.title.trim(),
+            content_md: action.evidence,
             due_date: action.due_date || null,
             priority: action.priority ?? 'normal',
             ...(index === inProgressIndex && { status: 'doing' }),
@@ -767,25 +769,36 @@ export function EntryEditor({
       }
     }
   };
-  const createTask = async () => {
-    const title = taskTitle.trim();
-    if (!title) return;
-    setTaskCreating(true);
+  const changeTask = async (action: () => Promise<TaskMetadata | null>) => {
+    if (taskBusy) return;
+    setTaskBusy(true);
+    setTaskMessage('');
     setError('');
     try {
       await autosave.flush();
-      await api.createTaskFromEntry(entry.id, { title, due_date: taskDueDate || null });
-      setTaskCreator(false);
-      setTaskMessage('Tâche créée et liée à cette entrée.');
-      onTaskCreated?.();
+      const updated = await action();
+      onTaskChanged?.(entry.id, updated);
+      if (mounted.current) setProgressInput(null);
     } catch (e) {
-      setError((e as Error).message);
+      if (mounted.current) setError((e as Error).message);
     } finally {
-      setTaskCreating(false);
+      if (mounted.current) setTaskBusy(false);
     }
   };
+  const startTracking = () => changeTask(async () => {
+    const { documents: _documents, ...created } = await api.createTaskFromEntry(entry.id);
+    return created.entry_id === entry.id ? created : null;
+  });
+  const stopTracking = () => {
+    if (!task || !confirm('Retirer le suivi de tâche de cette note ? Son contenu sera conservé.')) return;
+    return changeTask(async () => {
+      await api.deleteTask(task.id);
+      return null;
+    });
+  };
+  const progress = progressInput === null ? task?.progress : Number(progressInput);
   const linkedTaskIds = new Set(linkedTasks.map((task) => task.id));
-  const availableTasks = tasks.filter((task) => !linkedTaskIds.has(task.id));
+  const availableTasks = tasks.filter((candidate) => candidate.id !== task?.id && !linkedTaskIds.has(candidate.id));
   const taskQuery = taskFilter.trim().toLowerCase();
   const visibleTasks = taskQuery
     ? availableTasks.filter((task) => task.title.toLowerCase().includes(taskQuery))
@@ -879,7 +892,7 @@ export function EntryEditor({
           placeholder={savedTitle || 'Titre de l’entrée'}
           onChange={(e) => update({ title: e.target.value })}
         />
-        {entryStatus && <span className="entry-work-status" role="status" aria-label={`Statut de l’entrée : ${entryStatus}`}>{entryStatus}</span>}
+        {!task && entryStatus && <span className="entry-work-status" role="status" aria-label={`Statut de l’entrée : ${entryStatus}`}>{entryStatus}</span>}
         <span className={'save save-' + save}>{LABELS[save]}</span>
       </div>
 
@@ -969,21 +982,42 @@ export function EntryEditor({
       </div>
 
       </DetailsWrapper>
+      {task && <section className="entry-task-progress no-print" aria-label="Suivi de tâche">
+        <div className="entry-task-progress-meta">
+          <label>Statut de la tâche
+            <select disabled={taskBusy} value={task.status} onChange={(event) => {
+              const status = event.target.value as Status;
+              void changeTask(() => api.updateTask(task.id, { status }));
+            }}>
+              {COLUMNS.map((column) => <option key={column.id} value={column.id}>{column.label}</option>)}
+            </select>
+          </label>
+          <button className="ghost" type="button" disabled={taskBusy} onClick={stopTracking}>Retirer le suivi de tâche</button>
+        </div>
+        <form className="task-progress-form" onSubmit={(event) => {
+          event.preventDefault();
+          if (progressInput?.trim() && progress !== undefined && progress !== task.progress) {
+            void changeTask(() => api.updateTask(task.id, { progress }));
+          }
+        }}>
+          <progress className="task-progress-bar" aria-label="Avancement de la tâche" value={task.progress} max={100} />
+          <label>Avancement (%)
+            <input type="number" min={0} max={100} step={1} required disabled={taskBusy}
+              value={progressInput ?? String(task.progress)} onChange={(event) => setProgressInput(event.target.value)} />
+          </label>
+          <button type="submit" className="ghost" disabled={taskBusy || !progressInput?.trim() || progress === task.progress}>Appliquer</button>
+        </form>
+      </section>}
       <FollowUpPanel kind="entry" item={entry} dirty={save !== 'saved'} />
-      {linkedTasks.filter(isFollowed).map((task) => <div className="linked-follow-up no-print" role="group" aria-label={`Suivi de la tâche liée ${task.title}`} key={task.id}>
+      {task && isFollowed(task) && <FollowUpPanel kind="task" item={task} compact dirty={save !== 'saved'} />}
+      {linkedTasks.filter((linked) => linked.id !== task?.id && isFollowed(linked)).map((task) => <div className="linked-follow-up no-print" role="group" aria-label={`Suivi de la tâche liée ${task.title}`} key={task.id}>
         <p className="linked-follow-up-title">Suivi de la tâche liée : <strong>{task.title}</strong></p>
         <FollowUpPanel kind="task" item={task} compact dirty={save !== 'saved'} />
       </div>)}
       <div className="entry-task-action no-print">
-        {!taskCreator ? <button className="ghost" type="button" disabled={syncing} onClick={openTaskCreator}><span aria-hidden="true">＋ </span>Créer une tâche liée</button> : <form className="task-creator" onSubmit={(event) => { event.preventDefault(); void createTask(); }}>          <strong>Nouvelle tâche liée à cette entrée</strong>
-          <label>Titre de la tâche<input aria-label="Titre de la tâche liée" autoFocus value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} /></label>
-          <label>Échéance facultative<input aria-label="Échéance de la tâche liée" type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} /></label>
-          <div className="task-creator-actions">
-            <button className="task-primary" type="submit" disabled={taskCreating || !taskTitle.trim()}>{taskCreating ? 'Création…' : 'Créer et lier'}</button>
-            <button className="ghost" type="button" disabled={taskCreating} onClick={() => setTaskCreator(false)}>Annuler</button>
-          </div>
-        </form>}
-        {taskMessage && <p className="task-message" role="status">{taskMessage}</p>}
+        {!task && !isProcedure && !googleSync && (
+          <button className="ghost" type="button" disabled={syncing || taskBusy} onClick={startTracking}>Suivre comme tâche</button>
+        )}
         {!linkingTasks ? (
           <button className="ghost" type="button" disabled={syncing} onClick={startTaskLinking}><span aria-hidden="true">＋ </span>Lier une tâche existante</button>
         ) : (
@@ -1120,6 +1154,7 @@ export function EntryEditor({
         )}
       </div>
       {aiContext && <AiContextDetails context={aiContext} excludedIds={excludedAiSources} showTaskPlanning={showAiTaskPlanning} vocabularyOnly={aiVocabularyOnly} onExcludedChange={excludeAiSources} />}
+      {taskMessage && <p className="task-message no-print" role="status">{taskMessage}</p>}
       {error && <p role="alert" className="error no-print">{error}</p>}
       {error && googleHelp && <a className="no-print" href={googleHelp} target="_blank" rel="noopener noreferrer">Activer l’API dans Google Cloud</a>}
       {/* Première demande : l'attente s'affiche là où la proposition va venir. */}
@@ -1144,7 +1179,7 @@ export function EntryEditor({
       </div>}
       {actionsProposal && canDraftProcedure && <div className="proofread-preview ai-actions-proposal no-print" role="region" aria-busy={proposingTasks} aria-label="Tâches suggérées">
         <strong>Tâches suggérées — choisis les tâches à créer</strong>
-        <small>Priorités et échéances sont des propositions à vérifier ; certaines tâches sont déduites du contexte. Chaque tâche sera liée à cette note, dans son projet. La note est conservée.</small>
+        <small>Priorités et échéances sont des propositions à vérifier ; certaines tâches sont déduites du contexte. Chaque action crée une note de tâche dans ce projet, avec cette entrée comme référence.</small>
         {actionsProposal.items.length === 0 ? <p>Aucune nouvelle tâche suggérée pour cette note.</p> : <ul className="ai-action-list">
           {actionsProposal.items.map((action, index) => <li className="ai-action-row" key={index}>
             <label>

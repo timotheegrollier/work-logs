@@ -91,7 +91,7 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
   };
   const changeTaskStatus = (task: Task, status: Status) => {
     if (status === task.status) return;
-    const message = status === 'done' ? `« ${task.title} » validée.${task.documents.length ? ' Les documents liés sont archivés.' : ''}`
+    const message = status === 'done' ? `« ${task.title} » validée.${!task.entry_id && task.documents.length ? ' Les documents liés sont archivés.' : ''}`
       : status === 'doing' ? `« ${task.title} » passée en cours.`
       : task.status === 'done' ? `« ${task.title} » rouverte.` : `« ${task.title} » remise à faire.`;
     void run('task:' + task.id, () => api.moveTask(task.id, status, Number.MAX_SAFE_INTEGER), message, followHead.current);

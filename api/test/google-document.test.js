@@ -116,6 +116,49 @@ test('nouveau document synchronisé : aucun fichier créé si le format local es
   } finally { await api.close(); }
 });
 
+test('une note de tâche reste locale quand on demande une association à Google', async () => {
+  const google = stub(), api = await startApi({ google });
+  try {
+    const note = await make.entry(api, { content_json: googleToDocument(doc('Description')) });
+    assert.equal((await api.post(`/api/entries/${note.id}/task`, {})).status, 201);
+    const refused = await api.post(`/api/entries/${note.id}/google/push`);
+    assert.equal(refused.status, 409);
+    assert.equal(google.calls.length, 0);
+    assert.equal((await api.get(`/api/entries/${note.id}`)).body.google_sync, null);
+  } finally { await api.close(); }
+});
+
+test('une première association Google en cours réserve seulement la note envoyée', async () => {
+  const google = stub();
+  const request = google.request.bind(google);
+  const started = Promise.withResolvers();
+  const resume = Promise.withResolvers();
+  google.request = async (url, options) => {
+    if (url === '/docs/v1/documents') {
+      started.resolve();
+      await resume.promise;
+    }
+    return request(url, options);
+  };
+  const api = await startApi({ google });
+  let sending;
+  try {
+    const note = await make.entry(api, { content_json: googleToDocument(doc('Description')) });
+    const other = await make.entry(api, { title: 'Autre note' });
+    sending = api.post(`/api/entries/${note.id}/google/push`);
+    await Promise.race([started.promise, sending.then((result) => assert.fail(`Envoi terminé trop tôt : ${result.status}`))]);
+    assert.equal((await api.post(`/api/entries/${note.id}/task`, {})).status, 409);
+    assert.equal((await api.post(`/api/entries/${other.id}/task`, {})).status, 201);
+    resume.resolve();
+    assert.equal((await sending).status, 200);
+    assert.equal((await api.get(`/api/entries/${note.id}`)).body.task, null);
+  } finally {
+    resume.resolve();
+    await sending?.catch(() => {});
+    await api.close();
+  }
+});
+
 test('mode web : Drive indisponible sans exposer de connexion privilégiée', async () => {
   const api = await startApi();
   try {

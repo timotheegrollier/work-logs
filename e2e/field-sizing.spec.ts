@@ -74,18 +74,16 @@ test('les formulaires de l’Écriture se replient sur la largeur de la colonne,
     await page.goto('/');
     const editor = page.getByRole('region', { name: 'Entrée', exact: true });
     await editor.getByRole('button', { name: 'Écrire', exact: true }).click();
-    await editor.getByRole('button', { name: 'Créer une tâche liée' }).click();
     await editor.getByRole('button', { name: 'Assistance IA', exact: true }).click();
     await editor.getByRole('menuitem', { name: 'Suggérer des tâches avec l’IA', exact: true }).click();
     const preview = editor.getByRole('article', { name: 'Aperçu' });
     const rows = [
-      [editor.getByLabel('Titre de la tâche liée'), editor.getByLabel('Échéance de la tâche liée')],
       [editor.getByLabel('Titre de l’action 1'), editor.getByLabel('Priorité de l’action 1')],
     ] as const;
     const middle = async (field: Locator) => { const box = (await field.boundingBox())!; return box.y + box.height / 2; };
     // Écart vertical entre deux champs : ~0 côte à côte, une hauteur de champ une fois empilés.
     const side = async ([first, second]: readonly [Locator, Locator]) => (await middle(second)) - (await middle(first));
-    await expect(rows[1][0]).toHaveValue('Appeler le fournisseur');
+    await expect(rows[0][0]).toHaveValue('Appeler le fournisseur');
 
     // Colonne large : le Markdown à côté de son aperçu, titre et échéance sur une rangée.
     await expect(preview).toBeVisible();
@@ -107,24 +105,22 @@ test('les formulaires de l’Écriture se replient sur la largeur de la colonne,
   }
 });
 
-test('le panneau Tâches étroit garde ses champs dans la carte, les sous-tâches grandissent avec leur texte', async ({ page, request }) => {
+test('le panneau Tâches étroit garde la saisie et ses champs dans la carte', async ({ page, request }) => {
   const task = await (await request.post('/api/tasks', { data: { title: 'Contrôle des champs du panneau' } })).json();
+  const reference = await (await request.post('/api/entries', { data: { title: 'Référence du panneau étroit' } })).json();
   try {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
     const card = page.locator('.card').filter({ has: page.getByText('Contrôle des champs du panneau', { exact: true }) });
-    await card.getByRole('button', { name: 'Créer une entrée liée', exact: true }).click();
-    const subtasks = card.getByLabel('Sous-tâches de l’entrée liée, une par ligne');
-    // Au repos, quatre lignes comme avant ; au-delà, la zone grandit au lieu de défiler.
-    const empty = await fitsText(subtasks);
-    await subtasks.fill('Une\nDeux\nTrois\nQuatre');
-    expect(await fitsText(subtasks)).toBeCloseTo(empty, 0);
-    await subtasks.fill(Array.from({ length: 8 }, (_, i) => `Sous-tâche ${i + 1} avec un intitulé qui passe à la ligne`).join('\n'));
-    const filled = await fitsText(subtasks);
-    expect(filled).toBeGreaterThan(empty);
-
     await resizer(page, 'droite').press('Home');
-    expect(await fitsText(subtasks)).toBeGreaterThan(filled);
+    await card.getByRole('button', { name: `Planifier ${task.title}`, exact: true }).click();
+    const fields = [card.getByLabel('Échéance'), card.getByLabel('Statut'), card.getByLabel('Priorité')];
+    const box = (await card.boundingBox())!;
+    for (const field of fields) {
+      const bounds = (await field.boundingBox())!;
+      expect(bounds.x).toBeGreaterThanOrEqual(box.x);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(box.x + box.width);
+    }
     // « Nouvelle tâche » garde toute la rangée, « Ajouter » passe dessous.
     const input = (await page.getByLabel('Nouvelle tâche', { exact: true }).boundingBox())!;
     const add = (await page.getByRole('button', { name: 'Ajouter', exact: true }).boundingBox())!;
@@ -138,7 +134,8 @@ test('le panneau Tâches étroit garde ses champs dans la carte, les sous-tâche
     const cardBox = (await card.boundingBox())!;
     expect(search.x + search.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
   } finally {
-    await request.delete(`/api/tasks/${task.id}`);
+    await request.delete(`/api/entries/${task.entry_id}`);
+    await request.delete(`/api/entries/${reference.id}`);
   }
 });
 

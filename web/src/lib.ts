@@ -80,6 +80,7 @@ export interface EntrySummary {
   /** `procedure` = mode d'emploi du projet, rassemblé dans le panneau Procédures. */
   kind: 'note' | 'procedure';
   status?: Status;
+  task?: TaskMetadata | null;
   updated_at: string;
   follow_up?: FollowUp | null;
   follow_up_key?: string;
@@ -156,6 +157,7 @@ export interface Entry {
   archived: 0 | 1;
   kind: 'note' | 'procedure';
   status?: Status;
+  task?: TaskMetadata | null;
   created_at: string;
   updated_at: string;
   follow_up?: FollowUp | null;
@@ -201,6 +203,8 @@ export interface GoogleBackup { id: string; name: string; modifiedTime: string; 
 export interface GoogleTab { id: string; title: string; depth: number; editable?: boolean; reason?: string }
 export interface Task {
   id: string;
+  entry_id: string;
+  progress: number;
   title: string;
   status: Status;
   due_date: string | null;
@@ -217,6 +221,8 @@ export interface Task {
   documents: EntrySummary[];
 }
 /** Compare les champs relus avant d'appliquer une proposition IA, dans la même écriture. */
+export type TaskMetadata = Omit<Task, 'documents'>;
+
 export type TaskPlanningSnapshot = Pick<Task, 'status' | 'priority' | 'due_date'> & Partial<Pick<Task, 'title' | 'project_id' | 'category_id' | 'pinned'>> & {
   follow_up_key?: string | null;
   active_document_ids?: string[];
@@ -572,7 +578,7 @@ export const remoteApi = {
   copyEntry: (id: string) => send<Entry>('POST', `/api/entries/${id}/copy`),
   mergeEntries: (body: EntryMergeRequest) => send<Entry>('POST', '/api/entries/merge', body),
   mergeTasks: (body: EntryMergeRequest) => send<Entry>('POST', '/api/tasks/merge', body),
-  createTaskFromEntry: (entryId: string, body?: { title?: string; due_date?: string | null; priority?: Priority; status?: Status }) =>
+  createTaskFromEntry: (entryId: string, body?: { title?: string; content_md?: string; due_date?: string | null; priority?: Priority; status?: Status; progress?: number }) =>
     send<Task>('POST', `/api/entries/${entryId}/task`, body),
   createEntryFromTask: (taskId: string, body?: { title?: string; content_md?: string; expected_planning?: TaskPlanningSnapshot }) =>
     send<Entry>('POST', `/api/tasks/${taskId}/entry`, body),

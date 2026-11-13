@@ -32,6 +32,7 @@ export const TaskBoard = memo(function TaskBoard({
   revealRequest,
   onView,
   onOpenDocument,
+  onNewTask,
   onOpenShared,
   onProcedureCreated,
   onChanged,
@@ -51,6 +52,7 @@ export const TaskBoard = memo(function TaskBoard({
   onView: (view: TaskView | null) => void;
   /** `projectId` : projet connu d'un document absent de l'état filtré, que l'ouverture suit. */
   onOpenDocument: (entryId: string, projectId?: string | null) => void;
+  onNewTask: (task: Task) => void;
   onOpenShared: (path: string) => void;
   /** Procédure tirée d'une tâche par l'IA, créée : l'app l'ouvre. */
   onProcedureCreated: (procedure: Entry) => void;
@@ -188,7 +190,7 @@ export const TaskBoard = memo(function TaskBoard({
     <section className={'board' + (chosen.length ? ' is-picking' : '')} aria-label="Tâches">
       <div className="board-head">
         {/* Une tâche neuve n'entre dans aucune vue : on lève le filtre pour la voir arriver. */}
-        <QuickAdd projectId={projectId || creationCategory?.project_id || ''} categoryId={creationCategory?.id || null} onAdded={() => { onView(null); onChanged(); }} />
+        <QuickAdd projectId={projectId || creationCategory?.project_id || ''} categoryId={creationCategory?.id || null} onAdded={(task) => { onView(null); onNewTask(task); }} />
 
         {chosen.length > 0 && onMerge && (
           <div className="entry-pick-bar" role="group" aria-label="Tâches choisies">
@@ -337,27 +339,38 @@ export const TaskBoard = memo(function TaskBoard({
 });
 
 /** Saisie d'une tâche : son état vit ici, pour que taper ne redessine pas chaque carte. */
-function QuickAdd({ projectId, categoryId, onAdded }: { projectId: string; categoryId: string | null; onAdded: () => void }) {
+function QuickAdd({ projectId, categoryId, onAdded }: { projectId: string; categoryId: string | null; onAdded: (task: Task) => void }) {
   const [title, setTitle] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const add = async () => {
-    if (!title.trim()) return;
-    await api.createTask({ title: title.trim(), project_id: projectId || null, category_id: categoryId });
-    setTitle('');
-    onAdded();
+    if (busy || !title.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      const task = await api.createTask({ title: title.trim(), project_id: projectId || null, category_id: categoryId });
+      setTitle('');
+      onAdded(task);
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
   return (
-    <div className="quick">
+    <form className="quick" onSubmit={(event) => { event.preventDefault(); void add(); }}>
       <input
         aria-label="Nouvelle tâche"
         placeholder="Nouvelle tâche…"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && add()}
+        disabled={busy}
       />
-      <button className="ghost" type="button" onClick={add} disabled={!title.trim()}>
+      <button className="ghost" type="submit" disabled={busy || !title.trim()}>
         Ajouter
       </button>
-    </div>
+      {error && <p className="error" role="alert">{error}</p>}
+    </form>
   );
 }
 
@@ -450,6 +463,7 @@ function TaskCard({
     setProcedureDraft(null);
   };
   const linkedDocuments = task.documents ?? [];
+  const references = linkedDocuments.filter((document) => document.id !== task.entry_id);
   const linkedIds = new Set(linkedDocuments.map((document) => document.id));
   const availableDocuments = entries.filter((entry) => !linkedIds.has(entry.id));
   const query = filter.trim().toLowerCase();
@@ -457,6 +471,8 @@ function TaskCard({
     ? availableDocuments.filter((entry) => entry.title.toLowerCase().includes(query))
     : availableDocuments;
   const done = task.status === 'done';
+  const progress = task.progress ?? (done ? 100 : 0);
+  const statusLabel = COLUMNS.find((column) => column.id === task.status)?.label;
   const late = isOverdue(task);
   // Les documents d'une tâche terminée sont repliés derrière un historique :
   // la carte reste compacte, le contexte reste accessible. `null` = suivre le statut.
@@ -469,11 +485,16 @@ function TaskCard({
   };
 
   const saveEdit = async () => {
-    if (!form.title.trim() || editSaving) return;
+    if (editSaving || (!task.entry_id && !form.title.trim())) return;
     setEditSaving(true);
     setEditError('');
     try {
-      await api.updateTask(task.id, { title: form.title.trim(), due_date: form.due_date || null, priority: form.priority, category_id: form.category_id || null });
+      await api.updateTask(task.id, {
+        ...(!task.entry_id && { title: form.title.trim() }),
+        due_date: form.due_date || null,
+        priority: form.priority,
+        category_id: form.category_id || null,
+      });
       // Au doigt ou au clavier, pas de glisser-déposer : la carte va au bas de sa nouvelle colonne.
       // Seulement si le choix a changé ici : un déplacement fait ailleurs pendant l'édition tient.
       try {
@@ -850,7 +871,7 @@ function TaskCard({
 
   const documentControls = (
     <div className="card-documents">
-      {linkedDocuments.length > 0 && (
+      {references.length > 0 && (
         <div className="task-documents" aria-label={`Documents liés à ${task.title}`}>
           {done && (
             <button
@@ -862,10 +883,10 @@ function TaskCard({
             >
               {docsExpanded
                 ? 'Masquer l’historique'
-                : `Historique · ${linkedDocuments.length} document${linkedDocuments.length > 1 ? 's' : ''}`}
+                : `Historique · ${references.length} document${references.length > 1 ? 's' : ''}`}
             </button>
           )}
-          {docsExpanded && linkedDocuments.map((document) => {
+          {docsExpanded && references.map((document) => {
             const google = isGoogleDocument(document);
             return (
               <div className="task-document" key={document.id}>
@@ -978,7 +999,9 @@ function TaskCard({
   if (editing) {
     return (
       <div className="card is-editing">
-        <input
+        {task.entry_id ? <button className="card-title" type="button" onClick={() => onOpenDocument(task.entry_id, task.project_id)} title="Ouvrir la note de tâche">
+          {task.title}
+        </button> : <input
           aria-label="Titre de la tâche"
           disabled={editSaving}
           autoFocus
@@ -989,9 +1012,10 @@ function TaskCard({
             if (e.key === 'Enter') void saveEdit();
             if (e.key === 'Escape') onEditDone();
           }}
-        />
+        />}
         <input
           type="date"
+          autoFocus={Boolean(task.entry_id)}
           aria-label="Échéance"
           disabled={editSaving}
           value={form.due_date}
@@ -1058,7 +1082,9 @@ function TaskCard({
           aria-label={done ? `Rouvrir ${task.title}` : `Terminer ${task.title}`}
           onChange={() => void patch({ status: done ? 'todo' : 'done' })}
         />
-        <button className="card-title" type="button" onClick={onEdit} title="Modifier">
+        <button className="card-title" type="button"
+          onClick={task.entry_id ? () => onOpenDocument(task.entry_id, task.project_id) : onEdit}
+          title={task.entry_id ? 'Ouvrir la note de tâche' : 'Modifier'}>
           {task.title}
         </button>
         <span className="card-top-actions">
@@ -1095,13 +1121,15 @@ function TaskCard({
           >
             ★
           </button>
+          {task.entry_id && <button className="icon" type="button" aria-label={`Planifier ${task.title}`} title="Planifier" onClick={onEdit}>✎</button>}
           <button
             className="icon"
             type="button"
-            aria-label={`Supprimer ${task.title}`}
-            title="Supprimer"
+            aria-label={task.entry_id ? `Retirer le suivi de ${task.title}` : `Supprimer ${task.title}`}
+            title={task.entry_id ? 'Retirer le suivi de tâche' : 'Supprimer'}
             onClick={async () => {
-              if (!confirm(`Supprimer « ${task.title} » ?`)) return;
+              const message = task.entry_id ? `Retirer le suivi de « ${task.title} » ? Sa note sera conservée.` : `Supprimer « ${task.title} » ?`;
+              if (!confirm(message)) return;
               await api.deleteTask(task.id);
               onChanged();
             }}
@@ -1109,6 +1137,10 @@ function TaskCard({
             ✕
           </button>
         </span>
+      </div>
+      <div className="card-progress">
+        <progress className="task-progress-bar" aria-label={`Avancement de ${task.title}`} value={progress} max={100} />
+        <span>{progress} %</span>
       </div>
       <div className="card-meta">
         {/* « Tout » mêle les projets : chaque carte dit le sien, dans sa couleur. */}
@@ -1118,10 +1150,10 @@ function TaskCard({
             {project.name}
           </span>
         )}
-        {showStatus && task.status === 'doing' && (
-          <span className="status-doing" title="En cours">
-            <span className="dot" aria-hidden="true" />
-            En cours
+        {showStatus && statusLabel && (
+          <span className={task.status === 'doing' ? 'status-doing' : 'card-status'} title={statusLabel}>
+            {task.status === 'doing' && <span className="dot" aria-hidden="true" />}
+            {statusLabel}
           </span>
         )}
         <CategoryBadge categories={categories} categoryId={task.category_id} />
@@ -1157,7 +1189,7 @@ function TaskCard({
       {draftError && <p className="error" role="alert">{draftError}</p>}
       {finder}
       {findError && <p className="error" role="alert">{findError}</p>}
-      {!linking && !creatingEntry && !procedureDraft && !found && <div className="card-links">{linkButton}{entryButton}{aiMenu}</div>}
+      {!linking && !creatingEntry && !procedureDraft && !found && <div className="card-links">{linkButton}{!task.entry_id && entryButton}{aiMenu}</div>}
     </div>
   );
 }

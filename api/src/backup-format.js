@@ -1,5 +1,6 @@
 import { validateDocument } from './rich-document.js';
 import { readFollowUp } from './follow-up.js';
+import { normalizeTaskNotes, storedTaskProgress } from './task-notes.js';
 
 /** Format de sauvegarde : 100 % pur (aucun accès disque/réseau),
  *  partageable avec le front/PWA qui valide avant d'écrire en local. */
@@ -53,7 +54,7 @@ function contentValue(value, label) {
   catch { fail(`${label} invalide.`); }
 }
 /** Valide entièrement une sauvegarde avant toute écriture en base. */
-export function validateBackup(input) {
+export function validateBackup(input, { migrateTaskNotes = true } = {}) {
   const data = record(input, 'Sauvegarde');
   if (data.version !== BACKUP_VERSION) fail(`Version de sauvegarde non prise en charge (attendu : ${BACKUP_VERSION}).`);
   for (const name of ['projects', 'entries', 'tasks', 'task_entries', 'attachments']) {
@@ -160,10 +161,15 @@ export function validateBackup(input) {
     // Les exports antérieurs n'ont pas de priorité : ils reviennent en « normale ».
     const priority = task.priority === undefined || task.priority === null || task.priority === '' ? 'normal' : task.priority;
     if (!PRIORITIES.has(priority)) fail('Priorité de tâche invalide.');
+    const entryId = optionalId(task.entry_id, 'Note principale de la tâche');
+    if (entryId && !entryIds.has(entryId)) fail('Une tâche référence une note principale absente.');
+    if (task.progress !== undefined && task.progress !== storedTaskProgress(task)) fail('Avancement de tâche invalide.');
     return {
       id: id(task.id, 'Identifiant de tâche'),
+      entry_id: entryId,
       title: requiredText(task.title, 'Titre de tâche', 500),
       status: task.status,
+      progress: task.progress === undefined && !migrateTaskNotes ? undefined : storedTaskProgress(task),
       due_date: dueDate,
       pinned: Number(task.pinned),
       position: task.position,
@@ -211,6 +217,9 @@ export function validateBackup(input) {
   });
   unique(googleDocuments.map((document) => document.entry_id), 'Association Google');
   unique(googleDocuments.map((document) => `${document.document_id}\u0000${document.tab_id}`), 'Onglet Google');
+  const primaryIds = unique(tasks.flatMap((task) => task.entry_id ? [task.entry_id] : []), 'Note principale de tâche');
+  if (entries.some((entry) => primaryIds.has(entry.id) && entry.kind !== 'note')
+    || googleDocuments.some((document) => primaryIds.has(document.entry_id))) fail('Une tâche doit avoir une note principale locale.');
 
   const attachments = data.attachments.map((attachment) => {
     record(attachment, 'Pièce jointe');
@@ -239,7 +248,8 @@ export function validateBackup(input) {
   });
   unique(attachments.map((attachment) => attachment.id), 'Identifiant de pièce jointe');
 
-  return { version: BACKUP_VERSION, projects, categories, entries, tasks, task_entries: taskEntries, google_documents: googleDocuments, attachments };
+  const validated = { version: BACKUP_VERSION, projects, categories, entries, tasks, task_entries: taskEntries, google_documents: googleDocuments, attachments };
+  return migrateTaskNotes ? normalizeTaskNotes(validated) : validated;
 }
 
 /**
@@ -273,7 +283,7 @@ export function validateOutbox(input) {
     task_entries: data.task_entries,
     attachments: data.attachments,
     google_documents: [],
-  });
+  }, { migrateTaskNotes: false });
   const driveIds = new Map(
     (Array.isArray(data.attachments) ? data.attachments : []).map((attachment) => [attachment.id, attachment.driveFileId || null])
   );

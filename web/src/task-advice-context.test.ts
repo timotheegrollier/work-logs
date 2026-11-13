@@ -8,7 +8,7 @@ const summary = (id: string, extra: Partial<EntrySummary> = {}): EntrySummary =>
   kind: 'note', updated_at: '2026-10-30', excerpt: '', attachments: 0, ...extra,
 });
 const task = (id: string, documents: EntrySummary[] = []): Task => ({
-  id, title: `Tâche ${id}`, status: 'todo', priority: 'normal', due_date: null, pinned: 0,
+  entry_id: '', progress: 0, id, title: `Tâche ${id}`, status: 'todo', priority: 'normal', due_date: null, pinned: 0,
   position: 0, project_id: 'p', created_at: '2026-10-01', updated_at: '2026-10-30', documents,
 });
 const entry = (id: string): Entry => ({

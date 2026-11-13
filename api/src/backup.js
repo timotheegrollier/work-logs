@@ -44,8 +44,8 @@ export function restoreBackup(db, input, { tombstones = null } = {}) {
     for (const value of data.categories) if (value.parent_id) parent.run(value.parent_id, value.id);
     const entry = db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,status,created_at,updated_at,category_id,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
     for (const value of data.entries) entry.run(value.id, value.title, value.content_md, value.content_json ? JSON.stringify(value.content_json) : null, value.entry_date, value.project_id, value.archived, value.kind, value.status, value.created_at, value.updated_at, value.category_id, value.follow_up ? JSON.stringify(value.follow_up) : null);
-    const task = db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
-    for (const value of data.tasks) task.run(value.id, value.title, value.status, value.due_date, value.pinned, value.position, value.priority, value.project_id, value.created_at, value.updated_at, value.category_id, value.follow_up ? JSON.stringify(value.follow_up) : null);
+    const task = db.prepare('INSERT INTO tasks (id,entry_id,title,status,progress,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    for (const value of data.tasks) task.run(value.id, value.entry_id, value.title, value.status, value.progress, value.due_date, value.pinned, value.position, value.priority, value.project_id, value.created_at, value.updated_at, value.category_id, value.follow_up ? JSON.stringify(value.follow_up) : null);
     const google = db.prepare(`INSERT INTO google_documents
       (entry_id,document_id,tab_id,revision_id,synced_content_json,synced_at,document_title,tab_title,tab_order,tab_depth,readonly_reason)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`);

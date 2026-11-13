@@ -3,7 +3,19 @@ import { ApiError, type Task, type TaskPlanningSnapshot } from '../lib';
 import { localApi, setLocalDatabase } from './localApi';
 import { createMemoryDatabase } from './storage';
 
-beforeEach(() => { localStorage.clear(); setLocalDatabase(createMemoryDatabase()); });
+let database = createMemoryDatabase();
+beforeEach(() => {
+  localStorage.clear();
+  database = createMemoryDatabase();
+  setLocalDatabase(database);
+});
+async function makeLegacyOrphan(task: Task) {
+  const rows = database.table<Task>('tasks');
+  const { entry_id: _entryId, ...legacy } = (await rows.get(task.id))!;
+  await database.table('entries').remove(task.entry_id);
+  await database.table('task_entries').remove(`${task.id}\0${task.entry_id}`);
+  await database.table<typeof legacy>('tasks').put(legacy);
+}
 const expected = (task: Task): TaskPlanningSnapshot => ({
   title: task.title, status: task.status, priority: task.priority, due_date: task.due_date,
   project_id: task.project_id, pinned: task.pinned, follow_up_key: task.follow_up_key ?? null,
@@ -77,7 +89,7 @@ test('PWA : la création d’une note compare le classement actuel avant d’éc
   const project = await localApi.createProject({ name: 'Atelier' });
   const category = await localApi.createCategory({ name: 'Planning', project_id: project.id });
   const task = await localApi.createTask({ title: 'Tâche sans note', project_id: project.id });
-  await localApi.deleteEntry(task.documents[0].id);
+  await makeLegacyOrphan(task);
   await localApi.updateTask(task.id, { category_id: category.id });
   await expect(localApi.createEntryFromTask(task.id, {
     content_md: 'Texte proposé',
@@ -87,9 +99,9 @@ test('PWA : la création d’une note compare le classement actuel avant d’éc
   expect((await localApi.state('', project.id)).entries).toEqual([]);
 });
 
-test('PWA : deux créations concurrentes n’ajoutent qu’une note, même si elle est archivée dès sa création', async () => {
+test('PWA : deux créations concurrentes ne rattachent qu’une seule note à une tâche historique', async () => {
   const task = await localApi.createTask({ title: 'Ancienne tâche terminée', status: 'done' });
-  await localApi.deleteEntry(task.documents[0].id);
+  await makeLegacyOrphan(task);
   const body = {
     content_md: '# Compte rendu',
     expected_planning: { ...expected(task), document_ids: [], active_document_ids: [] },
@@ -100,8 +112,8 @@ test('PWA : deux créations concurrentes n’ajoutent qu’une note, même si el
   ]);
   expect(results.map(({ status }) => status)).toEqual(['fulfilled', 'rejected']);
   expect(results[1]).toMatchObject({ reason: { code: 'TASK_PLANNING_STALE' } });
-  expect((await current(task.id)).documents).toMatchObject([{ archived: 1 }]);
-  expect((await localApi.state(task.title)).entries).toMatchObject([{ archived: 1, excerpt: body.content_md }]);
+  expect((await current(task.id)).documents).toMatchObject([{ archived: 0 }]);
+  expect((await localApi.state(task.title)).entries).toMatchObject([{ archived: 0, excerpt: body.content_md }]);
 });
 
 test('PWA : un instantané mal formé n’écrit rien, et la file accepte la mutation suivante', async () => {

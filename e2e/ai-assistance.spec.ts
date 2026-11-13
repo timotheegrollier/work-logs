@@ -41,27 +41,34 @@ test('IA sur une tâche : lit les documents liés, affine et retire une source',
       return route.fulfill({ headers, json: { choices: [{ message: { content: prompts.length === 1 ? 'Couper l’eau\nChanger la cartouche' : 'Remplacer la cartouche' } }] } });
     });
     await page.goto('/');
-    const card = page.locator('.card').filter({ has: page.getByText('Changer le filtre IA', { exact: true }) });
-    await card.getByRole('button', { name: 'Créer une entrée liée', exact: true }).click();
-    await card.getByRole('button', { name: '✨ Suggérer', exact: true }).click();
-    const content = card.getByLabel('Sous-tâches de l’entrée liée, une par ligne');
-    await expect(content).toHaveValue('Couper l’eau\nChanger la cartouche');
+    const editor = page.getByRole('region', { name: 'Entrée', exact: true });
+    const suggest = async () => {
+      await editor.getByRole('button', { name: 'Assistance IA', exact: true }).click();
+      await editor.getByRole('menuitem', { name: 'Suggérer des sous-tâches', exact: true }).click();
+    };
+    await page.getByRole('region', { name: 'Tâches', exact: true }).getByRole('button', { name: task.title, exact: true }).click();
+    await editor.getByRole('button', { name: 'Écrire', exact: true }).click();
+    const content = editor.getByLabel('Contenu en Markdown');
+    await suggest();
+    await expect(content).toHaveValue('## Sous-tâches\n- [ ] Couper l’eau\n- [ ] Changer la cartouche\n');
     expect(prompts[0]).toContain('Cartouche modèle XY');
     expect(prompts[0]).not.toContain('CONFIDENTIEL AUTRE ATELIER');
-    await card.getByRole('button', { name: 'Plus court', exact: true }).click();
-    await expect(content).toHaveValue('Remplacer la cartouche');
+    await editor.getByRole('button', { name: 'Plus court', exact: true }).click();
+    await expect(content).toHaveValue('## Sous-tâches\n- [ ] Remplacer la cartouche\n');
     expect(prompts[1]).toContain('Proposition précédente');
     expect(prompts[1]).toContain('Couper l’eau');
     expect(prompts[1]).toContain('Plus court');
-    await card.getByText('Contexte utilisé par l’IA', { exact: true }).click();
-    await card.getByRole('checkbox', { name: 'Note : Diagnostic filtre IA', exact: true }).uncheck();
-    await card.getByRole('button', { name: '✨ Suggérer', exact: true }).click();
+    await editor.getByText('Contexte utilisé par l’IA', { exact: true }).click();
+    const reference = editor.getByRole('checkbox', { name: 'Note : Diagnostic filtre IA', exact: true });
+    await reference.uncheck();
+    await suggest();
     await expect.poll(() => prompts.length).toBe(3);
-    await expect(card.getByRole('button', { name: '✨ Suggérer', exact: true })).toBeEnabled();
     expect(prompts[2]).not.toContain('Cartouche modèle XY');
     expect(prompts[2]).not.toContain('Diagnostic filtre IA');
-    await expect(card.getByRole('checkbox', { name: 'Note : Diagnostic filtre IA', exact: true })).not.toBeChecked();
-    await card.getByRole('checkbox', { name: 'Note : Diagnostic filtre IA', exact: true }).check();
+    await expect(reference).not.toBeChecked();
+    await reference.check();
+    const state = await (await request.get(`/api/state?project_id=${project.id}`)).json();
+    expect(state.entries).toHaveLength(2);
   } finally {
     await cleanProject(page, request, project.id);
     await cleanProject(page, request, other.id);
@@ -101,6 +108,7 @@ test('IA sur mobile : suggère des tâches sourcées, ne crée que la sélection
     expect(tasks).toHaveLength(1);
     expect(tasks[0].due_date).toBe('2026-10-30');
     expect(tasks[0].documents.map((document: { id: string }) => document.id)).toContain(note.id);
+    expect((await (await request.get(`/api/entries/${tasks[0].entry_id}`)).json()).content_md).toBe('Appeler le fournisseur le 2026-10-30.');
     expect((await (await request.get(`/api/entries/${note.id}`)).json()).content_md).toBe(source);
   } finally {
     await cleanProject(page, request, project.id);

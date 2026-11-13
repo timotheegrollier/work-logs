@@ -802,19 +802,40 @@ describe('écrire une entrée', () => {
       .toMatchObject({ title: 'A', content_md: 'Écrit sans titre' });
   });
 
-  test('crée une tâche liée depuis l’entrée ouverte et affiche son document sur la carte', async () => {
+  test('suit la note ouverte comme tâche, synchronise son statut et conserve son texte après retrait du suivi', async () => {
     const user = userEvent.setup();
-    seedData(api.db, { entries: [{ id: 'en_context', title: 'Contexte de réunion' }] });
+    seedData(api.db, { entries: [{ id: 'en_context', title: 'Contexte de réunion', content_md: 'Relire le compte rendu.' }] });
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: 'Créer une tâche liée' }));
-    expect(screen.getByLabelText('Titre de la tâche liée')).toHaveValue('Contexte de réunion');
-    await user.click(screen.getByRole('button', { name: 'Créer et lier' }));
+    await user.click(await screen.findByRole('button', { name: 'Suivre comme tâche' }));
+    const taskProgress = await within(editor()).findByRole('region', { name: 'Suivi de tâche' });
+    const title = within(editor()).getByLabelText('Titre de l’entrée');
+    expect(title).toHaveValue('Contexte de réunion');
+    expect(row(api.db, 'SELECT COUNT(*) n FROM entries').n).toBe(1);
+    expect(row(api.db, 'SELECT entry_id, progress FROM tasks')).toEqual({ entry_id: 'en_context', progress: 0 });
+    expect(within(editor()).getByText('Relire le compte rendu.')).toBeVisible();
 
-    await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
-    expect(await within(editor()).findByText('Tâche créée et liée à cette entrée.')).toBeVisible();
-    const card = (await within(board()).findByRole('button', { name: 'Contexte de réunion' })).closest('.card') as HTMLElement;
-    expect(within(card).getByRole('button', { name: 'Ouvrir Contexte de réunion' })).toHaveAttribute('title', expect.stringContaining('Contexte de réunion — local'));
+    const cardTitle = await within(board()).findByRole('button', { name: 'Contexte de réunion' });
+    const card = cardTitle.closest('.card') as HTMLElement;
+    await user.click(cardTitle);
+    expect(within(card).queryByRole('button', { name: /Créer une entrée liée|Retirer Contexte de réunion/ })).toBeNull();
+    const progress = within(taskProgress).getByLabelText('Avancement (%)');
+    fireEvent.change(progress, { target: { value: '45' } });
+    await user.click(within(taskProgress).getByRole('button', { name: 'Appliquer' }));
+    const status = within(taskProgress).getByLabelText('Statut de la tâche');
+    await waitFor(() => expect(status).toHaveValue('doing'));
+    await waitFor(() => expect(within(board()).getByRole('progressbar', { name: 'Avancement de Contexte de réunion' })).toHaveAttribute('value', '45'));
+    expect(row(api.db, 'SELECT status, progress FROM tasks')).toEqual({ status: 'doing', progress: 45 });
+
+    await user.selectOptions(status, 'done');
+    await waitFor(() => expect(within(taskProgress).getByRole('progressbar')).toHaveAttribute('value', '100'));
+    expect(row(api.db, 'SELECT status, archived FROM entries WHERE id=?', 'en_context')).toEqual({ status: 'done', archived: 0 });
+    expect(within(journal()).getByText('Contexte de réunion')).toBeVisible();
+
+    await user.click(within(taskProgress).getByRole('button', { name: 'Retirer le suivi de tâche' }));
+    expect(await within(editor()).findByRole('button', { name: 'Suivre comme tâche' })).toBeVisible();
+    expect(row(api.db, 'SELECT COUNT(*) n FROM tasks').n).toBe(0);
+    expect(within(editor()).getByText('Relire le compte rendu.')).toBeVisible();
   });
 
   test('lie l’entrée ouverte à une tâche existante, sans en créer', async () => {
@@ -858,7 +879,7 @@ describe('écrire une entrée', () => {
     await user.click(screen.getByRole('button', { name: 'Écrire' }));
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('## Sous-tâches\n- [ ] Relire\n- [x] Payer\n');
     // La carte affiche le document lié, comme dans l'autre sens.
-    expect(await within(board()).findByRole('button', { name: 'Ouvrir Préparer le dossier' })).toBeInTheDocument();
+    expect(await within(board()).findByRole('button', { name: 'Préparer le dossier' })).toHaveAttribute('title', 'Ouvrir la note de tâche');
   });
 
   test('suggère des sous-tâches dans le créateur d’entrée liée', async () => {
@@ -1422,7 +1443,7 @@ describe('écrire une entrée', () => {
     render(<App />);
 
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Consignes Google'));
-    expect(screen.getByRole('button', { name: 'Créer une tâche liée' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Suivre comme tâche' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Assistance IA' })).not.toBeInTheDocument();
   });
 
@@ -1616,18 +1637,21 @@ describe('écrire une entrée', () => {
     expect(calls.some((url) => url.includes('chat/completions'))).toBe(false);
   });
 
-  test('crée une tâche liée depuis un document Google', async () => {
+  test('un document Google peut servir de référence à une note de tâche', async () => {
     const user = userEvent.setup();
     seedData(api.db, { entries: [{ id: 'en_google_task', title: 'Contexte Google' }] });
     seedGoogleLink(api.db, 'en_google_task', 'doc-task');
+    const task = await clientApi.createTask({ title: 'Préparer le dossier' });
+    localStorage.setItem('worklogs-entry', 'en_google_task');
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: 'Créer une tâche liée' }));
-    await user.click(screen.getByRole('button', { name: 'Créer et lier' }));
+    await user.click(await screen.findByRole('button', { name: 'Lier une tâche existante' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Lier Préparer le dossier à cette entrée' }));
+    await user.click(screen.getByRole('button', { name: 'Relier la sélection (1)' }));
 
-    await waitFor(() => expect(row(api.db, 'SELECT COUNT(*) n FROM task_entries').n).toBe(1));
-    const card = (await within(board()).findByRole('button', { name: 'Contexte Google' })).closest('.card') as HTMLElement;
-    expect(within(card).getByRole('button', { name: 'Ouvrir Contexte Google' })).toHaveAttribute('title', expect.stringContaining('Contexte Google — Google'));
+    const card = (await within(board()).findByRole('button', { name: 'Préparer le dossier' })).closest('.card') as HTMLElement;
+    expect(await within(card).findByRole('button', { name: 'Ouvrir Contexte Google' })).toHaveAttribute('title', expect.stringContaining('Contexte Google — Google'));
+    expect(row(api.db, 'SELECT entry_id FROM tasks WHERE id=?', task.id).entry_id).not.toBe('en_google_task');
   });
 
   test('supprime une entrée et ouvre la suivante', async () => {
@@ -2224,6 +2248,8 @@ describe('organiser les tâches', () => {
     expect(await within(board()).findByRole('button', { name: 'Rappeler le client' })).toBeInTheDocument();
     expect(await within(journal()).findByText('Rappeler le client')).toBeInTheDocument();
     expect(screen.getByLabelText('Nouvelle tâche')).toHaveValue('');
+    await waitFor(() => expect(within(editor()).getByLabelText('Titre de l’entrée')).toHaveValue('Rappeler le client'));
+    expect(within(editor()).getByRole('progressbar')).toHaveAttribute('value', '0');
     expect(row(api.db, 'SELECT * FROM tasks').status).toBe('todo');
   });
 
@@ -5476,14 +5502,13 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     expect(api.db.prepare('SELECT title FROM entries').all()).toEqual([{ title: 'Accès et joint' }]);
   });
 
-  test('fusionner deux tâches cochées : l’IA propose une tâche et sa note, Valider les garde seules', async () => {
+  test('fusionne deux notes de tâche et conserve les références', async () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     mockAiSuggest('# Remplacer le joint\n\nLa vanne fuit.\n\n- [ ] Commander le joint');
-    seedData(api.db, {
-      entries: [{ id: 'en_vanne', title: 'Constat vanne', content_md: 'La vanne fuit.' }],
-      tasks: [{ id: 'tk_vanne', title: 'Vérifier la vanne' }, { id: 'tk_joint', title: 'Commander le joint', pinned: 1 }],
-    });
-    api.db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run('tk_vanne', 'en_vanne', new Date().toISOString());
+    const valve = await clientApi.createTask({ title: 'Vérifier la vanne', content_md: 'La vanne fuit.' });
+    await clientApi.createTask({ title: 'Commander le joint', pinned: 1 });
+    const reference = await clientApi.createEntry({ title: 'Notice', content_md: 'Document de référence.' });
+    await clientApi.linkTaskDocument(valve.id, reference.id);
     render(<App />);
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Choisir la tâche Vérifier la vanne pour une fusion' }));
     const bar = screen.getByRole('group', { name: 'Tâches choisies' });
@@ -5496,19 +5521,20 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     const sent = (aiBodies[0] as { messages: { content: string }[] }).messages[1].content;
     expect(sent).toContain('La vanne fuit.');
     expect(sent).toContain('Commander le joint');
-    expect(sent).not.toMatch(/tk_vanne|tk_joint|en_vanne/);
+    expect(sent).not.toContain('Document de référence.');
     // Rien n'est écrit avant la validation.
     expect(row(api.db, 'SELECT count(*) n FROM tasks').n).toBe(2);
-    expect(row(api.db, 'SELECT count(*) n FROM entries').n).toBe(1);
+    expect(row(api.db, 'SELECT count(*) n FROM entries').n).toBe(3);
     fireEvent.click(within(panel).getByRole('button', { name: 'Valider la fusion' }));
     await waitFor(() => expect(screen.queryByRole('form', { name: 'Fusion de tâches' })).not.toBeInTheDocument(), { timeout: 5000 });
     expect(await screen.findByDisplayValue('Remplacer le joint')).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('group', { name: 'Tâches choisies' })).not.toBeInTheDocument());
     expect(api.db.prepare('SELECT title, pinned FROM tasks').all()).toEqual([{ title: 'Remplacer le joint', pinned: 1 }]);
-    expect(api.db.prepare('SELECT title, content_md FROM entries').all()).toEqual([
+    expect(api.db.prepare('SELECT title, content_md FROM entries ORDER BY title').all()).toEqual([
+      { title: 'Notice', content_md: 'Document de référence.' },
       { title: 'Remplacer le joint', content_md: 'La vanne fuit.\n\n- [ ] Commander le joint' },
     ]);
-    expect(row(api.db, 'SELECT count(*) n FROM task_entries').n).toBe(1);
+    expect(row(api.db, 'SELECT count(*) n FROM task_entries').n).toBe(2);
   });
 
   test('suggère des tâches depuis le brouillon en cours et crée seulement la sélection liée', async () => {
@@ -5544,7 +5570,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     await within(proposal).findByText('1 tâche créée et liée à cette note.');
     const created = row(api.db, "SELECT id,project_id,priority,due_date,status FROM tasks WHERE title='Contrôler le moteur du bassin'");
     expect(created).toMatchObject({ project_id: 'pr_bassin', priority: 'high', due_date: '2026-11-01', status: 'doing' });
-    expect(row(api.db, 'SELECT entry_id FROM task_entries WHERE task_id=?', created.id).entry_id).toBe('en_note');
+    expect(row(api.db, 'SELECT entry_id FROM task_entries WHERE task_id=? AND entry_id=?', created.id, 'en_note').entry_id).toBe('en_note');
     expect(row(api.db, "SELECT count(*) AS n FROM tasks WHERE title='Vérifier la ventilation'").n).toBe(0);
     expect(screen.getByLabelText('Contenu en Markdown')).toHaveValue('Le moteur surchauffe.');
   });
@@ -5701,7 +5727,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     await within(proposal).findByText('1 tâche créée et liée à cette note.');
     const created = row(api.db, "SELECT id,title,project_id,due_date FROM tasks WHERE title='Contrôler la pompe'");
     expect(created).toMatchObject({ title: 'Contrôler la pompe', project_id: 'pr_bassin', due_date: '2026-11-02' });
-    expect(row(api.db, 'SELECT entry_id FROM task_entries WHERE task_id=?', created.id).entry_id).toBe('en_note');
+    expect(row(api.db, 'SELECT entry_id FROM task_entries WHERE task_id=? AND entry_id=?', created.id, 'en_note').entry_id).toBe('en_note');
     expect(row(api.db, "SELECT count(*) AS n FROM tasks WHERE title='Appeler le fournisseur'").n).toBe(0);
     expect(row(api.db, "SELECT content_md FROM entries WHERE id='en_note'").content_md).toBe(text);
   });
@@ -5729,7 +5755,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     await waitFor(() => expect(within(proposal).getAllByText('Créée et liée')).toHaveLength(2));
     expect(create.mock.calls.map((call) => call[1]?.title)).toEqual(['Appeler le client', 'Vérifier le devis', 'Vérifier le devis']);
     expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(2);
-    expect(row(api.db, 'SELECT count(*) AS n FROM task_entries').n).toBe(2);
+    expect(row(api.db, 'SELECT count(*) AS n FROM task_entries').n).toBe(4);
   });
 
   test('modifier la note après suggestion bloque la création des tâches devenues anciennes', async () => {
@@ -5965,7 +5991,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     expect(within(proposal).getByRole('checkbox', { name: 'Créer l’action Appeler le client' })).toBeDisabled();
     expect(create).toHaveBeenCalledTimes(1);
     expect(row(api.db, 'SELECT count(*) AS n FROM tasks').n).toBe(1);
-    expect(row(api.db, 'SELECT count(*) AS n FROM task_entries').n).toBe(1);
+    expect(row(api.db, 'SELECT count(*) AS n FROM task_entries').n).toBe(2);
   });
 
   test('une case ajoutée pendant la suggestion ne devient pas une sous-tâche en double', async () => {
@@ -6200,8 +6226,7 @@ describe('suivi IA des entrées et tâches', () => {
     remote('Version reçue pendant un geste.');
     revision = 3;
     await waitFor(() => expect(answers).toHaveLength(1), backend);
-    fireEvent.change(screen.getByLabelText('Nouvelle tâche'), { target: { value: 'Sans rapport' } });
-    fireEvent.click(within(board()).getByRole('button', { name: 'Ajouter' }));
+    fireEvent.click(within(board()).getByRole('button', { name: 'Épingler Remonter la pompe' }));
     await waitFor(() => expect(answers).toHaveLength(2), backend);
     held.mockRestore();
     await act(async () => answers[0]());

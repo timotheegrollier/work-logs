@@ -12,7 +12,7 @@ vi.mock('../ai-suggest', async (original) => ({
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 const task = (blockers: string[]): Task => ({
-  id: 'tk_a', title: 'Réparer la pompe', status: 'todo', priority: 'normal', due_date: null, pinned: 0,
+  entry_id: '', progress: 0, id: 'tk_a', title: 'Réparer la pompe', status: 'todo', priority: 'normal', due_date: null, pinned: 0,
   position: 0, project_id: null, created_at: '2026-10-01', updated_at: '2026-10-30', documents: [],
   follow_up: { enabled: true, enabled_at: '2026-11-01T00:00:00Z', report: {
     generated_at: '2026-11-05T11:00:00Z', source_key: 'k', status: 'blocked', summary: 'S', completed: [], next_steps: [], warnings: [], blockers,

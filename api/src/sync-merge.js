@@ -13,16 +13,39 @@
 // - le suivi IA fusionne ses propres horloges : un bilan ne date jamais une saisie.
 
 import { mergeFollowUp } from './follow-up.js';
+import { legacyTaskNoteId, normalizeTaskNotes, storedTaskProgress } from './task-notes.js';
 
 export const TOMBSTONE_KINDS = ['project', 'category', 'entry', 'task', 'link', 'attachment'];
 export const TOMBSTONE_TTL_MS = 60 * 24 * 3600 * 1000;
-export const SEED_IDS = new Set(['pr_perso', 'pr_pro', 'en_welcome', 'tk_1', 'tk_2', 'tk_3']);
+const SEED_TASKS = ['tk_1', 'tk_2', 'tk_3'];
+export const SEED_IDS = new Set(['pr_perso', 'pr_pro', 'en_welcome', ...SEED_TASKS, ...SEED_TASKS.map(legacyTaskNoteId)]);
 const MAX_TOMBSTONES = 100_000;
 
 export const linkKey = (link) => `${link.task_id}|${link.entry_id}`;
 const tombKey = (kind, id) => `${kind}:${id}`;
 const stamp = (row) => row.updated_at || row.created_at || '';
 const pristine = (row) => SEED_IDS.has(row.id) && (!row.updated_at || row.updated_at === row.created_at);
+
+/** Une même note peut déjà être suivie sous deux identifiants historiques. */
+function coalescePrimaryOwners(tasks, tombs) {
+  const owners = new Map();
+  const aliases = new Map();
+  const result = new Map(tasks.map((row) => [row.id, row]));
+  for (const task of [...tasks].sort((a, b) => a.id < b.id ? -1 : 1)) {
+    if (!task.entry_id) continue;
+    const previous = owners.get(task.entry_id);
+    if (!previous) { owners.set(task.entry_id, task); continue; }
+    const latest = stamp(task) > stamp(previous) ? task : previous;
+    const owner = { ...latest, id: previous.id, created_at: previous.created_at,
+      follow_up: mergeFollowUp(previous.follow_up, task.follow_up) };
+    owners.set(task.entry_id, owner);
+    aliases.set(task.id, owner.id);
+    tombs.set(tombKey('task', task.id), { kind: 'task', id: task.id, deleted_at: stamp(latest) });
+    result.delete(task.id);
+    result.set(owner.id, owner);
+  }
+  return { tasks: [...result.values()], aliases };
+}
 
 /** Pierres tombales venues d'un fichier distant : on ne garde que le bien formé. */
 export function validateTombstones(input) {
@@ -150,7 +173,15 @@ export function mergeSnapshots(local, remote, now = Date.now()) {
       ? { ...row, project_id: projectId, category_id: categoryId } : row;
   };
   let entries = mergeSourceRows('entry', local.entries, other.entries, tombs).map(detach);
-  const tasks = mergeSourceRows('task', local.tasks, other.tasks, tombs).map(detach);
+  const known = new Map([...other.tasks, ...local.tasks].filter((row) => row.entry_id).map((row) => [row.id, row]));
+  let tasks = mergeSourceRows('task', local.tasks, other.tasks, tombs).map((row) => {
+    const task = detach(row);
+    const prior = known.get(task.id);
+    if (!prior) return task;
+    return { ...task, entry_id: task.entry_id || prior.entry_id, progress: storedTaskProgress({
+      status: task.status, progress: task.progress ?? (task.status === prior.status ? prior.progress : undefined),
+    }) };
+  });
 
   // Un même onglet Google ouvert sur deux appareils = deux copies locales : on garde la plus récente.
   const entryById = new Map(entries.map((row) => [row.id, row]));
@@ -174,11 +205,37 @@ export function mergeSnapshots(local, remote, now = Date.now()) {
   for (const id of dropped) tombs.set(tombKey('entry', id), { kind: 'entry', id, deleted_at: deletedAt });
   entries = entries.filter((row) => !dropped.has(row.id));
   const entryIds = new Set(entries.map((row) => row.id));
-  const taskIds = new Set(tasks.map((row) => row.id));
+  const survivingPrimary = new Map([...other.tasks, ...local.tasks]
+    .filter((task) => entryIds.has(task.entry_id)).map((task) => [task.id, task.entry_id]));
+  tasks = tasks.map((task) => task.entry_id && !entryIds.has(task.entry_id) && survivingPrimary.has(task.id)
+    ? { ...task, entry_id: survivingPrimary.get(task.id) } : task);
+  tasks = tasks.filter((task) => {
+    const primary = task.entry_id || legacyTaskNoteId(task.id);
+    if (entryIds.has(primary) || (!task.entry_id && !tombs.has(tombKey('entry', primary)))) return true;
+    // A newer progress update on another device cannot bring back a deleted note.
+    const deleted = tombs.get(tombKey('entry', primary))?.deleted_at ?? deletedAt;
+    tombs.set(tombKey('task', task.id), { kind: 'task', id: task.id, deleted_at: deleted > stamp(task) ? deleted : stamp(task) });
+    return false;
+  });
+  const { tasks: canonicalTasks, aliases } = coalescePrimaryOwners(tasks, tombs);
+  const taskIds = new Set(canonicalTasks.map((row) => row.id));
   const google_documents = [...byTab.values()].filter((row) => entryIds.has(row.entry_id));
 
-  const task_entries = mergeRows('link', local.task_entries, other.task_entries, tombs, linkKey)
-    .filter((row) => taskIds.has(row.task_id) && entryIds.has(row.entry_id));
+  const keptLinks = new Map();
+  for (const row of mergeRows('link', local.task_entries, other.task_entries, tombs, linkKey)) {
+    const id = aliases.get(row.task_id) ?? row.task_id;
+    if (!taskIds.has(id) || !entryIds.has(row.entry_id)) continue;
+    const link = id === row.task_id ? row : { ...row, task_id: id };
+    const key = linkKey(link);
+    if (id !== row.task_id) {
+      const tomb = tombKey('link', key);
+      if (tombs.get(tomb)?.deleted_at >= stamp(link)) continue;
+      tombs.delete(tomb);
+    }
+    const previous = keptLinks.get(key);
+    if (!previous || previous.created_at > link.created_at) keptLinks.set(key, link);
+  }
+  const task_entries = [...keptLinks.values()];
 
   // Pièces jointes : même fichier des deux côtés, on garde l'identifiant Drive connu.
   const remoteAttachments = new Map(other.attachments.map((row) => [row.id, row]));
@@ -186,10 +243,10 @@ export function mergeSnapshots(local, remote, now = Date.now()) {
     .filter((row) => entryIds.has(row.entry_id))
     .map((row) => (row.driveFileId ? row : { ...row, driveFileId: remoteAttachments.get(row.id)?.driveFileId || local.attachments.find((a) => a.id === row.id)?.driveFileId || null }));
 
-  const merged = {
-    projects, categories, entries, tasks, task_entries, google_documents, attachments,
+  const merged = normalizeTaskNotes({
+    projects, categories, entries, tasks: canonicalTasks, task_entries, google_documents, attachments,
     deleted: [...tombs.values()],
-  };
+  });
   const text = canonical(merged);
   return {
     merged,

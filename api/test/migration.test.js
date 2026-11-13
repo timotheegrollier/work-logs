@@ -96,7 +96,7 @@ describe('migration V1 → V2', () => {
       ['categories', 'projects'],
       'entries.project_id ne doit pas pointer vers projects_v1'
     );
-    assert.deepEqual(db.prepare('PRAGMA foreign_key_list(tasks)').all().map((f) => f.table).sort(), ['categories', 'projects']);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_list(tasks)').all().map((f) => f.table).sort(), ['categories', 'entries', 'projects']);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_list(attachments)').all().map((f) => f.table), ['entries']);
     assert.deepEqual(
       db.prepare('PRAGMA foreign_key_list(task_entries)').all().map((f) => f.table).sort(),
@@ -146,15 +146,14 @@ describe('migration V1 → V2', () => {
     assert.equal(event.entry_date, '2026-03-10', 'daté du jour de l’événement');
   });
 
-  test('les descriptions de tâches sont sauvées en entrées', () => {
+  test('les descriptions sont sauvées dans la note de leur tâche, avec un suivi pour chaque tâche', () => {
     const saved = one("SELECT * FROM entries WHERE id='en_t2'");
     assert.equal(saved.title, 'Bug urgent');
     assert.equal(saved.content_md, 'Reproduire puis corriger');
-    assert.equal(
-      one("SELECT COUNT(*) n FROM entries WHERE id='en_t1'").n,
-      0,
-      'pas d’entrée vide pour une tâche sans description'
-    );
+    assert.equal(one("SELECT entry_id FROM tasks WHERE id='t2'").entry_id, saved.id);
+    assert.equal(one("SELECT e.content_md FROM entries e JOIN tasks t ON t.entry_id=e.id WHERE t.id='t1'").content_md, '');
+    assert.equal(one("SELECT t.progress FROM entries e JOIN tasks t ON t.entry_id=e.id WHERE t.id='t4' AND e.status='done'").progress, 100);
+    assert.equal(one('SELECT COUNT(DISTINCT entry_id) n FROM tasks').n, 4);
   });
 
   test('les pièces jointes suivent leur doc, les autres sont détachées', () => {

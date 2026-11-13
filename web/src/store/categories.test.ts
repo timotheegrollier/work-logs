@@ -17,12 +17,12 @@ test('PWA : classement, descendants, recherche, compteurs et héritage des docum
   const note = await localApi.createEntry({ title: 'Devis', project_id: project.id, category_id: child.id });
   const task = await localApi.createTaskFromEntry(note.id);
   expect(task.category_id).toBe(child.id);
-  expect((await localApi.createEntryFromTask(task.id)).category_id).toBe(child.id);
+  expect((await localApi.entry(task.entry_id)).category_id).toBe(child.id);
   expect((await localApi.copyEntry(note.id)).category_id).toBe(child.id);
   const filtered = await localApi.state('Devis', project.id, root.id);
-  expect(filtered.entries).toHaveLength(3);
+  expect(filtered.entries).toHaveLength(2);
   expect(filtered.tasks.map((row) => row.id)).toEqual([task.id]);
-  expect(filtered.categories?.find((row) => row.id === child.id)).toMatchObject({ entries: 3, open_tasks: 1 });
+  expect(filtered.categories?.find((row) => row.id === child.id)).toMatchObject({ entries: 2, open_tasks: 1 });
   expect((await localApi.state('', project.id, '__none__')).entries).toEqual([]);
   await localApi.updateEntry(note.id, { category_id: null });
   expect((await localApi.state('', project.id, '__none__')).entries.map((row) => row.id)).toEqual([note.id]);

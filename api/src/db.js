@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import { TASK_CATEGORY_MIGRATION, inheritTaskCategories } from './task-categories.js';
+import { migrateTaskNotes } from './task-notes-sqlite.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -45,6 +46,8 @@ CREATE TABLE IF NOT EXISTS entries (
 );
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
+  entry_id TEXT REFERENCES entries(id) ON DELETE CASCADE,
+  progress INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
   title TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'todo',
   due_date TEXT,
@@ -141,6 +144,9 @@ function migrate(db) {
                     CASE WHEN priority IN ('high','urgent') THEN 1 ELSE 0 END,
                     position, project_id, created_at, updated_at
              FROM tasks_v1`);
+    db.exec(`INSERT OR IGNORE INTO task_entries (task_id,entry_id,created_at)
+      SELECT t.id, e.id, t.created_at FROM tasks_v1 t JOIN entries e ON e.id='en_' || t.id
+      WHERE t.description IS NOT NULL AND trim(t.description) != ''`);
     db.exec('DROP TABLE tasks_v1');
   }
   // attachments V1 : liés à un projet, une tâche ou un doc → liés à une entrée.
@@ -284,6 +290,10 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   // Priorités (2026-09-18) : les tâches existantes deviennent « normale », sans toucher
   // à l'ordre des colonnes — la position et l'épingle gardent leur rôle.
   if (!columns(db, 'tasks').includes('priority')) db.exec("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'");
+  const taskColumns = columns(db, 'tasks');
+  if (!taskColumns.includes('entry_id')) db.exec('ALTER TABLE tasks ADD COLUMN entry_id TEXT REFERENCES entries(id) ON DELETE CASCADE');
+  if (!taskColumns.includes('progress')) db.exec('ALTER TABLE tasks ADD COLUMN progress INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100)');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_primary_entry ON tasks(entry_id)');
   // Classement du projet : une seule catégorie par document/tâche, nullable
   // pour conserver les données existantes et les éléments sans classement.
   for (const table of ['entries', 'tasks']) {
@@ -365,6 +375,7 @@ export function openDb(dbPath, { withSeed = true } = {}) {
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); db.close(); throw error; }
   }
+  migrateTaskNotes(db);
   return db;
 }
 

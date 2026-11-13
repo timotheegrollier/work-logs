@@ -14,7 +14,7 @@ vi.mock('../ai-suggest', async (original) => ({
 }));
 
 const today = todayISO();
-const task = (id: string, rest: Partial<Task> = {}): Task => ({ id, title: `Tâche ${id}`, status: 'todo', priority: 'normal', pinned: 0, due_date: null, position: 0, project_id: null, created_at: `${today}T09:00:00Z`, updated_at: `${today}T09:00:00Z`, documents: [], ...rest });
+const task = (id: string, rest: Partial<Task> = {}): Task => ({ entry_id: '', progress: 0, id, title: `Tâche ${id}`, status: 'todo', priority: 'normal', pinned: 0, due_date: null, position: 0, project_id: null, created_at: `${today}T09:00:00Z`, updated_at: `${today}T09:00:00Z`, documents: [], ...rest });
 const follow: FollowUp = { enabled: true, enabled_at: `${today}T09:00:00Z`, report: { status: 'doing', summary: 'Contrôle commencé.', completed: ['Mesures relevées.'], next_steps: ['Vérifier la vanne.'], blockers: [], warnings: [], generated_at: `${today}T10:00:00Z`, source_key: 'version1' } };
 const state = (tasks: Task[]): AppState => ({ projects: [], entries: [], tasks, procedure_attachments: [], stats: { entries: 0, entriesThisWeek: 0, tasks: { todo: tasks.filter((item) => item.status === 'todo').length, doing: tasks.filter((item) => item.status === 'doing').length, done: tasks.filter((item) => item.status === 'done').length }, overdue: 0 } });
 const review = { summary: 'Les mesures sont prêtes ; la vanne reste à vérifier.', completed: ['Mesures relevées.'], next_steps: ['Vérifier la vanne.'], blockers: [], warnings: ['Le bilan ne date pas les avancées.'] };

@@ -44,6 +44,19 @@ describe('base mémoire', () => {
     await db.addAll(rows);
     for (const { table, value } of rows) expect(await db.table(table).all()).toEqual([value]);
   });
+
+  test('une mise à jour liée est annulée si une écriture du lot échoue', async () => {
+    const db = createMemoryDatabase();
+    const entries = db.table<{ id: string; status: string }>('entries');
+    await entries.put({ id: 'en_1', status: 'todo' });
+    await expect(db.writeAll([
+      { table: 'entries', value: { id: 'en_1', status: 'doing' } },
+      { table: 'task_entries', key: 'association', operation: 'delete' },
+      { table: 'tasks', value: { progress: 20 }, operation: 'add' },
+    ])).rejects.toThrow('Clé manquante');
+    expect(await entries.get('en_1')).toEqual({ id: 'en_1', status: 'todo' });
+    expect(await db.table('tasks').all()).toEqual([]);
+  });
 });
 
 describe("repli sans IndexedDB", () => {

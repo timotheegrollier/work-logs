@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 const task = (id: string, patch: Partial<Task> = {}): Task => ({
-  id, title: `Sujet ${id}`, status: 'todo', due_date: null, pinned: 0, position: 0, priority: 'normal', project_id: null,
+  entry_id: '', progress: 0, id, title: `Sujet ${id}`, status: 'todo', due_date: null, pinned: 0, position: 0, priority: 'normal', project_id: null,
   created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-01T00:00:00.000Z', documents: [], ...patch,
 });
 const entry = (id: string, patch: Partial<EntrySummary> = {}): EntrySummary => ({
@@ -1179,14 +1179,13 @@ describe('application des propositions, sur la vraie API', () => {
     stubAi(json({ actions: [{ kind: 'create_task_note', n: 1, content: '## Contrôle\n\nVérifier le journal.' }] }));
     const { proposals } = await ask({ text: 'Rédige le contenu de la tâche Inspection ancienne.' });
     expect(proposals[0]).toMatchObject({ kind: 'create_task_note', taskId: 't', title: 'Inspection ancienne' });
-    expect(proposals[0].label).toContain('la note sera archivée');
     const since = earlier();
     await applyChatProposal(proposals[0]);
     await applyChatProposal(proposals[0], { since });
     const task = (await api.state('Inspection ancienne')).tasks[0];
     expect(task.documents).toHaveLength(1);
     expect(await api.entry(task.documents[0].id)).toMatchObject({
-      title: 'Inspection ancienne', content_md: '## Contrôle\n\nVérifier le journal.', archived: 1,
+      title: 'Inspection ancienne', content_md: '## Contrôle\n\nVérifier le journal.', archived: 0, task: { progress: 100 },
     });
 
     stubAi(json({ actions: [{ kind: 'create_task_note', n: 1, content: 'Un doublon.' }] }));

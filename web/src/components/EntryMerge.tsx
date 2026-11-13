@@ -144,7 +144,7 @@ export function TaskMerge({ tasks, onCancel, onMerged }: {
       label="Fusion de tâches"
       heading={`Fusionner ${tasks.length} tâches — relis avant de valider`}
       reading="Lecture des tâches…"
-      consequence="elles seront remplacées par une seule tâche et cette note, qui réunit leurs notes et leurs pièces jointes. Documents Google et procédures restent liés."
+      consequence="une seule note de tâche réunira leur contenu et leurs pièces jointes. Les documents de référence resteront liés."
       titleLabel="Titre de la tâche fusionnée"
       textLabel="Note de la tâche fusionnée"
       load={async () => {
@@ -154,7 +154,7 @@ export function TaskMerge({ tasks, onCancel, onMerged }: {
           title: task.title,
           content_md: documents[index]
             // Une note liée à deux tâches choisies ne part qu'une fois chez le fournisseur IA.
-            .filter((note) => isRewritableNote(note) && !seen.has(note.id) && seen.add(note.id))
+            .filter((note) => note.id === task.entry_id && isRewritableNote(note) && !seen.has(note.id) && seen.add(note.id))
             .map((note) => `### ${note.title} (${note.entry_date})\n${note.content_json ? richToMarkdown(note.content_json) : note.content_md}`)
             .join('\n\n'),
         }));

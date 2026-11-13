@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import './styles.css';
-import { api, emptyDocument, taskViewMatch, todayISO, type AppState, type Entry, type GoogleStatus, type GoogleSyncStatus, type Task, type TaskView } from './lib';
+import { api, emptyDocument, taskViewMatch, todayISO, type AppState, type Entry, type GoogleStatus, type GoogleSyncStatus, type Task, type TaskMetadata, type TaskView } from './lib';
 import { startWebSync, subscribeWebSync } from './store/sync-web';
 import { EntryList } from './components/EntryList';
 import { EntryMerge, TaskMerge } from './components/EntryMerge';
@@ -251,12 +251,16 @@ export default function App() {
    * Le fichier du partage n'est quitté qu'une fois la garde passée, et le
    * filtre projet ne change qu'après : « Annuler » laisse tout en place.
    */
-  const openEntry = useCallback(async (id: string, project: string | undefined) => {
+  const openEntry = useCallback(async (id: string, project: string | undefined, { clearSearch = false, keepCategory = false } = {}) => {
     const navigation = ++navigationSequence.current;
     if (!(await requestLeave())) return false;
     await flushPendingSaves().catch(() => {});
     if (navigation !== navigationSequence.current) return false;
-    setCategoryId('');
+    if (!keepCategory) setCategoryId('');
+    if (clearSearch) {
+      setSearch('');
+      setQuery('');
+    }
     if (project !== undefined && project !== projectId) setProjectId(project);
     setFreshEntry(false);
     setShowCenter(true);
@@ -277,9 +281,11 @@ export default function App() {
     setTaskReveal((current) => ({ id: task.id, sequence: current.sequence + 1 }));
     if (isPhone()) goTo('tasks');
   }, [goTo]);
-  /** Une tâche documentée ouvre son entrée liée la plus récente.
-   * Le brouillon vide créé avec la tâche ne détourne pas le nœud de sa carte. */
   const revealTask = useCallback((task: Task) => {
+    if (task.entry_id) {
+      void openEntry(task.entry_id, undefined);
+      return;
+    }
     const document = task.documents.find((item) => item.title !== task.title || Boolean(item.excerpt));
     if (document) {
       void openEntry(document.id, undefined);
@@ -398,8 +404,9 @@ export default function App() {
       const selectedSummary = next.entries.find((e) => e.id === selectedRef.current);
       if (selectedSummary) {
         setEntry((current) => current && current.id === selectedSummary.id
-          ? { ...current, archived: selectedSummary.archived, project_id: selectedSummary.project_id, category_id: selectedSummary.category_id, updated_at: selectedSummary.updated_at,
-              status: selectedSummary.status, follow_up: selectedSummary.follow_up, follow_up_key: selectedSummary.follow_up_key,
+          ? { ...current, title: selectedSummary.task ? selectedSummary.title : current.title,
+              archived: selectedSummary.archived, project_id: selectedSummary.project_id, category_id: selectedSummary.category_id, updated_at: selectedSummary.updated_at,
+              status: selectedSummary.status, task: selectedSummary.task ?? null, follow_up: selectedSummary.follow_up, follow_up_key: selectedSummary.follow_up_key,
               ...(selectedSummary.kind === 'procedure' ? { attachments: next.procedure_attachments.filter((file) => file.entry_id === current.id) } : {}) }
           : current);
       }
@@ -419,6 +426,10 @@ export default function App() {
     entryWriteSequence.current += 1;
     return reload();
   }, [reload]);
+  const entryTaskChanged = useCallback((id: string, task: TaskMetadata | null) => {
+    setEntry((current) => current?.id === id ? { ...current, task, status: task?.status ?? current.status } : current);
+    void entryEditorChanged();
+  }, [entryEditorChanged]);
 
   const switchCategory = async (next: string) => {
     if (currentFilters.current.projectId !== projectId || currentFilters.current.categoryId !== categoryId) return;
@@ -659,6 +670,13 @@ export default function App() {
     void openEntry(entryId, project === undefined ? undefined : (project ?? ''));
   }, [openEntry, state]);
 
+  const openNewTask = useCallback((task: Task) => {
+    void openEntry(task.entry_id, undefined, { clearSearch: true, keepCategory: true }).then((opened) => {
+      if (opened) setProcedureEdit((current) => ({ id: task.entry_id, sequence: current.sequence + 1 }));
+      return reload();
+    });
+  }, [openEntry, reload]);
+
   // Procédure rédigée par l'IA depuis une entrée ou une tâche : ouverte au centre,
   // en lecture. Elle naît dans le projet de sa source, donc dans le filtre ; une
   // recherche en cours la masquerait : on l'efface, ce qui relit l'état (relire
@@ -696,29 +714,38 @@ export default function App() {
 
   const openChatTask = async ({ id, title }: Pick<Task, 'id' | 'title'>) => {
     setShowChat(false);
-    // Le tableau ne révèle qu'une carte présente : le filtre qui la masque est levé d'abord.
-    if (!state?.tasks.some((candidate) => candidate.id === id)) {
-      let search = '';
+    let task = state?.tasks.find((candidate) => candidate.id === id);
+    let search = '';
+    const hidden = !task;
+    if (!task) {
       try {
         const all = await api.state();
-        if (!all.tasks.some((candidate) => candidate.id === id)) {
+        task = all.tasks.find((candidate) => candidate.id === id);
+        if (!task) {
           search = title.slice(0, 100);
           const matching = await api.state(search);
-          if (!matching.tasks.some((candidate) => candidate.id === id)) {
-            setError('tâche introuvable');
-            return;
-          }
+          task = matching.tasks.find((candidate) => candidate.id === id);
         }
       } catch (cause) {
         setError((cause as Error).message || 'Impossible de retrouver cette tâche.');
         return;
       }
+    }
+    if (!task) {
+      setError('tâche introuvable');
+      return;
+    }
+    if (task.entry_id) {
+      await openEntry(task.entry_id, hidden ? task.project_id ?? '' : undefined, { clearSearch: hidden, keepCategory: !hidden });
+      return;
+    }
+    if (hidden) {
       setProjectId('');
       setCategoryId('');
       setSearch(search);
       setQuery(search);
     }
-    revealTaskCard({ id });
+    revealTaskCard(task);
   };
   const openChatDocument = (id: string) => {
     setShowChat(false);
@@ -985,6 +1012,7 @@ export default function App() {
               editRequest={procedureEdit.id === entry.id ? procedureEdit.sequence : 0}
               onChanged={entryEditorChanged}
               onTaskCreated={reload}
+              onTaskChanged={entryTaskChanged}
               onProcedureCreated={openCreatedProcedure}
               onDeleted={() => {
                 setSelectedId(null);
@@ -1015,6 +1043,7 @@ export default function App() {
             revealRequest={taskReveal}
             onView={setTaskView}
             onOpenDocument={openDocument}
+            onNewTask={openNewTask}
             onOpenShared={openShared}
             onProcedureCreated={openCreatedProcedure}
             onChanged={reload}

@@ -95,7 +95,8 @@ describe('application atomique d’une replanification IA', () => {
     const { body: category } = await api.post('/api/categories', { name: 'Planning', project_id: project.id });
     for (const patch of [{ status: 'done' }, { project_id: other.id }, { category_id: category.id }]) {
       const task = await make.task(api, { title: 'Tâche sans note', project_id: project.id });
-      await api.del(`/api/entries/${task.documents[0].id}`);
+      api.db.prepare('UPDATE tasks SET entry_id=NULL WHERE id=?').run(task.id);
+      await api.del(`/api/entries/${task.entry_id}`);
       await api.put(`/api/tasks/${task.id}`, patch);
       const refused = await api.post(`/api/tasks/${task.id}/entry`, {
         content_md: 'Texte proposé',
@@ -107,9 +108,10 @@ describe('application atomique d’une replanification IA', () => {
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entries').get().n, 0);
   });
 
-  test('une note archivée invalide le second essai concurrent sur une tâche terminée sans note', async () => {
+  test('la note invalide le second essai concurrent sur une ancienne tâche terminée sans note', async () => {
     const task = await make.task(api, { title: 'Ancienne tâche terminée', status: 'done' });
-    await api.del(`/api/entries/${task.documents[0].id}`);
+    api.db.prepare('UPDATE tasks SET entry_id=NULL WHERE id=?').run(task.id);
+    await api.del(`/api/entries/${task.entry_id}`);
     const body = {
       content_md: '# Compte rendu',
       expected_planning: { ...expected(task), document_ids: [], active_document_ids: [] },
@@ -119,7 +121,8 @@ describe('application atomique d’une replanification IA', () => {
     assert.deepEqual(results.map(({ status }) => status).sort(), [201, 409]);
     assert.equal(results.find(({ status }) => status === 409).body.code, 'TASK_PLANNING_STALE');
     const created = results.find(({ status }) => status === 201).body;
-    assert.equal(created.archived, 1);
+    assert.equal(created.archived, 0);
+    assert.equal(created.task.progress, 100);
     assert.equal(created.content_md, body.content_md);
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entries').get().n, 1);
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=? AND entry_id=?').get(task.id, created.id).n, 1);

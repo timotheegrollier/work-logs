@@ -90,8 +90,8 @@ test('la vue attend les données globales et se ferme si une recherche ou une ca
   } finally {
     resume();
     await page.unrouteAll({ behavior: 'wait' });
-    await request.delete(`/api/tasks/${first.id}`);
-    await request.delete(`/api/tasks/${second.id}`);
+    await request.delete(`/api/entries/${first.entry_id}`);
+    await request.delete(`/api/entries/${second.entry_id}`);
     await request.delete(`/api/projects/${project.id}`);
   }
 });
@@ -150,7 +150,7 @@ test('une sauvegarde refusée garde la note ouverte et son brouillon avant la vu
 test('une voie par projet qui tient en largeur, sur desktop comme sur téléphone', async ({ page, request }) => {
   const project = await post(request, '/api/projects', { name: 'Bassins vue', color: '#d9486e' });
   const other = await post(request, '/api/projects', { name: 'Compta vue', color: '#e0912a' });
-  const tasks: { id: string }[] = [];
+  const tasks: { entry_id: string }[] = [];
   try {
     for (let i = 0; i < 15; i++) tasks.push(await post(request, '/api/tasks', { title: `Étude ${i + 1}`, project_id: project.id, status: i === 0 ? 'doing' : 'todo' }));
     for (let i = 0; i < 3; i++) tasks.push(await post(request, '/api/tasks', { title: `Faite ${i + 1}`, project_id: project.id, status: 'done' }));
@@ -236,11 +236,11 @@ test('une voie par projet qui tient en largeur, sur desktop comme sur téléphon
     await sameRow();
     await lane.locator('.lane-node').first().click();
     await expect(overview).toBeHidden();
-    await expect(nav('Tâches')).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByRole('region', { name: 'Tâches', exact: true }).getByLabel('Titre de la tâche')).toHaveValue('Étude 1');
-    await expect(page.getByRole('region', { name: 'Tâches', exact: true }).getByLabel('Titre de la tâche')).toBeFocused();
+    await expect(nav('Écriture')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Étude 1');
+    await expect(page.getByLabel('Statut de la tâche')).toHaveValue('doing');
   } finally {
-    for (const task of tasks) await request.delete(`/api/tasks/${task.id}`);
+    for (const task of tasks) await request.delete(`/api/entries/${task.entry_id}`);
     await request.delete(`/api/projects/${project.id}`);
     await request.delete(`/api/projects/${other.id}`);
   }
@@ -259,7 +259,6 @@ test('choisir une tâche ou une entrée suivie ferme la vue et affiche la source
   try {
     await page.addInitScript(() => localStorage.setItem('worklogs-show-right', '0'));
     const overview = page.getByRole('region', { name: 'Vue d’ensemble des projets', exact: true });
-    const board = page.getByRole('region', { name: 'Tâches', exact: true });
     for (const viewport of [{ width: 1440, height: 900 }, { width: 800, height: 1000 }, { width: 375, height: 812 }]) {
       await page.setViewportSize(viewport);
       await page.goto('/');
@@ -267,15 +266,14 @@ test('choisir une tâche ou une entrée suivie ferme la vue et affiche la source
       await trigger.click();
       await overview.getByRole('button', { name: `${task.title} — à faire`, exact: true }).click();
       await expect(overview).toBeHidden();
-      await expect(board.getByLabel('Titre de la tâche')).toHaveValue(task.title);
-      await expect(board.getByLabel('Titre de la tâche')).toBeFocused();
+      await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(task.title);
+      await expect(page.getByLabel('Statut de la tâche')).toHaveValue('todo');
 
       await trigger.click();
       await overview.getByRole('button', { name: `Ouvrir la tâche ${done.title}`, exact: true }).click();
       await expect(overview).toBeHidden();
-      await expect(board.getByLabel('Titre de la tâche')).toHaveValue(done.title);
-      await expect(board.getByLabel('Titre de la tâche')).toBeFocused();
-      await expect(board.getByRole('button', { name: /Masquer les tâches terminées/ })).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(done.title);
+      await expect(page.getByRole('progressbar', { name: 'Avancement de la tâche' })).toHaveAttribute('value', '100');
 
       await trigger.click();
       await overview.getByRole('button', { name: `Ouvrir l’entrée ${entry.title}`, exact: true }).click();
@@ -284,19 +282,18 @@ test('choisir une tâche ou une entrée suivie ferme la vue et affiche la source
       expect(await noHorizontalScroll(page)).toBe(true);
     }
   } finally {
-    await request.delete(`/api/tasks/${task.id}`);
-    await request.delete(`/api/tasks/${done.id}`);
+    await request.delete(`/api/entries/${task.entry_id}`);
+    await request.delete(`/api/entries/${done.entry_id}`);
     await request.delete(`/api/entries/${entry.id}`);
     await request.delete(`/api/projects/${project.id}`);
   }
 });
 
-test('une tâche documentée ouvre son entrée liée la plus récente depuis un nœud ou son bilan', async ({ page, request }) => {
+test('une tâche ouvre sa note principale depuis un nœud ou son bilan, même avec des références', async ({ page, request }) => {
   const project = await post(request, '/api/projects', { name: 'Entrées des tâches vue' });
   const task = await post(request, '/api/tasks', { title: 'Reprendre le diagnostic documenté vue', project_id: project.id });
   const done = await post(request, '/api/tasks', { title: 'Intervention documentée terminée vue', project_id: project.id, status: 'done' });
-  // La plus ancienne est créée et liée en dernier : l'ouverture suit la date de
-  // l'entrée, pas la date de création du lien ni celle de la note.
+  // Des références de dates différentes ne changent pas la note ouverte.
   const latest = await post(request, '/api/entries', { title: 'Dernier avancement du diagnostic vue', project_id: project.id, entry_date: '2026-11-05', content_md: 'Le raccord est commandé ; contrôle à prévoir.' });
   const older = await post(request, '/api/entries', { title: 'Ancien diagnostic documenté vue', project_id: project.id, entry_date: '2026-10-01', content_md: 'Le raccord doit être commandé.' });
   const completed = await post(request, '/api/entries', { title: 'Compte rendu final de l’intervention vue', project_id: project.id, entry_date: '2026-11-04', content_md: 'Raccord posé et contrôle terminé.' });
@@ -307,7 +304,7 @@ test('une tâche documentée ouvre son entrée liée la plus récente depuis un 
   expect(followed.ok()).toBeTruthy();
   try {
     const state = await (await request.get('/api/state')).json();
-    expect(state.tasks.find((item: { id: string }) => item.id === task.id).documents.map((item: { id: string }) => item.id)).toEqual([task.documents[0].id, latest.id, older.id]);
+    expect(state.tasks.find((item: { id: string }) => item.id === task.id).documents.map((item: { id: string }) => item.id)).toEqual(expect.arrayContaining([task.entry_id, latest.id, older.id]));
     await page.addInitScript(() => localStorage.setItem('worklogs-show-right', '0'));
     for (const viewport of [{ width: 1440, height: 900 }, { width: 800, height: 1000 }, { width: 375, height: 812 }]) {
       await page.setViewportSize(viewport);
@@ -325,50 +322,41 @@ test('une tâche documentée ouvre son entrée liée la plus récente depuis un 
 
       await trigger.click();
       await overview.getByRole('group', { name: `Tâches ouvertes de ${project.name}`, exact: true }).getByRole('button', { name: `${task.title} — à faire`, exact: true }).click();
-      await expectEntry(latest.title);
+      await expectEntry(task.title);
 
       await trigger.click();
       await overview.getByRole('region', { name: 'Bilans et suivis IA', exact: true }).getByRole('button', { name: `Ouvrir la tâche ${done.title}`, exact: true }).click();
-      await expectEntry(completed.title);
+      await expectEntry(done.title);
     }
   } finally {
-    await request.delete(`/api/tasks/${task.id}`);
-    await request.delete(`/api/tasks/${done.id}`);
+    await request.delete(`/api/entries/${task.entry_id}`);
+    await request.delete(`/api/entries/${done.entry_id}`);
     for (const entry of [latest, older, completed]) await request.delete(`/api/entries/${entry.id}`);
     await request.delete(`/api/projects/${project.id}`);
   }
 });
 
-test('revenir à une carte depuis la vue conserve les brouillons de tâche, même après avoir ouvert une autre carte', async ({ page, request }) => {
+test('le brouillon de planification reste accessible depuis la carte après ouverture de sa note', async ({ page, request }) => {
   const project = await post(request, '/api/projects', { name: 'Brouillons navigation vue' });
-  const first = await post(request, '/api/tasks', { title: 'Première tâche brouillon vue', project_id: project.id });
-  const second = await post(request, '/api/tasks', { title: 'Seconde tâche brouillon vue', project_id: project.id });
+  const task = await post(request, '/api/tasks', { title: 'Première tâche brouillon vue', project_id: project.id });
   try {
     await page.goto('/');
     const trigger = page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true });
     const overview = page.getByRole('region', { name: 'Vue d’ensemble des projets', exact: true });
     const board = page.getByRole('region', { name: 'Tâches', exact: true });
-    const title = board.getByLabel('Titre de la tâche');
+    await board.getByRole('button', { name: `Planifier ${task.title}`, exact: true }).click();
+    const due = board.getByLabel('Échéance', { exact: true });
+    await due.fill('2026-12-24');
     await trigger.click();
-    await overview.getByRole('button', { name: `${first.title} — à faire`, exact: true }).click();
-    await title.fill('Première tâche : brouillon gardé');
-    await trigger.click();
-    await overview.getByRole('button', { name: `${first.title} — à faire`, exact: true }).click();
-    await expect(title).toHaveValue('Première tâche : brouillon gardé');
-    await trigger.click();
-    await overview.getByRole('button', { name: `${second.title} — à faire`, exact: true }).click();
-    await title.fill('Seconde tâche : brouillon gardé');
-    await trigger.click();
-    await overview.getByRole('button', { name: `${first.title} — à faire`, exact: true }).click();
-    await expect(title).toHaveValue('Première tâche : brouillon gardé');
-    expect((await (await request.get('/api/state')).json()).tasks.find((task: { id: string }) => task.id === first.id).title).toBe(first.title);
+    await overview.getByRole('button', { name: `${task.title} — à faire`, exact: true }).click();
+    await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(task.title);
+    await expect(due).toHaveValue('2026-12-24');
+    expect((await (await request.get('/api/state')).json()).tasks.find((row: { id: string }) => row.id === task.id).due_date).toBeNull();
     await board.locator('.is-editing').getByRole('button', { name: 'Annuler', exact: true }).click();
-    await trigger.click();
-    await overview.getByRole('button', { name: `${first.title} — à faire`, exact: true }).click();
-    await expect(title).toHaveValue(first.title);
+    await board.getByRole('button', { name: `Planifier ${task.title}`, exact: true }).click();
+    await expect(due).toHaveValue('');
   } finally {
-    await request.delete(`/api/tasks/${first.id}`);
-    await request.delete(`/api/tasks/${second.id}`);
+    await request.delete(`/api/entries/${task.entry_id}`);
     await request.delete(`/api/projects/${project.id}`);
   }
 });
@@ -384,7 +372,7 @@ test('le bouton pour mettre en cours se voit au repos, plein au survol', async (
     await page.getByRole('region', { name: 'Tâches', exact: true }).getByRole('button', { name: 'Tâche au repos vue', exact: true }).hover();
     await expect(button).toHaveCSS('opacity', '1');
   } finally {
-    await request.delete(`/api/tasks/${task.id}`);
+    await request.delete(`/api/entries/${task.entry_id}`);
   }
 });
 
@@ -400,7 +388,7 @@ test.describe('tactile', () => {
       await expect(button).toBeVisible();
       await expect(button).toHaveCSS('opacity', '1');
     } finally {
-      await request.delete(`/api/tasks/${task.id}`);
+      await request.delete(`/api/entries/${task.entry_id}`);
     }
   });
 });

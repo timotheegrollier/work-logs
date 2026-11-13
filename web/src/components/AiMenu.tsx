@@ -37,7 +37,7 @@ export function AiMenu({ label, busy, onCancel, className = 'ghost', children }:
     const row = rootRef.current?.parentElement;
     if (!stop || !row) return;
     const hidden = stop.getBoundingClientRect().right - row.getBoundingClientRect().right;
-    if (hidden > 0) row.scrollLeft += hidden;
+    if (hidden > 0) row.scrollLeft += Math.ceil(hidden);
   }, [busy, seconds >= 3 && String(seconds).length]);
 
   useEffect(() => {

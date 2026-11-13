@@ -1,5 +1,14 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Une tâche se rédige dans sa note — 2026-11-13 (§83)
+
+- **Suivre comme tâche** conserve l’entrée ouverte. **Nouvelle tâche** crée et ouvre la note
+  correspondante. Le tableau, la vue d’ensemble et l’assistant ouvrent cette même note.
+- La note et le tableau affichent le statut et l’avancement. La note reste visible à 100 %.
+  Retirer le suivi garde la note, son texte et ses fichiers.
+- La migration rattache les tâches existantes à une note principale et conserve les références.
+  SQLite, la PWA et les sauvegardes conservent l’avancement et les liens.
+
 ## Aperçus de proposition IA sans image tierce — 2026-11-13, v0.76.0 (§82)
 
 Cette version réunit aussi l’assistant en colonnes (§80) et le clavier Electron (§81).

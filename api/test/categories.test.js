@@ -150,7 +150,7 @@ describe('catégories et sous-catégories de projet', () => {
     assert.equal((await api.get(`/api/state?category_id=${group.id}`)).body.procedure_attachments[0].filename, 'classée.txt');
   });
 
-  test('hérite du classement dans les copies et créations liées réciproques', async () => {
+  test('garde le classement de la note copiée ou suivie comme tâche', async () => {
     const group = await category('À préparer');
     const entry = await make.entry(api, { project_id: project.id, category_id: group.id });
     const copy = await api.post(`/api/entries/${entry.id}/copy`, {});
@@ -160,9 +160,8 @@ describe('catégories et sous-catégories de projet', () => {
     assert.equal(task.status, 201);
     assert.equal(task.body.category_id, group.id);
     assert.equal(task.body.documents[0].category_id, group.id);
-    const linked = await api.post(`/api/tasks/${task.body.id}/entry`, {});
-    assert.equal(linked.status, 201);
-    assert.equal(linked.body.category_id, group.id);
+    assert.equal(task.body.entry_id, entry.id);
+    assert.equal((await api.get(`/api/entries/${entry.id}`)).body.task.category_id, group.id);
   });
 
   test('supprime un regroupement sans perdre ses enfants ni son contenu', async () => {
@@ -222,14 +221,15 @@ test('migration additive du classement sur une ancienne base V2, réouvrable san
   let migrated;
   try {
     migrated = openDb(file, { withSeed: false });
-    assert.equal(migrated.prepare('SELECT category_id FROM entries').get().category_id, null);
-    assert.equal(migrated.prepare('SELECT content_md FROM entries').get().content_md, 'Texte gardé');
+    assert.equal(migrated.prepare("SELECT category_id FROM entries WHERE id='en_old'").get().category_id, null);
+    assert.equal(migrated.prepare("SELECT content_md FROM entries WHERE id='en_old'").get().content_md, 'Texte gardé');
     assert.equal(migrated.prepare('SELECT category_id FROM tasks').get().category_id, null);
     assert.equal(migrated.prepare('SELECT COUNT(*) n FROM categories').get().n, 0);
     assert.deepEqual(migrated.prepare('PRAGMA foreign_key_check').all(), []);
     migrated.close();
     migrated = openDb(file, { withSeed: false });
-    assert.equal(migrated.prepare('SELECT COUNT(*) n FROM entries').get().n, 1);
+    assert.equal(migrated.prepare('SELECT COUNT(*) n FROM entries').get().n, 2);
+    assert.equal(migrated.prepare('SELECT COUNT(*) n FROM entries e JOIN tasks t ON t.entry_id=e.id').get().n, 1);
   } finally {
     migrated?.close();
     fs.rmSync(dir, { recursive: true, force: true });

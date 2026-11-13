@@ -9,9 +9,15 @@ export interface Table<T extends object> {
   clear(): Promise<void>;
 }
 
+export type StoreWrite =
+  | { table: string; value: object; operation?: 'add' | 'put' }
+  | { table: string; key: string; operation: 'delete' }
+  | { table: string; operation: 'clear' };
+
 export interface Database {
   table<T extends object>(name: string): Table<T>;
   addAll(rows: { table: string; value: object }[]): Promise<void>;
+  writeAll(rows: StoreWrite[]): Promise<void>;
 }
 
 function keyOf(table: string, value: object): string {
@@ -34,21 +40,40 @@ export function createMemoryDatabase(): Database {
     }
     return map;
   };
+  const writeAll = async (rows: StoreWrite[]) => {
+    const pending = new Map<string, Map<string, Record<string, unknown> | null>>();
+    const cleared = new Set<string>();
+    for (const row of rows) {
+      const target = store(row.table);
+      let batch = pending.get(row.table);
+      if (!batch) {
+        batch = new Map();
+        pending.set(row.table, batch);
+      }
+      if (row.operation === 'clear') {
+        cleared.add(row.table);
+        batch.clear();
+      } else if (row.operation === 'delete') {
+        batch.set(row.key, null);
+      } else {
+        const key = keyOf(row.table, row.value);
+        const exists = batch.has(key) ? batch.get(key) !== null : !cleared.has(row.table) && target.has(key);
+        if (row.operation === 'add' && exists) throw new Error(`Clé déjà présente dans ${row.table}.`);
+        batch.set(key, { ...row.value });
+      }
+    }
+    for (const [table, batch] of pending) {
+      const target = store(table);
+      if (cleared.has(table)) target.clear();
+      for (const [key, value] of batch) {
+        if (value === null) target.delete(key);
+        else target.set(key, value);
+      }
+    }
+  };
   return {
-    async addAll(rows) {
-      const pending = new Map<string, Map<string, Record<string, unknown>>>();
-      for (const { table, value } of rows) {
-        const key = keyOf(table, value);
-        const batch = pending.get(table) ?? new Map();
-        if (store(table).has(key) || batch.has(key)) throw new Error(`Clé déjà présente dans ${table}.`);
-        batch.set(key, { ...value });
-        pending.set(table, batch);
-      }
-      for (const [table, batch] of pending) {
-        const target = store(table);
-        for (const [key, value] of batch) target.set(key, value);
-      }
-    },
+    addAll: (rows) => writeAll(rows.map((row) => ({ ...row, operation: 'add' }))),
+    writeAll,
     table<T extends object>(name: string): Table<T> {
       const map = store(name);
       return {
@@ -104,26 +129,33 @@ export function createIndexedDbDatabase(): Database {
   const db = () => (opened ??= openIndexedDb());
   const store = async (name: string, mode: IDBTransactionMode) =>
     (await db()).transaction(name, mode).objectStore(name);
-  return {
-    async addAll(rows) {
-      if (!rows.length) return;
-      const values = rows.map(({ table, value }) => {
-        keyOf(table, value);
-        return { table, value: structuredClone(value) };
-      });
-      const database = await db();
-      const transaction = database.transaction([...new Set(values.map(({ table }) => table))], 'readwrite');
-      return new Promise<void>((resolve, reject) => {
-        transaction.oncomplete = () => resolve();
-        transaction.onabort = () => reject(transaction.error ?? new Error('Écriture IndexedDB annulée.'));
-        try {
-          for (const { table, value } of values) transaction.objectStore(table).add(value);
-        } catch (error) {
-          transaction.abort();
-          reject(error);
+  const writeAll = async (rows: StoreWrite[]) => {
+    if (!rows.length) return;
+    const database = await db();
+    const transaction = database.transaction([...new Set(rows.map(({ table }) => table))], 'readwrite');
+    return new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error ?? new Error('Écriture IndexedDB annulée.'));
+      try {
+        for (const row of rows) {
+          const target = transaction.objectStore(row.table);
+          if (row.operation === 'clear') target.clear();
+          else if (row.operation === 'delete') target.delete(row.key);
+          else {
+            keyOf(row.table, row.value);
+            if (row.operation === 'add') target.add(row.value);
+            else target.put(row.value);
+          }
         }
-      });
-    },
+      } catch (error) {
+        transaction.abort();
+        reject(error);
+      }
+    });
+  };
+  return {
+    addAll: (rows) => writeAll(rows.map((row) => ({ ...row, operation: 'add' }))),
+    writeAll,
     table<T extends object>(name: string): Table<T> {
       if (!(name in LOCAL_STORES)) throw new Error(`Table inconnue : ${name}.`);
       return {

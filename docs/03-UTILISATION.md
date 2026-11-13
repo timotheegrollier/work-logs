@@ -70,10 +70,10 @@ l'écran. Le journal est l'accueil.
   la rangée des projets reste collée en haut.
 - Dans **Écriture**, la date, le projet, la catégorie, Imprimer, Archiver et Supprimer sont
   repliés derrière une ligne qui les résume (« aujourd'hui · Chantier ») : la toucher les
-  déplie. Écrire / Lire, la tâche liée et ✨ IA restent sous le titre.
+  déplie. Écrire / Lire, le suivi de tâche et ✨ IA restent sous le titre.
 - Dans **Tâches**, les vues rapides (En retard, Aujourd'hui…) tiennent sur une rangée qui
-  défile au doigt. Pour faire avancer une tâche sans glisser-déposer, touche son titre et
-  choisis son **Statut**.
+  défile au doigt. Le titre ouvre la note de tâche, où tu peux changer le statut et
+  l’avancement.
 
 La vue n'est pas retenue au redémarrage. Les choix de panneaux faits sur ordinateur ne
 changent pas.
@@ -151,8 +151,9 @@ et un **projet** (facultatif).
 
 **Archiver** (bouton dans la barre de l'entrée) range un document hors du journal sans
 rien détruire : les tâches liées gardent leur contexte et **Supprimer** n'est pas appelé.
-Terminer une tâche archive automatiquement tous ses documents liés ; les archives se
-déplient en bas de la colonne de gauche, par jour comme le journal ;
+Terminer une tâche garde sa note visible dans le journal. Les documents de référence sont
+archivés, sauf s’ils portent eux-mêmes le suivi d’une autre tâche. Les archives se déplient
+en bas de la colonne de gauche, par jour comme le journal ;
 **Désarchiver** remet le document à sa place. Même geste pour un document Google :
 l'archiver le masque de l'application locale en conservant le fichier distant, tandis
 que **Supprimer** ne retire que la copie locale (jamais le fichier Google).
@@ -207,12 +208,14 @@ rendu approximatif.
 
 ## Suivre ses tâches
 
-- **Ajouter** : taper dans « Nouvelle tâche… » puis `Entrée`. Si un projet est filtré, la tâche
-  lui est rattachée automatiquement. Une entrée vide liée, avec le titre, le projet et la
-  catégorie de la tâche, apparaît aussi dans le journal pour la rédiger (v0.75.0, `05-DECISIONS.md` §79).
-- **Avancer** : glisser la carte d'une colonne à l'autre (À faire → En cours → Terminé), ou,
-  sans souris (téléphone, clavier), cliquer son titre et choisir son **Statut** : la carte va
-  au bas de sa nouvelle colonne.
+- **Ajouter** : taper dans « Nouvelle tâche… » puis `Entrée` pour créer et ouvrir la note de
+  tâche. Elle reprend le projet et la catégorie affichés. Le titre de la carte rouvre la note.
+- **Suivre comme tâche** active le suivi sur la note ouverte et conserve son contenu, ses
+  fichiers et son classement. **Retirer le suivi de tâche** conserve la note dans le journal.
+- **Avancer** : choisir le **Statut de la tâche** dans la note, ou saisir un **Avancement (%)**
+  puis cliquer **Appliquer**. 0 % remet à faire, 1 à 99 % passe en cours et 100 % termine.
+  Le tableau reprend le statut et le pourcentage. Tu peux aussi déplacer la carte entre les
+  colonnes ou utiliser son bouton **Planifier**.
 - **▶ Mettre en cours** : le bouton avant ★ met la tâche en cours d'un clic (elle va au bas
   de la colonne En cours) ; allumé, il dit qu'elle y est, et recliquer la remet à faire — au
   bas de À faire, pas à sa place d'avant. Une tâche terminée n'a pas de ▶ : la case la rouvre.
@@ -240,9 +243,8 @@ rendu approximatif.
   terminée ; **✓ Valider** la termine et archive ses documents liés, **Rouvrir** la remet à
   faire sans désarchiver ces documents ; **Archiver** range une entrée sans couper son suivi.
   Les tâches et les notes sans suivi se traitent dans les panneaux Tâches et Journal.
-  Cliquer un titre de suivi ou un nœud de la frise ferme la vue et ouvre l’entrée liée la plus
-  récente au centre, même pour une tâche terminée. Sans entrée liée, la carte de la tâche
-  s’ouvre. Les brouillons de cartes restent disponibles.
+  Cliquer un titre de suivi ou un nœud de la frise ferme la vue et ouvre sa note au centre,
+  même pour une tâche terminée.
 - **Bilan du jour**, en tête de la vue d’ensemble : un clic synthétise les bilans de suivi
   enregistrés en avancées attestées, blocages et prochaines actions, avec les titres des tâches
   terminées et des notes du jour. Les suivis sans bilan, anciens ou à actualiser sont signalés
@@ -297,7 +299,7 @@ rendu approximatif.
 - Sur grand écran, « N en cours » et « N en retard » de l'en-tête sont cliquables : ils
   ouvrent le panneau Tâches sur la vue correspondante. Ces compteurs portent sur toute la
   base ; si le projet filtré ou la recherche en cachent une partie, ils sont levés.
-- **Créer une tâche liée** depuis l’entrée ouverte préremplit son titre et permet d’ajouter une échéance. La tâche apparaît directement dans le panneau de droite avec cette entrée comme contexte. Dans une note locale, **✨ IA › Suggérer des tâches avec l’IA** propose aussi des tâches à partir du brouillon ; elles restent à relire avant création (voir « Assistance IA »).
+- **✨ IA › Suggérer des tâches avec l’IA** propose des actions à partir du brouillon. Chaque action validée crée sa note de tâche, avec la note d’origine comme référence.
 - Dans le panneau **Tâches**, la colonne des tâches terminées est repliée au départ. **Afficher les tâches terminées** la déplie ; **Masquer les tâches terminées** la replie sans les supprimer.
 - **Relier un document** ouvre la liste des entrées disponibles. Choisir une entrée locale ou un onglet Google puis cliquer sur **Relier** ; chaque document lié reste visible sur la carte avec son origine.
 - Cliquer sur le titre d'un document lié l'ouvre au centre. Le bouton ✕ retire seulement l'association, sans supprimer le document. Une même entrée peut fournir le contexte de plusieurs tâches.
@@ -344,7 +346,7 @@ une tâche avec **✨ Suivi IA** sur sa carte.
 Ouvrir **Vue d’ensemble** pour retrouver les suivis des entrées et des tâches chargées, y
 compris les tâches terminées : **Suivis IA** apparaît dès qu’un suivi existe, avec ses
 prochaines actions et ses blocages. Cliquer un titre ferme la vue et affiche l’entrée ;
-pour une tâche, c’est son entrée liée la plus récente, ou sa carte si elle n’a aucun lien.
+pour une tâche, c’est sa note.
 Les détails restent dépliables sur les cartes compactes.
 **+ Ajouter au suivi IA** ouvre une sélection commune : rechercher une tâche, une entrée ou
 un projet, cocher les éléments puis **Suivre la sélection**. Les bilans se préparent
@@ -415,9 +417,8 @@ dossier partagé (voir « Procédures »). Pas de menu IA sur une note Google : 
 n'est jamais envoyé. Une note riche passe par le Markdown : appliquer remet à plat
 surlignage, couleurs et alignements, et une case proposée y devient une puce.
 
-Une **tâche** n'a pas de texte à compléter : sur sa carte, **＋ Entrée liée** (le titre
-reprend la tâche), **Créer et ouvrir**, noter les points importants dans l'entrée, puis
-**✨ IA › Compléter** — la demande connaît la tâche liée.
+Pour compléter une **tâche**, ouvre sa note depuis le tableau et choisis **✨ IA › Compléter**.
+**✨ IA › Suggérer des sous-tâches** propose des cases à insérer dans cette même note.
 
 **Ajuster la proposition** précise ce qui est attendu : par exemple « Garde les commandes
 exactement et détaille les vérifications ». **Affiner**, **Plus court** et **Pour un collègue**
@@ -461,13 +462,12 @@ mémoire jusqu’à la fermeture de WorkLogs.
 
 - « Mets la tâche de contrôle en cours, donne-lui une échéance vendredi et classe-la dans Infra. »
   L’assistant peut créer, renommer, planifier et classer les tâches, changer leur priorité ou
-  leur statut et les épingler. Terminer une tâche archive ses documents liés, comme dans
-  le tableau des tâches. La proposition annonce cet archivage.
+  leur statut et les épingler. La proposition indique si les documents de référence seront
+  archivés.
 - À la création d’une tâche, d’une note ou d’une procédure, l’assistant prépare un brouillon
   avec une structure et les informations disponibles. Les détails inconnus sont à préciser.
-  Le brouillon de la tâche est enregistré dans son entrée liée. Dans la même conversation,
-  « Complète le contenu de cette tâche » propose de modifier cette entrée. Pour une ancienne
-  tâche sans entrée, l’assistant propose une note directement liée.
+  Le brouillon d’une tâche est enregistré dans sa note. Dans la même conversation,
+  « Complète le contenu de cette tâche » propose de modifier cette note.
 - « Classe cette note dans Contrôles et marque-la terminée. » L’assistant peut créer et classer
   les notes et les procédures locales, changer leur date, leur statut ou leur archivage.
   Une entrée terminée reste dans le journal jusqu’à son archivage. Il peut aussi proposer de

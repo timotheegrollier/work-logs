@@ -14,6 +14,7 @@ import { inheritTaskCategories } from './task-categories.js';
 import { createFollowUpAccess, registerFollowUpRoutes } from './follow-up-routes.js';
 import { assertExpectedTaskPlanning, taskPlanningUsesDocuments } from './task-planning.js';
 import { assertExpectedEntryEdit } from './entry-edit.js';
+import { taskCreationStamp, taskIdForNote, taskState } from './task-state.js';
 import { validateEntryMerge, assertEntryMergeSources, assertEntryMergeReplay, entryMergeTargetId, entryMergeClassification, isRewritableNote, assertTaskMergeSources, taskMergeTaskId, taskMergeAttributes } from './entry-merge.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
@@ -80,9 +81,11 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   });
 
   const followUp = createFollowUpAccess(db);
+  const taskForEntry = db.prepare('SELECT * FROM tasks WHERE entry_id=?');
+  const getEntryTask = (id) => followUp.metadata('task', taskForEntry.get(id));
   const getEntry = (id) => {
     const row = db.prepare('SELECT * FROM entries WHERE id=?').get(id);
-    return row ? { ...followUp.metadata('entry', decodeEntry(row)), google_sync: googleLink(db, row) } : row;
+    return row ? { ...followUp.metadata('entry', decodeEntry(row)), google_sync: googleLink(db, row), task: getEntryTask(id) ?? null } : row;
   };
   const getTask = (id) => followUp.metadata('task', db.prepare('SELECT * FROM tasks WHERE id=?').get(id));
   const getTaskWithDocuments = (id) => {
@@ -150,13 +153,17 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
           ORDER BY entries.entry_date DESC, entries.updated_at DESC
           LIMIT 500`
       )
-      .all(...entryArgs).map((entry) => followUp.metadata('entry', entry));
+      .all(...entryArgs).map((entry) => {
+        const task = getEntryTask(entry.id);
+        return { ...followUp.metadata('entry', entry), ...(task ? { task } : {}) };
+      });
 
     const taskWhere = [...where];
     const taskArgs = [...args];
     if (q) {
-      taskWhere.push('fold(title) LIKE ?');
-      taskArgs.push(`%${fold(q)}%`);
+      taskWhere.push('(fold(title) LIKE ? OR entry_id IN (SELECT entry_id FROM entry_search WHERE text LIKE ?))');
+      const pattern = `%${fold(q)}%`;
+      taskArgs.push(pattern, pattern);
     }
     const taskDocuments = db.prepare(
       `SELECT te.task_id, e.id, e.title, e.entry_date, e.project_id, e.category_id, e.archived, e.status, e.updated_at,
@@ -271,6 +278,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       const archived = pick(b, 'archived', cur.archived ?? 0, (v) => (v ? 1 : 0));
       const kind = pick(b, 'kind', cur.kind ?? 'note', (v) => kindOf(v, cur.kind ?? 'note'));
       if (!kind) return reject('type de document invalide (note ou procédure attendu)');
+      if (cur.task && kind !== 'note') return reject('Retire le suivi de tâche avant de transformer la note en procédure.');
       const status = pick(b, 'status', cur.status);
       if (!STATUSES.includes(status)) return reject('statut invalide');
 
@@ -279,22 +287,24 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       if (cur.content_json && rich === null) return reject('la conversion d’un document riche en Markdown n’est pas prise en charge');
 
       const time = nowISO();
+      const content = rich ? documentText(rich) : pick(b, 'content_md', cur.content_md, (v) => typeof v === 'string' ? v : cur.content_md);
+      const serialized = rich ? JSON.stringify(rich) : null;
+      const changedClassification = categoryId !== cur.category_id || projectId !== cur.project_id;
+      const changedSharedFields = title !== cur.title || changedClassification;
+      const changedNote = !cur.task || changedSharedFields || content !== cur.content_md || date !== cur.entry_date
+        || archived !== cur.archived || kind !== cur.kind || serialized !== (cur.content_json ? JSON.stringify(cur.content_json) : null);
       db.prepare(
         'UPDATE entries SET title=?, content_md=?, entry_date=?, project_id=?, archived=?, kind=?, status=?, updated_at=?, content_json=?, category_id=? WHERE id=?'
-      ).run(
-        title,
-        rich ? documentText(rich) : pick(b, 'content_md', cur.content_md, (v) => (typeof v === 'string' ? v : cur.content_md)),
-        date,
-        projectId,
-        archived,
-        kind,
-        status,
-        time,
-        rich ? JSON.stringify(rich) : null,
-        categoryId,
-        cur.id
-      );
-      if (categoryId !== cur.category_id || projectId !== cur.project_id) inheritTaskCategories(db, time, { entryId: cur.id });
+      ).run(title, content, date, projectId, archived, kind, status, changedNote ? time : cur.updated_at,
+        serialized, categoryId, cur.id);
+      const statusChanged = cur.task && cur.task.status !== status;
+      if (cur.task && (changedSharedFields || statusChanged)) {
+        const { progress } = taskState(status, undefined, cur.task);
+        db.prepare('UPDATE tasks SET title=?, project_id=?, category_id=?, status=?, progress=?, updated_at=? WHERE id=?')
+          .run(title, projectId, categoryId, status, progress, statusChanged ? time : cur.task.updated_at, cur.task.id);
+        if (statusChanged) moveTaskToEnd(cur.task, status, time);
+      }
+      if (changedClassification) inheritTaskCategories(db, time, { entryId: cur.id, excludeTaskId: cur.task?.id });
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); throw error; }
     res.json(getEntry(req.params.id));
@@ -306,9 +316,13 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     for (const a of db.prepare('SELECT stored FROM attachments WHERE entry_id=?').all(cur.id)) {
       fs.rmSync(path.join(uploadDir, a.stored), { force: true });
     }
-    db.prepare('DELETE FROM google_documents WHERE entry_id=?').run(cur.id);
-    db.prepare('DELETE FROM entries WHERE id=?').run(cur.id);
-    tombstone(db, 'entry', cur.id);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      if (cur.task) removeTask(cur.task);
+      db.prepare('DELETE FROM entries WHERE id=?').run(cur.id);
+      tombstone(db, 'entry', cur.id);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
     res.json({ ok: true });
   });
 
@@ -373,12 +387,18 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       }
       const sources = body.sources.map((source) => getEntry(source.id));
       assertEntryMergeSources(body, sources);
-      const { project_id, category_id, kind } = entryMergeClassification(sources);
+      const tracked = sources.filter((entry) => entry.task);
+      if (tracked.length > 1) return bad(res, 'Fusionne les tâches depuis le tableau pour réunir leurs notes.');
+      const primary = tracked[0];
+      const task = primary?.task;
+      const { project_id, category_id, kind } = primary ?? entryMergeClassification(sources);
       const time = nowISO();
       db.exec('BEGIN');
       try {
-        db.prepare('INSERT INTO entries (id,title,content_md,entry_date,project_id,category_id,kind,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
-          .run(id, body.title, body.content_md, today(), project_id, category_id, kind, time, time);
+        db.prepare('INSERT INTO entries (id,title,content_md,entry_date,project_id,category_id,kind,status,archived,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+          .run(id, body.title, body.content_md, today(), project_id, category_id, kind, task?.status ?? 'todo', primary?.archived ?? 0, time, time);
+        if (task) db.prepare('UPDATE tasks SET entry_id=?,title=?,project_id=?,category_id=?,updated_at=? WHERE id=?')
+          .run(id, body.title, project_id, category_id, time, task.id);
         for (const source of sources) absorbEntry(id, source.id, time);
         db.exec('COMMIT');
       } catch (error) {
@@ -392,28 +412,67 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   });
 
   // ---------------------------------------------------------------- tâches
+  const nextTaskPosition = db.prepare('SELECT COALESCE(MAX(position),-1)+1 p FROM tasks WHERE status=?');
+  const insertTask = db.prepare(`INSERT INTO tasks
+    (id,entry_id,title,status,progress,due_date,pinned,position,priority,project_id,category_id,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const insertTaskNote = db.prepare(`INSERT INTO entries
+    (id,title,content_md,entry_date,project_id,category_id,kind,status,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,'note',?,?,?)`);
+  const linkTaskEntry = db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)');
+  const googlePushPending = new Set();
+  const addTask = ({ id, entryId, title, status, progress, dueDate, pinned, priority, projectId, categoryId, time }) => {
+    insertTask.run(id, entryId, title, status, progress, dueDate, pinned, nextTaskPosition.get(status).p, priority, projectId, categoryId, time, time);
+    linkTaskEntry.run(id, entryId, time);
+    db.prepare("DELETE FROM sync_tombstones WHERE kind='task' AND id=?").run(id);
+  };
+  const moveTaskToEnd = (task, status, time) => {
+    db.prepare('UPDATE tasks SET position=? WHERE id=?').run(nextTaskPosition.get(status).p, task.id);
+    renumber(db, task.status);
+    renumber(db, status);
+    if (status === 'done') archiveTaskDocuments(db, task.id, time);
+  };
+  const removeTask = (task) => {
+    for (const { entry_id } of db.prepare('SELECT entry_id FROM task_entries WHERE task_id=?').all(task.id)) {
+      if (entry_id !== task.entry_id) tombstone(db, 'link', `${task.id}|${entry_id}`);
+    }
+    db.prepare('DELETE FROM tasks WHERE id=?').run(task.id);
+    tombstone(db, 'task', task.id);
+    renumber(db, task.status);
+  };
+
   app.post('/api/entries/:id/task', (req, res) => {
     const source = getEntry(req.params.id);
     if (!source) return notFound(res, 'entrée introuvable');
     const b = req.body || {};
     const title = b.title === undefined ? source.title : str(b.title);
     if (!title) return bad(res, 'titre requis');
-    const dueDate = b.due_date === undefined ? null : orNull(b.due_date);
+    const dueDate = orNull(b.due_date);
     if (dueDate && !DATE_RE.test(dueDate)) return bad(res, 'échéance invalide (AAAA-MM-JJ attendu)');
     const priority = priorityOf(b.priority);
     if (!priority) return bad(res, 'priorité invalide (basse, normale ou haute attendue)');
-    const status = b.status === undefined ? 'todo' : str(b.status);
-    if (!STATUSES.includes(status)) return bad(res, 'statut invalide');
+    if (b.content_md !== undefined && typeof b.content_md !== 'string') return bad(res, 'contenu Markdown invalide');
 
-    const id = uid('tk_');
-    const time = nowISO();
-    const position = db.prepare('SELECT COALESCE(MAX(position),-1)+1 p FROM tasks WHERE status=?').get(status).p;
-    db.exec('BEGIN');
+    const convert = isRewritableNote(source) && title === source.title && b.content_md === undefined;
+    const { status, progress } = taskState(b.status, b.progress, { status: convert ? source.status : 'todo', progress: 0 });
+    if (convert && source.task) return res.json(getTaskWithDocuments(source.task.id));
+    if (convert && googlePushPending.has(source.id)) {
+      return res.status(409).json({ error: 'Attends la fin de la synchronisation Google avant de suivre cette note comme tâche.' });
+    }
+    const entryId = convert ? source.id : uid('en_');
+    const id = taskIdForNote(entryId);
+    db.exec('BEGIN IMMEDIATE');
     try {
-      db.prepare(
-        'INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
-      ).run(id, title, status, dueDate, 0, position, priority, source.project_id, time, time, source.category_id);
-      db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run(id, source.id, time);
+      const deletedAt = db.prepare("SELECT deleted_at FROM sync_tombstones WHERE kind='task' AND id=?").get(id)?.deleted_at;
+      const time = taskCreationStamp(nowISO(), deletedAt);
+      if (convert) {
+        db.prepare('UPDATE entries SET status=? WHERE id=?').run(status, entryId);
+      } else {
+        insertTaskNote.run(entryId, title, b.content_md ?? title, today(), source.project_id, source.category_id, status, time, time);
+      }
+      addTask({ id, entryId, title, status, progress, dueDate, pinned: 0, priority, projectId: source.project_id, categoryId: source.category_id, time });
+      if (!convert) linkTaskEntry.run(id, source.id, time);
+      if (status === 'done') archiveTaskDocuments(db, id, time);
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
@@ -422,9 +481,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     res.status(201).json(getTaskWithDocuments(id));
   });
 
-  // Fusion de tâches (§73) : une tâche et une note relues remplacent les tâches choisies
-  // et leurs notes, en une transaction. Documents Google et procédures restent liés à la
-  // nouvelle tâche ; clé de source et rejeu comme pour la fusion d’entrées.
+  // Fusion de tâches : réunit leurs notes et reprend les références sans les modifier.
+  // Clé de source et rejeu comme pour la fusion d’entrées.
   app.post('/api/tasks/merge', async (req, res, next) => {
     try {
       const body = validateEntryMerge(req.body, 'tâches');
@@ -439,27 +497,20 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       const sources = body.sources.map((source) => getTask(source.id));
       const documentsOf = (id) => db.prepare('SELECT entry_id FROM task_entries WHERE task_id=?').all(id).map((link) => getEntry(link.entry_id));
       assertTaskMergeSources(body, sources, documentsOf);
-      const { status, due_date, pinned, priority, project_id, category_id } = taskMergeAttributes(sources);
+      const { status, progress, due_date, pinned, priority, project_id, category_id } = taskMergeAttributes(sources);
+      const selectedNotes = new Set(sources.map((task) => task.entry_id));
       const documents = new Map(sources.flatMap((task) => documentsOf(task.id)).map((entry) => [entry.id, entry]));
       const time = nowISO();
       db.exec('BEGIN');
       try {
-        const position = db.prepare('SELECT COALESCE(MAX(position),-1)+1 p FROM tasks WHERE status=?').get(status).p;
-        db.prepare('INSERT INTO entries (id,title,content_md,entry_date,project_id,category_id,kind,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
-          .run(entryId, body.title, body.content_md, today(), project_id, category_id, 'note', time, time);
-        db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-          .run(taskId, body.title, status, due_date, pinned, position, priority, project_id, time, time, category_id);
-        const link = db.prepare('INSERT OR IGNORE INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)');
-        link.run(taskId, entryId, time);
+        insertTaskNote.run(entryId, body.title, body.content_md, today(), project_id, category_id, status, time, time);
+        addTask({ id: taskId, entryId, title: body.title, status, progress, dueDate: due_date, pinned, priority, projectId: project_id, categoryId: category_id, time });
         for (const entry of documents.values()) {
-          if (isRewritableNote(entry)) absorbEntry(entryId, entry.id, time);
-          else link.run(taskId, entry.id, time);
+          if (selectedNotes.has(entry.id)) absorbEntry(entryId, entry.id, time);
+          else linkTaskEntry.run(taskId, entry.id, time);
         }
-        for (const task of sources) {
-          db.prepare('DELETE FROM tasks WHERE id=?').run(task.id);
-          tombstone(db, 'task', task.id);
-        }
-        for (const changed of new Set([status, ...sources.map((task) => task.status)])) renumber(db, changed);
+        for (const task of sources) removeTask(task);
+        renumber(db, status);
         if (status === 'done') archiveTaskDocuments(db, taskId, time);
         db.exec('COMMIT');
       } catch (error) {
@@ -472,8 +523,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     }
   });
 
-  // Miroir de /api/entries/:id/task : une entrée créée depuis une tâche, liée
-  // atomiquement. Le client y met sa liste de sous-tâches en Markdown.
+  // Répare une ancienne tâche sans note, après contrôle de l'instantané de l'assistant.
   app.post('/api/tasks/:id/entry', (req, res) => {
     const b = req.body || {};
     const id = uid('en_');
@@ -485,12 +535,16 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       assertExpectedTaskPlanning(b.expected_planning, source);
       const title = b.title === undefined ? source.title : str(b.title);
       if (!title) { db.exec('ROLLBACK'); return bad(res, 'titre requis'); }
+      if (source.entry_id) {
+        db.exec('ROLLBACK');
+        return res.status(409).json({ error: 'Cette tâche a déjà une note. Modifie sa note pour compléter le contenu.' });
+      }
       const content = typeof b.content_md === 'string' ? b.content_md : '';
       const time = nowISO();
-      db.prepare(
-        'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,created_at,updated_at,content_json,category_id) VALUES (?,?,?,?,?,?,?,?,?,?)'
-      ).run(id, title, content, today(), source.project_id, 'note', time, time, null, source.category_id);
-      db.prepare('INSERT INTO task_entries (task_id, entry_id, created_at) VALUES (?,?,?)').run(source.id, id, time);
+      const { progress } = taskState(undefined, undefined, source);
+      insertTaskNote.run(id, title, content, today(), source.project_id, source.category_id, source.status, time, time);
+      db.prepare('UPDATE tasks SET entry_id=?,title=?,progress=?,updated_at=? WHERE id=?').run(id, title, progress, time, source.id);
+      linkTaskEntry.run(source.id, id, time);
       if (source.status === 'done') archiveTaskDocuments(db, source.id, time);
       db.exec('COMMIT');
     } catch (error) {
@@ -505,30 +559,23 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const title = str(b.title);
     if (!title) return bad(res, 'titre requis');
     if (b.content_md !== undefined && typeof b.content_md !== 'string') return bad(res, 'contenu Markdown invalide');
-    const status = str(b.status) || 'todo';
-    if (!STATUSES.includes(status)) return bad(res, 'statut invalide');
+    const { status, progress } = taskState(str(b.status) || undefined, b.progress);
+    const dueDate = orNull(b.due_date);
+    if (dueDate && !DATE_RE.test(dueDate)) return bad(res, 'échéance invalide (AAAA-MM-JJ attendu)');
     const priority = priorityOf(b.priority);
     if (!priority) return bad(res, 'priorité invalide (basse, normale ou haute attendue)');
     if (orNull(b.project_id) && !getProject(str(b.project_id)))
       return bad(res, 'projet introuvable');
     const categoryId = categoryFor(db, orNull(b.project_id), b.category_id);
 
-    const id = uid('tk_');
     const entryId = uid('en_');
-    const t = nowISO();
-    const position = db
-      .prepare('SELECT COALESCE(MAX(position),-1)+1 p FROM tasks WHERE status=?')
-      .get(status).p;
+    const id = taskIdForNote(entryId);
+    const time = nowISO();
     const projectId = orNull(b.project_id);
     db.exec('BEGIN');
     try {
-      db.prepare(
-        'INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
-      ).run(id, title, status, orNull(b.due_date), b.pinned ? 1 : 0, position, priority, projectId, t, t, categoryId);
-      db.prepare(
-        'INSERT INTO entries (id,title,content_md,entry_date,project_id,kind,status,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?)'
-      ).run(entryId, title, b.content_md ?? '', today(), projectId, 'note', 'todo', t, t, categoryId);
-      db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run(id, entryId, t);
+      insertTaskNote.run(entryId, title, b.content_md ?? '', today(), projectId, categoryId, status, time, time);
+      addTask({ id, entryId, title, status, progress, dueDate, pinned: b.pinned ? 1 : 0, priority, projectId, categoryId, time });
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
@@ -550,28 +597,31 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       const reject = (message) => { db.exec('ROLLBACK'); return bad(res, message); };
       const title = pick(b, 'title', cur.title, str);
       if (!title) return reject('titre requis');
-      const status = pick(b, 'status', cur.status, (v) => str(v) || cur.status);
-      if (!STATUSES.includes(status)) return reject('statut invalide');
+      const { status, progress } = taskState(str(b.status) || undefined, b.progress, cur);
       const priority = pick(b, 'priority', cur.priority ?? 'normal', (v) => priorityOf(v, cur.priority ?? 'normal'));
       if (!priority) return reject('priorité invalide (basse, normale ou haute attendue)');
       const projectId = pick(b, 'project_id', cur.project_id, orNull);
       if (projectId && !getProject(projectId)) return reject('projet introuvable');
       const categoryId = nextCategory(db, b, cur, projectId);
+      const dueDate = pick(b, 'due_date', cur.due_date, orNull);
+      if (b.due_date !== undefined && dueDate && !DATE_RE.test(dueDate)) return reject('échéance invalide (AAAA-MM-JJ attendu)');
+      const pinned = pick(b, 'pinned', cur.pinned, (v) => v ? 1 : 0);
       const time = nowISO();
-      db.prepare(
-        'UPDATE tasks SET title=?, status=?, due_date=?, pinned=?, priority=?, project_id=?, updated_at=?, category_id=? WHERE id=?'
-      ).run(
-        title,
-        status,
-        pick(b, 'due_date', cur.due_date, orNull),
-        pick(b, 'pinned', cur.pinned, (v) => (v ? 1 : 0)),
-        priority,
-        projectId,
-        time,
-        categoryId,
-        cur.id
-      );
-      if (cur.status !== 'done' && status === 'done') archiveTaskDocuments(db, cur.id, time);
+      const changedNote = title !== cur.title || projectId !== cur.project_id || categoryId !== cur.category_id;
+      const changedTask = !cur.entry_id || status !== cur.status || progress !== cur.progress || dueDate !== cur.due_date
+        || pinned !== cur.pinned || priority !== cur.priority;
+      db.prepare('UPDATE tasks SET title=?, status=?, progress=?, due_date=?, pinned=?, priority=?, project_id=?, updated_at=?, category_id=? WHERE id=?')
+        .run(title, status, progress, dueDate, pinned, priority, projectId, changedTask ? time : cur.updated_at, categoryId, cur.id);
+      if (cur.entry_id && changedNote) {
+        db.prepare('UPDATE entries SET title=?,status=?,project_id=?,category_id=?,updated_at=? WHERE id=?')
+          .run(title, status, projectId, categoryId, time, cur.entry_id);
+        if (projectId !== cur.project_id || categoryId !== cur.category_id) {
+          inheritTaskCategories(db, time, { entryId: cur.entry_id, excludeTaskId: cur.id });
+        }
+      } else if (cur.status !== status) {
+        db.prepare('UPDATE entries SET status=? WHERE id=?').run(status, cur.entry_id);
+      }
+      if (cur.status !== status) moveTaskToEnd(cur, status, time);
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
@@ -592,12 +642,10 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const time = nowISO();
     db.exec('BEGIN');
     try {
-      db.prepare('UPDATE tasks SET status=?, position=?, updated_at=? WHERE id=?').run(
-        status,
-        target - 0.5,
-        time,
-        cur.id
-      );
+      const { progress } = taskState(status, undefined, cur);
+      db.prepare('UPDATE tasks SET status=?, progress=?, position=?, updated_at=? WHERE id=?')
+        .run(status, progress, target - 0.5, time, cur.id);
+      if (cur.status !== status) db.prepare('UPDATE entries SET status=? WHERE id=?').run(status, cur.entry_id);
       renumber(db, status);
       if (cur.status !== status) renumber(db, cur.status);
       if (cur.status !== 'done' && status === 'done') archiveTaskDocuments(db, cur.id, time);
@@ -639,6 +687,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     if (!task) return notFound(res, 'tâche introuvable');
     const entry = getEntry(req.params.entryId);
     if (!entry) return notFound(res, 'entrée introuvable');
+    if (task.entry_id === entry.id) return res.status(409).json({ error: 'Cette note contient la tâche. Retire le suivi de tâche pour la conserver comme note.' });
     const result = db.prepare('DELETE FROM task_entries WHERE task_id=? AND entry_id=?').run(task.id, entry.id);
     if (!result.changes) return notFound(res, 'association introuvable');
     tombstone(db, 'link', `${task.id}|${entry.id}`);
@@ -648,9 +697,12 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   app.delete('/api/tasks/:id', (req, res) => {
     const cur = getTask(req.params.id);
     if (!cur) return notFound(res, 'tâche introuvable');
-    db.prepare('DELETE FROM tasks WHERE id=?').run(cur.id);
-    tombstone(db, 'task', cur.id);
-    renumber(db, cur.status);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.prepare('UPDATE entries SET updated_at=? WHERE id=?').run(nowISO(), cur.entry_id);
+      removeTask(cur);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
     res.json({ ok: true });
   });
 
@@ -708,9 +760,9 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       for (const category of db.prepare('SELECT id FROM categories WHERE project_id=?').all(cur.id)) {
         tombstone(db, 'category', category.id);
       }
-      for (const table of ['entries', 'tasks']) {
-        db.prepare(`UPDATE ${table} SET project_id=NULL,category_id=NULL,updated_at=? WHERE project_id=?`).run(time, cur.id);
-      }
+      db.prepare('UPDATE entries SET project_id=NULL,category_id=NULL,updated_at=? WHERE project_id=?').run(time, cur.id);
+      db.prepare('UPDATE tasks SET project_id=NULL,category_id=NULL,updated_at=CASE WHEN entry_id IS NULL THEN ? ELSE updated_at END WHERE project_id=?')
+        .run(time, cur.id);
       db.prepare('DELETE FROM projects WHERE id=?').run(cur.id);
       // Lien vers un sous-dossier du partage : local, sans clé étrangère (§25).
       db.prepare('DELETE FROM shared_project_folders WHERE project_id=?').run(cur.id);
@@ -807,7 +859,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   // ---------------------------------------------------------------- export
   app.get('/api/export', (_req, res) => res.json(buildBackup(db)));
 
-  registerGoogleRoutes(app, { db, google, uploadDir, autoSync });
+  registerGoogleRoutes(app, { db, google, uploadDir, autoSync, googlePushPending });
   app.locals.shared = shared;
   registerSharedRoutes(app, { shared });
   app.use('/api', (_req, res) => notFound(res, 'route inconnue'));
@@ -829,11 +881,12 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   return app;
 }
 
-/** Archive les documents liés quand une tâche est terminée, sans supprimer leurs liens. */
+/** Archive les références d’une tâche terminée. Les notes suivies restent visibles. */
 function archiveTaskDocuments(db, taskId, time = nowISO()) {
   db.prepare(
     `UPDATE entries SET archived=1, updated_at=?
-     WHERE archived=0 AND id IN (SELECT entry_id FROM task_entries WHERE task_id=?)`
+     WHERE archived=0 AND id IN (SELECT entry_id FROM task_entries WHERE task_id=?)
+     AND NOT EXISTS (SELECT 1 FROM tasks WHERE entry_id=entries.id)`
   ).run(time, taskId);
 }
 

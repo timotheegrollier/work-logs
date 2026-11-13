@@ -64,7 +64,8 @@ entries(id, title, content_md, content_json JSON|NULL, entry_date 'AAAA-MM-JJ',
         archived 0|1 DEFAULT 0, status ∈ {todo, doing, done} DEFAULT 'todo',
         kind ∈ {'note','procedure'} DEFAULT 'note', follow_up JSON|NULL, created_at, updated_at)
 
-tasks(id, title, status ∈ {todo, doing, done}, due_date 'AAAA-MM-JJ'|NULL,
+tasks(id, entry_id → entries ON DELETE CASCADE UNIQUE, title,
+      status ∈ {todo, doing, done}, progress ∈ [0, 100], due_date 'AAAA-MM-JJ'|NULL,
       pinned 0|1, position, priority ∈ {low, normal, high} DEFAULT 'normal',
       project_id → projects ON DELETE SET NULL, category_id → categories ON DELETE SET NULL,
       follow_up JSON|NULL, created_at, updated_at)
@@ -83,16 +84,18 @@ google_documents(entry_id → entries ON DELETE CASCADE PRIMARY KEY,
 sync_tombstones(kind, id, deleted_at, PRIMARY KEY(kind, id))   -- suppressions à propager, oubliées après 60 jours
 ```
 
-- **IDs** : chaînes `préfixe + base36(horodatage) + 6 aléatoires` (`en_`, `tk_`, `pr_`, `at_`, `ca_`).
+- **IDs** : chaînes `préfixe + base36(horodatage) + 6 aléatoires` (`en_`, `pr_`, `at_`, `ca_`). Les nouveaux suivis dérivent leur identifiant de leur note.
 - `entry_date` est une date pure, comparée en texte — pas de fuseau horaire, pas de surprise.
-- Le statut d’une entrée est indépendant de son archivage, de ses tâches liées et du bilan IA.
-  Les anciennes bases et sauvegardes reviennent en `todo`.
+- Une note peut porter le suivi d’une tâche. Elle fournit le titre, le contenu, le projet et
+  la catégorie. La tâche fournit le statut, l’avancement et la planification. Les deux lignes
+  reflètent les champs partagés. L’archivage manuel reste indépendant du statut.
 - `position` : ordre dans une colonne. Après chaque déplacement ou suppression, la colonne est
   **renumérotée 0,1,2…** (`renumber()` dans `app.js`) : jamais de trou ni de doublon.
 - Supprimer un projet **détache** entrées et tâches (`SET NULL`), il ne les perd pas.
-- Supprimer une entrée supprime ses pièces jointes, ses associations de tâches, les lignes
-  `google_documents` associées et les fichiers disque. Cela ne supprime jamais le fichier Google.
-- Une tâche sans catégorie hérite du classement unique de ses entrées liées du même projet,
+- Supprimer une entrée supprime son suivi de tâche éventuel, ses pièces jointes, ses
+  associations, les lignes `google_documents` et les fichiers disque. Le fichier Google est
+  conservé. Retirer le suivi seul conserve la note.
+- Une tâche sans catégorie hérite du classement unique de ses documents de référence du même projet,
   au lien ou au reclassement d'une entrée. Un classement existant est conservé. La résolution
   vit dans `api/src/task-categories.js` ; SQLite inclut l'héritage dans la transaction de la
   mutation. Le miroir PWA sérialise les écritures et inscrit les tâches dans sa boîte d'envoi
@@ -170,11 +173,11 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 |---|---|---|
 | GET | `/api/health` | `{ok, ts}` |
 | GET | `/api/state?q=&project_id=&category_id=` | **tout l'écran en un appel** : projets, catégories, entrées (extrait seul, avec `kind`), tâches avec `documents`, pièces jointes des procédures du filtre, compteurs ; catégorie et descendants ou `__none__` |
-| GET | `/api/entries/:id` | l'entrée complète + ses pièces jointes |
+| GET | `/api/entries/:id` | l’entrée complète, ses pièces jointes et ses métadonnées `task` si elle est suivie |
 | GET | `/api/follow-up/:kind/:id` | `kind=entry\|task` : configuration, bilan, empreinte courante et sources enregistrées (entrée seule ou documents explicitement liés) |
 | PUT | `/api/follow-up/:kind/:id` | `{enabled?}` règle l’automatisme ; `{report, source_key}` conserve un bilan daté par le serveur, refusé en 409 si les sources ont changé ; `{enabled: false, report: null}` désactive, retire le bilan et date le retrait (`cleared_at`, §65) ; ne modifie ni texte ni statut |
 | POST · PUT · DELETE | `/api/entries[/:id]` | créer · modifier (dont `status`) · supprimer |
-| POST | `/api/entries/:id/task` | crée une tâche `todo` et la lie atomiquement à l’entrée |
+| POST | `/api/entries/:id/task` | active le suivi sur la note existante, ou crée la note d’une action extraite avec l’entrée source comme référence |
 | POST | `/api/entries/:id/copy` | copie locale indépendante, fichiers compris |
 | POST | `/api/entries/merge` | remplace les entrées sources par une note fusionnée, en une transaction (contrat `entry-merge.js`) |
 | GET · POST | `/api/google/*` | état, configuration desktop, connexion, déconnexion, liste et ouverture |
@@ -183,10 +186,10 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET · POST | `/api/google/backup/:id`, `/:id/import` | lit ou restaure une sauvegarde après validation transactionnelle |
 | GET | `/api/google/documents/:id/tabs` | onglets, imbrication et compatibilité d’édition |
 | POST | `/api/entries/:id/google/push` · `pull` | envoyer ou recharger avec contrôle de révision/brouillon |
-| POST · PUT · DELETE | `/api/tasks[/:id]` | créer, avec dans la même transaction une entrée Markdown liée (titre, projet et catégorie de la tâche ; `content_md` facultatif, vide par défaut, §79) · modifier · supprimer |
-| POST | `/api/tasks/:id/entry` | crée et lie une entrée Markdown avec le projet et la catégorie de la tâche. Accepte `title`, `content_md` et un `expected_planning` facultatif avec `document_ids` pour vérifier tous les liens, archives comprises. Un écart renvoie `409 TASK_PLANNING_STALE` |
-| POST · DELETE | `/api/tasks/:id/documents/:entryId` | associer ou retirer une entrée (locale ou Google) ; à l'ajout, remplir la catégorie non ambiguë d'une tâche libre du même projet |
-| POST | `/api/tasks/merge` | remplace les tâches sources par une tâche et sa note, en une transaction (contrat `entry-merge.js`) |
+| POST · PUT · DELETE | `/api/tasks[/:id]` | créer une note de tâche avec `content_md` facultatif · modifier l’état ou la planification · retirer le suivi en conservant la note |
+| POST | `/api/tasks/:id/entry` | rattache une note principale à une ancienne tâche sans note ; renvoie `409` si elle possède déjà sa note. L’instantané facultatif `expected_planning` protège l’opération |
+| POST · DELETE | `/api/tasks/:id/documents/:entryId` | associer ou retirer un document de référence local ou Google ; la note principale reste attachée |
+| POST | `/api/tasks/merge` | fusionne les notes des tâches choisies et conserve les références, en une transaction (contrat `entry-merge.js`) |
 | PATCH | `/api/tasks/:id/move` | `{status, position}` puis renumérotation |
 | POST · PUT · DELETE | `/api/projects[/:id]` | créer · renommer/recolorer · supprimer |
 | POST · PUT · DELETE | `/api/categories[/:id]` | créer · renommer/recolorer/reparent · supprimer en remontant contenu et enfants dans le parent |
@@ -218,7 +221,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 
 `PUT /api/tasks/:id` accepte l’instantané facultatif `expected_planning` avec `status`, `priority`
 et `due_date`. `title`, `project_id`, `category_id`, `pinned` et `follow_up_key` sont facultatifs.
-`active_document_ids` compare les documents liés qui seront archivés si la tâche est terminée.
+`active_document_ids` compare les documents liés actifs avant de terminer la tâche.
 Une différence refuse l’écriture en 409 avec le code `TASK_PLANNING_STALE`.
 
 `PUT /api/entries/:id` accepte l’instantané facultatif `expected_entry` avec `title`,
@@ -270,9 +273,14 @@ google_document_id, google_tab_id, google_document_title, google_tab_title}`. Le
 `project_id` filtre les tâches (et les entrées principales), mais pas les documents associés à
 une tâche : ils restent son contexte, même s'ils appartiennent à un autre projet.
 
-`POST /api/entries/:id/task` reprend par défaut le titre et le projet de l’entrée, accepte une échéance
-facultative et crée la tâche ainsi que `task_entries` dans une transaction. Il fonctionne de la même
-manière pour une entrée locale et pour un onglet Google.
+Le champ `entry_id` désigne la note principale. `documents` contient cette note et ses
+références. Les résumés du journal exposent `task` pour les notes suivies. Une conversion locale
+garde l’identifiant de l’entrée. Une action extraite ou issue d’une procédure ou d’un onglet
+Google possède une note locale et conserve sa source comme référence.
+
+`progress` est un entier. À faire correspond à 0 %, terminé à 100 %, en cours accepte 0 à 99 %.
+Une modification du pourcentage seul déduit le statut. Une tâche terminée conserve sa note dans
+le journal, sauf archivage manuel.
 
 Les associations sont créées avec `POST /api/tasks/:id/documents/:entryId` : `201` à la première
 création, puis `200` avec la ligne existante en cas de doublon. La suppression renvoie `200` ;

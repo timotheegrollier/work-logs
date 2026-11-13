@@ -290,7 +290,16 @@ test('fichiers joints et export JSON fonctionnent dans l’application empaquet�
   const exportDownload = downloadNext(exportTarget);
   await page.getByRole('button', { name: 'Exporter' }).click();
   await exportDownload;
-  expect(JSON.parse(fs.readFileSync(exportTarget, 'utf8')).entries[0].title).toBe('Comment ça marche');
+  const exported = JSON.parse(fs.readFileSync(exportTarget, 'utf8')) as {
+    entries: { id: string; title: string }[];
+    tasks: { entry_id: string; title: string; progress: number }[];
+  };
+  expect(exported.entries).toContainEqual(expect.objectContaining({ id: 'en_welcome', title: 'Comment ça marche' }));
+  expect(exported.tasks).toHaveLength(3);
+  for (const task of exported.tasks) {
+    expect(exported.entries).toContainEqual(expect.objectContaining({ id: task.entry_id, title: task.title }));
+    expect(task.progress).toBe(0);
+  }
 });
 
 test('dossier partagé : choisi par le dialogue natif, envoyé, retrouvé au redémarrage, absent de l’export', async () => {

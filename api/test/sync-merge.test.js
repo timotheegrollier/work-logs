@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mergeSnapshots, validateTombstones, TOMBSTONE_TTL_MS } from '../src/sync-merge.js';
 import { validateBackup } from '../src/backup-format.js';
+import { legacyTaskNoteId } from '../src/task-notes.js';
 
 const NOW = Date.parse('2026-09-22T12:00:00.000Z');
 const at = (minutes) => new Date(NOW - (60 - minutes) * 60_000).toISOString();
@@ -116,6 +117,10 @@ test('l’amorçage intact ne gagne jamais contre une version modifiée ; une su
   const pcDeleted = snap({ deleted: [{ kind: 'task', id: 'tk_1', deleted_at: at(1) }] });
   const phoneTask = { ...task('tk_1', 50), created_at: at(50), updated_at: at(50) };
   assert.deepEqual(mergeSnapshots(snap({ tasks: [phoneTask] }), pcDeleted, NOW).merged.tasks, []);
+  const seededId = legacyTaskNoteId('tk_1');
+  const seeded = entry(seededId, 50, { created_at: at(50) });
+  const written = entry(seededId, 10, { content_md: 'Description saisie' });
+  assert.equal(mergeSnapshots(snap({ entries: [seeded] }), snap({ entries: [written] }), NOW).merged.entries[0].content_md, 'Description saisie');
 });
 
 test('projet supprimé : entrées et tâches détachées, jamais orphelines', () => {
@@ -134,12 +139,87 @@ test('renommer un projet se propage : le plus récent gagne', () => {
 });
 
 test('liens tâche ⇄ document : union, moins les retraits et les orphelins', () => {
-  const base = { entries: [entry('en_a', 1), entry('en_b', 1)], tasks: [task('tk_a', 1)] };
+  const base = { entries: [entry('en_a', 1), entry('en_b', 1)], tasks: [task('tk_a', 1, { entry_id: 'en_a' })] };
   const local = snap({ ...base, task_entries: [{ task_id: 'tk_a', entry_id: 'en_a', created_at: at(2) }],
     deleted: [{ kind: 'link', id: 'tk_a|en_b', deleted_at: at(10) }] });
   const remote = snap({ ...base, task_entries: [{ task_id: 'tk_a', entry_id: 'en_b', created_at: at(3) }, { task_id: 'tk_zz', entry_id: 'en_a', created_at: at(3) }] });
   const { merged } = mergeSnapshots(local, remote, NOW);
   assert.deepEqual(merged.task_entries.map((l) => `${l.task_id}|${l.entry_id}`), ['tk_a|en_a']);
+});
+
+test('fusionne le texte et le progrès modifiés séparément dans la même note', () => {
+  const primary = 'en_a';
+  const desktop = snap({
+    entries: [entry(primary, 20, { title: 'Nouveau titre', content_md: 'Description locale', status: 'doing' })],
+    tasks: [task('tk_a', 1, { entry_id: primary, status: 'doing', progress: 20 })],
+  });
+  const phone = snap({
+    entries: [entry(primary, 1, { status: 'done' })],
+    tasks: [task('tk_a', 10, { entry_id: primary, status: 'done', progress: 100 })],
+  });
+  const { merged } = mergeSnapshots(desktop, phone, NOW);
+  assert.equal(merged.entries[0].content_md, 'Description locale');
+  assert.equal(merged.entries[0].status, 'done');
+  assert.equal(merged.entries[0].updated_at, at(20));
+  assert.equal(merged.tasks[0].title, 'Nouveau titre');
+  assert.equal(merged.tasks[0].progress, 100);
+  asBackup(merged);
+});
+
+test('une sauvegarde ancienne garde la note principale et le pourcentage déjà connus', () => {
+  const modern = snap({ entries: [entry('en_a', 1)], tasks: [task('tk_a', 5, { entry_id: 'en_a', status: 'doing', progress: 45 })] });
+  const legacy = snap({ tasks: [task('tk_a', 20, { status: 'doing', pinned: 1 })] });
+  const { merged } = mergeSnapshots(modern, legacy, NOW);
+  assert.deepEqual(ids(merged.entries), ['en_a']);
+  assert.equal(merged.tasks[0].entry_id, 'en_a');
+  assert.equal(merged.tasks[0].progress, 45);
+  assert.equal(merged.tasks[0].pinned, 1);
+});
+
+test('une note supprimée emporte sa tâche même après une mise à jour du progrès', () => {
+  const stale = snap({
+    entries: [entry('en_a', 1)],
+    tasks: [task('tk_a', 30, { entry_id: 'en_a', status: 'doing', progress: 40 })],
+  });
+  const deleted = snap({ deleted: [{ kind: 'entry', id: 'en_a', deleted_at: at(20) }] });
+  const { merged } = mergeSnapshots(deleted, stale, NOW);
+  assert.deepEqual(merged.entries, []);
+  assert.deepEqual(merged.tasks, []);
+  assert.ok(merged.deleted.some((row) => row.kind === 'task' && row.id === 'tk_a'));
+});
+
+test('la fusion de notes garde le suivi déplacé malgré la suppression de la source', () => {
+  const stale = snap({ entries: [entry('en_a', 5)], tasks: [task('tk_a', 30, { entry_id: 'en_a', status: 'doing', progress: 65 })] });
+  const replacement = snap({
+    entries: [entry('en_fusion', 20, { status: 'doing' })],
+    tasks: [task('tk_a', 20, { entry_id: 'en_fusion', status: 'doing', progress: 50 })],
+    deleted: [{ kind: 'entry', id: 'en_a', deleted_at: at(20) }],
+  });
+  const { merged } = mergeSnapshots(replacement, stale, NOW);
+  assert.deepEqual(ids(merged.entries), ['en_fusion']);
+  assert.equal(merged.tasks[0].entry_id, 'en_fusion');
+  assert.equal(merged.tasks[0].progress, 65);
+});
+
+test('deux suivis historiques de la même note fusionnent avec leurs références', () => {
+  const left = snap({
+    entries: [entry('en_a', 1), entry('en_ref', 1)],
+    tasks: [task('tk_a', 20, { entry_id: 'en_a', status: 'doing', progress: 40 })],
+    task_entries: [{ task_id: 'tk_a', entry_id: 'en_ref', created_at: at(20) }],
+  });
+  const right = snap({
+    entries: [entry('en_a', 1), entry('en_other', 1)],
+    tasks: [task('tk_z', 30, { entry_id: 'en_a', status: 'doing', progress: 65 })],
+    task_entries: [{ task_id: 'tk_z', entry_id: 'en_other', created_at: at(30) }],
+  });
+  for (const [local, remote] of [[left, right], [right, left]]) {
+    const { merged } = mergeSnapshots(local, remote, NOW);
+    assert.deepEqual(ids(merged.tasks), ['tk_a']);
+    assert.equal(merged.tasks[0].progress, 65);
+    assert.deepEqual(merged.task_entries.map((row) => `${row.task_id}|${row.entry_id}`).sort(), ['tk_a|en_a', 'tk_a|en_other', 'tk_a|en_ref']);
+    assert.ok(merged.deleted.some((row) => row.kind === 'task' && row.id === 'tk_z'));
+    assert.equal(mergeSnapshots(merged, merged, NOW).changedLocal, false);
+  }
 });
 
 test('pièces jointes : identifiant Drive complété, celles d’une entrée supprimée écartées', () => {

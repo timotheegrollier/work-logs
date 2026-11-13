@@ -38,7 +38,7 @@ describe('amorçage et état', () => {
     expect(state.projects.map((p) => p.name).sort()).toEqual(['Perso', 'Pro']);
     expect(state.entries.map((e) => e.title)).toContain('Comment ça marche');
     expect(state.tasks.map((t) => t.title)).toContain('Écrire ma première entrée');
-    expect(state.stats.entries).toBe(1);
+    expect(state.stats.entries).toBe(4);
     expect(state.stats.tasks).toEqual({ todo: 2, doing: 1, done: 0 });
   });
 
@@ -185,7 +185,7 @@ describe('entrées', () => {
     expect(copy.content_md).toContain(copy.attachments[0].stored);
     expect(copy.content_md).not.toContain(stored);
     await localApi.deleteEntry(original.id);
-    expect((await localApi.state()).stats.entries).toBe(2); // amorçage + copie
+    expect((await localApi.state()).stats.entries).toBe(5); // amorçage + copie
   });
 
   test('fusion : même contrat que l’API, fichiers et tâches suivent, source modifiée refusée', async () => {
@@ -219,7 +219,7 @@ describe('entrées', () => {
     const a = await localApi.createTask({ title: 'A', project_id: id, priority: 'high', due_date: '2026-12-10' });
     const b = await localApi.createTask({ title: 'B', project_id: id, due_date: '2026-12-05', pinned: 1 });
     const note = await localApi.createEntry({ title: 'Note', project_id: id, content_md: 'n' });
-    await localApi.upload(new File(['pixels'], 'photo.jpg', { type: 'image/jpeg' }), note.id);
+    await localApi.upload(new File(['pixels'], 'photo.jpg', { type: 'image/jpeg' }), a.entry_id);
     const procedure = await localApi.createEntry({ title: 'Mode opératoire', kind: 'procedure', content_md: 'étapes' });
     await localApi.linkTaskDocument(a.id, note.id);
     await localApi.linkTaskDocument(b.id, procedure.id);
@@ -246,8 +246,9 @@ describe('entrées', () => {
     expect(state.tasks.map((task) => task.title)).toEqual(expect.not.arrayContaining(['A', 'B']));
     const task = state.tasks.find((candidate) => candidate.title === 'Tâche commune')!;
     expect(task).toMatchObject({ status: 'todo', due_date: '2026-12-05', priority: 'high', pinned: 1 });
-    expect(task.documents.map((document) => document.id).sort()).toEqual([merged.id, procedure.id].sort());
-    expect(state.entries.map((entry) => entry.title)).not.toContain('Note');
+    expect(task.documents.map((document) => document.id).sort()).toEqual([merged.id, note.id, procedure.id].sort());
+    expect(state.entries.map((entry) => entry.title)).toContain('Note');
+    expect(task.entry_id).toBe(merged.id);
     expect(readLocalOutbox().tasks).toContain(task.id);
   });
 });
@@ -385,7 +386,7 @@ describe('tâches', () => {
     for (const priority of ['high', 'low'] as const) {
       const task = await localApi.createTaskFromEntry(entry.id, { title: `Tâche ${priority}`, priority });
       expect(task.priority).toBe(priority);
-      expect(task.documents.map((document) => document.id)).toEqual([entry.id]);
+      expect(task.documents.map((document) => document.id).sort()).toEqual([entry.id, task.entry_id].sort());
       expect((await localApi.state()).tasks.find((item) => item.id === task.id)?.priority).toBe(priority);
     }
     const before = (await localApi.state()).tasks;
@@ -402,15 +403,51 @@ describe('tâches', () => {
       .rejects.toThrow('statut invalide');
   });
 
-  test('création depuis une tâche, avec projet, contenu et lien repris', async () => {
+  test('une tâche créée possède une seule note éditable', async () => {
     const id = await projectId();
     const task = await localApi.createTask({ title: 'Dossier', project_id: id });
-    const entry = await localApi.createEntryFromTask(task.id, { content_md: '## Sous-tâches\n- [ ] Relire\n' });
-    expect(entry).toMatchObject({ title: 'Dossier', project_id: id, content_md: '## Sous-tâches\n- [ ] Relire\n' });
-    expect(entry.entry_date).toBe(new Date().toISOString().slice(0, 10));
-    expect((await localApi.state()).tasks.find((t) => t.id === task.id)?.documents.map((d) => d.id).sort()).toEqual([entry.id, task.documents[0].id].sort());
+    await expect(localApi.createEntryFromTask(task.id, { content_md: 'Nouvelle description' })).rejects.toThrow('Cette tâche a déjà une note');
+    const entry = await localApi.updateEntry(task.entry_id, { content_md: 'Nouvelle description' });
+    expect(entry).toMatchObject({ title: 'Dossier', project_id: id, content_md: 'Nouvelle description', task: { id: task.id } });
+    expect((await localApi.state()).tasks.find((t) => t.id === task.id)?.documents.map((d) => d.id)).toEqual([entry.id]);
     await expect(localApi.createEntryFromTask('tk_x')).rejects.toThrow('tâche introuvable');
     await expect(localApi.createEntryFromTask(task.id, { title: ' ' })).rejects.toThrow('titre requis');
+  });
+
+  test('convertir conserve le document ; statut et avancement restent partagés jusqu’au retrait du suivi', async () => {
+    const entry = await localApi.createEntry({ title: 'Pompe', content_md: 'Contrôler le joint' });
+    const attachment = await localApi.upload(new File(['plan'], 'plan.txt'), entry.id);
+    const tasks = await Promise.all([localApi.createTaskFromEntry(entry.id), localApi.createTaskFromEntry(entry.id)]);
+    const [task] = tasks;
+    expect(tasks.map(({ id, entry_id }) => [id, entry_id])).toEqual([[task.id, entry.id], [task.id, entry.id]]);
+    expect((await localApi.state('pompe')).entries).toHaveLength(1);
+    await localApi.updateEntry(entry.id, { title: 'Contrôle pompe' });
+    await expect(localApi.updateTask(task.id, { progress: 35 })).resolves.toMatchObject({ title: 'Contrôle pompe', status: 'doing', progress: 35 });
+    await expect(localApi.updateTask(task.id, { progress: 35.5 })).rejects.toThrow(/avancement/i);
+    expect((await localApi.state('joint')).tasks[0]).toMatchObject({ id: task.id, progress: 35 });
+    await expect(localApi.unlinkTaskDocument(task.id, entry.id)).rejects.toThrow(/cette note contient la tâche/i);
+    await localApi.updateEntry(entry.id, { status: 'done' });
+    expect(await localApi.entry(entry.id)).toMatchObject({ status: 'done', archived: 0, task: { progress: 100 }, attachments: [{ id: attachment.id }] });
+    await localApi.deleteTask(task.id);
+    expect(await localApi.entry(entry.id)).toMatchObject({ content_md: 'Contrôler le joint', task: null });
+    const trackedAgain = await localApi.createTaskFromEntry(entry.id);
+    await localApi.deleteEntry(entry.id);
+    expect((await localApi.state()).tasks.some(({ id }) => id === trackedAgain.id)).toBe(false);
+  });
+
+  test('la boîte mobile et la restauration gardent la note et l’avancement', async () => {
+    const task = await localApi.createTask({ title: 'Travaux', content_md: 'Préparer les outils' });
+    clearLocalOutbox();
+    await localApi.updateTask(task.id, { progress: 62 });
+    const payload = await exportLocalOutbox();
+    expect(payload).toMatchObject({
+      entries: [{ id: task.entry_id, content_md: 'Préparer les outils', status: 'doing' }],
+      tasks: [{ id: task.id, entry_id: task.entry_id, progress: 62 }],
+      task_entries: [{ task_id: task.id, entry_id: task.entry_id }],
+    });
+    const { blob } = await localApi.exportBackup();
+    await importLocalBackup(JSON.parse(await blob.text()));
+    expect(await localApi.entry(task.entry_id)).toMatchObject({ task: { id: task.id, progress: 62 }, status: 'doing' });
   });
 });
 
@@ -473,7 +510,7 @@ describe('import de sauvegarde', () => {
 
     setLocalDatabase(createMemoryDatabase());
     const result = await importLocalBackup(JSON.parse(await blob.text()));
-    expect(result).toEqual({ ok: true, projects: 3, entries: 3, tasks: 4 });
+    expect(result).toEqual({ ok: true, projects: 3, entries: 6, tasks: 4 });
     const state = await localApi.state();
     expect(state.entries.map((e) => e.title)).toContain('Devis');
     expect(state.tasks.find((t) => t.title === 'Relire')?.documents.map((d) => d.id).sort()).toEqual([entry.id, task.documents[0].id].sort());
@@ -484,7 +521,7 @@ describe('import de sauvegarde', () => {
 
   test('sauvegarde invalide refusée sans rien écrire', async () => {
     await expect(importLocalBackup({ version: 999 })).rejects.toThrow('Version de sauvegarde');
-    expect((await localApi.state()).stats.entries).toBe(1);
+    expect((await localApi.state()).stats.entries).toBe(4);
     await expect(importLocalBackup('{malformé')).rejects.toThrow();
   });
 });

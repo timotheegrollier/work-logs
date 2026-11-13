@@ -15,7 +15,7 @@ function outbox(overrides = {}) {
     device: 'pwa',
     projects: [{ id: 'pr_mob', name: 'Mobile', color: '#fff', created_at: T0 }],
     entries: [{ id: 'en_mob', title: 'Note mobile', content_md: 'corps', content_json: null, entry_date: '2026-09-18', project_id: 'pr_mob', created_at: T0, updated_at: T0 }],
-    tasks: [{ id: 'tk_mob', title: 'Relire', status: 'todo', due_date: null, pinned: 0, position: 0, priority: 'normal', project_id: 'pr_mob', created_at: T0, updated_at: T0 }],
+    tasks: [{ id: 'tk_mob', entry_id: 'en_mob', title: 'Note mobile', status: 'todo', progress: 0, due_date: null, pinned: 0, position: 0, priority: 'normal', project_id: 'pr_mob', created_at: T0, updated_at: T0 }],
     task_entries: [{ task_id: 'tk_mob', entry_id: 'en_mob', created_at: T0 }],
     attachments: [{ id: 'at_mob', filename: 'photo.jpg', stored: 'mob.jpg', mime: 'image/jpeg', size: 6, entry_id: 'en_mob', created_at: T0, driveFileId: 'drive-photo-1' }],
     ...overrides,
@@ -68,6 +68,7 @@ describe('boîte mobile', () => {
 
       payload.entries[0].content_md = 'Nouvelle saisie mobile après la suppression.';
       payload.tasks[0].title = 'Tâche retouchée après la suppression';
+      payload.entries[0].title = payload.tasks[0].title;
       for (const row of [...payload.entries, ...payload.tasks]) row.updated_at = later;
       const resurrected = await api.post('/api/google/outbox/ob-1/import');
       assert.equal(resurrected.body.entries, 1);
@@ -79,7 +80,7 @@ describe('boîte mobile', () => {
   });
 
   test('importe le statut d’une entrée nouvelle puis modifiée depuis la PWA', async () => {
-    const payload = outbox({ attachments: [] });
+    const payload = outbox({ tasks: [], task_entries: [], attachments: [] });
     payload.entries[0].status = 'doing';
     const api = await startApi({ google: mockGoogle({ payload }) });
     try {
@@ -164,6 +165,28 @@ describe('boîte mobile', () => {
     } finally {
       await api.close();
     }
+  });
+
+  test('importe le progrès mobile sans écraser la note plus récente sur le PC', async () => {
+    const payload = outbox({ attachments: [] });
+    const api = await startApi({ google: mockGoogle({ payload }) });
+    try {
+      assert.equal((await api.post('/api/google/outbox/ob-1/import')).status, 200);
+      const noteTime = '2026-09-18T14:00:00.000Z';
+      api.db.prepare('UPDATE entries SET title=?,content_md=?,updated_at=? WHERE id=?')
+        .run('Titre révisé sur le PC', 'Texte révisé sur le PC', noteTime, 'en_mob');
+      Object.assign(payload.tasks[0], { status: 'doing', progress: 55, updated_at: T1 });
+      payload.entries[0].status = 'doing';
+      assert.equal((await api.post('/api/google/outbox/ob-1/import')).status, 200);
+      const note = (await api.get('/api/entries/en_mob')).body;
+      const task = (await api.get('/api/state')).body.tasks.find((row) => row.id === 'tk_mob');
+      assert.equal(note.content_md, 'Texte révisé sur le PC');
+      assert.equal(note.updated_at, noteTime);
+      assert.equal(note.status, 'doing');
+      assert.equal(task.entry_id, note.id);
+      assert.equal(task.title, note.title);
+      assert.equal(task.progress, 55);
+    } finally { await api.close(); }
   });
 
   test('mise à jour plus récente appliquée, conflit conservé côté PC', async () => {

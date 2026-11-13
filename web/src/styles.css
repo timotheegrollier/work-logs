@@ -1969,6 +1969,44 @@ button:disabled {
   color: var(--text);
   font-size: 11.5px;
 }
+.entry-task-progress {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.entry-task-progress-meta,
+.task-progress-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+.entry-task-progress-meta {
+  justify-content: space-between;
+}
+.entry-task-progress label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.entry-task-progress input {
+  width: 8ch;
+}
+.task-progress-form .task-progress-bar {
+  align-self: center;
+  flex: 1 1 100px;
+}
+@media (max-width: 600px) {
+  .entry-task-progress select,
+  .entry-task-progress input,
+  .entry-task-progress button {
+    min-height: 44px;
+  }
+}
 /* Colonnes côte à côte : un sélecteur prend la largeur de son choix, pas celle du plus
    long chemin de catégorie ; la rangée tient ainsi sur moins de lignes. */
 @media (min-width: 901px) {
@@ -3359,6 +3397,47 @@ div.google-preserved {
   .card-top-actions .icon {
     opacity: 1;
   }
+}
+.card-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.task-progress-bar {
+  display: block;
+  width: 100%;
+  height: 8px;
+  min-width: 0;
+  overflow: hidden;
+  appearance: none;
+  border: 0;
+  border-radius: 99px;
+  background: var(--line);
+  accent-color: var(--accent);
+}
+.task-progress-bar::-webkit-progress-bar {
+  background: var(--line);
+}
+.task-progress-bar::-webkit-progress-value {
+  border-radius: 99px;
+  background: var(--accent);
+}
+.task-progress-bar::-moz-progress-bar {
+  border-radius: 99px;
+  background: var(--accent);
+}
+.card-progress .task-progress-bar {
+  flex: 1;
+}
+.card-status {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.quick .error {
+  flex-basis: 100%;
 }
 .card-meta:empty,
 .card-documents:empty {
@@ -5845,6 +5924,7 @@ div.google-preserved {
      ou un message ouvert reprend toute la largeur). */
   .entry-task-action:not(:has(> :not(.ghost, .ai-menu))) {
     flex-wrap: nowrap;
+    padding-inline-end: 2px;
     overflow-x: auto;
     scrollbar-width: none;
   }

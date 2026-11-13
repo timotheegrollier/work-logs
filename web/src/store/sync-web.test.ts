@@ -198,4 +198,27 @@ describe('synchro PWA', () => {
     expect(result.skipped).toBe(1);
     expect((await local.localApi.entry(created.id)).title).toBe('Saisi pendant la synchro');
   });
+
+  test('une saisie dans une note de tâche pendant le tirage rejoint le seul instantané envoyé', async () => {
+    const drive = fakeDrive();
+    connect();
+    const { local, sync } = await load();
+    const task = await local.localApi.createTask({ title: 'Préparer le devis', content_md: 'Brouillon' });
+    drive.text = remoteBackup([entry('en_pc', 'Note du PC', '2026-09-20T08:00:00.000Z')]);
+    drive.modifiedTime = '2026-09-20T08:00:00.000Z';
+    const apply = local.applySyncSnapshot;
+    const interrupt = vi.spyOn(local, 'applySyncSnapshot').mockImplementationOnce(async (merged, base) => {
+      await local.localApi.updateEntry(task.entry_id, { content_md: 'Saisie pendant le tirage' });
+      return apply(merged, base);
+    });
+    try {
+      await sync.syncWebNow();
+      expect(interrupt).toHaveBeenCalledTimes(2);
+      expect(drive.uploads).toHaveLength(1);
+      const sent = JSON.parse(drive.uploads[0]);
+      expect(sent.entries).toContainEqual(expect.objectContaining({ id: task.entry_id, content_md: 'Saisie pendant le tirage' }));
+      expect(sent.entries).toContainEqual(expect.objectContaining({ id: 'en_pc' }));
+      expect(sent.tasks).toContainEqual(expect.objectContaining({ id: task.id, entry_id: task.entry_id }));
+    } finally { interrupt.mockRestore(); }
+  });
 });

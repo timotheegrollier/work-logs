@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { dayLabel, formatSize, groupByDay, groupTabs, isOverdue, overviewOrder, plainText, projectProgress, subtasksMd, type EntrySummary, type Project, type Task } from './lib';
 
 const task = (over: Partial<Task>): Task => ({
-  id: 'tk_1',
+  entry_id: '', progress: 0, id: 'tk_1',
   title: 'Tâche',
   status: 'todo',
   due_date: null,
@@ -171,7 +171,7 @@ describe('subtasksMd', () => {
 
 describe('projectProgress', () => {
   const task = (id: string, extra: Partial<Task>): Task =>
-    ({ id, title: id, status: 'todo', due_date: null, pinned: 0, position: 0, priority: 'normal', project_id: 'p', created_at: '2026-10-01', updated_at: '2026-10-01', documents: [], ...extra });
+    ({ entry_id: '', progress: 0, id, title: id, status: 'todo', due_date: null, pinned: 0, position: 0, priority: 'normal', project_id: 'p', created_at: '2026-10-01', updated_at: '2026-10-01', documents: [], ...extra });
   const project = (id: string): Project => ({ id, name: id, color: '#000', created_at: '2026-01-01', entries: 0, open_tasks: 0 });
 
   test('une voie par projet dans l’ordre du bandeau, puis les sans-projet s’il y en a ; les ouvertes rangées, les terminées comptées', () => {
@@ -203,7 +203,7 @@ describe('projectProgress', () => {
 
 describe('overviewOrder', () => {
   const task = (id: string, extra: Partial<Task>): Task =>
-    ({ id, title: id, status: 'todo', due_date: null, pinned: 0, position: 0, priority: 'normal', project_id: 'p', created_at: '2026-10-01', updated_at: '2026-10-01', documents: [], ...extra });
+    ({ entry_id: '', progress: 0, id, title: id, status: 'todo', due_date: null, pinned: 0, position: 0, priority: 'normal', project_id: 'p', created_at: '2026-10-01', updated_at: '2026-10-01', documents: [], ...extra });
 
   test('en cours, en retard, épinglées, priorité, échéance proche, puis l’ordre des colonnes', () => {
     const tasks = [

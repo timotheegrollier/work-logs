@@ -41,7 +41,7 @@ describe('PWA locale (mêmes écrans, backend IndexedDB/mémoire)', () => {
     expect(await within(journal()).findByText('Comment ça marche')).toBeInTheDocument();
     expect(await within(board()).findByText('Écrire ma première entrée')).toBeInTheDocument();
     expect(await within(board()).findByText('Prendre en main WorkLogs')).toBeInTheDocument();
-    expect((await localApi.state()).stats.entries).toBe(1);
+    expect((await localApi.state()).stats.entries).toBe(4);
   });
 
   // Écran complet, éditeur riche et vraie sauvegarde différée (600 ms). Sous charge,
@@ -68,9 +68,9 @@ describe('PWA locale (mêmes écrans, backend IndexedDB/mémoire)', () => {
     await user.click(tasks.getByLabelText('Nouvelle tâche'));
     await user.paste('Acheter des plants');
     await user.keyboard('{Enter}');
-    expect(tasks.getAllByText('Acheter des plants').length).toBeGreaterThan(0);
+    expect(await tasks.findByText('Acheter des plants', undefined, stockage)).toBeInTheDocument();
     expect(await list.findByText('Acheter des plants', undefined, stockage)).toBeInTheDocument();
-    expect((await localApi.state()).stats.entries).toBe(3);
+    expect((await localApi.state()).stats.entries).toBe(6);
   }, 30_000);
 
   test('Exporter télécharge le JSON local', async () => {

@@ -91,7 +91,7 @@ async function pass(): Promise<void> {
       remote = seen.snapshot;
     } else if (file) {
       const raw = (await downloadWebBackup(file.id)) as { deleted?: unknown };
-      remote = { ...(validateBackup(raw) as Omit<SyncSnapshot, 'deleted'>), deleted: validateTombstones(raw.deleted) };
+      remote = { ...(validateBackup(raw, { migrateTaskNotes: false }) as Omit<SyncSnapshot, 'deleted'>), deleted: validateTombstones(raw.deleted) };
     }
     const local = await localSyncSnapshot();
     const { merged, changedLocal, changedRemote } = mergeSnapshots(local, remote) as {
@@ -100,9 +100,13 @@ async function pass(): Promise<void> {
     if (changedLocal) {
       const { changed, skipped } = await applySyncSnapshot(merged, local);
       // Dès l'écriture : une frappe pendant l'envoi ou un envoi en échec ferait passer le tirage pour une saisie (§77).
-      if (changed) publish({ revision: status.revision + 1 });
-      // Une saisie pendant la synchro : on repasse aussitôt pour l'envoyer.
-      if (skipped) again = true;
+      if (changed) {
+        publish({ revision: status.revision + 1 });
+        // Les photos arrivent après les fiches, sans bloquer la synchro.
+        void fetchMissingDriveAttachments().then(({ fetched }) => { if (fetched) publish({ revision: status.revision + 1 }); }).catch(() => {});
+      }
+      // Une saisie pendant la synchro doit rejoindre la fusion avant l'envoi.
+      if (skipped) { again = true; return; }
     }
     let written: { id: string; modifiedTime?: string } | null = file;
     if (changedRemote) {
@@ -112,10 +116,6 @@ async function pass(): Promise<void> {
     // Tout est sur Drive : l'ancienne « boîte mobile » n'a plus rien à envoyer.
     clearLocalOutbox();
     publish({ state: 'idle', error: '', lastSyncedAt: new Date().toISOString() });
-    if (changedLocal) {
-      // Les photos arrivent après les fiches, sans bloquer la synchro.
-      void fetchMissingDriveAttachments().then(({ fetched }) => { if (fetched) publish({ revision: status.revision + 1 }); }).catch(() => {});
-    }
   } catch (e) {
     publish({ state: 'error', error: (e as Error).message || 'Synchronisation impossible.' });
     return;
@@ -143,6 +143,10 @@ export function syncWebNow(): Promise<void> {
       again = false;
       await pass();
     } while (again && ++passes < 3);
+    if (again && status.state === 'syncing') {
+      publish({ state: 'idle' });
+      scheduleWebSync();
+    }
   })().finally(() => {
     running = null;
   });

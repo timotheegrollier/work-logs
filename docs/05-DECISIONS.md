@@ -3534,3 +3534,24 @@ lui-même ne charge rien (document inerte).
 
 **Rouvrir si** une image doit aussi être écartée à l’application d’une proposition, ou si une mise à
 jour de DOMPurify autorise un nouvel attribut qui charge une ressource.
+
+## 83. Une tâche se rédige dans sa note — 2026-11-13
+
+La note du journal devient une tâche au clic sur **Suivre comme tâche**, en gardant son
+identifiant, son texte et ses pièces jointes. La création rapide ouvre la note créée avec
+le suivi déjà actif. Une suggestion d’action tirée d’une autre note crée sa propre note de
+tâche et garde la source comme référence.
+
+Le tableau représente ces mêmes notes. La note fournit le titre, le texte et le classement.
+La ligne `tasks` porte le suivi, avec une note principale unique dans `entry_id`, et les
+autres associations servent de références. Statut et pourcentage se règlent dans la note
+et se lisent sur la carte. Le passage à 100 % termine la tâche et conserve sa note dans le
+journal. Les références gardent leur règle d’archivage, sauf si elles sont elles-mêmes des
+notes de tâche. Retirer le suivi conserve la note. Supprimer la note retire son suivi.
+
+La migration SQLite et IndexedDB réutilise une note locale liée de même titre et de
+classement compatible, ou génère une note dédiée en conservant les autres liens. Les
+anciens identifiants restent valides. Une tâche déjà terminée reçoit 100 %, les autres 0 %.
+En synchronisation, le contenu et le classement suivent l’horloge de la note, le statut
+et l’avancement celle de la tâche. Une modification du texte sur un appareil peut ainsi
+être fusionnée avec un changement d’avancement sur un autre.

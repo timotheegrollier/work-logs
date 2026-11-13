@@ -12,6 +12,7 @@ export function entryMergeSourceKey(entry) {
     entry.archived ?? 0, entry.kind ?? 'note', entry.created_at, entry.updated_at,
     entry.content_md ?? '', decoded(entry.content_json),
     ...(entry.status && entry.status !== 'todo' ? [entry.status] : []),
+    ...(entry.task ? [entry.task.id] : []),
   ]));
 }
 
@@ -60,14 +61,15 @@ export function entryMergeClassification(entries) {
   return { project_id, category_id: project_id ? common('category_id') : null, kind: common('kind') === 'procedure' ? 'procedure' : 'note' };
 }
 
-/** Fusion de tâches (§73) : seule une note se réécrit ; un document Google ou une procédure reste lié tel quel. */
+/** Une note locale peut contenir l’état d’une tâche. */
 export const isRewritableNote = (entry) => !entry.google_sync && !entry.google_document_id && !entry.google_tab_id && (entry.kind ?? 'note') === 'note';
 
 /** Couvre la tâche et tous ses documents : un lien ajouté ou retiré périme aussi la proposition. */
 export function taskMergeSourceKey(task, documents) {
   return JSON.stringify(canonical([
     'task-merge-v1', task.id, task.title, task.status, task.due_date ?? null, task.pinned ? 1 : 0, task.priority ?? 'normal',
-    task.project_id ?? null, task.category_id ?? null, task.created_at, task.updated_at, documents.map(entryMergeSourceKey).sort(),
+    task.project_id ?? null, task.category_id ?? null, task.created_at, task.updated_at, task.entry_id ?? null, task.progress ?? 0,
+    documents.map(entryMergeSourceKey).sort(),
   ]));
 }
 
@@ -88,9 +90,10 @@ export function taskMergeAttributes(tasks) {
   const open = tasks.filter((task) => task.status !== 'done');
   const deciding = open.length ? open : tasks;
   const { project_id, category_id } = entryMergeClassification(tasks);
+  const status = deciding.some((task) => task.status === 'doing') ? 'doing' : deciding[0].status;
   return {
-    project_id, category_id,
-    status: deciding.some((task) => task.status === 'doing') ? 'doing' : deciding[0].status,
+    project_id, category_id, status,
+    progress: status === 'done' ? 100 : status === 'doing' ? Math.max(...deciding.map((task) => task.progress ?? 0)) : 0,
     due_date: deciding.map((task) => task.due_date).filter(Boolean).sort()[0] ?? null,
     pinned: deciding.some((task) => task.pinned) ? 1 : 0,
     priority: ['high', 'normal', 'low'].find((level) => deciding.some((task) => task.priority === level)) ?? 'normal',

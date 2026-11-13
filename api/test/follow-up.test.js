@@ -269,13 +269,15 @@ test('migration additive des suivis : conserve textes, liens et intégrité d’
     const entry = db.prepare('SELECT * FROM entries LIMIT 1').get();
     const task = db.prepare('SELECT * FROM tasks LIMIT 1').get();
     db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run(task.id, entry.id, entry.created_at);
+    const count = db.prepare('SELECT COUNT(*) n FROM task_entries').get().n;
     db.exec('ALTER TABLE entries DROP COLUMN follow_up; ALTER TABLE tasks DROP COLUMN follow_up;');
     db.close();
     db = openDb(file, { withSeed: false });
     assert.equal(db.prepare('SELECT content_md FROM entries WHERE id=?').get(entry.id).content_md, entry.content_md);
     assert.equal(db.prepare('SELECT follow_up FROM entries WHERE id=?').get(entry.id).follow_up, null);
     assert.equal(db.prepare('SELECT follow_up FROM tasks WHERE id=?').get(task.id).follow_up, null);
-    assert.equal(db.prepare('SELECT COUNT(*) n FROM task_entries').get().n, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM task_entries').get().n, count);
+    assert.ok(db.prepare('SELECT 1 FROM task_entries WHERE task_id=? AND entry_id=?').get(task.id, entry.id));
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
   } finally { db.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

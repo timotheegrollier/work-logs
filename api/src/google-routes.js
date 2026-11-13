@@ -8,6 +8,8 @@ import { buildPreservingUpdate, googlePreservedCount, importGoogleDocument as go
 import { buildBackup, BACKUP_NAME, MAX_BACKUP_BYTES, restoreBackup, validateBackup } from './backup.js';
 import { createSyncEngine } from './google-sync.js';
 import { validateOutbox } from './backup-format.js';
+import { migrateTaskNotes } from './task-notes-sqlite.js';
+import { storedTaskProgress } from './task-notes.js';
 import { mergeFollowUp, readFollowUp } from './follow-up.js';
 
 const blankSource = { body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } };
@@ -160,18 +162,18 @@ function renumberTasks(db, status) {
   rows.forEach((row, i) => set.run(i, row.id));
 }
 
-const sameEntry = (current, next) =>
+const sameEntry = (current, next, tracked) =>
   current.title === next.title && current.content_md === next.content_md &&
   (current.content_json || null) === (next.content_json ? JSON.stringify(next.content_json) : null) &&
   current.entry_date === next.entry_date && (current.project_id || null) === (next.project_id || null) &&
   (current.archived ?? 0) === (next.archived ?? 0) && (current.kind ?? 'note') === (next.kind ?? 'note') &&
-  (current.status ?? 'todo') === (next.status ?? 'todo') && (current.category_id || null) === (next.category_id || null);
+  (tracked || (current.status ?? 'todo') === (next.status ?? 'todo')) && (current.category_id || null) === (next.category_id || null);
 
 const sameTask = (current, next) =>
-  current.title === next.title && current.status === next.status &&
+  current.status === next.status && (next.progress === undefined || current.progress === next.progress) &&
   (current.due_date || null) === (next.due_date || null) && current.pinned === next.pinned &&
   current.position === next.position && current.priority === next.priority &&
-  (current.project_id || null) === (next.project_id || null) && (current.category_id || null) === (next.category_id || null);
+  (!next.entry_id || current.entry_id === next.entry_id);
 
 /**
  * Fusionne une boîte mobile validée : insertions, mises à jour si la version
@@ -216,43 +218,56 @@ export async function importOutbox(db, { google, uploadDir }, data) {
       for (const next of incoming) category.run(next.id, next.name, next.project_id, next.color, next.created_at, next.updated_at);
       for (const next of incoming) db.prepare('UPDATE categories SET parent_id=? WHERE id=?').run(next.parent_id, next.id);
     }
+    const incomingPrimaries = new Set(data.tasks.map((task) => task.entry_id).filter(Boolean));
+    const primaryOwner = db.prepare('SELECT id FROM tasks WHERE entry_id=?');
     for (const next of data.entries) {
       const deleted = db.prepare('SELECT deleted_at FROM sync_tombstones WHERE kind=? AND id=?').get('entry', next.id);
       if (deleted && deleted.deleted_at >= next.updated_at) { counts.conflicts++; continue; }
       const current = db.prepare('SELECT * FROM entries WHERE id=?').get(next.id);
+      const localOwner = primaryOwner.get(next.id);
+      const tracked = localOwner || incomingPrimaries.has(next.id);
+      const kind = localOwner ? 'note' : next.kind ?? 'note';
       const content = next.content_json ? JSON.stringify(next.content_json) : null;
       const followUp = mergeFollowUp(current?.follow_up, next.follow_up);
       const serializedFollowUp = followUp ? JSON.stringify(followUp) : null;
       if (!current) {
         db.prepare('INSERT INTO entries (id,title,content_md,content_json,entry_date,project_id,archived,kind,status,created_at,updated_at,category_id,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
-          .run(next.id, next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.status ?? 'todo', next.created_at, next.updated_at, next.category_id ?? null, serializedFollowUp);
+          .run(next.id, next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, kind, next.status ?? 'todo', next.created_at, next.updated_at, next.category_id ?? null, serializedFollowUp);
         counts.entries++;
       } else if (next.updated_at > current.updated_at) {
         db.prepare('UPDATE entries SET title=?,content_md=?,content_json=?,entry_date=?,project_id=?,archived=?,kind=?,status=?,updated_at=?,category_id=?,follow_up=? WHERE id=?')
-          .run(next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, next.kind ?? 'note', next.status ?? 'todo', next.updated_at, next.category_id ?? null, serializedFollowUp, next.id);
+          .run(next.title, next.content_md, content, next.entry_date, next.project_id, next.archived ?? 0, kind, next.status ?? 'todo', next.updated_at, next.category_id ?? null, serializedFollowUp, next.id);
         counts.updated++;
       } else {
         if (JSON.stringify(readFollowUp(current.follow_up)) !== JSON.stringify(followUp)) {
           db.prepare('UPDATE entries SET follow_up=? WHERE id=?').run(serializedFollowUp, next.id);
           counts.updated++;
         }
-        if (!sameEntry(current, next)) counts.conflicts++;
+        if (!sameEntry(current, next, tracked)) counts.conflicts++;
       }
     }
     for (const next of data.tasks) {
       const deleted = db.prepare('SELECT deleted_at FROM sync_tombstones WHERE kind=? AND id=?').get('task', next.id);
       if (deleted && deleted.deleted_at >= next.updated_at) { counts.conflicts++; continue; }
       const current = db.prepare('SELECT * FROM tasks WHERE id=?').get(next.id);
+      const entryId = next.entry_id ?? current?.entry_id ?? null;
+      const progress = storedTaskProgress({ status: next.status,
+        progress: next.progress ?? (next.status === current?.status ? current.progress : undefined) });
+      if (entryId) {
+        const owner = primaryOwner.get(entryId);
+        const note = db.prepare('SELECT kind FROM entries WHERE id=? AND id NOT IN (SELECT entry_id FROM google_documents)').get(entryId);
+        if (note?.kind !== 'note' || (owner && owner.id !== next.id)) { counts.conflicts++; continue; }
+      }
       const followUp = mergeFollowUp(current?.follow_up, next.follow_up);
       const serializedFollowUp = followUp ? JSON.stringify(followUp) : null;
       if (!current) {
-        db.prepare('INSERT INTO tasks (id,title,status,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
-          .run(next.id, next.title, next.status, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.created_at, next.updated_at, next.category_id ?? null, serializedFollowUp);
+        db.prepare('INSERT INTO tasks (id,entry_id,title,status,progress,due_date,pinned,position,priority,project_id,created_at,updated_at,category_id,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+          .run(next.id, entryId, next.title, next.status, progress, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.created_at, next.updated_at, next.category_id ?? null, serializedFollowUp);
         counts.tasks++;
         touched.add(next.status);
       } else if (next.updated_at > current.updated_at) {
-        db.prepare('UPDATE tasks SET title=?,status=?,due_date=?,pinned=?,position=?,priority=?,project_id=?,updated_at=?,category_id=?,follow_up=? WHERE id=?')
-          .run(next.title, next.status, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.updated_at, next.category_id ?? null, serializedFollowUp, next.id);
+        db.prepare('UPDATE tasks SET entry_id=?,title=?,status=?,progress=?,due_date=?,pinned=?,position=?,priority=?,project_id=?,updated_at=?,category_id=?,follow_up=? WHERE id=?')
+          .run(entryId, next.title, next.status, progress, next.due_date, next.pinned, next.position, next.priority, next.project_id, next.updated_at, next.category_id ?? null, serializedFollowUp, next.id);
         counts.updated++;
         touched.add(current.status);
         touched.add(next.status);
@@ -267,18 +282,24 @@ export async function importOutbox(db, { google, uploadDir }, data) {
     for (const link of data.task_entries) {
       if (!db.prepare('SELECT 1 FROM tasks WHERE id=?').get(link.task_id)) continue;
       if (!db.prepare('SELECT 1 FROM entries WHERE id=?').get(link.entry_id)) continue;
+      const deleted = db.prepare('SELECT deleted_at FROM sync_tombstones WHERE kind=? AND id=?').get('link', `${link.task_id}|${link.entry_id}`);
+      if (deleted && deleted.deleted_at >= link.created_at) continue;
       if (!db.prepare('SELECT * FROM task_entries WHERE task_id=? AND entry_id=?').get(link.task_id, link.entry_id)) {
         db.prepare('INSERT INTO task_entries (task_id,entry_id,created_at) VALUES (?,?,?)').run(link.task_id, link.entry_id, link.created_at);
         counts.links++;
       }
     }
     for (const attachment of data.attachments) {
+      if (!db.prepare('SELECT 1 FROM entries WHERE id=?').get(attachment.entry_id)) continue;
       if (!db.prepare('SELECT id FROM attachments WHERE id=?').get(attachment.id)) {
         db.prepare('INSERT INTO attachments (id,filename,stored,mime,size,entry_id,created_at,drive_file_id) VALUES (?,?,?,?,?,?,?,?)')
           .run(attachment.id, attachment.filename, attachment.stored, attachment.mime, attachment.size, attachment.entry_id, attachment.created_at, attachment.driveFileId || '');
         counts.attachments++;
       }
     }
+    const migrated = migrateTaskNotes(db, { reconcile: true });
+    counts.entries += migrated.entries;
+    counts.links += migrated.links;
     for (const status of touched) renumberTasks(db, status);
     for (const { target, content } of pending) {
       fs.mkdirSync(uploadDir, { recursive: true });
@@ -310,7 +331,7 @@ export function googleLink(db, entry) {
   } : null;
 }
 
-export function registerGoogleRoutes(app, { db, google, uploadDir, autoSync = false }) {
+export function registerGoogleRoutes(app, { db, google, uploadDir, autoSync = false, googlePushPending = new Set() }) {
   /** Projet et présence locale d'un document Drive (ses onglets partagent le même projet). */
   const localDocument = (documentId) => {
     const rows = db.prepare('SELECT e.project_id FROM google_documents g JOIN entries e ON e.id=g.entry_id WHERE g.document_id=?').all(documentId);
@@ -685,21 +706,33 @@ export function registerGoogleRoutes(app, { db, google, uploadDir, autoSync = fa
       if (!current.content_json) fail('Crée un document riche pour le synchroniser avec Google Drive.');
       let rich = JSON.parse(current.content_json);
       let link = db.prepare('SELECT * FROM google_documents WHERE entry_id=?').get(id);
+      const assertCanLink = () => {
+        if (db.prepare('SELECT 1 FROM tasks WHERE entry_id=?').get(id)) {
+          fail('Retire le suivi de tâche avant de synchroniser cette note avec Google Drive.', 409);
+        }
+      };
       // Les anciens imports aplatis doivent être rechargés : ils ne contiennent
       // pas les repères nécessaires à la conservation des éléments Google.
       if (link?.readonly_reason) {
         fail('Cet ancien import a été aplati. Garde une copie locale de tes modifications puis recharge depuis Google pour activer la nouvelle synchronisation.', 422);
       }
       if (!link) {
+        assertCanLink();
         // Vérifier le format AVANT de créer un fichier distant.
         buildGoogleUpdate({ revisionId: 'check', body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } }, rich);
-        const created = await google.request('/docs/v1/documents', { method: 'POST', body: JSON.stringify({ title: current.title }) });
-        const source = await read(created.documentId);
-        // L'entrée peut avoir été supprimée pendant la requête Google.
-        entry(id);
-        db.prepare('INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json) VALUES (?,?,?,?,?)')
-          .run(id, created.documentId, documentBody(source).tabId || '', source.revisionId || '', JSON.stringify(googleToDocument(source)));
-        link = linked(id);
+        googlePushPending.add(id);
+        try {
+          const created = await google.request('/docs/v1/documents', { method: 'POST', body: JSON.stringify({ title: current.title }) });
+          const source = await read(created.documentId);
+          // L'entrée peut avoir été supprimée ou modifiée par une synchro pendant la requête Google.
+          entry(id);
+          assertCanLink();
+          db.prepare('INSERT INTO google_documents (entry_id,document_id,tab_id,revision_id,synced_content_json) VALUES (?,?,?,?,?)')
+            .run(id, created.documentId, documentBody(source).tabId || '', source.revisionId || '', JSON.stringify(googleToDocument(source)));
+          link = linked(id);
+        } finally {
+          googlePushPending.delete(id);
+        }
       }
       const source = await read(link.document_id, link.tab_id);
       const unchangedNewDocument = !link.revision_id && JSON.stringify(googleToDocument(source)) === link.synced_content_json;

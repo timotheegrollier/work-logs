@@ -51,7 +51,7 @@ export function createSyncEngine({ db, uploadDir, drive, debounceMs = 4000, inte
         remote = seen.snapshot; // inchangé depuis notre dernier passage : inutile de le retélécharger
       } else if (file) {
         const raw = JSON.parse(await drive.downloadText(file.id));
-        remote = { ...validateBackup(raw), deleted: validateTombstones(raw.deleted) };
+        remote = { ...validateBackup(raw, { migrateTaskNotes: false }), deleted: validateTombstones(raw.deleted) };
       }
       // Aucune attente entre la lecture locale et l'écriture : une saisie ne peut pas s'intercaler.
       const { merged, changedLocal, changedRemote } = mergeSnapshots(localSnapshot(), remote);

@@ -14,7 +14,7 @@ const summary = (id: string, patch: Partial<EntrySummary> = {}): EntrySummary =>
   kind: 'note', excerpt: '', archived: 0, attachments: 0, ...patch,
 });
 const task = (id: string, patch: Partial<Task> = {}): Task => ({
-  id, title: `Imprimante ${id}`, project_id: 'p1', status: 'todo', due_date: null, pinned: 0,
+  entry_id: '', progress: 0, id, title: `Imprimante ${id}`, project_id: 'p1', status: 'todo', due_date: null, pinned: 0,
   position: 0, priority: 'normal', created_at: '', updated_at: '', documents: [], ...patch,
 });
 const entry = (item: EntrySummary, patch: Partial<Entry> = {}): Entry => ({

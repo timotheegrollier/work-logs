@@ -120,7 +120,7 @@ describe('entrées de journal', () => {
     const state = (await api.get('/api/state')).body;
     assert.equal(state.entries.find(({ id }) => id === entry.id).status, 'done');
     assert.equal(state.tasks.find(({ id }) => id === task.id).status, 'doing');
-    assert.equal(state.tasks.find(({ id }) => id === task.id).documents[0].status, 'done');
+    assert.equal(state.tasks.find(({ id }) => id === task.id).documents.find(({ id }) => id === entry.id).status, 'done');
     const archived = await api.put(`/api/entries/${entry.id}`, { archived: 1 });
     assert.equal(archived.body.status, 'done');
     assert.equal((await api.put(`/api/entries/${entry.id}`, { status: 'blocked' })).status, 400);
@@ -280,6 +280,28 @@ describe('entrées de journal', () => {
     assert.equal(replay.status, 200);
     assert.equal(replay.body.id, merged.id);
     assert.equal(state.entries.filter((entry) => entry.title === 'A et B').length, 1);
+  });
+
+  test('la fusion d’une note suivie et d’une note simple conserve le même suivi', async () => {
+    const project = await make.project(api, 'Atelier');
+    const task = await make.task(api, { title: 'Objectif', project_id: project.id, progress: 36 });
+    const primary = (await api.get(`/api/entries/${task.entry_id}`)).body;
+    const other = await make.entry(api, { title: 'Informations' });
+    const result = await api.post('/api/entries/merge', {
+      request_id: crypto.randomUUID(),
+      sources: [primary, other].map((entry) => ({ id: entry.id, source_key: entryMergeSourceKey(entry) })),
+      title: 'Objectif enrichi',
+      content_md: 'Toutes les informations',
+    });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.project_id, project.id);
+    assert.equal(result.body.task.id, task.id);
+    assert.equal(result.body.task.entry_id, result.body.id);
+    assert.equal(result.body.task.progress, 36);
+    assert.equal(result.body.status, 'doing');
+    assert.equal((await api.get(`/api/entries/${primary.id}`)).status, 404);
+    const state = (await api.get('/api/state')).body;
+    assert.deepEqual(state.tasks.find(({ id }) => id === task.id).documents.map(({ id }) => id), [result.body.id]);
   });
 
   test('fusion : une source modifiée depuis la proposition refuse tout', async () => {

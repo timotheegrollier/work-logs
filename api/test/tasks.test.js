@@ -6,12 +6,19 @@ import path from 'node:path';
 import { startApi, make } from './helpers.js';
 import { openDb } from '../src/db.js';
 import { taskMergeSourceKey } from '../src/entry-merge.js';
+import { taskCreationStamp } from '../src/task-state.js';
 
 /** Titres d'une colonne, dans l'ordre d'affichage. */
 async function column(api, status) {
   const { body } = await api.get('/api/state');
   return body.tasks.filter((t) => t.status === status).map((t) => t.title);
 }
+
+test('un suivi réactivé la même milliseconde gagne sur son retrait', () => {
+  const time = '2026-11-13T10:00:00.123Z';
+  assert.equal(taskCreationStamp(time, time), '2026-11-13T10:00:00.124Z');
+  assert.equal(taskCreationStamp(time, '2026-11-13T10:00:00.122Z'), time);
+});
 
 describe('tâches', () => {
   let api;
@@ -28,6 +35,8 @@ describe('tâches', () => {
     assert.equal(res.body.due_date, null);
     assert.equal(res.body.position, 0);
     assert.equal(res.body.documents.length, 1);
+    assert.equal(res.body.entry_id, res.body.documents[0].id);
+    assert.equal(res.body.progress, 0);
     const document = api.db.prepare('SELECT * FROM entries WHERE id=?').get(res.body.documents[0].id);
     assert.equal(document.title, 'Rappeler le client');
     assert.equal(document.content_md, '');
@@ -46,6 +55,8 @@ describe('tâches', () => {
     assert.equal(document.body.title, 'Livrer');
     assert.equal(document.body.project_id, project.id);
     assert.equal(document.body.category_id, category.id);
+    assert.equal(document.body.task.id, created.body.id);
+    assert.equal(document.body.task.entry_id, document.body.id);
   });
 
   test('refuse un corps invalide et annule tâche et note si leur liaison échoue', async () => {
@@ -91,7 +102,7 @@ describe('tâches', () => {
     assert.deepEqual(await column(api, 'done'), ['A']);
   });
 
-  test('termine une tâche et archive ses documents sans supprimer le contexte', async () => {
+  test('termine une tâche et archive ses références en gardant sa note visible', async () => {
     const local = await make.entry(api, { title: 'Compte rendu local' });
     const google = await make.entry(api, { title: 'Onglet Google' });
     api.db.prepare(`INSERT INTO google_documents
@@ -103,6 +114,10 @@ describe('tâches', () => {
 
     const completed = await api.put(`/api/tasks/${task.id}`, { status: 'done' });
     assert.equal(completed.body.status, 'done');
+    assert.equal(completed.body.progress, 100);
+    const primary = (await api.get(`/api/entries/${task.entry_id}`)).body;
+    assert.equal(primary.archived, 0);
+    assert.equal(primary.status, 'done');
     assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(local.id).archived, 1);
     assert.equal(api.db.prepare('SELECT archived FROM entries WHERE id=?').get(google.id).archived, 1);
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=?').get(task.id).n, 3);
@@ -269,6 +284,11 @@ describe('tâches', () => {
     assert.equal(created.body.project_id, project.id);
     assert.equal(created.body.due_date, '2026-09-20');
     assert.equal(created.body.priority, 'normal');
+    assert.equal(created.body.entry_id, entry.id);
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entries').get().n, 1);
+    const replay = await api.post(`/api/entries/${entry.id}/task`, {});
+    assert.equal(replay.status, 200);
+    assert.equal(replay.body.id, created.body.id);
     assert.deepEqual(created.body.documents.map((document) => document.id), [entry.id]);
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=? AND entry_id=?').get(created.body.id, entry.id).n, 1);
   });
@@ -279,7 +299,8 @@ describe('tâches', () => {
       const result = await api.post(`/api/entries/${entry.id}/task`, { title: `Tâche ${priority}`, priority });
       assert.equal(result.status, 201);
       assert.equal(result.body.priority, priority);
-      assert.deepEqual(result.body.documents.map((document) => document.id), [entry.id]);
+      assert.notEqual(result.body.entry_id, entry.id);
+      assert.deepEqual(result.body.documents.map((document) => document.id).sort(), [entry.id, result.body.entry_id].sort());
       assert.equal(api.db.prepare('SELECT priority FROM tasks WHERE id=?').get(result.body.id).priority, priority);
     }
     const counts = () => [api.db.prepare('SELECT count(*) n FROM tasks').get().n, api.db.prepare('SELECT count(*) n FROM task_entries').get().n];
@@ -316,7 +337,9 @@ describe('tâches', () => {
       VALUES (?,?,?,?,?,?,?)`).run(entry.id, 'google-doc', 'tab-1', 'r1', '{"type":"doc","content":[{"type":"paragraph"}]}', 'Dossier', 'Onglet');
     const created = await api.post(`/api/entries/${entry.id}/task`, {});
     assert.equal(created.status, 201);
-    assert.equal(created.body.documents[0].google_document_id, 'google-doc');
+    assert.notEqual(created.body.entry_id, entry.id);
+    assert.equal(created.body.documents.find((document) => document.id === entry.id).google_document_id, 'google-doc');
+    assert.equal((await api.get(`/api/entries/${entry.id}`)).body.task, null);
     assert.equal((await api.post(`/api/entries/${entry.id}/task`, { due_date: '20-09-2026' })).body.error, 'échéance invalide (AAAA-MM-JJ attendu)');
   });
 
@@ -327,15 +350,18 @@ describe('tâches', () => {
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM tasks').get().n, 0);
   });
 
-  test('crée une entrée liée depuis une tâche en recopiant son projet, datée du jour', async () => {
+  test('répare une ancienne tâche sans note avec son projet, datée du jour', async () => {
     const project = await make.project(api, 'Chantier');
     const task = await make.task(api, { title: 'Préparer le dossier', project_id: project.id });
+    api.db.prepare('UPDATE tasks SET entry_id=NULL WHERE id=?').run(task.id);
+    api.db.prepare('DELETE FROM entries WHERE id=?').run(task.entry_id);
     const created = await api.post(`/api/tasks/${task.id}/entry`, { content_md: '## Sous-tâches\n- [ ] Relire\n' });
     assert.equal(created.status, 201);
     assert.equal(created.body.title, 'Préparer le dossier');
     assert.equal(created.body.project_id, project.id);
     assert.equal(created.body.entry_date, new Date().toISOString().slice(0, 10));
     assert.equal(created.body.content_md, '## Sous-tâches\n- [ ] Relire\n');
+    assert.equal(created.body.task.entry_id, created.body.id);
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=? AND entry_id=?').get(task.id, created.body.id).n, 1);
   });
 
@@ -344,6 +370,60 @@ describe('tâches', () => {
     const task = await make.task(api);
     assert.equal((await api.post(`/api/tasks/${task.id}/entry`, { title: ' ' })).status, 400);
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entries').get().n, 1, 'seule l’entrée créée avec la tâche existe');
+  });
+
+  test('refuse de créer une deuxième note et de détacher la note de la tâche', async () => {
+    const task = await make.task(api, { content_md: 'Description originale' });
+    assert.equal((await api.post(`/api/tasks/${task.id}/entry`, { content_md: 'Doublon' })).status, 409);
+    assert.equal((await api.del(`/api/tasks/${task.id}/documents/${task.entry_id}`)).status, 409);
+    assert.equal((await api.get(`/api/entries/${task.entry_id}`)).body.content_md, 'Description originale');
+    assert.equal(api.db.prepare('SELECT COUNT(*) n FROM entries').get().n, 1);
+  });
+
+  test('suit l’avancement dans la même note et dans la colonne correspondante', async () => {
+    const note = await make.entry(api, { title: 'Préparer le chantier', content_md: 'Inventaire des outils', status: 'doing' });
+    const { body: task } = await api.post(`/api/entries/${note.id}/task`, {});
+    assert.equal(task.entry_id, note.id);
+    assert.equal(task.status, 'doing');
+    assert.equal(task.progress, 0);
+
+    const url = `/api/tasks/${task.id}`;
+    const tracked = await api.put(url, { progress: 42 });
+    assert.equal(tracked.status, 200);
+    assert.equal(tracked.body.progress, 42);
+    assert.equal(tracked.body.updated_at >= task.updated_at, true);
+    const fromNote = (await api.get(`/api/entries/${note.id}`)).body;
+    assert.equal(fromNote.content_md, note.content_md);
+    assert.equal(fromNote.updated_at, note.updated_at);
+    assert.equal(fromNote.task.progress, 42);
+    const fromSearch = (await api.get('/api/state?q=inventaire')).body;
+    assert.equal(fromSearch.entries[0].task.progress, 42);
+    assert.equal(fromSearch.tasks[0].entry_id, note.id);
+    assert.equal(fromSearch.tasks[0].progress, 42);
+
+    const finished = await api.put(url, { progress: 100 });
+    assert.equal(finished.body.status, 'done');
+    assert.deepEqual(await column(api, 'done'), [note.title]);
+    assert.deepEqual(await column(api, 'doing'), []);
+    const reopened = await api.put(`/api/entries/${note.id}`, { status: 'doing', title: 'Reprendre le chantier' });
+    assert.equal(reopened.body.task.status, 'doing');
+    assert.equal(reopened.body.task.progress, 0);
+    assert.equal(reopened.body.archived, 0);
+    assert.deepEqual(await column(api, 'doing'), ['Reprendre le chantier']);
+    await api.put(url, { title: 'Chantier confirmé' });
+    assert.equal((await api.get(`/api/entries/${note.id}`)).body.title, 'Chantier confirmé');
+  });
+
+  test('refuse un avancement invalide ou incompatible sans modifier la note', async () => {
+    assert.equal((await api.post('/api/tasks', { title: 'Avancement négatif', progress: -1 })).status, 400);
+    const task = await make.task(api, { progress: 65 });
+    const url = `/api/tasks/${task.id}`;
+    for (const patch of [{ progress: 101 }, { progress: 50.5 }, { progress: '80' }, { progress: null }, { status: 'todo', progress: 40 }]) {
+      assert.equal((await api.put(url, patch)).status, 400);
+    }
+    const note = (await api.get(`/api/entries/${task.entry_id}`)).body;
+    assert.equal(note.task.progress, 65);
+    assert.equal(note.status, 'doing');
   });
 
   test('associe des entrées locales et Google, même hors du projet de la tâche', async () => {
@@ -408,13 +488,34 @@ describe('tâches', () => {
     assert.equal((await api.del(`/api/tasks/${task.id}/documents/${entry.id}`)).status, 404);
   });
 
-  test('supprimer une tâche supprime ses associations', async () => {
+  test('retire le suivi et ses associations en conservant le contenu de la note', async () => {
     const entry = await make.entry(api);
-    const task = await make.task(api);
+    const task = await make.task(api, { content_md: 'Texte suivi', status: 'done' });
     await api.post(`/api/tasks/${task.id}/documents/${entry.id}`);
 
     assert.equal((await api.del(`/api/tasks/${task.id}`)).status, 200);
     assert.equal(api.db.prepare('SELECT COUNT(*) n FROM task_entries WHERE task_id=?').get(task.id).n, 0);
+    const note = (await api.get(`/api/entries/${task.entry_id}`)).body;
+    assert.equal(note.task, null);
+    assert.equal(note.status, 'done');
+    assert.equal(note.content_md, 'Texte suivi');
+    assert.ok(api.db.prepare("SELECT 1 FROM sync_tombstones WHERE kind='link' AND id=?").get(`${task.id}|${entry.id}`));
+    const converted = await api.post(`/api/entries/${note.id}/task`, {});
+    assert.equal(converted.status, 201);
+    assert.equal(converted.body.id, task.id);
+    assert.equal(converted.body.created_at, converted.body.updated_at);
+    assert.equal(api.db.prepare('SELECT created_at FROM task_entries WHERE task_id=?').get(task.id).created_at, converted.body.created_at);
+  });
+
+  test('supprimer la note retire également la tâche et propage les deux suppressions', async () => {
+    const task = await make.task(api);
+    assert.equal((await api.del(`/api/entries/${task.entry_id}`)).status, 200);
+    const state = (await api.get('/api/state')).body;
+    assert.equal(state.entries.length, 0);
+    assert.equal(state.tasks.length, 0);
+    const removed = api.db.prepare("SELECT id FROM sync_tombstones WHERE kind IN ('entry','task') AND id IN (?,?) ORDER BY id")
+      .all(task.entry_id, task.id);
+    assert.deepEqual(removed.map(({ id }) => id), [task.entry_id, task.id].sort());
   });
 
   describe('fusion de tâches', () => {
@@ -431,14 +532,14 @@ describe('tâches', () => {
     const stateTask = async (id) => (await api.get('/api/state')).body.tasks.find((task) => task.id === id);
     const link = (taskId, entryId) => api.post(`/api/tasks/${taskId}/documents/${entryId}`);
 
-    test('une tâche et une note remplacent les sources ; pièces jointes, Google et procédures suivent', async () => {
+    test('les notes de tâche fusionnent avec leurs pièces jointes et gardent les références', async () => {
       const project = await make.project(api, 'Atelier');
       const a = await make.task(api, { title: 'A', project_id: project.id, priority: 'low', due_date: '2026-12-10' });
       const b = await make.task(api, { title: 'B', project_id: project.id, priority: 'high', due_date: '2026-12-05', pinned: true });
-      await api.patch(`/api/tasks/${b.id}/move`, { status: 'doing', position: 0 });
+      await api.put(`/api/tasks/${b.id}`, { progress: 60 });
       const other = await make.task(api, { title: 'Autre' });
       const noteA = await make.entry(api, { title: 'Note A', content_md: 'a', project_id: project.id });
-      await api.upload('photo.txt', 'image', { entry_id: noteA.id });
+      await api.upload('photo.txt', 'image', { entry_id: a.entry_id });
       const noteB = await make.entry(api, { title: 'Note B', content_md: 'b', project_id: project.id });
       const procedure = await make.entry(api, { title: 'Mode opératoire', content_md: 'étapes', kind: 'procedure' });
       const google = await make.entry(api, { title: 'Doc Google', content_md: 'g' });
@@ -462,20 +563,24 @@ describe('tâches', () => {
       const merged = state.tasks.find((task) => task.title === 'Tâche commune');
       // Le plus urgent des sources : en cours, échéance la plus proche, priorité haute, épinglée.
       assert.equal(merged.status, 'doing');
+      assert.equal(merged.progress, 60);
+      assert.equal(merged.entry_id, res.body.id);
       assert.equal(merged.due_date, '2026-12-05');
       assert.equal(merged.priority, 'high');
       assert.equal(merged.pinned, 1);
       assert.equal(merged.project_id, project.id);
-      assert.deepEqual(merged.documents.map((document) => document.id).sort(), [res.body.id, procedure.id, google.id].sort(), JSON.stringify(merged.documents.map(({ id, title, google_document_id }) => ({ id, title, google_document_id }))));
-      // Une tâche non choisie qui partageait une note suit la nouvelle, comme à la fusion d'entrées.
-      assert.deepEqual(state.tasks.find((task) => task.id === other.id).documents.map((document) => document.id).sort(), [res.body.id, other.documents[0].id].sort());
-      assert.equal((await api.get(`/api/entries/${noteA.id}`)).status, 404);
-      assert.equal((await api.get(`/api/entries/${noteB.id}`)).status, 404);
+      assert.deepEqual(merged.documents.map((document) => document.id).sort(), [res.body.id, noteA.id, noteB.id, procedure.id, google.id].sort());
+      // Une référence partagée continue à ouvrir sa propre note.
+      assert.deepEqual(state.tasks.find((task) => task.id === other.id).documents.map((document) => document.id).sort(), [noteB.id, other.entry_id].sort());
+      assert.equal((await api.get(`/api/entries/${noteA.id}`)).status, 200);
+      assert.equal((await api.get(`/api/entries/${noteB.id}`)).status, 200);
+      assert.equal((await api.get(`/api/entries/${a.entry_id}`)).status, 404);
+      assert.equal((await api.get(`/api/entries/${b.entry_id}`)).status, 404);
       assert.equal((await api.get(`/api/entries/${procedure.id}`)).status, 200);
       assert.equal((await api.get(`/api/entries/${google.id}`)).status, 200);
       // La synchro doit savoir que les sources ont disparu, sinon elles reviendraient.
       const tombstones = api.db.prepare('SELECT kind, id FROM sync_tombstones').all().map((row) => `${row.kind}:${row.id}`);
-      for (const expected of [`task:${a.id}`, `task:${b.id}`, `entry:${noteA.id}`, `entry:${noteB.id}`]) assert.ok(tombstones.includes(expected), expected);
+      for (const expected of [`task:${a.id}`, `task:${b.id}`, `entry:${a.entry_id}`, `entry:${b.entry_id}`]) assert.ok(tombstones.includes(expected), expected);
       assert.ok(!tombstones.includes(`entry:${procedure.id}`));
     });
 
@@ -483,6 +588,7 @@ describe('tâches', () => {
       const a = await make.task(api, { title: 'A' });
       const b = await make.task(api, { title: 'B' });
       for (const task of [a, b]) {
+        api.db.prepare('UPDATE tasks SET entry_id=NULL WHERE id=?').run(task.id);
         api.db.prepare('DELETE FROM task_entries WHERE task_id=?').run(task.id);
         for (const document of task.documents) api.db.prepare('DELETE FROM entries WHERE id=?').run(document.id);
       }
@@ -534,12 +640,14 @@ describe('tâches', () => {
       assert.equal(merged.priority, 'normal');
     });
 
-    test('tout terminé : la tâche reste terminée et sa note est archivée', async () => {
+    test('tout terminé : la tâche reste à 100 % et sa note est visible', async () => {
       const a = await make.task(api, { title: 'A', status: 'done' });
       const b = await make.task(api, { title: 'B', status: 'done' });
       const res = await api.post('/api/tasks/merge', await mergeRequest([a.id, b.id]));
       assert.equal((await api.get('/api/state')).body.tasks[0].status, 'done');
-      assert.equal((await api.get(`/api/entries/${res.body.id}`)).body.archived, 1);
+      const note = (await api.get(`/api/entries/${res.body.id}`)).body;
+      assert.equal(note.task.progress, 100);
+      assert.equal(note.archived, 0);
     });
 
     test('refuse moins de deux tâches', async () => {

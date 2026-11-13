@@ -119,7 +119,7 @@ test('PWA : la synchro ne recouvre pas un suivi modifié localement dans la mêm
   }
   clearLocalOutbox();
   const result = await applySyncSnapshot(merged, base);
-  expect(result.skipped).toBe(2);
+  expect(result).toEqual({ changed: 0, skipped: 1 });
   expect((await localApi.followUp('entry', entry.id)).follow_up?.enabled).toBe(false);
   expect((await localApi.followUp('task', task.id)).follow_up?.enabled).toBe(false);
 });

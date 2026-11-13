@@ -164,6 +164,28 @@ describe('sauvegardes Google Drive', () => {
     }
   });
 
+  test('restaure la note principale et son pourcentage sans dupliquer le contenu', async () => {
+    const { restoreBackup } = await import('../src/backup.js');
+    const api = await startApi();
+    try {
+      const created = await make.task(api, { title: 'Suivre le devis', progress: 35, content_md: 'Contrôler les devis reçus' });
+      const exported = (await api.get('/api/export')).body;
+      await api.del(`/api/entries/${created.entry_id}`);
+      assert.equal((await api.get(`/api/entries/${created.entry_id}`)).status, 404);
+      restoreBackup(api.db, exported);
+      const { body } = await api.get('/api/state');
+      assert.equal(body.entries.length, 1);
+      assert.equal(body.tasks.length, 1);
+      assert.equal(body.tasks[0].entry_id, created.entry_id);
+      assert.equal(body.tasks[0].progress, 35);
+      const restored = (await api.get(`/api/entries/${created.entry_id}`)).body;
+      assert.equal(restored.status, 'doing');
+      assert.equal(restored.content_md, 'Contrôler les devis reçus');
+    } finally {
+      await api.close();
+    }
+  });
+
   test('statut et archivage survivent à l’export et se normalisent pour les anciens exports', async () => {
     const { restoreBackup } = await import('../src/backup.js');
     const api = await startApi();

@@ -188,8 +188,8 @@ test('assistant sur téléphone : feuille plein écran, cibles au doigt, tout ap
     await opener.click();
     await chat.getByRole('button', { name: 'Ouvrir la tâche Réparer la pompe', exact: true }).click();
     await expect(chat).toBeHidden();
-    await expect(page.locator(`#task-${task.id}`)).toBeInViewport();
-    await expect(page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(task.title);
+    await expect(page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Écriture', exact: true })).toHaveAttribute('aria-pressed', 'true');
   } finally {
     await cleanProject(page, request, project.id);
   }
@@ -317,7 +317,7 @@ test('l’assistant crée un brouillon lié, le complète ensuite et ouvre le r�
     await expect(page.getByRole('region', { name: 'Entrée', exact: true }).getByText(instruction)).toBeVisible();
     await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
     await chat.getByRole('button', { name: 'Ouvrir la tâche', exact: true }).click();
-    await expect(page.locator(`#task-${task.id}`)).toBeInViewport();
+    await expect(page.getByRole('region', { name: 'Entrée', exact: true }).getByText(instruction)).toBeVisible();
     await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
     await chat.getByRole('button', { name: 'Ouvrir le document', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Entrée', exact: true }).getByText(instruction)).toBeVisible();

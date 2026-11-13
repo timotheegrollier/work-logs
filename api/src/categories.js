@@ -64,9 +64,9 @@ export function registerCategoryRoutes(app, db) {
     db.exec('BEGIN');
     try {
       db.prepare('UPDATE categories SET parent_id=?,updated_at=? WHERE parent_id=?').run(current.parent_id, time, current.id);
-      for (const table of ['entries', 'tasks']) {
-        db.prepare(`UPDATE ${table} SET category_id=?,updated_at=? WHERE category_id=?`).run(current.parent_id, time, current.id);
-      }
+      db.prepare('UPDATE entries SET category_id=?,updated_at=? WHERE category_id=?').run(current.parent_id, time, current.id);
+      db.prepare('UPDATE tasks SET category_id=?,updated_at=CASE WHEN entry_id IS NULL THEN ? ELSE updated_at END WHERE category_id=?')
+        .run(current.parent_id, time, current.id);
       db.prepare('DELETE FROM categories WHERE id=?').run(current.id);
       tombstone(db, 'category', current.id);
       db.exec('COMMIT');

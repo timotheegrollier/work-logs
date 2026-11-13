@@ -39,6 +39,10 @@ import { assertExpectedTaskPlanning, taskPlanningUsesDocuments } from '../../../
 import { assertExpectedEntryEdit } from '../../../api/src/entry-edit.js';
 // @ts-expect-error — même contrat de fusion que dans l'API SQLite.
 import { assertEntryMergeReplay, assertEntryMergeSources, assertTaskMergeSources, isRewritableNote, taskMergeAttributes, taskMergeTaskId, entryMergeClassification, entryMergeTargetId, validateEntryMerge } from '../../../api/src/entry-merge.js';
+// @ts-expect-error — normalisation pure partagée avec SQLite et les sauvegardes.
+import { normalizeTaskNotes } from '../../../api/src/task-notes.js';
+// @ts-expect-error — validation commune des statuts et de l’avancement.
+import { taskCreationStamp, taskIdForNote, taskState } from '../../../api/src/task-state.js';
 import { readRelay } from '../relay-settings';
 import { beginWebLogin, builtinWebClientId, clearWebClient, disconnectWeb, downloadDriveBinary, webGoogleRequest, webGoogleStatus } from './google-web';
 
@@ -62,7 +66,7 @@ function pwaGoogleStatus(): GoogleStatus {
     account: status.account, expired: status.expired,
   };
 }
-import { createIndexedDbDatabase, createMemoryDatabase, type Database, type Table } from './storage';
+import { createIndexedDbDatabase, createMemoryDatabase, type Database, type StoreWrite, type Table } from './storage';
 
 /**
  * Backend local du navigateur (PWA, `VITE_PWA=1`) : même interface `Api` que le
@@ -134,6 +138,7 @@ interface EntryRow {
   follow_up?: FollowUp | null;
 }
 interface TaskRow {
+  entry_id: string; progress: number;
   id: string; title: string; status: Status; due_date: string | null; pinned: 0 | 1;
   position: number; priority: 'low' | 'normal' | 'high'; project_id: string | null; category_id?: string | null;
   created_at: string; updated_at: string;
@@ -171,33 +176,64 @@ function localWrite<T>(operation: () => Promise<T>): Promise<T> {
 let backend: Database | null = null;
 let initialization: Promise<void> | null = null;
 
-type TaskCategoryTables = { tasks: Table<TaskRow>; entries: Table<EntryRow>; links: Table<LinkRow> };
+type TaskCategoryTables = { database: Database; tasks: Table<TaskRow>; entries: Table<EntryRow>; links: Table<LinkRow> };
 
-async function inheritLocalTaskCategories(tables: TaskCategoryTables, time: string, scope: { taskId?: string; entryId?: string } = {}): Promise<void> {
+async function inheritLocalTaskCategories(tables: TaskCategoryTables, time: string, scope: { taskId?: string; entryId?: string; excludeTaskId?: string } = {}): Promise<void> {
   const allTasks = await tables.tasks.all();
   const allLinks = await tables.links.all();
   const entries = new Map((await tables.entries.all()).map((entry) => [entry.id, entry]));
   for (const task of allTasks) {
-    if (task.category_id || (scope.taskId && task.id !== scope.taskId)) continue;
+    if (task.category_id || task.id === scope.excludeTaskId || (scope.taskId && task.id !== scope.taskId)) continue;
     const links = allLinks.filter((link) => link.task_id === task.id);
     if (scope.entryId && !links.some((link) => link.entry_id === scope.entryId)) continue;
-    const documents = links.flatMap((link) => entries.get(link.entry_id) ? [entries.get(link.entry_id)!] : []);
+    const documents = links.filter((link) => link.entry_id !== task.entry_id).flatMap((link) => entries.get(link.entry_id) ? [entries.get(link.entry_id)!] : []);
     const categoryId = inheritedTaskCategory(task, documents) as string | null;
     if (!categoryId) continue;
-    await tables.tasks.put({ ...task, category_id: categoryId, updated_at: time });
+    const note = entries.get(task.entry_id);
+    if (note) {
+      await tables.database.writeAll([
+        { table: 'entries', value: { ...note, category_id: categoryId, updated_at: time } },
+        { table: 'tasks', value: { ...task, category_id: categoryId } },
+      ]);
+      track('entries', note.id, false);
+    } else {
+      await tables.tasks.put({ ...task, category_id: categoryId, updated_at: time });
+    }
     track('tasks', task.id, false);
   }
 }
 
 async function initializeDatabase(database: Database): Promise<void> {
-  await seed(database);
+  const seeded = await seed(database);
   let migrate = true;
   try { migrate = localStorage.getItem(TASK_CATEGORY_MIGRATION) !== '1'; } catch { /* Stockage des préférences indisponible. */ }
-  if (!migrate) return;
-  await inheritLocalTaskCategories({
-    tasks: database.table<TaskRow>('tasks'), entries: database.table<EntryRow>('entries'), links: database.table<LinkRow>('task_entries'),
-  }, nowISO());
-  try { localStorage.setItem(TASK_CATEGORY_MIGRATION, '1'); } catch { /* Les données restent conservées dans le backend. */ }
+  const tasks = database.table<TaskRow>('tasks');
+  const entries = database.table<EntryRow>('entries');
+  const links = database.table<LinkRow>('task_entries');
+  if (migrate) {
+    await inheritLocalTaskCategories({ database, tasks, entries, links }, nowISO());
+    try { localStorage.setItem(TASK_CATEGORY_MIGRATION, '1'); } catch { /* Les données restent conservées dans le backend. */ }
+  }
+  const current = {
+    entries: await entries.all(), tasks: await tasks.all(), task_entries: await links.all(),
+    google_documents: await database.table<GoogleRow>('google_documents').all(),
+  };
+  const normalized = normalizeTaskNotes(current) as typeof current;
+  const writes: StoreWrite[] = [];
+  const added: { kind: 'entries' | 'tasks' | 'links'; id: string }[] = [];
+  const schedule = (table: string, kind: typeof added[number]['kind'], before: { id: string }[], after: { id: string }[]) => {
+    const old = new Map(before.map((row) => [row.id, row]));
+    for (const row of after) {
+      if (JSON.stringify(old.get(row.id)) === JSON.stringify(row)) continue;
+      writes.push({ table, value: row });
+      added.push({ kind, id: row.id });
+    }
+  };
+  schedule('entries', 'entries', current.entries, normalized.entries);
+  schedule('tasks', 'tasks', current.tasks, normalized.tasks);
+  schedule('task_entries', 'links', current.task_entries, normalized.task_entries.map((row) => ({ ...row, id: linkId(row.task_id, row.entry_id) })));
+  await database.writeAll(writes);
+  if (!seeded) for (const { kind, id } of added) track(kind, id, false);
 }
 
 async function tables() {
@@ -347,8 +383,10 @@ export function clearLocalOutbox(): void {
 }
 
 /** Amorçage identique à `seed()` de `api/src/db.js` : 2 projets, le mode d'emploi, 3 tâches. */
-async function seed(db: Database): Promise<void> {
-  if ((await db.table<ProjectRow>('projects').all()).length > 0) return;
+async function seed(db: Database): Promise<boolean> {
+  if ((await db.table<ProjectRow>('projects').all()).length > 0
+    || (await db.table<EntryRow>('entries').all()).length > 0
+    || (await db.table<TaskRow>('tasks').all()).length > 0) return false;
   const t = nowISO();
   const d = today();
   const projects = db.table<ProjectRow>('projects');
@@ -386,10 +424,11 @@ async function seed(db: Database): Promise<void> {
     updated_at: t,
   });
   const plus = (n: number): string => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
-  const tasks = db.table<TaskRow>('tasks');
+  const tasks = db.table<Omit<TaskRow, 'entry_id' | 'progress'>>('tasks');
   await tasks.put({ id: 'tk_1', title: 'Écrire ma première entrée', status: 'todo', due_date: plus(0), pinned: 1, position: 0, priority: 'normal', project_id: 'pr_perso', created_at: t, updated_at: t });
   await tasks.put({ id: 'tk_2', title: 'Créer mes projets', status: 'todo', due_date: null, pinned: 0, position: 1, priority: 'normal', project_id: 'pr_perso', created_at: t, updated_at: t });
   await tasks.put({ id: 'tk_3', title: 'Prendre en main WorkLogs', status: 'doing', due_date: null, pinned: 0, position: 0, priority: 'normal', project_id: 'pr_pro', created_at: t, updated_at: t });
+  return true;
 }
 
 const stripBlob = (row: AttachmentRow): Attachment => {
@@ -457,13 +496,15 @@ async function localFollowUpMetadata<T extends EntryRow | TaskRow>(kind: FollowU
 }
 
 async function fullEntry(id: string): Promise<Entry> {
-  const { entries, attachments } = await tables();
+  const { entries, attachments, tasks } = await tables();
   const row = (await entries.get(id)) ?? fail('entrée introuvable');
   const files = (await attachments.all())
     .filter((a) => a.entry_id === id)
     .sort((a, b) => cmp(b.created_at, a.created_at))
     .map(stripBlob);
   const entry = { ...decodeEntry(await localFollowUpMetadata('entry', row)), attachments: files } as Entry;
+  const task = (await tasks.all()).find((item) => item.entry_id === id);
+  entry.task = task ? await localFollowUpMetadata('task', task) : null;
   entry.google_sync = await googleSync(id, row.content_json);
   return entry;
 }
@@ -488,6 +529,9 @@ function taskDocuments(taskId: string, entries: EntryRow[], links: LinkRow[], go
     });
 }
 
+const nextTaskPosition = (tasks: TaskRow[], status: Status) =>
+  tasks.filter((task) => task.status === status).reduce((last, task) => Math.max(last, task.position), -1) + 1;
+
 async function renumber(status: Status): Promise<void> {
   const { tasks } = await tables();
   const rows = (await tasks.all())
@@ -500,47 +544,154 @@ async function renumber(status: Status): Promise<void> {
   }
 }
 
-/** Archive dans IndexedDB les entrées liées à une tâche qui vient d'être terminée. */
-async function archiveTaskDocuments(taskId: string): Promise<void> {
-  const { entries, links } = await tables();
+/** Les notes suivies restent visibles ; seuls les documents de référence sont archivés. */
+async function taskReferencesToArchive(taskId: string, time: string): Promise<EntryRow[]> {
+  const { entries, links, tasks } = await tables();
   const linked = new Set((await links.all()).filter((link) => link.task_id === taskId).map((link) => link.entry_id));
-  const time = nowISO();
-  for (const entry of await entries.all()) {
-    if (linked.has(entry.id) && !entry.archived) {
-      await entries.put({ ...entry, archived: 1, updated_at: time });
-      track('entries', entry.id);
-    }
+  const primaries = new Set((await tasks.all()).map((task) => task.entry_id));
+  return (await entries.all())
+    .filter((entry) => linked.has(entry.id) && !entry.archived && !primaries.has(entry.id))
+    .map((entry) => ({ ...entry, archived: 1, updated_at: time }));
+}
+
+async function archiveTaskDocuments(taskId: string): Promise<void> {
+  const { database } = await tables();
+  const archived = await taskReferencesToArchive(taskId, nowISO());
+  await database.writeAll(archived.map((value) => ({ table: 'entries', value })));
+  for (const entry of archived) track('entries', entry.id);
+}
+
+function taskStateFor(status: unknown, progress: unknown, current?: Pick<TaskRow, 'status' | 'progress'>): Pick<TaskRow, 'status' | 'progress'> {
+  try {
+    return taskState(status, progress, current);
+  } catch (error) {
+    return fail((error as Error).message);
   }
+}
+
+function taskNote(task: Pick<TaskRow, 'entry_id' | 'title' | 'status' | 'project_id' | 'category_id' | 'created_at' | 'updated_at'>, content: string): EntryRow {
+  return {
+    id: task.entry_id, title: task.title, content_md: content, content_json: null, entry_date: today(),
+    project_id: task.project_id, category_id: task.category_id ?? null, archived: 0, kind: 'note',
+    status: task.status, created_at: task.created_at, updated_at: task.updated_at,
+  };
+}
+
+function taskLink(taskId: string, entryId: string, time: string): LinkRow {
+  return { id: linkId(taskId, entryId), task_id: taskId, entry_id: entryId, created_at: time };
+}
+
+async function addTaskNote(task: TaskRow, note: EntryRow, source?: EntryRow, convert = false): Promise<Task> {
+  const { database, tasks } = await tables();
+  const primary = taskLink(task.id, note.id, task.created_at);
+  const reference = source && taskLink(task.id, source.id, task.created_at);
+  const archived = reference && task.status === 'done' && !source.archived
+    && !(await tasks.all()).some((item) => item.entry_id === source.id);
+  await database.writeAll([
+    { table: 'entries', value: note, operation: convert ? 'put' : 'add' },
+    { table: 'tasks', value: task, operation: 'add' },
+    { table: 'task_entries', value: primary, operation: 'add' },
+    ...(reference ? [{ table: 'task_entries', value: reference, operation: 'add' as const }] : []),
+    ...(archived && source ? [{ table: 'entries', value: { ...source, archived: 1, updated_at: task.created_at } }] : []),
+  ]);
+  if (convert) writeLocalTombstones(readLocalTombstones().filter((item) => item.kind !== 'task' || item.id !== task.id));
+  track('entries', note.id, false);
+  track('tasks', task.id, false);
+  track('links', primary.id, false);
+  if (reference) track('links', reference.id, false);
+  if (archived && source) track('entries', source.id, false);
+  notifyLocalChange();
+  return taskWithDocuments(task.id);
+}
+
+async function writeTaskUpdate(current: TaskRow, next: TaskRow): Promise<void> {
+  const { database, entries } = await tables();
+  const note = await entries.get(current.entry_id);
+  const noteChanged = note && (note.title !== next.title || note.project_id !== next.project_id || (note.category_id ?? null) !== (next.category_id ?? null));
+  const archived = current.status !== 'done' && next.status === 'done' ? await taskReferencesToArchive(current.id, next.updated_at) : [];
+  const noteUpdates = [...archived];
+  if (note && (noteChanged || note.status !== next.status)) {
+    noteUpdates.push({
+      ...note, title: next.title, project_id: next.project_id, category_id: next.category_id, status: next.status,
+      updated_at: noteChanged ? nowISO() : note.updated_at,
+    });
+  }
+  await database.writeAll([
+    { table: 'tasks', value: next },
+    ...noteUpdates.map((value) => ({ table: 'entries', value })),
+  ]);
+  for (const entry of noteUpdates) track('entries', entry.id, false);
+  track('tasks', next.id);
 }
 
 /** La note fusionnée reprend les fichiers et les liens aux tâches de sa source, qui disparaît. */
-async function absorbEntry(targetId: string, sourceId: string, time: string): Promise<void> {
-  const { entries, links, attachments } = await tables();
-  for (const file of (await attachments.all()).filter((row) => row.entry_id === sourceId)) {
-    await attachments.put({ ...file, entry_id: targetId });
-    track('attachments', file.id);
+async function mergeLocalNotes(
+  note: EntryRow,
+  absorbed: Entry[],
+  mergedTask?: TaskRow,
+  replacedTasks: TaskRow[] = [],
+  references: Entry[] = [],
+): Promise<void> {
+  const { database, links, attachments } = await tables();
+  const time = note.updated_at;
+  const removedEntries = new Set(absorbed.map(({ id }) => id));
+  const removedTasks = new Set(replacedTasks.map(({ id }) => id));
+  const files = (await attachments.all()).filter((file) => removedEntries.has(file.entry_id));
+  const changedLinks = (await links.all()).filter((link) => removedEntries.has(link.entry_id) || removedTasks.has(link.task_id));
+  const targetLinks = new Map<string, LinkRow>();
+  const addLink = (taskId: string, entryId: string) => {
+    const link = taskLink(taskId, entryId, time);
+    targetLinks.set(link.id, link);
+  };
+  for (const link of changedLinks) {
+    if (!removedTasks.has(link.task_id)) addLink(link.task_id, note.id);
   }
-  for (const link of (await links.all()).filter((row) => row.entry_id === sourceId)) {
-    await links.remove(link.id);
-    untrack('links', link.id);
-    await links.put({ id: linkId(link.task_id, targetId), task_id: link.task_id, entry_id: targetId, created_at: time });
-    track('links', linkId(link.task_id, targetId));
+  if (mergedTask) {
+    addLink(mergedTask.id, note.id);
+    for (const reference of references) addLink(mergedTask.id, reference.id);
   }
-  await entries.remove(sourceId);
-  untrack('entries', sourceId);
-  tombstone('entry', sourceId);
+  await database.writeAll([
+    { table: 'entries', value: note, operation: 'add' },
+    ...changedLinks.map(({ id }) => ({ table: 'task_entries', key: id, operation: 'delete' as const })),
+    ...[...targetLinks.values()].map((value) => ({ table: 'task_entries', value })),
+    ...files.map((file) => ({ table: 'attachments', value: { ...file, entry_id: note.id } })),
+    ...[...removedTasks].map((key) => ({ table: 'tasks', key, operation: 'delete' as const })),
+    ...(mergedTask ? [{ table: 'tasks', value: mergedTask }] : []),
+    ...[...removedEntries].map((key) => ({ table: 'entries', key, operation: 'delete' as const })),
+  ]);
+  track('entries', note.id, false);
+  if (mergedTask) track('tasks', mergedTask.id, false);
+  for (const file of files) track('attachments', file.id, false);
+  for (const link of changedLinks) untrack('links', link.id);
+  for (const link of targetLinks.values()) track('links', link.id, false);
+  for (const id of removedEntries) {
+    untrack('entries', id);
+    tombstone('entry', id);
+  }
+  for (const id of removedTasks) {
+    untrack('tasks', id);
+    tombstone('task', id);
+  }
+  notifyLocalChange();
 }
 
-/** Retire une tâche et ses liens ; les colonnes restent à renuméroter. */
-async function removeTask(id: string): Promise<void> {
-  const { tasks, links } = await tables();
-  await tasks.remove(id);
-  for (const link of (await links.all()).filter((row) => row.task_id === id)) {
-    await links.remove(link.id);
+/** Retire le suivi et ses liens en conservant la note et son contenu. */
+async function removeTask(task: TaskRow): Promise<void> {
+  const { database, links, entries } = await tables();
+  const associations = (await links.all()).filter((row) => row.task_id === task.id);
+  const note = await entries.get(task.entry_id);
+  await database.writeAll([
+    { table: 'tasks', key: task.id, operation: 'delete' },
+    ...associations.map(({ id }) => ({ table: 'task_entries', key: id, operation: 'delete' as const })),
+    ...(note ? [{ table: 'entries', value: { ...note, updated_at: nowISO() } }] : []),
+  ]);
+  if (note) track('entries', note.id, false);
+  for (const link of associations) {
     untrack('links', link.id);
+    if (link.entry_id !== task.entry_id) tombstone('link', `${task.id}|${link.entry_id}`);
   }
-  untrack('tasks', id);
-  tombstone('task', id);
+  untrack('tasks', task.id);
+  tombstone('task', task.id);
 }
 
 /** Lecture Docs ciblée sur l'onglet lié (miroir de `read` dans `google-routes.js`). */
@@ -763,6 +914,7 @@ export const localApi: Api = {
   pushGoogleDocument: async (id) => {
     const t = await tables();
     const current = (await t.entries.get(id)) ?? fail('entrée introuvable');
+    if ((await t.tasks.all()).some((task) => task.entry_id === id)) fail('Retire le suivi de la tâche avant de l’associer à Google Drive.');
     const currentJson: string = current.content_json ?? fail('Crée un document riche pour le synchroniser avec Google Drive.');
     let rich = JSON.parse(currentJson) as RichDocument;
     let link = (await t.google.get(id)) ?? null;
@@ -770,16 +922,18 @@ export const localApi: Api = {
       fail('Cet ancien import a été aplati. Garde une copie locale de tes modifications puis recharge depuis Google pour activer la nouvelle synchronisation.');
     }
     if (!link) {
-      // Vérifier le format AVANT de créer un fichier distant (miroir serveur).
-      buildGoogleUpdate({ revisionId: 'check', body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } }, rich);
-      const created = (await webGoogleRequest('/docs/v1/documents', { method: 'POST', body: JSON.stringify({ title: current.title }) })) as Record<string, unknown>;
-      const rawId: unknown = created['documentId'];
-      const documentId: string = typeof rawId === 'string' && /^[\w-]{1,200}$/.test(rawId) ? rawId : fail('Identifiant de document Google invalide.');
-      const fresh = await readGoogleSource(documentId);
       link = await localWrite(async () => {
-        if (!(await t.entries.get(id))) fail('entrée introuvable');
+        const latest = (await t.entries.get(id)) ?? fail('entrée introuvable');
+        if ((await t.tasks.all()).some((task) => task.entry_id === id)) fail('Retire le suivi de la tâche avant de l’associer à Google Drive.');
         const existing = await t.google.get(id);
         if (existing) return existing;
+        if (latest.content_json !== currentJson) fail('Le brouillon a changé. Enregistre-le avant de l’associer à Google Drive.');
+        // Vérifier le format avant de créer un fichier distant.
+        buildGoogleUpdate({ revisionId: 'check', body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } }, rich);
+        const created = (await webGoogleRequest('/docs/v1/documents', { method: 'POST', body: JSON.stringify({ title: latest.title }) })) as Record<string, unknown>;
+        const rawId: unknown = created['documentId'];
+        const documentId: string = typeof rawId === 'string' && /^[\w-]{1,200}$/.test(rawId) ? rawId : fail('Identifiant de document Google invalide.');
+        const fresh = await readGoogleSource(documentId);
         const createdLink: GoogleRow = {
           entry_id: id, document_id: documentId, tab_id: documentBody(fresh).tabId || '', revision_id: fresh.revisionId || '',
           synced_content_json: JSON.stringify(importGoogleDocument(fresh)),
@@ -856,6 +1010,7 @@ export const localApi: Api = {
     const matchesCategory = (row: { category_id?: string | null }) => !categoryId || (categoryId === '__none__' ? !row.category_id : selected.has(row.category_id || ''));
     const allEntries = await entries.all();
     const allTasks = await tasks.all();
+    const tasksByEntry = new Map(allTasks.map((task) => [task.entry_id, task]));
     const allLinks = await links.all();
     const allAttachments = await attachments.all();
     const googleByEntry = new Map((await google.all()).map((row) => [row.entry_id, row]));
@@ -878,6 +1033,7 @@ export const localApi: Api = {
     for (const file of allAttachments) counts.set(file.entry_id, (counts.get(file.entry_id) ?? 0) + 1);
     const summaries = matching.map((entry) => {
       const link = googleByEntry.get(entry.id);
+      const task = tasksByEntry.get(entry.id);
       return {
         id: entry.id, title: entry.title, entry_date: entry.entry_date, project_id: entry.project_id, category_id: entry.category_id ?? null,
         archived: entry.archived ?? 0, kind: entry.kind ?? 'note', status: entry.status ?? 'todo',
@@ -889,12 +1045,14 @@ export const localApi: Api = {
         google_sync_blocked: link?.readonly_reason ?? null,
         google_dirty: link ? entry.content_json !== link.synced_content_json : false,
         follow_up: entry.follow_up ?? null,
+        ...(task && { task: metadata('task', task) }),
         ...(entry.follow_up ? { follow_up_key: metadata('entry', entry).follow_up_key } : {}),
       };
     });
+    const matchingIds = new Set(matching.map(({ id }) => id));
     const matchingTasks = allTasks
       .filter((task) => (!projectId || task.project_id === projectId) && matchesCategory(task))
-      .filter((task) => !needle || foldSearch(task.title).includes(needle))
+      .filter((task) => !needle || matchingIds.has(task.entry_id) || (!task.entry_id && foldSearch(task.title).includes(needle)))
       .sort((a, b) => a.position - b.position || cmp(b.updated_at, a.updated_at) || cmp(a.id, b.id))
       .map((task) => ({ ...metadata('task', task), documents: taskDocuments(task.id, allEntries, allLinks, googleByEntry) }));
     const byStatus: Record<Status, number> = { todo: 0, doing: 0, done: 0 };
@@ -980,37 +1138,70 @@ export const localApi: Api = {
     const archived = pick(patch, 'archived', row.archived ?? 0, (v) => (v ? 1 : 0));
     const kind: 'note' | 'procedure' = pick(patch, 'kind', row.kind ?? 'note', (v) => kindOf(v, row.kind ?? 'note'))
       ?? fail('type de document invalide (note ou procédure attendu)');
+    if (current.task && kind !== 'note') fail('Retire le suivi de la tâche avant de transformer la note en procédure.');
     const status = pick(patch, 'status', current.status ?? 'todo');
     if (!STATUSES.includes(status)) fail('statut invalide');
     const categoryId = await categoryForPatch(patch, current, projectId);
     const time = nowISO();
-    await entries.put({
-      ...row, title,
-      content_md: rich ? documentText(rich) : pick(patch, 'content_md', current.content_md, (v) => (typeof v === 'string' ? v : current.content_md)),
-      entry_date: date, project_id: projectId, category_id: categoryId, archived, kind, status, updated_at: time,
-      content_json: rich ? JSON.stringify(rich) : null,
-    });
+    const content = rich ? documentText(rich) : pick(patch, 'content_md', current.content_md, (v) => typeof v === 'string' ? v : current.content_md);
+    const serialized = rich ? JSON.stringify(rich) : null;
+    const sharedChanged = title !== row.title || projectId !== row.project_id || categoryId !== (row.category_id ?? null);
+    const changed = sharedChanged || content !== row.content_md || serialized !== row.content_json || date !== row.entry_date
+      || archived !== row.archived || kind !== row.kind;
+    const note: EntryRow = {
+      ...row, title, content_md: content, content_json: serialized, entry_date: date,
+      project_id: projectId, category_id: categoryId, archived, kind, status,
+      updated_at: current.task && !changed ? row.updated_at : time,
+    };
+    const task = current.task && (sharedChanged || current.task.status !== status) ? await t.tasks.get(current.task.id) : undefined;
+    const state = task && taskStateFor(status, undefined, task);
+    const archivedReferences = task && task.status !== 'done' && status === 'done'
+      ? await taskReferencesToArchive(task.id, time) : [];
+    if (task && state) {
+      await t.database.writeAll([
+        { table: 'entries', value: note },
+        { table: 'tasks', value: {
+          ...task, ...state, title, project_id: projectId, category_id: categoryId,
+          position: task.status !== status ? nextTaskPosition(await t.tasks.all(), status) : task.position,
+          updated_at: task.status !== status ? time : task.updated_at,
+        } },
+        ...archivedReferences.map((value) => ({ table: 'entries', value })),
+      ]);
+      if (task.status !== status) {
+        await renumber(task.status);
+        await renumber(status);
+      }
+      track('tasks', task.id, false);
+      for (const reference of archivedReferences) track('entries', reference.id, false);
+    } else await entries.put(note);
     track('entries', id, false);
     try {
       // Une tentative précédente peut avoir persisté l'entrée avant l'échec d'une tâche.
-      if (patch['category_id'] !== undefined || patch['project_id'] !== undefined) await inheritLocalTaskCategories(t, time, { entryId: id });
+      if (patch['category_id'] !== undefined || patch['project_id'] !== undefined) await inheritLocalTaskCategories(t, time, { entryId: id, excludeTaskId: current.task?.id });
     } finally { notifyLocalChange(); }
     return fullEntry(id);
   },
 
   deleteEntry: async (id) => {
-    const { entries, links, attachments, google } = await tables();
+    const { database, entries, tasks, links, attachments } = await tables();
     if (!(await entries.get(id))) fail('entrée introuvable');
-    await entries.remove(id);
-    for (const link of (await links.all()).filter((row) => row.entry_id === id)) {
-      await links.remove(link.id);
-      untrack('links', link.id);
+    const task = (await tasks.all()).find((row) => row.entry_id === id);
+    const associations = (await links.all()).filter((row) => row.entry_id === id || row.task_id === task?.id);
+    const files = (await attachments.all()).filter((row) => row.entry_id === id);
+    await database.writeAll([
+      { table: 'entries', key: id, operation: 'delete' },
+      { table: 'google_documents', key: id, operation: 'delete' },
+      ...(task ? [{ table: 'tasks', key: task.id, operation: 'delete' as const }] : []),
+      ...associations.map(({ id }) => ({ table: 'task_entries', key: id, operation: 'delete' as const })),
+      ...files.map(({ id }) => ({ table: 'attachments', key: id, operation: 'delete' as const })),
+    ]);
+    for (const link of associations) untrack('links', link.id);
+    for (const file of files) untrack('attachments', file.id);
+    if (task) {
+      untrack('tasks', task.id);
+      tombstone('task', task.id);
+      await renumber(task.status);
     }
-    for (const file of (await attachments.all()).filter((row) => row.entry_id === id)) {
-      await attachments.remove(file.id);
-      untrack('attachments', file.id);
-    }
-    await google.remove(id);
     untrack('entries', id);
     tombstone('entry', id);
     return { ok: true };
@@ -1065,14 +1256,19 @@ export const localApi: Api = {
     const sources: (Entry | null)[] = [];
     for (const source of body.sources as { id: string }[]) sources.push((await entries.get(source.id)) ? await fullEntry(source.id) : null);
     assertEntryMergeSources(body, sources);
-    const { project_id, category_id, kind } = entryMergeClassification(sources);
+    const found = sources as Entry[];
+    const tracked = found.flatMap((entry) => entry.task ? [entry] : []);
+    if (tracked.length > 1) fail('Fusionne les tâches depuis le tableau pour réunir leurs notes.');
+    const primary = tracked[0];
     const time = nowISO();
-    await entries.put({
+    const classification = primary
+      ? { project_id: primary.project_id, category_id: primary.category_id ?? null, kind: 'note' as const }
+      : entryMergeClassification(found) as Pick<EntryRow, 'project_id' | 'category_id' | 'kind'>;
+    const task = primary?.task;
+    await mergeLocalNotes({
       id, title: body.title, content_md: body.content_md, content_json: null, entry_date: today(),
-      project_id, category_id, archived: 0, kind, created_at: time, updated_at: time,
-    });
-    track('entries', id);
-    for (const source of sources as Entry[]) await absorbEntry(id, source.id, time);
+      ...classification, archived: primary?.archived ?? 0, status: task?.status ?? 'todo', created_at: time, updated_at: time,
+    }, found, task ? { ...task, entry_id: id, title: body.title, updated_at: time } : undefined);
     return fullEntry(id);
   },
 
@@ -1099,153 +1295,152 @@ export const localApi: Api = {
     }
     assertTaskMergeSources(body, sources, (id: string) => documents.get(id) ?? []);
     const found = sources as TaskRow[];
-    const { status, due_date, pinned, priority, project_id, category_id } = taskMergeAttributes(found);
+    const { status, progress, due_date, pinned, priority, project_id, category_id } = taskMergeAttributes(found);
     const time = nowISO();
-    await entries.put({
-      id: entryId, title: body.title, content_md: body.content_md, content_json: null, entry_date: today(),
-      project_id, category_id, archived: 0, kind: 'note', created_at: time, updated_at: time,
-    });
-    track('entries', entryId);
-    const position = Math.max(-1, ...(await tasks.all()).filter((task) => task.status === status).map((task) => task.position)) + 1;
-    await tasks.put({ id: taskId, title: body.title, status, due_date, pinned, position, priority, project_id, category_id, created_at: time, updated_at: time });
-    track('tasks', taskId);
-    const addLink = async (id: string) => {
-      await links.put({ id: linkId(taskId, id), task_id: taskId, entry_id: id, created_at: time });
-      track('links', linkId(taskId, id));
+    const position = nextTaskPosition(await tasks.all(), status);
+    const task: TaskRow = {
+      id: taskId, entry_id: entryId, title: body.title, status, progress,
+      due_date, pinned, position, priority, project_id, category_id, created_at: time, updated_at: time,
     };
-    await addLink(entryId);
-    for (const entry of new Map([...documents.values()].flat().map((item) => [item.id, item])).values()) {
-      if (isRewritableNote(entry)) await absorbEntry(entryId, entry.id, time);
-      else await addLink(entry.id);
-    }
-    for (const task of found) await removeTask(task.id);
+    const owned = new Set(found.map((item) => item.entry_id));
+    const all = [...new Map([...documents.values()].flat().map((item) => [item.id, item])).values()];
+    const absorbed = all.filter((entry) => isRewritableNote(entry) && owned.has(entry.id));
+    const absorbedIds = new Set(absorbed.map(({ id }) => id));
+    await mergeLocalNotes(taskNote(task, body.content_md), absorbed, task, found, all.filter(({ id }) => !absorbedIds.has(id)));
     for (const changed of new Set<Status>([status, ...found.map((task) => task.status)])) await renumber(changed);
     if (status === 'done') await archiveTaskDocuments(taskId);
     return fullEntry(entryId);
   },
 
   createTaskFromEntry: async (entryId, body) => {
-    const { entries, tasks, links } = await tables();
+    const { entries, tasks, google } = await tables();
     const source = (await entries.get(entryId)) ?? fail('entrée introuvable');
     const title = body?.title === undefined ? source.title : str(body.title);
     if (!title) fail('titre requis');
-    const dueDate = body?.due_date === undefined ? null : orNull(body.due_date);
+    if (body?.content_md !== undefined && typeof body.content_md !== 'string') fail('contenu Markdown invalide');
+    const dueDate = orNull(body?.due_date);
     if (dueDate && !DATE_RE.test(dueDate)) fail('échéance invalide (AAAA-MM-JJ attendu)');
     const priority = priorityOf(body?.priority);
     if (!priority) fail('priorité invalide (basse, normale ou haute attendue)');
-    const status = body?.status ?? 'todo';
-    if (!STATUSES.includes(status)) fail('statut invalide');
-    const id = uid('tk_');
-    const time = nowISO();
-    const position = Math.max(-1, ...(await tasks.all()).filter((task) => task.status === status).map((task) => task.position)) + 1;
-    await tasks.put({
-      id, title, status, due_date: dueDate, pinned: 0, position,
-      priority: priority as TaskRow['priority'], project_id: source.project_id, category_id: source.category_id ?? null, created_at: time, updated_at: time,
-    });
-    await links.put({ id: linkId(id, source.id), task_id: id, entry_id: source.id, created_at: time });
-    track('tasks', id);
-    track('links', linkId(id, source.id));
-    return taskWithDocuments(id);
+    const existingRows = await tasks.all();
+    const convert = (source.kind ?? 'note') === 'note' && !(await google.get(entryId))
+      && body?.content_md === undefined && title === source.title;
+    const state = taskStateFor(body?.status, body?.progress, { status: convert ? source.status ?? 'todo' : 'todo', progress: 0 });
+    if (convert) {
+      const existing = existingRows.find((task) => task.entry_id === entryId);
+      if (existing) return taskWithDocuments(existing.id);
+    }
+    const noteId = convert ? entryId : uid('en_');
+    const id = taskIdForNote(noteId);
+    const deletedAt = convert ? readLocalTombstones().find((item) => item.kind === 'task' && item.id === id)?.deleted_at : undefined;
+    const time: string = taskCreationStamp(nowISO(), deletedAt);
+    const task: TaskRow = {
+      id, entry_id: noteId, title, ...state,
+      due_date: dueDate, pinned: 0, priority: priority as TaskRow['priority'],
+      project_id: source.project_id, category_id: source.category_id ?? null, created_at: time, updated_at: time,
+      position: nextTaskPosition(existingRows, state.status),
+    };
+    return convert
+      ? addTaskNote(task, { ...source, status: state.status }, undefined, true)
+      : addTaskNote(task, taskNote(task, body?.content_md ?? title), source);
   },
 
   createEntryFromTask: async (taskId, body) => {
-    const { entries, tasks, links } = await tables();
+    const { database, tasks } = await tables();
     const source = (await tasks.get(taskId)) ?? fail('tâche introuvable');
     await assertLocalTaskPlanning(body?.expected_planning, source);
     const title = body?.title === undefined ? source.title : str(body.title);
     if (!title) fail('titre requis');
-    const content = typeof body?.content_md === 'string' ? body.content_md : '';
-    const id = uid('en_');
+    if (source.entry_id) fail('Cette tâche a déjà une note. Modifie sa note pour compléter le contenu.');
     const time = nowISO();
-    await entries.put({
-      id, title, content_md: content, entry_date: today(), project_id: source.project_id, category_id: source.category_id ?? null,
-      archived: 0, kind: 'note', created_at: time, updated_at: time, content_json: null,
-    });
-    await links.put({ id: linkId(source.id, id), task_id: source.id, entry_id: id, created_at: time });
-    if (source.status === 'done') await archiveTaskDocuments(source.id);
-    track('entries', id);
-    track('links', linkId(source.id, id));
-    return fullEntry(id);
+    const next: TaskRow = { ...source, entry_id: uid('en_'), title, ...taskStateFor(source.status, undefined, source), updated_at: time };
+    const note = taskNote(next, typeof body?.content_md === 'string' ? body.content_md : '');
+    const link = taskLink(next.id, note.id, time);
+    await database.writeAll([
+      { table: 'entries', value: note, operation: 'add' },
+      { table: 'tasks', value: next },
+      { table: 'task_entries', value: link, operation: 'add' },
+    ]);
+    track('entries', note.id, false);
+    track('tasks', next.id, false);
+    track('links', link.id);
+    return fullEntry(note.id);
   },
 
   createTask: async (body) => {
-    const { database, tasks, projects } = await tables();
+    const { tasks, projects } = await tables();
     const title = str(body.title);
     if (!title) fail('titre requis');
     if (body.content_md !== undefined && typeof body.content_md !== 'string') fail('contenu Markdown invalide');
-    const status = (str(body.status) || 'todo') as Status;
-    if (!STATUSES.includes(status)) fail('statut invalide');
+    const state = taskStateFor(str(body.status) || undefined, body.progress);
     const priority = priorityOf(body.priority);
     if (!priority) fail('priorité invalide (basse, normale ou haute attendue)');
-    if (orNull(body.project_id) && !(await projects.get(str(body.project_id)))) fail('projet introuvable');
-    const id = uid('tk_');
-    const entryId = uid('en_');
-    const t = nowISO();
-    const position = Math.max(-1, ...(await tasks.all()).filter((task) => task.status === status).map((task) => task.position)) + 1;
     const projectId = orNull(body.project_id);
-    const categoryId = await categoryFor(body.category_id, projectId);
-    const row: TaskRow = {
-      id, title, status, due_date: orNull(body.due_date), pinned: body.pinned ? 1 : 0, position,
-      priority: priority as TaskRow['priority'], project_id: projectId, category_id: categoryId, created_at: t, updated_at: t,
+    if (projectId && !(await projects.get(projectId))) fail('projet introuvable');
+    const dueDate = orNull(body.due_date);
+    if (dueDate && !DATE_RE.test(dueDate)) fail('échéance invalide (AAAA-MM-JJ attendu)');
+    const time = nowISO();
+    const entryId = uid('en_');
+    const task: TaskRow = {
+      id: taskIdForNote(entryId), entry_id: entryId, title, ...state, due_date: dueDate, pinned: body.pinned ? 1 : 0,
+      position: nextTaskPosition(await tasks.all(), state.status),
+      priority: priority as TaskRow['priority'], project_id: projectId, category_id: await categoryFor(body.category_id, projectId),
+      created_at: time, updated_at: time,
     };
-    const note: EntryRow = {
-      id: entryId, title, content_md: body.content_md ?? '', content_json: null, entry_date: today(), project_id: projectId,
-      category_id: categoryId, archived: 0, kind: 'note', status: 'todo', created_at: t, updated_at: t,
-    };
-    const link: LinkRow = { id: linkId(id, entryId), task_id: id, entry_id: entryId, created_at: t };
-    await database.addAll([
-      { table: 'tasks', value: row },
-      { table: 'entries', value: note },
-      { table: 'task_entries', value: link },
-    ]);
-    track('tasks', id, false);
-    track('entries', entryId, false);
-    track('links', link.id);
-    return taskWithDocuments(id);
+    return addTaskNote(task, taskNote(task, body.content_md ?? ''));
   },
 
   updateTask: async (id, body) => {
-    const { tasks, projects } = await tables();
+    const t = await tables();
+    const { tasks, projects } = t;
     const current = (await tasks.get(id)) ?? fail('tâche introuvable');
     const patch = (body ?? {}) as Record<string, unknown>;
     await assertLocalTaskPlanning(body?.expected_planning, current);
     const title = pick(patch, 'title', current.title, (v) => str(v));
     if (!title) fail('titre requis');
-    const status = pick(patch, 'status', current.status, (v) => (str(v) || current.status) as Status);
-    if (!STATUSES.includes(status)) fail('statut invalide');
+    const state = taskStateFor(str(patch.status) || undefined, patch.progress, current);
     const priority = pick(patch, 'priority', current.priority, (v) => priorityOf(v, current.priority));
     if (!priority) fail('priorité invalide (basse, normale ou haute attendue)');
     const projectId = pick(patch, 'project_id', current.project_id, orNull);
     if (projectId && !(await projects.get(projectId))) fail('projet introuvable');
+    const dueDate = pick(patch, 'due_date', current.due_date, orNull);
+    if (patch.due_date !== undefined && dueDate && !DATE_RE.test(dueDate)) fail('échéance invalide (AAAA-MM-JJ attendu)');
+    const pinned = pick<0 | 1>(patch, 'pinned', current.pinned, (v) => v ? 1 : 0);
+    const planningChanged = state.status !== current.status || state.progress !== current.progress
+      || dueDate !== current.due_date || pinned !== current.pinned || priority !== current.priority;
     const next: TaskRow = {
-      ...current, title, status,
-      due_date: pick(patch, 'due_date', current.due_date, orNull),
-      pinned: pick(patch, 'pinned', current.pinned, (v) => (v ? 1 : 0)),
-      priority: priority as TaskRow['priority'], project_id: projectId, category_id: await categoryForPatch(patch, current, projectId), updated_at: nowISO(),
+      ...current, title, ...state, due_date: dueDate, pinned,
+      position: current.status !== state.status ? nextTaskPosition(await tasks.all(), state.status) : current.position,
+      priority: priority as TaskRow['priority'], project_id: projectId, category_id: await categoryForPatch(patch, current, projectId),
+      updated_at: planningChanged ? nowISO() : current.updated_at,
     };
-    await tasks.put(next);
-    if (current.status !== 'done' && status === 'done') await archiveTaskDocuments(id);
-    track('tasks', id);
-    return rowAsTask(await localFollowUpMetadata('task', next));
+    await writeTaskUpdate(current, next);
+    if (next.entry_id && (projectId !== current.project_id || next.category_id !== current.category_id)) {
+      await inheritLocalTaskCategories(t, nowISO(), { entryId: next.entry_id, excludeTaskId: id });
+    }
+    if (current.status !== next.status) {
+      await renumber(current.status);
+      await renumber(next.status);
+    }
+    return localFollowUpMetadata('task', (await tasks.get(id)) ?? next);
   },
 
   moveTask: async (id, status, position) => {
     const { tasks } = await tables();
     const current = (await tasks.get(id)) ?? fail('tâche introuvable');
     if (!STATUSES.includes(status)) fail('statut invalide');
+    const state = taskStateFor(status, undefined, current);
     const target = Number.isFinite(Number(position)) ? Math.max(0, Number(position)) : 0;
-    await tasks.put({ ...current, status, position: target - 0.5, updated_at: nowISO() });
+    await writeTaskUpdate(current, { ...current, ...state, position: target - 0.5, updated_at: nowISO() });
     await renumber(status);
     if (current.status !== status) await renumber(current.status);
-    if (current.status !== 'done' && status === 'done') await archiveTaskDocuments(id);
-    track('tasks', id);
     return rowAsTask((await tasks.get(id)) as TaskRow);
   },
 
   deleteTask: async (id) => {
     const { tasks } = await tables();
     const current = (await tasks.get(id)) ?? fail('tâche introuvable');
-    await removeTask(id);
+    await removeTask(current);
     await renumber(current.status);
     return { ok: true };
   },
@@ -1269,8 +1464,9 @@ export const localApi: Api = {
 
   unlinkTaskDocument: async (taskId, entryId) => {
     const { tasks, entries, links } = await tables();
-    if (!(await tasks.get(taskId))) fail('tâche introuvable');
+    const task = (await tasks.get(taskId)) ?? fail('tâche introuvable');
     if (!(await entries.get(entryId))) fail('entrée introuvable');
+    if (task.entry_id === entryId) fail('Cette note contient la tâche. Retire le suivi de tâche pour la conserver comme note.');
     if (!(await links.get(linkId(taskId, entryId)))) fail('association introuvable');
     await links.remove(linkId(taskId, entryId));
     untrack('links', linkId(taskId, entryId));
@@ -1308,7 +1504,7 @@ export const localApi: Api = {
       track('entries', entry.id);
     }
     for (const task of await tasks.all()) if (task.category_id === id) {
-      await tasks.put({ ...task, category_id: current.parent_id, updated_at });
+      await tasks.put({ ...task, category_id: current.parent_id, updated_at: task.entry_id ? task.updated_at : updated_at });
       track('tasks', task.id);
     }
     await categories.remove(id);
@@ -1358,7 +1554,7 @@ export const localApi: Api = {
       track('entries', entry.id);
     }
     for (const task of (await tasks.all()).filter((row) => row.project_id === id)) {
-      await tasks.put({ ...task, project_id: null, category_id: null, updated_at: nowISO() });
+      await tasks.put({ ...task, project_id: null, category_id: null, updated_at: task.entry_id ? task.updated_at : nowISO() });
       track('tasks', task.id);
     }
     for (const category of (await categories.all()).filter((row) => row.project_id === id)) {
@@ -1518,10 +1714,22 @@ async function applySyncSnapshotUnlocked(merged: SyncSnapshot, base: SyncSnapsho
   const graph = (rows: { id: string; project_id?: string | null; category_id?: string | null; parent_id?: string | null }[], category = false) =>
     JSON.stringify(rows.map((row) => [row.id, row.project_id ?? null, category ? row.parent_id ?? null : row.category_id ?? null]).sort((a, b) => cmp(a[0] || '', b[0] || '')));
   const projectIds = (rows: { id: string }[]) => JSON.stringify(rows.map((row) => row.id).sort());
-  if (projectIds(await t.projects.all()) !== projectIds(base.projects)
+  const currentEntries = await t.entries.all();
+  const currentTasks = await t.tasks.all();
+  const primaryIds = new Set([...currentTasks, ...base.tasks, ...merged.tasks].map((task) => task.entry_id));
+  const pairedTasks = (rows: TaskRow[]) => rows.filter(({ entry_id }) => primaryIds.has(entry_id))
+    .sort((a, b) => cmp(a.id, b.id))
+    .map((row) => [row.id, row.entry_id, row.updated_at, row.title, row.status, row.progress, row.due_date, row.priority, row.pinned, row.position, row.follow_up ?? null]);
+  const pairedNotes = (rows: EntryRow[]) => rows.filter(({ id }) => primaryIds.has(id))
+    .sort((a, b) => cmp(a.id, b.id))
+    .map((row) => [row.id, row.updated_at, row.title, row.status ?? 'todo', row.content_md, row.content_json, row.entry_date, row.archived, row.kind, row.follow_up ?? null]);
+  const pairedNotesInBase = base.entries.map((row) => ({ ...row, content_json: row.content_json ? JSON.stringify(row.content_json) : null }));
+  if (JSON.stringify(pairedTasks(currentTasks)) !== JSON.stringify(pairedTasks(base.tasks))
+    || JSON.stringify(pairedNotes(currentEntries)) !== JSON.stringify(pairedNotes(pairedNotesInBase))
+    || projectIds(await t.projects.all()) !== projectIds(base.projects)
     || graph(await t.categories.all(), true) !== graph(base.categories || [], true)
-    || graph(await t.entries.all()) !== graph(base.entries)
-    || graph(await t.tasks.all()) !== graph(base.tasks)) return { changed: 0, skipped: 1 };
+    || graph(currentEntries) !== graph(base.entries)
+    || graph(currentTasks) !== graph(base.tasks)) return { changed: 0, skipped: 1 };
   let changed = 0;
   let skipped = 0;
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -1529,7 +1737,7 @@ async function applySyncSnapshotUnlocked(merged: SyncSnapshot, base: SyncSnapsho
   async function sync<Wanted extends object, Row extends object>(
     table: { all(): Promise<Row[]>; put(value: Row): Promise<void>; remove(key: string): Promise<void> },
     wanted: Wanted[], before: Wanted[], key: (row: Wanted | Row) => string, toRow: (row: Wanted, current?: Row) => Row,
-    fields: string[],
+    fields: string[], batch?: { table: string; writes: StoreWrite[] },
   ) {
     const guarded = fields.length > 0;
     const baseMap = new Map(before.map((row) => [key(row), row]));
@@ -1550,25 +1758,30 @@ async function applySyncSnapshotUnlocked(merged: SyncSnapshot, base: SyncSnapsho
     for (const [id, row] of wantedMap) {
       if (same(row, baseMap.get(id))) continue;
       if (baseMap.has(id) ? moved(id) : current.has(id) && guarded) { skipped++; continue; }
-      await table.put(toRow(row, current.get(id)));
+      const value = toRow(row, current.get(id));
+      if (batch) batch.writes.push({ table: batch.table, value });
+      else await table.put(value);
       changed++;
     }
     for (const id of baseMap.keys()) {
       if (wantedMap.has(id) || !current.has(id)) continue;
       if (moved(id)) { skipped++; continue; }
-      await table.remove(id);
+      if (batch) batch.writes.push({ table: batch.table, key: id, operation: 'delete' });
+      else await table.remove(id);
       changed++;
     }
   }
   await sync(t.projects, merged.projects, base.projects, (row) => (row as ProjectRow).id, (row) => ({ ...row }), ['name', 'color']);
   await sync(t.categories, merged.categories || [], base.categories || [], (row) => (row as CategoryRow).id, (row) => ({ ...row }), ['name', 'color', 'project_id', 'parent_id']);
+  const noteWrites: StoreWrite[] = [];
   await sync(t.entries, merged.entries, base.entries, (row) => (row as EntryRow).id,
     (row) => ({ ...row, content_json: row.content_json ? JSON.stringify(row.content_json) : null }) as EntryRow,
-    ['title', 'content_md', 'content_json', 'entry_date', 'project_id', 'category_id', 'archived', 'kind', 'status', 'follow_up']);
+    ['title', 'content_md', 'content_json', 'entry_date', 'project_id', 'category_id', 'archived', 'kind', 'status', 'follow_up'], { table: 'entries', writes: noteWrites });
   await sync(t.tasks, merged.tasks, base.tasks, (row) => (row as TaskRow).id, (row) => ({ ...row }),
-    ['title', 'status', 'due_date', 'pinned', 'position', 'priority', 'project_id', 'category_id', 'follow_up']);
+    ['title', 'status', 'due_date', 'pinned', 'position', 'priority', 'project_id', 'category_id', 'follow_up', 'entry_id', 'progress'], { table: 'tasks', writes: noteWrites });
   await sync(t.links, merged.task_entries, base.task_entries, (row) => linkId(row.task_id, row.entry_id),
-    (row) => ({ id: linkId(row.task_id, row.entry_id), ...row }), []);
+    (row) => ({ id: linkId(row.task_id, row.entry_id), ...row }), [], { table: 'task_entries', writes: noteWrites });
+  await t.database.writeAll(noteWrites);
   await sync(t.google, merged.google_documents, base.google_documents, (row) => (row as GoogleRow).entry_id, (row) => ({ ...row }), []);
   await sync(t.attachments, merged.attachments, base.attachments, (row) => (row as AttachmentRow).id,
     (row, current) => ({ ...row, ...(current?.blob ? { blob: current.blob } : {}) }) as AttachmentRow, []);
@@ -1580,11 +1793,7 @@ async function applySyncSnapshotUnlocked(merged: SyncSnapshot, base: SyncSnapsho
   return { changed, skipped };
 }
 
-/**
- * Remplace le contenu local par une sauvegarde validée — miroir de
- * `restoreBackup` (`api/src/backup.js`), sans transaction (un seul
- * utilisateur) mais avec validation préalable : rien n'est écrit si elle échoue.
- */
+/** Remplace le contenu local par une sauvegarde validée, en une transaction. */
 export function importLocalBackup(input: unknown): Promise<{ ok: true; projects: number; entries: number; tasks: number }> {
   return localWrite(() => importLocalBackupUnlocked(input));
 }
@@ -1594,22 +1803,18 @@ async function importLocalBackupUnlocked(input: unknown): Promise<{ ok: true; pr
     tasks: TaskRow[]; task_entries: { task_id: string; entry_id: string; created_at: string }[];
     google_documents: GoogleRow[]; attachments: { id: string; filename: string; stored: string; mime: string; size: number; entry_id: string; created_at: string; driveFileId?: string | null }[];
   };
-  const t = await tables();
-  const byName = { projects: t.projects, categories: t.categories, entries: t.entries, tasks: t.tasks, task_entries: t.links, google_documents: t.google, attachments: t.attachments };
-  for (const name of ['task_entries', 'google_documents', 'attachments', 'tasks', 'entries', 'categories', 'projects'] as const) {
-    await byName[name].clear();
-  }
-  for (const project of data.projects) await t.projects.put(project);
-  for (const category of data.categories) await t.categories.put(category);
-  for (const entry of data.entries) {
-    await t.entries.put({ ...entry, content_json: entry.content_json ? JSON.stringify(entry.content_json) : null });
-  }
-  for (const task of data.tasks) await t.tasks.put(task);
-  for (const document of data.google_documents) await t.google.put(document);
-  for (const file of data.attachments) await t.attachments.put(file);
-  for (const link of data.task_entries) {
-    await t.links.put({ id: linkId(link.task_id, link.entry_id), ...link });
-  }
+  const { database } = await tables();
+  const replacement = {
+    projects: data.projects, categories: data.categories, tasks: data.tasks,
+    google_documents: data.google_documents, attachments: data.attachments,
+    entries: data.entries.map((entry) => ({ ...entry, content_json: entry.content_json ? JSON.stringify(entry.content_json) : null })),
+    task_entries: data.task_entries.map((link) => ({ ...link, id: linkId(link.task_id, link.entry_id) })),
+  };
+  const writes: StoreWrite[] = Object.entries(replacement).flatMap(([table, rows]) => [
+    { table, operation: 'clear' as const },
+    ...rows.map((value) => ({ table, value })),
+  ]);
+  await database.writeAll(writes);
   // Nouvelle base de référence : la file d'envoi repart de zéro.
   clearLocalOutbox();
   return { ok: true, projects: data.projects.length, entries: data.entries.length, tasks: data.tasks.length };
@@ -1647,12 +1852,26 @@ async function exportLocalOutboxUnlocked(baseExportedAt: string | null): Promise
     }
     return rows;
   };
-  const entries = await take(t.entries, outbox.entries);
-  const tasks = await take(t.tasks, outbox.tasks);
-  const links = await take(t.links, outbox.links);
+  const entries = new Set(outbox.entries);
+  const taskIds = new Set(outbox.tasks);
+  const linkIds = new Set(outbox.links);
   const files = await take(t.attachments, outbox.attachments);
+  for (const file of files) entries.add(file.entry_id);
+  for (const link of await take(t.links, outbox.links)) {
+    taskIds.add(link.task_id);
+    entries.add(link.entry_id);
+  }
+  for (const task of await t.tasks.all()) {
+    if (!task.entry_id || (!taskIds.has(task.id) && !entries.has(task.entry_id))) continue;
+    taskIds.add(task.id);
+    entries.add(task.entry_id);
+    linkIds.add(linkId(task.id, task.entry_id));
+  }
+  const entryRows = await take(t.entries, [...entries]);
+  const tasks = await take(t.tasks, [...taskIds]);
+  const links = await take(t.links, [...linkIds]);
   // A changed item needs its category and ancestors even if those did not change.
-  const categoryIds = new Set([...(outbox.categories || []), ...entries.map((row) => row.category_id || ''), ...tasks.map((row) => row.category_id || '')].filter(Boolean));
+  const categoryIds = new Set([...(outbox.categories || []), ...entryRows.map((row) => row.category_id || ''), ...tasks.map((row) => row.category_id || '')].filter(Boolean));
   const categories: CategoryRow[] = [];
   for (const id of categoryIds) {
     const row = await t.categories.get(id);
@@ -1660,7 +1879,7 @@ async function exportLocalOutboxUnlocked(baseExportedAt: string | null): Promise
     categories.push(row);
     if (row.parent_id) categoryIds.add(row.parent_id);
   }
-  const projectIds = new Set([...outbox.projects, ...entries.map((row) => row.project_id || ''), ...tasks.map((row) => row.project_id || ''), ...categories.map((row) => row.project_id)].filter(Boolean));
+  const projectIds = new Set([...outbox.projects, ...entryRows.map((row) => row.project_id || ''), ...tasks.map((row) => row.project_id || ''), ...categories.map((row) => row.project_id)].filter(Boolean));
   return {
     version: OUTBOX_VERSION,
     exported_at: nowISO(),
@@ -1668,7 +1887,7 @@ async function exportLocalOutboxUnlocked(baseExportedAt: string | null): Promise
     device: 'pwa',
     projects: await take(t.projects, [...projectIds]),
     categories,
-    entries: entries.map((row) => ({ ...row, status: row.status ?? 'todo', content_json: row.content_json ? (JSON.parse(row.content_json) as RichDocument) : null })),
+    entries: entryRows.map((row) => ({ ...row, status: row.status ?? 'todo', content_json: row.content_json ? (JSON.parse(row.content_json) as RichDocument) : null })),
     tasks,
     task_entries: links.map(({ task_id, entry_id, created_at }) => ({ task_id, entry_id, created_at })),
     attachments: files.map(({ blob: _blob, driveFileId, ...meta }) => ({ ...meta, driveFileId: driveFileId ?? null })),

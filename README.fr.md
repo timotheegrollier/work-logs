@@ -82,12 +82,12 @@ http://localhost:8410. Application desktop : `npm run desktop`.
 | **Imprimer** (ou `Ctrl+P`) | sort l'entrée seule, mise en page propre, prête pour un PDF |
 | 📎 **Joindre un fichier** | attache un document à l'entrée ouverte |
 | 👁 **Aperçu** | lit le fichier dans WorkLogs (image, PDF, texte) sans le télécharger |
-| Taper + `Entrée` dans « Nouvelle tâche » | ajoute une tâche à la colonne À faire, et une entrée vide liée dans le journal pour la rédiger |
+| Taper + `Entrée` dans « Nouvelle tâche » | crée et ouvre une note de tâche, visible aussi dans la colonne À faire |
 | Cocher une carte · la glisser | la termine · la change de colonne |
 | Clic sur un projet | filtre **le journal et les tâches** en même temps |
 | **Rechercher** | cherche dans les titres, le corps des entrées et les tâches |
 | **Assistant** | ouvre des conversations parallèles pour organiser le journal et les tâches, chercher sur le partage et préparer des procédures Word |
-| **Créer une tâche liée** dans une entrée | crée une tâche avec cette entrée comme contexte |
+| **Suivre comme tâche** dans une note | active le suivi sur la note ouverte ; son statut et son avancement de 0 à 100 % sont repris dans le tableau |
 | **Exporter** | télécharge toute la base en JSON |
 
 Markdown géré : titres, gras/italique, listes, **cases à cocher**, **tableaux**,

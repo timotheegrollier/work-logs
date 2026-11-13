@@ -21,19 +21,13 @@ function rejectTaskWriteOnce(memory: Database, taskId: string): Database {
   let rejectWrite = true;
   return {
     ...memory,
-    table<T extends object>(name: string) {
-      const table = memory.table<T>(name);
-      return {
-        ...table,
-        put: async (row: T) => {
-          const task = row as Partial<Task>;
-          if (name === 'tasks' && task.id === taskId && task.category_id && rejectWrite) {
-            rejectWrite = false;
-            throw new Error('stockage temporairement indisponible');
-          }
-          await table.put(row);
-        },
-      };
+    writeAll: async (writes) => {
+      if (rejectWrite && writes.some((write) => write.table === 'tasks' && 'value' in write
+        && (write.value as Partial<Task>).id === taskId && (write.value as Partial<Task>).category_id)) {
+        rejectWrite = false;
+        throw new Error('stockage temporairement indisponible');
+      }
+      await memory.writeAll(writes);
     },
   };
 }
@@ -51,7 +45,7 @@ test('PWA : lier une entrée classée remplit la catégorie sans remplacer un ch
   expect(await classification(explicit.id)).toBe(second.id);
   expect(await classification(foreign.id)).toBeNull();
   expect(await classification(unassigned.id)).toBeNull();
-  expect((await exportLocalOutbox()).tasks.map((row) => row.id)).toEqual([task.id]);
+  expect((await exportLocalOutbox()).tasks.map((row) => row.id).sort()).toEqual([task.id, explicit.id, foreign.id, unassigned.id].sort());
   await localApi.linkTaskDocument(task.id, note.id);
   const otherNote = await localApi.createEntry({ title: 'Note', project_id: project.id, category_id: second.id });
   await localApi.linkTaskDocument(task.id, otherNote.id);
@@ -75,7 +69,7 @@ test('PWA : classer une entrée liée remplit les tâches libres et inscrit entr
   expect(await classification(foreign.id)).toBeNull();
   const outbox = await exportLocalOutbox();
   expect(outbox.tasks.map((row) => row.id)).toEqual([task.id]);
-  expect(outbox.entries.map((row) => row.id)).toEqual([note.id]);
+  expect(outbox.entries.map((row) => row.id).sort()).toEqual([note.id, task.entry_id].sort());
   expect(snapshots).toEqual([[task.id]]);
 });
 
@@ -87,8 +81,7 @@ test('PWA : les catégories distinctes de plusieurs entrées restent ambiguës p
   const b = await localApi.createEntry({ title: 'Note', project_id: project.id, category_id: second.id });
   const task = await localApi.createTask({ title: 'Ambiguë', project_id: project.id });
   await localApi.linkTaskDocument(task.id, a.id);
-  const tasks = memory.table<Task>('tasks');
-  await tasks.put({ ...(await tasks.get(task.id))!, category_id: null });
+  await localApi.updateTask(task.id, { category_id: null });
   await localApi.linkTaskDocument(task.id, b.id);
   expect(await classification(task.id)).toBeNull();
   await localApi.updateEntry(b.id, { category_id: first.id });
@@ -107,8 +100,7 @@ test('PWA : migration initiale unique, non ambiguë et sans notification réentr
   const foreign = await localApi.createTask({ title: 'Ailleurs', project_id: otherProject.id });
   for (const target of [unique, ambiguous, explicit, foreign]) await localApi.linkTaskDocument(target.id, a.id);
   await localApi.linkTaskDocument(ambiguous.id, b.id);
-  const tasks = memory.table<Task>('tasks');
-  for (const target of [unique, ambiguous]) await tasks.put({ ...(await tasks.get(target.id))!, category_id: null });
+  for (const target of [unique, ambiguous]) await localApi.updateTask(target.id, { category_id: null });
   clearLocalOutbox();
   localStorage.removeItem(TASK_CATEGORY_MIGRATION);
   const notified = vi.fn();
@@ -136,7 +128,7 @@ test('PWA : un remplissage interrompu garde en outbox les tâches persistées et
   const tasks = memory.table<Task>('tasks');
   for (const task of [firstTask, secondTask]) {
     await localApi.linkTaskDocument(task.id, note.id);
-    await tasks.put({ ...(await tasks.get(task.id))!, category_id: null });
+    await localApi.updateTask(task.id, { category_id: null });
   }
   clearLocalOutbox();
   localStorage.removeItem(TASK_CATEGORY_MIGRATION);
@@ -166,10 +158,11 @@ test('PWA : une liaison persistée avant un héritage refusé reste en outbox et
   setLocalDatabase(rejectTaskWriteOnce(memory, task.id));
   await expect(localApi.linkTaskDocument(task.id, note.id)).rejects.toThrow('stockage temporairement indisponible');
   const interrupted = await exportLocalOutbox();
-  expect(interrupted.task_entries.map((link) => [link.task_id, link.entry_id])).toEqual([[task.id, note.id]]);
+  expect(interrupted.task_entries.map((link) => link.entry_id).sort()).toEqual([note.id, task.entry_id].sort());
+  expect(interrupted.tasks.map(({ id }) => id)).toEqual([task.id]);
   expect(await classification(task.id)).toBeNull();
   const persisted = await memory.table<{ id: string; created_at: string }>('task_entries').all();
-  expect(persisted).toHaveLength(2);
+  expect(persisted.filter((link) => link.id.startsWith(`${task.id}\0`))).toHaveLength(2);
   await localApi.linkTaskDocument(task.id, note.id);
   expect(await classification(task.id)).toBe(first.id);
   expect((await exportLocalOutbox()).tasks.map((row) => row.id)).toEqual([task.id]);
@@ -188,7 +181,7 @@ test('PWA : une entrée persistée reste en outbox après un héritage partiel e
   setLocalDatabase(rejectTaskWriteOnce(memory, secondTask.id));
   await expect(localApi.updateEntry(note.id, { category_id: first.id })).rejects.toThrow('stockage temporairement indisponible');
   const interrupted = await exportLocalOutbox();
-  expect(interrupted.entries.map((row) => row.id)).toEqual([note.id]);
+  expect(interrupted.entries.map((row) => row.id).sort()).toEqual([note.id, firstTask.entry_id].sort());
   expect(interrupted.tasks.map((row) => row.id)).toEqual([firstTask.id]);
   expect((await localApi.entry(note.id)).category_id).toBe(first.id);
   expect(await classification(firstTask.id)).toBe(first.id);

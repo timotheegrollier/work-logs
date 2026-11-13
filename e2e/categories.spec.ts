@@ -84,11 +84,11 @@ test.describe('catégories desktop', () => {
     await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Bilan installation');
     await page.getByLabel('Catégorie de l’entrée').selectOption(child.id);
     await expect.poll(async () => (await (await request.get(`/api/entries/${note.id}`)).json()).category_id).toBe(child.id);
-    await board(page).getByRole('button', { name: 'Préparer déploiement', exact: true }).click();
+    await board(page).getByRole('button', { name: 'Planifier Préparer déploiement', exact: true }).click();
     await page.getByLabel('Catégorie de la tâche').selectOption(child.id);
     await board(page).getByRole('button', { name: 'Enregistrer', exact: true }).click();
     await expect.poll(async () => (await (await request.get('/api/state')).json()).tasks.find((item: { id: string }) => item.id === task.id).category_id).toBe(child.id);
-    await expect(journal(page).locator('.category-badge', { hasText: 'Préparation / Déploiement' })).toBeVisible();
+    await expect(journal(page).getByRole('button', { name: /Bilan installation/ }).locator('.category-badge')).toHaveText('Préparation / Déploiement');
     await expect(board(page).locator('.category-badge', { hasText: 'Préparation / Déploiement' })).toBeVisible();
 
     // Les deux cibles ont un ordre manuel différent de l'ordre des groupes.
@@ -139,20 +139,20 @@ test.describe('catégories desktop', () => {
 
     // La note ouverte reçoit le parent après suppression. La prochaine frappe ne
     // doit pas réintroduire l'ancien identifiant dans l'enregistrement automatique.
-    await board(page).getByRole('button', { name: 'Préparer déploiement', exact: true }).click();
-    await page.getByLabel('Titre de la tâche', { exact: true }).fill('Préparer déploiement vérifié');
+    await board(page).getByRole('button', { name: 'Planifier Préparer déploiement', exact: true }).click();
+    await page.getByLabel('Échéance', { exact: true }).fill('2026-12-15');
     page.once('dialog', (dialog) => dialog.accept());
     await (await categories(page)).getByRole('button', { name: 'Supprimer la catégorie Déploiement', exact: true }).click();
     await expect(sheet(page).getByRole('button', { name: 'Afficher la catégorie Déploiement', exact: true })).toBeHidden();
     await sheet(page).getByRole('button', { name: 'Fermer', exact: true }).click();
     await expect(page.getByLabel('Catégorie de l’entrée')).toHaveValue(destination.id);
     await expect(page.getByLabel('Catégorie de la tâche')).toHaveValue(destination.id);
-    await expect(page.getByLabel('Titre de la tâche', { exact: true })).toHaveValue('Préparer déploiement vérifié');
+    await expect(page.getByLabel('Échéance', { exact: true })).toHaveValue('2026-12-15');
     await board(page).getByRole('button', { name: 'Enregistrer', exact: true }).click();
     await expect.poll(async () => {
       const updated = (await (await request.get('/api/state')).json()).tasks.find((item: { id: string }) => item.id === task.id);
-      return { category_id: updated.category_id, title: updated.title };
-    }).toEqual({ category_id: destination.id, title: 'Préparer déploiement vérifié' });
+      return { category_id: updated.category_id, due_date: updated.due_date };
+    }).toEqual({ category_id: destination.id, due_date: '2026-12-15' });
     await journal(page).getByRole('button', { name: /^Bilan installation/ }).click();
     await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Bilan installation');
     await page.getByLabel('Titre de l’entrée').fill('Bilan installation vérifié');
