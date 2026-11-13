@@ -10,6 +10,11 @@ l’aperçu est protégé : après « Appliquer », la note s’affiche normalem
 - `./scripts/check.sh` vert sur ce lot rebasé après `f608a06` : 329 API, 1 370 front et un échec
   attendu, 49 desktop unitaires, 49 scripts, 8 Worker, 11 relais, 117 navigateur et 20 Electron,
   soit 1 953.
+- **Recovery.** Ce correctif dormait en `claude/modest-meninsky-f396a8`, seul commit non mergé
+  du dépôt ; il a été rebasé sur `f608a06` (`8fe30ca`). Les douze autres copies de travail
+  (Copilot, Claude, Freebuff) ne portaient que du travail déjà dans `master` : rejoué en 3-way
+  sur `master`, leur patch ne changeait rien. Branches et copies supprimées le 2026-11-13.
+  Le stash `temp` du 10/11 était lui aussi déjà intégré.
 
 ## Postes activés avant le 2026-11-10 : relancer l’activation du dépôt — 2026-11-12
 
