@@ -223,6 +223,36 @@ test('fermer immédiatement sauve le texte et le thème survit au redémarrage',
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });
 
+test('assistant IA : le titre et l’historique survivent au redémarrage', async () => {
+  const title = 'Entretien de la pompe — Atelier';
+  const question = 'Que faut-il faire pour la pompe à l’atelier ?';
+  const reply = 'Le remplacement du joint est prioritaire.';
+  await page.evaluate(() => localStorage.setItem('worklogs-ai-key', 'cle-assistant-desktop-e2e'));
+  await page.route('**/chat/completions', async (route) => {
+    const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    return route.fulfill({ headers, json: { choices: [{ message: { content: JSON.stringify({ reply, conversation_title: title }) } }] } });
+  });
+  const openAssistant = () => page.getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+  const chat = () => page.getByRole('dialog', { name: 'Assistant IA', exact: true });
+  await openAssistant();
+  const field = chat().getByRole('textbox', { name: 'Message pour l’assistant' });
+  await field.fill(question);
+  await field.press('Enter');
+  await expect(chat().getByRole('heading', { name: title, exact: true })).toBeVisible();
+  await expect(chat().getByText(reply, { exact: true })).toBeVisible();
+
+  const closed = application!.waitForEvent('close');
+  await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  await closed;
+  application = undefined;
+  await launch();
+  await openAssistant();
+  await expect(chat().getByRole('heading', { name: title, exact: true })).toBeVisible();
+  await expect(chat().getByText(question, { exact: true })).toBeVisible();
+  await expect(chat().getByText(reply, { exact: true })).toBeVisible();
+});
+
 test('document riche : fermeture, reprise et panneau Drive dans Electron', async () => {
   await page.getByRole('button', { name: 'Nouveau document', exact: false }).click();
   const content = page.getByRole('textbox', { name: 'Contenu du document' });

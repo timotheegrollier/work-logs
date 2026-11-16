@@ -93,7 +93,7 @@ describe('assistant : conversation', () => {
     expect(chat().getByText('1 action écartée : statut inconnu.')).toBeInTheDocument();
     expect(field()).toHaveValue('');
     expect(ask).toHaveBeenCalledOnce();
-    expect(ask.mock.calls[0][1]).toEqual({ text: 'Première ligne', history: [], projectId: 'pj_1', openTitle: 'Note ouverte' });
+    expect(ask.mock.calls[0][1]).toEqual({ text: 'Première ligne', history: [], projectId: 'pj_1', openTitle: 'Note ouverte', needsConversationTitle: true });
   });
 
   test('Entrée pendant une composition IME n’envoie pas', () => {
@@ -102,6 +102,16 @@ describe('assistant : conversation', () => {
     fireEvent.keyDown(field(), { key: 'Enter', isComposing: true });
     expect(ask).not.toHaveBeenCalled();
     expect(field()).toHaveValue('にほん');
+  });
+
+  test('le titre proposé pour le sujet s’affiche dans la liste et reste stable', async () => {
+    render(<Host />);
+    await answered(answer({ conversationTitle: 'Atelier · Entretien de la pompe' }), 'Peux-tu me dire où on en est ?');
+    expect(conversations().getByRole('button', { name: 'Conversation 1 · Atelier · Entretien de la pompe' })).toBeInTheDocument();
+    expect(chat().getByRole('heading', { name: 'Atelier · Entretien de la pompe' })).toBeInTheDocument();
+    await answered(answer({ reply: 'Le joint est commandé.', conversationTitle: 'Commande du joint' }), 'Et le joint ?');
+    expect(ask.mock.calls[1][1].needsConversationTitle).toBeUndefined();
+    expect(chat().getByRole('heading', { name: 'Atelier · Entretien de la pompe' })).toBeInTheDocument();
   });
 
   test('la catégorie filtrée accompagne la demande', async () => {

@@ -24,6 +24,13 @@ async function cleanProject(page: Page, request: APIRequestContext, id: string) 
   await request.delete(`/api/projects/${id}`);
 }
 
+async function restorePlanning(request: APIRequestContext, tasks: TaskState[]) {
+  for (const task of tasks) {
+    const response = await request.put(`/api/tasks/${task.id}`, { data: { priority: task.priority, due_date: task.due_date } });
+    expect(response.ok()).toBeTruthy();
+  }
+}
+
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
 const noHorizontalScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
@@ -36,19 +43,31 @@ async function saveReport(request: APIRequestContext, kind: 'task' | 'entry', id
   expect(response.ok()).toBeTruthy();
 }
 
-test('bilan du jour en un clic : synthétise les suivis, accessibles en tête et lisibles sur téléphone', async ({ page, request }, testInfo) => {
+test('bilan du jour en un clic : replanifie les tâches ouvertes avant une synthèse lisible sur téléphone', async ({ page, request }, testInfo) => {
   test.setTimeout(60_000);
   const project = await post(request, '/api/projects', { name: 'Bilan quotidien vue IA' });
+  const original = (await (await request.get('/api/state')).json()).tasks as TaskState[];
   try {
     const task = await post(request, '/api/tasks', { title: 'Remise en service bilan quotidien', project_id: project.id });
     const entry = await post(request, '/api/entries', { title: 'Contrôle du raccord bilan quotidien', project_id: project.id, content_md: 'TEXTE BRUT NON ENVOYÉ PAR LE BILAN QUOTIDIEN' });
+    const done = await post(request, '/api/tasks', { title: 'Diagnostic terminé bilan quotidien', project_id: project.id, status: 'done', due_date: '2020-01-01' });
     await saveReport(request, 'task', task.id, 'Diagnostic confirmé ; le raccord reste à vérifier.');
     await saveReport(request, 'entry', entry.id, 'Le joint est posé ; le contrôle reste à réaliser.');
     await configure(page);
     const prompts: string[] = [];
+    const targetDate = new Date(Date.now() + 2 * 864e5).toISOString().slice(0, 10);
+    let stateAtReview: TaskState[] = [];
     await page.route('**/chat/completions', async (route) => {
       if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-      prompts.push(route.request().postDataJSON().messages[1].content);
+      const prompt = route.request().postDataJSON().messages[1].content as string;
+      prompts.push(prompt);
+      if (prompts.length === 1) {
+        const tasks = [...prompt.matchAll(/^(\d+) · (.+?) · /gm)];
+        return route.fulfill({ headers, json: { choices: [{ message: { content: JSON.stringify(tasks.map(([, number]) => ({
+          n: Number(number), priority: 'high', due_date: targetDate, reason: 'Date estimée selon les blocages connus.',
+        }))) } }] } });
+      }
+      stateAtReview = (await (await request.get('/api/state')).json()).tasks as TaskState[];
       return route.fulfill({ headers, json: { choices: [{ message: { content: JSON.stringify({
         summary: 'Le diagnostic est confirmé et le joint posé. Le contrôle du raccord reste prioritaire avant la remise en service.',
         completed: [], next_steps: ['Contrôler le raccord avant remise en service.'], blockers: [],
@@ -64,10 +83,18 @@ test('bilan du jour en un clic : synthétise les suivis, accessibles en tête et
     await dailyButton.click();
     const daily = overview.getByRole('region', { name: 'Bilan IA du jour', exact: true });
     await expect(daily.getByText('Le diagnostic est confirmé et le joint posé. Le contrôle du raccord reste prioritaire avant la remise en service.')).toBeVisible();
-    expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain('Diagnostic confirmé ; le raccord reste à vérifier.');
-    expect(prompts[0]).toContain('Le joint est posé ; le contrôle reste à réaliser.');
-    expect(prompts[0]).not.toContain('TEXTE BRUT NON ENVOYÉ');
+    expect(prompts).toHaveLength(2);
+    for (const open of [task, ...original.filter((item) => item.status !== 'done')]) {
+      expect(prompts[0]).toContain(open.title);
+      expect(stateAtReview.find((item) => item.id === open.id)).toMatchObject({ status: open.status, priority: 'high', due_date: targetDate });
+    }
+    expect(prompts[0]).not.toContain(done.title);
+    expect(stateAtReview.find((item) => item.id === done.id)).toMatchObject({ status: 'done', due_date: '2020-01-01' });
+    expect(prompts[1]).toContain('Diagnostic confirmé ; le raccord reste à vérifier.');
+    expect(prompts[1]).toContain('Le joint est posé ; le contrôle reste à réaliser.');
+    expect(prompts[1]).not.toContain('TEXTE BRUT NON ENVOYÉ');
+    const source = JSON.parse(prompts[1].split('\n\n')[0]);
+    expect(source.open_tasks).toContainEqual(expect.objectContaining({ report: source.reports.find((report: { title: string }) => report.title === task.title).n, priority: 'high', due_date: targetDate }));
     expect(await noHorizontalScroll(page)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('overview-desktop-light.png'), fullPage: true });
     await expect(overview.getByRole('heading', { name: 'Suivis IA', exact: true })).toBeVisible();
@@ -83,9 +110,10 @@ test('bilan du jour en un clic : synthétise les suivis, accessibles en tête et
     await page.getByRole('button', { name: 'Changer de thème', exact: true }).click();
     await dailyButton.scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath('overview-desktop-dark.png'), fullPage: true });
-    expect(prompts).toHaveLength(1);
+    expect(prompts).toHaveLength(2);
   } finally {
     await cleanProject(page, request, project.id);
+    await restorePlanning(request, original);
   }
 });
 
@@ -138,10 +166,7 @@ test('replanification : relit et corrige les dates et priorités de toutes les t
     for (const task of open.filter((task) => task.id !== later.id)) expect(state.find((next) => next.id === task.id)?.due_date).toBe(tomorrow);
   } finally {
     await cleanProject(page, request, project.id);
-    for (const task of original) {
-      const response = await request.put(`/api/tasks/${task.id}`, { data: { priority: task.priority, due_date: task.due_date } });
-      expect(response.ok()).toBeTruthy();
-    }
+    await restorePlanning(request, original);
   }
 });
 

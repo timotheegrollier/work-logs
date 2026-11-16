@@ -118,7 +118,7 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
         </div>
       </div>
       {(missingOpen > 0 || missingTasks > 0) && <p className="notice" role="status">
-        {missingOpen > 0 && <>{missingOpen} tâche{missingOpen > 1 ? 's' : ''} ouverte{missingOpen > 1 ? 's' : ''} manquante{missingOpen > 1 ? 's' : ''} : la replanification est indisponible. </>}
+        {missingOpen > 0 && <>{missingOpen} tâche{missingOpen > 1 ? 's' : ''} ouverte{missingOpen > 1 ? 's' : ''} manquante{missingOpen > 1 ? 's' : ''} : le bilan du jour et la replanification sont indisponibles. </>}
         {missingTasks > 0 && <>L’avancement des projets est incomplet : {missingTasks} tâche{missingTasks > 1 ? 's' : ''} non chargée{missingTasks > 1 ? 's' : ''}.</>}
       </p>}
       <div className="overview-work no-print" aria-busy={Boolean(busy)}>

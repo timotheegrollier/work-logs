@@ -133,6 +133,60 @@ test('assistant sur ordinateur : espace de travail, proposition appliquée en ba
   }
 });
 
+test('assistant : retrouve deux conversations titrées après rechargement et persiste leur suppression', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Atelier historique' });
+  try {
+    const note = await post(request, '/api/entries', { title: 'Semaine de maintenance', project_id: project.id });
+    await configure(page, project.id, note.id);
+    const prompts = await stubAssistant(page, {
+      reply: 'La pompe passe en révision mardi.',
+      conversation_title: 'Révision de la pompe · Atelier historique',
+    }, {
+      reply: 'La vanne est prête.',
+      conversation_title: 'Contrôle de la vanne',
+    }, {
+      reply: 'Le raccord est prévu.',
+    });
+    await page.goto('/');
+    const opener = page.getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true });
+    await opener.click();
+    const chat = assistant(page);
+    const first = chat.getByRole('region', { name: 'Conversation 1', exact: true });
+    const second = chat.getByRole('region', { name: 'Conversation 2', exact: true });
+    const firstField = first.getByRole('textbox');
+    await firstField.fill('Quand faut-il revoir la pompe ?');
+    await firstField.press('Enter');
+    await expect(first.getByRole('heading', { name: 'Révision de la pompe · Atelier historique' })).toBeVisible();
+    await firstField.fill('Et le raccord ?');
+    await chat.getByRole('button', { name: 'Nouvelle conversation' }).click();
+    await second.getByRole('textbox').fill('Où en est la vanne ?');
+    await second.getByRole('textbox').press('Enter');
+    await expect(second.getByText('La vanne est prête.')).toBeVisible();
+
+    await page.reload();
+    await opener.click();
+    const list = chat.getByRole('navigation', { name: 'Conversations' });
+    await expect(list.getByRole('button', { name: /Contrôle de la vanne/ })).toBeVisible();
+    await list.getByRole('button', { name: /Révision de la pompe · Atelier historique/ }).click();
+    await expect(first.getByText('La pompe passe en révision mardi.')).toBeVisible();
+    await expect(firstField).toHaveValue('Et le raccord ?');
+    await firstField.press('Enter');
+    await expect(first.getByText('Le raccord est prévu.')).toBeVisible();
+    expect(prompts).toHaveLength(3);
+    expect(prompts[2]).toContain('La pompe passe en révision mardi.');
+
+    await list.getByRole('button', { name: /Contrôle de la vanne/ }).click();
+    await second.getByRole('button', { name: 'Effacer la conversation' }).click();
+    await expect(list.getByRole('button', { name: /Contrôle de la vanne/ })).toHaveCount(0);
+    await page.reload();
+    await opener.click();
+    await expect(first.getByText('Le raccord est prévu.')).toBeVisible();
+    await expect(list.getByRole('button', { name: /Contrôle de la vanne/ })).toHaveCount(0);
+  } finally {
+    await cleanProject(page, request, project.id);
+  }
+});
+
 test('assistant sur téléphone : feuille plein écran, cibles au doigt, tout appliquer et carte révélée', async ({ page, request }) => {
   const project = await post(request, '/api/projects', { name: 'Atelier assistant mobile' });
   const long = 'Vérifier-le-raccord-de-la-pompe-sans-espace-'.repeat(4);

@@ -20,8 +20,8 @@ export interface Database {
   writeAll(rows: StoreWrite[]): Promise<void>;
 }
 
-function keyOf(table: string, value: object): string {
-  const keyPath = LOCAL_STORES[table];
+function keyOf(table: string, value: object, stores = LOCAL_STORES): string {
+  const keyPath = stores[table];
   if (!keyPath) throw new Error(`Table inconnue : ${table}.`);
   const key = (value as Record<string, unknown>)[keyPath];
   if (typeof key !== 'string' || !key) throw new Error(`Clé manquante pour ${table}.`);
@@ -93,15 +93,21 @@ export function createMemoryDatabase(): Database {
   };
 }
 
-function openIndexedDb(): Promise<IDBDatabase> {
+interface IndexedDbSchema {
+  name: string;
+  version: number;
+  stores: Record<string, string>;
+}
+
+function openIndexedDb({ name, version, stores }: IndexedDbSchema): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
       reject(new Error('IndexedDB indisponible sur ce navigateur.'));
       return;
     }
-    const request = indexedDB.open(LOCAL_DB_NAME, LOCAL_DB_VERSION);
+    const request = indexedDB.open(name, version);
     request.onupgradeneeded = () => {
-      for (const [name, keyPath] of Object.entries(LOCAL_STORES)) {
+      for (const [name, keyPath] of Object.entries(stores)) {
         if (!request.result.objectStoreNames.contains(name)) {
           request.result.createObjectStore(name, { keyPath });
         }
@@ -124,9 +130,9 @@ function idbRequest<T>(request: IDBRequest<T>): Promise<T> {
 
 /** Backend persistant du navigateur. Ouverture paresseuse et partagée : le
  * module ne touche jamais à `indexedDB` à l'import (tests, SSR, vieux navigateurs). */
-export function createIndexedDbDatabase(): Database {
+export function createIndexedDbDatabase(schema: IndexedDbSchema = { name: LOCAL_DB_NAME, version: LOCAL_DB_VERSION, stores: LOCAL_STORES }): Database {
   let opened: Promise<IDBDatabase> | null = null;
-  const db = () => (opened ??= openIndexedDb());
+  const db = () => (opened ??= openIndexedDb(schema));
   const store = async (name: string, mode: IDBTransactionMode) =>
     (await db()).transaction(name, mode).objectStore(name);
   const writeAll = async (rows: StoreWrite[]) => {
@@ -142,7 +148,7 @@ export function createIndexedDbDatabase(): Database {
           if (row.operation === 'clear') target.clear();
           else if (row.operation === 'delete') target.delete(row.key);
           else {
-            keyOf(row.table, row.value);
+            keyOf(row.table, row.value, schema.stores);
             if (row.operation === 'add') target.add(row.value);
             else target.put(row.value);
           }
@@ -157,12 +163,12 @@ export function createIndexedDbDatabase(): Database {
     addAll: (rows) => writeAll(rows.map((row) => ({ ...row, operation: 'add' }))),
     writeAll,
     table<T extends object>(name: string): Table<T> {
-      if (!(name in LOCAL_STORES)) throw new Error(`Table inconnue : ${name}.`);
+      if (!(name in schema.stores)) throw new Error(`Table inconnue : ${name}.`);
       return {
         all: async () => idbRequest((await store(name, 'readonly')).getAll() as IDBRequest<T[]>),
         get: async (key) => (await idbRequest((await store(name, 'readonly')).get(key))) as T | undefined,
         put: async (value) => {
-          keyOf(name, value);
+          keyOf(name, value, schema.stores);
           await idbRequest((await store(name, 'readwrite')).put(structuredClone(value)));
         },
         remove: async (key) => {

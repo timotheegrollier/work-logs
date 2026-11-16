@@ -457,6 +457,50 @@ describe('appels au modèle', () => {
 });
 
 describe('réponse du modèle', () => {
+  test('demande un titre de sujet et de projet dans la même réponse, seulement si la conversation attend un titre', async () => {
+    mockState({ projects: [project('p1', 'Serre')] });
+    const calls = stubAi(
+      json({ reply: 'Je peux préparer le planning.', conversation_title: '  Rénovation  du bassin\n— Serre  ' }),
+      json({ reply: 'Et pour vendredi…', conversation_title: 'Un autre titre' }),
+    );
+    const first = await ask({ text: 'Prépare la rénovation du bassin', projectId: 'p1', needsConversationTitle: true });
+    expect(first).toMatchObject({ reply: 'Je peux préparer le planning.', conversationTitle: 'Rénovation du bassin — Serre' });
+    expect(calls).toHaveLength(1);
+    expect(system(calls[0])).toContain('« conversation_title »');
+    expect(system(calls[0])).toContain('Nomme le projet s’il concerne ce sujet.');
+    expect(user(calls[0])).toContain('Projet affiché : P1, Serre');
+
+    const next = await ask({ text: 'Et pour vendredi ?', projectId: 'p1' });
+    expect(next.reply).toBe('Et pour vendredi…');
+    expect(next).not.toHaveProperty('conversationTitle');
+    expect(system(calls[1])).not.toContain('« conversation_title »');
+    expect(calls).toHaveLength(2);
+  });
+
+  test('écarte un titre mal formé et borne un titre trop long sans toucher à la réponse', async () => {
+    mockState();
+    stubAi(
+      json({ reply: 'Bonjour.', conversation_title: ['Invalide'] }),
+      json({ reply: 'Voici.', conversation_title: 'x'.repeat(200) }),
+    );
+    const first = await ask({ needsConversationTitle: true });
+    expect(first.reply).toBe('Bonjour.');
+    expect(first).not.toHaveProperty('conversationTitle');
+    const next = await ask({ needsConversationTitle: true });
+    expect(next).toMatchObject({ reply: 'Voici.', conversationTitle: `${'x'.repeat(79)}…` });
+  });
+
+  test('conserve le titre proposé lors d’une lecture nécessaire si la réponse suivante l’omet', async () => {
+    mockState({ entries: [entry('e1', { title: 'Vanne nord' })] });
+    const calls = stubAi(
+      json({ search: ['vanne'], conversation_title: 'Entretien du réseau' }),
+      json({ reply: 'J’ai trouvé la note.', show_documents: [1] }),
+    );
+    const answer = await ask({ text: 'Prépare l’entretien du réseau', needsConversationTitle: true });
+    expect(calls).toHaveLength(2);
+    expect(answer).toMatchObject({ reply: 'J’ai trouvé la note.', conversationTitle: 'Entretien du réseau', documents: [{ id: 'e1' }] });
+  });
+
   test('pas de JSON : le texte devient la réponse, sans action ni second appel', async () => {
     mockState({ tasks: [task('t1')] });
     const calls = stubAi('Tu n’as qu’une tâche.\nBon courage.');
@@ -828,6 +872,20 @@ describe('repli local', () => {
     mockState({ tasks: [task('t1', { title: 'Pompe' }), task('t2', { title: 'Sans rapport' })] });
     expect((await ask({ text: 'pompe' }, { ...settings, key: '' })).reply).toBe('Recherche locale : 1 résultat.');
     expect((await ask({ text: 'inexistant' }, { ...settings, key: '' })).reply).toBe('Recherche locale : 0 résultat.');
+  });
+
+  test('sans IA, titre le sujet local unique avec son projet, même si sa note principale figure aussi dans les résultats', async () => {
+    const main = entry('e1', { title: 'Contrôle hydraulique', project_id: 'p2' });
+    mockState({
+      projects: [project('p1', 'Atelier'), project('p2', 'Serre')],
+      tasks: [task('t1', { title: main.title, project_id: 'p2', entry_id: main.id, documents: [main] })],
+      entries: [main],
+    });
+    const local = { ...settings, key: '' };
+    const found = await ask({ text: 'hydraulique', projectId: 'p1', needsConversationTitle: true }, local);
+    expect(found).toMatchObject({ usedAi: false, reply: 'Recherche locale : 2 résultats.', conversationTitle: 'Contrôle hydraulique — Serre' });
+    const missing = await ask({ text: 'facture', projectId: 'p1', needsConversationTitle: true }, local);
+    expect(missing).not.toHaveProperty('conversationTitle');
   });
 
   test('une tâche terminée qui correspond est un résultat, pas une tâche urgente sans rapport', async () => {

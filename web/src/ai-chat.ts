@@ -23,6 +23,7 @@ export interface ChatHistoryItem {
 }
 export interface ChatAnswer {
   reply: string; notice: string; tasks: Task[]; documents: EntrySummary[]; proposals: ChatProposal[]; usedAi: boolean;
+  conversationTitle?: string;
   sharedDocuments?: { path: string; title: string }[];
   usedSharedContent?: boolean;
 }
@@ -30,6 +31,7 @@ export interface ChatAppliedResult { taskId?: string; entryId?: string; sharedPa
 interface ChatInput {
   text: string; history: ChatHistoryItem[]; projectId: string; categoryId?: string | null;
   openTitle?: string; openEntryId?: string; allowSharedContent?: boolean;
+  needsConversationTitle?: boolean;
 }
 
 const MAX_OPEN_TASKS = 40;
@@ -41,6 +43,7 @@ const MAX_PROJECTS = 30;
 const MAX_CATEGORIES = 40;
 const MAX_ACTIONS = 20;
 const MAX_TITLE = 240;
+const MAX_CONVERSATION_TITLE = 80;
 const MAX_REPLY = 2000;
 const MAX_BODY = 8000;
 const MAX_MODEL_CALLS = 4;
@@ -50,7 +53,7 @@ const MAX_SEARCH_TERM = 100;
 /** Titres coupés dans le prompt seulement : la validation et les libellés gardent le titre entier. */
 const PROMPT_TITLE = 60;
 /** Clés du protocole : un objet qui n'en porte aucune est de la prose qui cite du JSON. */
-const PROTOCOL_KEYS = ['reply', 'actions', 'search', 'show_tasks', 'show_documents', 'show_shared', 'shared_search', 'shared_list', 'read_shared', 'read_entries'];
+const PROTOCOL_KEYS = ['reply', 'actions', 'search', 'show_tasks', 'show_documents', 'show_shared', 'shared_search', 'shared_list', 'read_shared', 'read_entries', 'conversation_title'];
 const STATUS_LABELS: Record<Status, string> = { todo: 'À faire', doing: 'En cours', done: 'Terminée' };
 const STALE_PROPOSAL = 'Cette tâche a changé depuis la proposition : redemande à l’assistant.';
 
@@ -77,6 +80,9 @@ Réponds uniquement par un objet JSON, sans commentaire :
 Lectures : « shared_search » (3 termes, noms du partage), « shared_list » (true, dossiers), « read_entries » (numéros des textes locaux), « read_shared » (numéros du partage, extraits autorisés), « show_shared » (numéros à afficher).
 Lis seulement si nécessaire, puis propose des actions. Pour créer sur le partage, repère la destination demandée avec « shared_list » ou « shared_search ».
 « reply » en français, en texte brut sans Markdown, sans codes ni numéros internes. « show_tasks » et « show_documents » affichent les éléments correspondants. « search » prend 3 mots pour la recherche locale.`;
+const CONVERSATION_TITLE_PROMPT = `Ajoute « conversation_title » au JSON : un titre descriptif de 3 à 8 mots pour le sujet principal de l’échange, en texte brut et dans la langue de la demande.
+Nomme le projet s’il concerne ce sujet. Appuie-toi sur la demande et les échanges précédents.
+Si le sujet est encore indéfini, omets le titre.`;
 const SEARCH_DONE = 'La recherche a déjà été faite, ses résultats sont à la fin des listes. « search » est interdit désormais : réponds avec ce que tu as, et dis-le si cela ne suffit pas.';
 
 interface Scored<T> { item: T; score: number }
@@ -468,14 +474,24 @@ function changedFields<T extends object>(wanted: T, current: T): Partial<T> {
   return Object.fromEntries(Object.entries(wanted).filter(([key, value]) => value !== current[key as keyof T])) as Partial<T>;
 }
 
-function readAnswer(raw: string, context: ChatContext, shownProject: string | null): ChatAnswer {
+function readConversationTitle(value: unknown): string | undefined {
+  const title = typeof value === 'string' ? truncate(value, MAX_CONVERSATION_TITLE) : '';
+  return /[\p{L}\p{N}]/u.test(title) ? title : undefined;
+}
+
+function readAnswer(raw: string, context: ChatContext, shownProject: string | null, conversationTitle?: string): ChatAnswer {
   const value = replyObject(raw);
   const usedSharedContent = context.sharedExcerpts.size > 0 || context.sharedContentInHistory;
   const fromSharedContent = usedSharedContent ? { usedSharedContent } : {};
   if (!value) {
     // Du protocole illisible ne s'affiche pas et ne part pas dans l'historique du message suivant.
     const malformed = PROTOCOL_KEYS.some((key) => new RegExp(`"${key}"\\s*:`).test(raw));
-    return { reply: malformed ? 'Réponse IA mal formée : reformule ta demande.' : clip(raw, MAX_REPLY), notice: [...new Set(context.readingNotices)].join(' '), tasks: [], documents: [], proposals: [], usedAi: !malformed, ...fromSharedContent };
+    return {
+      reply: malformed ? 'Réponse IA mal formée : reformule ta demande.' : clip(raw, MAX_REPLY),
+      notice: [...new Set(context.readingNotices)].join(' '), tasks: [], documents: [], proposals: [], usedAi: !malformed,
+      ...(!malformed && conversationTitle && { conversationTitle }),
+      ...fromSharedContent,
+    };
   }
   const actions = listOf(value.actions);
   const proposals: ChatProposal[] = [];
@@ -503,6 +519,7 @@ function readAnswer(raw: string, context: ChatContext, shownProject: string | nu
     reply: reply || (proposals.length + tasks.length + documents.length + sharedDocuments.length > 0 ? 'Voici ce que je te propose.' : 'Réponse vide de l’IA : reformule ta demande.'),
     notice: [...new Set(context.readingNotices), ...(dropped.length ? [`${dropped.length} action${dropped.length > 1 ? 's' : ''} écartée${dropped.length > 1 ? 's' : ''} : ${[...new Set(dropped)].join(' ; ')}.`] : [])].join(' '),
     tasks, documents, proposals, usedAi: true,
+    ...(conversationTitle && { conversationTitle }),
     ...(sharedDocuments.length > 0 && { sharedDocuments }),
     ...fromSharedContent,
   };
@@ -609,24 +626,27 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
   const readEntries = new Set<string>();
 
   try {
+    let conversationTitle: string | undefined;
     for (let step = 1; ; step++) {
       const finalStep = step === MAX_MODEL_CALLS;
       const instructions = [
         SYSTEM_PROMPT,
+        input.needsConversationTitle && CONVERSATION_TITLE_PROMPT,
         searchedLocal && SEARCH_DONE,
         finalStep && 'Dernière étape : réponds avec les résultats disponibles, sans demander de nouvelle lecture.',
       ].filter(Boolean).join('\n');
       const raw = await call(instructions);
       const response = replyObject(raw);
+      if (input.needsConversationTitle) conversationTitle = readConversationTitle(response?.conversation_title) ?? conversationTitle;
       const terms: string[] = searchedLocal ? [] : termsOf(response?.search);
       const shareTerms = termsOf(response?.shared_search).filter((term) => !sharedTerms.has(term)).slice(0, 3 - sharedTerms.size);
       const listShare: boolean = !listedShare && response?.shared_list === true;
       const sources = numbered(response?.read_entries, context.documents).filter(({ id }) => !readEntries.has(id)).slice(0, MAX_SOURCE_READS - readEntries.size);
       const sharedSources = numbered(response?.read_shared, context.sharedFiles).filter(({ path }) => !readShared.has(path)).slice(0, MAX_SOURCE_READS - readShared.size);
-      if (!terms.length && !shareTerms.length && !listShare && !sources.length && !sharedSources.length) return readAnswer(raw, context, shownProject);
+      if (!terms.length && !shareTerms.length && !listShare && !sources.length && !sharedSources.length) return readAnswer(raw, context, shownProject, conversationTitle);
       if (finalStep) {
         context.readingNotices.push('Limite de lectures atteinte pour ce message.');
-        return { ...readAnswer(raw, context, shownProject), proposals: [] };
+        return { ...readAnswer(raw, context, shownProject, conversationTitle), proposals: [] };
       }
 
       searchedLocal ||= terms.length > 0;
@@ -668,7 +688,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
       ]);
       if (settings.signal?.aborted) throw new AiCancelled();
       if (!newLocalResults && !shareTerms.length && !listShare && !sources.length && !sharedSources.length) {
-        return { ...readAnswer(raw, context, shownProject), reply: `Rien de plus trouvé pour « ${terms.join(' », « ')} ».` };
+        return { ...readAnswer(raw, context, shownProject, conversationTitle), reply: `Rien de plus trouvé pour « ${terms.join(' », « ')} ».` };
       }
     }
   } catch (cause) {
@@ -681,8 +701,15 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
     const documents = rankDocuments(unique(read.flatMap((item) => item.entries)), own, new Set(asked.flatMap((item) => item.entries.map(({ id }) => id)))).slice(0, 5).map(({ item }) => item);
     const count = tasks.length + documents.length;
     const sharedDocuments = context.sharedFiles.map(({ path, name }) => ({ path, title: name }));
+    const singleTask = tasks.length === 1 ? tasks[0] : undefined;
+    const separateDocuments = documents.filter(({ id }) => id !== singleTask?.entry_id);
+    const subject = input.needsConversationTitle && tasks.length + separateDocuments.length + sharedDocuments.length === 1
+      ? singleTask ?? separateDocuments[0] ?? sharedDocuments[0] : undefined;
+    const subjectProject = subject && 'project_id' in subject ? state.projects.find(({ id }) => id === subject.project_id) : undefined;
+    const conversationTitle = subject && readConversationTitle(subjectProject ? `${subject.title} — ${subjectProject.name}` : subject.title);
     return {
       reply: `Recherche locale : ${count} résultat${count > 1 ? 's' : ''}.`, notice: [cause.message, ...new Set(context.readingNotices)].join(' '), tasks, documents, proposals: [], usedAi: false,
+      ...(conversationTitle && { conversationTitle }),
       ...(sharedDocuments.length > 0 && { sharedDocuments }),
     };
   }

@@ -251,10 +251,13 @@ rendu approximatif.
   Les tâches et les notes sans suivi se traitent dans les panneaux Tâches et Journal.
   Cliquer un titre de suivi ou un nœud de la frise ferme la vue et ouvre sa note au centre,
   même pour une tâche terminée.
-- **Bilan du jour**, en tête de la vue d’ensemble : un clic synthétise les bilans de suivi
-  enregistrés en avancées attestées, blocages et prochaines actions, avec les titres des tâches
-  terminées et des notes du jour. Les suivis sans bilan, anciens ou à actualiser sont signalés
-  dans les limites. Une date de génération ne prouve pas qu’un travail a été fait aujourd’hui :
+- **Bilan du jour**, en tête de la vue d’ensemble, recalcule et enregistre les échéances et les
+  priorités de toutes les tâches ouvertes avant de lancer la synthèse. Si la replanification
+  échoue ou rend une réponse incomplète, le bilan s’arrête à cette étape. La synthèse utilise le
+  planning enregistré, les bilans de suivi et les titres des tâches terminées et des notes du
+  jour pour présenter les avancées attestées, les blocages et les prochaines actions.
+  Les suivis sans bilan, anciens ou à actualiser sont signalés dans les limites.
+  Une date de génération ne prouve pas qu’un travail a été fait aujourd’hui :
   faute de date de clôture, une tâche terminée et modifiée aujourd’hui y figure seulement comme
   « terminée ou retouchée aujourd’hui », et une note du jour prouve seulement qu’elle a été
   écrite. La synthèse reste affichée jusqu’à sa fermeture ou à une modification
@@ -462,10 +465,12 @@ créées en **À faire**.
 **Nouvelle conversation** garde la précédente. Sur ordinateur, les conversations s’affichent
 côte à côte. La liste à gauche permet de rejoindre une colonne si elle est hors écran.
 Sur téléphone, **Conversations** ouvre la liste et affiche ensuite la conversation choisie.
-Chaque conversation garde son historique, son brouillon et son indicateur d’activité animé.
+Un indicateur animé signale les demandes en cours dans chaque conversation.
 **Entrée** envoie, **Maj+Entrée** va à la ligne et **Arrêter** coupe la demande de la conversation
-affichée. Les demandes continuent quand le panneau est fermé. Les conversations restent en
-mémoire jusqu’à la fermeture de WorkLogs.
+affichée. Les demandes continuent quand le panneau est fermé.
+WorkLogs nomme chaque conversation d’après son sujet et le projet concerné. L’historique et
+les brouillons se retrouvent après redémarrage sur le même profil. **Effacer** supprime la
+conversation.
 
 - « Mets la tâche de contrôle en cours, donne-lui une échéance vendredi et classe-la dans Infra. »
   L’assistant peut créer, renommer, planifier et classer les tâches, changer leur priorité ou

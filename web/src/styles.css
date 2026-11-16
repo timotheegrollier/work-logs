@@ -7391,6 +7391,10 @@ button.lane-name:hover {
   display: flex;
   gap: 6px;
 }
+.ai-chat-storage-error {
+  margin: 0;
+  padding: 8px 18px;
+}
 .ai-chat-workspace {
   display: grid;
   grid-template-columns: clamp(168px, 19vw, 242px) minmax(0, 1fr);

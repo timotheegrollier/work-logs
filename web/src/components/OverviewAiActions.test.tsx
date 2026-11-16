@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, todayISO, type AppState, type EntrySummary, type FollowUp, type Task } from '../lib';
 import * as lib from '../lib';
 import { generateDailyReview, generateFollowUp, localToday, replanTasks } from '../ai-suggest';
+import { recordAiUsage, saveDailyLimit } from '../ai-budget';
 import { FollowUpProvider } from '../follow-up-controller';
 import { OverviewAiActions } from './OverviewAiActions';
 
@@ -22,19 +23,51 @@ const props = (tasks: Task[]) => ({ tasks, entries: [] as EntrySummary[], projec
 const note = (id: string, title: string, rest: Partial<EntrySummary> = {}): EntrySummary => ({ id, title, entry_date: localToday(), project_id: null, archived: 0, kind: 'note', updated_at: `${today}T09:00:00Z`, excerpt: '', attachments: 0, ...rest });
 const localTime = (dayOffset: number, hours: number, minutes: number) => { const date = new Date(); date.setDate(date.getDate() + dayOffset); date.setHours(hours, minutes, 0, 0); return date.toISOString(); };
 
-beforeEach(() => { localStorage.clear(); vi.mocked(generateDailyReview).mockReset(); vi.mocked(replanTasks).mockReset(); vi.mocked(generateFollowUp).mockReset(); });
+const mockDailyState = ({ tasks, entries }: ReturnType<typeof props>) => {
+  let saved = tasks;
+  const read = vi.spyOn(api, 'state').mockImplementation(async () => {
+    const snapshot = state(saved);
+    return { ...snapshot, entries, stats: { ...snapshot.stats, entries: entries.length } };
+  });
+  const write = vi.spyOn(api, 'updateTask').mockImplementation(async (id, patch) => {
+    const updated = { ...saved.find((task) => task.id === id)!, priority: patch.priority!, due_date: patch.due_date! };
+    saved = saved.map((task) => task.id === id ? updated : task);
+    return updated;
+  });
+  return { read, write };
+};
+
+beforeEach(() => {
+  localStorage.clear();
+  vi.mocked(generateDailyReview).mockReset();
+  vi.mocked(replanTasks).mockReset().mockImplementation(async (_settings, tasks, options) => tasks.map((task) => ({
+    id: task.id, priority: task.priority ?? 'normal', due_date: task.due_date ?? options?.today ?? today, reason: 'Date estimée.',
+  })));
+  vi.mocked(generateFollowUp).mockReset();
+});
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
-test('le bilan est directement accessible et lit la totalité des tâches non terminées', async () => {
+test('le bilan applique les dates et priorités des tâches ouvertes avant la synthèse', async () => {
   const user = userEvent.setup();
+  const dueDate = '2099-11-06';
+  vi.mocked(replanTasks).mockResolvedValue([
+    { id: 'a', priority: 'high', due_date: dueDate, reason: 'À traiter en premier.' },
+    { id: 'b', priority: 'low', due_date: dueDate, reason: 'Peut attendre.' },
+  ]);
   vi.mocked(generateDailyReview).mockResolvedValue(review);
-  const inputs = props([task('a', { follow_up: follow, follow_up_key: 'version1' }), task('b')]);
+  const inputs = props([task('a', { follow_up: follow, follow_up_key: 'version1' }), task('b', { status: 'doing' }), task('finie', { status: 'done' })]);
+  const { write } = mockDailyState(inputs);
   render(<OverviewAiActions {...inputs} />);
   await user.click(screen.getByRole('button', { name: /Bilan du jour/ }));
   await screen.findByRole('region', { name: 'Bilan IA du jour' });
-  expect(vi.mocked(generateDailyReview).mock.calls[0][1]).toHaveLength(2);
-  expect(vi.mocked(generateDailyReview).mock.calls[0][1][0]).toMatchObject({ id: 'a', kind: 'task', follow_up: follow });
-  expect(vi.mocked(generateDailyReview).mock.calls[0][1][1]).toMatchObject({ id: 'b', kind: 'task', status: 'todo' });
+  expect(vi.mocked(replanTasks).mock.calls[0][1].map((item) => item.id)).toEqual(['a', 'b']);
+  expect(write.mock.calls.map(([id]) => id)).toEqual(['a', 'b']);
+  expect(inputs.onChanged).toHaveBeenCalledOnce();
+  expect(write.mock.invocationCallOrder[1]).toBeLessThan(vi.mocked(generateDailyReview).mock.invocationCallOrder[0]);
+  expect(vi.mocked(generateDailyReview).mock.calls[0][1]).toEqual([
+    expect.objectContaining({ id: 'a', kind: 'task', follow_up: follow, priority: 'high', due_date: dueDate }),
+    expect.objectContaining({ id: 'b', kind: 'task', status: 'doing', priority: 'low', due_date: dueDate }),
+  ]);
   expect(screen.getByText(review.summary)).toBeVisible();
 });
 
@@ -48,9 +81,11 @@ test('le bilan reçoit la vraie planification et l’activité du jour local, sa
     task('matin', { status: 'done', updated_at: localTime(0, 0, 10) }),
     task('veille', { status: 'done', updated_at: localTime(-1, 23, 50) }),
   ]), entries: [note('n1', 'Note du jour'), note('n2', 'Note ancienne', { entry_date: '2020-01-01' }), note('p1', 'Procédure du jour', { kind: 'procedure' })] };
+  const { write } = mockDailyState(inputs);
   const view = render(<OverviewAiActions {...inputs} />);
   await user.click(screen.getByRole('button', { name: /Bilan du jour/ }));
   await screen.findByRole('region', { name: 'Bilan IA du jour' });
+  expect(write).not.toHaveBeenCalled();
   const [, items, options] = vi.mocked(generateDailyReview).mock.calls[0];
   expect(items.map((item) => [item.id, item.status, item.priority, item.due_date])).toEqual([
     ['a', 'doing', 'high', '2099-01-02'],
@@ -67,6 +102,73 @@ test('sans tâche ouverte et sans suivi, le raccourci du bilan reste désactivé
   render(<OverviewAiActions {...props([task('finie', { status: 'done' })])} />);
   expect(screen.getByRole('button', { name: /Bilan du jour/ })).toBeDisabled();
   expect(screen.getByText(/Ajoute une tâche ou une entrée aux suivis IA/)).toBeVisible();
+});
+
+test('le bilan synthétise les entrées suivies même sans tâche à replanifier', async () => {
+  const user = userEvent.setup();
+  const inputs = { ...props([]), entries: [note('n', 'Note suivie', { follow_up: follow })] };
+  const { write } = mockDailyState(inputs);
+  vi.mocked(generateDailyReview).mockResolvedValue(review);
+  render(<OverviewAiActions {...inputs} />);
+  await user.click(screen.getByRole('button', { name: 'Bilan du jour' }));
+  await screen.findByRole('region', { name: 'Bilan IA du jour' });
+  expect(replanTasks).not.toHaveBeenCalled();
+  expect(write).not.toHaveBeenCalled();
+  expect(vi.mocked(generateDailyReview).mock.calls[0][1]).toEqual([expect.objectContaining({ id: 'n', follow_up: follow })]);
+});
+
+test('un plan incomplet bloque les écritures et le bilan', async () => {
+  const user = userEvent.setup();
+  const inputs = props([task('a'), task('b')]);
+  const { write } = mockDailyState(inputs);
+  vi.mocked(replanTasks).mockResolvedValue([{ id: 'a', priority: 'high', due_date: '2099-11-06', reason: 'À traiter en premier.' }]);
+  render(<OverviewAiActions {...inputs} />);
+  await user.click(screen.getByRole('button', { name: 'Bilan du jour' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Replanification incomplète (1 sur 2 tâches)');
+  expect(write).not.toHaveBeenCalled();
+  expect(generateDailyReview).not.toHaveBeenCalled();
+});
+
+test('un changement des tâches pendant la replanification empêche le bilan et les écritures', async () => {
+  const user = userEvent.setup();
+  const inputs = props([task('a')]);
+  const { read, write } = mockDailyState(inputs);
+  read.mockResolvedValueOnce(state(inputs.tasks)).mockResolvedValueOnce(state([...inputs.tasks, task('b')]));
+  render(<OverviewAiActions {...inputs} />);
+  await user.click(screen.getByRole('button', { name: 'Bilan du jour' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('les tâches ont changé pendant la replanification');
+  expect(write).not.toHaveBeenCalled();
+  expect(generateDailyReview).not.toHaveBeenCalled();
+});
+
+test('un refus en cours d’enregistrement rafraîchit les tâches et empêche le bilan', async () => {
+  const user = userEvent.setup();
+  const inputs = props([task('a'), task('b')]);
+  const { write } = mockDailyState(inputs);
+  write.mockResolvedValueOnce(task('a', { due_date: '2099-11-06' })).mockRejectedValueOnce(new Error('Écriture refusée.'));
+  render(<OverviewAiActions {...inputs} />);
+  await user.click(screen.getByRole('button', { name: 'Bilan du jour' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Écriture refusée.');
+  expect(screen.getByRole('status')).toHaveTextContent('1 tâche enregistrée.');
+  expect(inputs.onChanged).toHaveBeenCalledOnce();
+  expect(generateDailyReview).not.toHaveBeenCalled();
+});
+
+test('si le planificateur atteint le plafond IA, le bilan s’arrête avant les écritures', async () => {
+  const user = userEvent.setup();
+  saveDailyLimit(10);
+  for (let index = 0; index < 9; index++) recordAiUsage(100, false);
+  const inputs = props([task('a')]);
+  const { write } = mockDailyState(inputs);
+  vi.mocked(replanTasks).mockImplementation(async () => {
+    recordAiUsage(100, false);
+    return [{ id: 'a', priority: 'high', due_date: '2099-11-06', reason: 'À traiter en premier.' }];
+  });
+  render(<OverviewAiActions {...inputs} />);
+  await user.click(screen.getByRole('button', { name: 'Bilan du jour' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Plafond quotidien d’IA atteint');
+  expect(write).not.toHaveBeenCalled();
+  expect(generateDailyReview).not.toHaveBeenCalled();
 });
 
 test('la replanification exclut les terminées, laisse corriger et décocher avant toute écriture', async () => {
@@ -185,7 +287,9 @@ test('Arrêter coupe la demande et ignore une réponse qui arrive ensuite', asyn
   const user = userEvent.setup();
   let resolve!: (value: typeof review) => void;
   vi.mocked(generateDailyReview).mockImplementation(() => new Promise((done) => { resolve = done; }));
-  render(<OverviewAiActions {...props([task('a', { follow_up: follow })])} />);
+  const inputs = props([task('a', { follow_up: follow })]);
+  mockDailyState(inputs);
+  render(<OverviewAiActions {...inputs} />);
   await user.click(screen.getByRole('button', { name: /Bilan du jour/ }));
   await waitFor(() => expect(generateDailyReview).toHaveBeenCalledOnce());
   const signal = vi.mocked(generateDailyReview).mock.calls[0][0].signal;
@@ -203,6 +307,7 @@ describe.each(['Bilan du jour', 'Replanifier avec l’IA'])('%s : pas de fausse 
     vi.mocked(generateDailyReview).mockImplementation(() => new Promise(() => {}));
     vi.mocked(replanTasks).mockImplementation(() => new Promise(() => {}));
     const inputs = props(followed('version1'));
+    mockDailyState(inputs);
     const view = render(<OverviewAiActions {...inputs} />);
     await user.click(screen.getByRole('button', { name }));
     await user.click(await screen.findByRole('button', { name: 'Arrêter' }));
@@ -215,6 +320,7 @@ describe.each(['Bilan du jour', 'Replanifier avec l’IA'])('%s : pas de fausse 
     vi.mocked(generateDailyReview).mockRejectedValue(new Error('Quota atteint.'));
     vi.mocked(replanTasks).mockRejectedValue(new Error('Quota atteint.'));
     const inputs = props(followed('version1'));
+    mockDailyState(inputs);
     const view = render(<OverviewAiActions {...inputs} />);
     await user.click(screen.getByRole('button', { name }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Quota atteint.');
@@ -227,6 +333,7 @@ test('Fermer le bilan : le changement suivant ne déclenche pas de fausse alerte
   const user = userEvent.setup();
   vi.mocked(generateDailyReview).mockResolvedValue(review);
   const inputs = props([task('a', { follow_up: follow, follow_up_key: 'version1' })]);
+  mockDailyState(inputs);
   const view = render(<OverviewAiActions {...inputs} />);
   await user.click(screen.getByRole('button', { name: /Bilan du jour/ }));
   await screen.findByRole('region', { name: 'Bilan IA du jour' });
@@ -238,14 +345,15 @@ test('Fermer le bilan : le changement suivant ne déclenche pas de fausse alerte
 test('arrêter un bilan laisse applicable la replanification déjà proposée', async () => {
   const user = userEvent.setup();
   const tasks = [task('a')];
-  vi.mocked(replanTasks).mockResolvedValue([{ id: 'a', priority: 'high', due_date: today, reason: '' }]);
-  vi.mocked(generateDailyReview).mockImplementation(() => new Promise(() => {}));
+  vi.mocked(replanTasks).mockResolvedValueOnce([{ id: 'a', priority: 'high', due_date: today, reason: '' }])
+    .mockImplementationOnce(() => new Promise(() => {}));
   vi.spyOn(api, 'state').mockResolvedValue(state(tasks));
   const write = vi.spyOn(api, 'updateTask').mockImplementation(async (_id, patch) => ({ ...tasks[0], ...patch }));
   render(<OverviewAiActions {...props(tasks)} />);
   await user.click(screen.getByRole('button', { name: 'Replanifier avec l’IA' }));
   await screen.findByRole('region', { name: 'Dates et priorités proposées par l’IA' });
   await user.click(screen.getByRole('button', { name: 'Bilan du jour' }));
+  await waitFor(() => expect(replanTasks).toHaveBeenCalledTimes(2));
   await user.click(await screen.findByRole('button', { name: 'Arrêter' }));
   await user.click(screen.getByRole('button', { name: 'Appliquer 1 tâche' }));
   await waitFor(() => expect(write).toHaveBeenCalledOnce());
@@ -256,6 +364,7 @@ test('un suivi modifié pendant une demande invalide le résultat en vol', async
   let resolve!: (value: typeof review) => void;
   vi.mocked(generateDailyReview).mockImplementation(() => new Promise((done) => { resolve = done; }));
   const inputs = props([task('a', { follow_up: follow, follow_up_key: 'version1' })]);
+  mockDailyState(inputs);
   const view = render(<OverviewAiActions {...inputs} />);
   await user.click(screen.getByRole('button', { name: /Bilan du jour/ }));
   await waitFor(() => expect(generateDailyReview).toHaveBeenCalledOnce());
@@ -269,6 +378,7 @@ test('un changement de jour invalide le bilan au lieu de lui attribuer la nouvel
   const user = userEvent.setup();
   vi.mocked(generateDailyReview).mockResolvedValue(review);
   const inputs = props([task('a', { follow_up: follow })]);
+  mockDailyState(inputs);
   const view = render(<OverviewAiActions {...inputs} />);
   await user.click(screen.getByRole('button', { name: 'Bilan du jour' }));
   await screen.findByRole('region', { name: 'Bilan IA du jour' });
@@ -306,6 +416,7 @@ const renderWithStaleFollowUp = () => {
   vi.useFakeTimers();
   vi.mocked(generateFollowUp).mockImplementation(() => new Promise(() => {}));
   vi.spyOn(api, 'followUp').mockResolvedValue({ follow_up: follow, source_key: 'version2', source: { kind: 'task', id: 'a', title: 'Tâche a', project: null, documents: [] } });
+  mockDailyState(props([task('a', { follow_up: follow, follow_up_key: 'version2' })]));
   const tree = (key: string) => {
     const stale = task('a', { follow_up: follow, follow_up_key: key });
     return <FollowUpProvider state={state([stale])} onChanged={vi.fn()}><OverviewAiActions {...props([stale])} /></FollowUpProvider>;
@@ -345,7 +456,9 @@ test('les documents Google ne donnent pas leur titre à l’activité du jour', 
   const user = userEvent.setup();
   vi.mocked(generateDailyReview).mockResolvedValue(review);
   const entries = [note('n', 'Note locale'), note('g', 'Contrat Google', { google_document_id: 'doc1' }), note('o', 'Onglet Google', { google_tab_id: 'tab1' })];
-  render(<OverviewAiActions {...props([task('a')])} entries={entries} />);
+  const inputs = { ...props([task('a')]), entries };
+  mockDailyState(inputs);
+  render(<OverviewAiActions {...inputs} />);
   await user.click(screen.getByRole('button', { name: 'Bilan du jour' }));
   await screen.findByRole('region', { name: 'Bilan IA du jour' });
   expect(vi.mocked(generateDailyReview).mock.calls[0][2]?.todayActivity?.notes).toEqual(['Note locale']);
@@ -355,7 +468,9 @@ test('le bilan annonce le jour local de son activité, même quand le jour UTC r
   const user = userEvent.setup();
   vi.spyOn(lib, 'todayISO').mockReturnValue('2099-11-05');
   vi.mocked(generateDailyReview).mockResolvedValue(review);
-  render(<OverviewAiActions {...props([task('a')])} />);
+  const inputs = props([task('a')]);
+  mockDailyState(inputs);
+  render(<OverviewAiActions {...inputs} />);
   await user.click(screen.getByRole('button', { name: 'Bilan du jour' }));
   await screen.findByRole('region', { name: 'Bilan IA du jour' });
   expect(vi.mocked(generateDailyReview).mock.calls[0][2]?.today).toBe(localToday());

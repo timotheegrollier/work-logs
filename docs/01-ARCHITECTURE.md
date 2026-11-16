@@ -300,7 +300,8 @@ une tâche, une entrée ou une association inconnue renvoie `404` avec un messag
 | `ai-budget.ts` | plafond quotidien par appareil (`localStorage`), jour de Los Angeles, réservations en mémoire pour les appels parallèles, un tiers au plus pour le suivi automatique |
 | `ai-chat.ts` | lectures bornées par message, propositions validées à partir du JSON du fournisseur, application au clic |
 | `ai-chat-shared.ts` | recherche et extraits bornés dans le partage configuré, création exclusive de procédures Word |
-| `components/AiChat.tsx` | conversations parallèles en mémoire, annulation par conversation, file commune des écritures validées |
+| `components/AiChat.tsx` | conversations parallèles, annulation par conversation, file commune des écritures validées |
+| `store/chat-conversations.ts` | historique et brouillons de l’assistant dans une base IndexedDB propre au profil WorkLogs |
 | `components/ProcedureDraft.tsx` | relecture d'une procédure rédigée par l'IA (titre modifiable, aperçu), puis création par `POST /api/entries` |
 | `components/EntryList.tsx` | journal groupé par jour, extrait sur une ligne |
 | `components/ProcedureList.tsx` | procédures du projet (entrées `kind='procedure'`) + pièces jointes rassemblées |

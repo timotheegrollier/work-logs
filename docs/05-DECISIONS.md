@@ -2874,7 +2874,8 @@ tâches.
 
 **Demande.** Simplifier encore le haut de la vue d’ensemble ; rendre le bilan des suivis IA
 plus accessible, générer rapidement un bilan quotidien, redater les tâches selon ce qui compte
-réellement ; cliquer une source doit fermer la vue et l’afficher.
+réellement ; cliquer une source doit fermer la vue et l’afficher. Le §85 décrit le nouvel
+enchaînement du bilan et de la replanification.
 
 **Choix.**
 - Deux actions directes en tête : **Bilan du jour** synthétise les rapports de suivi déjà
@@ -3425,8 +3426,8 @@ ouverte, que la frappe suivante réécrirait.
 
 Une conversation peut poursuivre ses lectures pendant qu’une autre travaille ou pendant que
 le panneau est fermé. Chaque demande capture ses paramètres et le projet affiché à l’envoi.
-L’état de chaque conversation reste dans la mémoire de l’application. Le quota réserve une place
-aux appels en cours avant leur envoi et enregistre leur usage après la réponse.
+L’état de chaque conversation est conservé sur l’appareil depuis le §85. Le quota réserve une
+place aux appels en cours avant leur envoi et enregistre leur usage après la réponse.
 
 Le protocole JSON conserve la compatibilité avec les fournisseurs existants. Le modèle peut
 demander des lectures bornées et reçoit leurs résultats avant de préparer ses propositions.
@@ -3579,3 +3580,17 @@ restant juste et sobre en jetons (`web/src/task-progress.ts`).
 - Écartés : estimer à chaque frappe (coût), laisser l’IA terminer une tâche (archivage
   surprise), un réglage pour couper l’estimation (nouveau mode, non demandé ; l’IA non
   configurée suffit à l’éteindre).
+
+## 85. Le bilan replanifie les tâches et l’assistant conserve ses conversations
+
+Depuis la vue d’ensemble, **Bilan du jour** replanifie d’abord toutes les tâches ouvertes
+de tous les projets. Quand le plan couvre les tâches et que leurs dates et priorités sont
+enregistrées, le bilan utilise l’état relu. Une erreur de planification ou un changement
+concurrent qui invalide le plan demande de relancer le bilan. **Replanifier** permet toujours
+de relire et ajuster les propositions avant de les appliquer.
+
+L’assistant enregistre les conversations, leurs titres et leurs brouillons dans IndexedDB,
+dans le profil local de l’application ou du navigateur. **Effacer** supprime la conversation
+de l’historique local. Le titre est demandé dans la réponse normale de l’assistant et se fixe
+dès que le sujet est identifiable. Après réouverture, les réponses et les résultats des
+propositions restent disponibles. Une demande interrompue s’affiche comme arrêtée.

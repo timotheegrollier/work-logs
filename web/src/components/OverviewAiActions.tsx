@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AiCancelled, MAX_DAILY_FOLLOW_UPS, MAX_REPLANNED_TASKS, generateDailyReview, localToday, readAiSettings, replanTasks, type DailyFollowUpInput, type DailyReview, type TaskScheduleProposal } from '../ai-suggest';
+import { AiCancelled, MAX_DAILY_FOLLOW_UPS, MAX_REPLANNED_TASKS, generateDailyReview, localToday, readAiSettings, replanTasks, type AiSettings, type DailyFollowUpInput, type DailyReview, type TaskScheduleProposal } from '../ai-suggest';
+import { aiBudgetRefusal } from '../ai-budget';
 import { readProjectAiBrief } from '../ai-context';
 import { flushPendingSaves } from '../autosave';
 import { useFollowUpBusy, useFollowUpHold } from '../follow-up-controller';
-import { api, dayLabel, isFollowed, PRIORITIES, priorityLabel, todayISO, type EntrySummary, type Project, type Task } from '../lib';
+import { api, dayLabel, isFollowed, PRIORITIES, priorityLabel, todayISO, type AppState, type EntrySummary, type Project, type Task } from '../lib';
 import { AiPending } from './AiMenu';
 
 type Choice = TaskScheduleProposal & { selected: boolean; applied: boolean; previousDueDate: string | null };
 type Work = 'daily' | 'schedule' | 'applying' | null;
+type Busy = Work | 'daily-planning' | 'daily-applying';
 const changedMessage = 'Les tâches ou les suivis ont changé. Relance la replanification.';
+const dailyChangedMessage = 'La journée ou les tâches ont changé pendant la replanification. Relance le bilan du jour.';
 const openTasks = (tasks: Task[]) => tasks.filter((task) => task.status !== 'done');
+const hasMissingOpenTasks = ({ stats, tasks }: AppState) => stats.tasks.todo + stats.tasks.doing > openTasks(tasks).length;
 const projectKey = (projects: Project[]) => projects.map((project) => [project.id, project.name, readProjectAiBrief(project.id)]).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 const planningContext = (projects: Project[]) => [projectKey(projects), readProjectAiBrief(null), readAiSettings().profile, todayISO()];
 const planningKey = (tasks: Task[], projects: Project[], context = planningContext(projects)) => JSON.stringify([
@@ -20,10 +24,27 @@ const taskItem = (task: Task) => ({ id: task.id, kind: 'task' as const, title: t
 const plannedTaskItem = (task: Task) => ({ ...taskItem(task), status: task.status, priority: task.priority, due_date: task.due_date });
 const followedEntries = (entries: EntrySummary[]) => entries.filter(isFollowed).map((entry) => ({ id: entry.id, kind: 'entry' as const, title: entry.title, date: entry.entry_date, follow_up: entry.follow_up, follow_up_key: entry.follow_up_key }));
 const followedItems = (tasks: Task[], entries: EntrySummary[]): DailyFollowUpInput[] => [...tasks.filter(isFollowed).map(taskItem), ...followedEntries(entries)];
+const dailyItemsFor = (tasks: Task[], entries: EntrySummary[]): DailyFollowUpInput[] => [
+  ...tasks.filter(isFollowed).map(plannedTaskItem), ...followedEntries(entries),
+  ...openTasks(tasks).filter((task) => !isFollowed(task)).map(plannedTaskItem),
+];
 const dailyKey = (items: DailyFollowUpInput[], missingEntries: number, missingTasks: number) => JSON.stringify([items, readAiSettings().profile, todayISO(), missingEntries, missingTasks]);
 const validDate = (value: string, today: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value && value >= today;
 
-/** Deux demandes directes ; seules les dates et priorités explicitement relues sont écrites. */
+const proposeSchedule = (settings: AiSettings, tasks: Task[], projects: Project[], today: string) => replanTasks(settings, tasks.map((task) => ({
+  ...task, project: projects.find((project) => project.id === task.project_id)?.name,
+  projectId: task.project_id ?? undefined, projectBrief: readProjectAiBrief(task.project_id), documents: task.documents.length,
+})), { today });
+
+const scheduleChangesTask = (task: Task, choice: TaskScheduleProposal) => task.priority !== choice.priority || task.due_date !== choice.due_date;
+const saveSchedule = (task: Task, choice: TaskScheduleProposal) => api.updateTask(task.id, {
+  priority: choice.priority, due_date: choice.due_date, expected_planning: {
+    title: task.title, status: task.status, priority: task.priority, due_date: task.due_date,
+    project_id: task.project_id, pinned: task.pinned, follow_up_key: task.follow_up_key ?? null,
+  },
+});
+const savedCount = (count: number) => `${count} tâche${count > 1 ? 's' : ''} enregistrée${count > 1 ? 's' : ''}.`;
+
 export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, missingEntries = 0, missingTasks = 0, onChanged, onTask, children }: {
   tasks: Task[];
   entries: EntrySummary[];
@@ -35,7 +56,7 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
   onTask: (task: Task) => void;
   children?: ReactNode;
 }) {
-  const [busy, setBusy] = useState<Work>(null);
+  const [busy, setBusy] = useState<Busy>(null);
   const work = useRef<Work>(null);
   const controller = useRef<AbortController | null>(null);
   const [daily, setDaily] = useState<DailyReview | null>(null);
@@ -54,8 +75,7 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
   const followed = followedItems(tasks, entries);
   const followUpsRunning = useFollowUpBusy();
   useFollowUpHold(Boolean(busy || daily || choices));
-  // Le bilan du jour lit la totalité des tâches non terminées, pas seulement les suivies.
-  const dailyItems: DailyFollowUpInput[] = [...tasks.filter(isFollowed).map(plannedTaskItem), ...followedEntries(entries), ...open.filter((task) => !isFollowed(task)).map(plannedTaskItem)];
+  const dailyItems = dailyItemsFor(tasks, entries);
   // La clé de détection de changement ne porte que sur les suivis : le statut d'une
   // tâche ouverte ne doit pas invalider un bilan déjà demandé.
   const currentDaily = dailyKey(followed, missingEntries, missingTasks);
@@ -66,7 +86,7 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
   const hasSchedule = choices !== null;
   const choiceChanged = (choice: Choice) => {
     const task = tasks.find((candidate) => candidate.id === choice.id);
-    return Boolean(task && (task.priority !== choice.priority || task.due_date !== choice.due_date));
+    return Boolean(task && scheduleChangesTask(task, choice));
   };
   const changedCount = choices?.filter((choice) => !choice.applied && choiceChanged(choice)).length ?? 0;
 
@@ -97,9 +117,10 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
     const request = new AbortController();
     const date = todayISO();
     controller.current = request;
-    work.current = kind; setBusy(kind); setError(''); setFeedback('');
-    if (kind === 'daily') { dailyInput.current = dailyKey(followed, missingEntries, missingTasks); setDaily(null); }
+    work.current = kind; setBusy(kind === 'daily' ? 'daily-planning' : kind); setError(''); setFeedback('');
+    if (kind === 'daily') { dailyInput.current = null; setDaily(null); }
     else { scheduleContext.current = planningContext(projects); scheduleInput.current = planningKey(tasks, projects, scheduleContext.current); expected.current = open; setChoices(null); }
+    let written = 0;
     try {
       await flushPendingSaves();
       if (request.signal.aborted) return;
@@ -107,22 +128,73 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
       if (kind === 'daily') {
         // La date annoncée et l'activité portent sur le même jour local : après minuit, le jour UTC est encore la veille.
         const day = localToday();
-        const result = await generateDailyReview(settings, dailyItems, { today: day, todayActivity: {
-          doneTasks: tasks.filter((task) => task.status === 'done' && new Date(task.updated_at).toDateString() === new Date().toDateString()).map((task) => task.title),
-          notes: entries.filter((entry) => entry.kind === 'note' && entry.entry_date === day && !entry.google_document_id && !entry.google_tab_id).map((entry) => entry.title),
+        let snapshot = await api.state();
+        if (request.signal.aborted) return;
+        const active = openTasks(snapshot.tasks);
+        if (hasMissingOpenTasks(snapshot)) throw new Error('Des tâches ouvertes manquent. Le bilan du jour nécessite de toutes les replanifier.');
+        if (dailyItemsFor(snapshot.tasks, snapshot.entries).length > MAX_DAILY_FOLLOW_UPS) throw new Error(`Le bilan accepte ${MAX_DAILY_FOLLOW_UPS} sources au maximum.`);
+        if (active.length) {
+          const originalPlan = planningKey(snapshot.tasks, snapshot.projects);
+          const plan = await proposeSchedule(settings, active, snapshot.projects, day);
+          if (request.signal.aborted) return;
+          const byId = new Map(plan.map((choice) => [choice.id, choice]));
+          if (active.some((task) => !byId.has(task.id))) throw new Error(`Replanification incomplète (${plan.length} sur ${active.length} tâches). Relance le bilan du jour.`);
+          await flushPendingSaves();
+          if (request.signal.aborted) return;
+          snapshot = await api.state();
+          if (request.signal.aborted) return;
+          if (hasMissingOpenTasks(snapshot) || planningKey(snapshot.tasks, snapshot.projects) !== originalPlan || localToday() !== day) throw new Error(dailyChangedMessage);
+
+          const refusal = aiBudgetRefusal(false);
+          if (refusal) throw new Error(refusal);
+          const changes = active.flatMap((task) => {
+            const choice = byId.get(task.id);
+            return choice && scheduleChangesTask(task, choice) ? [{ task, choice }] : [];
+          });
+          if (changes.length) {
+            // Une ancienne proposition manuelle ne doit plus pouvoir être appliquée sur ces dates.
+            scheduleInput.current = null; expected.current = null; setChoices(null);
+            setBusy('daily-applying');
+            const nextPlan = planningKey(snapshot.tasks.map((task) => {
+              const choice = byId.get(task.id);
+              return choice ? { ...task, priority: choice.priority, due_date: choice.due_date } : task;
+            }), snapshot.projects);
+            try {
+              for (const { task, choice } of changes) {
+                if (request.signal.aborted) return;
+                await saveSchedule(task, choice);
+                written += 1;
+              }
+            } finally {
+              // Même une réponse perdue peut avoir modifié la planification affichée.
+              await onChanged();
+            }
+            if (request.signal.aborted) return;
+            snapshot = await api.state();
+            if (request.signal.aborted) return;
+            if (hasMissingOpenTasks(snapshot) || planningKey(snapshot.tasks, snapshot.projects) !== nextPlan) throw new Error(dailyChangedMessage);
+          }
+        }
+        if (localToday() !== day) throw new Error(dailyChangedMessage);
+        const { stats } = snapshot;
+        dailyInput.current = dailyKey(followedItems(snapshot.tasks, snapshot.entries), Math.max(0, stats.entries - snapshot.entries.length),
+          Math.max(0, stats.tasks.todo + stats.tasks.doing + stats.tasks.done - snapshot.tasks.length));
+        if (written) setFeedback(`${written} tâche${written > 1 ? 's' : ''} replanifiée${written > 1 ? 's' : ''}.`);
+        setBusy('daily');
+        const result = await generateDailyReview(settings, dailyItemsFor(snapshot.tasks, snapshot.entries), { today: day, todayActivity: {
+          doneTasks: snapshot.tasks.filter((task) => task.status === 'done' && new Date(task.updated_at).toDateString() === new Date().toDateString()).map((task) => task.title),
+          notes: snapshot.entries.filter((entry) => entry.kind === 'note' && entry.entry_date === day && !entry.google_document_id && !entry.google_tab_id).map((entry) => entry.title),
         } });
         if (!request.signal.aborted) { setDailyDate(day); setDaily(result); }
       } else {
-        const result = await replanTasks(settings, open.map((task) => ({
-          ...task, project: projects.find((project) => project.id === task.project_id)?.name,
-          projectId: task.project_id ?? undefined, projectBrief: readProjectAiBrief(task.project_id), documents: task.documents.length,
-        })), { today: date });
+        const result = await proposeSchedule(settings, open, projects, date);
         if (!request.signal.aborted) setChoices(result.map((choice) => ({ ...choice, selected: true, applied: false, previousDueDate: open.find((task) => task.id === choice.id)?.due_date ?? null })));
       }
     } catch (cause) {
       if (!request.signal.aborted && !(cause instanceof AiCancelled)) {
         // Aucun résultat à invalider : le prochain changement ne doit pas recouvrir cette erreur.
         if (kind === 'daily') dailyInput.current = null; else scheduleInput.current = null;
+        if (written) setFeedback(savedCount(written));
         setError((cause as Error).message || 'La demande IA a échoué.');
       }
     } finally { finish(request); }
@@ -135,8 +207,7 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
     try {
       await flushPendingSaves();
       const state = await api.state();
-      const missing = state.stats.tasks.todo + state.stats.tasks.doing - openTasks(state.tasks).length;
-      if (missing > 0 || planningKey(state.tasks, state.projects) !== scheduleInput.current) {
+      if (hasMissingOpenTasks(state) || planningKey(state.tasks, state.projects) !== scheduleInput.current) {
         setChoices(null); expected.current = null; scheduleInput.current = null;
         throw new Error(changedMessage);
       }
@@ -145,11 +216,8 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
       for (const choice of selected) {
         const task = expected.current.find((candidate) => candidate.id === choice.id);
         if (!task || task.status === 'done') throw new Error(changedMessage);
-        if (task.priority !== choice.priority || task.due_date !== choice.due_date) {
-          const updated = await api.updateTask(choice.id, { priority: choice.priority, due_date: choice.due_date, expected_planning: {
-            title: task.title, status: task.status, priority: task.priority, due_date: task.due_date,
-            project_id: task.project_id, pinned: task.pinned, follow_up_key: task.follow_up_key ?? null,
-          } });
+        if (scheduleChangesTask(task, choice)) {
+          const updated = await saveSchedule(task, choice);
           // Le PUT ne recharge pas les liens (absents côté serveur, liste vide
           // côté PWA) : garder les documents du contexte relu avant l'écriture.
           expected.current = expected.current.map((candidate) => candidate.id === updated.id ? { ...candidate, ...updated, documents: candidate.documents } : candidate);
@@ -161,7 +229,7 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
       // Toutes les tâches sélectionnées ont été écrites : la proposition se referme.
       setChoices(null); expected.current = null; scheduleInput.current = null;
     } catch (cause) {
-      setError((written ? `${written} tâche${written > 1 ? 's' : ''} enregistrée${written > 1 ? 's' : ''}. ` : '') + ((cause as Error).message || 'Impossible d’appliquer les dates.'));
+      setError((written ? savedCount(written) + ' ' : '') + ((cause as Error).message || 'Impossible d’appliquer les dates.'));
     } finally {
       work.current = null;
       setBusy(null);
@@ -171,13 +239,16 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
     }
   };
   const list = (title: string, values: string[]) => values.length > 0 && <div><h4>{title}</h4><ul>{values.map((value, index) => <li key={index}>{value}</li>)}</ul></div>;
+  const canPlan = missingOpen === 0 && open.length <= MAX_REPLANNED_TASKS;
+  const writing = busy === 'applying' || busy === 'daily-applying';
 
   return <section className="overview-ai no-print" aria-label="Bilan du jour et planification IA" aria-busy={Boolean(busy)}>
     <div className="overview-ai-actions">
-      <button className="task-primary" type="button" aria-label="Bilan du jour" disabled={Boolean(busy) || followUpsRunning || !hasReports || dailyItems.length > MAX_DAILY_FOLLOW_UPS} onClick={() => void generate('daily')}><span aria-hidden="true">✨ </span>Bilan du jour</button>
-      <button className="ghost" type="button" aria-label="Replanifier avec l’IA" disabled={Boolean(busy) || followUpsRunning || !open.length || missingOpen > 0 || open.length > MAX_REPLANNED_TASKS} onClick={() => void generate('schedule')}><span aria-hidden="true">↻ </span>Replanifier</button>
+      <button className="task-primary" type="button" aria-label="Bilan du jour" disabled={Boolean(busy) || followUpsRunning || !canPlan || !hasReports || dailyItems.length > MAX_DAILY_FOLLOW_UPS} onClick={() => void generate('daily')}><span aria-hidden="true">✨ </span>Bilan du jour</button>
+      <button className="ghost" type="button" aria-label="Replanifier avec l’IA" disabled={Boolean(busy) || followUpsRunning || !open.length || !canPlan} onClick={() => void generate('schedule')}><span aria-hidden="true">↻ </span>Replanifier</button>
       {children}
     </div>
+    {canPlan && open.length > 0 && <p className="ai-hint overview-ai-note">Le bilan du jour met à jour les échéances et les priorités des tâches ouvertes avant la synthèse.</p>}
     {followed.length === 0 && <p className="ai-hint overview-ai-note">Ajoute une tâche ou une entrée aux suivis IA pour retrouver ici leurs bilans.</p>}
     {followUpsRunning && <p className="ai-hint overview-ai-note">Bilans de suivi en cours d’actualisation : le bilan du jour et la replanification attendent leur fin.</p>}
     <details className="overview-ai-scope">
@@ -186,7 +257,7 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
     </details>
     {(missingEntries > 0 || missingTasks > 0) && <p className="notice">Le bilan couvre uniquement {dailyItems.length} source{dailyItems.length > 1 ? 's' : ''} chargée{dailyItems.length > 1 ? 's' : ''}. Éléments non chargés : {missingEntries > 0 ? `${missingEntries} entrée${missingEntries > 1 ? 's' : ''}` : ''}{missingEntries > 0 && missingTasks > 0 ? ' et ' : ''}{missingTasks > 0 ? `${missingTasks} tâche${missingTasks > 1 ? 's' : ''}` : ''}. D’autres sources peuvent manquer.</p>}
     {(dailyItems.length > MAX_DAILY_FOLLOW_UPS || open.length > MAX_REPLANNED_TASKS) && <p className="notice">{dailyItems.length > MAX_DAILY_FOLLOW_UPS ? `Le bilan accepte ${MAX_DAILY_FOLLOW_UPS} sources au maximum. ` : ''}{open.length > MAX_REPLANNED_TASKS ? `La replanification accepte ${MAX_REPLANNED_TASKS} tâches ouvertes au maximum ; termine les tâches devenues inutiles.` : ''}</p>}
-    {busy && <div className="overview-ai-pending"><AiPending label={busy === 'daily' ? 'L’IA rassemble les bilans de suivi…' : busy === 'schedule' ? 'L’IA propose les priorités et les dates…' : 'Enregistrement des dates et priorités…'} />{busy !== 'applying' && <button className="ghost" type="button" onClick={() => {
+    {busy && <div className="overview-ai-pending"><AiPending label={busy === 'daily' ? 'L’IA rassemble les bilans de suivi…' : writing ? 'Enregistrement des dates et priorités…' : busy === 'daily-planning' ? 'L’IA replanifie les tâches ouvertes avant le bilan…' : 'L’IA propose les priorités et les dates…'} />{!writing && <button className="ghost" type="button" onClick={() => {
       // Seule la référence de la demande coupée tombe : l'autre garde encore un résultat affiché.
       if (work.current === 'daily') dailyInput.current = null; else scheduleInput.current = null;
       controller.current?.abort(); controller.current = null; work.current = null; setBusy(null);

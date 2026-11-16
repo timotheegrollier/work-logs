@@ -171,7 +171,7 @@
   <header>
     <p class="eyebrow">WorkLogs</p>
     <h1>Politique de confidentialité</h1>
-    <p class="updated">Dernière mise à jour le 12 novembre 2026</p>
+    <p class="updated">Dernière mise à jour le 16 novembre 2026</p>
   </header>
 
   <p class="lead">
@@ -284,7 +284,8 @@
     conversation au moment de l’envoi. L’assistant peut alors lire jusqu’à deux fichiers Word,
     Markdown ou texte et envoyer jusqu’à 3 000 caractères par fichier. Désactiver cette option
     écarte les réponses tirées de ces extraits de l’historique transmis ensuite.
-    WorkLogs garde les conversations en mémoire jusqu’à la fermeture de l’application.
+    WorkLogs enregistre les conversations et leurs brouillons dans le profil local de cet
+    appareil (IndexedDB). Le bouton « Effacer » supprime la conversation de ce profil.
   </p>
 
   <h3>1.5 Partage en réseau local (facultatif)</h3>
@@ -418,8 +419,9 @@
       locally; on desktop they are encrypted with the OS keychain. The PWA sends its refresh
       token over HTTPS to a Cloudflare Worker token relay that does not store or log tokens.
       Google Drive files remain in your Google account. Optional AI features send the content
-      you submit to the AI provider you configure. WorkLogs does not sell or rent your data,
-      does not use it for advertising, and does not use Google user data to train AI models.
+      you submit to the AI provider you configure. Assistant conversations and drafts are
+      saved in the local profile and can be deleted from the assistant. WorkLogs does not sell
+      or rent your data, does not use it for advertising, and does not use Google user data to train AI models.
       WorkLogs’ use and transfer to any other app of information received from Google APIs will
       adhere to the
       <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noreferrer">Google API Services User Data Policy</a>,

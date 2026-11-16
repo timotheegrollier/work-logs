@@ -1,38 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { aiUsageLabel } from '../ai-budget';
-import { applyChatProposal, askAssistant, type ChatAnswer, type ChatAppliedResult, type ChatHistoryItem, type ChatProposal } from '../ai-chat';
-import { AiCancelled, readAiSettings } from '../ai-suggest';
+import { applyChatProposal, askAssistant, type ChatHistoryItem, type ChatProposal } from '../ai-chat';
+import { AiCancelled, readAiSettings, truncate } from '../ai-suggest';
 import { COLUMNS, type Task } from '../lib';
+import { readChatConversations, writeChatConversations, type ChatProposalItem, type ChatSession, type ChatTurn } from '../store/chat-conversations';
 
-interface ChatProposalItem {
-  proposal: ChatProposal;
-  status: 'open' | 'applying' | 'applied' | 'ignored' | 'failed';
-  error?: string;
-  result?: ChatAppliedResult;
-  /** Horodatage du premier essai : un réessai ne recrée pas ce qui a abouti sans réponse. */
-  since?: string;
-}
-interface ChatTurn {
-  id: number;
-  question: string;
-  answer?: Omit<ChatAnswer, 'proposals'> & { proposals: ChatProposalItem[] };
-  error?: string;
-  stopped?: boolean;
-}
-
-interface ChatSession {
-  id: number;
-  draft: string;
-  turns: ChatTurn[];
-  allowSharedContent: boolean;
-}
-
-const newSession = (id: number): ChatSession => ({ id, draft: '', turns: [], allowSharedContent: false });
+const newSession = (id: number): ChatSession => ({
+  id, storageId: crypto.randomUUID?.() ?? `chat-${Date.now()}-${Math.random()}`,
+  createdAt: Date.now(), draft: '', turns: [], allowSharedContent: false,
+});
+const hasContent = (session: ChatSession) => Boolean(session.turns.length || session.draft || session.allowSharedContent);
 const isRunning = (session: ChatSession) => session.turns.some(({ answer, error, stopped }) => !answer && !error && !stopped);
 const isApplying = (session: ChatSession) => session.turns.some(({ answer }) => answer?.proposals.some(({ status }) => status === 'applying'));
 const conversationName = (id: number) => `Conversation ${id}`;
-const conversationTitle = (session: ChatSession) => session.turns[0]?.question.replace(/\s+/g, ' ').trim() || conversationName(session.id);
+const conversationTitle = (session: ChatSession) => session.title
+  || truncate(session.turns[0]?.question ?? '', 80)
+  || conversationName(session.id);
 const conversationActivity = (session: ChatSession) => isRunning(session) ? 'Recherche en cours' : isApplying(session) ? 'Écriture en cours' : '';
 
 const PROPOSAL_WORDS: Record<ChatProposalItem['status'], string> = { open: 'proposée', applying: 'en cours', applied: 'appliquée', ignored: 'ignorée', failed: 'échouée' };
@@ -67,7 +51,11 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
   const writeQueue = useRef<Promise<void> | null>(null);
   const lastTurnId = useRef(0);
   const lastSessionId = useRef(1);
-  const [sessions, setSessions] = useState(() => [newSession(1)]);
+  const [sessions, renderSessions] = useState(() => [newSession(1)]);
+  const currentSessions = useRef(sessions);
+  const historyAvailable = useRef(typeof indexedDB !== 'undefined');
+  const [historyLoaded, setHistoryLoaded] = useState(!historyAvailable.current);
+  const [historyError, setHistoryError] = useState('');
   const [activeId, setActiveId] = useState(1);
   const [showSidebar, setShowSidebar] = useState(false);
   const active = sessions.find(({ id }) => id === activeId) ?? sessions[0];
@@ -75,15 +63,52 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
   const inProgress = sessions.filter(conversationActivity).length;
   const latestOnChanged = useRef(onChanged);
   latestOnChanged.current = onChanged;
-  const updateSession = (id: number, patch: (session: ChatSession) => ChatSession) => {
+  useEffect(() => {
+    if (!historyAvailable.current) return;
+    let disposed = false;
+    void readChatConversations().then((restored) => {
+      if (disposed) return;
+      const last = restored.at(-1);
+      if (last) {
+        lastSessionId.current = last.id;
+        lastTurnId.current = restored.reduce((latest, session) =>
+          session.turns.reduce((id, turn) => Math.max(id, turn.id), latest), 0);
+        currentSessions.current = restored;
+        renderSessions(restored);
+        setActiveId(last.id);
+      }
+      setHistoryLoaded(true);
+    }, () => {
+      if (disposed) return;
+      historyAvailable.current = false;
+      setHistoryError('Impossible de charger l’historique des conversations sur cet appareil.');
+      setHistoryLoaded(true);
+    });
+    return () => { disposed = true; };
+  }, []);
+  const setSessions = (update: (current: ChatSession[]) => ChatSession[]) => {
+    const before = currentSessions.current;
+    const after = update(before);
+    currentSessions.current = after;
+    renderSessions(after);
+    if (!historyAvailable.current) return;
+    const previous = new Map(before.map((session) => [session.storageId, session]));
+    const retained = new Map(after.filter(hasContent).map((session) => [session.storageId, session]));
+    const upsert = [...retained.values()].filter((session) => previous.get(session.storageId) !== session);
+    const remove = before.filter((session) => hasContent(session) && !retained.has(session.storageId)).map(({ storageId }) => storageId);
+    if (!upsert.length && !remove.length) return;
+    return writeChatConversations(upsert, remove).then(() => true, () => {
+      setHistoryError('Certaines modifications de l’historique n’ont pas pu être enregistrées.');
+      return false;
+    });
+  };
+  const updateSession = (id: number, patch: (session: ChatSession) => ChatSession) =>
     setSessions((current) => current.map((session) => session.id === id ? patch(session) : session));
-  };
-  const onTurns = (id: number, patch: (turns: ChatTurn[]) => ChatTurn[]) => {
+  const onTurns = (id: number, patch: (turns: ChatTurn[]) => ChatTurn[]) =>
     updateSession(id, (session) => ({ ...session, turns: patch(session.turns) }));
-  };
   const pane = (id: number) => columnsRef.current?.querySelector<HTMLElement>(`[data-conversation="${id}"]`);
   useEffect(() => {
-    if (!open) return;
+    if (!open || !historyLoaded) return;
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (!dialog.open) {
@@ -98,9 +123,9 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
     }
     // Le dialogue retiré ne rend pas le focus de lui-même.
     return () => opener.current?.focus();
-  }, [open, opener]);
+  }, [open, historyLoaded, opener]);
   useEffect(() => {
-    if (!open) return;
+    if (!open || !historyLoaded) return;
     if (mobileSidebar) {
       focusNewPane.current = false;
       sidebarRef.current?.querySelector<HTMLButtonElement>('[aria-current="true"]')?.focus();
@@ -112,7 +137,7 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
     focusNewPane.current = false;
     if (compact) sidebarToggleRef.current?.focus();
     else selected?.querySelector('textarea')?.focus();
-  }, [open, active.id, compact, mobileSidebar]);
+  }, [open, historyLoaded, active.id, compact, mobileSidebar]);
   useEffect(() => () => {
     const pending = [...requests.current.values()];
     requests.current.clear();
@@ -143,12 +168,21 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
     requests.current.set(sessionId, { controller, turnId: id });
     const isCurrent = () => requests.current.get(sessionId)?.controller === controller;
     try {
-      const { proposals, ...answer } = await askAssistant({ ...readAiSettings(), signal: controller.signal }, {
+      const { proposals, conversationTitle: title, ...answer } = await askAssistant({ ...readAiSettings(), signal: controller.signal }, {
         text, history, projectId, categoryId, openTitle,
         ...(openEntryId && { openEntryId }),
+        ...(!session.title && { needsConversationTitle: true }),
         ...(session.allowSharedContent && { allowSharedContent: true }),
       });
-      if (isCurrent()) patch({ answer: { ...answer, proposals: proposals.map((proposal) => ({ proposal, status: 'open' })) } });
+      if (isCurrent()) {
+        updateSession(sessionId, (current) => ({
+          ...current,
+          ...(!current.title && title && { title }),
+          turns: current.turns.map((turn) => turn.id === id
+            ? { ...turn, answer: { ...answer, proposals: proposals.map((proposal) => ({ proposal, status: 'open' })) } }
+            : turn),
+        }));
+      }
     } catch (cause) {
       if (isCurrent()) patch(cause instanceof AiCancelled ? { stopped: true } : { error: (cause as Error).message || 'La demande à l’assistant a échoué.' });
     } finally {
@@ -183,7 +217,7 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
     const remaining = sessions.filter(({ id }) => id !== sessionId);
     const next = remaining[Math.min(index, remaining.length - 1)] ?? newSession(++lastSessionId.current);
     stop(sessionId);
-    setSessions(remaining.length ? remaining : [next]);
+    setSessions(() => remaining.length ? remaining : [next]);
     if (active.id === sessionId) selectConversation(next.id);
   };
 
@@ -201,8 +235,15 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
     });
     const run = async () => {
       for (const { item, index } of queued) {
-        if (!item.since) patchProposal(sessionId, turnId, index, { since: new Date().toISOString() });
         try {
+          if (!item.since) {
+            // Après un rechargement, une écriture déjà envoyée se reprend avec le même repère.
+            const saved = patchProposal(sessionId, turnId, index, { since: new Date().toISOString() });
+            if (saved && !await saved) {
+              patchProposal(sessionId, turnId, index, { since: undefined });
+              throw new Error('Impossible de préparer l’écriture de cette proposition. Réessaie.');
+            }
+          }
           const result = await applyChatProposal(item.proposal, item.since ? { since: item.since } : undefined);
           patchProposal(sessionId, turnId, index, { status: 'applied', result: result || undefined });
         } catch (cause) {
@@ -221,7 +262,7 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
     void pending.then(release, release);
   };
 
-  if (!open) return null;
+  if (!open || !historyLoaded) return null;
   const close = () => { setShowSidebar(false); onClose(); };
   return createPortal((
     <dialog className="settings-dialog ai-chat-dialog no-print" aria-label="Assistant IA" aria-modal="true" ref={dialogRef} onCancel={(event) => { event.preventDefault(); close(); }}>
@@ -237,6 +278,7 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
           <button className="ghost" type="button" aria-label="Fermer l’assistant" ref={closeRef} onClick={close}>Fermer</button>
         </div>
       </header>
+      {historyError && <p className="ai-chat-storage-error error" role="alert">{historyError}</p>}
 
       <div className={'ai-chat-workspace' + (compact ? ' is-compact' : '')}>
         <nav className="ai-chat-sidebar" ref={sidebarRef} aria-label="Conversations" hidden={compact && !mobileSidebar}>
@@ -283,7 +325,7 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
                 if (!pendingProposals.current.has(proposalKey(turnId, index))) patchProposal(session.id, turnId, index, { status: 'ignored' });
               }}
               onRemove={() => removeConversation(session.id)}
-              canRemove={!isApplying(session) && (sessions.length > 1 || Boolean(session.turns.length || session.draft || session.allowSharedContent))}
+              canRemove={!isApplying(session) && (sessions.length > 1 || hasContent(session))}
               compact={compact}
               navigation={navigation}
             />
@@ -394,7 +436,7 @@ function ChatPane({ session, onFocus, onSend, onStop, onDraft, onAllowShared, on
             <input type="checkbox" checked={allowSharedContent} onChange={(event) => onAllowShared(event.target.checked)} />
             Autoriser l’envoi d’extraits des fichiers partagés dans cette conversation
           </label>
-          <p>Ce réglage s’applique à l’envoi des prochains messages.</p>
+          <p>Ce réglage s’applique à l’envoi des prochains messages. L’historique et les brouillons sont enregistrés sur cet appareil.</p>
         </details>
       </footer>
     </section>
