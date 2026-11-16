@@ -1,5 +1,18 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Bilan qui replanifie, conversations de l’assistant conservées — 2026-11-16, v0.79.0 (§85)
+
+- **Bilan du jour** : les échéances et priorités de toutes les tâches ouvertes sont enregistrées
+  avant la synthèse. Une replanification incomplète ou un changement concurrent arrête le bilan ;
+  **Replanifier** reste disponible pour relire les propositions avant de les appliquer.
+- **Assistant** : titres, réponses et brouillons des conversations enregistrés dans une base
+  IndexedDB propre au profil (`web/src/store/chat-conversations.ts`). Le titre est demandé dans
+  la réponse du modèle et se fixe dès que le sujet est identifiable ; **Effacer** supprime la
+  conversation de l’historique local.
+- `./scripts/check.sh` vert sur le lot rebasé après la v0.78.0 : 346 API, 1 397 front et un échec
+  attendu, 49 desktop unitaires, 49 scripts, 8 Worker, 11 relais, 118 navigateur et 21 Electron,
+  soit 1 999 tests.
+
 ## Terminer archive la note ; l’avancement suit la note — 2026-11-13 (§84)
 
 - Cocher une tâche archive sa note et ses références (API, PWA, annonce de l’assistant). La
