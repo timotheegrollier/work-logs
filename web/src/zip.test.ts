@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { crc32, readZip, readZipEntry, readZipText, writeZip, ZipError } from './zip';
+import { crc32, readZip, readZipEntry, readZipText, writeZip, ZIP_LIMITS, ZipError } from './zip';
 import { attrNS, elements, findChild, scanXml, XmlScanError } from './xml-scan';
 import { buildZip } from './test/docx-fixture';
 
@@ -85,6 +85,15 @@ describe('zip', () => {
   it('refuse d’ajouter une entrée déjà présente', async () => {
     const archive = readZip(buildZip([{ name: 'a.xml', data: '<a/>' }]));
     await expect(writeZip(archive, new Map(), { added: [{ name: 'a.xml', data: text('x') }] })).rejects.toThrow(/déjà présente/);
+  });
+
+  it('arrête une expansion bornée même si le répertoire annonce une taille plus petite', async () => {
+    const bytes = buildZip([{ name: 'a.xml', data: 'x'.repeat(64) }, { name: 'b.xml', data: 'y'.repeat(64) }]);
+    const entry = readZip(bytes).byName.get('b.xml')!;
+    new DataView(bytes.buffer).setUint32(entry.central.byteOffset - bytes.byteOffset + 24, 16, true);
+    const archive = readZip(bytes, { ...ZIP_LIMITS, entry: 64, expanded: 96 });
+    await expect(readZipText(archive, 'a.xml')).resolves.toBe('x'.repeat(64));
+    await expect(readZipText(archive, 'b.xml')).rejects.toThrow(/trop volumineux/);
   });
 
   it('refuse ancien format Office, archive chiffrée, zip64 et entrées en double', () => {

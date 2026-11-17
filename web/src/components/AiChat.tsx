@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { aiUsageLabel } from '../ai-budget';
-import { applyChatProposal, askAssistant, type ChatHistoryItem, type ChatProposal } from '../ai-chat';
+import { applyChatProposal, askAssistant, MAX_CHAT_MESSAGE, type ChatHistoryItem, type ChatProposal, type ChatQuestion } from '../ai-chat';
+import { chatAttachmentBytes, createChatLink, MAX_CHAT_ATTACHMENTS, MAX_CHAT_ATTACHMENT_BYTES, readChatAttachment, type ChatAttachment } from '../ai-chat-attachments';
 import { AiCancelled, readAiSettings, truncate } from '../ai-suggest';
 import { COLUMNS, type Task } from '../lib';
 import { readChatConversations, writeChatConversations, type ChatProposalItem, type ChatSession, type ChatTurn } from '../store/chat-conversations';
@@ -10,17 +11,20 @@ const newSession = (id: number): ChatSession => ({
   id, storageId: crypto.randomUUID?.() ?? `chat-${Date.now()}-${Math.random()}`,
   createdAt: Date.now(), draft: '', turns: [], allowSharedContent: false,
 });
-const hasContent = (session: ChatSession) => Boolean(session.turns.length || session.draft || session.allowSharedContent);
+const hasContent = (session: ChatSession) => Boolean(session.turns.length || session.draft || session.draftAttachments?.length || session.allowSharedContent);
 const isRunning = (session: ChatSession) => session.turns.some(({ answer, error, stopped }) => !answer && !error && !stopped);
 const isApplying = (session: ChatSession) => session.turns.some(({ answer }) => answer?.proposals.some(({ status }) => status === 'applying'));
 const conversationName = (id: number) => `Conversation ${id}`;
 const conversationTitle = (session: ChatSession) => session.title
   || truncate(session.turns[0]?.question ?? '', 80)
+  || truncate(session.turns[0]?.attachments?.[0]?.name ?? '', 80)
   || conversationName(session.id);
 const conversationActivity = (session: ChatSession) => isRunning(session) ? 'Recherche en cours' : isApplying(session) ? 'Écriture en cours' : '';
 
 const PROPOSAL_WORDS: Record<ChatProposalItem['status'], string> = { open: 'proposée', applying: 'en cours', applied: 'appliquée', ignored: 'ignorée', failed: 'échouée' };
 type ProposalTarget = { item: ChatProposalItem; index: number };
+interface AttachmentFeedback { reading?: boolean; error?: string }
+const attachmentCountError = `Tu peux joindre jusqu’à ${MAX_CHAT_ATTACHMENTS} fichiers ou liens par message.`;
 interface ChatNavigation {
   onTask: (task: Task) => void;
   onAppliedTask?: (id: string, title: string) => void;
@@ -47,6 +51,8 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
   const closeRef = useRef<HTMLButtonElement>(null);
   const focusNewPane = useRef(false);
   const requests = useRef(new Map<number, { controller: AbortController; turnId: number }>());
+  const attachmentReads = useRef(new Set<number>());
+  const [attachmentFeedback, setAttachmentFeedback] = useState<Record<number, AttachmentFeedback>>({});
   const pendingProposals = useRef(new Set<string>());
   const writeQueue = useRef<Promise<void> | null>(null);
   const lastTurnId = useRef(0);
@@ -143,33 +149,104 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
     requests.current.clear();
     pending.forEach(({ controller }) => controller.abort());
   }, []);
-  const send = async (session: ChatSession) => {
-    const text = session.draft.trim();
-    const sessionId = session.id;
-    if (!text || requests.current.has(sessionId)) return;
+  const setFeedback = (sessionId: number, feedback: AttachmentFeedback) => {
+    setAttachmentFeedback((current) => ({ ...current, [sessionId]: feedback }));
+  };
+  const appendAttachments = (session: ChatSession, incoming: ChatAttachment[]): string[] => {
+    const attachments = [...(session.draftAttachments ?? [])];
+    let bytes = attachments.reduce((total, attachment) => total + chatAttachmentBytes(attachment), 0);
+    const errors: string[] = [];
+    for (const attachment of incoming) {
+      const size = chatAttachmentBytes(attachment);
+      if (attachments.length >= MAX_CHAT_ATTACHMENTS) {
+        errors.push(attachmentCountError);
+        break;
+      }
+      if (bytes + size > MAX_CHAT_ATTACHMENT_BYTES) {
+        errors.push(`« ${attachment.name} » dépasse la taille totale de 10 Mio par message.`);
+        continue;
+      }
+      bytes += size;
+      attachments.push(attachment);
+    }
+    if (attachments.length !== (session.draftAttachments?.length ?? 0)) {
+      updateSession(session.id, (current) => ({ ...current, draftAttachments: attachments }));
+    }
+    return errors;
+  };
+  const attachFiles = async (sessionId: number, files: File[]) => {
+    const session = currentSessions.current.find(({ id }) => id === sessionId);
+    if (!session || !files.length || attachmentReads.current.has(sessionId)) return;
+    const available = MAX_CHAT_ATTACHMENTS - (session.draftAttachments?.length ?? 0);
+    if (available <= 0) {
+      setFeedback(sessionId, { error: attachmentCountError });
+      return;
+    }
+    attachmentReads.current.add(sessionId);
+    setFeedback(sessionId, { reading: true });
+    const results = await Promise.allSettled(files.slice(0, available).map((file) => readChatAttachment(file)));
+    attachmentReads.current.delete(sessionId);
+    const latest = currentSessions.current.find(({ id }) => id === sessionId);
+    if (!latest) return;
+    const readable: ChatAttachment[] = [];
+    const errors = files.length > available ? [attachmentCountError] : [];
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') readable.push(result.value);
+      else errors.push(`« ${files[index].name} » — ${(result.reason as Error).message}`);
+    });
+    errors.push(...appendAttachments(latest, readable));
+    setFeedback(sessionId, { error: errors.join(' ') });
+  };
+  const attachLink = (sessionId: number, value: string) => {
+    const session = currentSessions.current.find(({ id }) => id === sessionId);
+    if (!session || attachmentReads.current.has(sessionId)) return false;
+    try {
+      const errors = appendAttachments(session, [createChatLink(value)]);
+      setFeedback(sessionId, { error: errors.join(' ') });
+      return errors.length === 0;
+    } catch (cause) {
+      setFeedback(sessionId, { error: (cause as Error).message });
+      return false;
+    }
+  };
+  const send = async (sessionId: number, choice?: string) => {
+    const session = currentSessions.current.find(({ id }) => id === sessionId);
+    if (!session || requests.current.has(sessionId) || attachmentReads.current.has(sessionId)) return;
+    const draft = choice ?? session.draft;
+    const text = draft.trim() ? draft : '';
+    const attachments = choice === undefined && session.draftAttachments?.length ? session.draftAttachments : undefined;
+    if (!text && !attachments) return;
     const id = ++lastTurnId.current;
     const patch = (next: Partial<ChatTurn>) => onTurns(sessionId, (current) => current.map((turn) => (turn.id === id ? { ...turn, ...next } : turn)));
     // Seuls les échanges où le modèle a répondu : ni demande coupée, ni recherche locale.
-    // Les actions et ce qui était affiché d'abord : « mets-la en priorité haute », « et la deuxième ? » les désignent. shortcut: le prompt coupe le dernier message à 900 caractères et les autres à 400, donc la fin d'une très longue liste et la réponse qui la suit, à revoir si le modèle en perd le fil.
+    // Les actions et ce qui était affiché d'abord : « mets-la en priorité haute », « et la deuxième ? » les désignent.
     const history = session.turns.flatMap((turn): ChatHistoryItem[] => {
       if (!turn.answer?.usedAi || (turn.answer.usedSharedContent && !session.allowSharedContent)) return [];
-      const { proposals, tasks, documents, sharedDocuments, reply, usedSharedContent } = turn.answer;
+      const { proposals, tasks, documents, sharedDocuments, reply, usedSharedContent, question, consultedLinks } = turn.answer;
       const actions = proposals.map(({ status, proposal }) => `[${PROPOSAL_WORDS[status]}] ${proposal.label}`);
       const shown = [...tasks, ...documents, ...(sharedDocuments ?? [])].map(({ title }) => `[affiché] « ${title} »`);
       const createdTasks = proposals.flatMap(({ result, proposal }) =>
         proposal.kind === 'create_task' && result?.taskId ? [{ id: result.taskId, title: proposal.title }] : []);
-      return [{ role: 'user', text: turn.question }, {
+      return [{ role: 'user', text: turn.question, ...(turn.attachments?.length && { attachments: turn.attachments }) }, {
         role: 'assistant', text: [...actions, ...shown, reply].join('\n'), ...(usedSharedContent && { sharedContent: true }),
         ...(createdTasks.length > 0 && { createdTasks }),
+        ...(question && { question }),
+        ...(consultedLinks && { consultedLinks }),
       }];
     });
-    updateSession(sessionId, (session) => ({ ...session, draft: '', turns: [...session.turns, { id, question: text }] }));
+    updateSession(sessionId, (current) => ({
+      ...current,
+      ...(choice === undefined && { draft: '', draftAttachments: undefined }),
+      turns: [...current.turns, { id, question: text, ...(attachments && { attachments }) }],
+    }));
+    if (choice === undefined) setFeedback(sessionId, {});
     const controller = new AbortController();
     requests.current.set(sessionId, { controller, turnId: id });
     const isCurrent = () => requests.current.get(sessionId)?.controller === controller;
     try {
       const { proposals, conversationTitle: title, ...answer } = await askAssistant({ ...readAiSettings(), signal: controller.signal }, {
         text, history, projectId, categoryId, openTitle,
+        ...(attachments && { attachments }),
         ...(openEntryId && { openEntryId }),
         ...(!session.title && { needsConversationTitle: true }),
         ...(session.allowSharedContent && { allowSharedContent: true }),
@@ -217,6 +294,11 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
     const remaining = sessions.filter(({ id }) => id !== sessionId);
     const next = remaining[Math.min(index, remaining.length - 1)] ?? newSession(++lastSessionId.current);
     stop(sessionId);
+    setAttachmentFeedback((current) => {
+      const next = { ...current };
+      delete next[sessionId];
+      return next;
+    });
     setSessions(() => remaining.length ? remaining : [next]);
     if (active.id === sessionId) selectConversation(next.id);
   };
@@ -316,9 +398,15 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
               key={session.id}
               session={session}
               onFocus={() => setActiveId(session.id)}
-              onSend={() => void send(session)}
+              onSend={(choice) => void send(session.id, choice)}
               onStop={() => stop(session.id)}
               onDraft={(draft) => updateSession(session.id, (current) => ({ ...current, draft }))}
+              attachmentFeedback={attachmentFeedback[session.id]}
+              onFiles={(files) => void attachFiles(session.id, files)}
+              onLink={(value) => attachLink(session.id, value)}
+              onForget={(id) => updateSession(session.id, (current) => ({
+                ...current, draftAttachments: current.draftAttachments?.filter((attachment) => attachment.id !== id),
+              }))}
               onAllowShared={(allowSharedContent) => updateSession(session.id, (current) => ({ ...current, allowSharedContent }))}
               onApply={(turnId, targets) => apply(session.id, turnId, targets)}
               onIgnore={(turnId, index) => {
@@ -341,12 +429,19 @@ function WorkingIcon() {
   return <span className="ai-chat-working-icon" aria-hidden="true" />;
 }
 
-function ChatPane({ session, onFocus, onSend, onStop, onDraft, onAllowShared, onApply, onIgnore, onRemove, canRemove, compact, navigation }: {
+function ChatPane({
+  session, onFocus, onSend, onStop, onDraft, attachmentFeedback, onFiles, onLink, onForget,
+  onAllowShared, onApply, onIgnore, onRemove, canRemove, compact, navigation,
+}: {
   session: ChatSession;
   onFocus: () => void;
-  onSend: () => void;
+  onSend: (choice?: string) => void;
   onStop: () => void;
   onDraft: (text: string) => void;
+  attachmentFeedback?: AttachmentFeedback;
+  onFiles: (files: File[]) => void;
+  onLink: (value: string) => boolean;
+  onForget: (id: string) => void;
   onAllowShared: (allowed: boolean) => void;
   onApply: (turnId: number, targets: ProposalTarget[]) => void;
   onIgnore: (turnId: number, index: number) => void;
@@ -358,10 +453,25 @@ function ChatPane({ session, onFocus, onSend, onStop, onDraft, onAllowShared, on
   const logRef = useRef<HTMLDivElement>(null);
   const lastTurnRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
-  const { id, turns, draft, allowSharedContent } = session;
+  const filesRef = useRef<HTMLInputElement>(null);
+  const [showLink, setShowLink] = useState(false);
+  const [link, setLink] = useState('');
+  const { id, turns, draft, draftAttachments, allowSharedContent } = session;
+  const linkFieldId = `ai-chat-link-${id}`;
   const busy = isRunning(session);
   const activity = conversationActivity(session);
   const focusField = () => { if (!compact) fieldRef.current?.focus(); };
+  const reading = Boolean(attachmentFeedback?.reading);
+  const canSend = !busy && !reading && Boolean(draft.trim() || draftAttachments?.length);
+  const addLink = () => {
+    if (!onLink(link)) return;
+    setShowLink(false);
+    setLink('');
+    focusField();
+  };
+  const submit = () => {
+    if (canSend) onSend();
+  };
   useEffect(() => {
     const log = logRef.current;
     const last = lastTurnRef.current;
@@ -369,7 +479,19 @@ function ChatPane({ session, onFocus, onSend, onStop, onDraft, onAllowShared, on
   }, [turns.length, busy]);
 
   return (
-    <section className="ai-chat-pane" id={`ai-chat-pane-${id}`} data-conversation={id} aria-label={conversationName(id)} onFocusCapture={onFocus}>
+    <section className="ai-chat-pane" id={`ai-chat-pane-${id}`} data-conversation={id} aria-label={conversationName(id)} onFocusCapture={onFocus}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = reading ? 'none' : 'copy';
+      }}
+      onDrop={(event) => {
+        const files = Array.from(event.dataTransfer.files);
+        if (!files.length) return;
+        event.preventDefault();
+        onFocus();
+        onFiles(files);
+      }}>
       <header className="ai-chat-pane-header">
         <div className="ai-chat-pane-heading">
           <h3 title={conversationTitle(session)}>{conversationTitle(session)}</h3>
@@ -385,11 +507,18 @@ function ChatPane({ session, onFocus, onSend, onStop, onDraft, onAllowShared, on
             const targets = (answer?.proposals ?? []).map((item, index) => ({ item, index })).filter(({ item }) => item.status === 'open' || item.status === 'failed');
             return (
               <div className="ai-chat-turn" key={turn.id} ref={turn === turns.at(-1) ? lastTurnRef : undefined}>
-                <p className="ai-chat-bubble is-user">{turn.question}</p>
+                {turn.question && <p className="ai-chat-bubble is-user">{turn.question}</p>}
+                {turn.attachments?.length ? <ChatAttachments attachments={turn.attachments} /> : null}
                 {turn.stopped && <p className="ai-hint">Demande arrêtée.</p>}
                 {turn.error && <p className="error" role="alert">{turn.error}</p>}
                 {answer && <>
-                  <p className="ai-chat-bubble">{answer.reply}</p>
+                  {answer.reply && answer.reply !== answer.question?.text && <p className="ai-chat-bubble">{answer.reply}</p>}
+                  {answer.question && <ChatQuestionCard question={answer.question}
+                    onReply={turn === turns.at(-1) && !busy && !reading ? (choice) => {
+                      focusField();
+                      onSend(choice);
+                    } : undefined}
+                  />}
                   {answer.notice && <p className="notice">{answer.notice}</p>}
                   <ChatResults answer={answer} navigation={navigation} />
                   {answer.proposals.length > 0 && (
@@ -407,31 +536,64 @@ function ChatPane({ session, onFocus, onSend, onStop, onDraft, onAllowShared, on
               </div>
             );
           })}
-          {busy && <div className="ai-chat-working" role="status"><WorkingIcon />L’assistant cherche dans tes tâches, tes notes et tes procédures…</div>}
+          {busy && <div className="ai-chat-working" role="status"><WorkingIcon />L’assistant cherche et prépare sa réponse…</div>}
         </div>
       </div>
       <footer className="ai-chat-footer">
-        <form className="ai-chat-composer" onSubmit={(event) => { event.preventDefault(); onSend(); }}>
+        <form className="ai-chat-composer" onSubmit={(event) => { event.preventDefault(); submit(); }}>
           <textarea
             ref={fieldRef}
             aria-label="Message pour l’assistant"
-            placeholder="Ta demande…"
-            maxLength={2000}
+            placeholder={turns.at(-1)?.answer?.question ? 'Ta réponse…' : 'Ta demande…'}
+            maxLength={MAX_CHAT_MESSAGE}
             enterKeyHint="send"
             value={draft}
             onChange={(event) => onDraft(event.target.value)}
+            onPaste={(event) => {
+              const files = Array.from(event.clipboardData.files);
+              if (!files.length || reading) return;
+              if (!event.clipboardData.getData('text/plain')) event.preventDefault();
+              onFiles(files);
+            }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
               event.preventDefault();
-              onSend();
+              submit();
             }}
           />
-          {busy && <button className="ghost" type="button" aria-label="Arrêter la demande IA" onClick={() => { onStop(); focusField(); }}>Arrêter</button>}
-          <button className="task-primary" type="submit" disabled={busy || !draft.trim()}>Envoyer</button>
+          {draftAttachments?.length ? <ChatAttachments attachments={draftAttachments} onForget={onForget} /> : null}
+          {showLink && <div className="ai-chat-link" id={linkFieldId}>
+            <input aria-label="Adresse du lien" inputMode="url" placeholder="https://…" value={link} autoFocus
+              onChange={(event) => setLink(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+                event.preventDefault();
+                if (link.trim() && !reading) addLink();
+              }}
+            />
+            <button className="ghost" type="button" disabled={!link.trim() || reading} onClick={addLink}>Ajouter le lien</button>
+          </div>}
+          {reading && <p className="ai-hint ai-chat-attachment-feedback" role="status">Préparation des fichiers…</p>}
+          {attachmentFeedback?.error && <p className="error ai-chat-attachment-feedback" role="alert">{attachmentFeedback.error}</p>}
+          <div className="ai-chat-composer-actions">
+            <input type="file" hidden multiple ref={filesRef} aria-label="Fichiers à joindre"
+              onChange={(event) => {
+                onFiles(Array.from(event.target.files ?? []));
+                event.target.value = '';
+              }}
+            />
+            <button className="ghost" type="button" aria-label="Joindre des fichiers" disabled={reading}
+              title="Joindre des fichiers Word, Excel, PDF, images, texte ou code" onClick={() => filesRef.current?.click()}>Fichiers</button>
+            <button className="ghost" type="button" aria-label="Joindre un lien" aria-expanded={showLink}
+              aria-controls={showLink ? linkFieldId : undefined} onClick={() => setShowLink(!showLink)}>Lien</button>
+            <button className="task-primary" type="submit" disabled={!canSend}>Envoyer</button>
+            {busy && <button className="ghost" type="button" aria-label="Arrêter la demande IA" onClick={() => { onStop(); focusField(); }}>Arrêter</button>}
+          </div>
         </form>
         <details className="overview-ai-scope ai-chat-data">
           <summary>Données envoyées au service IA</summary>
           <p>Le service IA reçoit ta demande, les derniers échanges, ton profil, les repères du projet affiché, le nom des projets et catégories, les tâches pertinentes, le titre de la note ouverte et le début des notes utiles. Il peut lire le texte de notes et procédures locales dans une limite de taille. Pour un document Google, il reçoit le titre et la date seuls. Une recherche dans le dossier partagé lui transmet les chemins trouvés.</p>
+          <p>Les fichiers et liens que tu joins sont transmis au service IA à l’envoi et peuvent resservir dans la suite de cette conversation. Pour les fichiers texte, Word et Excel, il reçoit le texte extrait par WorkLogs.</p>
           <label className="ai-chat-content-setting">
             <input type="checkbox" checked={allowSharedContent} onChange={(event) => onAllowShared(event.target.checked)} />
             Autoriser l’envoi d’extraits des fichiers partagés dans cette conversation
@@ -441,6 +603,42 @@ function ChatPane({ session, onFocus, onSend, onStop, onDraft, onAllowShared, on
       </footer>
     </section>
   );
+}
+
+function ChatAttachments({ attachments, onForget }: { attachments: ChatAttachment[]; onForget?: (id: string) => void }) {
+  return <ul className={`ai-chat-attachments${onForget ? '' : ' is-sent'}`} aria-label={onForget ? 'Pièces jointes du brouillon' : 'Pièces jointes envoyées'}>
+    {attachments.map((attachment) => <li key={attachment.id} title={attachment.name}>
+      <span>{attachment.name}</span>
+      {'truncated' in attachment && attachment.truncated && <small>Extrait</small>}
+      {onForget && <button type="button" className="ghost" aria-label={`Retirer ${attachment.name}`} onClick={() => onForget(attachment.id)}>×</button>}
+    </li>)}
+  </ul>;
+}
+
+function ChatQuestionCard({ question, onReply }: { question: ChatQuestion; onReply?: (options: string) => void }) {
+  const [selected, setSelected] = useState<string[]>([]);
+  if (!question.options.length) return <p className="ai-chat-bubble ai-chat-question">{question.text}</p>;
+  if (!onReply) {
+    return <div className="ai-chat-bubble ai-chat-question">
+      <p>{question.text}</p>
+      <ul>{question.options.map((option) => <li key={option}>{option}</li>)}</ul>
+    </div>;
+  }
+  return <fieldset className="ai-chat-question ai-chat-poll">
+    <legend>{question.text}</legend>
+    <div className="ai-chat-poll-options">
+      {question.options.map((option) => question.multiple
+        ? <label key={option}>
+          <input type="checkbox" checked={selected.includes(option)} onChange={(event) => {
+            setSelected(event.target.checked ? [...selected, option] : selected.filter((value) => value !== option));
+          }} />
+          {option}
+        </label>
+        : <button className="ghost" type="button" key={option} onClick={() => onReply(option)}>{option}</button>)}
+    </div>
+    {question.multiple && <button className="task-primary" type="button" disabled={!selected.length}
+      onClick={() => onReply(question.options.filter((option) => selected.includes(option)).join('\n'))}>Répondre avec ces choix</button>}
+  </fieldset>;
 }
 
 function ChatResults({ answer, navigation }: { answer: NonNullable<ChatTurn['answer']>; navigation: ChatNavigation }) {

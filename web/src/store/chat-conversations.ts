@@ -1,4 +1,5 @@
 import type { ChatAnswer, ChatAppliedResult, ChatProposal } from '../ai-chat';
+import type { ChatAttachment } from '../ai-chat-attachments';
 import { createIndexedDbDatabase } from './storage';
 
 export interface ChatProposalItem {
@@ -13,6 +14,7 @@ export interface ChatProposalItem {
 export interface ChatTurn {
   id: number;
   question: string;
+  attachments?: ChatAttachment[];
   answer?: Omit<ChatAnswer, 'proposals' | 'conversationTitle'> & { proposals: ChatProposalItem[] };
   error?: string;
   stopped?: boolean;
@@ -24,6 +26,7 @@ export interface ChatSession {
   createdAt: number;
   title?: string;
   draft: string;
+  draftAttachments?: ChatAttachment[];
   turns: ChatTurn[];
   allowSharedContent: boolean;
 }

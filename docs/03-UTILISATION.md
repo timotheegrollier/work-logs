@@ -472,6 +472,23 @@ WorkLogs nomme chaque conversation d’après son sujet et le projet concerné. 
 les brouillons se retrouvent après redémarrage sur le même profil. **Effacer** supprime la
 conversation.
 
+Si l’objectif ou une contrainte importante reste à préciser, l’assistant peut poser une
+question avant de préparer sa proposition. Réponds dans le champ de message ou choisis
+une option dans le sondage. Dans un sondage à plusieurs réponses, coche les options puis
+clique sur **Répondre avec ces choix**. Chaque réponse prolonge la même conversation.
+
+**Fichiers** ajoute des pièces au brouillon. Tu peux aussi déposer des fichiers dans la
+conversation ou coller une capture depuis le presse-papiers. WorkLogs accepte les PDF,
+les documents Word (.docx), les classeurs Excel (.xlsx), les images PNG, JPEG ou WebP et
+les fichiers texte, Markdown, CSV et code. Tu peux coller directement du code dans le
+message, avec ses sauts de ligne et son indentation. **Lien** ajoute une adresse web
+publique. Avec Gemini, l’assistant peut consulter la page. Les autres services
+compatibles reçoivent l’adresse comme référence.
+
+Chaque message peut contenir jusqu’à cinq pièces et 10 Mio au total. Les pièces
+s’affichent dans le brouillon, avec un bouton pour les retirer. **Envoyer** accepte aussi
+un message composé uniquement de pièces jointes.
+
 - « Mets la tâche de contrôle en cours, donne-lui une échéance vendredi et classe-la dans Infra. »
   L’assistant peut créer, renommer, planifier et classer les tâches, changer leur priorité ou
   leur statut et les épingler. La proposition indique si les documents de référence seront
@@ -502,7 +519,10 @@ créée donne accès à sa carte et à son brouillon lié.
 Le fournisseur reçoit la demande, les derniers échanges de la conversation, le profil, le
 projet et ses repères, les catégories et des résumés des tâches, des entrées et de leurs liens.
 Quand une demande en a besoin, l’assistant peut consulter le texte d’entrées locales et les noms du partage.
-Le contenu des documents Google et des pièces jointes reste hors de cette lecture.
+Pour les documents Google associés, le fournisseur reçoit les titres et les dates.
+Les pièces jointes au chat partent à l’envoi. WorkLogs extrait le texte des fichiers
+Word, Excel et texte. La mention **Extrait** indique un contenu abrégé. Les pièces
+récentes peuvent aussi servir aux réponses suivantes de la conversation.
 
 Un message comporte jusqu’à quatre étapes IA selon les lectures nécessaires. Le plafond
 quotidien s’applique aux conversations en parallèle. Si le service est indisponible ou que

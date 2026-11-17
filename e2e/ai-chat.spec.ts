@@ -32,7 +32,9 @@ async function stubAssistant(page: Page, ...replies: (object | ((prompt: string)
   await page.route('**/chat/completions', async (route) => {
     const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
     if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    const prompt: string = route.request().postDataJSON().messages[1].content;
+    const message = route.request().postDataJSON().messages[1].content;
+    const prompt: string = typeof message === 'string' ? message
+      : message.map((part: { type: string; text?: string }) => part.type === 'text' ? part.text : `[${part.type}]`).join('\n');
     prompts.push(prompt);
     const next = replies.shift();
     const reply = typeof next === 'function' ? next(prompt) : next ?? { reply: 'Rien de plus.' };
@@ -537,6 +539,108 @@ test('l’assistant lit une procédure du partage avec accord et y crée un Word
     await cleanProject(page, request, project.id);
     await rm(folder, { recursive: true, force: true });
   }
+});
+
+test('l’assistant discute du besoin, puis reçoit les réponses aux sondages dans le même fil', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('worklogs-ai-key', 'cle-e2e'));
+  const prompts = await stubAssistant(page,
+    { reply: 'Définissons d’abord le résultat attendu.', question: { text: 'Quel est l’objectif ?' } },
+    { question: { text: 'Quels points faut-il contrôler ?', options: ['Les délais', 'La qualité', 'Les coûts'], multiple: true } },
+    { question: { text: 'Quand faut-il faire le point ?', options: ['Vendredi', 'Lundi'] } },
+    { reply: 'Je retiens un contrôle des délais et de la qualité vendredi.' },
+  );
+  await page.goto('/');
+  await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+  const chat = assistant(page);
+  const message = messageField(page);
+  await message.fill('Aide-moi à préparer le prochain contrôle.');
+  await message.press('Enter');
+  await expect(chat.getByText('Quel est l’objectif ?', { exact: true })).toBeVisible();
+  await message.fill('Préparer la reprise de l’atelier.');
+  await message.press('Enter');
+
+  const poll = chat.getByRole('group', { name: 'Quels points faut-il contrôler ?' });
+  await poll.getByRole('checkbox', { name: 'La qualité' }).check();
+  await poll.getByRole('checkbox', { name: 'Les délais' }).check();
+  expect(prompts).toHaveLength(2);
+  await poll.getByRole('button', { name: 'Répondre avec ces choix' }).click();
+  const date = chat.getByRole('group', { name: 'Quand faut-il faire le point ?' });
+  await date.getByRole('button', { name: 'Vendredi' }).click();
+  await expect(chat.getByText('Je retiens un contrôle des délais et de la qualité vendredi.')).toBeVisible();
+  expect(prompts).toHaveLength(4);
+  expect(prompts[1]).toContain('Quel est l’objectif ?');
+  expect(prompts[2]).toContain('Quels points faut-il contrôler ?');
+  expect(prompts[2]).toContain('Les délais\nLa qualité');
+  expect(prompts[3]).toContain('Quand faut-il faire le point ?');
+  expect(prompts[3]).toContain('Vendredi');
+  await expect(chat.getByRole('group', { name: 'Quand faut-il faire le point ?' })).toHaveCount(0);
+});
+
+test('sélectionne, colle et dépose des pièces, puis récupère le brouillon avant de l’envoyer', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('worklogs-ai-key', 'cle-e2e');
+    localStorage.setItem('worklogs-ai-endpoint', 'https://assistant.test/v1');
+    localStorage.setItem('worklogs-ai-model', 'modele-compatible');
+  });
+  const prompts = await stubAssistant(page, { reply: 'J’ai examiné les pièces.' }, { reply: 'Je garde le contexte.' });
+  await page.setViewportSize({ width: 375, height: 680 });
+  await page.goto('/');
+  const opener = page.locator('.project-strip').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true });
+  await opener.click();
+  const chat = assistant(page);
+  const picker = page.waitForEvent('filechooser');
+  await chat.getByRole('button', { name: 'Joindre des fichiers' }).click();
+  await (await picker).setFiles([
+    { name: 'controle.ts', mimeType: 'text/plain', buffer: Buffer.from('const limite = 12;') },
+    { name: 'retirer.txt', mimeType: 'text/plain', buffer: Buffer.from('Un texte que je retire.') },
+  ]);
+  const draftFiles = chat.getByRole('list', { name: 'Pièces jointes du brouillon' });
+  await draftFiles.getByRole('button', { name: 'Retirer retirer.txt' }).click();
+  await expect(draftFiles.getByText('controle.ts')).toBeVisible();
+
+  const fileDrop = await page.evaluateHandle(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(['Contrôler le débit.'], 'notes.md', { type: 'text/markdown' }));
+    return transfer;
+  });
+  await chat.locator('.ai-chat-pane').dispatchEvent('drop', { dataTransfer: fileDrop });
+  await expect(draftFiles.getByText('notes.md')).toBeVisible();
+  await messageField(page).evaluate((field) => {
+    const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7ePmUAAAAASUVORK5CYII='), (character) => character.charCodeAt(0));
+    const clipboard = new DataTransfer();
+    clipboard.items.add(new File([bytes], 'capture.png', { type: 'image/png' }));
+    field.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: clipboard }));
+  });
+  await expect(draftFiles.getByText('capture.png')).toBeVisible();
+
+  await chat.getByRole('button', { name: 'Joindre un lien' }).click();
+  await chat.getByRole('textbox', { name: 'Adresse du lien' }).fill('https://example.org/documentation');
+  await chat.getByRole('button', { name: 'Ajouter le lien' }).click();
+  await expect(draftFiles.getByText('https://example.org/documentation')).toBeVisible();
+  expect(prompts).toHaveLength(0);
+
+  await page.reload();
+  await opener.click();
+  const code = '  const option = {\n    balise: "<filtre>"\n  };';
+  await messageField(page).fill(code);
+  await expect(draftFiles.getByRole('listitem')).toHaveCount(4);
+  await expectNoOverflow(page);
+  await chat.getByRole('button', { name: 'Envoyer', exact: true }).click();
+  await expect(chat.getByText('J’ai examiné les pièces.')).toBeVisible();
+  const sent = chat.getByRole('list', { name: 'Pièces jointes envoyées' });
+  await expect(sent.getByRole('listitem')).toHaveCount(4);
+  await expect(draftFiles).toHaveCount(0);
+  expect(await chat.locator('.ai-chat-bubble.is-user').textContent()).toBe(code);
+  expect(prompts[0]).toContain('const limite = 12;');
+  expect(prompts[0]).toContain('Contrôler le débit.');
+  expect(prompts[0]).toContain('[image_url]');
+  expect(prompts[0]).toContain('https://example.org/documentation');
+  expect(prompts[0]).toContain(code);
+  expect(prompts[0]).not.toContain('Un texte que je retire.');
+  await messageField(page).fill('Et la limite du contrôle ?');
+  await messageField(page).press('Enter');
+  await expect(chat.getByText('Je garde le contexte.')).toBeVisible();
+  expect(prompts[1]).toContain('const limite = 12;');
 });
 
 test('en-tête avec statistiques : le bouton Assistant ne fait pas déborder la page', async ({ page, request }) => {

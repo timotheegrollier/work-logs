@@ -5997,6 +5997,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
       return diverted(input, init);
     }));
     render(<App />);
+    expect(await screen.findByLabelText('Titre de l’entrée', {}, { timeout: 5000 })).toHaveValue('Pompe');
     fireEvent.click(await aiAction(button));
     await waitFor(() => expect(finish).toBeTypeOf('function'));
     fireEvent.click(screen.getByText('Contexte utilisé par l’IA'));

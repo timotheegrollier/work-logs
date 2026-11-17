@@ -1,5 +1,5 @@
 import { getSchema, type JSONContent } from '@tiptap/core';
-import { readZip, readZipEntry, readZipText, writeZip, ZipError, type ZipAddition, type ZipArchive } from './zip';
+import { readZip, readZipEntry, readZipText, writeZip, ZipError, type ZipAddition, type ZipArchive, type ZipReadLimits } from './zip';
 import { attrNS, elements, escapeAttr, escapeText, findChild, scanXml, XmlScanError, type XmlElement } from './xml-scan';
 import { coreAuthor, isWellFormed, packageParts, partRelsPath, patchCoreProperties, relationships, resolveTarget, textOf } from './ooxml';
 import { docxExtensions, type DocxNumbering } from './docx-extensions';
@@ -427,9 +427,9 @@ function wrapError(error: unknown): never {
 }
 
 /** Lit un .docx : document pour l'éditeur, et tout ce qu'il faut pour le réécrire. */
-export async function readDocxDocument(bytes: Uint8Array): Promise<DocxDocument> {
+export async function readDocxDocument(bytes: Uint8Array, limits?: ZipReadLimits): Promise<DocxDocument> {
   try {
-    const archive = readZip(bytes);
+    const archive = readZip(bytes, limits);
     const { mainPart, corePart } = await packageParts(archive, 'word/document.xml');
     const xml = await readZipText(archive, mainPart);
     if (xml === null) throw new FormatError('Ce fichier n’est pas un document Word (.docx) : contenu principal absent.');

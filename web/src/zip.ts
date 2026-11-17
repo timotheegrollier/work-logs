@@ -33,6 +33,15 @@ export interface ZipArchive {
   byName: Map<string, ZipEntry>;
   /** Fin du répertoire central (commentaire compris), recopiée telle quelle. */
   eocd: Uint8Array;
+  /** Pour une lecture bornée, taille cumulée restante et plafond de chaque entrée. */
+  expansion?: { remaining: number; entry: number };
+}
+
+export interface ZipReadLimits {
+  archive: number;
+  entries: number;
+  entry: number;
+  expanded?: number;
 }
 
 export const ZIP_LIMITS = {
@@ -52,7 +61,7 @@ const view = (bytes: Uint8Array) => new DataView(bytes.buffer, bytes.byteOffset,
 /** Un ancien .doc/.xls (OLE) ou un fichier protégé par mot de passe commence ainsi. */
 const isOle = (bytes: Uint8Array) => bytes.length >= 8 && bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0;
 
-export function readZip(bytes: Uint8Array, limits = ZIP_LIMITS): ZipArchive {
+export function readZip(bytes: Uint8Array, limits: ZipReadLimits = ZIP_LIMITS): ZipArchive {
   if (isOle(bytes)) throw new ZipError('Fichier protégé par mot de passe, ou ancien format Office (.doc, .xls) : WorkLogs ne sait pas l’ouvrir.');
   if (bytes.length > limits.archive) throw new ZipError('Archive trop volumineuse.');
   const data = view(bytes);
@@ -103,7 +112,10 @@ export function readZip(bytes: Uint8Array, limits = ZIP_LIMITS): ZipArchive {
     byName.set(name, entry);
     at += recordLength;
   }
-  return { bytes, entries, byName, eocd: bytes.subarray(end) };
+  return {
+    bytes, entries, byName, eocd: bytes.subarray(end),
+    ...(limits.expanded !== undefined && { expansion: { remaining: limits.expanded, entry: limits.entry } }),
+  };
 }
 
 async function pipe(data: Uint8Array, transform: TransformStream<Uint8Array, Uint8Array>, limit: number): Promise<Uint8Array> {
@@ -131,11 +143,21 @@ const deflate = (data: Uint8Array) =>
   pipe(data, new CompressionStream('deflate-raw') as unknown as TransformStream<Uint8Array, Uint8Array>, Number.MAX_SAFE_INTEGER);
 
 export async function readZipEntry(archive: ZipArchive, entry: ZipEntry, limit = ZIP_LIMITS.entry): Promise<Uint8Array> {
+  const budget = archive.expansion;
+  if (budget) limit = Math.min(limit, budget.entry, budget.remaining);
   if (entry.size > limit) throw new ZipError('Contenu trop volumineux.');
   const raw = archive.bytes.subarray(entry.dataStart, entry.dataStart + entry.compressed);
-  if (entry.method === 0) return raw.slice(0, limit);
-  if (entry.method === 8) return inflate(raw, limit);
-  throw new ZipError('Archive compressée d’une façon inconnue.');
+  let result: Uint8Array;
+  if (entry.method === 0) {
+    if (budget && raw.length > limit) throw new ZipError('Contenu trop volumineux.');
+    result = raw.slice(0, limit);
+  } else if (entry.method === 8) result = await inflate(raw, limit);
+  else throw new ZipError('Archive compressée d’une façon inconnue.');
+  if (budget) {
+    if (result.length > budget.remaining) throw new ZipError('Contenu trop volumineux.');
+    budget.remaining -= result.length;
+  }
+  return result;
 }
 
 export async function readZipText(archive: ZipArchive, name: string, limit = ZIP_LIMITS.entry): Promise<string | null> {

@@ -3594,3 +3594,26 @@ dans le profil local de l’application ou du navigateur. **Effacer** supprime l
 de l’historique local. Le titre est demandé dans la réponse normale de l’assistant et se fixe
 dès que le sujet est identifiable. Après réouverture, les réponses et les résultats des
 propositions restent disponibles. Une demande interrompue s’affiche comme arrêtée.
+
+## 86. L’assistant précise l’objectif et accepte les pièces jointes
+
+L’assistant peut poser une question ouverte ou proposer un sondage à choix unique ou
+multiples. Les choix et les réponses libres forment des messages de la conversation.
+Le modèle reçoit la question avec ses options à la suite, ainsi que l’objectif initial
+lorsqu’il sort des derniers échanges. Une demande de clarification suspend les propositions
+d’écriture du tour. Les écritures du journal restent validées au clic.
+
+Le brouillon et les messages conservent leurs pièces dans la même base IndexedDB.
+Les pièces récentes peuvent être reprises dans la conversation, avec priorité au message
+en cours. WorkLogs transmet jusqu’à cinq pièces et 10 Mio de données par tour. Pour Word,
+Excel, le texte et le code, il envoie un extrait préparé sur l’appareil. Les images et les
+PDF sont envoyés au service configuré. Sur Gemini, les PDF utilisent l’entrée native.
+[Documentation Gemini sur les PDF](https://ai.google.dev/gemini-api/docs/generate-content/document-processing)
+Les fournisseurs compatibles avec Chat Completions reçoivent les images et PDF comme
+parties du message, selon les capacités du modèle.
+
+Gemini peut consulter un lien ajouté explicitement. Cet appel reçoit les adresses jointes
+seules et utilise le quota du chat. WorkLogs transmet au tour principal les extraits des
+pages dont le fournisseur confirme la lecture et les conserve pour la conversation.
+Un lien privé ou inaccessible peut être fourni sous forme de fichier texte ou PDF.
+[Documentation Gemini sur URL Context](https://ai.google.dev/gemini-api/docs/generate-content/url-context)

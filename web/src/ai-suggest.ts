@@ -2,11 +2,12 @@
  * Assistance IA avec une clé personnelle ; seul le suivi activé explicitement
  * peut se réactualiser après enregistrement.
  *
- * Un seul client générique compatible OpenAI (`POST {endpoint}/chat/completions`,
- * `Authorization: Bearer <clé>`) : il parle aussi bien à OpenAI qu'à la clé
+ * Le client compatible OpenAI (`POST {endpoint}/chat/completions`,
+ * `Authorization: Bearer <clé>`) parle aussi bien à OpenAI qu'à la clé
  * gratuite d'AI Studio via l'endpoint OpenAI-compatible de Gemini
  * (`https://generativelanguage.googleapis.com/v1beta/openai`, modèle
- * `gemini-3-flash-preview` par défaut, chaîne de secours sur les autres modèles gratuits). Aucune dépendance, `fetch` natif.
+ * `gemini-3-flash-preview` par défaut, chaîne de secours sur les autres modèles gratuits).
+ * Les PDF Gemini et la consultation de liens utilisent generateContent.
  */
 
 export interface AiSettings {
@@ -406,6 +407,39 @@ async function providerDetail(res: Response): Promise<string> {
   }
 }
 
+export interface AiMediaInput {
+  name: string;
+  mimeType: string;
+  data: string;
+}
+
+interface CompletionOptions {
+  effort?: 'minimal' | 'low';
+  only?: boolean;
+  media?: readonly AiMediaInput[];
+  onUrlsRead?: (urls: string[]) => void;
+}
+
+function chatMedia({ name, mimeType, data }: AiMediaInput) {
+  const url = `data:${mimeType};base64,${data}`;
+  return mimeType === 'application/pdf'
+    ? { type: 'file', file: { filename: name, file_data: url } }
+    : { type: 'image_url', image_url: { url } };
+}
+
+function geminiUrls(candidate: {
+  urlContextMetadata?: { urlMetadata?: { retrievedUrl?: string; urlRetrievalStatus?: string }[] };
+  url_context_metadata?: { url_metadata?: { retrieved_url?: string; url_retrieval_status?: string }[] };
+} | undefined): string[] {
+  const camel = candidate?.urlContextMetadata?.urlMetadata;
+  const snake = candidate?.url_context_metadata?.url_metadata;
+  if (Array.isArray(camel)) return camel.flatMap((item) =>
+    item?.urlRetrievalStatus === 'URL_RETRIEVAL_STATUS_SUCCESS' && typeof item.retrievedUrl === 'string' ? [item.retrievedUrl] : []);
+  if (Array.isArray(snake)) return snake.flatMap((item) =>
+    item?.url_retrieval_status === 'URL_RETRIEVAL_STATUS_SUCCESS' && typeof item.retrieved_url === 'string' ? [item.retrieved_url] : []);
+  return [];
+}
+
 /**
  * Une demande explicite ou un suivi automatique activé = un appel, jamais de boucle.
  * Sur l'endpoint Gemini, si le modèle choisi est saturé (503…) ou ne répond pas à
@@ -420,7 +454,7 @@ export async function postChatCompletions(
   user: string,
   maxTokens: number,
   timeoutMs: number,
-  options: { effort?: 'minimal' | 'low'; only?: boolean } = {}
+  options: CompletionOptions = {}
 ): Promise<string> {
   const key = settings.key.trim();
   if (!key) throw new AiError(`Colle ta clé IA dans ⚙ Paramètres pour activer ${feature}.`);
@@ -434,7 +468,7 @@ export async function postChatCompletions(
   // Un autre fournisseur n'a pas ces modèles, et « only » veut juger celui-là : un seul essai.
   if (options.only || !GEMINI_ENDPOINT.test(settings.endpoint.trim())) {
     stopped();
-    const content = await postOnce(settings, model, key, system, user, maxTokens, timeoutMs, options.effort).catch((e: unknown) => {
+    const content = await postOnce(settings, model, key, system, user, maxTokens, timeoutMs, options).catch((e: unknown) => {
       stopped();
       throw e;
     });
@@ -460,7 +494,7 @@ export async function postChatCompletions(
     const remaining = deadline - Date.now();
     if (remaining < slice / 2) break;
     try {
-      const content = await postOnce(settings, candidate, key, system, user, maxTokens, Math.min(remaining, slice), options.effort);
+      const content = await postOnce(settings, candidate, key, system, user, maxTokens, Math.min(remaining, slice), options);
       stopped();
       preferred = candidate === model ? null : { chosen: model, model: candidate, until: Date.now() + PREFERRED_MS };
       return content;
@@ -488,12 +522,14 @@ async function postOnce(
   user: string,
   maxTokens: number,
   timeoutMs: number,
-  effort?: 'minimal' | 'low'
+  options: CompletionOptions
 ): Promise<string> {
-  const reservation = reserveAiRequest(Boolean(settings.background), estimateTokens(system + user) + maxTokens);
+  const mediaTokens = options.media?.reduce((sum, { mimeType, data }) =>
+    sum + (mimeType === 'application/pdf' ? Math.max(1024, Math.ceil(data.length / 2048)) : 512), 0) ?? 0;
+  const reservation = reserveAiRequest(Boolean(settings.background), estimateTokens(system + user) + mediaTokens + maxTokens);
   if ('reason' in reservation) throw new (reservation.temporary ? AiError : AiBudgetError)(reservation.reason);
   try {
-    return await postReserved(settings, model, key, system, user, maxTokens, timeoutMs, effort);
+    return await postReserved(settings, model, key, system, user, maxTokens, timeoutMs, options, mediaTokens);
   } finally {
     reservation.release();
   }
@@ -507,37 +543,57 @@ async function postReserved(
   user: string,
   maxTokens: number,
   timeoutMs: number,
-  effort?: 'minimal' | 'low'
+  options: CompletionOptions,
+  mediaTokens: number
 ): Promise<string> {
   const background = Boolean(settings.background);
+  const endpoint = settings.endpoint.trim().replace(/\/+$/, '');
   const gemini = GEMINI_ENDPOINT.test(settings.endpoint.trim());
+  const { effort, media = [], onUrlsRead } = options;
+  const native = gemini && (onUrlsRead || media.some(({ mimeType }) => mimeType === 'application/pdf'));
   // « none » coupe la réflexion des 2.5 Flash ; 2.5 Pro ne la coupe pas, « minimal » la réduit.
-  const reasoning = !gemini || !effort || effortRefused.has(model) ? undefined
+  const reasoning = !gemini || native || !effort || effortRefused.has(model) ? undefined
     : effort === 'minimal' && model.startsWith('gemini-2.5-flash') ? 'none' : effort;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (native) headers['x-goog-api-key'] = key;
+  else headers.Authorization = `Bearer ${key}`;
+  const request = native ? {
+    url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.replace(/^models\//, ''))}:generateContent`,
+    body: {
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: user }, ...media.map(({ mimeType, data }) => ({ inlineData: { mimeType, data } }))] }],
+      generationConfig: { temperature: 0.4, maxOutputTokens: maxTokens },
+      ...(onUrlsRead && { tools: [{ url_context: {} }] }),
+    },
+  } : {
+    url: `${endpoint}/chat/completions`,
+    body: {
+      model,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: media.length ? [{ type: 'text', text: user }, ...media.map(chatMedia)] : user },
+      ],
+      temperature: 0.4,
+      max_tokens: maxTokens,
+      ...(reasoning && { reasoning_effort: reasoning }),
+    },
+  };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const stop = () => controller.abort();
   settings.signal?.addEventListener('abort', stop);
   let res: Response;
   try {
-    res = await fetch(`${settings.endpoint.trim().replace(/\/+$/, '')}/chat/completions`, {
+    res = await fetch(request.url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-        temperature: 0.4,
-        max_tokens: maxTokens,
-        ...(reasoning && { reasoning_effort: reasoning }),
-      }),
+      headers,
+      body: JSON.stringify(request.body),
+      ...(native && { redirect: 'error' }),
       signal: controller.signal,
     });
   } catch {
     // Abandon après envoi : le fournisseur a pu traiter la demande.
-    if (controller.signal.aborted) recordAiUsage(estimateTokens(system + user), background);
+    if (controller.signal.aborted) recordAiUsage(estimateTokens(system + user) + mediaTokens, background);
     if (settings.signal?.aborted) throw new AiCancelled();
     // Délai dépassé ≠ hors ligne : le message « injoignable » accusait à tort la connexion.
     if (controller.signal.aborted) throw new AiTryNext(OVERLOADED_MESSAGE, true);
@@ -564,7 +620,7 @@ async function postReserved(
     if (res.status === 400 && reasoning) {
       effortRefused.add(model);
       if (settings.signal?.aborted) throw new AiCancelled();
-      return postReserved(settings, model, key, system, user, maxTokens, timeoutMs);
+      return postReserved(settings, model, key, system, user, maxTokens, timeoutMs, { ...options, effort: undefined }, mediaTokens);
     }
     // 404 : modèle absent pour cette clé ; le suivant a sa chance.
     throw new (res.status === 404 ? AiTryNext : AiError)(
@@ -575,15 +631,21 @@ async function postReserved(
   }
   const body = await res.json().catch(() => null);
   const choice = body?.choices?.[0];
-  const content = choice?.message?.content;
-  const total = body?.usage?.total_tokens;
-  recordAiUsage(typeof total === 'number' && total > 0 ? total : estimateTokens(system + user + (typeof content === 'string' ? content : '')), background);
+  const candidate = body?.candidates?.[0];
+  const parts = candidate?.content?.parts;
+  const content = native ? (Array.isArray(parts) ? parts.flatMap((part) =>
+    !part?.thought && typeof part?.text === 'string' ? [part.text] : []).join('') : '')
+    : choice?.message?.content;
+  const total = native ? body?.usageMetadata?.totalTokenCount : body?.usage?.total_tokens;
+  const finish = native ? candidate?.finishReason : choice?.finish_reason;
+  recordAiUsage(typeof total === 'number' && total > 0 ? total : estimateTokens(system + user + (typeof content === 'string' ? content : '')) + mediaTokens, background);
   // Avant le contenu vide : un blocage peut n'avoir aucun texte, et « réessaie » serait faux.
-  if (choice?.finish_reason === 'content_filter') throw new AiTryNext('Réponse IA bloquée par le filtre du fournisseur : reformule ou retire le passage concerné.', false, true, true);
+  if (finish === 'content_filter' || finish === 'SAFETY' || body?.promptFeedback?.blockReason) throw new AiTryNext('Réponse IA bloquée par le filtre du fournisseur : reformule ou retire le passage concerné.', false, true, true);
   if (typeof content !== 'string' || !content.trim()) throw new AiTryNext('Réponse IA illisible : réessaie.', false, false, true);
   // Budget de jetons épuisé : la rendre ferait passer une réponse coupée pour complète.
   // Pas de modèle suivant : il aurait le même budget.
-  if (choice.finish_reason === 'length') throw new AiError('Réponse IA coupée avant la fin : réessaie, ou raccourcis le texte.');
+  if (finish === 'length' || finish === 'MAX_TOKENS') throw new AiError('Réponse IA coupée avant la fin : réessaie, ou raccourcis le texte.');
+  onUrlsRead?.(geminiUrls(candidate));
   return content;
 }
 

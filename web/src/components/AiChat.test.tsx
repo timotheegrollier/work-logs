@@ -6,7 +6,11 @@ import { AiCancelled } from '../ai-suggest';
 import type { EntrySummary, Task } from '../lib';
 import { AiChat } from './AiChat';
 
-vi.mock('../ai-chat', () => ({ askAssistant: vi.fn(), applyChatProposal: vi.fn() }));
+vi.mock('../ai-chat', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../ai-chat')>(),
+  askAssistant: vi.fn(),
+  applyChatProposal: vi.fn(),
+}));
 const ask = vi.mocked(askAssistant);
 const applyProposal = vi.mocked(applyChatProposal);
 
@@ -102,6 +106,27 @@ describe('assistant : conversation', () => {
     fireEvent.keyDown(field(), { key: 'Enter', isComposing: true });
     expect(ask).not.toHaveBeenCalled();
     expect(field()).toHaveValue('にほん');
+  });
+
+  test('Envoie une pièce seule et signale une adresse invalide avant de l’ajouter', async () => {
+    render(<Host />);
+    fireEvent.click(chat().getByRole('button', { name: 'Joindre un lien' }));
+    const link = chat().getByRole('textbox', { name: 'Adresse du lien' });
+    fireEvent.change(link, { target: { value: 'file:///etc/passwd' } });
+    fireEvent.keyDown(link, { key: 'Enter' });
+    expect(chat().getByRole('alert')).toBeInTheDocument();
+    expect(ask).not.toHaveBeenCalled();
+    fireEvent.change(link, { target: { value: 'https://example.org/guide' } });
+    fireEvent.keyDown(link, { key: 'Enter' });
+    expect(chat().queryByRole('alert')).not.toBeInTheDocument();
+    const response = answer();
+    ask.mockResolvedValueOnce(response);
+    fireEvent.click(chat().getByRole('button', { name: 'Envoyer' }));
+    await chat().findByText(response.reply);
+    expect(ask.mock.calls[0][1]).toMatchObject({
+      text: '',
+      attachments: [{ kind: 'link', name: 'https://example.org/guide' }],
+    });
   });
 
   test('le titre proposé pour le sujet s’affiche dans la liste et reste stable', async () => {

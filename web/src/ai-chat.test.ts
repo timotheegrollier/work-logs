@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { pacificDay } from './ai-budget';
-import { applyChatProposal, askAssistant, type ChatProposal } from './ai-chat';
+import { pacificDay, readAiUsage, recordAiUsage, saveDailyLimit } from './ai-budget';
+import { applyChatProposal, askAssistant, MAX_CHAT_MESSAGE, type ChatProposal } from './ai-chat';
+import { createChatLink, MAX_CHAT_ATTACHMENTS, type ChatAttachment } from './ai-chat-attachments';
 import { saveProjectAiBrief } from './ai-context';
 import { AiCancelled, DEFAULT_AI_ENDPOINT, DEFAULT_AI_MODEL, localToday, resetAiFallbackMemory } from './ai-suggest';
 import { Autosave, discardPendingSaves } from './autosave';
@@ -66,6 +67,123 @@ const lines = (prompt: string, heading: string) => (prompt.split('\n\n').find((p
 const titles = (prompt: string, heading = 'Tâches') => lines(prompt, heading).map((line) => line.replace(/^\d+\. /, '').replace(/ \[.*$/, ''));
 const ask = (input: Partial<Parameters<typeof askAssistant>[1]> = {}, options = settings) => askAssistant(options, { text: 'bonjour', history: [], projectId: '', ...input });
 const json = (value: unknown) => JSON.stringify(value);
+
+describe('pièces jointes de la conversation', () => {
+  test('garde le code collé et les fichiers récents, en donnant la priorité aux nouvelles pièces', async () => {
+    mockState();
+    const calls = stubAi(json({ reply: 'Vu.' }));
+    const recent: ChatAttachment[] = Array.from({ length: MAX_CHAT_ATTACHMENTS }, (_, index) => ({
+      id: `f${index}`, kind: 'text', name: `f${index}.txt`, text: `source ${index}`,
+    }));
+    const code = 'def surface():\n    return 12 * 8';
+    const pasted = '    premier_niveau()\n        suivant()';
+    await ask({
+      text: pasted,
+      history: recent.map((attachment, index) => ({ role: 'user', text: index === recent.length - 1 ? pasted : 'Pièce jointe précédente', attachments: [attachment] })),
+      attachments: [{ id: 'code', kind: 'text', name: 'surface.py', text: code }],
+    });
+    const prompt = user(calls[0]);
+    const manifest = JSON.parse(lines(prompt, 'Pièces jointes du chat')[0]);
+    expect(manifest).toHaveLength(MAX_CHAT_ATTACHMENTS);
+    expect(manifest[0]).toEqual({ name: 'surface.py', type: 'text', text: code });
+    expect(manifest[1]).toEqual({ name: `f${MAX_CHAT_ATTACHMENTS - 1}.txt`, type: 'text', previous: true, text: `source ${MAX_CHAT_ATTACHMENTS - 1}` });
+    expect(manifest.map(({ name }: { name: string }) => name)).not.toContain('f0.txt');
+    expect(prompt).toContain(`Demande :\n${pasted}`);
+    expect(lines(prompt, 'Échanges précédents').at(-1)).toBe(`Utilisateur : ${json(pasted)}`);
+  });
+
+  test('transmet une image et un PDF récupéré de la conversation dans un format compatible', async () => {
+    mockState();
+    const calls = stubAi(json({ reply: 'Image et PDF lus.' }));
+    const pdf: ChatAttachment = { id: 'pdf', name: 'guide.pdf', kind: 'pdf', file: new Blob(['%PDF-'], { type: 'application/pdf' }) };
+    const image: ChatAttachment = { id: 'photo', name: 'atelier.png', kind: 'image', file: new Blob(['PNG'], { type: 'image/png' }) };
+    await expect(ask({ text: '', attachments: [image], history: [{ role: 'user', text: '', attachments: [pdf] }] })).resolves.toMatchObject({ usedAi: true });
+    expect(user(calls[0])).toEqual([
+      { type: 'text', text: expect.stringContaining('Si mon objectif reste indéterminé') },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,UE5H' } },
+      { type: 'file', file: { filename: 'guide.pdf', file_data: 'data:application/pdf;base64,JVBERi0=' } },
+    ]);
+  });
+
+  test('envoie les PDF à Gemini en inlineData et compte les jetons renvoyés', async () => {
+    mockState();
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({
+      candidates: [{ content: { parts: [{ text: 'réflexion interne', thought: true }, { text: json({ reply: 'PDF lu.' }) }] }, finishReason: 'STOP' }],
+      usageMetadata: { totalTokenCount: 3210 },
+    }));
+    vi.stubGlobal('fetch', fetch);
+    const pdf: ChatAttachment = { id: 'rapport', kind: 'pdf', name: 'rapport.pdf', file: new Blob(['%PDF-'], { type: 'application/pdf' }) };
+    await expect(ask({ attachments: [pdf] }, { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL })).resolves.toMatchObject({ reply: 'PDF lu.' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, request] = fetch.mock.calls[0];
+    expect(url).toBe(`https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_AI_MODEL}:generateContent`);
+    expect(request.headers).toMatchObject({ 'x-goog-api-key': settings.key });
+    const body = JSON.parse(request.body as string);
+    expect(body.contents[0].parts).toEqual([
+      { text: expect.stringContaining('rapport.pdf') },
+      { inlineData: { mimeType: 'application/pdf', data: 'JVBERi0=' } },
+    ]);
+    expect(readAiUsage()).toMatchObject({ requests: 1, tokens: 3210 });
+  });
+
+  test('consulte seulement les liens joints et signale les pages dont la lecture a échoué', async () => {
+    mockState({ projects: [project('p1', 'Projet personnel')] });
+    const first = createChatLink('https://example.com/guide');
+    const second = createChatLink('https://example.org/guide');
+    const fetch = vi.fn(async (url: string, _init: RequestInit) => url.includes(':generateContent')
+      ? Response.json({
+        candidates: [{
+          content: { parts: [{ text: json({ sources: [
+            { url: first.text, text: 'Le guide décrit la pompe doseuse.' },
+            { url: second.text, text: 'Détail inventé sur le deuxième guide.' },
+          ] }) }] },
+          urlContextMetadata: { urlMetadata: [
+            { retrievedUrl: first.text, urlRetrievalStatus: 'URL_RETRIEVAL_STATUS_SUCCESS' },
+            { retrievedUrl: second.text, urlRetrievalStatus: 'URL_RETRIEVAL_STATUS_ERROR' },
+          ] },
+        }],
+      })
+      : aiResponse(json({ reply: 'Le premier guide décrit la pompe doseuse.' })));
+    vi.stubGlobal('fetch', fetch);
+    const result = await ask({
+      text: 'Compare les deux guides et ignore https://example.net/dossier.',
+      attachments: [first, second],
+    }, { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL });
+    expect(result.notice).toContain(second.text);
+    expect(result.reply).toContain('pompe doseuse');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const linkRequest = JSON.parse(fetch.mock.calls[0][1].body as string);
+    expect(linkRequest.tools).toEqual([{ url_context: {} }]);
+    expect(linkRequest.contents[0].parts).toEqual([{ text: [first.text, second.text].join('\n') }]);
+    expect(JSON.stringify(linkRequest)).not.toContain('Projet personnel');
+    expect(JSON.stringify(linkRequest)).not.toContain('example.net');
+    const chatRequest = JSON.parse(fetch.mock.calls[1][1].body as string);
+    expect(chatRequest.tools).toBeUndefined();
+    expect(user(chatRequest)).toContain('Le guide décrit la pompe doseuse.');
+    expect(user(chatRequest)).not.toContain('Détail inventé');
+
+    await ask({ text: 'Peux-tu détailler le premier ?', history: [
+      { role: 'user', text: '', attachments: [first, second] },
+      { role: 'assistant', text: result.reply, consultedLinks: result.consultedLinks },
+    ] }, { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch.mock.calls[2][0]).toContain('/chat/completions');
+    expect(user(JSON.parse(fetch.mock.calls[2][1].body as string))).toContain('Le guide décrit la pompe doseuse.');
+  });
+
+  test('garde la dernière requête quotidienne pour répondre lorsque le message joint un lien', async () => {
+    mockState();
+    saveDailyLimit(10);
+    for (let count = 0; count < 9; count++) recordAiUsage(20, false);
+    const calls = stubAi(json({ reply: 'Je peux travailler à partir du lien.' }));
+    const attachment = createChatLink('https://example.com/guide');
+    const result = await ask({ attachments: [attachment] }, { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL });
+    expect(calls).toHaveLength(1);
+    expect(user(calls[0])).toContain(attachment.text);
+    expect(result.usedAi).toBe(true);
+    expect(result.notice).toContain('quota restant');
+  });
+});
 
 describe('lecture locale et classement', () => {
   test('relie la tâche créée dans la conversation à son entrée, même après un renommage', async () => {
@@ -228,7 +346,7 @@ describe('lecture locale et classement', () => {
     expect(calls.map((call) => titles(user(call), 'Documents'))).toEqual(Array(10).fill(['note | Surpresseur : notice | 2026-10-21']));
   });
 
-  test('prompt borné sous 18 000 caractères sur 60 tâches et 30 projets aux noms de 40 caractères, chaque champ coupé à sa limite', async () => {
+  test('prompt borné sur 60 tâches et 30 projets aux noms de 40 caractères, chaque champ coupé à sa limite', async () => {
     saveProjectAiBrief('p1', 'R'.repeat(2000));
     const entries = Array.from({ length: 20 }, (_, index) => entry(`e${index}`, { title: `Remplacer ${index} `.repeat(30), excerpt: 'mot '.repeat(100) }));
     mockState({
@@ -242,11 +360,11 @@ describe('lecture locale et classement', () => {
     });
     const calls = stubAi('{"reply":"Vu."}');
     await ask({
-      text: `remplacer ${'x'.repeat(5000)}`, projectId: 'p1', openTitle: 'T'.repeat(500),
+      text: `remplacer ${'x'.repeat(MAX_CHAT_MESSAGE)}`, projectId: 'p1', openTitle: 'T'.repeat(500),
       history: Array.from({ length: 12 }, (_, index) => ({ role: index % 2 ? 'assistant' as const : 'user' as const, text: `h${index} ${'y'.repeat(1000)}` })),
     }, { ...settings, profile: 'P'.repeat(3000) });
     const prompt = user(calls[0]);
-    expect(system(calls[0]).length + prompt.length).toBeLessThan(18_000);
+    expect(system(calls[0]).length + prompt.length - MAX_CHAT_MESSAGE).toBeLessThan(17_000);
     expect(lines(prompt, 'Projets')).toHaveLength(30);
     expect(titles(prompt)).toHaveLength(50);
     expect(titles(prompt).every((title) => title.length <= 60)).toBe(true);
@@ -255,11 +373,12 @@ describe('lecture locale et classement', () => {
     expect(documents.every((line) => line.split(' | ')[3].length <= 200)).toBe(true);
     expect(prompt).toContain(`Profil : ${'P'.repeat(299)}…`);
     expect(prompt).toContain(`Repères du projet affiché : ${'R'.repeat(499)}…`);
-    expect(prompt.match(/h\d+ /g)).toEqual(['h6 ', 'h7 ', 'h8 ', 'h9 ', 'h10 ', 'h11 ']);
+    expect(prompt).toContain(`Objectif initial : h0 ${'y'.repeat(496)}…`);
     const exchanges = lines(prompt, 'Échanges précédents');
+    expect(exchanges.join('\n').match(/h\d+ /g)).toEqual(['h6 ', 'h7 ', 'h8 ', 'h9 ', 'h10 ', 'h11 ']);
     expect(exchanges.slice(0, -1).every((line) => line.length <= 400 + 'Utilisateur : '.length)).toBe(true);
     expect(exchanges.at(-1)).toHaveLength(900 + 'Assistant : '.length);
-    expect(lines(prompt, 'Demande')[0]).toHaveLength(2000);
+    expect(lines(prompt, 'Demande')[0]).toHaveLength(MAX_CHAT_MESSAGE);
   });
 
   test('derrière une longue liste affichée, le modèle garde sa dernière réponse', async () => {
@@ -269,6 +388,7 @@ describe('lecture locale et classement', () => {
     const reply = 'La plus urgente est la pompe : le client attend jeudi.';
     await ask({ text: 'Pourquoi ?', history: [{ role: 'user', text: 'Quoi d’abord ?' }, { role: 'assistant', text: `${listed}\n${reply}` }] });
     expect(lines(user(calls[0]), 'Échanges précédents').at(-1)).toContain(reply);
+    expect(user(calls[0])).not.toContain('Objectif initial');
   });
 
   test('30 projets au plus, le projet affiché d’abord, et une tâche d’un projet non listé ne se dit pas sans projet', async () => {
@@ -457,6 +577,55 @@ describe('appels au modèle', () => {
 });
 
 describe('réponse du modèle', () => {
+  test('une question ouverte est une réponse à part entière et arrête la recherche et les propositions du tour', async () => {
+    const state = mockState({ tasks: [task('t1', { title: 'Projet annuel' })] });
+    const calls = stubAi(json({
+      question: { text: ' Quel est ton objectif\n pour ce projet ? ', options: [] },
+      search: ['vanne'], actions: [{ kind: 'create_task', title: 'Préparer le projet' }], show_tasks: [1],
+    }));
+    const answer = await ask();
+    expect(answer).toMatchObject({
+      reply: '', question: { text: 'Quel est ton objectif pour ce projet ?', options: [] },
+      proposals: [], tasks: [{ id: 't1' }], usedAi: true,
+    });
+    expect(calls).toHaveLength(1);
+    expect(state).not.toHaveBeenCalledWith('vanne');
+    expect(system(calls[0])).toContain('Reprends les réponses et décisions précédentes.');
+  });
+
+  test('les choix du sondage restent disponibles quand le modèle reprend la réponse de l’utilisateur', async () => {
+    mockState();
+    const label = 'Quels livrables veux-tu préparer ?';
+    const calls = stubAi(
+      json({ reply: 'On peut adapter la suite.', question: { text: label, options: [' Checklist ', 'checklist', false, 'Note de synthèse', 'x'.repeat(101)], multiple: true } }),
+      json({ reply: 'Voici les deux livrables.', actions: [{ kind: 'create_note', title: 'Checklist' }, { kind: 'create_note', title: 'Note de synthèse' }] }),
+    );
+    const first = await ask({ text: 'Aide-moi à préparer la revue de l’année.' });
+    expect(first.question).toEqual({ text: label, options: ['Checklist', 'Note de synthèse'], multiple: true });
+
+    const next = await ask({ text: 'Les deux', history: [
+      { role: 'user', text: 'Aide-moi à préparer la revue de l’année.' },
+      { role: 'assistant', text: first.reply, question: first.question },
+    ] });
+    const prompt = user(calls[1]);
+    expect(prompt).toContain(`Question posée : ${label} Choix multiples : ["Checklist","Note de synthèse"]`);
+    expect(prompt).toContain('Demande :\nLes deux');
+    expect(next.question).toBeUndefined();
+    expect(next.proposals.map(({ title }) => title)).toEqual(['Checklist', 'Note de synthèse']);
+  });
+
+  test('un sondage sans choix distincts devient une question ouverte et un intitulé invalide est écarté', async () => {
+    mockState();
+    stubAi(
+      json({ question: { text: 'Quelle date ?', options: ['Lundi', ' lundi ', {}, ' '], multiple: true } }),
+      json({ reply: 'Bonjour.', question: { text: 'x'.repeat(301), options: ['Lundi', 'Mardi'] } }),
+    );
+    expect((await ask()).question).toEqual({ text: 'Quelle date ?', options: [] });
+    const answer = await ask();
+    expect(answer.reply).toBe('Bonjour.');
+    expect(answer).not.toHaveProperty('question');
+  });
+
   test('demande un titre de sujet et de projet dans la même réponse, seulement si la conversation attend un titre', async () => {
     mockState({ projects: [project('p1', 'Serre')] });
     const calls = stubAi(
