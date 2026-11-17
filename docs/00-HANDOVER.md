@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Questions, sondages et pièces jointes dans l’assistant — 2026-11-17 (§86)
+## Questions, sondages et pièces jointes dans l’assistant — 2026-11-17, v0.80.0 (§86)
 
 - L’assistant peut préciser l’objectif avec une question ouverte ou un sondage. Une réponse
   libre ou un choix poursuit la conversation. L’objectif initial est repris dans les échanges longs.
