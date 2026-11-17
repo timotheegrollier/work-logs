@@ -45,15 +45,24 @@ describe('pièces jointes de l’assistant', () => {
     expect(new Uint8Array(await image.file!.arrayBuffer())).toEqual(png);
   });
 
-  it('refuse un binaire, un PDF invalide, et une image mal déclarée', async () => {
-    await expect(readChatAttachment(new File([new Uint8Array([0x00, 0x1f, 0xff])], 'binary')))
-      .rejects.toThrow(/format/);
-    await expect(readChatAttachment(new File(['texte'], 'faux.pdf'))).rejects.toThrow(/PDF lisible/);
-    await expect(readChatAttachment(new File(['<svg/>'], 'faux.png', { type: 'image/png' })))
-      .rejects.toThrow(/image PNG, JPEG ou WebP/);
+  it('conserve sans le lire un binaire, un PDF invalide et une image mal déclarée', async () => {
+    const binary = new File([new Uint8Array([0x00, 0x1f, 0xff])], 'archive.zip');
+    await expect(readChatAttachment(binary)).resolves.toMatchObject({ kind: 'file', name: 'archive.zip' });
+    await expect(readChatAttachment(new File(['texte'], 'faux.pdf'))).resolves.toMatchObject({ kind: 'file', name: 'faux.pdf' });
+    const svg = new File(['<svg/>'], 'faux.png', { type: 'image/png' });
+    await expect(readChatAttachment(svg)).resolves.toMatchObject({ kind: 'file', name: 'faux.png' });
     const huge = new Uint8Array(pngImage(2, 3));
     new DataView(huge.buffer).setUint32(16, 100_000_000);
-    await expect(readChatAttachment(new File([huge], 'énorme.png'))).rejects.toThrow(/résolution/);
+    await expect(readChatAttachment(new File([huge], 'énorme.png'))).resolves.toMatchObject({ kind: 'file', name: 'énorme.png' });
+  });
+
+  it('garde aussi les formats non lus et les documents illisibles, octets compris', async () => {
+    const presentation = new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], 'revue.pptx');
+    const stored = await readChatAttachment(presentation);
+    expect(stored).toMatchObject({ kind: 'file', name: 'revue.pptx' });
+    expect(new Uint8Array(await stored.file!.arrayBuffer())).toEqual(new Uint8Array([0x50, 0x4b, 0x03, 0x04]));
+    await expect(readChatAttachment(new File(['pas un document'], 'casse.docx'))).resolves.toMatchObject({ kind: 'file', name: 'casse.docx' });
+    await expect(readChatAttachment(new File(['   '], 'vide-texte.md'))).resolves.toMatchObject({ kind: 'file', name: 'vide-texte.md' });
   });
 
   it('vérifie la taille avant de lire un fichier', async () => {

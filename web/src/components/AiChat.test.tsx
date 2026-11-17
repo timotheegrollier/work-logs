@@ -129,6 +129,20 @@ describe('assistant : conversation', () => {
     });
   });
 
+  test('garde un fichier que l’assistant ne sait pas lire et l’envoie comme pièce non lue', async () => {
+    render(<Host />);
+    const input = chat().getByLabelText('Fichiers à joindre');
+    fireEvent.change(input, { target: { files: [new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], 'revue.pptx')] } });
+    const draft = await chat().findByRole('list', { name: 'Pièces jointes du brouillon' });
+    expect(await within(draft).findByText('revue.pptx')).toBeInTheDocument();
+    expect(within(draft).getByText('Non lu')).toBeInTheDocument();
+    const response = answer();
+    ask.mockResolvedValueOnce(response);
+    fireEvent.click(chat().getByRole('button', { name: 'Envoyer' }));
+    expect(await chat().findByText(response.reply)).toBeInTheDocument();
+    expect(ask.mock.calls[0][1].attachments).toEqual([expect.objectContaining({ kind: 'file', name: 'revue.pptx' })]);
+  });
+
   test('le titre proposé pour le sujet s’affiche dans la liste et reste stable', async () => {
     render(<Host />);
     await answered(answer({ conversationTitle: 'Atelier · Entretien de la pompe' }), 'Peux-tu me dire où on en est ?');

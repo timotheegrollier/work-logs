@@ -105,6 +105,25 @@ describe('pièces jointes de la conversation', () => {
     ]);
   });
 
+  test('annonce un fichier non lisible sans envoyer son contenu, et le garde pour la suite', async () => {
+    mockState();
+    const calls = stubAi(json({ reply: 'Je garde ce fichier.' }), json({ reply: 'Toujours là.' }));
+    const opaque: ChatAttachment = {
+      id: 'revue', kind: 'file', name: 'revue.pptx',
+      file: new Blob(['binaire secret'], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }),
+    };
+    await expect(ask({ text: '', attachments: [opaque] })).resolves.toMatchObject({ usedAi: true });
+    const prompt = user(calls[0]);
+    expect(prompt).toContain('"name":"revue.pptx"');
+    expect(prompt).toContain('"unread":true');
+    expect(prompt).not.toContain('binaire secret');
+    expect(typeof prompt).toBe('string');
+    expect(system(calls[0])).toContain('Une pièce marquée « unread » n’a pas été lue');
+
+    await ask({ text: 'Et ensuite ?', history: [{ role: 'user', text: '', attachments: [opaque] }, { role: 'assistant', text: 'Je garde ce fichier.' }] });
+    expect(user(calls[1])).toContain('"previous":true,"unread":true');
+  });
+
   test('envoie les PDF à Gemini en inlineData et compte les jetons renvoyés', async () => {
     mockState();
     const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({

@@ -5,8 +5,9 @@
 - L’assistant peut préciser l’objectif avec une question ouverte ou un sondage. Une réponse
   libre ou un choix poursuit la conversation. L’objectif initial est repris dans les échanges longs.
 - **Fichiers** et **Lien** ajoutent des pièces au brouillon. Le collage et le dépôt fonctionnent
-  aussi. Word, Excel, PDF, images, texte et code peuvent servir de sources. Les brouillons et
-  échanges conservent leurs pièces dans le profil local.
+  aussi. Word, Excel, PDF, images, texte et code peuvent servir de sources. Les autres formats
+  restent dans la conversation, marqués **Non lu** : seul leur nom part au fournisseur. Les
+  brouillons et échanges conservent leurs pièces dans le profil local.
 - Gemini peut consulter les liens publics joints. WorkLogs garde l’extrait associé aux
   lectures confirmées pour les échanges suivants. Les parcours automatisés simulent le fournisseur.
 - `./scripts/check.sh` vert sur la base et après le lot. Le lot compte 2 026 tests,

@@ -481,9 +481,11 @@ clique sur **Répondre avec ces choix**. Chaque réponse prolonge la même conve
 conversation ou coller une capture depuis le presse-papiers. WorkLogs accepte les PDF,
 les documents Word (.docx), les classeurs Excel (.xlsx), les images PNG, JPEG ou WebP et
 les fichiers texte, Markdown, CSV et code. Tu peux coller directement du code dans le
-message, avec ses sauts de ligne et son indentation. **Lien** ajoute une adresse web
-publique. Avec Gemini, l’assistant peut consulter la page. Les autres services
-compatibles reçoivent l’adresse comme référence.
+message, avec ses sauts de ligne et son indentation. Les autres formats, comme les
+présentations ou les archives, restent joints à la conversation : l’assistant reçoit
+seulement leur nom, sans leur contenu, et la pièce est marquée **Non lu**. **Lien**
+ajoute une adresse web publique. Avec Gemini, l’assistant peut consulter la page. Les
+autres services compatibles reçoivent l’adresse comme référence.
 
 Chaque message peut contenir jusqu’à cinq pièces et 10 Mio au total. Les pièces
 s’affichent dans le brouillon, avec un bouton pour les retirer. **Envoyer** accepte aussi
@@ -520,9 +522,10 @@ Le fournisseur reçoit la demande, les derniers échanges de la conversation, le
 projet et ses repères, les catégories et des résumés des tâches, des entrées et de leurs liens.
 Quand une demande en a besoin, l’assistant peut consulter le texte d’entrées locales et les noms du partage.
 Pour les documents Google associés, le fournisseur reçoit les titres et les dates.
-Les pièces jointes au chat partent à l’envoi. WorkLogs extrait le texte des fichiers
-Word, Excel et texte. La mention **Extrait** indique un contenu abrégé. Les pièces
-récentes peuvent aussi servir aux réponses suivantes de la conversation.
+Les pièces jointes lisibles au chat partent à l’envoi. WorkLogs extrait le texte des fichiers
+Word, Excel et texte. La mention **Extrait** indique un contenu abrégé. Les autres pièces
+restent dans la conversation : le fournisseur reçoit leur nom et leur type, jamais leurs
+octets. Les pièces récentes peuvent aussi servir aux réponses suivantes de la conversation.
 
 Un message comporte jusqu’à quatre étapes IA selon les lectures nécessaires. Le plafond
 quotidien s’applique aux conversations en parallèle. Si le service est indisponible ou que

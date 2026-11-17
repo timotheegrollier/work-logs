@@ -593,10 +593,13 @@ test('sélectionne, colle et dépose des pièces, puis récupère le brouillon a
   await (await picker).setFiles([
     { name: 'controle.ts', mimeType: 'text/plain', buffer: Buffer.from('const limite = 12;') },
     { name: 'retirer.txt', mimeType: 'text/plain', buffer: Buffer.from('Un texte que je retire.') },
+    { name: 'revue.pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04]) },
   ]);
   const draftFiles = chat.getByRole('list', { name: 'Pièces jointes du brouillon' });
   await draftFiles.getByRole('button', { name: 'Retirer retirer.txt' }).click();
   await expect(draftFiles.getByText('controle.ts')).toBeVisible();
+  await expect(draftFiles.getByText('revue.pptx')).toBeVisible();
+  await expect(draftFiles.getByText('Non lu')).toBeVisible();
 
   const fileDrop = await page.evaluateHandle(() => {
     const transfer = new DataTransfer();
@@ -623,12 +626,12 @@ test('sélectionne, colle et dépose des pièces, puis récupère le brouillon a
   await opener.click();
   const code = '  const option = {\n    balise: "<filtre>"\n  };';
   await messageField(page).fill(code);
-  await expect(draftFiles.getByRole('listitem')).toHaveCount(4);
+  await expect(draftFiles.getByRole('listitem')).toHaveCount(5);
   await expectNoOverflow(page);
   await chat.getByRole('button', { name: 'Envoyer', exact: true }).click();
   await expect(chat.getByText('J’ai examiné les pièces.')).toBeVisible();
   const sent = chat.getByRole('list', { name: 'Pièces jointes envoyées' });
-  await expect(sent.getByRole('listitem')).toHaveCount(4);
+  await expect(sent.getByRole('listitem')).toHaveCount(5);
   await expect(draftFiles).toHaveCount(0);
   expect(await chat.locator('.ai-chat-bubble.is-user').textContent()).toBe(code);
   expect(prompts[0]).toContain('const limite = 12;');
@@ -636,11 +639,13 @@ test('sélectionne, colle et dépose des pièces, puis récupère le brouillon a
   expect(prompts[0]).toContain('[image_url]');
   expect(prompts[0]).toContain('https://example.org/documentation');
   expect(prompts[0]).toContain(code);
+  expect(prompts[0]).toContain('"name":"revue.pptx","type":"file","unread":true');
   expect(prompts[0]).not.toContain('Un texte que je retire.');
   await messageField(page).fill('Et la limite du contrôle ?');
   await messageField(page).press('Enter');
   await expect(chat.getByText('Je garde le contexte.')).toBeVisible();
   expect(prompts[1]).toContain('const limite = 12;');
+  expect(prompts[1]).toContain('"name":"revue.pptx","type":"file","previous":true,"unread":true');
 });
 
 test('en-tête avec statistiques : le bouton Assistant ne fait pas déborder la page', async ({ page, request }) => {

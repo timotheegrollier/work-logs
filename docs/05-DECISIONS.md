@@ -3612,6 +3612,12 @@ PDF sont envoyés au service configuré. Sur Gemini, les PDF utilisent l’entr�
 Les fournisseurs compatibles avec Chat Completions reçoivent les images et PDF comme
 parties du message, selon les capacités du modèle.
 
+Un fichier que WorkLogs ne sait pas lire n’est jamais refusé pour ce seul motif : il reste
+joint au brouillon et à la conversation, dans la limite des cinq pièces et 10 Mio. Son nom
+et son type sont annoncés au modèle avec `unread`, mais ses octets ne quittent pas
+l’appareil. Un document Word ou Excel illisible, un PDF invalide ou une image hors limites
+suit le même chemin. Seuls un fichier vide ou dépassant 10 Mio est refusé.
+
 Gemini peut consulter un lien ajouté explicitement. Cet appel reçoit les adresses jointes
 seules et utilise le quota du chat. WorkLogs transmet au tour principal les extraits des
 pages dont le fournisseur confirme la lecture et les conserve pour la conversation.

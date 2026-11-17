@@ -593,7 +593,7 @@ function ChatPane({
         <details className="overview-ai-scope ai-chat-data">
           <summary>Données envoyées au service IA</summary>
           <p>Le service IA reçoit ta demande, les derniers échanges, ton profil, les repères du projet affiché, le nom des projets et catégories, les tâches pertinentes, le titre de la note ouverte et le début des notes utiles. Il peut lire le texte de notes et procédures locales dans une limite de taille. Pour un document Google, il reçoit le titre et la date seuls. Une recherche dans le dossier partagé lui transmet les chemins trouvés.</p>
-          <p>Les fichiers et liens que tu joins sont transmis au service IA à l’envoi et peuvent resservir dans la suite de cette conversation. Pour les fichiers texte, Word et Excel, il reçoit le texte extrait par WorkLogs.</p>
+          <p>Les fichiers et liens que tu joins sont transmis au service IA à l’envoi et peuvent resservir dans la suite de cette conversation. Pour les fichiers texte, Word et Excel, il reçoit le texte extrait par WorkLogs. Les autres fichiers restent dans la conversation : le service IA reçoit seulement leur nom, sans leur contenu.</p>
           <label className="ai-chat-content-setting">
             <input type="checkbox" checked={allowSharedContent} onChange={(event) => onAllowShared(event.target.checked)} />
             Autoriser l’envoi d’extraits des fichiers partagés dans cette conversation
@@ -609,6 +609,7 @@ function ChatAttachments({ attachments, onForget }: { attachments: ChatAttachmen
   return <ul className={`ai-chat-attachments${onForget ? '' : ' is-sent'}`} aria-label={onForget ? 'Pièces jointes du brouillon' : 'Pièces jointes envoyées'}>
     {attachments.map((attachment) => <li key={attachment.id} title={attachment.name}>
       <span>{attachment.name}</span>
+      {attachment.kind === 'file' && <small title="Le fichier reste dans la conversation ; l’assistant ne peut pas lire son contenu.">Non lu</small>}
       {'truncated' in attachment && attachment.truncated && <small>Extrait</small>}
       {onForget && <button type="button" className="ghost" aria-label={`Retirer ${attachment.name}`} onClick={() => onForget(attachment.id)}>×</button>}
     </li>)}
