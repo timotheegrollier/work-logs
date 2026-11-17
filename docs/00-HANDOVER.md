@@ -1,5 +1,16 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Fichiers illisibles conservés dans la conversation — 2026-11-17, v0.81.0 (§86)
+
+- **Fichiers** accepte tout fichier jusqu’à 10 Mio. Un format inconnu, un document Word ou
+  Excel illisible, un PDF invalide ou une image hors limites reste joint au brouillon et à la
+  conversation, marqué **Non lu**. Seuls un fichier vide ou de plus de 10 Mio est refusé.
+- Le contenu d’une pièce non lue ne quitte pas l’appareil : le modèle reçoit son nom, son type
+  et `unread`, et le prompt lui interdit d’en prétendre le contenu. Les pièces lisibles suivent
+  le circuit existant (Word et Excel extraits, images et PDF natifs, liens Gemini).
+- `./scripts/check.sh` vert sur le lot : 346 API, 1 424 front et un échec attendu, 49 desktop
+  unitaires, 49 scripts, 8 Worker, 11 relais, 120 navigateur et 21 Electron, soit 2 029 tests.
+
 ## Questions, sondages et pièces jointes dans l’assistant — 2026-11-17, v0.80.0 (§86)
 
 - L’assistant peut préciser l’objectif avec une question ouverte ou un sondage. Une réponse
