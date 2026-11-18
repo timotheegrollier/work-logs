@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Avancement par checklist et mises à jour proposées par l’IA — 2026-11-18 (§87)
+## Avancement par checklist et mises à jour proposées par l’IA — 2026-11-18, v0.82.0 (§87)
 
 - Les notes Markdown et leurs cartes affichent le pourcentage de cases cochées uniquement
   quand elles ont une checklist. Cocher toutes les cases affiche 100 %. L’action **Terminer**
@@ -8,6 +8,8 @@
 - L’assistant prépare les sous-tâches des nouvelles tâches et les actions des nouvelles notes
   en cases à cocher. L’assistant, le bilan du jour et le suivi IA peuvent proposer des changements
   de cases à relire et appliquer. L’écriture vérifie le texte relu et actualise l’avancement.
+- `./scripts/check.sh` vert avant et après le lot, avec 2 042 tests, échec attendu compris,
+  dont 121 parcours Chromium et 21 parcours Electron.
 
 ## Fichiers illisibles conservés dans la conversation — 2026-11-17, v0.81.0 (§86)
 
