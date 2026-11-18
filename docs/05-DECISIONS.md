@@ -3623,3 +3623,18 @@ seules et utilise le quota du chat. WorkLogs transmet au tour principal les extr
 pages dont le fournisseur confirme la lecture et les conserve pour la conversation.
 Un lien privé ou inaccessible peut être fourni sous forme de fichier texte ou PDF.
 [Documentation Gemini sur URL Context](https://ai.google.dev/gemini-api/docs/generate-content/url-context)
+
+## 87. Les cases à cocher déterminent l’avancement
+
+Une barre s’affiche dans une note Markdown ou sur sa carte de tâche quand la note
+contient une checklist. Elle montre la part des cases cochées dans le brouillon de la
+note, puis dans les autres vues après enregistrement. SQLite et IndexedDB recalculent
+l’avancement de la tâche lors de l’écriture de sa note principale. Le statut **Terminé**
+archive sa note et ses références sur action explicite.
+
+L’assistant décompose le travail à la création d’une tâche et structure en cases les
+actions des notes qu’il rédige. Les mises à jour ciblées du chat modifient les marqueurs
+du Markdown relu. Le bilan du jour et les suivis peuvent proposer des changements à
+partir d’un passage qui atteste l’état d’une action. L’utilisateur relit la proposition
+et la valide avant l’écriture. Une modification du texte depuis sa lecture déclenche
+la vérification de concurrence habituelle lors de l’application.

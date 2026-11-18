@@ -10,11 +10,12 @@ import { googleLink, registerGoogleRoutes } from './google-routes.js';
 import { registerSharedRoutes } from './shared-routes.js';
 import { attachmentHeader, inlineHeader } from './disposition.js';
 import { categoryFor, nextCategory, categoryDescendants, registerCategoryRoutes } from './categories.js';
+import { checklistProgress } from './checklist.js';
 import { inheritTaskCategories } from './task-categories.js';
 import { createFollowUpAccess, registerFollowUpRoutes } from './follow-up-routes.js';
 import { assertExpectedTaskPlanning, taskPlanningUsesDocuments } from './task-planning.js';
 import { assertExpectedEntryEdit } from './entry-edit.js';
-import { taskCreationStamp, taskIdForNote, taskState } from './task-state.js';
+import { changedChecklistProgress, noteChecklistProgress, taskCreationStamp, taskIdForNote, taskState } from './task-state.js';
 import { validateEntryMerge, assertEntryMergeSources, assertEntryMergeReplay, entryMergeTargetId, entryMergeClassification, isRewritableNote, assertTaskMergeSources, taskMergeTaskId, taskMergeAttributes } from './entry-merge.js';
 
 export const STATUSES = ['todo', 'doing', 'done'];
@@ -81,7 +82,9 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   });
 
   const followUp = createFollowUpAccess(db);
+  db.function('checklist_progress', { deterministic: true }, (markdown) => checklistProgress(markdown));
   const taskForEntry = db.prepare('SELECT * FROM tasks WHERE entry_id=?');
+  const noteProgress = db.prepare('SELECT CASE WHEN content_json IS NULL THEN checklist_progress(content_md) END progress FROM entries WHERE id=?');
   const getEntryTask = (id) => followUp.metadata('task', taskForEntry.get(id));
   const getEntry = (id) => {
     const row = db.prepare('SELECT * FROM entries WHERE id=?').get(id);
@@ -139,10 +142,12 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       entryWhere.push('entries.id IN (SELECT entry_id FROM entry_search WHERE text LIKE ?)');
       entryArgs.push(`%${fold(q)}%`);
     }
+    const checklistByEntry = new Map();
     const entries = db
       .prepare(
         `SELECT entries.id, entries.title, entries.entry_date, entries.project_id, entries.category_id, entries.archived, entries.kind, entries.status, entries.updated_at, entries.follow_up,
                 substr(entries.content_md, 1, 240) excerpt,
+                CASE WHEN entries.content_json IS NULL THEN checklist_progress(entries.content_md) END checklist_progress,
                 (SELECT COUNT(*) FROM attachments a WHERE a.entry_id = entries.id) attachments,
                 g.document_id google_document_id, g.tab_id google_tab_id,
                 g.document_title google_document_title, g.tab_title google_tab_title,
@@ -155,6 +160,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       )
       .all(...entryArgs).map((entry) => {
         const task = getEntryTask(entry.id);
+        checklistByEntry.set(entry.id, entry.checklist_progress);
         return { ...followUp.metadata('entry', entry), ...(task ? { task } : {}) };
       });
 
@@ -190,7 +196,11 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
          LIMIT 500`
       )
       .all(...taskArgs)
-      .map((task) => ({ ...followUp.metadata('task', task), documents: documentsByTask.get(task.id) || [] }));
+      .map((task) => ({
+        ...followUp.metadata('task', task), documents: documentsByTask.get(task.id) || [],
+        checklist_progress: checklistByEntry.has(task.entry_id)
+          ? checklistByEntry.get(task.entry_id) : noteProgress.get(task.entry_id)?.progress ?? null,
+      }));
 
     // Pièces jointes rassemblées pour le panneau Procédures : celles des
     // procédures du filtre courant, métadonnées seules (binaires via /api/files).
@@ -279,8 +289,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       const kind = pick(b, 'kind', cur.kind ?? 'note', (v) => kindOf(v, cur.kind ?? 'note'));
       if (!kind) return reject('type de document invalide (note ou procédure attendu)');
       if (cur.task && kind !== 'note') return reject('Retire le suivi de tâche avant de transformer la note en procédure.');
-      const status = pick(b, 'status', cur.status);
-      if (!STATUSES.includes(status)) return reject('statut invalide');
+      const requestedStatus = pick(b, 'status', cur.status);
+      if (!STATUSES.includes(requestedStatus)) return reject('statut invalide');
 
       const rich = b.content_json === undefined ? cur.content_json : b.content_json;
       if (rich !== null) validateDocument(rich);
@@ -289,6 +299,9 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       const time = nowISO();
       const content = rich ? documentText(rich) : pick(b, 'content_md', cur.content_md, (v) => typeof v === 'string' ? v : cur.content_md);
       const serialized = rich ? JSON.stringify(rich) : null;
+      const state = cur.task && taskState(b.status, undefined, cur.task,
+        changedChecklistProgress(cur, { content_md: content, content_json: rich }));
+      const status = state?.status ?? requestedStatus;
       const changedClassification = categoryId !== cur.category_id || projectId !== cur.project_id;
       const changedSharedFields = title !== cur.title || changedClassification;
       const changedNote = !cur.task || changedSharedFields || content !== cur.content_md || date !== cur.entry_date
@@ -298,10 +311,10 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       ).run(title, content, date, projectId, archived, kind, status, changedNote ? time : cur.updated_at,
         serialized, categoryId, cur.id);
       const statusChanged = cur.task && cur.task.status !== status;
-      if (cur.task && (changedSharedFields || statusChanged)) {
-        const { progress } = taskState(status, undefined, cur.task);
+      const progressChanged = state && state.progress !== cur.task.progress;
+      if (state && (changedSharedFields || statusChanged || progressChanged)) {
         db.prepare('UPDATE tasks SET title=?, project_id=?, category_id=?, status=?, progress=?, updated_at=? WHERE id=?')
-          .run(title, projectId, categoryId, status, progress, statusChanged ? time : cur.task.updated_at, cur.task.id);
+          .run(title, projectId, categoryId, status, state.progress, statusChanged || progressChanged ? time : cur.task.updated_at, cur.task.id);
         if (statusChanged) moveTaskToEnd(cur.task, status, time);
       }
       if (changedClassification) inheritTaskCategories(db, time, { entryId: cur.id, excludeTaskId: cur.task?.id });
@@ -455,7 +468,8 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     if (b.content_md !== undefined && typeof b.content_md !== 'string') return bad(res, 'contenu Markdown invalide');
 
     const convert = isRewritableNote(source) && title === source.title && b.content_md === undefined;
-    const { status, progress } = taskState(b.status, b.progress, { status: convert ? source.status : 'todo', progress: 0 });
+    const note = convert ? source : { content_md: b.content_md ?? title };
+    const { status, progress } = taskState(b.status, b.progress, { status: convert ? source.status : 'todo', progress: 0 }, noteChecklistProgress(note));
     if (convert && source.task) return res.json(getTaskWithDocuments(source.task.id));
     if (convert && googlePushPending.has(source.id)) {
       return res.status(409).json({ error: 'Attends la fin de la synchronisation Google avant de suivre cette note comme tâche.' });
@@ -542,10 +556,11 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
       }
       const content = typeof b.content_md === 'string' ? b.content_md : '';
       const time = nowISO();
-      const { progress } = taskState(undefined, undefined, source);
-      insertTaskNote.run(id, title, content, today(), source.project_id, source.category_id, source.status, time, time);
-      db.prepare('UPDATE tasks SET entry_id=?,title=?,progress=?,updated_at=? WHERE id=?').run(id, title, progress, time, source.id);
+      const { status, progress } = taskState(undefined, undefined, source, noteChecklistProgress({ content_md: content }));
+      insertTaskNote.run(id, title, content, today(), source.project_id, source.category_id, status, time, time);
+      db.prepare('UPDATE tasks SET entry_id=?,title=?,status=?,progress=?,updated_at=? WHERE id=?').run(id, title, status, progress, time, source.id);
       linkTaskEntry.run(source.id, id, time);
+      if (source.status !== status) moveTaskToEnd(source, status, time);
       if (source.status === 'done') archiveTaskDocuments(db, source.id, time);
       db.exec('COMMIT');
     } catch (error) {
@@ -560,7 +575,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const title = str(b.title);
     if (!title) return bad(res, 'titre requis');
     if (b.content_md !== undefined && typeof b.content_md !== 'string') return bad(res, 'contenu Markdown invalide');
-    const { status, progress } = taskState(str(b.status) || undefined, b.progress);
+    const { status, progress } = taskState(str(b.status) || undefined, b.progress, undefined, noteChecklistProgress({ content_md: b.content_md ?? '' }));
     const dueDate = orNull(b.due_date);
     if (dueDate && !DATE_RE.test(dueDate)) return bad(res, 'échéance invalide (AAAA-MM-JJ attendu)');
     const priority = priorityOf(b.priority);

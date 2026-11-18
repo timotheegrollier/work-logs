@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { hasHtmlOrImage, insertCodeFence, renderAiProposal, renderMarkdown, toggleChecklistItem } from './markdown';
+import { checklistProgress, getChecklistItems, updateChecklistItems, hasHtmlOrImage, insertCodeFence, renderAiProposal, renderMarkdown, toggleChecklistItem } from './markdown';
 
 describe('rendu Markdown', () => {
   test('produit les titres et le gras', () => {
@@ -229,5 +229,44 @@ describe('toggleChecklistItem', () => {
     expect(toggleChecklistItem(source, 5)).toBe(source);
     expect(toggleChecklistItem(source, -1)).toBe(source);
     expect(toggleChecklistItem('Sans case', 0)).toBe('Sans case');
+  });
+});
+
+describe('checklists Markdown', () => {
+  test('les mêmes cases comptent dans le rendu, la progression et les modifications ciblées', () => {
+    const source = ['```md', '- [x] exemple', '```', '- Parent', '  > 1. [ ] Contrôler', '  > 2. [X] Raccorder', '+ [ ] Tester'].join('\r\n');
+    const dom = new DOMParser().parseFromString(renderMarkdown(source, { interactiveCheckboxes: true }), 'text/html');
+    const boxes = [...dom.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+    expect(boxes.map((box) => [box.dataset.checklistIndex, box.checked])).toEqual([['0', false], ['1', true], ['2', false]]);
+    expect(getChecklistItems(source).map((item) => item.text)).toEqual(['Contrôler', 'Raccorder', 'Tester']);
+    expect(checklistProgress(source)).toBe(33);
+    expect(updateChecklistItems(source, [{ index: 0, checked: true }, { index: 1, checked: false }])).toBe(
+      source.replace('1. [ ] Contrôler', '1. [x] Contrôler').replace('2. [X] Raccorder', '2. [ ] Raccorder'),
+    );
+  });
+
+  test('ignore les marqueurs en prose, code et HTML et distingue les cases HTML', () => {
+    const source = '[x] texte\n\n    - [x] bloc indenté\n\n<div>\n- [x] bloc HTML\n</div>';
+    expect(checklistProgress(source)).toBeNull();
+    const html = renderMarkdown('<input type="checkbox" data-checklist-index="7">\n\n- [ ] Vraie case', { interactiveCheckboxes: true });
+    const dom = new DOMParser().parseFromString(html, 'text/html');
+    expect([...dom.querySelectorAll<HTMLInputElement>('input')].map((box) => box.dataset.checklistIndex)).toEqual([undefined, '0']);
+  });
+
+  test('conserve les tabulations du Markdown imbriqué', () => {
+    const source = '- [x] Parent\n\t- [ ] Enfant';
+    expect(checklistProgress(source)).toBe(50);
+    expect(toggleChecklistItem(source, 1)).toBe('- [x] Parent\n\t- [x] Enfant');
+  });
+
+  test('ignore une tabulation dans les crochets et reconnaît une liste après un bloc indenté', () => {
+    const source = '- [\t] Sans case\n\n    code\n2. [x] Vraie case';
+    expect(getChecklistItems(source)).toEqual([{ index: 0, text: 'Vraie case', checked: true }]);
+    expect(renderMarkdown(source, { interactiveCheckboxes: true })).toContain('data-checklist-index="0"');
+  });
+
+  test('réserve 100 % à une liste entièrement cochée', () => {
+    expect(checklistProgress('- [x] Élément fait\n'.repeat(199) + '- [ ] Dernière étape')).toBe(99);
+    expect(checklistProgress('- [x] Tous faits')).toBe(100);
   });
 });

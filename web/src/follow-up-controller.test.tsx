@@ -584,3 +584,37 @@ test('un filtre qui masque un élément coupe son actualisation automatique en v
   await advance(0);
   expect(busy()).toBe('false');
 });
+
+test.each([false, true])('applique les cases du suivi au clic si la source est encore actuelle (obsolète : %s)', async (stale) => {
+  const content_md = '- [ ] Vérifier la pompe\nPompe vérifiée.';
+  const saved = { ...report('v1'), checklist_updates: [
+    { entry_id: 'check', entry_title: 'check', text: 'Vérifier la pompe', index: 0, checked: true, evidence: 'Pompe vérifiée.' },
+  ] };
+  const item = entry('check', 'v1', followed(saved));
+  const document = { id: item.id, title: item.title, entry_date: item.entry_date, kind: item.kind, content_md, content_json: null, google: false };
+  const detail = { ...item, content_md, content_json: null, attachments: [], created_at: item.updated_at };
+  vi.mocked(api.followUp).mockResolvedValueOnce({
+    follow_up: item.follow_up ?? null, source_key: stale ? 'v2' : 'v1',
+    source: { kind: 'entry', id: item.id, title: item.title, project: null, documents: [document] },
+  });
+  vi.spyOn(api, 'entry').mockResolvedValue(detail);
+  const write = vi.spyOn(api, 'updateEntry').mockResolvedValue(detail);
+  const onEntriesChanged = vi.fn();
+  render(<FollowUpProvider state={stateOf([item])} onChanged={onChanged} onEntriesChanged={onEntriesChanged}>
+    <FollowUpPanel kind="entry" item={item} />
+  </FollowUpProvider>);
+  expect(screen.getByText('« Pompe vérifiée. »')).toBeInTheDocument();
+  expect(write).not.toHaveBeenCalled();
+  click('Appliquer les mises à jour des cases');
+  await advance(0);
+  if (stale) {
+    expect(write).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Actualise le bilan');
+  } else {
+    expect(write).toHaveBeenCalledWith(item.id, expect.objectContaining({
+      content_md: '- [x] Vérifier la pompe\nPompe vérifiée.',
+      expected_entry: expect.objectContaining({ source_key: expect.any(String) }),
+    }));
+    expect(onEntriesChanged).toHaveBeenCalledWith([item.id]);
+  }
+});

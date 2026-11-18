@@ -83,6 +83,16 @@ describe('suivi IA enregistré', () => {
     assert.equal(copy.follow_up, null, 'une nouvelle copie n’active pas les envois automatiques');
   });
 
+  test('conserve les propositions de cases avec le rapport sans modifier la note', async () => {
+    const note = await make.entry(api, { title: 'Intervention', content_md: '- [ ] Signer\nSignature obtenue.' });
+    const change = { entry_id: note.id, entry_title: note.title, index: 0, checked: true, text: 'Signer', evidence: 'Signature obtenue.' };
+    const saved = await report('entry', note.id, { ...REPORT, checklist_updates: [change] });
+    assert.equal(saved.status, 200);
+    assert.deepEqual((await snapshot('entry', note.id)).follow_up.report.checklist_updates, [change]);
+    assert.equal((await api.get(`/api/entries/${note.id}`)).body.content_md, note.content_md);
+    assert.equal((await report('entry', note.id, { ...REPORT, checklist_updates: [{ ...change, checked: 'oui' }] })).status, 400);
+  });
+
   test('modifier un bilan, l’épingle ou la date technique ne le rend pas obsolète ; modifier les sources le rend obsolète', async () => {
     const project = await make.project(api, 'Chantier');
     const note = await make.entry(api, { title: 'Journal', content_md: 'Devis préparé', project_id: project.id });

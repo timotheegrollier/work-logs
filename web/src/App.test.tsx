@@ -845,18 +845,17 @@ describe('écrire une entrée', () => {
     const card = cardTitle.closest('.card') as HTMLElement;
     await user.click(cardTitle);
     expect(within(card).queryByRole('button', { name: /Créer une entrée liée|Retirer Contexte de réunion/ })).toBeNull();
-    const progress = within(taskProgress).getByLabelText('Avancement (%)');
-    fireEvent.change(progress, { target: { value: '45' } });
-    await user.click(within(taskProgress).getByRole('button', { name: 'Appliquer' }));
+    expect(within(taskProgress).queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(within(card).queryByRole('progressbar')).not.toBeInTheDocument();
     const status = within(taskProgress).getByLabelText('Statut de la tâche');
+    await user.selectOptions(status, 'doing');
     await waitFor(() => expect(status).toHaveValue('doing'));
-    await waitFor(() => expect(within(board()).getByRole('progressbar', { name: 'Avancement de Contexte de réunion' })).toHaveAttribute('value', '45'));
-    expect(row(api.db, 'SELECT status, progress FROM tasks')).toEqual({ status: 'doing', progress: 45 });
+    expect(row(api.db, 'SELECT status FROM tasks')).toEqual({ status: 'doing' });
 
     await user.selectOptions(status, 'done');
-    await waitFor(() => expect(within(taskProgress).getByRole('progressbar')).toHaveAttribute('value', '100'));
     // Terminer archive la note de la tâche ; la rouvrir la fait revenir.
-    expect(row(api.db, 'SELECT status, archived FROM entries WHERE id=?', 'en_context')).toEqual({ status: 'done', archived: 1 });
+    await waitFor(() => expect(row(api.db, 'SELECT status, archived FROM entries WHERE id=?', 'en_context')).toEqual({ status: 'done', archived: 1 }));
+    expect(within(taskProgress).queryByRole('progressbar')).not.toBeInTheDocument();
     await user.selectOptions(status, 'doing');
     await waitFor(() => expect(row(api.db, 'SELECT status, archived FROM entries WHERE id=?', 'en_context')).toEqual({ status: 'doing', archived: 0 }));
 
@@ -870,17 +869,27 @@ describe('écrire une entrée', () => {
     const user = userEvent.setup();
     seedData(api.db, { entries: [{ id: 'en_pompe', title: 'Contrôle pompe', content_md: '- [x] Démonter\n- [ ] Remonter\n- [ ] Tester' }] });
     render(<App />);
+    expect(await screen.findByRole('progressbar', { name: 'Avancement de l’entrée' })).toHaveAttribute('value', '33');
     await user.click(await screen.findByRole('button', { name: 'Suivre comme tâche' }));
     const taskProgress = await within(editor()).findByRole('region', { name: 'Suivi de tâche' });
-    await waitFor(() => expect(within(taskProgress).getByRole('progressbar')).toHaveAttribute('value', '33'), { timeout: 4000 });
-    expect(within(taskProgress).getByText('Suit les cases cochées de la note.')).toBeVisible();
+    const cardProgress = () => within(board()).getByRole('progressbar', { name: 'Avancement de Contrôle pompe' });
+    expect(within(taskProgress).getByRole('progressbar')).toHaveAttribute('value', '33');
     expect(row(api.db, 'SELECT status, progress FROM tasks')).toEqual({ status: 'doing', progress: 33 });
 
     await user.click(within(screen.getByRole('article', { name: 'Aperçu' })).getAllByRole('checkbox')[1]);
-    await waitFor(() => expect(row(api.db, 'SELECT status, progress FROM tasks')).toEqual({ status: 'doing', progress: 67 }), { timeout: 4000 });
-    // Tout cocher ne termine pas la tâche : terminer reste un geste, qui archive la note.
+    expect(within(taskProgress).getByRole('progressbar')).toHaveAttribute('value', '67');
+    await waitFor(() => expect(cardProgress()).toHaveAttribute('value', '67'));
     await user.click(within(screen.getByRole('article', { name: 'Aperçu' })).getAllByRole('checkbox')[2]);
-    await waitFor(() => expect(row(api.db, 'SELECT status, progress FROM tasks')).toEqual({ status: 'doing', progress: 99 }), { timeout: 4000 });
+    expect(within(taskProgress).getByRole('progressbar')).toHaveAttribute('value', '100');
+    await waitFor(() => expect(cardProgress()).toHaveAttribute('value', '100'));
+    // Terminer et archiver la tâche reste un geste explicite.
+    expect(row(api.db, 'SELECT status, progress FROM tasks')).toEqual({ status: 'doing', progress: 99 });
+    expect(row(api.db, 'SELECT archived FROM entries WHERE id=?', 'en_pompe')).toEqual({ archived: 0 });
+
+    await user.click(within(editor()).getByRole('button', { name: 'Écrire' }));
+    fireEvent.change(within(editor()).getByLabelText('Contenu en Markdown'), { target: { value: 'Texte sans liste' } });
+    expect(within(taskProgress).queryByRole('progressbar')).not.toBeInTheDocument();
+    await waitFor(() => expect(within(board()).queryByRole('progressbar')).not.toBeInTheDocument(), { timeout: 4000 });
   });
 
   test('lie l’entrée ouverte à une tâche existante, sans en créer', async () => {
@@ -2294,7 +2303,7 @@ describe('organiser les tâches', () => {
     expect(await within(journal()).findByText('Rappeler le client')).toBeInTheDocument();
     expect(screen.getByLabelText('Nouvelle tâche')).toHaveValue('');
     await waitFor(() => expect(within(editor()).getByLabelText('Titre de l’entrée')).toHaveValue('Rappeler le client'));
-    expect(within(editor()).getByRole('progressbar')).toHaveAttribute('value', '0');
+    expect(within(editor()).queryByRole('progressbar')).not.toBeInTheDocument();
     expect(row(api.db, 'SELECT * FROM tasks').status).toBe('todo');
   });
 

@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { api, type AppState, type FollowUp, type FollowUpKind, type FollowUpReportDraft } from './lib';
+import { api, type AppState, type FollowUp, type FollowUpKind, type FollowUpReport, type FollowUpChecklistChange, type FollowUpReportDraft } from './lib';
 import { aiBudgetRefusal } from './ai-budget';
 import { AiBudgetError, AiCancelled, generateFollowUp, readAiSettings } from './ai-suggest';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
+import { applyChecklistChanges } from './checklist-edits';
 
 export interface FollowUpItem {
   id: string;
@@ -12,7 +13,7 @@ export interface FollowUpItem {
 }
 type Item = FollowUpItem & { kind: FollowUpKind };
 /** `background` : actualisation automatique, présentée sans déplacer le bilan affiché. */
-type Runtime = { busy: boolean; queued?: boolean; error: string; background: boolean };
+type Runtime = { busy: boolean; queued?: boolean; applyingChecklist?: boolean; error: string; background: boolean };
 type Job = { item: Item; manual: boolean };
 const keyOf = (kind: FollowUpKind, id: string) => `${kind}:${id}`;
 // Une vraie pause d'écriture : deux secondes relançaient l'IA au milieu d'une note.
@@ -21,13 +22,14 @@ const AUTO_DELAY = 8000;
 const AUTO_COOLDOWN = 60_000;
 const idle: Runtime = { busy: false, error: '', background: false };
 const reportContent = (report: FollowUpReportDraft) => JSON.stringify([
-  report.status, report.summary, report.completed, report.next_steps, report.blockers, report.warnings,
+  report.status, report.summary, report.completed, report.next_steps, report.blockers, report.warnings, report.checklist_updates ?? [],
 ]);
 interface Control {
   runtime: Record<string, Runtime>;
   /** `clear` : « Désactiver », l'automatisme et le bilan partent ensemble. */
   toggle: (item: Item, enabled: boolean, clear?: boolean) => void;
   refresh: (item: Item) => void;
+  applyChecklist: (item: Item, report: FollowUpReport) => void;
   stop: (item: Item) => void;
   hold: () => () => void;
 }
@@ -35,9 +37,10 @@ export const FollowUpContext = createContext<Control | null>(null);
 
 /** Un ordonnanceur pour l'écran entier : une seule génération à la fois, même
  * quand une carte et son bilan sont visibles à deux endroits. */
-export function FollowUpProvider({ state, onChanged, children }: {
+export function FollowUpProvider({ state, onChanged, onEntriesChanged, children }: {
   state: AppState | null;
   onChanged: () => void | Promise<void>;
+  onEntriesChanged?: (ids: string[]) => void | Promise<void>;
   children: ReactNode;
 }) {
   const [runtime, setRuntime] = useState<Record<string, Runtime>>({});
@@ -191,6 +194,47 @@ export function FollowUpProvider({ state, onChanged, children }: {
     })();
   }, [enqueue, patch, stop]);
 
+  const applyChecklist = (item: Item, report: FollowUpReport) => {
+    const key = keyOf(item.kind, item.id);
+    if (!report.checklist_updates?.length || configBusy.current.has(key) || active.current?.key === key || queue.current.has(key)) return;
+    configBusy.current.add(key);
+    patch(key, { ...idle, busy: true, applyingChecklist: true });
+    void (async () => {
+      const updated: string[] = [];
+      try {
+        await flushPendingSaves();
+        const snapshot = await api.followUp(item.kind, item.id);
+        const stored = snapshot.follow_up?.report;
+        const stale = () => new Error('Le suivi ou ses sources ont changé. Actualise le bilan avant d’appliquer les cases.');
+        if (snapshot.source_key !== report.source_key || stored?.generated_at !== report.generated_at
+          || reportContent(stored) !== reportContent(report)) throw stale();
+        const edits = new Map<string, FollowUpChecklistChange[]>();
+        for (const change of stored.checklist_updates ?? []) {
+          const group = edits.get(change.entry_id) ?? [];
+          group.push(change);
+          edits.set(change.entry_id, group);
+        }
+        const entries = await Promise.all([...edits.keys()].map((id) => api.entry(id)));
+        for (const entry of entries) {
+          const document = snapshot.source.documents.find(({ id }) => id === entry.id);
+          if (!document || document.kind !== 'note' || entry.content_json || entry.google_sync
+            || entry.content_md !== document.content_md || entry.kind !== document.kind || entry.title !== document.title) throw stale();
+        }
+        for (const entry of entries) {
+          await applyChecklistChanges(entry, edits.get(entry.id)!);
+          updated.push(entry.id);
+        }
+        patch(key, idle);
+      } catch (error) {
+        patch(key, { ...idle, error: (error as Error).message || 'Impossible de mettre à jour les cases.' });
+      } finally {
+        configBusy.current.delete(key);
+        if (updated.length > 0 && onEntriesChanged) await onEntriesChanged(updated);
+        else await changed.current();
+      }
+    })();
+  };
+
   useEffect(() => {
     // Le nouveau texte annule la réponse en vol ; la version suivante sera
     // regroupée après la pause de saisie et la sauvegarde réussie.
@@ -293,7 +337,7 @@ export function FollowUpProvider({ state, onChanged, children }: {
     return () => { holds.current -= 1; };
   }, []);
 
-  return <FollowUpContext.Provider value={{ runtime, toggle, refresh: (item) => enqueue(item, true), stop, hold }}>{children}</FollowUpContext.Provider>;
+  return <FollowUpContext.Provider value={{ runtime, toggle, refresh: (item) => enqueue(item, true), applyChecklist, stop, hold }}>{children}</FollowUpContext.Provider>;
 }
 
 /** Un bilan qui arrive invalide les synthèses de la vue d'ensemble : mieux vaut ne pas les lancer. */
@@ -316,6 +360,7 @@ export function useFollowUp(kind: FollowUpKind, item: FollowUpItem) {
     toggle: (enabled: boolean) => context?.toggle({ ...item, kind }, enabled),
     disable: () => context?.toggle({ ...item, kind }, false, true),
     refresh: () => context?.refresh({ ...item, kind }),
+    applyChecklist: (report: FollowUpReport) => context?.applyChecklist({ ...item, kind }, report),
     stop: () => context?.stop({ ...item, kind }),
   };
 }

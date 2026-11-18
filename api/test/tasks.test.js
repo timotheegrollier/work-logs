@@ -415,6 +415,29 @@ describe('tâches', () => {
     assert.equal((await api.get(`/api/entries/${note.id}`)).body.title, 'Chantier confirmé');
   });
 
+  test('un changement de cases met à jour la note et sa tâche dans la même écriture', async () => {
+    const introduction = 'Présentation '.repeat(25).trim();
+    const task = await make.task(api, { content_md: `${introduction}\n\n- [x] Démonter\n- [ ] Tester` });
+    const url = `/api/entries/${task.entry_id}`;
+    assert.equal(task.status, 'doing');
+    assert.equal(task.progress, 50);
+    const state = (await api.get('/api/state')).body;
+    assert.equal(state.tasks[0].checklist_progress, 50);
+    assert.equal(state.entries[0].checklist_progress, 50);
+    assert.equal(state.entries[0].content_md, undefined);
+
+    const updated = await api.put(url, { content_md: `${introduction}\n\n- [x] Démonter\n- [x] Tester` });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.body.task.progress, 99);
+    assert.equal(updated.body.status, 'doing');
+    assert.equal(updated.body.archived, 0);
+    assert.equal((await api.get('/api/state')).body.tasks[0].checklist_progress, 100);
+
+    const withoutChecklist = await api.put(url, { content_md: introduction });
+    assert.equal(withoutChecklist.body.task.progress, 0);
+    assert.equal((await api.get('/api/state')).body.tasks[0].checklist_progress, null);
+  });
+
   test('refuse un avancement invalide ou incompatible sans modifier la note', async () => {
     assert.equal((await api.post('/api/tasks', { title: 'Avancement négatif', progress: -1 })).status, 400);
     const task = await make.task(api, { progress: 65 });

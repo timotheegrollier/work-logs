@@ -33,6 +33,28 @@ describe('bilan du suivi IA', () => {
     expect(body.messages[0].content).toContain('recopie en tête la date écrite dans la source');
   });
 
+  test('propose seulement des cases connues avec une preuve citée dans une note lue', async () => {
+    const log = { ...document, id: 'journal', title: 'Journal', content_md: 'La pompe a été remplacée le 03/11.' };
+    const procedure = { ...log, id: 'procedure', kind: 'procedure' as const, content_md: 'Vérifier le montage.' };
+    const update = { document: 1, item: 2, checked: true, evidence_document: 2, evidence: log.content_md };
+    const fetch = vi.fn(async () => response(JSON.stringify({ ...report, checklist_updates: [
+      { ...update, evidence: 'Fait sans preuve.' },
+      { ...update, item: 99 },
+      { ...update, evidence_document: 3, evidence: procedure.content_md },
+      { ...update, evidence_document: 1, evidence: 'Diagnostic fait.' },
+      { ...update, item: 1 },
+      update,
+    ] })));
+    vi.stubGlobal('fetch', fetch);
+    const result = await generateFollowUp(settings, { ...source, documents: [document, log, procedure] });
+    expect(result.checklist_updates).toEqual([{
+      entry_id: document.id, entry_title: document.title, index: 1, checked: true,
+      text: 'Remplacer la pompe.', evidence: log.content_md,
+    }]);
+    const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.messages[1].content).toContain('"n":2,"text":"Remplacer la pompe.","checked":false');
+  });
+
   test('garde le début et la fin des longs textes et annonce chaque document omis', async () => {
     const long = `OBJECTIF_INITIAL${'a'.repeat(MAX_FOLLOW_UP_CHARS)}DERNIÈRE_AVANCÉE`;
     const docs = Array.from({ length: MAX_FOLLOW_UP_DOCUMENTS + 2 }, (_, index) => ({ ...document, id: `en_${index}`, title: `Document ${index}`, content_md: index < MAX_FOLLOW_UP_DOCUMENTS ? long + index : 'DOCUMENT_OMIS' }));

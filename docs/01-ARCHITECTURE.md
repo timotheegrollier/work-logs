@@ -278,10 +278,12 @@ références. Les résumés du journal exposent `task` pour les notes suivies. U
 garde l’identifiant de l’entrée. Une action extraite ou issue d’une procédure ou d’un onglet
 Google possède une note locale et conserve sa source comme référence.
 
-`progress` est un entier. À faire correspond à 0 %, terminé à 100 %, en cours accepte 0 à 99 %.
-Une modification du pourcentage seul déduit le statut. Terminer une tâche archive sa note et ses
-références (`archiveTaskDocuments`), sauf les notes d’autres tâches ; la rouvrir désarchive sa
-note (`restoreTaskNote`). L’avancement automatique (`web/src/task-progress.ts`) s’arrête à 99 %.
+`/api/state` fournit `checklist_progress` sur les résumés des entrées et des tâches. Ce
+pourcentage est calculé à partir des cases Markdown de la note, avec `null` en l’absence
+de checklist. Le champ enregistré `progress` reste lié au statut de la tâche pour les
+échanges et les sauvegardes. À faire correspond à 0 %, terminé à 100 %, en cours accepte
+0 à 99 %. Terminer une tâche archive sa note et ses références (`archiveTaskDocuments`),
+sauf les notes d’autres tâches. La rouvrir désarchive sa note (`restoreTaskNote`).
 
 Les associations sont créées avec `POST /api/tasks/:id/documents/:entryId` : `201` à la première
 création, puis `200` avec la ligne existante en cas de doublon. La suppression renvoie `200` ;

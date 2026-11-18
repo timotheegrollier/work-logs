@@ -307,7 +307,8 @@ test('deux conversations avancent en parallèle et reprennent après fermeture d
 test('l’assistant crée un brouillon lié, le complète ensuite et ouvre le résultat appliqué', async ({ page, request }) => {
   const project = await post(request, '/api/projects', { name: 'Atelier contenu de tâche' });
   const title = 'Préparer la revue du classeur';
-  const initialContent = '## Objectif\n\nPréparer la revue du classeur.\n\n## Étapes\n\n- [ ] À préciser.';
+  const initialDraft = '## Objectif\n\nPréparer la revue du classeur.\n\n## Étapes\n\n- Repérer les relevés concernés.\n- Fixer la date de revue.';
+  const initialContent = initialDraft.replace(/^- /gm, '- [ ] ');
   const instruction = 'Comparer les deux relevés avant la revue.';
   const content = `## Préparation\n\n${instruction}`;
   const unrelatedContent = 'Ancienne note de réunion sans lien avec cette tâche.';
@@ -318,7 +319,7 @@ test('l’assistant crée un brouillon lié, le complète ensuite et ouvre le r�
     let linkedNoteNumber = 0;
     let taskLine: string | undefined;
     const prompts = await stubAssistant(page,
-      { reply: 'La tâche est prête à créer.', actions: [{ kind: 'create_task', title, content: initialContent }] },
+      { reply: 'La tâche est prête à créer.', actions: [{ kind: 'create_task', title, content: initialDraft }] },
       (prompt) => {
         taskLine = prompt.split('\n').find((line) => line.replace(/^\d+\. /, '').startsWith(`${title} [`));
         taskNumber = Number(taskLine?.match(/^(\d+)\. /)?.[1]);
@@ -339,7 +340,7 @@ test('l’assistant crée un brouillon lié, le complète ensuite et ouvre le r�
     await field.press('Enter');
     const creation = chat.locator('.ai-action-row').filter({ hasText: 'Créer la tâche' });
     await creation.getByText('Relire le texte proposé', { exact: true }).click();
-    await expect(creation.locator('pre')).toContainText('Préparer la revue du classeur.');
+    await expect(creation.locator('pre')).toContainText('- [ ] Repérer les relevés concernés.');
     expect(await tasksOf(request, project.id)).toHaveLength(0);
     await chat.getByRole('button', { name: /^Appliquer : Créer la tâche/ }).click();
     await expect(chat.getByText('✓ Appliqué', { exact: true })).toHaveCount(1);
@@ -377,6 +378,48 @@ test('l’assistant crée un brouillon lié, le complète ensuite et ouvre le r�
     await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
     await chat.getByRole('button', { name: 'Ouvrir le document', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Entrée', exact: true }).getByText(instruction)).toBeVisible();
+  } finally {
+    await cleanProject(page, request, project.id);
+  }
+});
+
+test('l’assistant coche la sous-tâche choisie et actualise la note de tâche ouverte', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Atelier checklist assistant' });
+  const title = 'Contrôler la pression du circuit';
+  const content = '- [ ] Mesurer à 3 bars\n- [ ] Noter l’heure du relevé';
+  try {
+    const task = await post(request, '/api/tasks', { title, project_id: project.id, content_md: content });
+    await configure(page, project.id, task.entry_id);
+    let noteNumber = 0;
+    const prompts = await stubAssistant(page,
+      (prompt) => {
+        const taskLine = prompt.split('\n').find((line) => line.includes(`. ${title} [`));
+        noteNumber = Number(taskLine?.match(/note principale D(\d+)/)?.[1]);
+        return { read_entries: [noteNumber] };
+      },
+      () => ({
+        reply: 'La mesure est prête à être cochée.',
+        actions: [{ kind: 'update_entry', n: noteNumber, checklist_updates: [{ n: 1, checked: true }] }],
+      }),
+    );
+    await page.goto('/');
+    const progress = page.getByRole('progressbar', { name: 'Avancement de la tâche' });
+    await expect(progress).toHaveAttribute('value', '0');
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    const chat = assistant(page);
+    const field = messageField(page);
+    await field.fill('Coche « Mesurer à 3 bars » dans la tâche Contrôler la pression du circuit.');
+    await field.press('Enter');
+    const apply = chat.getByRole('button', { name: /Appliquer .* cocher « Mesurer à 3 bars »/ });
+    await expect(apply).toBeVisible();
+    expect(prompts[1]).toContain('"checklist":[{"n":1,"text":"Mesurer à 3 bars","checked":false}');
+    const readNote = async () => (await request.get(`/api/entries/${task.entry_id}`)).json();
+    expect(await readNote()).toMatchObject({ content_md: content });
+    await apply.click();
+    await expect(chat.getByText('✓ Appliqué', { exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(progress).toHaveAttribute('value', '50');
+    expect(await readNote()).toMatchObject({ content_md: content.replace('[ ] Mesurer', '[x] Mesurer'), archived: 0 });
   } finally {
     await cleanProject(page, request, project.id);
   }

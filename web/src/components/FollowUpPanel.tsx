@@ -19,7 +19,7 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false, acti
   /** Vue d'ensemble : les gestes sur l'élément, à côté de la suite proposée, qui reste dépliée pour décider. */
   actions?: ReactNode;
 }) {
-  const { followUp, stale, busy, queued, error, background, toggle, disable, refresh, stop } = useFollowUp(kind, item);
+  const { followUp, stale, busy, queued, error, background, applyingChecklist, toggle, disable, refresh, stop, applyChecklist } = useFollowUp(kind, item);
   const report = followUp?.report;
   const initial = !followUp || !isFollowed(item);
   const activate = useRef<HTMLButtonElement>(null);
@@ -68,15 +68,23 @@ export function FollowUpPanel({ kind, item, compact = false, dirty = false, acti
       </div>
       {report ? <p className="follow-up-summary">{report.summary}</p> : !busy && <p className="follow-up-empty">Aucun bilan pour le moment.</p>}
       {actions && <div className="follow-up-lists">{proposals}</div>}
+      {report?.checklist_updates?.length && !stale ? <div className="follow-up-list">
+        <h4>Cases à mettre à jour</h4>
+        <ul>{report.checklist_updates.map((change) => <li key={JSON.stringify([change.entry_id, change.index])}>
+          {change.entry_title} · {change.checked ? 'Cocher' : 'Décocher'} « {change.text} »<br />
+          <small>« {change.evidence} »</small>
+        </li>)}</ul>
+        <button className="ghost" type="button" disabled={busy || dirty} onClick={() => applyChecklist(report)}>Appliquer les mises à jour des cases</button>
+      </div> : null}
       <div className="follow-up-actions">
         {actions}
         <button className="ghost" type="button" aria-label={`Actualiser le bilan de ${item.title}`} disabled={busy} onClick={refresh}>{report ? 'Actualiser' : 'Générer le bilan'}</button>
-        {busy && <button className="ghost" type="button" aria-label={`Arrêter le suivi IA de ${item.title}`} onClick={stop}>Arrêter</button>}
-        <button className="ghost follow-up-off" type="button" aria-label={`Désactiver le suivi IA de ${item.title}`} title={kind === 'entry' ? "Arrête le suivi et retire son bilan ; la vue d’ensemble permet de le relancer avec « + Ajouter au suivi IA »" : "Arrête le suivi et retire son bilan ; « ✨ Suivi IA » le relance"} onClick={() => { turnedOff.current = true; disable(); }}>Désactiver</button>
+        {busy && !applyingChecklist && <button className="ghost" type="button" aria-label={`Arrêter le suivi IA de ${item.title}`} onClick={stop}>Arrêter</button>}
+        <button className="ghost follow-up-off" type="button" disabled={applyingChecklist} aria-label={`Désactiver le suivi IA de ${item.title}`} title={kind === 'entry' ? "Arrête le suivi et retire son bilan ; la vue d’ensemble permet de le relancer avec « + Ajouter au suivi IA »" : "Arrête le suivi et retire son bilan ; « ✨ Suivi IA » le relance"} onClick={() => { turnedOff.current = true; disable(); }}>Désactiver</button>
       </div>
       {compact ? <details className="follow-up-details"><summary>Détails du suivi</summary>{details}</details> : details}
     </>}
-    {busy && !background && <AiPending label={queued ? 'En attente…' : 'L’IA prépare le bilan…'} />}
+    {busy && !background && <AiPending label={applyingChecklist ? 'Enregistrement des cases…' : queued ? 'En attente…' : 'L’IA prépare le bilan…'} />}
     {error && <p className="error" role="alert">{error}</p>}
   </section>;
 }

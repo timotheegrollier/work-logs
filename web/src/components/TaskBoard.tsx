@@ -471,7 +471,7 @@ function TaskCard({
     ? availableDocuments.filter((entry) => entry.title.toLowerCase().includes(query))
     : availableDocuments;
   const done = task.status === 'done';
-  const progress = task.progress ?? (done ? 100 : 0);
+  const progress = task.checklist_progress ?? null;
   const statusLabel = COLUMNS.find((column) => column.id === task.status)?.label;
   const late = isOverdue(task);
   // Les documents d'une tâche terminée sont repliés derrière un historique :
@@ -1138,10 +1138,10 @@ function TaskCard({
           </button>
         </span>
       </div>
-      <div className="card-progress">
+      {progress !== null && <div className="checklist-progress">
         <progress className="task-progress-bar" aria-label={`Avancement de ${task.title}`} value={progress} max={100} />
         <span>{progress} %</span>
-      </div>
+      </div>}
       <div className="card-meta">
         {/* « Tout » mêle les projets : chaque carte dit le sien, dans sa couleur. */}
         {showProject && project && (

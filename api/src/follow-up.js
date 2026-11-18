@@ -19,6 +19,20 @@ const timestamp = (value) => {
   return new Date(clean).toISOString();
 };
 
+function checklistChanges(value) {
+  if (!Array.isArray(value) || value.length > 8) fail();
+  const seen = new Set();
+  return value.map((item) => {
+    if (!object(item) || !Number.isSafeInteger(item.index) || item.index < 0 || typeof item.checked !== 'boolean') fail();
+    const entry_id = text(item.entry_id, 200);
+    const key = JSON.stringify([entry_id, item.index]);
+    if (seen.has(key)) fail();
+    seen.add(key);
+    return { entry_id, entry_title: text(item.entry_title, 200), index: item.index, checked: item.checked,
+      text: text(item.text, 200), evidence: text(item.evidence, 500) };
+  });
+}
+
 export function validateFollowUpReport(value) {
   if (!object(value) || !STATES.has(value.status)) fail();
   return {
@@ -28,6 +42,7 @@ export function validateFollowUpReport(value) {
     next_steps: list(value.next_steps, 8),
     blockers: list(value.blockers, 8),
     warnings: list(value.warnings, 12),
+    ...(value.checklist_updates === undefined ? {} : { checklist_updates: checklistChanges(value.checklist_updates) }),
   };
 }
 
@@ -71,7 +86,6 @@ export function mergeFollowUp(local, remote) {
   if (leftReport && rightReport) {
     const leftTime = Date.parse(leftReport.generated_at);
     const rightTime = Date.parse(rightReport.generated_at);
-    // Les champs du rapport sont plats, leurs valeurs sont des chaînes ou listes.
     const canonical = (value) => JSON.stringify(Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)));
     report = leftTime > rightTime ? leftReport : rightTime > leftTime ? rightReport
       : canonical(leftReport) >= canonical(rightReport) ? leftReport : rightReport;

@@ -1977,14 +1977,11 @@ button:disabled {
   border-radius: 10px;
   background: var(--surface-2);
 }
-.entry-task-progress-meta,
-.task-progress-form {
+.entry-task-progress-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 8px 12px;
-}
-.entry-task-progress-meta {
   justify-content: space-between;
 }
 .entry-task-progress label {
@@ -1993,16 +1990,8 @@ button:disabled {
   color: var(--muted);
   font-size: 12.5px;
 }
-.entry-task-progress input {
-  width: 8ch;
-}
-.task-progress-form .task-progress-bar {
-  align-self: center;
-  flex: 1 1 100px;
-}
 @media (max-width: 600px) {
   .entry-task-progress select,
-  .entry-task-progress input,
   .entry-task-progress button {
     min-height: 44px;
   }
@@ -3398,7 +3387,7 @@ div.google-preserved {
     opacity: 1;
   }
 }
-.card-progress {
+.checklist-progress {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -3429,7 +3418,7 @@ div.google-preserved {
   border-radius: 99px;
   background: var(--accent);
 }
-.card-progress .task-progress-bar {
+.checklist-progress .task-progress-bar {
   flex: 1;
 }
 .card-status {

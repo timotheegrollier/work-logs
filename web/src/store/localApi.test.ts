@@ -439,6 +439,23 @@ describe('tâches', () => {
     expect((await localApi.state()).tasks.some(({ id }) => id === trackedAgain.id)).toBe(false);
   });
 
+  test('cocher les sous-tâches met à jour la tâche locale et la progression de la note', async () => {
+    const note = await localApi.createEntry({ title: 'Remise en service', content_md: '- [ ] Remonter\n- [ ] Tester' });
+    const initial = (await localApi.state()).entries.find(({ id }) => id === note.id);
+    expect(initial?.checklist_progress).toBe(0);
+    const task = await localApi.createTaskFromEntry(note.id);
+
+    await expect(localApi.updateEntry(note.id, { content_md: '- [x] Remonter\n- [ ] Tester' }))
+      .resolves.toMatchObject({ status: 'doing', task: { progress: 50 } });
+    await expect(localApi.updateEntry(note.id, { content_md: '- [x] Remonter\n- [x] Tester' }))
+      .resolves.toMatchObject({ status: 'doing', archived: 0, task: { progress: 99 } });
+    expect((await localApi.state()).tasks.find(({ id }) => id === task.id)?.checklist_progress).toBe(100);
+
+    await expect(localApi.updateEntry(note.id, { content_md: 'Texte sans liste' }))
+      .resolves.toMatchObject({ status: 'doing', task: { progress: 0 } });
+    expect((await localApi.state()).tasks.find(({ id }) => id === task.id)?.checklist_progress).toBeNull();
+  });
+
   test('la boîte mobile et la restauration gardent la note et l’avancement', async () => {
     const task = await localApi.createTask({ title: 'Travaux', content_md: 'Préparer les outils' });
     clearLocalOutbox();

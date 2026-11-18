@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AiCancelled, MAX_DAILY_FOLLOW_UPS, MAX_REPLANNED_TASKS, generateDailyReview, localToday, readAiSettings, replanTasks, type AiSettings, type DailyFollowUpInput, type DailyReview, type TaskScheduleProposal } from '../ai-suggest';
+import { AiCancelled, MAX_DAILY_FOLLOW_UPS, MAX_REPLANNED_TASKS, generateDailyReview, localToday, readAiSettings, replanTasks, type AiSettings, type DailyChecklistChange, type DailyChecklistInput, type DailyFollowUpInput, type DailyReview, type TaskScheduleProposal } from '../ai-suggest';
 import { aiBudgetRefusal } from '../ai-budget';
 import { readProjectAiBrief } from '../ai-context';
 import { flushPendingSaves } from '../autosave';
+import { applyChecklistChanges } from '../checklist-edits';
+import { getChecklistItems } from '../markdown';
 import { useFollowUpBusy, useFollowUpHold } from '../follow-up-controller';
-import { api, dayLabel, isFollowed, PRIORITIES, priorityLabel, todayISO, type AppState, type EntrySummary, type Project, type Task } from '../lib';
+import { api, ApiError, dayLabel, isFollowed, PRIORITIES, priorityLabel, todayISO, type AppState, type Entry, type EntrySummary, type Project, type Task } from '../lib';
 import { AiPending } from './AiMenu';
 
 type Choice = TaskScheduleProposal & { selected: boolean; applied: boolean; previousDueDate: string | null };
-type Work = 'daily' | 'schedule' | 'applying' | null;
+type Work = 'daily' | 'schedule' | 'applying' | 'daily-checklists' | null;
 type Busy = Work | 'daily-planning' | 'daily-applying';
+type DailyChecklistProposal = { entry: Entry; changes: DailyChecklistChange[] };
+type DailyResult = DailyReview & { checklistProposals: DailyChecklistProposal[] };
 const changedMessage = 'Les tâches ou les suivis ont changé. Relance la replanification.';
 const dailyChangedMessage = 'La journée ou les tâches ont changé pendant la replanification. Relance le bilan du jour.';
 const openTasks = (tasks: Task[]) => tasks.filter((task) => task.status !== 'done');
@@ -29,6 +33,37 @@ const dailyItemsFor = (tasks: Task[], entries: EntrySummary[]): DailyFollowUpInp
   ...openTasks(tasks).filter((task) => !isFollowed(task)).map(plannedTaskItem),
 ];
 const dailyKey = (items: DailyFollowUpInput[], missingEntries: number, missingTasks: number) => JSON.stringify([items, readAiSettings().profile, todayISO(), missingEntries, missingTasks]);
+const dailySnapshotKey = ({ tasks, entries, stats }: AppState) => dailyKey(followedItems(tasks, entries), Math.max(0, stats.entries - entries.length),
+  Math.max(0, stats.tasks.todo + stats.tasks.doing + stats.tasks.done - tasks.length));
+const dailyChecklistEntries = (entries: EntrySummary[], day: string) => entries.filter((entry) =>
+  entry.checklist_progress != null && !entry.archived && !entry.google_document_id && !entry.google_tab_id && entry.task?.status !== 'done'
+  && (isFollowed(entry) || (entry.kind === 'note' && entry.entry_date === day)));
+const freshReportEvidence = (item: Task | Entry | undefined, day: string) => {
+  const report = item?.follow_up?.report;
+  if (!report || report.source_key !== item?.follow_up_key || new Date(report.generated_at).toDateString() !== new Date(`${day}T12:00:00`).toDateString()) return [];
+  return [report.completed.join('\n'), report.summary];
+};
+
+async function readDailyChecklists(snapshot: AppState, day: string): Promise<{ entry: Entry; input: DailyChecklistInput }[]> {
+  const entries = new Map(snapshot.entries.map((entry) => [entry.id, entry]));
+  const tasks = new Map(openTasks(snapshot.tasks).filter((task) => task.entry_id && (task.checklist_progress != null || entries.get(task.entry_id)?.checklist_progress != null))
+    .map((task) => [task.entry_id, task]));
+  const ids = [...new Set([...tasks.keys(), ...dailyChecklistEntries(snapshot.entries, day).map((entry) => entry.id)])].slice(0, MAX_DAILY_FOLLOW_UPS);
+  const read = await Promise.all(ids.map(async (id) => {
+    const entry = await api.entry(id).catch(() => null);
+    if (!entry || entry.google_sync || entry.content_json || entry.archived || entry.task?.status === 'done') return [];
+    const items = getChecklistItems(entry.content_md);
+    if (!items.length) return [];
+    const summary = entries.get(id);
+    if (summary && summary.updated_at !== entry.updated_at) return [];
+    // Le modèle reçoit les libellés séparément ; une ligne de checklist ne vaut pas constat.
+    const prose = entry.content_md.split('\n').filter((line) => !/^\s*(?:>\s*)*(?:[-+*]|\d+[.)])\s+\[[ xX]\](?:\s|$)/.test(line)).join('\n');
+    const evidence = [prose, ...freshReportEvidence(tasks.get(id), day), ...freshReportEvidence(entry, day)].filter((text) => text.trim());
+    return [{ entry, input: { entryId: id, title: entry.title, items, evidence } }];
+  }));
+  return read.flat();
+}
+
 const validDate = (value: string, today: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value && value >= today;
 
 const proposeSchedule = (settings: AiSettings, tasks: Task[], projects: Project[], today: string) => replanTasks(settings, tasks.map((task) => ({
@@ -45,7 +80,7 @@ const saveSchedule = (task: Task, choice: TaskScheduleProposal) => api.updateTas
 });
 const savedCount = (count: number) => `${count} tâche${count > 1 ? 's' : ''} enregistrée${count > 1 ? 's' : ''}.`;
 
-export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, missingEntries = 0, missingTasks = 0, onChanged, onTask, children }: {
+export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, missingEntries = 0, missingTasks = 0, onChanged, onEntriesChanged, onTask, children }: {
   tasks: Task[];
   entries: EntrySummary[];
   projects: Project[];
@@ -53,13 +88,14 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
   missingEntries?: number;
   missingTasks?: number;
   onChanged: () => void | Promise<void>;
+  onEntriesChanged?: (ids: string[]) => void | Promise<void>;
   onTask: (task: Task) => void;
   children?: ReactNode;
 }) {
   const [busy, setBusy] = useState<Busy>(null);
   const work = useRef<Work>(null);
   const controller = useRef<AbortController | null>(null);
-  const [daily, setDaily] = useState<DailyReview | null>(null);
+  const [daily, setDaily] = useState<DailyResult | null>(null);
   const [dailyDate, setDailyDate] = useState(todayISO);
   const [choices, setChoices] = useState<Choice[] | null>(null);
   const [error, setError] = useState('');
@@ -80,7 +116,7 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
   // tâche ouverte ne doit pas invalider un bilan déjà demandé.
   const currentDaily = dailyKey(followed, missingEntries, missingTasks);
   const today = todayISO();
-  const hasReports = dailyItems.some((item) => item.follow_up?.report) || open.length > 0;
+  const canReview = dailyItems.some((item) => item.follow_up?.report) || open.length > 0 || dailyChecklistEntries(entries, localToday()).length > 0;
   const selected = choices?.filter((choice) => choice.selected && !choice.applied) ?? [];
   const invalidDates = selected.some((choice) => !validDate(choice.due_date, today));
   const hasSchedule = choices !== null;
@@ -101,7 +137,7 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
       setChoices(null);
       setError(changedMessage);
     }
-    if (dailyInput.current && currentDaily !== dailyInput.current) {
+    if (work.current !== 'daily-checklists' && dailyInput.current && currentDaily !== dailyInput.current) {
       if (work.current === 'daily') { controller.current?.abort(); controller.current = null; work.current = null; setBusy(null); }
       dailyInput.current = null;
       setDaily(null);
@@ -176,16 +212,24 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
           }
         }
         if (localToday() !== day) throw new Error(dailyChangedMessage);
-        const { stats } = snapshot;
-        dailyInput.current = dailyKey(followedItems(snapshot.tasks, snapshot.entries), Math.max(0, stats.entries - snapshot.entries.length),
-          Math.max(0, stats.tasks.todo + stats.tasks.doing + stats.tasks.done - snapshot.tasks.length));
+        dailyInput.current = dailySnapshotKey(snapshot);
+        const checklists = await readDailyChecklists(snapshot, day);
+        if (request.signal.aborted) return;
+        if (localToday() !== day) throw new Error(dailyChangedMessage);
         if (written) setFeedback(`${written} tâche${written > 1 ? 's' : ''} replanifiée${written > 1 ? 's' : ''}.`);
         setBusy('daily');
         const result = await generateDailyReview(settings, dailyItemsFor(snapshot.tasks, snapshot.entries), { today: day, todayActivity: {
           doneTasks: snapshot.tasks.filter((task) => task.status === 'done' && new Date(task.updated_at).toDateString() === new Date().toDateString()).map((task) => task.title),
           notes: snapshot.entries.filter((entry) => entry.kind === 'note' && entry.entry_date === day && !entry.google_document_id && !entry.google_tab_id).map((entry) => entry.title),
-        } });
-        if (!request.signal.aborted) { setDailyDate(day); setDaily(result); }
+        }, ...(checklists.length > 0 && { checklists: checklists.map(({ input }) => input) }) });
+        if (!request.signal.aborted) {
+          const checklistProposals = checklists.flatMap(({ entry }) => {
+            const changes = (result.checklistChanges ?? []).filter(({ entryId }) => entryId === entry.id);
+            return changes.length ? [{ entry, changes }] : [];
+          });
+          setDailyDate(day);
+          setDaily({ ...result, checklistProposals });
+        }
       } else {
         const result = await proposeSchedule(settings, open, projects, date);
         if (!request.signal.aborted) setChoices(result.map((choice) => ({ ...choice, selected: true, applied: false, previousDueDate: open.find((task) => task.id === choice.id)?.due_date ?? null })));
@@ -238,13 +282,52 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
       try { await onChanged(); } catch (cause) { setError((cause as Error).message || 'Impossible de relire les tâches.'); }
     }
   };
+  const applyDailyChecklist = async ({ entry, changes }: DailyChecklistProposal) => {
+    if (work.current || !dailyInput.current) return;
+    work.current = 'daily-checklists'; setBusy('daily-checklists'); setError(''); setFeedback('');
+    let attempted = false;
+    const removeProposal = () => setDaily((current) => current && { ...current, checklistProposals: current.checklistProposals.filter((proposal) => proposal.entry.id !== entry.id) });
+    try {
+      await flushPendingSaves();
+      const snapshot = await api.state();
+      if (localToday() !== dailyDate || dailySnapshotKey(snapshot) !== dailyInput.current) {
+        dailyInput.current = null;
+        setDaily(null);
+        throw new Error('La journée ou les suivis ont changé. Relance le bilan du jour.');
+      }
+      attempted = true;
+      await applyChecklistChanges(entry, changes);
+      removeProposal();
+      setFeedback(changes.length === 1 ? '1 case mise à jour.' : `${changes.length} cases mises à jour.`);
+      // La note modifiée peut périmer son propre suivi. Le bilan déjà lu reste affiché.
+      const refreshed = await api.state();
+      dailyInput.current = dailySnapshotKey(refreshed);
+      if (scheduleInput.current && planningKey(refreshed.tasks, refreshed.projects) !== scheduleInput.current) {
+        scheduleInput.current = null; expected.current = null; setChoices(null);
+      }
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.code === 'ENTRY_EDIT_STALE') {
+        removeProposal();
+        setError('Cette entrée a changé depuis la proposition. Relance le bilan du jour.');
+      } else setError((cause as Error).message || 'Impossible de mettre à jour les cases.');
+    } finally {
+      try {
+        if (attempted) await (onEntriesChanged ? onEntriesChanged([entry.id]) : onChanged());
+      } catch (cause) {
+        setError((cause as Error).message || 'Impossible de relire les données.');
+      } finally {
+        work.current = null;
+        setBusy(null);
+      }
+    }
+  };
   const list = (title: string, values: string[]) => values.length > 0 && <div><h4>{title}</h4><ul>{values.map((value, index) => <li key={index}>{value}</li>)}</ul></div>;
   const canPlan = missingOpen === 0 && open.length <= MAX_REPLANNED_TASKS;
-  const writing = busy === 'applying' || busy === 'daily-applying';
+  const writing = busy === 'applying' || busy === 'daily-applying' || busy === 'daily-checklists';
 
   return <section className="overview-ai no-print" aria-label="Bilan du jour et planification IA" aria-busy={Boolean(busy)}>
     <div className="overview-ai-actions">
-      <button className="task-primary" type="button" aria-label="Bilan du jour" disabled={Boolean(busy) || followUpsRunning || !canPlan || !hasReports || dailyItems.length > MAX_DAILY_FOLLOW_UPS} onClick={() => void generate('daily')}><span aria-hidden="true">✨ </span>Bilan du jour</button>
+      <button className="task-primary" type="button" aria-label="Bilan du jour" disabled={Boolean(busy) || followUpsRunning || !canPlan || !canReview || dailyItems.length > MAX_DAILY_FOLLOW_UPS} onClick={() => void generate('daily')}><span aria-hidden="true">✨ </span>Bilan du jour</button>
       <button className="ghost" type="button" aria-label="Replanifier avec l’IA" disabled={Boolean(busy) || followUpsRunning || !open.length || !canPlan} onClick={() => void generate('schedule')}><span aria-hidden="true">↻ </span>Replanifier</button>
       {children}
     </div>
@@ -253,11 +336,11 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
     {followUpsRunning && <p className="ai-hint overview-ai-note">Bilans de suivi en cours d’actualisation : le bilan du jour et la replanification attendent leur fin.</p>}
     <details className="overview-ai-scope">
       <summary>Données envoyées au service IA</summary>
-      <p>Pour le bilan du jour, le service IA reçoit ton profil, les bilans de suivi, le titre, le statut, la priorité et l’échéance des tâches ouvertes, et les titres des tâches terminées et des notes du jour. Pour replanifier, il reçoit ton profil, les champs des tâches, leurs bilans et les repères des projets.</p>
+      <p>Pour le bilan du jour, le service IA reçoit ton profil, les bilans de suivi, le titre, le statut, la priorité et l’échéance des tâches ouvertes, les titres des tâches terminées et des notes du jour, ainsi que les cases et des extraits des notes locales qui les contiennent. Pour replanifier, il reçoit ton profil, les champs des tâches, leurs bilans et les repères des projets.</p>
     </details>
     {(missingEntries > 0 || missingTasks > 0) && <p className="notice">Le bilan couvre uniquement {dailyItems.length} source{dailyItems.length > 1 ? 's' : ''} chargée{dailyItems.length > 1 ? 's' : ''}. Éléments non chargés : {missingEntries > 0 ? `${missingEntries} entrée${missingEntries > 1 ? 's' : ''}` : ''}{missingEntries > 0 && missingTasks > 0 ? ' et ' : ''}{missingTasks > 0 ? `${missingTasks} tâche${missingTasks > 1 ? 's' : ''}` : ''}. D’autres sources peuvent manquer.</p>}
     {(dailyItems.length > MAX_DAILY_FOLLOW_UPS || open.length > MAX_REPLANNED_TASKS) && <p className="notice">{dailyItems.length > MAX_DAILY_FOLLOW_UPS ? `Le bilan accepte ${MAX_DAILY_FOLLOW_UPS} sources au maximum. ` : ''}{open.length > MAX_REPLANNED_TASKS ? `La replanification accepte ${MAX_REPLANNED_TASKS} tâches ouvertes au maximum ; termine les tâches devenues inutiles.` : ''}</p>}
-    {busy && <div className="overview-ai-pending"><AiPending label={busy === 'daily' ? 'L’IA rassemble les bilans de suivi…' : writing ? 'Enregistrement des dates et priorités…' : busy === 'daily-planning' ? 'L’IA replanifie les tâches ouvertes avant le bilan…' : 'L’IA propose les priorités et les dates…'} />{!writing && <button className="ghost" type="button" onClick={() => {
+    {busy && <div className="overview-ai-pending"><AiPending label={busy === 'daily' ? 'L’IA rassemble les bilans de suivi…' : busy === 'daily-checklists' ? 'Enregistrement des cases…' : writing ? 'Enregistrement des dates et priorités…' : busy === 'daily-planning' ? 'L’IA replanifie les tâches ouvertes avant le bilan…' : 'L’IA propose les priorités et les dates…'} />{!writing && <button className="ghost" type="button" onClick={() => {
       // Seule la référence de la demande coupée tombe : l'autre garde encore un résultat affiché.
       if (work.current === 'daily') dailyInput.current = null; else scheduleInput.current = null;
       controller.current?.abort(); controller.current = null; work.current = null; setBusy(null);
@@ -265,11 +348,22 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
     {error && <p className="error" role="alert">{error}</p>}
     {feedback && <p className="overview-ai-feedback" role="status">{feedback}</p>}
     {daily && <section className="overview-daily" aria-label="Bilan IA du jour">
-      <div className="overview-ai-result-head"><div className="overview-result-heading"><h3 ref={dailyHead} tabIndex={-1}>Bilan du {new Date(dailyDate + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}</h3></div><button className="ghost" type="button" aria-label="Fermer le bilan du jour" onClick={() => { dailyInput.current = null; setDaily(null); }}>Fermer</button></div>
+      <div className="overview-ai-result-head"><div className="overview-result-heading"><h3 ref={dailyHead} tabIndex={-1}>Bilan du {new Date(dailyDate + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}</h3></div><button className="ghost" type="button" aria-label="Fermer le bilan du jour" disabled={busy === 'daily-checklists'} onClick={() => { dailyInput.current = null; setDaily(null); }}>Fermer</button></div>
       <p>{daily.summary}</p>
       <div className="overview-daily-lists">{list('Avancées attestées', daily.completed)}{list('Prochaines actions', daily.next_steps)}{list('Blocages', daily.blockers)}</div>
+      {daily.checklistProposals.length > 0 && <section aria-label="Cases à mettre à jour">
+        <h4>Cases à mettre à jour</h4>
+        {daily.checklistProposals.map((proposal) => <div key={proposal.entry.id}>
+          <h5>{proposal.entry.title}</h5>
+          <ul>{proposal.changes.map((change) => <li key={change.index}>
+            <strong>{change.checked ? 'Cocher' : 'Décocher'} « {change.text} »</strong> — {change.quote}
+          </li>)}</ul>
+          <button className="ghost" type="button" aria-label={`Appliquer les cases de ${proposal.entry.title}`} disabled={Boolean(busy)}
+            onClick={() => void applyDailyChecklist(proposal)}>Appliquer les cases</button>
+        </div>)}
+      </section>}
       {daily.warnings.length > 0 && <details className="overview-daily-limits"><summary>Sources et limites du bilan ({daily.warnings.length})</summary><ul>{daily.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
-      <p className="ai-hint">Synthèse des bilans enregistrés ; leur date de génération ne prouve pas la date des avancées.</p>
+      <p className="ai-hint">La date de génération des bilans de suivi ne date pas les avancées.</p>
     </section>}
     {choices && <section className="overview-schedule" aria-label="Dates et priorités proposées par l’IA">
       <div className="overview-ai-result-head">

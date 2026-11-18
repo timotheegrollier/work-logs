@@ -1,5 +1,8 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { getChecklistItems, updateChecklistItems } from '../../api/src/checklist.js';
+
+export { checklistProgress, getChecklistItems, updateChecklistItems, type ChecklistChange, type ChecklistItem } from '../../api/src/checklist.js';
 
 marked.use({
   gfm: true, // tableaux, cases à cocher, barré
@@ -13,15 +16,35 @@ marked.use({
  *
  * `marked` rend les cases à cocher avec `disabled` : c'est le bon défaut
  * (aperçu d'écriture, aperçu de relecture IA), mais le mode Lire de
- * l'éditeur veut des cases cliquables. `interactiveCheckboxes` retire ce
- * seul attribut, uniquement sur les `<input type="checkbox">`.
+ * l'éditeur veut des cases cliquables. `interactiveCheckboxes` retire cet
+ * attribut sur les cases Markdown et les relie à leur position dans la note.
  */
 export function renderMarkdown(source: string, options: { interactiveCheckboxes?: boolean } = {}): string {
-  const html = marked.parse(source || '', { async: false });
-  if (!options.interactiveCheckboxes) return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
-  // Sur le DOM assaini : une regex sur le HTML peut couper un attribut et en fabriquer d'autres.
+  if (!options.interactiveCheckboxes) {
+    return DOMPurify.sanitize(marked.parse(source || '', { async: false }), { ADD_ATTR: ['target'] });
+  }
+  // Seules les cases produites par le parseur sont reliées à un marqueur Markdown.
+  const renderer = new marked.Renderer();
+  let marker = 'data-worklogs-box';
+  const lowerSource = source.toLowerCase();
+  for (let suffix = 1; lowerSource.includes(marker); suffix++) marker = `data-worklogs-box-${suffix}`;
+  const renderCheckbox = renderer.checkbox;
+  renderer.checkbox = function (token) {
+    return renderCheckbox.call(this, token).replace('<input ', '<input ' + marker + ' ');
+  };
+  const html = marked.parse(source || '', { async: false, renderer });
   const body = DOMPurify.sanitize(html, { ADD_ATTR: ['target'], RETURN_DOM: true }) as HTMLElement;
-  body.querySelectorAll('input[type="checkbox"]').forEach((box) => box.removeAttribute('disabled'));
+  body.querySelectorAll('[data-checklist-index]').forEach((box) => box.removeAttribute('data-checklist-index'));
+  const boxes = [...body.querySelectorAll<HTMLInputElement>(`input[${marker}]`)];
+  const items = getChecklistItems(source);
+  const aligned = boxes.length === items.length && boxes.every((box, index) => box.checked === items[index].checked);
+  boxes.forEach((box, index) => {
+    box.removeAttribute(marker);
+    if (aligned) {
+      box.dataset.checklistIndex = String(index);
+      box.removeAttribute('disabled');
+    }
+  });
   return body.innerHTML;
 }
 
@@ -89,30 +112,8 @@ export function insertCodeFence(source: string, start: number, end: number): { t
   return { text: before + open + code + close + after, start: codeStart, end: codeStart + code.length };
 }
 
-/**
- * Inverse le statut de la Nième case à cocher Markdown (`- [ ]` ↔ `- [x]`).
- * L'index suit l'ordre d'apparition des cases dans le texte, comme celui
- * des `<input type="checkbox">` dans le HTML rendu. Index inconnu ou texte
- * sans case : le contenu est renvoyé tel quel.
- */
-const CHECKLIST_ITEM = /^\s*(?:[-*•]\s*)?\[([ xX])\]/;
-
-/** Part des cases cochées, en pourcentage arrondi ; null sans case à cocher. */
-export function checklistProgress(source: string): number | null {
-  const items = source.split('\n').map((line) => CHECKLIST_ITEM.exec(line)?.[1]).filter((mark) => mark !== undefined);
-  return items.length ? Math.round((items.filter((mark) => mark !== ' ').length / items.length) * 100) : null;
-}
-
+/** Inverse la case Markdown dans l'ordre du rendu, en préservant le texte. */
 export function toggleChecklistItem(source: string, index: number): string {
-  if (!Number.isInteger(index) || index < 0) return source;
-  const lines = source.split('\n');
-  let seen = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (!CHECKLIST_ITEM.test(lines[i])) continue;
-    seen += 1;
-    if (seen !== index) continue;
-    lines[i] = lines[i].replace(/\[[ xX]\]/, (match) => (match.toLowerCase() === '[x]' ? '[ ]' : '[x]'));
-    break;
-  }
-  return lines.join('\n');
+  const item = getChecklistItems(source)[index];
+  return item ? updateChecklistItems(source, [{ index, checked: !item.checked }]) : source;
 }

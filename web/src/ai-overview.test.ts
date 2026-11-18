@@ -146,6 +146,31 @@ describe('bilan quotidien des suivis', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  test('propose seulement un changement de case connue appuyé par une citation du bon extrait', async () => {
+    const quote = 'Le joint de la pompe a été posé.';
+    const checklists = [{ entryId: 'en_secret_checklist', title: 'Pompe', items: [
+      { index: 0, text: 'Poser le joint', checked: false }, { index: 1, text: 'Vérifier la vanne', checked: true },
+    ], evidence: [quote] }, {
+      entryId: 'en_secret_seconde_checklist', title: 'Vanne', items: [{ index: 0, text: 'Vérifier la vanne', checked: false }], evidence: ['Prévoir un essai demain.'],
+    }];
+    const fetch = vi.fn(async () => response(JSON.stringify({ ...review, checklist_changes: [
+      { list: 1, item: 1, checked: true, quote },
+      { list: 1, item: 2, checked: true, quote },
+      { list: 1, item: 3, checked: true, quote },
+      { list: 1, item: 2, checked: false, quote: 'Citation inventée.' },
+      { list: 1, item: 2, checked: 'false', quote },
+      { list: 2, item: 1, checked: true, quote },
+      { list: 3, item: 1, checked: true, quote },
+    ] })));
+    vi.stubGlobal('fetch', fetch);
+    const result = await generateDailyReview(settings, [], { today, checklists });
+    expect(result.checklistChanges).toEqual([{ entryId: 'en_secret_checklist', index: 0, text: 'Poser le joint', checked: true, quote }]);
+    const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    const data = JSON.parse(body.messages[1].content.split('\n\n')[1]);
+    expect(data.checklists[0]).toMatchObject({ n: 1, evidence: [quote], items: [{ n: 1, text: 'Poser le joint', checked: false }, { n: 2, text: 'Vérifier la vanne', checked: true }] });
+    expect(body.messages[1].content).not.toContain('en_secret');
+  });
+
   test('refuse le vide et le dépassement avant un appel, sans tronquer la sélection', async () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
     await expect(generateDailyReview(settings, [], { today })).rejects.toThrow('Aucun bilan de suivi');

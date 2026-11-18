@@ -273,7 +273,8 @@ test('choisir une tâche ou une entrée suivie ferme la vue et affiche la source
       await overview.getByRole('button', { name: `Ouvrir la tâche ${done.title}`, exact: true }).click();
       await expect(overview).toBeHidden();
       await expect(page.getByLabel('Titre de l’entrée')).toHaveValue(done.title);
-      await expect(page.getByRole('progressbar', { name: 'Avancement de la tâche' })).toHaveAttribute('value', '100');
+      await expect(page.getByLabel('Statut de la tâche')).toHaveValue('done');
+      await expect(page.getByRole('progressbar', { name: 'Avancement de la tâche' })).toHaveCount(0);
 
       await trigger.click();
       await overview.getByRole('button', { name: `Ouvrir l’entrée ${entry.title}`, exact: true }).click();

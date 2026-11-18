@@ -42,7 +42,7 @@ import { assertEntryMergeReplay, assertEntryMergeSources, assertTaskMergeSources
 // @ts-expect-error — normalisation pure partagée avec SQLite et les sauvegardes.
 import { normalizeTaskNotes } from '../../../api/src/task-notes.js';
 // @ts-expect-error — validation commune des statuts et de l’avancement.
-import { taskCreationStamp, taskIdForNote, taskState } from '../../../api/src/task-state.js';
+import { changedChecklistProgress, noteChecklistProgress, taskCreationStamp, taskIdForNote, taskState } from '../../../api/src/task-state.js';
 import { readRelay } from '../relay-settings';
 import { beginWebLogin, builtinWebClientId, clearWebClient, disconnectWeb, downloadDriveBinary, webGoogleRequest, webGoogleStatus } from './google-web';
 
@@ -569,9 +569,9 @@ async function archiveTaskDocuments(taskId: string, withNote = false): Promise<v
   for (const entry of archived) track('entries', entry.id);
 }
 
-function taskStateFor(status: unknown, progress: unknown, current?: Pick<TaskRow, 'status' | 'progress'>): Pick<TaskRow, 'status' | 'progress'> {
+function taskStateFor(status: unknown, progress: unknown, current?: Pick<TaskRow, 'status' | 'progress'>, checklist?: number | null): Pick<TaskRow, 'status' | 'progress'> {
   try {
-    return taskState(status, progress, current);
+    return taskState(status, progress, current, checklist);
   } catch (error) {
     return fail((error as Error).message);
   }
@@ -1041,13 +1041,17 @@ export const localApi: Api = {
       .sort((a, b) => cmp(b.entry_date, a.entry_date) || cmp(b.updated_at, a.updated_at));
     const counts = new Map<string, number>();
     for (const file of allAttachments) counts.set(file.entry_id, (counts.get(file.entry_id) ?? 0) + 1);
+    const entriesById = new Map(allEntries.map((entry) => [entry.id, entry]));
+    const checklistByEntry = new Map<string, number | null>();
     const summaries = matching.map((entry) => {
+      const checklist_progress: number | null = noteChecklistProgress(entry);
+      checklistByEntry.set(entry.id, checklist_progress);
       const link = googleByEntry.get(entry.id);
       const task = tasksByEntry.get(entry.id);
       return {
         id: entry.id, title: entry.title, entry_date: entry.entry_date, project_id: entry.project_id, category_id: entry.category_id ?? null,
         archived: entry.archived ?? 0, kind: entry.kind ?? 'note', status: entry.status ?? 'todo',
-        updated_at: entry.updated_at, excerpt: entry.content_md.slice(0, 240),
+        updated_at: entry.updated_at, excerpt: entry.content_md.slice(0, 240), checklist_progress,
         attachments: counts.get(entry.id) ?? 0,
         google_document_id: link?.document_id ?? null, google_tab_id: link?.tab_id ?? null,
         google_document_title: link?.document_title ?? null, google_tab_title: link?.tab_title ?? null,
@@ -1064,7 +1068,11 @@ export const localApi: Api = {
       .filter((task) => (!projectId || task.project_id === projectId) && matchesCategory(task))
       .filter((task) => !needle || matchingIds.has(task.entry_id) || (!task.entry_id && foldSearch(task.title).includes(needle)))
       .sort((a, b) => a.position - b.position || cmp(b.updated_at, a.updated_at) || cmp(a.id, b.id))
-      .map((task) => ({ ...metadata('task', task), documents: taskDocuments(task.id, allEntries, allLinks, googleByEntry) }));
+      .map((task) => ({
+        ...metadata('task', task), documents: taskDocuments(task.id, allEntries, allLinks, googleByEntry),
+        checklist_progress: checklistByEntry.has(task.entry_id ?? '')
+          ? checklistByEntry.get(task.entry_id ?? '') : noteChecklistProgress(entriesById.get(task.entry_id ?? '')),
+      }));
     const byStatus: Record<Status, number> = { todo: 0, doing: 0, done: 0 };
     for (const task of allTasks) byStatus[task.status]++;
     const day = today();
@@ -1072,12 +1080,11 @@ export const localApi: Api = {
     // Pièces jointes rassemblées pour le panneau Procédures : celles des
     // procédures du filtre courant, métadonnées seules, plus récentes d'abord.
     const procedureIds = new Set(matching.filter((entry) => (entry.kind ?? 'note') === 'procedure').map((entry) => entry.id));
-    const procedureEntries = new Map(allEntries.map((entry) => [entry.id, entry]));
     const procedureAttachments = allAttachments
       .filter((file) => procedureIds.has(file.entry_id))
       .sort((a, b) => cmp(b.created_at, a.created_at))
       .map((file) => {
-        const parent = procedureEntries.get(file.entry_id);
+        const parent = entriesById.get(file.entry_id);
         const { blob: _blob, driveFileId: _drive, ...meta } = file;
         return { ...meta, driveFileId: file.driveFileId ?? null, entry_title: parent?.title ?? '' };
       });
@@ -1145,18 +1152,20 @@ export const localApi: Api = {
     if (rich !== null) validateDocument(rich);
     if (current.content_json && rich === null) fail('la conversion d’un document riche en Markdown n’est pas prise en charge');
     const row = (await entries.get(id)) as EntryRow;
-    const nextStatus = pick(patch, 'status', current.status ?? 'todo');
-    const chosen = pick(patch, 'archived', row.archived ?? 0, (v) => (v ? 1 : 0));
-    const archived = current.task ? taskNoteArchived(current.task.status, nextStatus, chosen) : chosen;
     const kind: 'note' | 'procedure' = pick(patch, 'kind', row.kind ?? 'note', (v) => kindOf(v, row.kind ?? 'note'))
       ?? fail('type de document invalide (note ou procédure attendu)');
     if (current.task && kind !== 'note') fail('Retire le suivi de la tâche avant de transformer la note en procédure.');
-    const status = pick(patch, 'status', current.status ?? 'todo');
-    if (!STATUSES.includes(status)) fail('statut invalide');
+    const requestedStatus = pick(patch, 'status', current.status ?? 'todo');
+    if (!STATUSES.includes(requestedStatus)) fail('statut invalide');
     const categoryId = await categoryForPatch(patch, current, projectId);
     const time = nowISO();
     const content = rich ? documentText(rich) : pick(patch, 'content_md', current.content_md, (v) => typeof v === 'string' ? v : current.content_md);
     const serialized = rich ? JSON.stringify(rich) : null;
+    const state = current.task && taskStateFor(patch.status, undefined, current.task,
+      changedChecklistProgress(row, { content_md: content, content_json: serialized }));
+    const status = state?.status ?? requestedStatus;
+    const chosen = pick(patch, 'archived', row.archived ?? 0, (v) => (v ? 1 : 0));
+    const archived = current.task ? taskNoteArchived(current.task.status, status, chosen) : chosen;
     const sharedChanged = title !== row.title || projectId !== row.project_id || categoryId !== (row.category_id ?? null);
     const changed = sharedChanged || content !== row.content_md || serialized !== row.content_json || date !== row.entry_date
       || archived !== row.archived || kind !== row.kind;
@@ -1165,8 +1174,8 @@ export const localApi: Api = {
       project_id: projectId, category_id: categoryId, archived, kind, status,
       updated_at: current.task && !changed ? row.updated_at : time,
     };
-    const task = current.task && (sharedChanged || current.task.status !== status) ? await t.tasks.get(current.task.id) : undefined;
-    const state = task && taskStateFor(status, undefined, task);
+    const taskChanged = current.task && state && (current.task.status !== status || current.task.progress !== state.progress);
+    const task = current.task && (sharedChanged || taskChanged) ? await t.tasks.get(current.task.id) : undefined;
     const archivedReferences = task && task.status !== 'done' && status === 'done'
       ? await taskReferencesToArchive(task.id, time) : [];
     if (task && state) {
@@ -1175,7 +1184,7 @@ export const localApi: Api = {
         { table: 'tasks', value: {
           ...task, ...state, title, project_id: projectId, category_id: categoryId,
           position: task.status !== status ? nextTaskPosition(await t.tasks.all(), status) : task.position,
-          updated_at: task.status !== status ? time : task.updated_at,
+          updated_at: taskChanged ? time : task.updated_at,
         } },
         ...archivedReferences.map((value) => ({ table: 'entries', value })),
       ]);
@@ -1337,7 +1346,9 @@ export const localApi: Api = {
     const existingRows = await tasks.all();
     const convert = (source.kind ?? 'note') === 'note' && !(await google.get(entryId))
       && body?.content_md === undefined && title === source.title;
-    const state = taskStateFor(body?.status, body?.progress, { status: convert ? source.status ?? 'todo' : 'todo', progress: 0 });
+    const note = convert ? source : { content_md: body?.content_md ?? title };
+    const state = taskStateFor(body?.status, body?.progress, { status: convert ? source.status ?? 'todo' : 'todo', progress: 0 },
+      noteChecklistProgress(note));
     if (convert) {
       const existing = existingRows.find((task) => task.entry_id === entryId);
       if (existing) return taskWithDocuments(existing.id);
@@ -1365,14 +1376,20 @@ export const localApi: Api = {
     if (!title) fail('titre requis');
     if (source.entry_id) fail('Cette tâche a déjà une note. Modifie sa note pour compléter le contenu.');
     const time = nowISO();
-    const next: TaskRow = { ...source, entry_id: uid('en_'), title, ...taskStateFor(source.status, undefined, source), updated_at: time };
-    const note = taskNote(next, typeof body?.content_md === 'string' ? body.content_md : '');
+    const content = typeof body?.content_md === 'string' ? body.content_md : '';
+    const state = taskStateFor(undefined, undefined, source, noteChecklistProgress({ content_md: content }));
+    const next: TaskRow = {
+      ...source, entry_id: uid('en_'), title, ...state, updated_at: time,
+      position: source.status === state.status ? source.position : nextTaskPosition(await tasks.all(), state.status),
+    };
+    const note = taskNote(next, content);
     const link = taskLink(next.id, note.id, time);
     await database.writeAll([
       { table: 'entries', value: note, operation: 'add' },
       { table: 'tasks', value: next },
       { table: 'task_entries', value: link, operation: 'add' },
     ]);
+    if (source.status !== state.status) await renumber(source.status);
     track('entries', note.id, false);
     track('tasks', next.id, false);
     track('links', link.id);
@@ -1384,7 +1401,7 @@ export const localApi: Api = {
     const title = str(body.title);
     if (!title) fail('titre requis');
     if (body.content_md !== undefined && typeof body.content_md !== 'string') fail('contenu Markdown invalide');
-    const state = taskStateFor(str(body.status) || undefined, body.progress);
+    const state = taskStateFor(str(body.status) || undefined, body.progress, undefined, noteChecklistProgress({ content_md: body.content_md ?? '' }));
     const priority = priorityOf(body.priority);
     if (!priority) fail('priorité invalide (basse, normale ou haute attendue)');
     const projectId = orNull(body.project_id);

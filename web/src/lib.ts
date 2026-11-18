@@ -14,6 +14,14 @@ export const emptyDocument = (): RichDocument => ({ type: 'doc', content: [{ typ
 
 export type FollowUpKind = 'entry' | 'task';
 export type FollowUpStatus = 'unclear' | 'todo' | 'doing' | 'blocked' | 'done';
+export interface FollowUpChecklistChange {
+  entry_id: string;
+  entry_title: string;
+  index: number;
+  checked: boolean;
+  text: string;
+  evidence: string;
+}
 export interface FollowUpReportDraft {
   status: FollowUpStatus;
   summary: string;
@@ -21,6 +29,7 @@ export interface FollowUpReportDraft {
   next_steps: string[];
   blockers: string[];
   warnings: string[];
+  checklist_updates?: FollowUpChecklistChange[];
 }
 export interface FollowUpReport extends FollowUpReportDraft {
   generated_at: string;
@@ -85,6 +94,8 @@ export interface EntrySummary {
   follow_up?: FollowUp | null;
   follow_up_key?: string;
   excerpt: string;
+  /** Part des cases cochées dans le Markdown de l’entrée, même au-delà de l’extrait. */
+  checklist_progress?: number | null;
   attachments: number;
   /** Renseignés pour les onglets d'un document Google, sinon nuls. */
   google_document_id?: string | null;
@@ -205,6 +216,8 @@ export interface Task {
   id: string;
   entry_id: string;
   progress: number;
+  /** Part des cases cochées de la note principale, si elle contient une liste. */
+  checklist_progress?: number | null;
   title: string;
   status: Status;
   due_date: string | null;

@@ -755,12 +755,10 @@ export default function App() {
     setShowChat(false);
     void openShared(path);
   };
-  const chatChanged = async (proposals: ChatProposal[]) => {
-    if (proposals.some(({ kind }) => kind === 'create_task')) setTaskView(null);
-    if (proposals.some(({ kind }) => kind === 'create_shared_procedure')) bumpShared();
+  const refreshEditedEntries = async (ids: string[]) => {
     await reload();
     const id = selectedRef.current;
-    if (!id || !proposals.some((proposal) => proposal.kind === 'update_entry' && proposal.entryId === id)) return;
+    if (!id || !ids.includes(id)) return;
     while (selectedRef.current === id) {
       const sequence = entryWriteSequence.current;
       const refreshed = await api.entry(id).catch(() => null);
@@ -769,6 +767,11 @@ export default function App() {
       setEntry((current) => current?.id === id && sequence === entryWriteSequence.current ? refreshed : current);
       return;
     }
+  };
+  const chatChanged = async (proposals: ChatProposal[]) => {
+    if (proposals.some(({ kind }) => kind === 'create_task')) setTaskView(null);
+    if (proposals.some(({ kind }) => kind === 'create_shared_procedure')) bumpShared();
+    await refreshEditedEntries(proposals.flatMap((proposal) => proposal.kind === 'update_entry' ? [proposal.entryId] : []));
   };
   // Le titre relu, pas celui du chargement : l'entrée a pu être renommée depuis.
   const openNote = showEditor && !overview && !sharedPath && !merging && !mergingTasks ? entry : undefined;
@@ -816,7 +819,7 @@ export default function App() {
   );
 
   return (
-    <FollowUpProvider state={state} onChanged={reload}>
+    <FollowUpProvider state={state} onChanged={reload} onEntriesChanged={refreshEditedEntries}>
     <div className="app" ref={pageRef}>
       <UpdateBar />
       <header className="head no-print">
@@ -978,6 +981,7 @@ export default function App() {
               onEntry={(item) => void openEntry(item.id, undefined)}
               onClose={() => setOverview(false)}
               onChanged={reload}
+              onEntriesChanged={refreshEditedEntries}
               missingOpen={missingOpen}
               missingTasks={Math.max(0, state.stats.tasks.todo + state.stats.tasks.doing + state.stats.tasks.done - state.tasks.length)}
               missingEntries={Math.max(0, state.stats.entries - state.entries.length)}

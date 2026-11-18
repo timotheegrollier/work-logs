@@ -17,7 +17,7 @@ const plural = (count: number, one: string, many: string) => `${count} ${count >
  * d'un git dont l'historique est replié — les terminées comptées dans une pastille, un nœud
  * par tâche ouverte (plein pour celle en cours, le HEAD), une barre d'avancement et la dernière note.
  */
-export function ProjectOverview({ projects, tasks, entries, onProject, onTask, onEntry, onClose, onChanged, advice, missingOpen = 0, missingTasks = 0, missingEntries = 0 }: {
+export function ProjectOverview({ projects, tasks, entries, onProject, onTask, onEntry, onClose, onChanged, onEntriesChanged, advice, missingOpen = 0, missingTasks = 0, missingEntries = 0 }: {
   projects: Project[];
   tasks: Task[];
   entries: EntrySummary[];
@@ -28,6 +28,7 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
   onEntry: (entry: EntrySummary) => void;
   onClose: () => void;
   onChanged: () => void | Promise<void>;
+  onEntriesChanged?: (ids: string[]) => void | Promise<void>;
   advice?: ReactNode;
   /** Nombre de tâches absentes de l’état global limité par le serveur. */
   missingOpen?: number;
@@ -122,7 +123,7 @@ export function ProjectOverview({ projects, tasks, entries, onProject, onTask, o
         {missingTasks > 0 && <>L’avancement des projets est incomplet : {missingTasks} tâche{missingTasks > 1 ? 's' : ''} non chargée{missingTasks > 1 ? 's' : ''}.</>}
       </p>}
       <div className="overview-work no-print" aria-busy={Boolean(busy)}>
-        <OverviewAiActions tasks={tasks} entries={entries} projects={projects} missingOpen={missingOpen} missingTasks={missingTasks} missingEntries={missingEntries} onChanged={onChanged} onTask={onTask}>
+        <OverviewAiActions tasks={tasks} entries={entries} projects={projects} missingOpen={missingOpen} missingTasks={missingTasks} missingEntries={missingEntries} onChanged={onChanged} onEntriesChanged={onEntriesChanged} onTask={onTask}>
           <OverviewFollowUpPicker tasks={tasks} entries={entries} projects={projects} onChanged={onChanged} />
         </OverviewAiActions>
         <div className="overview-action-feedback">

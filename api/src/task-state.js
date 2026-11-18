@@ -1,8 +1,20 @@
+import { checklistProgress } from './checklist.js';
+
+/** Les listes de cases appartiennent au Markdown de la note principale. */
+export const noteChecklistProgress = (note) => note && !note.content_json ? checklistProgress(note.content_md) : null;
+
+export function changedChecklistProgress(before, after) {
+  if (before.content_md === after.content_md && Boolean(before.content_json) === Boolean(after.content_json)) return undefined;
+  const previous = noteChecklistProgress(before);
+  const next = noteChecklistProgress(after);
+  return previous === next ? undefined : next ?? 0;
+}
+
 /** Règles d'avancement communes à SQLite et à la PWA. */
 const statuses = new Set(['todo', 'doing', 'done']);
 const invalid = (message) => { throw Object.assign(new Error(message), { status: 400 }); };
 
-export function taskState(status, progress, current = { status: 'todo', progress: 0 }) {
+export function taskState(status, progress, current = { status: 'todo', progress: 0 }, checklist = null) {
   if (status !== undefined && !statuses.has(status)) invalid('statut invalide');
   if (progress !== undefined) {
     if (!Number.isInteger(progress) || progress < 0 || progress > 100) {
@@ -15,6 +27,10 @@ export function taskState(status, progress, current = { status: 'todo', progress
     return { status: next, progress };
   }
   const next = status ?? current.status;
+  if (next !== 'done' && status !== 'todo' && checklist !== null) {
+    // Le statut « Terminé » et son archivage restent un geste explicite.
+    return { status: checklist > 0 ? 'doing' : next, progress: Math.min(99, checklist) };
+  }
   return { status: next, progress: next === 'done' ? 100 : next === 'doing' && current.status === 'doing' ? current.progress ?? 0 : 0 };
 }
 

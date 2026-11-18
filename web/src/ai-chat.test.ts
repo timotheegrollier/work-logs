@@ -463,6 +463,8 @@ describe('lecture locale et classement', () => {
     expect(system(calls[0])).toContain('dates relatives');
     expect(system(calls[0])).toContain('texte brut sans Markdown');
     expect(system(calls[0])).toContain('Markdown sans HTML ni images');
+    expect(system(calls[0])).toContain('Décompose chaque nouvelle tâche en sous-tâches concrètes');
+    expect(system(calls[0])).toContain('"checklist_updates":[{"n":1,"checked":true}]');
     expect(system(calls[0])).toContain('{"reply":"…","show_tasks":[n],"show_documents":[n],"actions":[…],"search":["mot"]}');
     for (const kind of ['create_task', 'update_task', 'create_note']) expect(system(calls[0])).toContain(`"kind":"${kind}"`);
   });
@@ -868,6 +870,20 @@ describe('validation des actions', () => {
     expect(notice).toBe('');
     expect(proposals[0]).toMatchObject({ content_md: text });
     expect(proposals[1]).toMatchObject({ content_md: '## Sujet\n\nBilan de visite\n\n## Contexte et points clés\n\nÀ préciser.' });
+  });
+
+  test('rend les listes d’actions interactives et préserve les autres listes et le code', async () => {
+    const content = '## Matériel\n\n- Manomètre\n\n## Étapes\n\n1. Fermer la vanne\n2. Mesurer à 3 bars\n\n```md\n- Exemple littéral\n```';
+    const { proposals } = await propose([
+      { kind: 'create_task', title: 'Contrôler la pression', content },
+      { kind: 'create_note', title: 'Suite à la visite', content: '## Actions à mener\n\n- Commander le joint\n- [x] Examiner la pompe' },
+      { kind: 'create_note', title: 'Matériel disponible', content: '- Vannes\n- Joints' },
+    ]);
+    expect(proposals).toMatchObject([
+      { content_md: content.replace('1. Fermer', '1. [ ] Fermer').replace('2. Mesurer', '2. [ ] Mesurer') },
+      { content_md: '## Actions à mener\n\n- [ ] Commander le joint\n- [x] Examiner la pompe' },
+      { content_md: '- Vannes\n- Joints' },
+    ]);
   });
 
   test('création de tâche : tous les champs, projet donné, date du jour', async () => {
@@ -1437,8 +1453,9 @@ describe('application des propositions, sur la vraie API', () => {
     const task = (await api.state('Inspection ancienne')).tasks[0];
     expect(task.documents).toHaveLength(1);
     expect(await api.entry(task.documents[0].id)).toMatchObject({
-      title: 'Inspection ancienne', content_md: '## Contrôle\n\nVérifier le journal.', archived: 0, task: { progress: 100 },
+      title: 'Inspection ancienne', content_md: expect.stringContaining('## Contrôle\n\nVérifier le journal.'), archived: 0, task: { progress: 100 },
     });
+    expect((await api.entry(task.documents[0].id)).content_md).toContain('- [ ] Préciser les étapes de réalisation.');
 
     stubAi(json({ actions: [{ kind: 'create_task_note', n: 1, content: 'Un doublon.' }] }));
     const answer = await ask({ text: 'Complète la tâche Inspection ancienne.' });
@@ -1458,6 +1475,51 @@ describe('application des propositions, sur la vraie API', () => {
     await api.updateEntry('e', { content_md: 'Corps saisi ailleurs.' });
     await expect(applyChatProposal(proposals[0])).rejects.toThrow('Cette entrée a changé depuis la proposition');
     expect((await api.entry('e')).content_md).toBe('Corps saisi ailleurs.');
+  });
+
+  test('propose de cocher et décocher des cases précises en conservant le reste du Markdown', async () => {
+    const original = 'Photo de la pompe ![profil](https://exemple.net/pompe.png)\n\n```md\n- [ ] Exemple\n```\n\n- [ ] Mesurer la **pression**\n- [X] Vérifier la vanne\n';
+    const updated = original.replace('[ ] Mesurer', '[x] Mesurer').replace('[X] Vérifier', '[ ] Vérifier');
+    seedData(server.db, { entries: [{ id: 'e', title: 'Contrôle', content_md: original }] });
+    const calls = stubAi(
+      json({ read_entries: [1] }),
+      json({ actions: [{ kind: 'update_entry', n: 1, checklist_updates: [{ n: 1, checked: true }, { n: 2, checked: false }] }] }),
+    );
+    const { proposals, notice } = await ask({ text: 'Coche la mesure de pression et décoche la vérification dans cette note.', openEntryId: 'e' });
+    expect(notice).toBe('');
+    expect(user(calls[1])).toContain('"checklist":[{"n":1,"text":');
+    expect(user(calls[1])).not.toContain('"text":"Exemple"');
+    expect(proposals).toEqual([expect.objectContaining({
+      kind: 'update_entry', label: '« Contrôle » : cocher « Mesurer la pression » ; décocher « Vérifier la vanne »',
+      changes: { content_md: updated }, expected: expect.objectContaining({ source_key: expect.any(String) }),
+    })]);
+    expect((await api.entry('e')).content_md).toBe(original);
+    await expect(applyChatProposal(proposals[0])).resolves.toEqual({ entryId: 'e' });
+    await expect(applyChatProposal(proposals[0], { since: earlier() })).resolves.toEqual({ entryId: 'e' });
+    expect((await api.entry('e')).content_md).toBe(updated);
+  });
+
+  test('écarte les cases non lues ou invalides et protège une checklist modifiée depuis la proposition', async () => {
+    const original = '- [ ] Mesurer la pression\n- [ ] Vérifier la vanne';
+    seedData(server.db, { entries: [{ id: 'e', title: 'Contrôle', content_md: original }] });
+    const input = { text: 'Coche la mesure de pression.', openEntryId: 'e' };
+    const update = { kind: 'update_entry', n: 1, checklist_updates: [{ n: 1, checked: true }] };
+    const action = (value: unknown) => json({ actions: [value] });
+    stubAi(
+      action(update),
+      json({ read_entries: [1] }), action({ ...update, checklist_updates: [{ n: 3, checked: true }] }),
+      json({ read_entries: [1] }), action({ ...update, content: 'Texte de remplacement.' }),
+      json({ read_entries: [1] }), action(update),
+    );
+    await expect(ask(input)).resolves.toMatchObject({ proposals: [], notice: expect.stringContaining('lire la note Markdown') });
+    await expect(ask(input)).resolves.toMatchObject({ proposals: [], notice: expect.stringContaining('numéro ou état de case invalide') });
+    await expect(ask(input)).resolves.toMatchObject({ proposals: [], notice: expect.stringContaining('séparément du remplacement du texte') });
+    const { proposals } = await ask(input);
+    expect(proposals).toHaveLength(1);
+    const concurrent = `Relevé saisi ailleurs.\n\n${original}`;
+    await api.updateEntry('e', { content_md: concurrent });
+    await expect(applyChatProposal(proposals[0])).rejects.toThrow('Cette entrée a changé depuis la proposition');
+    expect((await api.entry('e')).content_md).toBe(concurrent);
   });
 
   test('réessai d’une modification déjà appliquée, réponse perdue : acceptée, sans fausse erreur', async () => {

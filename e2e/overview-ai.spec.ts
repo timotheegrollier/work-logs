@@ -48,7 +48,11 @@ test('bilan du jour en un clic : replanifie les tâches ouvertes avant une synth
   const project = await post(request, '/api/projects', { name: 'Bilan quotidien vue IA' });
   const original = (await (await request.get('/api/state')).json()).tasks as TaskState[];
   try {
-    const task = await post(request, '/api/tasks', { title: 'Remise en service bilan quotidien', project_id: project.id });
+    const quote = 'La mesure de débit est enregistrée.';
+    const task = await post(request, '/api/tasks', {
+      title: 'Remise en service bilan quotidien', project_id: project.id,
+      content_md: `- [ ] Relever le débit\n- [ ] Vérifier le raccord\n\n${quote}`,
+    });
     const entry = await post(request, '/api/entries', { title: 'Contrôle du raccord bilan quotidien', project_id: project.id, content_md: 'TEXTE BRUT NON ENVOYÉ PAR LE BILAN QUOTIDIEN' });
     const done = await post(request, '/api/tasks', { title: 'Diagnostic terminé bilan quotidien', project_id: project.id, status: 'done', due_date: '2020-01-01' });
     await saveReport(request, 'task', task.id, 'Diagnostic confirmé ; le raccord reste à vérifier.');
@@ -68,9 +72,12 @@ test('bilan du jour en un clic : replanifie les tâches ouvertes avant une synth
         }))) } }] } });
       }
       stateAtReview = (await (await request.get('/api/state')).json()).tasks as TaskState[];
+      const data = JSON.parse(prompt.split('\n\n')[0]);
+      const checklist = data.checklists.find((list: { title: string }) => list.title === task.title);
       return route.fulfill({ headers, json: { choices: [{ message: { content: JSON.stringify({
         summary: 'Le diagnostic est confirmé et le joint posé. Le contrôle du raccord reste prioritaire avant la remise en service.',
         completed: [], next_steps: ['Contrôler le raccord avant remise en service.'], blockers: [],
+        checklist_changes: [{ list: checklist.n, item: 1, checked: true, quote }],
       }) } }] } });
     });
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -95,6 +102,14 @@ test('bilan du jour en un clic : replanifie les tâches ouvertes avant une synth
     expect(prompts[1]).not.toContain('TEXTE BRUT NON ENVOYÉ');
     const source = JSON.parse(prompts[1].split('\n\n')[0]);
     expect(source.open_tasks).toContainEqual(expect.objectContaining({ report: source.reports.find((report: { title: string }) => report.title === task.title).n, priority: 'high', due_date: targetDate }));
+    const applyCases = daily.getByRole('button', { name: `Appliquer les cases de ${task.title}`, exact: true });
+    await expect(applyCases).toBeVisible();
+    expect((await (await request.get(`/api/entries/${task.entry_id}`)).json()).content_md).toContain('- [ ] Relever le débit');
+    await applyCases.click();
+    await expect(overview.getByText('1 case mise à jour.', { exact: true })).toBeVisible();
+    const saved = await (await request.get(`/api/entries/${task.entry_id}`)).json();
+    expect(saved.content_md).toBe(`- [x] Relever le débit\n- [ ] Vérifier le raccord\n\n${quote}`);
+    expect(saved.task).toMatchObject({ status: 'doing', progress: 50 });
     expect(await noHorizontalScroll(page)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('overview-desktop-light.png'), fullPage: true });
     await expect(overview.getByRole('heading', { name: 'Suivis IA', exact: true })).toBeVisible();

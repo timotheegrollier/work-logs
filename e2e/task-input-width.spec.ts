@@ -3,7 +3,7 @@ import { expect, test, type Locator } from '@playwright/test';
 async function fieldsFit(form: Locator) {
   const widths = await form.evaluate(element => {
     const formBox = element.getBoundingClientRect();
-    const fields = [...element.querySelectorAll('input, button, progress')].map(field => {
+    const fields = [...element.querySelectorAll('select, button, progress')].map(field => {
       const { left, right, width } = field.getBoundingClientRect();
       return { left, right, width };
     });
@@ -17,8 +17,8 @@ async function fieldsFit(form: Locator) {
   }
 }
 
-test('modifier l’avancement de la note fonctionne du panneau étroit au téléphone', async ({ page, request }) => {
-  const response = await request.post('/api/entries', { data: { title: 'Vérifier la jauge', content_md: 'Mettre la jauge à jour.' } });
+test('cocher les sous-tâches actualise les jauges du panneau étroit au téléphone', async ({ page, request }) => {
+  const response = await request.post('/api/entries', { data: { title: 'Vérifier la jauge', content_md: '- [ ] Mettre la jauge à jour.\n- [ ] Vérifier la mesure.' } });
   expect(response.ok()).toBeTruthy();
   const note = await response.json();
   try {
@@ -27,27 +27,30 @@ test('modifier l’avancement de la note fonctionne du panneau étroit au télé
     await page.goto('/');
     const editor = page.getByRole('region', { name: 'Entrée', exact: true });
     await editor.getByRole('button', { name: 'Suivre comme tâche', exact: true }).click();
-    const form = editor.locator('.task-progress-form');
-    const field = form.getByLabel('Avancement (%)');
-    const editorBar = form.getByRole('progressbar');
+    const tracker = editor.getByRole('region', { name: 'Suivi de tâche' });
+    const editorBar = tracker.getByRole('progressbar');
+    const boxes = editor.getByRole('article', { name: 'Aperçu' }).getByRole('checkbox');
     const board = page.getByRole('region', { name: 'Tâches', exact: true });
     const cardBar = board.getByRole('progressbar', { name: 'Avancement de Vérifier la jauge' });
-    await field.fill('65');
-    await field.press('Enter');
-    await expect(editorBar).toHaveAttribute('value', '65');
-    await expect(cardBar).toHaveAttribute('value', '65');
+    await expect(editorBar).toHaveAttribute('value', '0');
+    await expect(cardBar).toHaveAttribute('value', '0');
+    await boxes.first().click();
+    await expect(editorBar).toHaveAttribute('value', '50');
+    await expect(cardBar).toHaveAttribute('value', '50');
 
     await page.getByRole('separator', { name: 'Redimensionner la colonne de gauche' }).press('End');
     await page.getByRole('separator', { name: 'Redimensionner la colonne de droite' }).press('End');
-    await fieldsFit(form);
+    await fieldsFit(tracker);
     await page.setViewportSize({ width: 320, height: 900 });
     const nav = page.getByRole('group', { name: 'Panneaux latéraux' });
     await nav.getByRole('button', { name: 'Tâches', exact: true }).click();
     await board.getByRole('button', { name: 'Vérifier la jauge', exact: true }).click();
     await expect(nav.getByRole('button', { name: 'Écriture', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await fieldsFit(form);
-    await expect(field).toHaveValue('65');
-    await expect(editor.getByText('Mettre la jauge à jour.')).toBeVisible();
+    await fieldsFit(tracker);
+    await expect(boxes.first()).toBeChecked();
+    await boxes.last().click();
+    await expect(editorBar).toHaveAttribute('value', '100');
+    await expect(tracker.getByLabel('Statut de la tâche')).toHaveValue('doing');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   } finally {
     await request.delete(`/api/entries/${note.id}`);

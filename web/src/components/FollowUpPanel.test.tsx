@@ -30,6 +30,7 @@ const control = (background: boolean) => ({
   runtime: { 'entry:en_1': { busy: true, error: '', background } },
   toggle: vi.fn(),
   refresh: vi.fn(),
+  applyChecklist: vi.fn(),
   stop: vi.fn(),
   hold: () => () => {},
 });

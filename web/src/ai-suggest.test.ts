@@ -736,7 +736,8 @@ describe('note complétée', () => {
     expect(prompt.system).toMatch(/note complète, en Markdown et en français, à partir de son titre et de ce qui est déjà écrit/);
     expect(prompt.system).toMatch(/développe chaque point en phrases courtes/);
     expect(prompt.system).toMatch(/Garde toutes les informations déjà écrites \(.*cases cochées ou non\).*sans jamais rien retirer/);
-    expect(prompt.system).toMatch(/une action prévue reste à faire, un constat reste un constat, rien ne devient « fait »/);
+    expect(prompt.system).toContain('un passage distinct de cette note atteste explicitement que l’action correspondante a été accomplie, rouverte ou reste à faire');
+    expect(prompt.system).toContain('Une action seulement prévue reste à faire');
     expect(prompt.system).toMatch(/N'invente ni fait, ni résultat, ni valeur chiffrée, ni date, ni nom propre .* écris « à préciser » à la place/);
     expect(prompt.system).toMatch(/Avec un titre seul, propose le plan de la note/);
     expect(prompt.system).toMatch(/sans titre de premier niveau, sans introduction ni explication/);

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { api, todayISO, type AppState, type EntrySummary, type FollowUp, type Task } from '../lib';
+import { api, ApiError, todayISO, type AppState, type Entry, type EntrySummary, type FollowUp, type Task } from '../lib';
 import * as lib from '../lib';
 import { generateDailyReview, generateFollowUp, localToday, replanTasks } from '../ai-suggest';
 import { recordAiUsage, saveDailyLimit } from '../ai-budget';
@@ -115,6 +115,49 @@ test('le bilan synthétise les entrées suivies même sans tâche à replanifier
   expect(replanTasks).not.toHaveBeenCalled();
   expect(write).not.toHaveBeenCalled();
   expect(vi.mocked(generateDailyReview).mock.calls[0][1]).toEqual([expect.objectContaining({ id: 'n', follow_up: follow })]);
+});
+
+test.each([false, true])('le bilan affiche puis applique les cases d’une note du jour avec précondition (conflit = %s)', async (stale) => {
+  const user = userEvent.setup();
+  const entry = note('n', 'Checklist du raccord', { checklist_progress: 50 });
+  const quote = 'Le premier joint a été posé.';
+  const source: Entry = { ...entry, content_md: `# Joint\n\n- [ ] Poser le premier joint\n- [x] Vérifier le premier joint\n\n${quote}\nLa vérification doit être refaite.`, created_at: entry.updated_at, attachments: [] };
+  const inputs = { ...props([]), entries: [entry], onEntriesChanged: vi.fn() };
+  mockDailyState(inputs);
+  vi.spyOn(api, 'entry').mockResolvedValue(source);
+  const write = vi.spyOn(api, 'updateEntry').mockImplementation(async (_id, data) => {
+    if (stale) throw new ApiError('L’entrée a changé.', 'ENTRY_EDIT_STALE');
+    return { ...source, ...data };
+  });
+  vi.mocked(generateDailyReview).mockResolvedValue({
+    ...review, checklistChanges: [
+      { entryId: entry.id, index: 0, checked: true, text: 'Poser le premier joint', quote },
+      { entryId: entry.id, index: 1, checked: false, text: 'Vérifier le premier joint', quote: 'La vérification doit être refaite.' },
+    ],
+  });
+  render(<OverviewAiActions {...inputs} />);
+  await user.click(screen.getByRole('button', { name: 'Bilan du jour' }));
+  expect(await screen.findByText(quote, { exact: false })).toBeVisible();
+  expect(screen.getByText('Décocher « Vérifier le premier joint »')).toBeVisible();
+  expect(replanTasks).not.toHaveBeenCalled();
+  expect(vi.mocked(generateDailyReview).mock.calls[0][2]?.checklists).toEqual([{
+    entryId: entry.id, title: entry.title, items: [
+      { index: 0, text: 'Poser le premier joint', checked: false }, { index: 1, text: 'Vérifier le premier joint', checked: true },
+    ], evidence: [expect.stringContaining(quote)],
+  }]);
+  expect(write).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: 'Appliquer les cases de Checklist du raccord' }));
+  await waitFor(() => expect(inputs.onEntriesChanged).toHaveBeenCalledWith([entry.id]));
+  expect(write).toHaveBeenCalledWith(entry.id, {
+    content_md: source.content_md.replace('- [ ] Poser', '- [x] Poser').replace('- [x] Vérifier', '- [ ] Vérifier'),
+    expected_entry: expect.objectContaining({ title: entry.title, updated_at: entry.updated_at, source_key: expect.stringContaining(source.id) }),
+  });
+  if (stale) expect(screen.getByRole('alert')).toHaveTextContent('Relance le bilan du jour');
+  else {
+    expect(screen.getByText('2 cases mises à jour.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Appliquer les cases/ })).not.toBeInTheDocument();
+    expect(screen.getByText(review.summary)).toBeVisible();
+  }
 });
 
 test('un plan incomplet bloque les écritures et le bilan', async () => {
