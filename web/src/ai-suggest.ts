@@ -377,12 +377,24 @@ export function resetAiFallbackMemory(): void {
 
 /** Échec propre à ce modèle (saturé, trop lent, absent pour cette clé, réponse vide) : un autre a sa chance. */
 class AiTryNext extends AiError {
-  // explains : ce motif dit mieux l'échec qu'un 5xx ou 404 ; charged : réponse 200 déjà comptée au plafond.
-  constructor(message: string, readonly overloaded = false, readonly explains = false, readonly charged = false) { super(message); }
+  // explains : ce motif dit mieux l'échec qu'un 5xx ou 404 ; charged : réponse 200 déjà comptée au plafond ;
+  // retryable : un 5xx, souvent une pointe de quelques secondes, mérite un nouvel essai.
+  constructor(message: string, readonly overloaded = false, readonly explains = false, readonly charged = false, readonly retryable = false) { super(message); }
+}
+
+/** Attente annulable : l'utilisateur qui arrête n'attend pas la fin de la pause. */
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => { clearTimeout(timer); signal?.removeEventListener('abort', done); resolve(); };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener('abort', done);
+  });
 }
 
 export const GEMINI_ENDPOINT = /^https:\/\/generativelanguage\.googleapis\.com\//;
 const OVERLOADED_MESSAGE = 'Modèle IA surchargé chez le fournisseur : réessaie dans quelques minutes, ou choisis un autre modèle dans ⚙ Paramètres.';
+/** Le temps laissé à une pointe 5xx du fournisseur avant le dernier essai. */
+const OVERLOAD_RETRY_MS = 1_000;
 const KEY_REFUSED_MESSAGE = 'Clé IA refusée : vérifie-la dans ⚙ Paramètres (une clé AI Studio suffit).';
 
 /**
@@ -505,7 +517,29 @@ export async function postChatCompletions(
     }
   }
   stopped();
-  if (!last || allOverloaded) throw new AiError(OVERLOADED_MESSAGE);
+  if (last && allOverloaded) {
+    // Toute la chaîne en 5xx : c'est presque toujours une pointe du fournisseur. Un seul
+    // nouvel essai du modèle choisi, une seconde plus tard, avant d'annoncer l'échec —
+    // jamais pour un suivi automatique, où l'attente coûterait plus que la suggestion.
+    if (last.retryable && !settings.background) {
+      await pause(OVERLOAD_RETRY_MS, settings.signal);
+      stopped();
+      if (!aiBudgetRefusal(false)) {
+        try {
+          // Un essai, pas deux budgets : le dernier recours reste borné au délai habituel.
+          const content = await postOnce(settings, model, key, system, user, maxTokens, Math.min(timeoutMs, AI_TIMEOUT_MS), options);
+          preferred = null;
+          return content;
+        } catch (e) {
+          if (!(e instanceof AiTryNext)) throw e;
+          // Un quota ou un filtre, rencontré au second essai, explique mieux que « surchargé ».
+          if (e.explains) throw new AiError(e.message);
+        }
+      }
+    }
+    throw new AiError(OVERLOADED_MESSAGE);
+  }
+  if (!last) throw new AiError(OVERLOADED_MESSAGE);
   throw new AiError(last.message);
 }
 
@@ -598,7 +632,7 @@ async function postReserved(
     settings.signal?.removeEventListener('abort', stop);
   }
   if (res.status === 503 || res.status === 502 || res.status === 504 || res.status === 500) {
-    throw new AiTryNext(OVERLOADED_MESSAGE, true);
+    throw new AiTryNext(OVERLOADED_MESSAGE, true, false, false, true);
   }
   if (res.status === 401 || res.status === 403) {
     throw new AiError(KEY_REFUSED_MESSAGE);

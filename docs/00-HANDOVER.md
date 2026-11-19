@@ -1,5 +1,25 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Classeur en grande fenêtre, assistant plus patient — 2026-11-19
+
+- Un `.xlsx`/`.xlsm` joint s’ouvre dans une fenêtre d’édition qui prend la page (presque tout
+  l’écran, grille sans marge, plein écran sur téléphone). Les feuilles se choisissent par des
+  **onglets en bas**, comme dans Excel ; une feuille masquée ou modifiée le dit sur son onglet.
+  `Ctrl+S` et **Enregistrer une copie modifiée** créent la copie dans l’entrée, l’original
+  n’est jamais réécrit. Le dossier partagé garde sa liste « Feuille » (`05-DECISIONS.md` §27).
+- L’assistant disposait de 30 s par demande (20 s par essai) : une note entière à réécrire était
+  coupée avant la fin, puis tout finissait en « Modèle IA surchargé » et en recherche locale.
+  Il reçoit désormais 45 s par demande (30 s par essai). Et quand toute la chaîne de modèles a
+  répondu 5xx, un **seul** nouvel essai du modèle choisi part une seconde plus tard avant le
+  message d’échec. Un 429, un délai dépassé ou un suivi automatique ne sont pas réessayés.
+  Une vraie panne prolongée du fournisseur rend toujours le repli local avec son motif.
+- Tests : 1 dans `ai-suggest.test.ts` (reprise après une pointe 5xx ; le compte d’essais de la
+  saturation totale est ajusté), onglets de feuilles vérifiés dans `App.test.tsx` (feuille
+  masquée signalée, changement de feuille).
+- `./scripts/check.sh` vert sur ce lot : **2 087 tests**, échec attendu compris. 361 API ·
+  1 454 front (dont un échec attendu) · 49 desktop · 56 scripts · 8 Worker · 11 relais ·
+  126 navigateur · 22 desktop e2e.
+
 ## Entrées modifiables par l’assistant, classeurs et transferts — 2026-11-19, v0.84.0 (§90)
 
 - L’assistant complète ou corrige une note ou une procédure existante : `append_content`,

@@ -962,11 +962,23 @@ describe('modèle saturé', () => {
     expect(new Set(models).size).toBe(models.length);
   });
 
-  test('tous saturés : message « surchargé », un appel par modèle au plus, jamais de boucle', async () => {
+  test('tous saturés : un appel par modèle, puis un seul nouvel essai du modèle choisi', async () => {
     const fetch = vi.fn(async () => aiResponse('x', 503));
     vi.stubGlobal('fetch', fetch);
     await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow(/surchargé/);
-    expect(fetch).toHaveBeenCalledTimes(GEMINI_FALLBACK_MODELS.length);
+    const models = fetch.mock.calls.map(modelOf);
+    expect(models).toEqual([...new Set([gemini.model, ...GEMINI_FALLBACK_MODELS]), gemini.model]);
+  });
+
+  test('une pointe 5xx passée, le nouvel essai du modèle choisi rend la réponse', async () => {
+    const fetch = vi.fn(async () => aiResponse('x', 503));
+    vi.stubGlobal('fetch', fetch);
+    fetch.mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('x', 503))
+      .mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('x', 503))
+      .mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('x', 503))
+      .mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('Relire'));
+    expect(await suggestSubtasks(gemini, 'T')).toBe('Relire');
+    expect(fetch.mock.calls.map(modelOf).at(-1)).toBe(gemini.model);
   });
 
   test('budget total borné : des modèles qui traînent ne font pas attendre indéfiniment', async () => {

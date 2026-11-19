@@ -71,6 +71,11 @@ const MAX_HISTORY_MESSAGES = 6;
 const MAX_BODY = 8000;
 const MAX_CHECKLIST_ITEMS = 50;
 const MAX_MODEL_CALLS = 4;
+/**
+ * Une réponse d'assistant réécrit parfois une entrée entière (4 096 jetons) : à 30 s,
+ * chaque essai était coupé avant la fin et tout finissait en « surchargé ».
+ */
+const CHAT_TIMEOUT_MS = 45_000;
 const MAX_SOURCE_READS = 2;
 /** Un terme part en query string : démesuré, le serveur refuse la lecture et le message échoue. */
 const MAX_SEARCH_TERM = 100;
@@ -960,7 +965,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
     const excerpts = [...context.consultedLinks, ...olderExcerpts];
     const call = (system: string) => postChatCompletions(settings, 'l’assistant', system,
       userPrompt(settings, input, context, attachmentSources, excerpts.length ? JSON.stringify(excerpts) : ''),
-      4096, AI_TIMEOUT_MS, { effort: 'low', media });
+      4096, CHAT_TIMEOUT_MS, { effort: 'low', media });
     const maxSteps = MAX_MODEL_CALLS - links.modelCalls;
     let conversationTitle: string | undefined;
     for (let step = 1; ; step++) {

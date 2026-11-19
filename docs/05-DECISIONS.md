@@ -548,6 +548,17 @@ fournisseur n'est exclu de plus. Et `finish_reason: "length"` rend « Réponse I
 avant la fin » au lieu d'un texte tronqué présenté comme complet. Pas de modèle suivant
 dans ce cas : il aurait le même budget (une réponse **vide** passe toujours au suivant).
 
+**Révisé le 2026-11-19 : un classeur demande plus que 30 s, et un 5xx mérite un second essai.**
+Une note entière à réécrire (jusqu'à 4 096 jetons) était coupée à 20 s par essai — les deux
+premiers modèles expiraient, le budget total de 45 s était épuisé et l'assistant répondait
+« surchargé » puis se repliait sur la recherche locale. L'assistant reçoit désormais
+`CHAT_TIMEOUT_MS` = 45 s (⅔ = 30 s par essai, 67 s en tout). Et quand **toute** la chaîne a
+répondu 5xx, un seul nouvel essai du modèle choisi part une seconde plus tard, avant le
+message d'échec : une pointe de charge dure souvent quelques secondes. Jamais pour un suivi
+automatique, jamais après un délai dépassé ou un 429 (rien ne changerait), et le nombre
+d'essais reste borné (une chaîne, puis un). Tests : `ai-suggest.test.ts` (nouvel essai et
+reprise), `ai-chat.test.ts` (le repli garde son motif).
+
 **Révisé le 2026-11-09 : chaîne et dépense, voir §77.** `gemini-3.5-flash`, routé vers
 `gemini-3.6-flash`, quitte la chaîne et `gemini-3.8-flash` y entre ; les modèles déjà mesurés
 gardent leur ordre. **Tester la connexion** n’interroge plus que le modèle affiché, un suivi
@@ -1138,9 +1149,13 @@ conditionnelles, validations, tableaux, tableaux croisés.
   autres en dépendent), formules matricielles, valeurs riches (image dans la cellule), cellules
   verrouillées d'une feuille protégée. Classeur entier : macros (`.xlsm`), mot de passe de
   modification ; OOXML strict refusé à l'ouverture.
-- Une feuille à la fois, choisie dans une liste « Feuille » (masquées signalées) : **pas
-  d'onglets** (règle du produit). Pas d'insertion de lignes ou colonnes au milieu : on ajoute
-  en fin, en tapant dans la ligne ou la colonne libre.
+- Dossier partagé : une feuille à la fois, choisie dans une liste « Feuille » (masquées
+  signalées) : **pas d'onglets** (règle du produit). Pas d'insertion de lignes ou colonnes au
+  milieu : on ajoute en fin, en tapant dans la ligne ou la colonne libre.
+- **Révisé le 2026-11-19 : la fenêtre d'édition d'une entrée prend la page.** Le classeur joint
+  s'ouvre dans `FileViewer` avec `is-workbook` (presque tout l'écran, grille sans marge) et des
+  **onglets de feuilles en bas** (`sheetTabs`), comme Excel. Le partage garde sa liste : c'est
+  une copie qu'on enregistre dans l'entrée, pas le fichier d'équipe.
 - Brouillon = les saisies, cellule par cellule (`{feuille: {B3: '250'}}`) ; revenir à la
   valeur d'origine efface la modification. Rien de modifié → les octets d'origine.
 - Garde-fou final : chaque XML produit est relu par `DOMParser` ; invalide → rien ne part.
