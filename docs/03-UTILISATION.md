@@ -487,6 +487,12 @@ seulement leur nom, sans leur contenu, et la pièce est marquée **Non lu**. **L
 ajoute une adresse web publique. Avec Gemini, l’assistant peut consulter la page. Les
 autres services compatibles reçoivent l’adresse comme référence.
 
+Un lien vers un dépôt, un dossier ou un fichier `https://github.com/…` est d’abord lu
+par cet ordinateur avec la connexion GitHub CLI déjà configurée (`gh auth login`).
+L’assistant reçoit l’extrait ainsi obtenu, y compris depuis un dépôt privé auquel ce
+compte a accès. Sur la PWA, cette lecture locale n’existe pas : seul le serveur local
+avec l’application desktop peut lire un dépôt privé.
+
 Chaque message peut contenir jusqu’à cinq pièces et 10 Mio au total. Les pièces
 s’affichent dans le brouillon, avec un bouton pour les retirer. **Envoyer** accepte aussi
 un message composé uniquement de pièces jointes.

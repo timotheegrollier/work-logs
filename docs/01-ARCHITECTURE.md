@@ -198,6 +198,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | GET | `/api/files/:stored/preview` | afficher dans l’app : mêmes octets, `inline` + type enregistré |
 | DELETE | `/api/attachments/:id` | supprimer la ligne et le fichier disque |
 | GET | `/api/export` | toute la base en JSON : tâches, associations, liens Google et métadonnées de pièces jointes |
+| GET | `/api/github/link?url=` | lit localement un dépôt, un dossier ou un fichier GitHub avec GitHub CLI (`gh`) : `{url, text, private}`. Réservé à cet ordinateur (`GITHUB_LOCAL_ONLY`), borné à 128 Kio par fichier et 16 000 caractères d’extrait ; refus explicites `GITHUB_AUTH_REQUIRED`, `GITHUB_NOT_FOUND`, `GITHUB_FORBIDDEN`, `GITHUB_UNAVAILABLE` |
 | GET | `/api/shared/status` | dossier partagé : `available`, racine, montage, `reach` (`ok`, `offline`, `unmounted`, `blocked`, `unconfigured`), envois en attente, conflits |
 | GET | `/api/shared/list?dir=` | un niveau du partage : fichiers, dossiers, verrous lus, état local ; hors ligne `503` + fichiers gardés ici |
 | GET | `/api/shared/file?path=` · `/api/shared/content?hash=` | métadonnées et brouillon · octets d'une version du magasin local |
