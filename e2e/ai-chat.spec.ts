@@ -620,6 +620,8 @@ test('l’assistant discute du besoin, puis reçoit les réponses aux sondages d
   await message.fill('Aide-moi à préparer le prochain contrôle.');
   await message.press('Enter');
   await expect(chat.getByText('Quel est l’objectif ?', { exact: true })).toBeVisible();
+  await chat.getByRole('group', { name: 'Quel est l’objectif ?' }).getByRole('button', { name: 'Répondre librement' }).click();
+  await expect(message).toBeFocused();
   await message.fill('Préparer la reprise de l’atelier.');
   await message.press('Enter');
 

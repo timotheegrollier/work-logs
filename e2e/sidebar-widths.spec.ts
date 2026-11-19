@@ -27,6 +27,30 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
 });
 
+test('redimensionne l’assistant au pointeur et au clavier et mémorise sa largeur', async ({ page }) => {
+  const opener = page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true });
+  const chat = page.getByRole('dialog', { name: 'Assistant IA', exact: true });
+  const resize = chat.getByRole('separator', { name: 'Redimensionner le panneau de l’assistant' });
+  await opener.click();
+  await expect(chat).toHaveCSS('width', '1460px');
+  const edge = (await resize.boundingBox())!;
+  const x = edge.x + edge.width / 2;
+  const y = edge.y + edge.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 160, y, { steps: 8 });
+  await expect(chat).toHaveCSS('width', '1300px');
+  await page.mouse.up();
+  await resize.press('Shift+ArrowLeft');
+  await expect(chat).toHaveCSS('width', '1350px');
+  await page.reload();
+  await opener.click();
+  await expect(chat).toHaveCSS('width', '1350px');
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(chat).toHaveCSS('width', '375px');
+  await expect(resize).toHaveCount(0);
+});
+
 test('largeurs : glisser les deux bords ajuste les panneaux en direct et survit au rechargement', async ({ page }, testInfo) => {
   await drag(page, 'gauche', 90);
   await expect(page.locator('.left')).toHaveCSS('width', '380px');

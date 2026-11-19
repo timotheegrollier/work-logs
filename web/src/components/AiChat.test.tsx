@@ -328,6 +328,28 @@ describe('assistant : conversation', () => {
     expect(chat().getByRole('button', { name: 'Répondre avec ces choix' })).toBeEnabled();
   });
 
+  test.each([{ options: [] }, { options: ['La pression', 'Les raccords'] }])('une précision permet de répondre librement sur téléphone (choix : $options)', async ({ options }) => {
+    const question = { text: 'Que veux-tu vérifier ?', options };
+    render(<Host compact />);
+    await answered(answer({ question }), 'Prépare le contrôle.');
+    fireEvent.change(field(), { target: { value: 'La température de sortie uniquement.' } });
+    const prompt = chat().getByRole('group', { name: question.text });
+    fireEvent.click(within(prompt).getByRole('button', { name: 'Répondre librement' }));
+    expect(field()).toHaveFocus();
+    expect(field()).toHaveValue('La température de sortie uniquement.');
+    ask.mockResolvedValueOnce(answer({ reply: 'Je retiens la température de sortie.' }));
+    fireEvent.keyDown(field(), { key: 'Enter' });
+    await chat().findByText('Je retiens la température de sortie.');
+    expect(ask.mock.calls.at(-1)![1]).toMatchObject({
+      text: 'La température de sortie uniquement.',
+      history: [
+        { role: 'user', text: 'Prépare le contrôle.' },
+        { role: 'assistant', question },
+      ],
+    });
+    expect(chat().queryByRole('button', { name: 'Répondre librement' })).not.toBeInTheDocument();
+  });
+
   test('l’autorisation de lire des extraits du partage reste propre à la conversation', async () => {
     render(<Host />);
     const permission = () => chat().getByRole('checkbox', { name: /Autoriser l’envoi d’extraits/, hidden: true });
@@ -536,6 +558,20 @@ describe('assistant : propositions', () => {
     fireEvent.click(chat().getByText('Relire le texte proposé'));
     expect(dialog().querySelector('pre')?.textContent).toBe(content);
     expect(applyProposal).not.toHaveBeenCalled();
+  });
+
+  test('une correction de document riche montre le texte relu et l’avertissement de mise à plat', async () => {
+    render(<Host />);
+    const warning = 'La correction a été appliquée au texte : les couleurs, surlignages et alignements de ce document riche sont remis à plat.';
+    const entryProposal: ChatProposal = {
+      kind: 'update_entry', entryId: 'en_1', title: 'Contrôle', changes: { content_json: { type: 'doc', content: [] } },
+      expected: { title: 'Contrôle', entry_date: '2026-10-21', project_id: null, category_id: null, archived: 0, status: 'todo', kind: 'note', updated_at: '2026-10-21T00:00:00.000Z', google_document_id: null },
+      label: '« Contrôle » : corriger les passages proposés', preview: '**Pression** à contrôler.', warning,
+    };
+    await answered(answer({ proposals: [entryProposal] }));
+    expect(chat().getByText(warning)).toBeInTheDocument();
+    fireEvent.click(chat().getByText('Relire le texte proposé'));
+    expect(dialog().querySelector('pre')?.textContent).toBe('**Pression** à contrôler.');
   });
 
   test('Ignorer écarte la proposition sans rien écrire', async () => {

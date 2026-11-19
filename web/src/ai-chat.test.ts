@@ -118,7 +118,7 @@ describe('pièces jointes de la conversation', () => {
     expect(prompt).toContain('"unread":true');
     expect(prompt).not.toContain('binaire secret');
     expect(typeof prompt).toBe('string');
-    expect(system(calls[0])).toContain('Une pièce marquée « unread » n’a pas été lue');
+    expect(system(calls[0])).toContain('Une pièce « unread » n’a pas été lue');
 
     await ask({ text: 'Et ensuite ?', history: [{ role: 'user', text: '', attachments: [opaque] }, { role: 'assistant', text: 'Je garde ce fichier.' }] });
     expect(user(calls[1])).toContain('"previous":true,"unread":true');
@@ -539,7 +539,7 @@ describe('lecture locale et classement', () => {
     expect(system(calls[0])).toContain('dates relatives');
     expect(system(calls[0])).toContain('texte brut sans Markdown');
     expect(system(calls[0])).toContain('Markdown sans HTML ni images');
-    expect(system(calls[0])).toContain('Décompose chaque nouvelle tâche en sous-tâches concrètes');
+    expect(system(calls[0])).toContain('Donne à chaque nouvelle tâche des sous-tâches');
     expect(system(calls[0])).toContain('"checklist_updates":[{"n":1,"checked":true}]');
     expect(system(calls[0])).toContain('{"reply":"…","show_tasks":[n],"show_documents":[n],"actions":[…],"search":["mot"]}');
     for (const kind of ['create_task', 'update_task', 'create_note']) expect(system(calls[0])).toContain(`"kind":"${kind}"`);
@@ -674,6 +674,28 @@ describe('appels au modèle', () => {
 });
 
 describe('réponse du modèle', () => {
+  test('demande la précision utile après lecture du contexte avant de proposer une écriture', async () => {
+    const summary = entry('e1', { title: 'Contrôle du circuit' });
+    mockState({ entries: [summary] });
+    vi.spyOn(api, 'entry').mockResolvedValue({
+      ...summary, content_md: 'Contrôler la pression et la température.',
+      created_at: summary.updated_at, attachments: [],
+    });
+    const question = { text: 'Quel contrôle souhaites-tu préparer ?', options: ['Pression', 'Température'] };
+    const calls = stubAi(
+      json({ read_entries: [1] }),
+      json({ reply: 'La note prévoit deux contrôles possibles.', question, actions: [{ kind: 'create_task', title: 'Contrôler la pression' }] }),
+    );
+    const result = await ask({ text: 'Prépare le contrôle.' });
+    expect(calls).toHaveLength(2);
+    expect(user(calls[1])).toContain('Contrôler la pression et la température.');
+    expect(system(calls[1])).toContain('lis le contexte, puis pose la « question » utile');
+    expect(system(calls[1])).toContain('avant les actions, avec 2 à');
+    expect(system(calls[1])).toContain('Si la demande est précise, avance.');
+    expect(result.question).toEqual(question);
+    expect(result.proposals).toEqual([]);
+  });
+
   test('une question ouverte est une réponse à part entière et arrête la recherche et les propositions du tour', async () => {
     const state = mockState({ tasks: [task('t1', { title: 'Projet annuel' })] });
     const calls = stubAi(json({
@@ -687,7 +709,7 @@ describe('réponse du modèle', () => {
     });
     expect(calls).toHaveLength(1);
     expect(state).not.toHaveBeenCalledWith('vanne');
-    expect(system(calls[0])).toContain('Reprends les réponses et décisions précédentes.');
+    expect(system(calls[0])).toContain('Reprends les réponses précédentes');
   });
 
   test('les choix du sondage restent disponibles quand le modèle reprend la réponse de l’utilisateur', async () => {
@@ -1551,6 +1573,67 @@ describe('application des propositions, sur la vraie API', () => {
     await api.updateEntry('e', { content_md: 'Corps saisi ailleurs.' });
     await expect(applyChatProposal(proposals[0])).rejects.toThrow('Cette entrée a changé depuis la proposition');
     expect((await api.entry('e')).content_md).toBe('Corps saisi ailleurs.');
+  });
+
+  test('corrige un document riche au texte cité, en gardant les marques autour', async () => {
+    seedData(server.db, { entries: [{ id: 'e', title: 'Contrôle', content_md: '' }] });
+    server.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(JSON.stringify({
+      type: 'doc', content: [{ type: 'paragraph', content: [
+        { type: 'text', text: 'Pression', marks: [{ type: 'bold' }] },
+        { type: 'text', text: ' à vérifier.' },
+      ] }],
+    }), 'e');
+    stubAi(
+      json({ read_entries: [1] }),
+      json({ actions: [{ kind: 'update_entry', n: 1, text_edits: [{ find: 'à vérifier.', replace: 'à contrôler.' }] }] }),
+    );
+    const { proposals, notice } = await ask({ text: 'Corrige la fin de la phrase.', openEntryId: 'e' });
+    expect(notice).toBe('');
+    expect(proposals[0]).toMatchObject({ kind: 'update_entry', preview: expect.stringContaining('à contrôler.') });
+    expect(proposals[0]).not.toHaveProperty('warning');
+    await expect(applyChatProposal(proposals[0])).resolves.toEqual({ entryId: 'e' });
+    const saved = JSON.stringify((await api.entry('e')).content_json);
+    expect(saved).toContain('"text":" à contrôler."');
+    expect(saved).toContain('"type":"bold"');
+  });
+
+  test('un passage cité avec ses repères Markdown corrige le document riche en annonçant la mise à plat', async () => {
+    seedData(server.db, { entries: [{ id: 'e', title: 'Contrôle', content_md: '' }] });
+    server.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(JSON.stringify({
+      type: 'doc', content: [
+        { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Contrôle' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'Bassin 3.' }] },
+      ],
+    }), 'e');
+    stubAi(
+      json({ read_entries: [1] }),
+      json({ actions: [{ kind: 'update_entry', n: 1, text_edits: [{ find: '# Contrôle', replace: '# Contrôle annuel' }] }] }),
+    );
+    const { proposals, notice } = await ask({ text: 'Renomme le titre du document.', openEntryId: 'e' });
+    expect(notice).toBe('');
+    expect(proposals[0]).toMatchObject({ warning: expect.stringContaining('remis à plat') });
+    await expect(applyChatProposal(proposals[0])).resolves.toEqual({ entryId: 'e' });
+    const saved = JSON.stringify((await api.entry('e')).content_json);
+    expect(saved).toContain('Contrôle annuel');
+    expect(saved).toContain('Bassin 3.');
+  });
+
+  test('ajoute du texte à un document riche sans écraser le contenu existant', async () => {
+    seedData(server.db, { entries: [{ id: 'e', title: 'Contrôle', content_md: '' }] });
+    server.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(JSON.stringify({
+      type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Bassin 3.' }] }],
+    }), 'e');
+    stubAi(
+      json({ read_entries: [1] }),
+      json({ actions: [{ kind: 'update_entry', n: 1, append_content: 'Vérifier la vanne.' }] }),
+    );
+    const { proposals, notice } = await ask({ text: 'Ajoute une vérification à la fin.', openEntryId: 'e' });
+    expect(notice).toBe('');
+    expect(proposals[0]).toMatchObject({ preview: expect.stringContaining('Vérifier la vanne.') });
+    await expect(applyChatProposal(proposals[0])).resolves.toEqual({ entryId: 'e' });
+    const saved = JSON.stringify((await api.entry('e')).content_json);
+    expect(saved).toContain('Bassin 3.');
+    expect(saved).toContain('Vérifier la vanne.');
   });
 
   test('propose de cocher et décocher des cases précises en conservant le reste du Markdown', async () => {

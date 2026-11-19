@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { aiUsageLabel } from '../ai-budget';
 import { applyChatProposal, askAssistant, MAX_CHAT_MESSAGE, type ChatHistoryItem, type ChatProposal, type ChatQuestion } from '../ai-chat';
@@ -6,6 +6,21 @@ import { chatAttachmentBytes, createChatLink, MAX_CHAT_ATTACHMENTS, MAX_CHAT_ATT
 import { AiCancelled, readAiSettings, truncate } from '../ai-suggest';
 import { COLUMNS, type Task } from '../lib';
 import { readChatConversations, writeChatConversations, type ChatProposalItem, type ChatSession, type ChatTurn } from '../store/chat-conversations';
+import { ColumnResizer } from './ColumnResizer';
+
+const CHAT_PANEL_ID = 'worklogs-assistant-panel';
+const CHAT_WIDTH_KEY = 'worklogs-assistant-width';
+const CHAT_MIN_WIDTH = 500;
+const CHAT_DEFAULT_WIDTH = 1460;
+const CHAT_MAX_WIDTH = 2400;
+
+function readChatWidth() {
+  try {
+    const width = Number(localStorage.getItem(CHAT_WIDTH_KEY));
+    if (Number.isInteger(width) && width >= CHAT_MIN_WIDTH && width <= CHAT_MAX_WIDTH) return width;
+  } catch { /* Le stockage peut être désactivé dans le navigateur. */ }
+  return CHAT_DEFAULT_WIDTH;
+}
 
 const newSession = (id: number): ChatSession => ({
   id, storageId: crypto.randomUUID?.() ?? `chat-${Date.now()}-${Math.random()}`,
@@ -64,11 +79,18 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
   const [historyError, setHistoryError] = useState('');
   const [activeId, setActiveId] = useState(1);
   const [showSidebar, setShowSidebar] = useState(false);
+  const [width, setWidth] = useState(readChatWidth);
   const active = sessions.find(({ id }) => id === activeId) ?? sessions[0];
   const mobileSidebar = compact && showSidebar;
   const inProgress = sessions.filter(conversationActivity).length;
   const latestOnChanged = useRef(onChanged);
   latestOnChanged.current = onChanged;
+  useEffect(() => {
+    try {
+      if (width === CHAT_DEFAULT_WIDTH) localStorage.removeItem(CHAT_WIDTH_KEY);
+      else localStorage.setItem(CHAT_WIDTH_KEY, String(width));
+    } catch { /* La largeur reste utilisable. */ }
+  }, [width]);
   useEffect(() => {
     if (!historyAvailable.current) return;
     let disposed = false;
@@ -344,8 +366,12 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
 
   if (!open || !historyLoaded) return null;
   const close = () => { setShowSidebar(false); onClose(); };
+  const maxWidth = Math.max(CHAT_MIN_WIDTH, Math.min(CHAT_MAX_WIDTH, window.innerWidth));
   return createPortal((
-    <dialog className="settings-dialog ai-chat-dialog no-print" aria-label="Assistant IA" aria-modal="true" ref={dialogRef} onCancel={(event) => { event.preventDefault(); close(); }}>
+    <dialog id={CHAT_PANEL_ID} className="settings-dialog ai-chat-dialog no-print" aria-label="Assistant IA" aria-modal="true"
+      style={{ '--ai-chat-width': `${width}px` } as CSSProperties} ref={dialogRef} onCancel={(event) => { event.preventDefault(); close(); }}>
+      {!compact && <ColumnResizer side="right" area="ai-chat" label="Redimensionner le panneau de l’assistant"
+        panelId={CHAT_PANEL_ID} min={CHAT_MIN_WIDTH} max={maxWidth} value={Math.min(width, maxWidth)} onChange={setWidth} />}
       <header className="ai-chat-header">
         <h2>Assistant IA</h2>
         <div className="ai-chat-header-actions">
@@ -519,6 +545,7 @@ function ChatPane({
                       focusField();
                       onSend(choice);
                     } : undefined}
+                    onFreeReply={() => fieldRef.current?.focus()}
                   />}
                   {answer.notice && <p className="notice">{answer.notice}</p>}
                   <ChatResults answer={answer} navigation={navigation} />
@@ -617,10 +644,10 @@ function ChatAttachments({ attachments, onForget }: { attachments: ChatAttachmen
   </ul>;
 }
 
-function ChatQuestionCard({ question, onReply }: { question: ChatQuestion; onReply?: (options: string) => void }) {
+function ChatQuestionCard({ question, onReply, onFreeReply }: { question: ChatQuestion; onReply?: (options: string) => void; onFreeReply: () => void }) {
   const [selected, setSelected] = useState<string[]>([]);
-  if (!question.options.length) return <p className="ai-chat-bubble ai-chat-question">{question.text}</p>;
   if (!onReply) {
+    if (!question.options.length) return <p className="ai-chat-bubble ai-chat-question">{question.text}</p>;
     return <div className="ai-chat-bubble ai-chat-question">
       <p>{question.text}</p>
       <ul>{question.options.map((option) => <li key={option}>{option}</li>)}</ul>
@@ -640,6 +667,7 @@ function ChatQuestionCard({ question, onReply }: { question: ChatQuestion; onRep
     </div>
     {question.multiple && <button className="task-primary" type="button" disabled={!selected.length}
       onClick={() => onReply(question.options.filter((option) => selected.includes(option)).join('\n'))}>Répondre avec ces choix</button>}
+    <button className="ghost" type="button" onClick={onFreeReply}>Répondre librement</button>
   </fieldset>;
 }
 
@@ -684,7 +712,7 @@ function ChatProposalRow({ item, navigation, onApply, onIgnore }: {
 }) {
   const { proposal, result } = item;
   const { label } = proposal;
-  const body = proposal.kind === 'update_entry' ? proposal.changes.content_md : 'content_md' in proposal ? proposal.content_md : undefined;
+  const body = proposal.kind === 'update_entry' ? proposal.preview ?? proposal.changes.content_md : 'content_md' in proposal ? proposal.content_md : undefined;
   const taskTitle = proposal.kind === 'update_task' ? proposal.changes.title ?? proposal.title
     : proposal.kind === 'create_task_note' ? proposal.taskTitle : proposal.title;
   const retry = item.status === 'failed';
@@ -694,6 +722,7 @@ function ChatProposalRow({ item, navigation, onApply, onIgnore }: {
   return (
     <li className={'ai-action-row' + (item.status === 'ignored' ? ' is-ignored' : '')}>
       <p className="ai-chat-proposal">{label}</p>
+      {proposal.kind === 'update_entry' && proposal.warning && <p className="ai-hint ai-chat-warning">{proposal.warning}</p>}
       {body !== undefined && <details className="ai-chat-review">
         <summary>Relire le texte proposé</summary>
         <pre>{body || 'Texte vide'}</pre>
