@@ -1,26 +1,71 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, formatSize, type Attachment } from '../lib';
-import { downloadAttachment, driveViewUrl, openAttachmentWith } from '../attachment-download';
-import { previewKind, previewNotice } from '../file-preview';
+import { downloadAttachment, driveViewUrl, openAttachmentWith, readAttachmentBlob } from '../attachment-download';
+import { extensionOf, previewKind, previewNotice } from '../file-preview';
+import type { FileEditorHandle } from '../file-formats';
 import { DocxView } from './DocxView';
 import { FileIcon } from './FileIcon';
+import { XlsxFileEditor } from './XlsxFileEditor';
 
 /**
- * Aperçu intégré d'une pièce jointe : image, PDF ou texte s'affichent dans un
- * dialogue au premier plan (comme « Gérer Google Drive »), le téléchargement
- * restant à un clic. Les formats qu'on ne sait pas rendre honnêtement — les
- * tableurs notamment — sont annoncés tels quels plutôt que montrés de travers.
+ * Aperçu intégré des pièces jointes. Les classeurs XLSX réutilisent la grille
+ * du partage et peuvent être enregistrés dans une nouvelle pièce jointe.
  *
  * Le dialogue est rendu par `EntryEditor` avec `key` sur la pièce jointe : un
  * changement de fichier remonte le composant, donc jamais d'aperçu périmé.
  */
-export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { file: Attachment; onClose: () => void; onFetch?: () => void; fetching?: boolean; fetchError?: string }) {
+export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetchError, onSaved }: { file: Attachment; onClose: () => void; onFetch?: () => void; fetching?: boolean; fetchError?: string; onSaved?: (file: Attachment) => void }) {
+  const [file, setFile] = useState(initialFile);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const kind = previewKind(file);
+  const spreadsheet = kind === 'sheet' && (['xlsx', 'xlsm'].includes(extensionOf(file.filename))
+    || file.mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  const editorRef = useRef<FileEditorHandle | null>(null);
+  const savingRef = useRef(false);
+  const [bytes, setBytes] = useState<Uint8Array | null>(null);
+  const [editorVersion, setEditorVersion] = useState(0);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [opening, setOpening] = useState(false);
+
+  const close = () => {
+    if (savingRef.current) return;
+    if (editorRef.current?.isDirty() && !confirm(`Fermer sans enregistrer la copie modifiée de « ${file.filename} » ?`)) return;
+    onClose();
+  };
+
+  const saveWorkbook = async () => {
+    const editor = editorRef.current;
+    if (savingRef.current) return;
+    if (!editor?.isDirty()) { setDirty(false); return; }
+    const problems = editor.problems();
+    if (problems.length) { setError(problems.join('\n')); return; }
+    savingRef.current = true;
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const content = await editor.serialize();
+      const stem = file.filename.replace(/\.(xlsx|xlsm)$/i, '').replace(/ - modifié$/i, '');
+      const uploaded = await api.upload(new File([new Uint8Array(content)], `${stem} - modifié.xlsx`, {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }), file.entry_id);
+      setFile(uploaded);
+      setBytes(content);
+      setEditorVersion((version) => version + 1);
+      setDirty(false);
+      setNotice('Copie modifiée enregistrée dans cette entrée.');
+      onSaved?.(uploaded);
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
 
   const openWith = async () => {
     setError('');
@@ -44,8 +89,35 @@ export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { f
     catch { dialog.setAttribute('open', ''); }
   }, []);
 
-  // Seul le texte a besoin d'être rapatrié : images et PDF sont rendus par le
-  // navigateur à partir de l'URL, sans passer par la mémoire du renderer.
+  useEffect(() => {
+    if (!spreadsheet) return;
+    let alive = true;
+    setBytes(null);
+    setError('');
+    readAttachmentBlob(file).then((blob) => blob.arrayBuffer()).then((content) => {
+      if (alive) setBytes(new Uint8Array(content));
+    }, (cause: Error) => { if (alive) setError(cause.message); });
+    return () => { alive = false; };
+  }, [spreadsheet, file]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const guard = (event: BeforeUnloadEvent) => {
+      if (editorRef.current?.isDirty()) event.preventDefault();
+    };
+    const unsubscribe = window.worklogsDesktop?.onBeforeClose(async () => {
+      if (editorRef.current?.isDirty()) {
+        throw new Error(`Le classeur « ${file.filename} » contient des modifications. Reviens à WorkLogs pour enregistrer une copie modifiée.`);
+      }
+    });
+    window.addEventListener('beforeunload', guard);
+    return () => {
+      unsubscribe?.();
+      window.removeEventListener('beforeunload', guard);
+    };
+  }, [dirty, file.filename]);
+
+  // Images et PDF sont rendus par le navigateur à partir de l’URL.
   useEffect(() => {
     if (kind !== 'text') return;
     let alive = true;
@@ -69,8 +141,15 @@ export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { f
       aria-label={`Aperçu de ${file.filename}`}
       aria-modal="true"
       ref={dialogRef}
-      onCancel={(event) => { event.preventDefault(); onClose(); }}
+      onCancel={(event) => { event.preventDefault(); close(); }}
       onClose={onClose}
+      onKeyDown={(event) => {
+        if (spreadsheet && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+          event.preventDefault();
+          event.stopPropagation();
+          void saveWorkbook();
+        }
+      }}
     >
       <div className="viewer-heading">
         <div className="viewer-title">
@@ -78,6 +157,9 @@ export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { f
           <small>{formatSize(file.size)}</small>
         </div>
         <div className="viewer-actions">
+          {spreadsheet && <button className="task-primary" type="button" disabled={!dirty || saving} onClick={() => void saveWorkbook()}>
+            {saving ? 'Enregistrement…' : 'Enregistrer une copie modifiée'}
+          </button>}
           <button className="ghost" type="button" disabled={opening} onClick={() => void openWith()}>
             {opening ? 'Ouverture…' : 'Ouvrir avec…'}
           </button>
@@ -96,10 +178,10 @@ export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { f
           >
             Télécharger
           </a>
-          <button className="ghost" type="button" onClick={onClose}>Fermer</button>
+          <button className="ghost" type="button" disabled={saving} onClick={close}>Fermer</button>
         </div>
       </div>
-      <div className="viewer-body">
+      <div className={'viewer-body' + (spreadsheet ? ' viewer-workbook' : '')}>
         {fetchError && <p className="error" role="alert">{fetchError}</p>}
         {notice && <p className="viewer-notice" role="status">{notice}</p>}
         {error && kind !== 'text' && <p className="error" role="alert">{error}</p>}
@@ -107,6 +189,13 @@ export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { f
         {kind === 'image' && <img src={url} alt={file.filename} />}
         {kind === 'pdf' && <iframe className="viewer-frame" src={url} title={file.filename} />}
         {kind === 'docx' && <DocxView url={url} filename={file.filename} />}
+        {spreadsheet && (bytes
+          ? <XlsxFileEditor key={editorVersion} name={file.filename} bytes={bytes} initialDraft={null}
+            readOnly={saving ? 'Enregistrement en cours…' : null} handleRef={editorRef} onEdit={() => {
+              setDirty(true);
+              setNotice('');
+            }} />
+          : !error && <p>Lecture du classeur…</p>)}
         {kind === 'text' && (
           error
             ? <p role="alert">{error}</p>
@@ -114,7 +203,7 @@ export function FileViewer({ file, onClose, onFetch, fetching, fetchError }: { f
               ? <p>Chargement…</p>
               : <pre className="viewer-text">{text}</pre>
         )}
-        {(kind === 'sheet' || kind === 'other') && (
+        {((!spreadsheet && kind === 'sheet') || kind === 'other') && (
           <p className="viewer-notice">{previewNotice(kind, file.filename)}</p>
         )}
       </div>

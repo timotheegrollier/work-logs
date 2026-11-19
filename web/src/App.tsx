@@ -1015,6 +1015,7 @@ export default function App() {
               compact={phone}
               editRequest={procedureEdit.id === entry.id ? procedureEdit.sequence : 0}
               onChanged={entryEditorChanged}
+              onSharedChanged={bumpShared}
               onTaskCreated={reload}
               onTaskChanged={entryTaskChanged}
               onProcedureCreated={openCreatedProcedure}
@@ -1078,6 +1079,7 @@ export default function App() {
             onEdit={editProcedure}
             onCreate={createProcedure}
             onChanged={reload}
+            onSharedChanged={bumpShared}
             onDeleted={procedureDeleted}
           />
           {/* PWA : absente tant que le relais n'est pas réglé (le statut dit « indisponible »). */}

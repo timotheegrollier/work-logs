@@ -1,10 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 // Le renderer ne reçoit ni accès Node, ni accès IPC général, ni jeton du serveur.
-let beforeClose = async () => {};
+const closeChecks = new Set();
 ipcRenderer.on('worklogs:prepare-close', async () => {
   try {
-    await beforeClose();
+    const results = await Promise.allSettled([...closeChecks].map(async (check) => check()));
+    const failure = results.find((result) => result.status === 'rejected');
+    if (failure) throw failure.reason;
     ipcRenderer.send('worklogs:close-ready', null);
   } catch (error) {
     ipcRenderer.send('worklogs:close-ready', error instanceof Error ? error.message : String(error));
@@ -26,8 +28,8 @@ contextBridge.exposeInMainWorld('worklogsDesktop', {
     },
   },
   onBeforeClose(callback) {
-    beforeClose = callback;
-    return () => { beforeClose = async () => {}; };
+    closeChecks.add(callback);
+    return () => { closeChecks.delete(callback); };
   },
   // Renvoie '' si l'application du système a pris le fichier, sinon le message d'erreur.
   openAttachment: (stored, filename) => ipcRenderer.invoke('worklogs:open-attachment', { stored, filename }),

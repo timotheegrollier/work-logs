@@ -3,6 +3,7 @@ import type { GoogleDocsBridge } from '../../web/src/google-desktop';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { excelWorkbook } from '../../web/src/test/xlsx-fixture';
 
 type DesktopWindow = Window & { worklogsDesktop: { googleDocs: GoogleDocsBridge } };
 
@@ -498,6 +499,41 @@ test('impression PDF, refus de fermeture si l’enregistrement échoue, puis sor
   await closed;
   application = undefined;
   await launch();
+});
+
+test('fermer un classeur modifié permet de revenir aux cellules puis d’enregistrer sa copie', async () => {
+  await page.getByLabel('Joindre un fichier', { exact: true }).setInputFiles({
+    name: 'budget.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(excelWorkbook()),
+  });
+  await page.getByRole('button', { name: 'Aperçu de budget.xlsx', exact: true }).click();
+  const viewer = page.getByRole('dialog', { name: 'Aperçu de budget.xlsx', exact: true });
+  await viewer.getByRole('gridcell', { name: 'B3 : 100,00 €', exact: true }).click();
+  await page.keyboard.type('250');
+  await page.keyboard.press('Enter');
+  await expect(viewer.getByRole('gridcell', { name: 'B3 : 250,00 €', exact: true })).toBeVisible();
+
+  type WorkbookCloseDialogs = { workbookCloseMessages: string[] };
+  await application!.evaluate(({ dialog }) => {
+    (globalThis as unknown as WorkbookCloseDialogs).workbookCloseMessages = [];
+    dialog.showMessageBoxSync = (...args: unknown[]) => {
+      (globalThis as unknown as WorkbookCloseDialogs).workbookCloseMessages.push(JSON.stringify(args[1]));
+      return 0;
+    };
+  });
+  const messages = () => application!.evaluate(() => (globalThis as unknown as WorkbookCloseDialogs).workbookCloseMessages);
+  await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  await expect.poll(messages).toHaveLength(1);
+  expect((await messages())[0]).toContain('budget.xlsx');
+  expect((await messages())[0]).toContain('Fermer sans enregistrer');
+  await expect(viewer.getByRole('gridcell', { name: 'B3 : 250,00 €', exact: true })).toBeVisible();
+
+  await viewer.getByRole('button', { name: 'Enregistrer une copie modifiée', exact: true }).click();
+  const saved = page.getByRole('dialog', { name: 'Aperçu de budget - modifié.xlsx', exact: true });
+  await expect(saved.getByRole('gridcell', { name: 'B3 : 250,00 €', exact: true })).toBeVisible();
+  const closed = application!.waitForEvent('close');
+  await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  await closed;
+  application = undefined;
 });
 
 test('Google intégré : outils dans le canevas, isolation, dimensions et copie locale', async () => {

@@ -26,7 +26,12 @@ async function fetchAttachment(file: DownloadableFile): Promise<Response> {
  * Drive : il est rapatrié d'abord, puis enregistré.
  */
 export async function downloadAttachment(file: DownloadableFile): Promise<void> {
-  saveBlob(await (await fetchAttachment(file)).blob(), file.filename);
+  saveBlob(await readAttachmentBlob(file), file.filename);
+}
+
+/** Lit la pièce jointe enregistrée, en la rapatriant depuis Drive si nécessaire. */
+export async function readAttachmentBlob(file: DownloadableFile): Promise<Blob> {
+  return (await fetchAttachment(file)).blob();
 }
 
 /**

@@ -6,6 +6,7 @@ import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-down
 import { groupByCategory } from '../categories';
 import { CategoryBadge } from './CategoryPicker';
 import { FileIcon } from './FileIcon';
+import { AttachFromLinkedFolder, CopyAttachmentToLinkedFolder } from './ProcedureSharedFiles';
 
 // L'aperçu (Word compris) ne se charge qu'au premier fichier consulté.
 const FileViewer = lazy(() => import('./FileViewer').then((m) => ({ default: m.FileViewer })));
@@ -28,6 +29,7 @@ export const ProcedureList = memo(function ProcedureList({
   onEdit,
   onCreate,
   onChanged,
+  onSharedChanged,
   onDeleted,
 }: {
   entries: EntrySummary[];
@@ -41,6 +43,7 @@ export const ProcedureList = memo(function ProcedureList({
   onEdit: (id: string) => void;
   onCreate: () => void;
   onChanged: () => void;
+  onSharedChanged?: () => void;
   onDeleted: (id: string) => void;
 }) {
   const [error, setError] = useState('');
@@ -141,6 +144,7 @@ export const ProcedureList = memo(function ProcedureList({
       <ol className="procedure-items">
         {group.items.map((entry) => {
           const entryFiles = files.filter((file) => file.entry_id === entry.id);
+          const linkedProject = projects.find((candidate) => candidate.id === entry.project_id && candidate.shared_dir);
           return (
             <li key={entry.id}>
               <button
@@ -191,6 +195,8 @@ export const ProcedureList = memo(function ProcedureList({
                   />
                 </label>
               </div>
+              {linkedProject && <AttachFromLinkedFolder key={`${entry.id}:${linkedProject.shared_dir}`} entryId={entry.id} title={entry.title}
+                project={linkedProject} disabled={busy} onAttached={onChanged} />}
               {entryFiles.length > 0 && (
                 <ul className="procedure-files" aria-label={`Pièces jointes de ${entry.title}`}>
                   {entryFiles.map((file) => (
@@ -217,6 +223,7 @@ export const ProcedureList = memo(function ProcedureList({
                       >
                         ↓
                       </a>
+                      {linkedProject && <CopyAttachmentToLinkedFolder file={file} project={linkedProject} disabled={busy} onCopied={onSharedChanged} />}
                       {file.driveFileId
                         ? <small className="picker-source is-google" title="Conservé sur Google Drive">☁ Drive</small>
                         : <small className="picker-source" title="Uniquement sur cet appareil tant que Google Drive n’est pas connecté">local seul</small>}
@@ -248,6 +255,7 @@ export const ProcedureList = memo(function ProcedureList({
         onFetch={() => void recover(previewing)}
         fetching={fetching}
         fetchError={fetchError}
+        onSaved={(updated) => { setPreviewing(updated); onChanged(); }}
       /></Suspense>}
     </section>
   );

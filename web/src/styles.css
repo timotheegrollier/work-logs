@@ -1537,6 +1537,7 @@ button:disabled {
 }
 .procedure-files li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   min-width: 0;
@@ -1571,6 +1572,61 @@ button:disabled {
 }
 .procedure-files .picker-source {
   flex: none;
+}
+.procedure-file-transfer {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.procedure-file-transfer small {
+  overflow-wrap: anywhere;
+}
+.procedure-files .procedure-file-transfer,
+.file .procedure-file-transfer {
+  flex-basis: 100%;
+}
+.file:has(.procedure-file-transfer) {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.procedure-linked-files {
+  min-width: 0;
+}
+.procedure-linked-picker {
+  margin: 4px 0;
+  padding: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.procedure-linked-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.procedure-linked-heading > span {
+  flex: 1 1 100%;
+}
+.procedure-linked-picker ul {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0;
+  max-height: 240px;
+  overflow: auto;
+}
+.procedure-linked-picker li > button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 34px;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 /* Pictogramme du type de fichier (`FileIcon`) : une page teintée au coin plié, le sigle du
@@ -4117,6 +4173,12 @@ div.google-preserved {
   overflow: auto;
   background: var(--bg);
 }
+.viewer-body.viewer-workbook {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
 /* Aperçu Word : une page lisible, en haut du panneau, le texte au premier plan. */
 .viewer-body .docx-view {
   align-self: start;
@@ -4514,13 +4576,19 @@ div.google-preserved {
   flex: 1;
   min-width: 0;
 }
-.shared-file-delete {
+.shared-file-delete,
+.shared-file-download {
   flex: none;
   font-size: 12px;
   padding: 4px 7px;
   color: var(--muted);
   border-color: transparent;
   background: transparent;
+}
+.shared-upload-files {
+  margin: 0;
+  padding-left: 1.4em;
+  overflow-wrap: anywhere;
 }
 .shared-file-delete:hover:not(:disabled) {
   color: var(--danger);
@@ -7353,11 +7421,17 @@ button.lane-name:hover {
 .ai-chat-dialog {
   inset: 0 0 0 auto;
   transform: none;
-  width: min(1460px, 100vw);
+  width: min(var(--ai-chat-width, 1460px), 100vw);
   height: 100dvh;
   max-height: none;
   border-width: 0 0 0 1px;
   border-radius: 0;
+}
+.column-resizer-ai-chat {
+  display: block;
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 2;
 }
 .ai-chat-header,
 .ai-chat-pane-header {

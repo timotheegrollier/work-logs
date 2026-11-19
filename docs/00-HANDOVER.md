@@ -1,5 +1,13 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Classeurs joints et transferts depuis les procédures (§90)
+
+- Un classeur `.xlsx` joint s’ouvre dans la grille Excel intégrée. Les modifications
+  peuvent être enregistrées en copie dans la même entrée ou procédure.
+- Le dossier partagé reçoit les fichiers du PC et propose un téléchargement dans l’arbre
+  et les résultats de recherche. Une procédure peut copier ses pièces jointes vers le
+  dossier lié à son projet et y choisir un fichier à joindre.
+
 ## Pipeline plus court, mêmes validations — 2026-11-19, v0.83.1
 
 - `ci.yml` sépare la construction des paquets (`build`, « Paquets desktop ») des tests

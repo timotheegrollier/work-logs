@@ -3661,3 +3661,18 @@ Les appels GitHub et la taille du contenu sont bornés. Une absence de connexion
 de droit d’accès produit un message précis. La PWA indique que cet accès privé
 nécessite le serveur local. Gemini garde la consultation des pages publiques
 qui ne peuvent pas être lues localement.
+
+## 90. Éditer un classeur joint et transférer les fichiers d’une procédure
+
+Les pièces jointes `.xlsx` réutilisent la grille et l’écriture ciblée des cellules
+du dossier partagé (§27). **Enregistrer une copie modifiée** joint le classeur
+modifié à la même entrée. Les pièces jointes gardent ainsi leur historique et
+leur cycle de synchronisation Drive. Sur le partage, le bouton **Enregistrer sur
+le partage** met à jour le fichier avec les contrôles de concurrence existants.
+
+Dans **Procédures**, **Importer depuis le PC** copie les fichiers choisis vers le
+dossier affiché ou un sous-dossier déplié. Une procédure liée propose aussi de
+copier une pièce jointe dans le dossier de son projet et d’y choisir un fichier à
+joindre. Les transferts réutilisent la création exclusive du partage et la lecture
+des octets par empreinte. Les téléchargements depuis l’arbre ou les résultats de
+recherche utilisent le nom du fichier du partage.

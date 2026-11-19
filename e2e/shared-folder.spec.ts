@@ -119,6 +119,53 @@ test('un projet relié à un sous-dossier : son filtre n’affiche que lui', asy
   await expect(page.getByRole('button', { name: /^Ouvrir ailleurs\.md/ })).toBeVisible();
 });
 
+test('copie un classeur du PC vers le dossier lié et le télécharge sans altérer ses octets', async ({ page, request }) => {
+  const projectResponse = await request.post('/api/projects', { data: { name: 'Transferts du chantier' } });
+  expect(projectResponse.ok()).toBeTruthy();
+  const { id: projectId } = await projectResponse.json();
+  const workbook = Buffer.from(excelWorkbook());
+  fs.mkdirSync(path.join(share, 'Chantier', 'Plans'), { recursive: true });
+  put('Chantier/Plans/existant.txt', 'Sur le serveur');
+  try {
+    await page.goto('/');
+    if (await page.locator('#workspace-procedures').isHidden()) await page.getByRole('button', { name: 'Procédures', exact: true }).click();
+    await page.getByRole('group', { name: 'Filtrer par projet' }).getByRole('button', { name: 'Transferts du chantier' }).click();
+    await page.getByRole('button', { name: 'Relier Transferts du chantier à un dossier…' }).click();
+    await page.getByRole('button', { name: 'Relier Transferts du chantier au dossier Chantier', exact: true }).click();
+    await page.getByRole('button', { name: 'Dossier Plans', exact: true }).click();
+    await page.getByRole('button', { name: 'Importer depuis le PC…', exact: true }).click();
+    const form = page.getByRole('form', { name: 'Importer des fichiers depuis le PC' });
+    await expect(form.getByLabel('Dossier de destination')).toHaveValue('Chantier/Plans');
+    await form.getByLabel('Fichiers à copier sur le partage').setInputFiles([
+      { name: 'planning.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: workbook },
+      { name: 'existant.txt', mimeType: 'text/plain', buffer: Buffer.from('Du PC') },
+    ]);
+    await form.getByRole('button', { name: 'Copier sur le partage', exact: true }).click();
+    await expect(page.getByText('1 fichier copié sur le partage.')).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'existe déjà' })).toBeVisible();
+    await expect(form.getByText('existant.txt', { exact: true })).toBeVisible();
+    await expect(form.getByText('planning.xlsx', { exact: true })).toHaveCount(0);
+    expect(fs.readFileSync(path.join(share, 'Chantier/Plans/planning.xlsx'))).toEqual(workbook);
+    expect(get('Chantier/Plans/existant.txt')).toBe('Sur le serveur');
+    await form.getByRole('button', { name: 'Annuler' }).click();
+
+    const received = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Télécharger planning.xlsx sur cet appareil' }).click();
+    const download = await received;
+    expect(download.suggestedFilename()).toBe('planning.xlsx');
+    expect(fs.readFileSync(await download.path())).toEqual(workbook);
+
+    await page.getByRole('searchbox', { name: 'Chercher dans le partage' }).fill('planning');
+    const result = page.getByRole('region', { name: 'Résultats de la recherche' });
+    const foundDownload = page.waitForEvent('download');
+    await result.getByRole('button', { name: 'Télécharger Chantier/Plans/planning.xlsx sur cet appareil' }).click();
+    expect(fs.readFileSync(await (await foundDownload).path())).toEqual(workbook);
+  } finally {
+    await page.goto('about:blank');
+    await request.delete(`/api/projects/${projectId}`);
+  }
+});
+
 test('document Word : taper dans un paragraphe puis Ctrl+S ne réécrit que lui, mise en forme d’origine gardée', async ({ page }) => {
   const original = wordDocx();
   put('procédure.docx', Buffer.from(original));

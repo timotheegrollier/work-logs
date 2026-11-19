@@ -7,6 +7,8 @@ import { fileNameProblem, NEW_FILE_TYPES, newFileBytes, PROCEDURE_EXPORT_TYPES, 
 import { followDir, linkFor, localDir } from '../shared-links';
 import { richToMarkdown } from '../rich-markdown';
 import { flushPendingSaves } from '../autosave';
+import { saveBlob } from '../attachment-download';
+import { readSharedFile } from '../shared-transfer';
 import { FileIcon } from './FileIcon';
 
 const OPEN_KEY = 'worklogs-shared-open';
@@ -64,6 +66,7 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
    */
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [transferNotice, setTransferNotice] = useState('');
   /** Choix du sous-dossier du projet filtré : chaque dossier de l'arbre propose « Relier ici ». */
   const [linking, setLinking] = useState(false);
   /** Adresse du partage à monter (\\serveur\partage) ; formulaire visible sans dossier, ou sur demande. */
@@ -83,6 +86,7 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
   const [creatingDir, setCreatingDir] = useState<{ name: string; dir: string } | null>(null);
   /** « Depuis une procédure » : procédure locale, format au choix, nom, dossier, déplacer ou copier. */
   const [importing, setImporting] = useState<{ procedureId: string; ext: ProcedureExportExt; name: string; dir: string; removeOriginal: boolean } | null>(null);
+  const [uploading, setUploading] = useState<{ dir: string; files: File[] } | null>(null);
   /** Dossier dont les actions (Renommer, Supprimer) sont ouvertes sous sa ligne. */
   const [actionsFor, setActionsFor] = useState<string | null>(null);
   /** Dossier renommé dans sa ligne de l'arbre. */
@@ -103,6 +107,10 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
   const linked = projectId ? localDir(status?.address, sharedDir) : null;
   const linkedElsewhere = Boolean(projectId && sharedDir && linked === null);
   const root = projectId && linked ? linked : '';
+  useLayoutEffect(() => {
+    setUploading(null);
+    setTransferNotice('');
+  }, [projectId, root]);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -289,6 +297,55 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
       onOpen(rel);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const uploadFromComputer = async () => {
+    if (!uploading?.files.length || busy || status.reach !== 'ok') return;
+    const { dir, files } = uploading;
+    setBusy(true);
+    setError('');
+    setTransferNotice('');
+    const failedFiles: File[] = [];
+    const failures: string[] = [];
+    try {
+      // Une écriture à la fois pour borner les octets conservés en mémoire.
+      for (const file of files) {
+        try {
+          const problem = fileNameProblem(file.name);
+          if (problem) throw new Error(problem);
+          if (file.size > 100 * 1024 * 1024) throw new Error('Fichier trop volumineux (100 Mo au plus).');
+          const rel = dir ? `${dir}/${file.name}` : file.name;
+          await api.createShared(rel, new Uint8Array(await file.arrayBuffer()));
+        } catch (cause) {
+          failedFiles.push(file);
+          failures.push(`« ${file.name} » — ${(cause as Error).message}`);
+        }
+      }
+      const sent = files.length - failedFiles.length;
+      if (sent) {
+        setTransferNotice(sent === 1 ? '1 fichier copié sur le partage.' : `${sent} fichiers copiés sur le partage.`);
+        await loadDir(dir);
+      }
+      setError(failures.join(' '));
+      setUploading((current) => current !== uploading ? current : failedFiles.length ? { dir, files: failedFiles } : null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const downloadToComputer = async (path: string) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    setTransferNotice('');
+    try {
+      const { file, bytes } = await readSharedFile(path);
+      saveBlob(new Blob([bytes as BlobPart]), file.name);
+    } catch (cause) {
+      setError((cause as Error).message);
     } finally {
       setBusy(false);
     }
@@ -639,7 +696,8 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
               {expanded.has(entry.path) && depth < 12 && renderDir(entry.path, depth + 1)}
             </li>
           )
-          : <FileRow key={entry.path} entry={entry} selected={entry.path === selectedPath} disabled={busy} onOpen={onOpen} onDelete={(target) => void removeFile(target)} />))}
+          : <FileRow key={entry.path} entry={entry} selected={entry.path === selectedPath} disabled={busy} onOpen={onOpen}
+              onDownload={(path) => void downloadToComputer(path)} onDelete={(target) => void removeFile(target)} />))}
         {listing.truncated && <li className="empty">Dossier trop grand : seuls les 2 000 premiers éléments sont listés.</li>}
       </ul>
       </>
@@ -712,7 +770,36 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
             )}
             {connecting && !showConnect && <p className="notice" role="status">Connexion à {connecting}… saisis ton mot de passe dans la fenêtre « Authentification requise » si elle s’ouvre (parfois derrière WorkLogs).</p>}
             {error && <p className="error" role="alert">{error}</p>}
-            {creating ? (
+            {transferNotice && <p className="notice" role="status">{transferNotice}</p>}
+            {uploading ? (
+              <form className="shared-new" aria-label="Importer des fichiers depuis le PC"
+                onSubmit={(event) => { event.preventDefault(); void uploadFromComputer(); }}>
+                <label>
+                  Fichiers à copier sur le partage
+                  <input type="file" multiple disabled={busy} onChange={(event) => {
+                    const files = Array.from(event.currentTarget.files ?? []);
+                    setUploading({ ...uploading, files });
+                    setError('');
+                    setTransferNotice('');
+                    event.currentTarget.value = '';
+                  }} />
+                </label>
+                {uploading.files.length > 0 && <ul className="shared-upload-files">{uploading.files.map((file, index) =>
+                  <li key={index}>{file.name}</li>)}</ul>}
+                <label>
+                  Dossier de destination
+                  <select value={uploading.dir} disabled={busy} onChange={(event) => setUploading({ ...uploading, dir: event.target.value })}>
+                    {dirOptions}
+                  </select>
+                </label>
+                <div className="shared-project-link">
+                  <button className="task-primary" type="submit" disabled={busy || reach !== 'ok' || !uploading.files.length}>
+                    {busy ? 'Copie en cours…' : 'Copier sur le partage'}
+                  </button>
+                  <button className="ghost" type="button" disabled={busy} onClick={() => { setUploading(null); setError(''); }}>Annuler</button>
+                </div>
+              </form>
+            ) : creating ? (
               <form className="shared-new" aria-label="Nouveau fichier" onSubmit={(event) => { event.preventDefault(); void createFile(); }}>
                 <label>
                   Type
@@ -796,6 +883,13 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
               </form>
             ) : reach === 'ok' && (
               <div className="shared-new-buttons">
+                <button className="ghost shared-change" disabled={busy} onClick={() => {
+                  setError('');
+                  setTransferNotice('');
+                  setUploading({ dir: defaultDir, files: [] });
+                }}>
+                  Importer depuis le PC…
+                </button>
                 <button className="ghost shared-change" disabled={busy} onClick={() => setCreating({ ext: 'docx', name: '', dir: defaultDir })}>
                   ＋ Nouveau fichier…
                 </button>
@@ -835,7 +929,7 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
                     </p>
                     <ul className="shared-tree">
                       {search.results.map((result) => (
-                        <li key={result.path}>
+                        <li key={result.path} className={result.type === 'file' ? 'shared-file-row' : undefined}>
                           {result.type === 'dir' ? (
                             <button className="shared-dir shared-search-hit" aria-label={`Afficher le dossier ${result.path}`} onClick={() => reveal(result.path)}>
                               <span className="shared-file-name"><FileIcon folder /> {result.name}</span>
@@ -851,6 +945,8 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
                               <span className="shared-search-where"><bdi dir="ltr">{result.dir || status.label}</bdi></span>
                             </button>
                           )}
+                          {result.type === 'file' && <DownloadButton name={result.path} disabled={busy}
+                            onClick={() => void downloadToComputer(result.path)} />}
                         </li>
                       ))}
                     </ul>
@@ -888,7 +984,12 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
   );
 }
 
-function FileRow({ entry, selected, disabled, onOpen, onDelete }: { entry: SharedEntry; selected: boolean; disabled: boolean; onOpen: (path: string) => void; onDelete: (entry: SharedEntry) => void }) {
+function DownloadButton({ name, disabled, onClick }: { name: string; disabled: boolean; onClick: () => void }) {
+  return <button className="ghost shared-file-download" type="button" disabled={disabled}
+    aria-label={`Télécharger ${name} sur cet appareil`} title="Télécharger sur cet appareil" onClick={onClick}>↓</button>;
+}
+
+function FileRow({ entry, selected, disabled, onOpen, onDownload, onDelete }: { entry: SharedEntry; selected: boolean; disabled: boolean; onOpen: (path: string) => void; onDownload: (path: string) => void; onDelete: (entry: SharedEntry) => void }) {
   const badges = badgesFor(entry);
   // Grisé : WorkLogs ne l'ouvre pas lui-même. Un PDF ou une image se voit sur place, sans être modifiable.
   const opens = Boolean(editorKind(entry.ext)) || entry.ext === 'pdf' || previewKind({ filename: entry.name }) === 'image';
@@ -906,6 +1007,7 @@ function FileRow({ entry, selected, disabled, onOpen, onDelete }: { entry: Share
         <span className="shared-file-name" title={entry.name}>{entry.name}</span>
         {badges.map((badge) => <span key={badge.icon} className="shared-badge" title={badge.label} aria-hidden="true">{badge.icon}</span>)}
       </button>
+      <DownloadButton name={entry.name} disabled={disabled || Boolean(entry.unavailable)} onClick={() => onDownload(entry.path)} />
       <button
         className="ghost shared-file-delete"
         disabled={disabled || entry.unavailable}

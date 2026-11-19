@@ -17,6 +17,7 @@ import { AiRefinement } from './AiRefinement';
 import { CategoryPicker } from './CategoryPicker';
 import { FileIcon } from './FileIcon';
 import { FollowUpPanel } from './FollowUpPanel';
+import { AttachFromLinkedFolder, CopyAttachmentToLinkedFolder } from './ProcedureSharedFiles';
 
 // Chargés à la demande : l'éditeur riche (Tiptap) est le plus gros morceau du
 // paquet, l'aperçu Word ne sert qu'au premier fichier consulté.
@@ -56,6 +57,7 @@ export function EntryEditor({
   linkedTasks = [],
   tasks = [],
   onChanged,
+  onSharedChanged,
   onDeleted,
   onTaskCreated,
   onTaskChanged,
@@ -73,6 +75,7 @@ export function EntryEditor({
   /** Toutes les tâches, pour lier l'entrée à des existantes (miroir du lieur de la carte). */
   tasks?: { id: string; title: string; status: Status }[];
   onChanged: () => void;
+  onSharedChanged?: () => void;
   onDeleted: () => void;
   onTaskCreated?: () => void;
   onTaskChanged?: (entryId: string, task: TaskMetadata | null) => void;
@@ -510,6 +513,7 @@ export function EntryEditor({
   // Markdown, procédure ou note complétée. Une procédure ou une note riche passe
   // par le Markdown (`rich-markdown.ts`) ; un document Google reste exclu (§23).
   const isProcedure = entry.kind === 'procedure';
+  const linkedProject = isProcedure ? projects.find((project) => project.id === draft.project_id && project.shared_dir) : undefined;
   // Écrire / Lire : les entrées Markdown, et les procédures riches locales ; un
   // document Google garde son propre parcours d'édition.
   const hasModes = !draft.content_json || (isProcedure && !googleSync);
@@ -1283,6 +1287,8 @@ export function EntryEditor({
             }}
           />
         </label>
+        {linkedProject && <AttachFromLinkedFolder key={`${entry.id}:${linkedProject.shared_dir}`} entryId={entry.id} title={draft.title}
+          project={linkedProject} disabled={syncing} onAttached={(added) => { setAttachments((current) => [added, ...current]); onChanged(); }} />}
         {attachments.map((file) => (
           <span className="file" key={file.id}>
             <FileIcon name={file.filename} />
@@ -1297,6 +1303,7 @@ export function EntryEditor({
               {file.filename}
             </a>
             <small>{formatSize(file.size)}</small>
+            {linkedProject && <CopyAttachmentToLinkedFolder file={file} project={linkedProject} disabled={syncing} onCopied={onSharedChanged} />}
             {file.driveFileId
               ? <small className="picker-source is-google" title="Binaire conservé sur Google Drive">☁ Drive</small>
               : <small className="picker-source" title="Fichier uniquement sur cet appareil">local seul</small>}
@@ -1329,7 +1336,8 @@ export function EntryEditor({
         ))}
         {driveNotice && <p className="drive-success" role="status">{driveNotice}</p>}
       </div>}
-      {previewing && <Suspense fallback={null}><FileViewer key={previewing.id + (previewing.driveFileId || '')} file={previewing} onClose={() => setPreviewing(null)} onFetch={() => previewing && void fetchFromDrive(previewing)} fetching={fetchingId === previewing.id} /></Suspense>}
+      {previewing && <Suspense fallback={null}><FileViewer key={previewing.id + (previewing.driveFileId || '')} file={previewing} onClose={() => setPreviewing(null)} onFetch={() => previewing && void fetchFromDrive(previewing)} fetching={fetchingId === previewing.id}
+        onSaved={(updated) => { setPreviewing(updated); setAttachments((current) => [updated, ...current.filter((file) => file.id !== updated.id)]); onChanged(); }} /></Suspense>}
     </section>
   );
 }

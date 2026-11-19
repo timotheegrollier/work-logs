@@ -1792,20 +1792,20 @@ describe('écrire une entrée', () => {
     expect(within(dialog).queryByText(/ne prend pas en charge/)).not.toBeInTheDocument();
   });
 
-  test('un tableur est annoncé tel quel plutôt que rendu de travers', async () => {
+  test('un ancien tableur XLS propose une ouverture dans l’application du système', async () => {
     const user = userEvent.setup();
     seedData(api.db, { entries: [{ id: 'en_xlsx', title: 'Budget' }] });
     const entry = row(api.db, 'SELECT * FROM entries WHERE id=?', 'en_xlsx') as { id: string };
-    const upload = await api.upload('budget.xlsx', 'PK binaire', { entry_id: entry.id });
+    const upload = await api.upload('budget.xls', 'ancien binaire', { entry_id: entry.id });
     api.db.prepare('UPDATE attachments SET mime=? WHERE id=?').run(
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', upload.body.id
+      'application/vnd.ms-excel', upload.body.id
     );
 
     render(<App />);
     await user.click(await within(journal()).findByText('Budget'));
-    await user.click(await screen.findByRole('button', { name: 'Aperçu de budget.xlsx' }));
+    await user.click(await screen.findByRole('button', { name: 'Aperçu de budget.xls' }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Aperçu de budget.xlsx' });
+    const dialog = await screen.findByRole('dialog', { name: 'Aperçu de budget.xls' });
     expect(within(dialog).getByText(/tableur/)).toBeInTheDocument();
     expect(within(dialog).queryByRole('img')).not.toBeInTheDocument();
     // Pas encore sur Drive : seule l'ouverture par l'application du système est proposée.
@@ -1815,11 +1815,59 @@ describe('écrire une entrée', () => {
     window.worklogsDesktop = { onBeforeClose: () => () => {}, openAttachment };
     try {
       await user.click(within(dialog).getByRole('button', { name: 'Ouvrir avec…' }));
-      await waitFor(() => expect(openAttachment).toHaveBeenCalledWith(upload.body.stored, 'budget.xlsx'));
+      await waitFor(() => expect(openAttachment).toHaveBeenCalledWith(upload.body.stored, 'budget.xls'));
       expect(await within(dialog).findByRole('status')).toHaveTextContent(/lecture seule/);
     } finally {
       delete window.worklogsDesktop;
     }
+  });
+
+  test('modifie un XLSX local et enregistre une copie, en gardant les saisies après un refus', async () => {
+    const { excelWorkbook } = await import('./test/xlsx-fixture');
+    const { readZip, readZipText } = await import('./zip');
+    const original = excelWorkbook();
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_xlsx', title: 'Budget atelier' }] });
+    const uploaded = await api.upload('budget.xlsx', Buffer.from(original), { entry_id: 'en_xlsx' });
+    const upload = vi.spyOn(clientApi, 'upload').mockImplementation(async (file, entryId) => {
+      const bytes = await new Promise<ArrayBuffer>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.readAsArrayBuffer(file);
+      });
+      return (await api.upload(file.name, Buffer.from(bytes), { entry_id: entryId })).body;
+    }).mockRejectedValueOnce(new Error('Enregistrement indisponible.'));
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Aperçu de budget.xlsx' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Aperçu de budget.xlsx' });
+    const grid = await within(dialog).findByRole('grid', { name: 'Feuille Suivi' });
+    fireEvent.click(within(grid).getByRole('gridcell', { name: 'B3 : 100,00 €' }));
+    const input = within(dialog).getByLabelText('Contenu de la cellule');
+    fireEvent.change(input, { target: { value: '250' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    await user.click(within(dialog).getByRole('button', { name: 'Fermer' }));
+    expect(dialog).toBeInTheDocument();
+    expect(window.confirm).toHaveBeenCalledWith('Fermer sans enregistrer la copie modifiée de « budget.xlsx » ?');
+    const save = within(dialog).getByRole('button', { name: 'Enregistrer une copie modifiée' });
+    await user.click(save);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Enregistrement indisponible.');
+    expect(within(grid).getByRole('gridcell', { name: 'B3 : 250,00 €' })).toBeInTheDocument();
+    expect(row(api.db, 'SELECT COUNT(*) n FROM attachments').n).toBe(1);
+
+    await user.click(save);
+    const saved = await screen.findByRole('dialog', { name: 'Aperçu de budget - modifié.xlsx' });
+    expect(await within(saved).findByRole('gridcell', { name: 'B3 : 250,00 €' })).toBeInTheDocument();
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(row(api.db, 'SELECT COUNT(*) n FROM attachments').n).toBe(2);
+    const source = await (await fetch(clientApi.fileUrl(uploaded.body.stored))).arrayBuffer();
+    expect(new Uint8Array(source)).toEqual(original);
+    const copy = row(api.db, 'SELECT stored FROM attachments WHERE filename=?', 'budget - modifié.xlsx');
+    const changed = new Uint8Array(await (await fetch(clientApi.fileUrl(String(copy.stored)))).arrayBuffer());
+    const sheet = await readZipText(readZip(changed), 'xl/worksheets/sheet1.xml');
+    expect(sheet).toContain('<c r="B3" s="2"><v>250</v></c>');
+    expect(await readZipText(readZip(changed), 'xl/styles.xml')).toBe(await readZipText(readZip(original), 'xl/styles.xml'));
   });
 
   test('un tableur déjà sur Drive propose « Ouvrir dans Drive »', async () => {
