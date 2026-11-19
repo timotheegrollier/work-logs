@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Classeur en grande fenêtre, assistant plus patient — 2026-11-19
+## Classeur en grande fenêtre, assistant plus patient — 2026-11-19, v0.85.0
 
 - Un `.xlsx`/`.xlsm` joint s’ouvre dans une fenêtre d’édition qui prend la page (presque tout
   l’écran, grille sans marge, plein écran sur téléphone). Les feuilles se choisissent par des
