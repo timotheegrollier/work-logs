@@ -1,12 +1,21 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Classeurs joints et transferts depuis les procédures (§90)
+## Entrées modifiables par l’assistant, classeurs et transferts — 2026-11-19, v0.84.0 (§90)
 
+- L’assistant complète ou corrige une note ou une procédure existante : `append_content`,
+  `text_edits` (les styles autour du passage restent) et `content` pour un document riche sans
+  image ni bloc Google. Quand le passage n’est cité que dans le Markdown relu, la correction
+  s’applique avec un avertissement de mise à plat.
 - Un classeur `.xlsx` joint s’ouvre dans la grille Excel intégrée. Les modifications
   peuvent être enregistrées en copie dans la même entrée ou procédure.
 - Le dossier partagé reçoit les fichiers du PC et propose un téléchargement dans l’arbre
   et les résultats de recherche. Une procédure peut copier ses pièces jointes vers le
   dossier lié à son projet et y choisir un fichier à joindre.
+- Les sondages de l’assistant se répondent au bouton ou librement dans le panneau, qui se
+  redimensionne au pointeur ou au clavier et mémorise sa largeur.
+- `./scripts/check.sh` vert sur ce lot : **2 086 tests**, échec attendu compris. 361 API ·
+  1 453 front (dont un échec attendu) · 49 desktop · 56 scripts · 8 Worker · 11 relais ·
+  126 navigateur · 22 desktop e2e.
 
 ## Pipeline plus court, mêmes validations — 2026-11-19, v0.83.1
 
