@@ -59,8 +59,8 @@ plus depuis que Pages publie par artefact (dernier run le 2026-11-10 à 11:28).
 
 ### 2.1 CI Linux (`ci.yml`)
 
-Le job `validate` (« Types, tests, paquets et installation ») tourne sur `ubuntu-22.04`, 25 min
-au plus, avec `WORKLOGS_TEST_NO_SANDBOX=1`. Ses étapes, dans l'ordre :
+Le job `validate` (« Types et tests ») tourne sur `ubuntu-22.04`, 25 min au plus, avec
+`WORKLOGS_TEST_NO_SANDBOX=1`. Ses étapes, dans l'ordre :
 1. checkout de `inputs.ref` (vide hors appel) ; Node de `.nvmrc` (24.20.0) ; cache npm des trois
    lockfiles ;
 2. `npm ci && npm --prefix api ci && npm --prefix web ci` ;
@@ -70,15 +70,16 @@ au plus, avec `WORKLOGS_TEST_NO_SANDBOX=1`. Ses étapes, dans l'ordre :
    `sudo apt-get update && sudo apt-get install -y xvfb rpm` ;
 5. `./scripts/check.sh` (§6) ;
 6. `node scripts/check-release.mjs`, avec le tag en argument quand la ref en est un ;
-7. `npm run desktop:dist`, qui refait le build web puis lance
-   `electron-builder --linux --x64 --publish never` ;
-8. `node scripts/verify-package.mjs` ;
-9. `node scripts/appimage-blockmap.mjs`, puis présence de `release/latest-linux.yml` et d'un
-   `.blockmap` ;
-10. envoi de l'artefact `linux-packages`, et de `test-reports` (`test-results/`,
-    `playwright-report/`) en cas d'échec.
+7. envoi de `test-reports` (`test-results/`, `playwright-report/`) en cas d'échec.
 
-Le job `packages` (« Installation et lancement — `<distribution>` ») attend `validate`. Il tourne
+Le job `build` (« Paquets desktop ») ne dépend d'aucun test : il part en même temps que
+`validate` et chevauche ses minutes. Il refait checkout, Node et dépendances, puis
+`sudo apt-get install -y rpm`, `npm run desktop:dist` (build web puis
+`electron-builder --linux --x64 --publish never`), `node scripts/verify-package.mjs`,
+`node scripts/appimage-blockmap.mjs` (présence de `release/latest-linux.yml` et d'un
+`.blockmap`), et envoie l'artefact `linux-packages` (14 jours).
+
+Le job `packages` (« Installation et lancement — `<distribution>` ») attend `build`. Il tourne
 sur `ubuntu-24.04`, 25 min au plus, sans `fail-fast`. Sa matrice : `mint-22-base` (image
 `ubuntu:24.04`, deb), `fedora-43` et `fedora-44` (rpm). Chaque job télécharge `linux-packages` et
 lance `./scripts/test-linux-package.sh <image> <format>`. Le script installe le vrai paquet dans
@@ -88,8 +89,8 @@ fenêtres : chaque passage compte 18 réussites et 1 test sauté. L'AppImage est
 (`--appimage-extract`) : son montage FUSE n'est jamais exercé.
 
 La CI ne lit que deux secrets, `GOOGLE_DESKTOP_CLIENT_ID` et `GOOGLE_DESKTOP_CLIENT_SECRET`, et à
-la seule étape `desktop:dist`. Sans eux (fork, par exemple), le paquet demande une configuration
-Google manuelle.
+la seule étape `desktop:dist` du job `build`. Sans eux (fork, par exemple), le paquet demande une
+configuration Google manuelle.
 
 Une PR lance deux runs pour le même commit, un par événement, dans deux groupes de concurrence.
 Un nouveau push sur master annule la CI de master en cours : les runs 42207180075, 42039922946 et
@@ -98,8 +99,12 @@ Un nouveau push sur master annule la CI de master en cours : les runs 4220718007
 ### 2.2 Release Linux (`release.yml`)
 
 - `precheck` (« Commit déjà validé ? ») : 5 min au plus, sans checkout. Il lit le SHA du tag
-  (`git/matching-refs/tags/<tag>`, champ `object.sha`). Il cherche ensuite un run « CI Linux » de
-  ce SHA, en `success`, dont la branche est `master`. Ses sorties : `skip`, `run-id`, `sha`.
+  (`git/matching-refs/tags/<tag>`, champ `object.sha`). Il vérifie par l'API de comparaison que
+  ce SHA appartient à `master` (`identical` ou `ahead`), puis cherche un run « CI Linux » de ce
+  SHA, en `success` et de type `push` : la branche ou `master`, peu importe, puisque ce run a
+  testé exactement le même arbre. Les runs `pull_request` testent la fusion, pas ce SHA. Ses
+  sorties : `skip`, `run-id`, `sha`. C'est ce qui permet de taguer dès la CI de branche verte,
+  sans attendre une seconde CI sur `master`.
 - `validate` : seulement si `skip` ne vaut pas `true`. Il appelle `ci.yml` avec le tag pour `ref`
   et `secrets: inherit` : tests, paquets et trois installations.
 - `release` (« Attester et publier les trois paquets ») : seulement si `precheck` a réussi, et si
@@ -317,9 +322,9 @@ Les fichiers du desktop, en une ligne chacun (l'architecture est décrite dans
 
 ## 8. Défauts connus du pipeline
 
-Relevés le 2026-11-10, revérifiés le 2026-11-12 sur le code de `8e345d0`. Aucun n'est corrigé ici.
-Chaque défaut donne son effet pour qui publie, puis la conduite à tenir en attendant sa
-correction.
+Relevés le 2026-11-10, revérifiés le 2026-11-12 sur le code de `8e345d0`. D8 est corrigé depuis le
+2026-11-19 (checkout partiel) ; les autres ne le sont pas. Chaque défaut donne son effet pour qui
+publie, puis la conduite à tenir en attendant sa correction.
 
 **D1. Le garde-fou de « Dépôts » n'arrête rien** (`repos.yml:52-59`). `--jq -e` fait échouer
 `gh release view` (« accepts at most 1 arg(s), received 2 »). `exit 0` ne termine que l'étape, pas
@@ -376,22 +381,22 @@ attendant :* ne jamais pousser sur master un commit dont la CI de branche n'est 
 ce changement seul n'atteint pas le téléphone. *En attendant :* lancer « PWA Cloudflare » à la
 main après un tel changement (`gh workflow run pwa-cloudflare.yml`).
 
-**D8. `fetch-depth: 0` télécharge l'historique binaire de `gh-pages`** (`release.yml:73,86`,
-`repos.yml:50`). Ce réglage récupère toutes les branches, et `gh-pages` porte les paquets de
-toutes les versions dans son historique. Le réglage n'est pas superflu pour autant : sans
-l'historique ni les tags, `scripts/release-notes.mjs` ne trouve pas `PREV`, et la note se réduit en
-silence au commit de version, avec un lien `compare/...vX.Y.Z` cassé. Une correction doit écarter
-`gh-pages`, pas l'historique de master ni les tags. *Effet :* le checkout fait l'essentiel du chemin
-rapide : 299 s sur les 338 s du job `release` de la v0.74.0, dont le délai est de 10 min ; 122 s
-dans « Dépôts ». *En attendant :* compter 5 à 6 min du tag à la release publiée. Si le job
-`release` expire au checkout, le relancer par `gh run rerun <id> --failed` (cas non observé).
+**D8. `fetch-depth: 0` téléchargeait l'historique binaire de `gh-pages`** (`release.yml`,
+`repos.yml`) — **corrigé le 2026-11-19**. Ce réglage récupère toutes les branches, et `gh-pages`
+porte les paquets de toutes les versions dans son historique. L'historique et les tags restent
+nécessaires : sans eux, `scripts/release-notes.mjs` ne trouve pas `PREV`, et la note se réduit en
+silence au commit de version, avec un lien `compare/...vX.Y.Z` cassé. Les deux checkouts gardent
+`fetch-depth: 0` mais ajoutent `filter: blob:none` : les commits et les tags sont là, les blobs de
+`gh-pages` ne sont plus téléchargés. Avant, le checkout faisait l'essentiel du chemin rapide :
+299 s sur les 338 s du job `release` de la v0.74.0, dont le délai est de 10 min ; 122 s dans
+« Dépôts ». Le gain du checkout partiel n'est pas encore mesuré.
 
 **D9. `precheck` ne vérifie pas que l'artefact existe encore** (`release.yml:45-51,98`,
 `ci.yml:85`). L'artefact `linux-packages` vit 14 jours. Lecture du code, non observé. *Effet :*
-un tag posé plus de 14 jours après la CI verte de master échouerait au téléchargement, au lieu de
-reconstruire. *En attendant :* taguer peu après la CI verte de master ; passé 14 jours, poser un
-tag annoté (`git tag -a`), qui force le chemin plein (vécu avec la v0.13.0, 07 §4), ou taguer un
-commit plus récent de master, après sa propre CI verte.
+un tag posé plus de 14 jours après la CI verte échouerait au téléchargement, au lieu de
+reconstruire. *En attendant :* taguer juste après la CI verte de la branche (ou de master) ; passé
+14 jours, poser un tag annoté (`git tag -a`), qui force le chemin plein (vécu avec la v0.13.0,
+07 §4), ou taguer un commit plus récent, après sa propre CI verte.
 
 **D10. L'entrée `force` de « PWA Cloudflare » n'est lue par aucune étape**
 (`pwa-cloudflare.yml:22-26`). *Effet :* aucun ; un dispatch reconstruit et redéploie toujours.
@@ -403,8 +408,8 @@ vérifié en exécution). *Effet :* aucun aujourd'hui, car le chemin plein passe
 la seconde clause protège de l'annulation. *En attendant :* ne pas compter sur cette clause si la
 CI réutilisée reçoit un jour une ref de branche.
 
-**D12. Des commentaires du pipeline sont faux.** `release.yml:22-23` annonce « the same
-6 minutes » (14,0 min mesurées). `electron-builder.yml:47` annonce « ~87 Mo » (93,7 Mio).
+**D12. Des commentaires du pipeline sont faux.** `electron-builder.yml:47` annonce « ~87 Mo »
+(93,7 Mio).
 `repos.yml:30-33` justifie `KEEP` par Pages, qui ne lit plus `gh-pages`. `pwa-cloudflare.yml:5-7`
 annonce le groupe de concurrence de « Dépôts » et « PWA », alors que `:33-35` en définit un
 propre. `desktop/main.mjs:226` parle du « workflow et Pages ». `pwa-cloudflare.yml:31-32`

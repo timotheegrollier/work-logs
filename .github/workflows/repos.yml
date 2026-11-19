@@ -48,6 +48,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          # Tags et historique des commits seulement : les blobs de gh-pages
+          # n'ont pas à être téléchargés ici (D8).
+          filter: blob:none
 
       - name: 'Garde-fou : release vraiment publiée, avec ses paquets'
         run: |

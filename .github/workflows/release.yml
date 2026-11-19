@@ -18,11 +18,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Fast path (see docs/07-RELEASES.md): our process only tags a master commit
-  # right after its CI went green, so re-validating from scratch on every tag
-  # would just redo the same 6 minutes. If the tagged commit already has a
-  # successful CI run on master, we skip `validate` and reuse its packages.
-  # Anything else (tag on an untested commit) falls back to the full CI.
+  # Fast path (see docs/07-RELEASES.md): the release branch is tagged right
+  # after its CI went green, then pushed to master. Re-validating on the tag
+  # would redo the same tests 15 minutes later, on the same tree. If the tagged
+  # commit is on master and already has a successful push CI run for that SHA
+  # (branch or master), we skip `validate` and reuse its packages. Anything else
+  # (tag on an untested commit, commit absent from master) falls back to the
+  # full CI.
   precheck:
     name: Commit déjà validé ?
     runs-on: ubuntu-24.04
@@ -42,16 +44,27 @@ jobs:
         run: |
           SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$TAG" --jq '.[0].object.sha')"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          RUN_ID="$(gh run list --commit "$SHA" --workflow 'CI Linux' -R "$GITHUB_REPOSITORY" \
-            --json databaseId,conclusion,headBranch \
-            --jq '[.[] | select(.conclusion == "success" and .headBranch == "master")] | .[0].databaseId // empty')"
+          # Le commit tagué doit appartenir à master : « identical » (même commit)
+          # ou « ahead » (master est en avance, le commit en est ancêtre). Un tag
+          # annoté donne le SHA de l'objet tag : la comparaison échoue et le
+          # chemin plein revalide, comme avant.
+          ON_MASTER="$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...master" --jq '.status' 2>/dev/null || true)"
+          RUN_ID=""
+          if [[ "$ON_MASTER" == "identical" || "$ON_MASTER" == "ahead" ]]; then
+            # Un run de push a testé exactement ce SHA, sur sa branche ou sur
+            # master. Les runs `pull_request` testent la fusion, pas ce SHA :
+            # ils ne comptent pas.
+            RUN_ID="$(gh run list --commit "$SHA" --workflow 'CI Linux' -R "$GITHUB_REPOSITORY" \
+              --json databaseId,conclusion,event \
+              --jq '[.[] | select(.conclusion == "success" and .event == "push")] | .[0].databaseId // empty')"
+          fi
           if [[ -n "$RUN_ID" ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
-            echo "Tag $TAG ($SHA) already validated by run $RUN_ID — skipping rebuild."
+            echo "Tag $TAG ($SHA) on master, already validated by push run $RUN_ID — skipping rebuild."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "No green CI for $TAG ($SHA) — full validation ahead."
+            echo "No green push CI for $TAG ($SHA) on master — full validation ahead."
           fi
 
   validate:
@@ -84,6 +97,9 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
+          # Les notes de release ont besoin des tags et de l'historique des
+          # commits, pas des blobs de gh-pages (D8). Le checkout reste rapide.
+          filter: blob:none
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc

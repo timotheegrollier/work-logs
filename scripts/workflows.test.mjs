@@ -65,6 +65,7 @@ describe('workflow Dépôts (vérification des URLs publiques)', () => {
     assert.equal(wf.on.workflow_run.workflows?.[0], 'Release Linux');
     assert.equal(wf.concurrency?.group, 'gh-pages');
     assert.equal(wf.jobs.repos['timeout-minutes'], 35);
+  assert.ok(content.includes('filter: blob:none'), 'checkout partiel (D8)');
   });
 
   test('vérifie les URLs publiques après le push, avec un échec explicite', () => {
@@ -80,5 +81,57 @@ describe('workflow Dépôts (vérification des URLs publiques)', () => {
     const script = readFileSync('./scripts/verify-repo.mjs', 'utf8');
     assert.match(script, /DEFAULT_TIMEOUT_MS = 10 \* 60 \* 1000/);
     assert.match(script, /::error::/);
+  });
+
+  test('le checkout n’a plus à télécharger les blobs de gh-pages', () => {
+    assert.ok(content.includes('filter: blob:none'), 'checkout partiel (D8)');
+  });
+});
+
+describe('workflow CI Linux (tests et paquets en parallèle)', () => {
+  const content = readFileSync('./.github/workflows/ci.yml', 'utf8');
+  const wf = yaml.load(content);
+
+  test('est un YAML valide, mêmes déclencheurs', () => {
+    assert.equal(wf.name, 'CI Linux');
+    assert.ok(wf.on.push.branches?.includes('**'));
+    assert.ok('pull_request' in wf.on, 'toujours déclenché sur pull_request');
+  });
+
+  test('les paquets se construisent sans attendre les tests', () => {
+    assert.ok(wf.jobs.build, 'job build présent');
+    assert.equal(wf.jobs.build['timeout-minutes'], 15);
+    const validate = JSON.stringify(wf.jobs.validate);
+    assert.ok(!validate.includes('desktop:dist'), 'validate ne construit plus les paquets');
+    assert.ok(JSON.stringify(wf.jobs.build).includes('desktop:dist'), 'build les construit');
+    assert.ok(JSON.stringify(wf.jobs.build).includes('verify-package.mjs'), 'paquet vérifié');
+    assert.ok(JSON.stringify(wf.jobs.build).includes('appimage-blockmap.mjs'), 'blockmap vérifié');
+  });
+
+  test('les installations attendent les paquets et reçoivent leur artefact', () => {
+    assert.equal(wf.jobs.packages.needs, 'build');
+    const uploads = wf.jobs.build.steps.filter((step) => step.uses?.startsWith('actions/upload-artifact'));
+    assert.ok(uploads.some((step) => step.with?.name === 'linux-packages'), 'artefact linux-packages');
+    assert.ok(uploads.some((step) => step.with?.['if-no-files-found'] === 'error'), 'artefact exigé');
+  });
+});
+
+describe('workflow Release Linux (réutilise la CI de la branche)', () => {
+  const wf = yaml.load(readFileSync('./.github/workflows/release.yml', 'utf8'));
+  const precheck = wf.jobs.precheck.steps[0].run;
+
+  test('le commit tagué doit appartenir à master', () => {
+    assert.match(precheck, /compare\/\$SHA\.\.\.master/);
+    assert.match(precheck, /identical/);
+    assert.match(precheck, /ahead/);
+  });
+
+  test('un run de push vert sur ce SHA suffit, branche ou master', () => {
+    assert.match(precheck, /\.event == "push"/);
+    assert.ok(!precheck.includes('headBranch == "master"'), 'plus de seconde CI imposée sur master');
+  });
+
+  test('le checkout ne télécharge plus les blobs de gh-pages', () => {
+    assert.ok(JSON.stringify(wf.jobs.release).includes('"filter":"blob:none"'));
   });
 });

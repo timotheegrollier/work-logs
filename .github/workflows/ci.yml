@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Types, tests, paquets et installation
+    name: Types et tests
     runs-on: ubuntu-22.04
     timeout-minutes: 25
     env:
@@ -59,6 +59,35 @@ jobs:
           else
             node scripts/check-release.mjs
           fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: test-reports
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+
+  # Les paquets ne dépendent d'aucun test : ils partent en même temps que
+  # `validate` et chevauchent ses 7 minutes. `packages` attend leur artefact.
+  build:
+    name: Paquets desktop
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
+            web/package-lock.json
+      - run: npm ci && npm --prefix api ci && npm --prefix web ci
+      - run: sudo apt-get update && sudo apt-get install -y rpm
       - run: npm run desktop:dist
         env:
           # Client Google « Application de bureau » intégré au paquet (connexion
@@ -83,18 +112,10 @@ jobs:
             release/latest-linux.yml
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
-        with:
-          name: test-reports
-          path: |
-            test-results/
-            playwright-report/
-          retention-days: 14
 
   packages:
     name: Installation et lancement — ${{ matrix.distribution }}
-    needs: validate
+    needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     strategy:

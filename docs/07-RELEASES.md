@@ -52,6 +52,9 @@ workflow, relevés le 2026-11-10 (06 §3). La dernière colonne donne la mesure 
 De la poussée de la branche aux dépôts vérifiés, la v0.74.0 a pris 47 minutes, et la v0.75.0
 34 minutes (06 §3).
 
+Depuis le 2026-11-19, le tag n'attend plus la CI de master (pas 7) : cette ligne n'est plus sur le
+chemin critique, et le job `build` des paquets chevauche `validate` (06 §2.1).
+
 ## 2. Versionnage et notes de release
 
 - `package.json` racine seule fait foi ; `api/` et `web/` restent en `0.1.0`.
@@ -185,22 +188,24 @@ L'arrivée du commit sur master, par poussée ou par fusion, déclenche « CI Li
 « PWA Cloudflare ». **Les deux PWA n'attendent pas la CI** : le téléphone reçoit ce commit en moins
 d'une minute (06, D6).
 
-**7. Attendre la CI verte sur master** (14,0 min en médiane ; 20,6 min pour la v0.74.0).
+**7. Taguer sans attendre une seconde CI sur master** (depuis le 2026-11-19).
+`precheck` accepte le run de push déjà vert sur ce SHA, qu'il vienne de la branche ou de master :
+l'arbre testé est identique (§4). Il vérifie en plus que le commit appartient à master.
 ```bash
-gh run list --commit <sha> --branch master --workflow ci.yml -L 1
-gh run watch <id> --exit-status
+gh run list --commit <sha> --workflow 'CI Linux' --json databaseId,conclusion,event,headBranch
+                                            # attendu : un run "success" de type "push" sur ce SHA
 ```
-Ne rien pousser d'autre sur master pendant ce temps. Un nouveau push annulerait ce run, et le tag
-partirait en chemin plein (§4). Si un autre agent pousse quand même et que ce run finit en
-`cancelled`, taguer tout de même `<sha>` au pas 8 : le chemin plein le revalide sur le tag. Ne pas
-relancer le run annulé : il entrerait dans le groupe de concurrence de master (`ci.yml:16-18`)
-et pourrait annuler la CI en cours de l'autre agent (non essayé).
+La CI de master continue de tourner pour l'historique, mais elle n'est plus sur le chemin de la
+release : ne pas l'attendre. Si elle échoue alors que celle de branche était verte, le même arbre a
+produit deux verdicts : lire l'échec (`gh run view <id> --log-failed`), sans considérer la release
+comme invalide. Ne pas relancer un run annulé : il entrerait dans le groupe de concurrence de
+master (`ci.yml:16-18`) et pourrait annuler la CI en cours d'un autre agent (non essayé).
 
 **8. Taguer ce commit, et lui seul.**
 ```bash
 gh release list -L 3                        # aucune version plus haute en cours ailleurs ?
-gh run list --commit <sha> --workflow 'CI Linux' --json databaseId,conclusion,headBranch
-                                            # attendu : un run "success" sur "master"
+gh run list --commit <sha> --workflow 'CI Linux' --json databaseId,conclusion,event,headBranch
+                                            # attendu : un run "success" de type "push" sur ce SHA
 git tag vX.Y.Z <sha>                        # tag léger : ni -a, ni -s, ni -m (-m implique -a)
 git push origin vX.Y.Z
 ```
@@ -238,12 +243,15 @@ ne prouve pas qu'un poste reçoit la version.
   par exemple, porte la date de sa construction (`releaseDate`).
 
 Le tag part en chemin plein dans trois cas :
-- la CI de master de ce commit n'est pas finie, a échoué, ou a été annulée par un push suivant ;
-- le commit n'a été validé que sur une branche ou une PR ;
+- aucun run de push vert n'a testé ce SHA (tag posé avant la CI, ou CI annulée par un push suivant) ;
+- le commit n'appartient pas à master (tag sur une branche non fusionnée) ;
 - le tag est annoté : `object.sha` désigne alors l'objet tag, pas le commit. Vécu le 2026-09-16 :
   la v0.13.0, taguée en annoté, a pris le chemin plein (run 35113664670, « No green CI for v0.13.0
   (94fcf0a…) »), alors que son commit `e6cf944` avait une CI verte sur master (run 35112767768,
   finie 13 s avant).
+
+Un run de `pull_request` ne compte pas : il teste le commit de fusion, pas ce SHA. Un run de push
+sur une branche, lui, a testé exactement l'arbre tagué.
 
 Le chemin rapide échouerait au lieu de sauter si l'artefact avait expiré, plus de 14 jours après
 la CI (06, D9).
