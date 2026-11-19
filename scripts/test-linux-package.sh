@@ -23,6 +23,10 @@ fi
 mkdir -p /work/desktop
 cp /source/package.json /source/package-lock.json /source/playwright.desktop.config.ts /work/
 cp -r /source/desktop/e2e /work/desktop/
+# Le parcours « classeur modifié » construit son XLSX avec la fixture des tests web :
+# elle n'est pas dans le paquet, et son import est résolu depuis /work.
+mkdir -p /work/web/src/test
+cp /source/web/src/test/xlsx-fixture.ts /source/web/src/test/docx-fixture.ts /work/web/src/test/
 cd /work
 npm ci --ignore-scripts --no-audit --no-fund
 Xvfb :99 -screen 0 1600x1000x24 -nolisten tcp &
