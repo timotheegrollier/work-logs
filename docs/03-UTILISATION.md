@@ -203,9 +203,11 @@ ses fichiers.
 
 **👁 Aperçu** affiche le fichier dans WorkLogs, sans ouvrir un autre programme : les images,
 les PDF et les textes (`.txt`, `.md`, `.csv`, code…) s'y lisent directement, et le bouton
-**Télécharger** du dialogue reste disponible. Les tableurs (`.xlsx`, `.ods`…) ne sont pas
-décodés — l'aperçu le dit franchement et renvoie au téléchargement, plutôt que d'afficher un
-rendu approximatif.
+**Télécharger** du dialogue reste disponible. Un classeur `.xlsx`/`.xlsm` s'ouvre dans une
+fenêtre qui prend la page : onglets de feuilles en bas, barre de formule en haut, grille au
+centre, comme dans Excel. **Enregistrer une copie modifiée** (ou `Ctrl+S`) crée la copie dans
+la même entrée sans toucher au fichier d'origine. Les autres tableurs (`.ods`, `.xls`) ne sont
+pas décodés — l'aperçu le dit franchement et renvoie au téléchargement.
 
 ## Suivre ses tâches
 

@@ -199,6 +199,7 @@ export function SheetGrid({
     <div className="sheet-grid-wrap">
       <div className="sheet-bar no-print">
         <output className="sheet-ref" aria-label="Cellule active">{reference}</output>
+        <span className="sheet-fx" aria-hidden="true">fx</span>
         <input
           ref={barRef}
           className="sheet-input"

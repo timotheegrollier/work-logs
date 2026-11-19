@@ -1840,7 +1840,15 @@ describe('écrire une entrée', () => {
     render(<App />);
     await user.click(await screen.findByRole('button', { name: 'Aperçu de budget.xlsx' }));
     const dialog = await screen.findByRole('dialog', { name: 'Aperçu de budget.xlsx' });
+    // Feuilles en onglets sous la grille, comme dans Excel : la grille suit l'onglet choisi.
+    await within(dialog).findByRole('grid', { name: 'Feuille Suivi' });
+    const tabs = within(dialog).getByRole('tablist', { name: 'Feuilles du classeur' });
+    expect(within(tabs).getByRole('tab', { name: /^Paramètres/ })).toHaveAccessibleName(/masquée/);
+    await user.click(within(tabs).getByRole('tab', { name: 'Résumé' }));
+    expect(await within(dialog).findByRole('grid', { name: 'Feuille Résumé' })).toBeInTheDocument();
+    await user.click(within(tabs).getByRole('tab', { name: 'Suivi' }));
     const grid = await within(dialog).findByRole('grid', { name: 'Feuille Suivi' });
+    expect(grid).toBeInTheDocument();
     fireEvent.click(within(grid).getByRole('gridcell', { name: 'B3 : 100,00 €' }));
     const input = within(dialog).getByLabelText('Contenu de la cellule');
     fireEvent.change(input, { target: { value: '250' } });

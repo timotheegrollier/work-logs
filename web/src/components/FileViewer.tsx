@@ -137,7 +137,7 @@ export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetc
 
   return (
     <dialog
-      className="viewer-dialog"
+      className={'viewer-dialog' + (spreadsheet ? ' is-workbook' : '')}
       aria-label={`Aperçu de ${file.filename}`}
       aria-modal="true"
       ref={dialogRef}
@@ -154,7 +154,8 @@ export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetc
       <div className="viewer-heading">
         <div className="viewer-title">
           <strong><FileIcon name={file.filename} />{file.filename}</strong>
-          <small>{formatSize(file.size)}</small>
+          <small>{spreadsheet ? 'Classeur' : formatSize(file.size)}</small>
+          {spreadsheet && dirty && <span className="viewer-dirty" role="status">non enregistré</span>}
         </div>
         <div className="viewer-actions">
           {spreadsheet && <button className="task-primary" type="button" disabled={!dirty || saving} onClick={() => void saveWorkbook()}>
@@ -190,7 +191,7 @@ export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetc
         {kind === 'pdf' && <iframe className="viewer-frame" src={url} title={file.filename} />}
         {kind === 'docx' && <DocxView url={url} filename={file.filename} />}
         {spreadsheet && (bytes
-          ? <XlsxFileEditor key={editorVersion} name={file.filename} bytes={bytes} initialDraft={null}
+          ? <XlsxFileEditor key={editorVersion} name={file.filename} bytes={bytes} initialDraft={null} sheetTabs
             readOnly={saving ? 'Enregistrement en cours…' : null} handleRef={editorRef} onEdit={() => {
               setDirty(true);
               setNotice('');

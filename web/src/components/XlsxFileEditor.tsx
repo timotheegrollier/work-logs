@@ -9,11 +9,15 @@ import { SheetGrid, type CellEdit } from './SheetGrid';
 const MAX_UNDO = 100;
 
 /**
- * `.xlsx` du dossier partagé : une feuille à la fois dans la grille, choisie
- * dans une liste (pas d'onglets). Le brouillon ne garde que ce qui a été tapé,
- * cellule par cellule ; à l'envoi, seules ces cellules sont réécrites (`xlsx.ts`).
+ * `.xlsx` du dossier partagé : une feuille à la fois dans la grille. Le brouillon
+ * ne garde que ce qui a été tapé, cellule par cellule ; à l'envoi, seules ces
+ * cellules sont réécrites (`xlsx.ts`).
+ *
+ * `sheetTabs` : dans la fenêtre d'édition d'une entrée, les feuilles se choisissent
+ * par des onglets en bas de grille, comme dans Excel ; le partage garde sa liste
+ * « Feuille » (règle du produit, `05-DECISIONS.md` §27).
  */
-export function XlsxFileEditor({ name, bytes, initialDraft, readOnly, onEdit, handleRef, author }: FileEditorProps) {
+export function XlsxFileEditor({ name, bytes, initialDraft, readOnly, onEdit, handleRef, author, sheetTabs }: FileEditorProps & { sheetTabs?: boolean }) {
   const [workbook, setWorkbook] = useState<XlsxWorkbook | null>(null);
   const [error, setError] = useState('');
 
@@ -25,10 +29,10 @@ export function XlsxFileEditor({ name, bytes, initialDraft, readOnly, onEdit, ha
 
   if (error) return <p className="error" role="alert">{error}</p>;
   if (!workbook) return <p className="empty">Lecture du classeur…</p>;
-  return <XlsxEditorBody workbook={workbook} name={name} bytes={bytes} initialDraft={initialDraft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} author={author} />;
+  return <XlsxEditorBody workbook={workbook} name={name} bytes={bytes} initialDraft={initialDraft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} author={author} sheetTabs={sheetTabs} />;
 }
 
-function XlsxEditorBody({ workbook, bytes, initialDraft, readOnly, onEdit, handleRef, author }: FileEditorProps & { workbook: XlsxWorkbook }) {
+function XlsxEditorBody({ workbook, bytes, initialDraft, readOnly, onEdit, handleRef, author, sheetTabs }: FileEditorProps & { workbook: XlsxWorkbook; sheetTabs?: boolean }) {
   const saved = initialDraft as XlsxDraft | null;
   const [edits, setEdits] = useState<XlsxEdits>(() => (saved?.format === 'xlsx' && saved.edits ? saved.edits : {}));
   const [sheetIndex, setSheetIndex] = useState(workbook.activeSheet);
@@ -103,18 +107,20 @@ function XlsxEditorBody({ workbook, bytes, initialDraft, readOnly, onEdit, handl
   };
 
   return (
-    <div className="shared-sheet">
-      <div className="shared-tools no-print">
-        <span className="shared-meta">
-          Classeur Excel · {workbook.sheets.length} feuille{workbook.sheets.length > 1 ? 's' : ''}
-        </span>
-        <label className="shared-encoding">
-          Feuille
-          <select aria-label="Feuille" value={sheetIndex} onChange={(event) => setSheetIndex(Number(event.target.value))}>
-            {workbook.sheets.map((_sheet, index) => <option key={index} value={index}>{label(index)}</option>)}
-          </select>
-        </label>
-      </div>
+    <div className={'shared-sheet' + (sheetTabs ? ' has-tabs' : '')}>
+      {!sheetTabs && (
+        <div className="shared-tools no-print">
+          <span className="shared-meta">
+            Classeur Excel · {workbook.sheets.length} feuille{workbook.sheets.length > 1 ? 's' : ''}
+          </span>
+          <label className="shared-encoding">
+            Feuille
+            <select aria-label="Feuille" value={sheetIndex} onChange={(event) => setSheetIndex(Number(event.target.value))}>
+              {workbook.sheets.map((_sheet, index) => <option key={index} value={index}>{label(index)}</option>)}
+            </select>
+          </label>
+        </div>
+      )}
       {workbook.readOnly && <p className="notice">{workbook.readOnly}</p>}
       {sheet.kind !== 'worksheet' || !sheet.sheetData ? (
         <p className="notice">{sheet.readOnly ?? 'Feuille sans cellules.'}</p>
@@ -138,6 +144,26 @@ function XlsxEditorBody({ workbook, bytes, initialDraft, readOnly, onEdit, handl
             onRedo={() => travel(redo, undo)}
           />
         </>
+      )}
+      {sheetTabs && (
+        <div className="sheet-tabs no-print" role="tablist" aria-label="Feuilles du classeur">
+          {workbook.sheets.map((candidate, index) => (
+            <button
+              key={candidate.name}
+              type="button"
+              role="tab"
+              className={'sheet-tab' + (index === sheetIndex ? ' is-active' : '')}
+              aria-selected={index === sheetIndex}
+              aria-label={label(index)}
+              title={label(index)}
+              onClick={() => setSheetIndex(index)}
+            >
+              {candidate.name}
+              {candidate.hidden && <span className="sheet-tab-note">masquée</span>}
+              {edits[candidate.name] && <span className="sheet-tab-dot" aria-label="modifiée" />}
+            </button>
+          ))}
+        </div>
       )}
       {problems.length > 0 && (
         <ul className="sheet-problems no-print" role="alert" aria-label="À corriger avant l’envoi">
