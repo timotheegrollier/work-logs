@@ -1,5 +1,23 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Pipeline plus court, mêmes validations — 2026-11-19, v0.83.1
+
+- `ci.yml` sépare la construction des paquets (`build`, « Paquets desktop ») des tests
+  (`validate`, « Types et tests »). Les deux jobs partent ensemble ; `packages` attend `build`.
+  Le build desktop (environ 3 min) chevauche les tests (environ 7 min) au lieu de les suivre.
+- `release.yml` réutilise la CI de branche : `precheck` accepte un run de push vert sur le SHA
+  tagué s'il appartient à master (`identical` ou `ahead`), et non plus seulement un run de master.
+  Le tag part dès la CI de branche verte ; la seconde CI de master n'est plus attendue (14 min de
+  médiane en moins). Un run de PR ne compte pas : il teste le commit de fusion.
+- Les checkouts `fetch-depth: 0` de `release` et `repos` ajoutent `filter: blob:none` : tags et
+  historique des commits conservés, blobs de `gh-pages` non téléchargés (D8 corrigé).
+- Tests : 7 cas de plus dans `scripts/workflows.test.mjs` (structure des jobs, garde master, run
+  de push, checkouts partiels).
+- `./scripts/check.sh` vert sur ce lot : **2 069 tests**, échec attendu compris. 361 API ·
+  1 441 front (dont un échec attendu) · 49 desktop · 56 scripts · 8 Worker · 11 relais ·
+  122 navigateur · 21 desktop e2e. Le gain du nouveau chemin est mesuré par la publication de la
+  v0.83.1 elle-même.
+
 ## Avancement par checklist et assistant — 2026-11-19, v0.83.0 (§87 à §89)
 
 - Les notes Markdown et leurs cartes affichent le pourcentage de cases cochées uniquement
