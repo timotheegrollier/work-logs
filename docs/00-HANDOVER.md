@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Avancement par checklist et assistant — 2026-11-19, v0.82.0 (§87 à §89)
+## Avancement par checklist et assistant — 2026-11-19, v0.83.0 (§87 à §89)
 
 - Les notes Markdown et leurs cartes affichent le pourcentage de cases cochées uniquement
   quand elles ont une checklist. Cocher toutes les cases affiche 100 %. L’action **Terminer**
