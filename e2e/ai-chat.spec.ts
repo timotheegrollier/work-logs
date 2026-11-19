@@ -251,7 +251,7 @@ test('assistant sur téléphone : feuille plein écran, cibles au doigt, tout ap
   }
 });
 
-test('deux conversations avancent en parallèle et reprennent après fermeture du panneau', async ({ page }) => {
+test('une conversation visible à la fois et les recherches continuent pendant les autres échanges', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('worklogs-ai-key', 'cle-e2e'));
   let releaseFirst!: () => void;
   const firstReply = new Promise<void>((resolve) => { releaseFirst = resolve; });
@@ -263,7 +263,8 @@ test('deux conversations avancent en parallèle et reprennent après fermeture d
     received.push(prompt);
     const first = prompt.includes('Liste du premier chantier');
     if (first) await firstReply;
-    const reply = first ? 'Premier chantier prêt.' : 'Second chantier prêt.';
+    const reply = first ? 'Premier chantier prêt.'
+      : prompt.includes('Confirme le second chantier') ? 'Le second chantier est confirmé.' : 'Second chantier prêt.';
     return route.fulfill({ headers, json: { choices: [{ message: { content: JSON.stringify({ reply }) } }] } });
   });
   try {
@@ -281,21 +282,41 @@ test('deux conversations avancent en parallèle et reprennent après fermeture d
     await chat.getByRole('button', { name: 'Nouvelle conversation' }).click();
     const secondPane = chat.getByRole('region', { name: 'Conversation 2', exact: true });
     const secondField = secondPane.getByRole('textbox', { name: 'Message pour l’assistant' });
+    await expect(firstPane).toHaveCount(0);
+    await expect(chat.getByRole('region', { name: /^Conversation \d+$/ })).toHaveCount(1);
     await expect(secondField).toHaveValue('');
     await secondField.fill('Liste du second chantier');
     await secondField.press('Enter');
     await expect(secondPane.getByText('Second chantier prêt.')).toBeVisible();
     expect(received).toHaveLength(2);
     expect(received[1]).not.toContain('Liste du premier chantier');
+    const list = chat.getByRole('navigation', { name: 'Conversations' });
+    const firstConversation = list.getByRole('button', { name: /^Conversation 1(?: ·|$)/ });
+    const secondConversation = list.getByRole('button', { name: /^Conversation 2(?: ·|$)/ });
+    await expect(firstConversation).toHaveAccessibleDescription('Recherche en cours');
+    await firstConversation.click();
     await expect(firstPane.getByRole('button', { name: 'Arrêter la demande IA' })).toBeVisible();
     await expect(firstPane.locator('.ai-chat-working').locator('.ai-chat-working-icon')).toHaveCSS('animation-name', 'ai-chat-spin');
-    expect((await secondPane.boundingBox())!.x).toBeGreaterThan((await firstPane.boundingBox())!.x);
+    await expect(secondPane).toHaveCount(0);
+    await secondConversation.click();
+    await secondField.fill('Confirme le second chantier');
+    await secondField.press('Enter');
+    await expect(secondPane.getByText('Le second chantier est confirmé.')).toBeVisible();
+    expect(received).toHaveLength(3);
+    expect(received[2]).toContain('Second chantier prêt.');
+    expect(received[2]).not.toContain('Liste du premier chantier');
+    await expect(firstConversation).toHaveAccessibleDescription('Recherche en cours');
+    await expectNoOverflow(page);
 
     await page.keyboard.press('Escape');
     await expect(chat).toBeHidden();
     releaseFirst();
     await opener.click();
     await expect(secondPane.getByText('Second chantier prêt.')).toBeVisible();
+    await expect(secondPane.getByText('Le second chantier est confirmé.')).toBeVisible();
+    await expect(firstConversation).not.toHaveAccessibleDescription('Recherche en cours');
+    await expect(firstPane).toHaveCount(0);
+    await firstConversation.click();
     await expect(firstField).toHaveValue('Brouillon à garder');
     await expect(firstPane.getByText('Premier chantier prêt.')).toBeVisible();
     await expect(firstPane.getByText('Second chantier prêt.')).toHaveCount(0);
@@ -751,4 +772,34 @@ test('sur téléphone, le plafond de requêtes se règle au doigt', async ({ pag
   const limit = settings.getByLabel('Plafond de requêtes IA par jour', { exact: true });
   await expect(limit).toHaveCSS('font-size', '16px');
   expect((await limit.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+});
+
+
+test('un lien GitHub privé est lu localement avant la réponse de l’assistant', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('worklogs-ai-key', 'cle-e2e');
+    localStorage.setItem('worklogs-ai-endpoint', 'https://ia.example/v1');
+  });
+  const url = 'https://github.com/Murgat-Ingenierie/deployer';
+  const excerpt = 'README du dépôt privé — Le déploiement est lancé depuis le tableau de bord.';
+  let read = 0;
+  await page.route('**/api/github/link?*', (route) => {
+    expect(new URL(route.request().url()).searchParams.get('url')).toBe(url);
+    read += 1;
+    return route.fulfill({ json: { url, text: excerpt, private: true } });
+  });
+  const prompts = await stubAssistant(page, { reply: 'Le déploiement se lance depuis le tableau de bord.' });
+  await page.goto('/');
+  await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+  const chat = assistant(page);
+  await chat.getByRole('button', { name: 'Joindre un lien', exact: true }).click();
+  await chat.getByRole('textbox', { name: 'Adresse du lien' }).fill(url);
+  await chat.getByRole('button', { name: 'Ajouter le lien', exact: true }).click();
+  await messageField(page).fill('Explique le fonctionnement de ce dépôt.');
+  await messageField(page).press('Enter');
+  await expect(chat.getByText('Le déploiement se lance depuis le tableau de bord.', { exact: true })).toBeVisible();
+  expect(read).toBe(1);
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]).toContain(excerpt);
+  await expect(chat.getByText(/Lien non consulté/)).toHaveCount(0);
 });

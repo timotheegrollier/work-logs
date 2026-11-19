@@ -138,7 +138,6 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
       return;
     }
     const selected = pane(active.id);
-    if (!compact) selected?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     if (!focusNewPane.current) return;
     focusNewPane.current = false;
     if (compact) sidebarToggleRef.current?.focus();
@@ -276,7 +275,6 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
   const selectConversation = (id: number) => {
     if (id === active.id && !mobileSidebar) {
       if (compact) return;
-      pane(id)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
       pane(id)?.querySelector('textarea')?.focus();
       return;
     }
@@ -378,7 +376,7 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
                     aria-current={session.id === active.id ? true : undefined}
                     aria-label={title === name ? name : `${name} · ${title}`}
                     aria-describedby={activity ? `ai-chat-session-activity-${session.id}` : undefined}
-                    aria-controls={!compact || session.id === active.id ? `ai-chat-pane-${session.id}` : undefined}
+                    aria-controls={session.id === active.id ? `ai-chat-pane-${session.id}` : undefined}
                     title={title}
                     onClick={() => selectConversation(session.id)}
                   >
@@ -393,10 +391,11 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
         </nav>
 
         <div className="ai-chat-columns" ref={columnsRef} hidden={mobileSidebar}>
-          {(compact ? [active] : sessions).map((session) => (
+          {sessions.map((session) => (
             <ChatPane
               key={session.id}
               session={session}
+              hidden={session.id !== active.id}
               onFocus={() => setActiveId(session.id)}
               onSend={(choice) => void send(session.id, choice)}
               onStop={() => stop(session.id)}
@@ -430,10 +429,11 @@ function WorkingIcon() {
 }
 
 function ChatPane({
-  session, onFocus, onSend, onStop, onDraft, attachmentFeedback, onFiles, onLink, onForget,
+  session, hidden, onFocus, onSend, onStop, onDraft, attachmentFeedback, onFiles, onLink, onForget,
   onAllowShared, onApply, onIgnore, onRemove, canRemove, compact, navigation,
 }: {
   session: ChatSession;
+  hidden: boolean;
   onFocus: () => void;
   onSend: (choice?: string) => void;
   onStop: () => void;
@@ -460,7 +460,7 @@ function ChatPane({
   const linkFieldId = `ai-chat-link-${id}`;
   const busy = isRunning(session);
   const activity = conversationActivity(session);
-  const focusField = () => { if (!compact) fieldRef.current?.focus(); };
+  const focusField = () => { if (!compact && !hidden) fieldRef.current?.focus(); };
   const reading = Boolean(attachmentFeedback?.reading);
   const canSend = !busy && !reading && Boolean(draft.trim() || draftAttachments?.length);
   const addLink = () => {
@@ -473,13 +473,14 @@ function ChatPane({
     if (canSend) onSend();
   };
   useEffect(() => {
+    if (hidden) return;
     const log = logRef.current;
     const last = lastTurnRef.current;
     if (log && last) log.scrollTop += last.getBoundingClientRect().top - log.getBoundingClientRect().top - 16;
-  }, [turns.length, busy]);
+  }, [turns.length, busy, hidden]);
 
   return (
-    <section className="ai-chat-pane" id={`ai-chat-pane-${id}`} data-conversation={id} aria-label={conversationName(id)} onFocusCapture={onFocus}
+    <section className="ai-chat-pane" id={`ai-chat-pane-${id}`} data-conversation={id} hidden={hidden} aria-label={conversationName(id)} onFocusCapture={onFocus}
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes('Files')) return;
         event.preventDefault();
@@ -593,7 +594,7 @@ function ChatPane({
         <details className="overview-ai-scope ai-chat-data">
           <summary>Données envoyées au service IA</summary>
           <p>Le service IA reçoit ta demande, les derniers échanges, ton profil, les repères du projet affiché, le nom des projets et catégories, les tâches pertinentes, le titre de la note ouverte et le début des notes utiles. Il peut lire le texte de notes et procédures locales dans une limite de taille. Pour un document Google, il reçoit le titre et la date seuls. Une recherche dans le dossier partagé lui transmet les chemins trouvés.</p>
-          <p>Les fichiers et liens que tu joins sont transmis au service IA à l’envoi et peuvent resservir dans la suite de cette conversation. Pour les fichiers texte, Word et Excel, il reçoit le texte extrait par WorkLogs. Les autres fichiers restent dans la conversation : le service IA reçoit seulement leur nom, sans leur contenu.</p>
+          <p>Les fichiers et liens que tu joins sont transmis au service IA à l’envoi et peuvent resservir dans la suite de cette conversation. Pour les fichiers texte, Word et Excel, il reçoit le texte extrait par WorkLogs. Les autres fichiers restent dans la conversation : le service IA reçoit seulement leur nom, sans leur contenu. Sur cet ordinateur, les liens GitHub peuvent être lus avec la connexion GitHub locale. Seul l’extrait lu est transmis au service IA.</p>
           <label className="ai-chat-content-setting">
             <input type="checkbox" checked={allowSharedContent} onChange={(event) => onAllowShared(event.target.checked)} />
             Autoriser l’envoi d’extraits des fichiers partagés dans cette conversation

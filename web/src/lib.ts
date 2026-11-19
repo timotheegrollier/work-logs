@@ -538,6 +538,8 @@ export function sharedClient(base: string) {
 export type SharedClient = ReturnType<typeof sharedClient>;
 
 export const remoteApi = {
+  readGithubLink: (url: string, signal?: AbortSignal) =>
+    req<{ url: string; text: string; private: boolean }>('/api/github/link?url=' + encodeURIComponent(url), { signal }),
   followUp: (kind: FollowUpKind, id: string) => req<FollowUpSnapshot>(`/api/follow-up/${kind}/${enc(id)}`),
   saveFollowUp: (kind: FollowUpKind, id: string, body: FollowUpUpdate) =>
     send<FollowUpSnapshot>('PUT', `/api/follow-up/${kind}/${enc(id)}`, body),

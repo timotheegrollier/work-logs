@@ -3,7 +3,7 @@ import { pacificDay, readAiUsage, recordAiUsage, saveDailyLimit } from './ai-bud
 import { applyChatProposal, askAssistant, MAX_CHAT_MESSAGE, type ChatProposal } from './ai-chat';
 import { createChatLink, MAX_CHAT_ATTACHMENTS, type ChatAttachment } from './ai-chat-attachments';
 import { saveProjectAiBrief } from './ai-context';
-import { AiCancelled, DEFAULT_AI_ENDPOINT, DEFAULT_AI_MODEL, localToday, resetAiFallbackMemory } from './ai-suggest';
+import { AiCancelled, DEFAULT_AI_ENDPOINT, DEFAULT_AI_MODEL, localToday, resetAiFallbackMemory, type AiSettings } from './ai-suggest';
 import { Autosave, discardPendingSaves } from './autosave';
 import { api, type AppState, type Category, type EntrySummary, type Project, type SharedFile, type SharedSearchResult, type Task } from './lib';
 import { seedData, useRealApi } from './test/server';
@@ -65,7 +65,7 @@ const system = (call: AiCall) => call.messages[0].content;
 const user = (call: AiCall) => call.messages[1].content;
 const lines = (prompt: string, heading: string) => (prompt.split('\n\n').find((part) => part.startsWith(heading)) ?? '').split('\n').slice(1);
 const titles = (prompt: string, heading = 'Tâches') => lines(prompt, heading).map((line) => line.replace(/^\d+\. /, '').replace(/ \[.*$/, ''));
-const ask = (input: Partial<Parameters<typeof askAssistant>[1]> = {}, options = settings) => askAssistant(options, { text: 'bonjour', history: [], projectId: '', ...input });
+const ask = (input: Partial<Parameters<typeof askAssistant>[1]> = {}, options: AiSettings = settings) => askAssistant(options, { text: 'bonjour', history: [], projectId: '', ...input });
 const json = (value: unknown) => JSON.stringify(value);
 
 describe('pièces jointes de la conversation', () => {
@@ -188,6 +188,82 @@ describe('pièces jointes de la conversation', () => {
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(fetch.mock.calls[2][0]).toContain('/chat/completions');
     expect(user(JSON.parse(fetch.mock.calls[2][1].body as string))).toContain('Le guide décrit la pompe doseuse.');
+  });
+
+  test('lit un dépôt GitHub privé avec la connexion locale et conserve son extrait pour la suite', async () => {
+    mockState();
+    const attachment = createChatLink('https://github.com/Murgat-Ingenierie/deployer');
+    const text = 'Dépôt privé Murgat-Ingenierie/deployer. README — Déployer les services depuis le tableau de bord.';
+    const read = vi.spyOn(api, 'readGithubLink').mockResolvedValue({ url: attachment.text!, text, private: true });
+    const calls = stubAi(json({ reply: 'Le dépôt décrit le déploiement des services.' }), json({ reply: 'Voici la suite.' }));
+    const result = await ask({ attachments: [attachment] });
+    expect(read).toHaveBeenCalledWith(attachment.text, undefined);
+    expect(result.notice).toBe('');
+    expect(result.consultedLinks).toEqual([{ url: attachment.text, text }]);
+    expect(calls).toHaveLength(1);
+    expect(user(calls[0])).toContain(text);
+    await ask({ text: 'Détaille ce fonctionnement', history: [
+      { role: 'user', text: '', attachments: [attachment] },
+      { role: 'assistant', text: result.reply, consultedLinks: result.consultedLinks },
+    ] });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(user(calls[1])).toContain(text);
+  });
+
+  test('conserve la dernière requête IA pour répondre après une lecture GitHub locale', async () => {
+    mockState();
+    saveDailyLimit(10);
+    for (let count = 0; count < 9; count++) recordAiUsage(20, false);
+    const attachment = createChatLink('https://github.com/Murgat-Ingenierie/deployer');
+    vi.spyOn(api, 'readGithubLink').mockResolvedValue({ url: attachment.text!, text: 'Le README du dépôt privé est lu.', private: true });
+    const calls = stubAi(json({ reply: 'Lecture terminée.' }));
+    const result = await ask({ attachments: [attachment] }, { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL });
+    expect(calls).toHaveLength(1);
+    expect(user(calls[0])).toContain('Le README du dépôt privé est lu.');
+    expect(result.notice).toBe('');
+  });
+
+  test('explique l’accès GitHub indisponible sans inventer un contenu lu', async () => {
+    mockState();
+    const attachment = createChatLink('https://github.com/Murgat-Ingenierie/deployer');
+    vi.spyOn(api, 'readGithubLink').mockRejectedValue(new Error('Connecte GitHub sur cet ordinateur avec gh auth login.'));
+    const calls = stubAi(json({ reply: 'Je dispose du lien seulement.' }));
+    const result = await ask({ attachments: [attachment] });
+    expect(result.notice).toContain('gh auth login');
+    expect(result.consultedLinks).toBeUndefined();
+    expect(user(calls[0])).toContain(attachment.text);
+    expect(user(calls[0])).not.toContain('Extrait des liens joints consultés');
+  });
+
+  test('arrêter la lecture GitHub interrompt le message avant l’appel à l’IA', async () => {
+    mockState();
+    const controller = new AbortController();
+    const attachment = createChatLink('https://github.com/Murgat-Ingenierie/deployer');
+    vi.spyOn(api, 'readGithubLink').mockImplementation(async (_url, signal) => {
+      expect(signal).toBe(controller.signal);
+      controller.abort();
+      throw new DOMException('Lecture arrêtée', 'AbortError');
+    });
+    const calls = stubAi();
+    await expect(ask({ attachments: [attachment] }, { ...settings, signal: controller.signal })).rejects.toBeInstanceOf(AiCancelled);
+    expect(calls).toHaveLength(0);
+  });
+
+  test('un lien GitHub public reste consultable par Gemini si la lecture locale est indisponible', async () => {
+    mockState();
+    const url = 'https://github.com/exemple/public';
+    vi.spyOn(api, 'readGithubLink').mockRejectedValue(new Error('GitHub CLI indisponible.'));
+    const fetch = vi.fn(async (endpoint: string) => endpoint.includes(':generateContent')
+      ? Response.json({ candidates: [{
+        content: { parts: [{ text: json({ sources: [{ url, text: 'Le README public présente le projet.' }] }) }] },
+        urlContextMetadata: { urlMetadata: [{ retrievedUrl: url, urlRetrievalStatus: 'URL_RETRIEVAL_STATUS_SUCCESS' }] },
+      }] })
+      : aiResponse(json({ reply: 'Le projet est décrit dans son README.' })));
+    vi.stubGlobal('fetch', fetch);
+    const result = await ask({ attachments: [createChatLink(url)] }, { ...settings, endpoint: DEFAULT_AI_ENDPOINT });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(result.notice).toBe('');
+    expect(result.consultedLinks).toEqual([{ url, text: 'Le README public présente le projet.' }]);
   });
 
   test('garde la dernière requête quotidienne pour répondre lorsque le message joint un lien', async () => {

@@ -233,7 +233,7 @@ describe('assistant : conversation', () => {
     expect(field()).toHaveValue('Brouillon à garder');
   });
 
-  test('deux conversations travaillent en parallèle, chacune avec son brouillon et son historique', async () => {
+  test('une seule conversation s’affiche et les autres travaillent en arrière-plan, avec leurs brouillons et historiques', async () => {
     const view = render(<Host openEntryId="en_1" />);
     await answered(answer({ reply: 'Un premier échange.' }), 'Question A');
     const first = pendingAnswer();
@@ -247,7 +247,8 @@ describe('assistant : conversation', () => {
 
     newConversation();
     view.rerender(<Host projectId="pj_2" openEntryId="en_2" />);
-    expect(workspace().getAllByRole('region', { name: /^Conversation \d/ })).toHaveLength(2);
+    expect(workspace().getAllByRole('region', { name: /^Conversation \d/ })).toHaveLength(1);
+    expect(workspace().queryByRole('region', { name: 'Conversation 1' })).not.toBeInTheDocument();
     expect(field()).toHaveValue('');
     expect(chat().queryByText('Un premier échange.')).not.toBeInTheDocument();
     const second = pendingAnswer();
@@ -256,7 +257,6 @@ describe('assistant : conversation', () => {
     expect(ask.mock.calls[2][1]).toMatchObject({ projectId: 'pj_2', openEntryId: 'en_2', history: [] });
     expect(firstSignal.aborted).toBe(false);
     expect(workspace().getByText('2 conversations en cours')).toBeInTheDocument();
-    expect(within(pane('1')).getByRole('status')).toHaveTextContent('L’assistant cherche');
     expect(within(pane('2')).getByRole('status')).toHaveTextContent('L’assistant cherche');
     expect(conversations().getAllByText('Recherche en cours')).toHaveLength(2);
     fireEvent.change(field(), { target: { value: 'Brouillon de B' } });
@@ -264,13 +264,22 @@ describe('assistant : conversation', () => {
     await second.resolve(answer({ reply: 'B a fini.' }));
     expect(chat().getByText('B a fini.')).toBeInTheDocument();
     expect(workspace().getByText('1 conversation en cours')).toBeInTheDocument();
-    expect(within(pane('1')).getByRole('status')).toBeInTheDocument();
     expect(within(pane('2')).queryByRole('status')).not.toBeInTheDocument();
     switchConversation('1');
     expect(field()).toHaveValue('Brouillon de A');
+    expect(field()).toHaveFocus();
+    expect(chat().getByRole('status')).toHaveTextContent('L’assistant cherche');
     expect(chat().queryByText('B a fini.')).not.toBeInTheDocument();
+    switchConversation('2');
     await first.resolve(answer({ reply: 'A a fini.' }));
+    expect(chat().getByText('B a fini.')).toBeInTheDocument();
+    expect(chat().queryByText('A a fini.')).not.toBeInTheDocument();
+    expect(conversations().queryByText('Recherche en cours')).not.toBeInTheDocument();
+    expect(firstSignal.aborted).toBe(false);
+    switchConversation('1');
     expect(chat().getByText('A a fini.')).toBeInTheDocument();
+    expect(log().getByText('Un premier échange.')).toBeInTheDocument();
+    expect(field()).toHaveValue('Brouillon de A');
     switchConversation('2');
     expect(secondSignal.aborted).toBe(false);
     expect(field()).toHaveValue('Brouillon de B');
@@ -299,6 +308,24 @@ describe('assistant : conversation', () => {
     expect(log().getByText('Recherche à garder')).toBeInTheDocument();
     await first.resolve(answer({ reply: 'Résultat à garder.' }));
     expect(chat().getByText('Résultat à garder.')).toBeInTheDocument();
+  });
+
+  test('changer de conversation conserve le lien en cours de saisie et les choix de sondage non envoyés', async () => {
+    render(<Host />);
+    await answered(answer({ question: { text: 'Quels points faut-il vérifier ?', options: ['La pression', 'Les raccords'], multiple: true } }));
+    fireEvent.click(chat().getByRole('checkbox', { name: 'La pression' }));
+    fireEvent.click(chat().getByRole('button', { name: 'Joindre un lien' }));
+    fireEvent.change(chat().getByRole('textbox', { name: 'Adresse du lien' }), { target: { value: 'https://example.org/guide-en-cours' } });
+
+    newConversation();
+    expect(workspace().getAllByRole('region', { name: /^Conversation \d/ })).toHaveLength(1);
+    expect(chat().queryByRole('checkbox', { name: 'La pression' })).not.toBeInTheDocument();
+    expect(chat().queryByRole('textbox', { name: 'Adresse du lien' })).not.toBeInTheDocument();
+    switchConversation('1');
+    expect(chat().getByRole('checkbox', { name: 'La pression' })).toBeChecked();
+    expect(chat().getByRole('checkbox', { name: 'Les raccords' })).not.toBeChecked();
+    expect(chat().getByRole('textbox', { name: 'Adresse du lien' })).toHaveValue('https://example.org/guide-en-cours');
+    expect(chat().getByRole('button', { name: 'Répondre avec ces choix' })).toBeEnabled();
   });
 
   test('l’autorisation de lire des extraits du partage reste propre à la conversation', async () => {
@@ -344,7 +371,7 @@ describe('assistant : conversation', () => {
     expect(field()).toHaveValue('Brouillon du chantier');
     expect(field()).not.toHaveFocus();
     expect(log().getByText('Première réponse.')).toBeInTheDocument();
-    expect(workspace().queryByText('Deuxième réponse.')).not.toBeInTheDocument();
+    expect(workspace().getByText('Deuxième réponse.')).not.toBeVisible();
   });
 
   test('sur téléphone, rouvrir une conversation place le focus sur « Fermer », pas sur « Nouvelle conversation »', async () => {

@@ -1,9 +1,9 @@
 # WorkLogs — règles agents
 
 ## Reprise
-- **État : v0.82.0** (`package.json` fait foi). `./scripts/check.sh` vert le 2026-11-18 sur le lot
-  de la v0.82.0, **2 042 tests**, échec attendu compris. 348 API · 1 435 front (dont un échec
-  attendu) · 49 desktop · 49 scripts · 8 Worker · 11 relais · 121 navigateur · 21 desktop e2e.
+- **État : v0.82.0** (`package.json` fait foi). `./scripts/check.sh` vert le 2026-11-19 sur le lot
+  de la v0.82.0, **2 062 tests**, échec attendu compris. 361 API · 1 441 front (dont un échec
+  attendu) · 49 desktop · 49 scripts · 8 Worker · 11 relais · 122 navigateur · 21 desktop e2e.
   Lots et bilans : `docs/00-HANDOVER.md`.
 - Publication : `docs/07-RELEASES.md`. `./scripts/check.sh` reste la validation requise (desktop compris).
 - **Éditeur Google Docs natif** : la vraie page Google s'affiche dans la colonne centrale

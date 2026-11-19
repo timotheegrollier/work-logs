@@ -7349,7 +7349,7 @@ button.lane-name:hover {
   .overview-schedule-badge { margin-top: 1px; }
 }
 
-/* Assistant : liste des conversations et colonnes à défilement indépendant. */
+/* Assistant : liste des conversations et échange sélectionné. */
 .ai-chat-dialog {
   inset: 0 0 0 auto;
   transform: none;
@@ -7401,7 +7401,8 @@ button.lane-name:hover {
   background: var(--paper);
 }
 .ai-chat-sidebar[hidden],
-.ai-chat-columns[hidden] {
+.ai-chat-columns[hidden],
+.ai-chat-pane[hidden] {
   display: none;
 }
 .ai-chat-sidebar .ai-chat-new {
@@ -7463,19 +7464,15 @@ button.lane-name:hover {
   display: flex;
   align-items: stretch;
   min-height: 0;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
+  overflow: hidden;
   background: var(--surface);
 }
 .ai-chat-pane {
   display: flex;
-  flex: 1 0 clamp(310px, 31vw, 480px);
+  flex: 1 1 100%;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-}
-.ai-chat-pane + .ai-chat-pane {
-  border-left: 1px solid var(--line);
 }
 .ai-chat-pane-header {
   flex: none;
@@ -7816,9 +7813,6 @@ button.lane-name:hover {
 }
 .ai-chat-workspace.is-compact .ai-chat-sidebar {
   border-right: 0;
-}
-.ai-chat-workspace.is-compact .ai-chat-pane {
-  flex-basis: 100%;
 }
 @media (max-width: 600px), (max-width: 900px) and (max-height: 500px) {
   .ai-chat-dialog {

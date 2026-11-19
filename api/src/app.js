@@ -8,6 +8,7 @@ import { decodeEntry, documentText, validateDocument } from './rich-document.js'
 import { buildBackup } from './backup.js';
 import { googleLink, registerGoogleRoutes } from './google-routes.js';
 import { registerSharedRoutes } from './shared-routes.js';
+import { registerGithubRoutes } from './github-routes.js';
 import { attachmentHeader, inlineHeader } from './disposition.js';
 import { categoryFor, nextCategory, categoryDescendants, registerCategoryRoutes } from './categories.js';
 import { checklistProgress } from './checklist.js';
@@ -879,6 +880,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   registerGoogleRoutes(app, { db, google, uploadDir, autoSync, googlePushPending });
   app.locals.shared = shared;
   registerSharedRoutes(app, { shared });
+  registerGithubRoutes(app);
   app.use('/api', (_req, res) => notFound(res, 'route inconnue'));
 
   // En production, l'API sert aussi le front construit : une seule URL.

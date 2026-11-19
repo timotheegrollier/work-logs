@@ -12,11 +12,11 @@ import { inlineHeader } from './disposition.js';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
-export function localOnly(req, res, next) {
+export function localOnly(req, res, next, denied = { error: 'Dossier partagé : accès réservé à cet ordinateur.', code: 'SHARED_LOCAL_ONLY' }) {
   const host = String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '').replace(/^\[(.*)\]$/, '$1');
   const hostIsLocal = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host.endsWith('.localhost');
   if (!LOOPBACK.has(req.socket.remoteAddress) || !hostIsLocal || req.headers['sec-fetch-site'] === 'cross-site') {
-    return res.status(403).json({ error: 'Dossier partagé : accès réservé à cet ordinateur.', code: 'SHARED_LOCAL_ONLY' });
+    return res.status(403).json(denied);
   }
   next();
 }

@@ -714,6 +714,9 @@ async function readGoogleSource(documentId: string, tabId = '') {
 const blankGoogleSource = () => ({ body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } });
 
 export const localApi: Api = {
+  readGithubLink: async () => {
+    throw new ApiError('GitHub : la lecture des dépôts privés utilise GitHub CLI sur l’ordinateur avec l’application desktop ou le serveur local WorkLogs.', 'GITHUB_UNAVAILABLE');
+  },
   followUp: localFollowUpSnapshot,
   saveFollowUp: async (kind, id, body) => {
     const value = await localFollowUpSnapshot(kind, id);

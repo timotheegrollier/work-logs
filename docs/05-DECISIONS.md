@@ -3638,3 +3638,26 @@ du Markdown relu. Le bilan du jour et les suivis peuvent proposer des changement
 partir d’un passage qui atteste l’état d’une action. L’utilisateur relit la proposition
 et la valide avant l’écriture. Une modification du texte depuis sa lecture déclenche
 la vérification de concurrence habituelle lors de l’application.
+
+## 88. Une conversation visible et des demandes indépendantes — 2026-11-19
+
+L’assistant affiche la conversation sélectionnée à côté de sa liste sur ordinateur.
+Sur téléphone, la liste et la conversation se succèdent. Une nouvelle conversation
+devient la conversation sélectionnée.
+
+Les requêtes et leurs résultats appartiennent au contrôleur de l’assistant.
+Changer de conversation ou en créer une autre laisse les demandes en cours continuer.
+La liste indique l’activité des conversations et permet de retrouver leur réponse.
+
+## 89. Les liens GitHub utilisent la connexion locale — 2026-11-19
+
+La consultation d’une page par Gemini ne dispose pas de la connexion GitHub de
+l’utilisateur. Un lien GitHub joint au chat est donc lu depuis le serveur local avec
+la commande GitHub CLI déjà configurée sur ce poste. Le fournisseur IA reçoit
+l’extrait récupéré et les limites de lecture. Le jeton reste géré par GitHub CLI.
+
+Le lecteur accepte les dépôts et les pages de fichiers ou de dossiers GitHub.
+Les appels GitHub et la taille du contenu sont bornés. Une absence de connexion ou
+de droit d’accès produit un message précis. La PWA indique que cet accès privé
+nécessite le serveur local. Gemini garde la consultation des pages publiques
+qui ne peuvent pas être lues localement.
