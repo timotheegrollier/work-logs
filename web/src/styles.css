@@ -715,6 +715,7 @@ button:disabled {
   flex: 1 1 320px;
   min-width: 320px;
   overflow-y: auto;
+  position: relative;
   background: var(--paper);
   container-type: inline-size;
 }
@@ -4192,11 +4193,26 @@ div.google-preserved {
   align-items: stretch;
   gap: 10px;
 }
-/* Classeur : la fenêtre d'édition prend la page, la grille touche les bords. */
+/* Un classeur ouvert hors de la colonne Écriture garde la grande fenêtre. */
 .viewer-dialog.is-workbook {
   width: min(1440px, calc(100vw - 20px));
   height: min(940px, calc(100vh - 20px));
   border-radius: 12px;
+}
+/* Tableur : l’éditeur remplit le panneau Écriture, la grille touche les bords. */
+.workbook-panel {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--paper);
+}
+.workbook-panel .viewer-body.viewer-workbook {
+  min-height: 0;
 }
 .viewer-body.viewer-workbook {
   padding: 0;
@@ -4212,14 +4228,6 @@ div.google-preserved {
 .viewer-body.viewer-workbook .docx-hint {
   margin: 0;
 }
-.viewer-dirty {
-  padding: 1px 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 11px;
-}
 @media (max-width: 700px) {
   .viewer-dialog.is-workbook {
     width: 100vw;
@@ -4227,6 +4235,14 @@ div.google-preserved {
     border: 0;
     border-radius: 0;
   }
+}
+.viewer-dirty {
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
 }
 /* Aperçu Word : une page lisible, en haut du panneau, le texte au premier plan. */
 .viewer-body .docx-view {

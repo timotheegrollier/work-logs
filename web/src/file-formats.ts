@@ -58,7 +58,7 @@ export interface FileEditorProps {
 
 export class FormatError extends Error {}
 
-export type EditorKind = 'text' | 'markdown' | 'csv' | 'docx' | 'xlsx';
+export type EditorKind = 'text' | 'markdown' | 'csv' | 'docx' | 'xlsx' | 'ods';
 
 const KINDS: Record<string, EditorKind> = {
   txt: 'text', text: 'text', log: 'text',
@@ -67,6 +67,8 @@ const KINDS: Record<string, EditorKind> = {
   docx: 'docx',
   // Un classeur à macros s'affiche, en lecture seule (`xlsx.ts`).
   xlsx: 'xlsx', xlsm: 'xlsx',
+  // Tableur LibreOffice (OpenDocument) : éditable comme un classeur Excel.
+  ods: 'ods',
 };
 
 /** Éditeur maison pour cette extension, ou `null` (ouvrir avec une autre application). */

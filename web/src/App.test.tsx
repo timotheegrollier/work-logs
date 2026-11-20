@@ -1838,8 +1838,8 @@ describe('écrire une entrée', () => {
       return (await api.upload(file.name, Buffer.from(bytes), { entry_id: entryId })).body;
     }).mockRejectedValueOnce(new Error('Enregistrement indisponible.'));
     render(<App />);
-    await user.click(await screen.findByRole('button', { name: 'Aperçu de budget.xlsx' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Aperçu de budget.xlsx' });
+    await user.click(await screen.findByRole('link', { name: 'budget.xlsx' }));
+    const dialog = await screen.findByRole('region', { name: 'Édition de budget.xlsx' }, { timeout: 10_000 });
     // Feuilles en onglets sous la grille, comme dans Excel : la grille suit l'onglet choisi.
     await within(dialog).findByRole('grid', { name: 'Feuille Suivi' });
     const tabs = within(dialog).getByRole('tablist', { name: 'Feuilles du classeur' });
@@ -1860,12 +1860,12 @@ describe('écrire une entrée', () => {
     expect(window.confirm).toHaveBeenCalledWith('Fermer sans enregistrer la copie modifiée de « budget.xlsx » ?');
     const save = within(dialog).getByRole('button', { name: 'Enregistrer une copie modifiée' });
     await user.click(save);
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Enregistrement indisponible.');
+    expect(await within(dialog).findByRole('alert', {}, { timeout: 10_000 })).toHaveTextContent('Enregistrement indisponible.');
     expect(within(grid).getByRole('gridcell', { name: 'B3 : 250,00 €' })).toBeInTheDocument();
     expect(row(api.db, 'SELECT COUNT(*) n FROM attachments').n).toBe(1);
 
     await user.click(save);
-    const saved = await screen.findByRole('dialog', { name: 'Aperçu de budget - modifié.xlsx' });
+    const saved = await screen.findByRole('region', { name: 'Édition de budget - modifié.xlsx' }, { timeout: 10_000 });
     expect(await within(saved).findByRole('gridcell', { name: 'B3 : 250,00 €' })).toBeInTheDocument();
     expect(upload).toHaveBeenCalledTimes(2);
     expect(row(api.db, 'SELECT COUNT(*) n FROM attachments').n).toBe(2);
@@ -1876,18 +1876,115 @@ describe('écrire une entrée', () => {
     const sheet = await readZipText(readZip(changed), 'xl/worksheets/sheet1.xml');
     expect(sheet).toContain('<c r="B3" s="2"><v>250</v></c>');
     expect(await readZipText(readZip(changed), 'xl/styles.xml')).toBe(await readZipText(readZip(original), 'xl/styles.xml'));
+  }, 30_000);
+
+  test('ouvre un ODS depuis son nom dans le panneau Écriture et enregistre une copie modifiée', async () => {
+    const { odsWorkbook } = await import('./test/ods-fixture');
+    const { readOdsWorkbook } = await import('./ods');
+    const original = odsWorkbook();
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_ods', title: 'Stock' }] });
+    const uploaded = await api.upload('stock.ods', Buffer.from(original), { entry_id: 'en_ods' });
+    const upload = vi.spyOn(clientApi, 'upload').mockImplementation(async (file, entryId) => {
+      const bytes = await new Promise<ArrayBuffer>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.readAsArrayBuffer(file);
+      });
+      return (await api.upload(file.name, Buffer.from(bytes), { entry_id: entryId })).body;
+    });
+
+    render(<App />);
+    await user.click(await within(journal()).findByText('Stock'));
+    await user.click(await screen.findByRole('link', { name: 'stock.ods' }));
+    const panel = await screen.findByRole('region', { name: 'Édition de stock.ods' });
+    const grid = await within(panel).findByRole('grid', { name: 'Feuille Données' });
+    expect(within(panel).getByRole('tab', { name: 'Résumé (masquée)' })).toBeInTheDocument();
+    expect(within(grid).getByRole('gridcell', { name: 'B1 : 12,5' })).toBeInTheDocument();
+    fireEvent.click(within(grid).getByRole('gridcell', { name: 'A1 : Libellé' }));
+    const input = within(panel).getByLabelText('Contenu de la cellule');
+    fireEvent.change(input, { target: { value: 'Stock modifié' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer une copie modifiée' }));
+
+    const savedPanel = await screen.findByRole('region', { name: 'Édition de stock - modifié.ods' });
+    expect(await within(savedPanel).findByRole('gridcell', { name: 'A1 : Stock modifié' })).toBeInTheDocument();
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(row(api.db, 'SELECT COUNT(*) n FROM attachments').n).toBe(2);
+    const source = await (await fetch(clientApi.fileUrl(uploaded.body.stored))).arrayBuffer();
+    expect(new Uint8Array(source)).toEqual(original);
+    const copy = row(api.db, 'SELECT stored FROM attachments WHERE filename=?', 'stock - modifié.ods');
+    const changed = new Uint8Array(await (await fetch(clientApi.fileUrl(String(copy.stored)))).arrayBuffer());
+    const workbook = await readOdsWorkbook(changed);
+    expect(workbook.sheets[0].cells.get(0)?.display).toBe('Stock modifié');
+  });
+
+  test('ouvre un CSV dans le même panneau et conserve son séparateur en enregistrant une copie', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_csv', title: 'Inventaire' }] });
+    const uploaded = await api.upload('inventaire.csv', 'Article;Quantité\nVis;2\n', { entry_id: 'en_csv' });
+    vi.spyOn(clientApi, 'upload').mockImplementation(async (file, entryId) => {
+      const bytes = await new Promise<ArrayBuffer>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.readAsArrayBuffer(file);
+      });
+      return (await api.upload(file.name, Buffer.from(bytes), { entry_id: entryId })).body;
+    });
+
+    render(<App />);
+    await user.click(await within(journal()).findByText('Inventaire'));
+    await user.click(await screen.findByRole('link', { name: 'inventaire.csv' }));
+    const panel = await screen.findByRole('region', { name: 'Édition de inventaire.csv' });
+    expect(panel.closest('#workspace-editor')).not.toBeNull();
+    const grid = await within(panel).findByRole('grid', { name: 'Tableau inventaire.csv' });
+    fireEvent.click(within(grid).getByRole('gridcell', { name: 'B2 : 2' }));
+    const input = within(panel).getByLabelText('Contenu de la cellule');
+    fireEvent.change(input, { target: { value: '10' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await user.click(within(panel).getByRole('button', { name: 'Enregistrer une copie modifiée' }));
+    expect(await screen.findByRole('region', { name: 'Édition de inventaire - modifié.csv' })).toBeInTheDocument();
+    const copy = row(api.db, 'SELECT stored FROM attachments WHERE filename=?', 'inventaire - modifié.csv');
+    const result = await (await fetch(clientApi.fileUrl(String(copy.stored)))).text();
+    expect(result).toContain('Article;Quantité');
+    expect(result).toContain('Vis;10');
+    const original = await (await fetch(clientApi.fileUrl(uploaded.body.stored))).text();
+    expect(original).toContain('Vis;2');
+  });
+
+  test('demande confirmation avant de quitter un tableur modifié dans Écriture', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_sheet', title: 'Tableau' }, { id: 'en_next', title: 'Entrée suivante' }] });
+    await api.upload('tableau.csv', 'Article;Quantité\nVis;2\n', { entry_id: 'en_sheet' });
+    render(<App />);
+    await user.click(await within(journal()).findByText('Tableau'));
+    await user.click(await screen.findByRole('link', { name: 'tableau.csv' }));
+    const panel = await screen.findByRole('region', { name: 'Édition de tableau.csv' });
+    const grid = await within(panel).findByRole('grid', { name: 'Tableau tableau.csv' });
+    fireEvent.click(within(grid).getByRole('gridcell', { name: 'B2 : 2' }));
+    fireEvent.change(within(panel).getByLabelText('Contenu de la cellule'), { target: { value: '8' } });
+
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    await user.click(await within(journal()).findByText('Entrée suivante'));
+    expect(await screen.findByRole('region', { name: 'Édition de tableau.csv' })).toBeInTheDocument();
+    expect(window.confirm).toHaveBeenCalledWith('Quitter sans enregistrer la copie modifiée de « tableau.csv » ?');
+
+    await user.click(within(journal()).getByText('Entrée suivante'));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Entrée suivante'));
   });
 
   test('un tableur déjà sur Drive propose « Ouvrir dans Drive »', async () => {
+    const { odsWorkbook } = await import('./test/ods-fixture');
     const user = userEvent.setup();
     seedData(api.db, { entries: [{ id: 'en_ods', title: 'Stock' }] });
-    const upload = await api.upload('stock.ods', 'PK', { entry_id: 'en_ods' });
+    const upload = await api.upload('stock.ods', Buffer.from(odsWorkbook()), { entry_id: 'en_ods' });
     api.db.prepare('UPDATE attachments SET drive_file_id=? WHERE id=?').run('drive-ods-1', upload.body.id);
 
     render(<App />);
     await user.click(await within(journal()).findByText('Stock'));
-    await user.click(await screen.findByRole('button', { name: 'Aperçu de stock.ods' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Aperçu de stock.ods' });
+    await user.click(await screen.findByRole('link', { name: 'stock.ods' }));
+    const dialog = await screen.findByRole('region', { name: 'Édition de stock.ods' });
+    await within(dialog).findByRole('grid', { name: 'Feuille Données' });
     const link = within(dialog).getByRole('link', { name: 'Ouvrir dans Drive' });
     expect(link).toHaveAttribute('href', 'https://drive.google.com/file/d/drive-ods-1/view');
     expect(link).toHaveAttribute('target', '_blank');

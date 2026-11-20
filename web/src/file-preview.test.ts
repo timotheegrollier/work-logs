@@ -51,7 +51,7 @@ describe('classement des pièces jointes pour l’aperçu', () => {
     expect(previewKind({ filename: 'journal', mime: 'text/plain' })).toBe('text');
   });
 
-  test('les tableurs sont annoncés, jamais rendus de travers', () => {
+  test('classe les formats de tableur ; les anciens formats restent signalés comme non pris en charge', () => {
     expect(previewKind({ filename: 'budget.xlsx' })).toBe('sheet');
     expect(previewKind({ filename: 'Changer format balance.DOCX' })).toBe('docx');
     expect(previewKind({ filename: 'sans-extension', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })).toBe('docx');
@@ -59,14 +59,14 @@ describe('classement des pièces jointes pour l’aperçu', () => {
     expect(previewKind({ filename: 'ancien.doc' })).toBe('other');
     expect(previewKind({ filename: 'budget.ods' })).toBe('sheet');
     expect(previewKind({ filename: 'budget', mime: 'application/vnd.oasis.opendocument.spreadsheet' })).toBe('sheet');
-    // Un CSV reste du texte : il s’affiche très bien tel quel.
+    // Un CSV reste classé comme texte ; l’éditeur le traite à part dans sa grille.
     expect(previewKind({ filename: 'budget.csv' })).toBe('text');
   });
 
   test('le reste est classé « autre » et renvoyé au téléchargement', () => {
     expect(previewKind({ filename: 'archive.zip' })).toBe('other');
     expect(previewKind({ filename: 'sans-extension' })).toBe('other');
-    expect(previewNotice('sheet', 'budget.xlsx')).toContain('tableur');
+    expect(previewNotice('sheet', 'budget.xls')).toContain('format de tableur non pris en charge');
     expect(previewNotice('other', 'archive.zip')).toContain('archive.zip');
   });
 });

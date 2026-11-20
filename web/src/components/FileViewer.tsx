@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { api, formatSize, type Attachment } from '../lib';
 import { downloadAttachment, driveViewUrl, openAttachmentWith, readAttachmentBlob } from '../attachment-download';
 import { extensionOf, previewKind, previewNotice } from '../file-preview';
@@ -6,20 +6,36 @@ import type { FileEditorHandle } from '../file-formats';
 import { DocxView } from './DocxView';
 import { FileIcon } from './FileIcon';
 import { XlsxFileEditor } from './XlsxFileEditor';
+import { ODSFileEditor } from './ODSFileEditor';
+import { CsvFileEditor } from './CsvFileEditor';
+import { setLeaveGuard } from '../shared-leave';
 
 /**
- * Aperçu intégré des pièces jointes. Les classeurs XLSX réutilisent la grille
- * du partage et peuvent être enregistrés dans une nouvelle pièce jointe.
+ * Aperçu intégré des pièces jointes. Les classeurs s'ouvrent dans le panneau
+ * Écriture et peuvent être enregistrés dans une nouvelle pièce jointe.
  *
- * Le dialogue est rendu par `EntryEditor` avec `key` sur la pièce jointe : un
- * changement de fichier remonte le composant, donc jamais d'aperçu périmé.
+ * Rendu par `EntryEditor` avec `key` sur la pièce jointe : un changement de
+ * fichier remonte le composant, donc jamais d'aperçu périmé.
  */
-export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetchError, onSaved }: { file: Attachment; onClose: () => void; onFetch?: () => void; fetching?: boolean; fetchError?: string; onSaved?: (file: Attachment) => void }) {
+export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetchError, onSaved, inlineSpreadsheet = false }: {
+  file: Attachment;
+  onClose: () => void;
+  onFetch?: () => void;
+  fetching?: boolean;
+  fetchError?: string;
+  onSaved?: (file: Attachment) => void;
+  inlineSpreadsheet?: boolean;
+}) {
   const [file, setFile] = useState(initialFile);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const kind = previewKind(file);
-  const spreadsheet = kind === 'sheet' && (['xlsx', 'xlsm'].includes(extensionOf(file.filename))
-    || file.mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  const extension = extensionOf(file.filename);
+  const delimited = ['csv', 'tsv'].includes(extension);
+  const spreadsheet = (kind === 'sheet' && (
+    ['xlsx', 'xlsm', 'ods'].includes(extension)
+    || ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.oasis.opendocument.spreadsheet'].includes(file.mime ?? '')
+  )) || (kind === 'text' && delimited);
+  const inline = spreadsheet && inlineSpreadsheet;
   const editorRef = useRef<FileEditorHandle | null>(null);
   const savingRef = useRef(false);
   const [bytes, setBytes] = useState<Uint8Array | null>(null);
@@ -49,9 +65,16 @@ export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetc
     setNotice('');
     try {
       const content = await editor.serialize();
-      const stem = file.filename.replace(/\.(xlsx|xlsm)$/i, '').replace(/ - modifié$/i, '');
-      const uploaded = await api.upload(new File([new Uint8Array(content)], `${stem} - modifié.xlsx`, {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      const format = extension === 'ods' || file.mime === 'application/vnd.oasis.opendocument.spreadsheet'
+        ? 'ods'
+        : delimited ? extension || 'csv' : 'xlsx';
+      const stem = file.filename.replace(/\.(xlsx|xlsm|ods|csv|tsv)$/i, '').replace(/ - modifié$/i, '');
+      const mime = format === 'ods' ? 'application/vnd.oasis.opendocument.spreadsheet'
+        : format === 'csv' ? 'text/csv'
+          : format === 'tsv' ? 'text/tab-separated-values'
+            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      const uploaded = await api.upload(new File([new Uint8Array(content)], `${stem} - modifié.${format}`, {
+        type: mime,
       }), file.entry_id);
       setFile(uploaded);
       setBytes(content);
@@ -84,10 +107,10 @@ export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetc
 
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (!dialog || dialog.open) return;
+    if (!dialog || inline || dialog.open) return;
     try { dialog.showModal(); }
     catch { dialog.setAttribute('open', ''); }
-  }, []);
+  }, [inline]);
 
   useEffect(() => {
     if (!spreadsheet) return;
@@ -107,7 +130,7 @@ export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetc
     };
     const unsubscribe = window.worklogsDesktop?.onBeforeClose(async () => {
       if (editorRef.current?.isDirty()) {
-        throw new Error(`Le classeur « ${file.filename} » contient des modifications. Reviens à WorkLogs pour enregistrer une copie modifiée.`);
+        throw new Error(`Le tableur « ${file.filename} » contient des modifications. Reviens à WorkLogs pour enregistrer une copie modifiée.`);
       }
     });
     window.addEventListener('beforeunload', guard);
@@ -117,9 +140,15 @@ export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetc
     };
   }, [dirty, file.filename]);
 
+  useEffect(() => {
+    if (!inline || !dirty) return;
+    return setLeaveGuard(async () => !editorRef.current?.isDirty()
+      || confirm(`Quitter sans enregistrer la copie modifiée de « ${file.filename} » ?`));
+  }, [inline, dirty, file.filename]);
+
   // Images et PDF sont rendus par le navigateur à partir de l’URL.
   useEffect(() => {
-    if (kind !== 'text') return;
+    if (kind !== 'text' || spreadsheet) return;
     let alive = true;
     setText(null);
     setError('');
@@ -131,30 +160,22 @@ export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetc
       .then((body) => { if (alive) setText(body); })
       .catch((e: Error) => { if (alive) setError(e.message); });
     return () => { alive = false; };
-  }, [kind, file.stored, file.driveFileId]);
+  }, [kind, file.stored, file.driveFileId, spreadsheet]);
 
   const url = api.previewUrl(file.stored);
 
-  return (
-    <dialog
-      className={'viewer-dialog' + (spreadsheet ? ' is-workbook' : '')}
-      aria-label={`Aperçu de ${file.filename}`}
-      aria-modal="true"
-      ref={dialogRef}
-      onCancel={(event) => { event.preventDefault(); close(); }}
-      onClose={onClose}
-      onKeyDown={(event) => {
-        if (spreadsheet && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
-          event.preventDefault();
-          event.stopPropagation();
-          void saveWorkbook();
-        }
-      }}
-    >
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (spreadsheet && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      event.stopPropagation();
+      void saveWorkbook();
+    }
+  };
+  const heading = (
       <div className="viewer-heading">
         <div className="viewer-title">
           <strong><FileIcon name={file.filename} />{file.filename}</strong>
-          <small>{spreadsheet ? 'Classeur' : formatSize(file.size)}</small>
+          <small>{spreadsheet ? 'Tableur' : formatSize(file.size)}</small>
           {spreadsheet && dirty && <span className="viewer-dirty" role="status">non enregistré</span>}
         </div>
         <div className="viewer-actions">
@@ -182,22 +203,36 @@ export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetc
           <button className="ghost" type="button" disabled={saving} onClick={close}>Fermer</button>
         </div>
       </div>
-      <div className={'viewer-body' + (spreadsheet ? ' viewer-workbook' : '')}>
+  );
+  const body = (
+    <div className={'viewer-body' + (spreadsheet ? ' viewer-workbook' : '')}>
         {fetchError && <p className="error" role="alert">{fetchError}</p>}
         {notice && <p className="viewer-notice" role="status">{notice}</p>}
-        {error && kind !== 'text' && <p className="error" role="alert">{error}</p>}
+        {error && (kind !== 'text' || spreadsheet) && <p className="error" role="alert">{error}</p>}
         {file.driveFileId && <p className="viewer-notice">☁ Conservé sur Google Drive — l’aperçu fonctionne après récupération, même sur un autre appareil.</p>}
         {kind === 'image' && <img src={url} alt={file.filename} />}
         {kind === 'pdf' && <iframe className="viewer-frame" src={url} title={file.filename} />}
         {kind === 'docx' && <DocxView url={url} filename={file.filename} />}
         {spreadsheet && (bytes
-          ? <XlsxFileEditor key={editorVersion} name={file.filename} bytes={bytes} initialDraft={null} sheetTabs
-            readOnly={saving ? 'Enregistrement en cours…' : null} handleRef={editorRef} onEdit={() => {
-              setDirty(true);
-              setNotice('');
-            }} />
+          ? delimited
+            ? <CsvFileEditor key={editorVersion} name={file.filename} bytes={bytes} initialDraft={null}
+              readOnly={saving ? 'Enregistrement en cours…' : null} handleRef={editorRef} onEdit={() => {
+                setDirty(true);
+                setNotice('');
+              }} />
+            : extension === 'ods' || file.mime === 'application/vnd.oasis.opendocument.spreadsheet'
+              ? <ODSFileEditor key={editorVersion} name={file.filename} bytes={bytes} initialDraft={null} sheetTabs
+              readOnly={saving ? 'Enregistrement en cours…' : null} handleRef={editorRef} onEdit={() => {
+                setDirty(true);
+                setNotice('');
+              }} />
+              : <XlsxFileEditor key={editorVersion} name={file.filename} bytes={bytes} initialDraft={null} sheetTabs
+              readOnly={saving ? 'Enregistrement en cours…' : null} handleRef={editorRef} onEdit={() => {
+                setDirty(true);
+                setNotice('');
+              }} />
           : !error && <p>Lecture du classeur…</p>)}
-        {kind === 'text' && (
+        {kind === 'text' && !spreadsheet && (
           error
             ? <p role="alert">{error}</p>
             : text === null
@@ -207,7 +242,25 @@ export function FileViewer({ file: initialFile, onClose, onFetch, fetching, fetc
         {((!spreadsheet && kind === 'sheet') || kind === 'other') && (
           <p className="viewer-notice">{previewNotice(kind, file.filename)}</p>
         )}
-      </div>
+    </div>
+  );
+  return inline ? (
+    <section className="workbook-panel" aria-label={`Édition de ${file.filename}`} onKeyDown={onKeyDown}>
+      {heading}
+      {body}
+    </section>
+  ) : (
+    <dialog
+      className={'viewer-dialog' + (spreadsheet ? ' is-workbook' : '')}
+      aria-label={`Aperçu de ${file.filename}`}
+      aria-modal="true"
+      ref={dialogRef}
+      onCancel={(event) => { event.preventDefault(); close(); }}
+      onClose={onClose}
+      onKeyDown={onKeyDown}
+    >
+      {heading}
+      {body}
     </dialog>
   );
 }

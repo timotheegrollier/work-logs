@@ -11,9 +11,8 @@ const TEXT_EXT = [
   'txt', 'md', 'markdown', 'csv', 'tsv', 'log', 'json', 'yaml', 'yml',
   'xml', 'html', 'css', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'sh', 'sql', 'ini', 'toml',
 ];
-// Formats tableur : les octets sont binaires (zip/OpenDocument) ou très
-// structurés. Les décoder demanderait une bibliothèque : on le dit franchement
-// plutôt que d'afficher du charabia, et on laisse le téléchargement.
+// Les anciens classeurs binaires et les formats non pris en charge restent
+// confiés à l’application système plutôt que rendus comme du texte illisible.
 const SHEET_EXT = ['xlsx', 'xls', 'ods', 'xlsm', 'numbers'];
 
 export const extensionOf = (filename: string): string => {
@@ -80,7 +79,7 @@ export function imageMime(bytes: Uint8Array): string | null {
 /** Message affiché pour les formats qu'on ne peut pas rendre honnêtement. */
 export function previewNotice(kind: PreviewKind, filename: string): string {
   if (kind === 'sheet') {
-    return `« ${filename} » est un tableur : WorkLogs ne l’affiche pas lui-même. « Ouvrir avec… » le confie à ton tableur (LibreOffice, Google Sheets…), « Ouvrir dans Drive » l’affiche dans Google Drive.`;
+    return `« ${filename} » est un format de tableur non pris en charge ici. « Ouvrir avec… » le confie à ton tableur (LibreOffice, Google Sheets…), « Ouvrir dans Drive » l’affiche dans Google Drive.`;
   }
   return `L’aperçu intégré ne prend pas en charge « ${filename} ». « Ouvrir avec… » le confie à l’application qui sait le lire.`;
 }

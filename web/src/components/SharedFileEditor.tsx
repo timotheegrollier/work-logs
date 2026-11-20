@@ -18,6 +18,7 @@ import { FileIcon } from './FileIcon';
 import { CsvFileEditor } from './CsvFileEditor';
 import { DocxFileEditor } from './DocxFileEditor';
 import { XlsxFileEditor } from './XlsxFileEditor';
+import { ODSFileEditor } from './ODSFileEditor';
 import { officeAuthor } from '../ooxml';
 import { mergeText, mergeXlsx, type MergeOutcome } from '../shared-merge';
 import type { XlsxDraft } from '../xlsx';
@@ -584,8 +585,8 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
 
   const name = file?.name ?? basename(path);
   const kind = file ? editorKind(file.ext) : null;
-  // Les formats zip (Word, Excel) ont leurs propres bornes, à la lecture de l'archive.
-  const tooBig = Boolean(loaded && kind !== 'docx' && kind !== 'xlsx' && loaded.bytes.length > MAX_EDITABLE_TEXT);
+  // Les formats zip (Word, Excel, OpenDocument) ont leurs propres bornes, à la lecture de l'archive.
+  const tooBig = Boolean(loaded && kind !== 'docx' && kind !== 'xlsx' && kind !== 'ods' && loaded.bytes.length > MAX_EDITABLE_TEXT);
   const blocked = (lockBlocks(file?.lock) || (lockForgotten(file?.lock) && !held)) && !override;
   const readOnly = sending ? 'Envoi en cours…'
     : file?.state === 'conflict' ? 'Règle d’abord le conflit.'
@@ -763,6 +764,8 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
         <DocxFileEditor key={loaded.version} name={name} bytes={loaded.bytes} initialDraft={loaded.draft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} author={author} />
       ) : kind === 'xlsx' ? (
         <XlsxFileEditor key={loaded.version} name={name} bytes={loaded.bytes} initialDraft={loaded.draft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} author={author} />
+      ) : kind === 'ods' ? (
+        <ODSFileEditor key={loaded.version} name={name} bytes={loaded.bytes} initialDraft={loaded.draft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} author={author} />
       ) : kind === 'csv' ? (
         <CsvFileEditor key={loaded.version} name={name} bytes={loaded.bytes} initialDraft={loaded.draft} readOnly={readOnly} onEdit={onEdit} handleRef={handleRef} />
       ) : (

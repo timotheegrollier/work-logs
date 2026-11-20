@@ -1290,15 +1290,17 @@ export function EntryEditor({
         </label>
         {linkedFolders.length > 0 && <AttachFromLinkedFolder key={`${entry.id}:${JSON.stringify(linkedFolders)}`} entryId={entry.id} title={draft.title}
           folders={linkedFolders} disabled={syncing} onAttached={(added) => { setAttachments((current) => [added, ...current]); onChanged(); }} />}
-        {attachments.map((file) => (
-          <span className="file" key={file.id}>
+        {attachments.map((file) => {
+          const sheet = ['xlsx', 'xlsm', 'ods', 'csv', 'tsv'].includes(file.filename.split('.').pop()?.toLowerCase() ?? '');
+          return <span className="file" key={file.id}>
             <FileIcon name={file.filename} />
             <a
               href={api.fileUrl(file.stored)}
               onClick={(event) => {
                 event.preventDefault();
                 setError('');
-                void downloadAttachment(file).catch((e: Error) => setError(e.message));
+                if (sheet) setPreviewing(file);
+                else void downloadAttachment(file).catch((e: Error) => setError(e.message));
               }}
             >
               {file.filename}
@@ -1311,10 +1313,10 @@ export function EntryEditor({
             <button
               className="ghost file-preview"
               type="button"
-              aria-label={`Aperçu de ${file.filename}`}
+              aria-label={`${sheet ? 'Ouvrir dans l’écriture' : 'Aperçu de'} ${file.filename}`}
               onClick={() => setPreviewing(file)}
             >
-              👁 Aperçu
+              {sheet ? '✎ Ouvrir' : '👁 Aperçu'}
             </button>
             {file.driveFileId && <button
               className="ghost file-preview"
@@ -1333,11 +1335,11 @@ export function EntryEditor({
             >
               ✕
             </button>
-          </span>
-        ))}
+          </span>;
+        })}
         {driveNotice && <p className="drive-success" role="status">{driveNotice}</p>}
       </div>}
-      {previewing && <Suspense fallback={null}><FileViewer key={previewing.id + (previewing.driveFileId || '')} file={previewing} onClose={() => setPreviewing(null)} onFetch={() => previewing && void fetchFromDrive(previewing)} fetching={fetchingId === previewing.id}
+      {previewing && <Suspense fallback={null}><FileViewer key={previewing.id + (previewing.driveFileId || '')} file={previewing} inlineSpreadsheet onClose={() => setPreviewing(null)} onFetch={() => previewing && void fetchFromDrive(previewing)} fetching={fetchingId === previewing.id}
         onSaved={(updated) => { setPreviewing(updated); setAttachments((current) => [updated, ...current.filter((file) => file.id !== updated.id)]); onChanged(); }} /></Suspense>}
     </section>
   );

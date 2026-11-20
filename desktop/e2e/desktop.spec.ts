@@ -505,8 +505,8 @@ test('fermer un classeur modifié permet de revenir aux cellules puis d’enregi
   await page.getByLabel('Joindre un fichier', { exact: true }).setInputFiles({
     name: 'budget.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(excelWorkbook()),
   });
-  await page.getByRole('button', { name: 'Aperçu de budget.xlsx', exact: true }).click();
-  const viewer = page.getByRole('dialog', { name: 'Aperçu de budget.xlsx', exact: true });
+  await page.getByRole('link', { name: 'budget.xlsx', exact: true }).click();
+  const viewer = page.getByRole('region', { name: 'Édition de budget.xlsx', exact: true });
   await viewer.getByRole('gridcell', { name: 'B3 : 100,00 €', exact: true }).click();
   await page.keyboard.type('250');
   await page.keyboard.press('Enter');
@@ -528,7 +528,7 @@ test('fermer un classeur modifié permet de revenir aux cellules puis d’enregi
   await expect(viewer.getByRole('gridcell', { name: 'B3 : 250,00 €', exact: true })).toBeVisible();
 
   await viewer.getByRole('button', { name: 'Enregistrer une copie modifiée', exact: true }).click();
-  const saved = page.getByRole('dialog', { name: 'Aperçu de budget - modifié.xlsx', exact: true });
+  const saved = page.getByRole('region', { name: 'Édition de budget - modifié.xlsx', exact: true });
   await expect(saved.getByRole('gridcell', { name: 'B3 : 250,00 €', exact: true })).toBeVisible();
   const closed = application!.waitForEvent('close');
   await application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());

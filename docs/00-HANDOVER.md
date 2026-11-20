@@ -11,12 +11,17 @@
 - Quand toutes les actions d’une réponse sont écartées, l’assistant rejoue une fois sa demande
   avec le motif du refus ; si le second passage échoue encore sur la forme, il pose une question
   avec des choix (cases, puces, rubrique) au lieu de laisser l’utilisateur sans suite.
+- Les pièces jointes `.xlsx`, `.ods`, `.csv` et `.tsv` s’ouvrent directement dans la colonne
+  **Écriture** en cliquant leur nom. Elles réutilisent leurs grilles dédiées et s’enregistrent
+  en copie dans l’entrée ; l’original reste intact. Ce n’est pas une parité Excel complète :
+  `.xls` reste confié au logiciel système, `.xlsm` est en lecture seule et les classeurs ne
+  prennent pas en charge les outils avancés de mise en forme ou de structure (`05-DECISIONS.md` §92).
 - Tests : 4 dans `ai-chat.test.ts` (ajout hors liste et autre famille acceptée, correction ciblée
   sur un marqueur, réessai, question après second refus) et 4 parcours navigateur
   (`e2e/ai-chat.spec.ts`, ajout dans une liste à puces, puces ajoutées à une note en cases,
   question après un second refus puis choix appliqué, correction ciblée refusée).
 - `./scripts/check.sh` (étapes lancées séparément, navigateur sur `WORKLOGS_E2E_PORT=8414`)
-  passe avec **2 115 tests**, dont un échec attendu. 365 API · 1 472 front · 49 desktop
+  passe avec **2 121 tests**, dont un échec attendu. 365 API · 1 478 front · 49 desktop
   unitaires · 56 scripts · 8 Worker · 11 relais · 132 navigateurs · 22 Electron.
 
 ## Ajouts de texte et dossiers reliés — 2026-11-20, v0.86.0

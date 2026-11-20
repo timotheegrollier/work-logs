@@ -3717,3 +3717,19 @@ d’échec ; sinon le motif reste affiché avec l’absence de proposition. Un s
 jamais en boucle. Si le second passage échoue encore sur la forme, l’assistant ne laisse pas
 l’utilisateur sans suite : il pose une question avec des choix (cases à cocher, puces,
 rubrique « ## »), et la consigne du réessai l’autorise à demander lui-même la forme voulue.
+
+## 92. Les tableurs joints s’ouvrent dans Écriture — 2026-11-20
+
+Cliquer le nom d’une pièce jointe `.xlsx`, `.ods`, `.csv` ou `.tsv` ouvre sa grille
+dans la colonne **Écriture**, sans dialogue qui recouvre l’application. Les onglets
+de feuille restent en bas pour les classeurs. **Enregistrer une copie modifiée**
+ajoute une nouvelle pièce jointe dans la même entrée ; l’original reste intact.
+Les classeurs du dossier partagé utilisent aussi l’éditeur ODS.
+
+Il ne s’agit pas d’une reproduction complète d’Excel : la grille modifie les cellules
+et conserve le reste du classeur, sans édition des graphiques, des formats ou de la
+structure avancée. ODS conserve la mise en forme existante et invalide les résultats
+en cache des formules à recalculer au prochain chargement dans un tableur ; les
+formules saisies acceptent les références simples à la feuille active. `.xls` et
+`.numbers` restent confiés à l’application système ; `.xlsm` reste en lecture seule.
+Aucune dépendance de tableur n’est ajoutée.
