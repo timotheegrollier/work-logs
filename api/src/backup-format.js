@@ -1,6 +1,7 @@
 import { validateDocument } from './rich-document.js';
 import { readFollowUp } from './follow-up.js';
 import { normalizeTaskNotes, storedTaskProgress } from './task-notes.js';
+import { projectFolders } from './project-folders.js';
 
 /** Format de sauvegarde : 100 % pur (aucun accès disque/réseau),
  *  partageable avec le front/PWA qui valide avant d'écrire en local. */
@@ -66,15 +67,14 @@ export function validateBackup(input, { migrateTaskNotes = true } = {}) {
 
   const projects = data.projects.map((project) => {
     record(project, 'Projet');
+    const folders = projectFolders(project);
     return {
       id: id(project.id, 'Identifiant de projet'),
       name: requiredText(project.name, 'Nom de projet', 500),
       color: requiredText(project.color, 'Couleur de projet', 100),
       created_at: timestamp(project.created_at, 'Date de création du projet'),
-      // Dossier du TSE relié (2026-10-07) : absent des anciens exports.
-      shared_dir: project.shared_dir === undefined || project.shared_dir === null || project.shared_dir === ''
-        ? null
-        : requiredText(project.shared_dir, 'Dossier relié du projet', 2000),
+      shared_dir: folders.shared_dir,
+      ...(project.shared_dirs !== undefined && { shared_dirs: folders.shared_dirs }),
       // Synchro (2026-09-22) : absent des anciens exports, il vaut alors la création.
       updated_at: project.updated_at === undefined || project.updated_at === null || project.updated_at === ''
         ? timestamp(project.created_at, 'Date de création du projet')

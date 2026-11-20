@@ -473,6 +473,51 @@ describe('tâches', () => {
 });
 
 describe('projets et fichiers', () => {
+  test('plusieurs dossiers du projet persistent dans l’état, les sauvegardes et la boîte mobile', async () => {
+    const first = 'Procedures/TSE';
+    const second = 'Archives/TSE';
+    const project = await localApi.createProject({ name: 'Dossiers TSE', shared_dirs: [first, second, first] });
+    expect(project).toMatchObject({ shared_dir: first, shared_dirs: [first, second] });
+    expect(await localApi.updateProject(project.id, { color: '#123456' })).toMatchObject({ shared_dirs: [first, second] });
+    const snapshot = await localSyncSnapshot();
+    expect(snapshot.projects.find(({ id }) => id === project.id)?.shared_dirs).toEqual([first, second]);
+    const outbox = await exportLocalOutbox();
+    expect(outbox.projects.find(({ id }) => id === project.id)?.shared_dirs).toEqual([first, second]);
+    const exported = await localApi.exportBackup();
+    const backup = JSON.parse(await exported.blob.text());
+    expect(backup.projects.find(({ id }: { id: string }) => id === project.id)?.shared_dirs).toEqual([first, second]);
+    setLocalDatabase(createMemoryDatabase());
+    await importLocalBackup(backup);
+    expect((await localApi.state()).projects.find(({ id }) => id === project.id)).toMatchObject({ shared_dir: first, shared_dirs: [first, second] });
+    expect(await localApi.updateProject(project.id, { shared_dir: second })).toMatchObject({ shared_dir: second, shared_dirs: [second] });
+    expect(await localApi.updateProject(project.id, { shared_dirs: [] })).toMatchObject({ shared_dir: null, shared_dirs: [] });
+    await expect(localApi.updateProject(project.id, { shared_dirs: ['bad\u0001folder'] })).rejects.toThrow('dossier relié invalide');
+  });
+
+  test('une ancienne ligne singulière est lisible et la synchro garde une édition concurrente des dossiers', async () => {
+    const database = createMemoryDatabase();
+    setLocalDatabase(database);
+    await localApi.state();
+    const projects = database.table<{ id: string; name: string; color: string; created_at: string; updated_at: string; shared_dir?: string; shared_dirs?: string[] }>('projects');
+    const created_at = '2026-11-20T09:00:00Z';
+    await projects.put({ id: 'pr_old', name: 'Ancien', color: '#123456', created_at, updated_at: created_at, shared_dir: 'TSE' });
+    expect((await localApi.state()).projects.find(({ id }) => id === 'pr_old')).toMatchObject({ shared_dir: 'TSE', shared_dirs: ['TSE'] });
+    const base = await localSyncSnapshot();
+    const incoming = structuredClone(base);
+    const remote = incoming.projects.find(({ id }) => id === 'pr_old')!;
+    Object.assign(remote, { shared_dir: 'TSE', shared_dirs: ['TSE', 'Archives'], updated_at: '2026-11-20T10:00:00Z' });
+    expect((await applySyncSnapshot(incoming, base)).skipped).toBe(0);
+    expect((await localApi.state()).projects.find(({ id }) => id === 'pr_old')?.shared_dirs).toEqual(['TSE', 'Archives']);
+    const nextBase = await localSyncSnapshot();
+    const raced = structuredClone(nextBase);
+    const racedProject = raced.projects.find(({ id }) => id === 'pr_old')!;
+    Object.assign(racedProject, { shared_dirs: ['Remote'], shared_dir: 'Remote' });
+    const current = (await projects.get('pr_old'))!;
+    await projects.put({ ...current, shared_dir: 'Local', shared_dirs: ['Local'] });
+    expect((await applySyncSnapshot(raced, nextBase)).skipped).toBe(1);
+    expect((await localApi.state()).projects.find(({ id }) => id === 'pr_old')?.shared_dirs).toEqual(['Local']);
+  });
+
   test('projets : création, renommage, suppression qui détache sans perdre', async () => {
     await expect(localApi.createProject({ name: '' })).rejects.toThrow('nom requis');
     const project = await localApi.createProject({ name: 'Villa' });

@@ -327,7 +327,7 @@ describe('dossier partagé', () => {
     }
     // Listes gardées sur cet ordinateur seulement : jamais exportées.
     assert.deepEqual(api.db.prepare('SELECT rel_dir FROM shared_dirs ORDER BY rel_dir').all().map((row) => row.rel_dir), ['', 'Global']);
-    assert.equal(JSON.stringify(buildBackup(api.db)).includes('shared_dirs'), false);
+    assert.equal(Object.hasOwn(buildBackup(api.db), 'shared_dirs'), false);
   });
 
   test('conflit : « prendre la leur » garde ma version de côté', async () => {

@@ -13,6 +13,7 @@
 // - le suivi IA fusionne ses propres horloges : un bilan ne date jamais une saisie.
 
 import { mergeFollowUp } from './follow-up.js';
+import { decodeProject, mergeProjectFolders } from './project-folders.js';
 import { legacyTaskNoteId, normalizeTaskNotes, storedTaskProgress } from './task-notes.js';
 
 export const TOMBSTONE_KINDS = ['project', 'category', 'entry', 'task', 'link', 'attachment'];
@@ -130,7 +131,12 @@ export function mergeSnapshots(local, remote, now = Date.now()) {
   const other = remote || empty;
   const tombs = mergeTombstones(local.deleted || [], other.deleted || [], now);
 
-  const projects = mergeRows('project', local.projects, other.projects, tombs);
+  const localProjects = new Map(local.projects.map((row) => [row.id, row]));
+  const remoteProjects = new Map(other.projects.map((row) => [row.id, row]));
+  const projects = mergeRows('project', local.projects, other.projects, tombs).map((row) => {
+    const previous = row === localProjects.get(row.id) ? remoteProjects.get(row.id) : localProjects.get(row.id);
+    return { ...row, ...mergeProjectFolders(row, previous ? decodeProject(previous) : undefined) };
+  });
   const projectIds = new Set(projects.map((row) => row.id));
   const categories = mergeRows('category', local.categories || [], other.categories || [], tombs)
     .filter((row) => projectIds.has(row.project_id)).map((row) => ({ ...row }));

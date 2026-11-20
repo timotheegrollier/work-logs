@@ -54,7 +54,7 @@ client intégré (OAuth « Web ») passe par le relais de jetons `oauth-proxy/`,
 ## Base — tables synchronisées et tables de la machine
 
 ```sql
-projects(id, name, color, shared_dir, created_at, updated_at)
+projects(id, name, color, shared_dir, shared_dirs JSON|NULL, created_at, updated_at)
 
 categories(id, name, project_id → projects ON DELETE CASCADE,
            parent_id → categories ON DELETE SET NULL, color, created_at, updated_at)
@@ -145,8 +145,8 @@ shared_versions(id PRIMARY KEY, rel_path, hash, size, origin, state, author, cre
 shared_dirs(rel_dir PRIMARY KEY, entries_json, listed_at) -- dernière liste vue (arbre hors ligne)
 entry_search(entry_id PRIMARY KEY, text)                 -- titre + texte sans accents ni capitales (§58)
                                                          -- effacé par déclencheur à chaque titre/texte changé
--- Le dossier relié à un projet n'est plus ici : `projects.shared_dir` (adresse complète,
--- synchronisée par Drive). `shared_project_folders` ne sert plus qu'à reprendre les anciens liens.
+-- `projects.shared_dirs` contient les adresses reliées, synchronisées par Drive.
+-- `projects.shared_dir` conserve la première. `shared_project_folders` sert à reprendre les anciens liens.
 ```
 
 **Aucune clé étrangère** : `restoreBackup` vide et réinsère projets et entrées à chaque synchro.

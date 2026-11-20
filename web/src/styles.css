@@ -1583,6 +1583,19 @@ button:disabled {
 .procedure-file-transfer small {
   overflow-wrap: anywhere;
 }
+.procedure-transfer-destination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+.procedure-transfer-destination select,
+.procedure-linked-heading select {
+  min-width: 0;
+  max-width: 100%;
+}
 .procedure-files .procedure-file-transfer,
 .file .procedure-file-transfer {
   flex-basis: 100%;
@@ -4531,10 +4544,6 @@ div.google-preserved {
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-.shared-root strong {
-  color: var(--text);
-  font-weight: 600;
-}
 .shared-change {
   justify-self: start;
   font-size: 12px;
@@ -4648,6 +4657,10 @@ div.google-preserved {
 }
 .shared-dir-row .shared-dir {
   flex: 1;
+}
+.shared-linked-roots .shared-dir[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .shared-link-here {
   flex: none;

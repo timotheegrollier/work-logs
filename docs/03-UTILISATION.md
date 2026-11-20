@@ -512,8 +512,8 @@ un message composé uniquement de pièces jointes.
   Une entrée terminée reste dans le journal jusqu’à son archivage. Il peut aussi proposer de
   réécrire une entrée Markdown après en avoir lu le texte complet.
 - « Retrouve la procédure de sauvegarde sur le serveur et rédige un Word dans le dossier Infra. »
-  L’assistant cherche par nom dans le dossier partagé configuré, sous le dossier relié au projet
-  s’il existe. Les résultats ouvrent les fichiers dans WorkLogs. Il peut créer un nouveau
+  L’assistant cherche par nom dans les dossiers reliés au projet ou dans le partage entier
+  si le projet n’a aucun dossier lié. Les résultats ouvrent les fichiers dans WorkLogs. Il peut créer un nouveau
   fichier Word dans un dossier trouvé. Pour qu’il puisse utiliser le texte d’un fichier Word,
   Markdown ou texte comme source, ouvre **Données envoyées au service IA** et coche
   **Autoriser l’envoi d’extraits des fichiers partagés dans cette conversation** avant d’envoyer
@@ -731,9 +731,10 @@ lorsque la colonne Procédures est affichée.
   ou l'application du système — pour ce que WorkLogs ne modifie pas (en-têtes Word, mise en
   forme Excel, autres formats). Envoie ou abandonne d'abord ton brouillon.
 - Avec un projet filtré, **Relier … à un dossier…** associe le projet à un sous-dossier du
-  partage : la section n'affiche plus que lui. **Délier** rend tout le partage. Le lien est
-  enregistré **sur le projet** et suit par Drive : relié sur le PC, il l'est aussi sur le
-  téléphone (et inversement).
+  partage. **Relier un autre dossier…** ajoute un dossier à la liste. Clique sur le dossier
+  à parcourir. **Délier** retire le raccourci choisi et le dernier retrait réaffiche le partage.
+  Les liens sont enregistrés sur le projet et se synchronisent par Drive. Depuis une procédure,
+  choisis le dossier source ou destination lorsque le projet en a plusieurs.
 - **Historique sur cet ordinateur** (sous l'éditeur) liste les versions lues, envoyées ou
   mises de côté ; **Restaurer** en fait ton brouillon, à envoyer comme d'habitude.
 - **Fusionner.** Si un collègue a enregistré pendant que tu modifiais un fichier texte, un

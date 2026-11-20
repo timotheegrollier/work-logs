@@ -1,5 +1,16 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Ajouts de texte et dossiers reliés — 2026-11-20
+
+- Pour un ajout ou une correction ciblée, WorkLogs relit le texte de l’entrée sur cet appareil
+  avant de préparer la proposition. Une réécriture complète ou un changement de cases utilise
+  une lecture présentée au modèle. L’écriture vérifie toujours l’état relu lors de l’application.
+- La colonne **Procédures** peut relier plusieurs dossiers d’un même partage à un projet.
+  Chaque dossier peut être ouvert ou délié séparément. Les transferts de pièces jointes proposent
+  le dossier source ou destination. Les liens suivent les projets dans les sauvegardes et Drive.
+- `./scripts/check.sh` passe avec **2 107 tests**, dont un échec attendu. 365 API · 1 468 front ·
+  49 desktop unitaires · 56 scripts · 8 Worker · 11 relais · 128 navigateurs · 22 Electron.
+
 ## Classeur en grande fenêtre, assistant plus patient — 2026-11-19, v0.85.0
 
 - Un `.xlsx`/`.xlsm` joint s’ouvre dans une fenêtre d’édition qui prend la page (presque tout

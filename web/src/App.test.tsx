@@ -4705,18 +4705,21 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     await waitFor(() => expect(api.db.prepare('SELECT COUNT(*) n FROM shared_project_folders').get()).toEqual({ n: 0 }));
   });
 
-  test('dossier relié depuis un autre appareil (adresse, autre nom du serveur, autre casse) : le bon dossier ici', async () => {
+  test('dossiers reliés depuis un autre appareil : ouvrir celui que ce montage atteint', async () => {
     seedData(api.db, { projects: [{ id: 'pr_t', name: 'TSE' }] });
     const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
     fs.mkdirSync(path.join(share, '2. TSE'));
     await write('2. TSE/Redémarrage.md', '# x');
     await write('autre.md', 'y');
-    // Cet ordinateur monte « \\172.16.1.20\d\…\00. PROCEDURE » ; le téléphone a relié le projet par « SRVMURGAT » et « D ».
+    // Le téléphone a relié le projet depuis un montage plus large, avec un autre nom de serveur.
     api.db.prepare("INSERT INTO local_settings (key, value, updated_at) VALUES ('shared.address', ?, ?)").run('\\\\172.16.1.20\\d\\Global\\00. PROCEDURE', new Date().toISOString());
-    api.db.prepare("UPDATE projects SET shared_dir=? WHERE id='pr_t'").run('\\\\SRVMURGAT\\D\\Global\\00. PROCEDURE\\2. TSE');
+    const outside = '\\\\SRVMURGAT\\D\\Archives';
+    await clientApi.updateProject('pr_t', { shared_dirs: [outside, '\\\\SRVMURGAT\\D\\Global\\00. PROCEDURE\\2. TSE'] });
     render(<App />);
     fireEvent.click(await within(filters()).findByRole('button', { name: /TSE/ }));
     expect(await screen.findByRole('button', { name: /^Ouvrir Redémarrage\.md/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Afficher le dossier lié ${outside}` })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Afficher le dossier lié 2. TSE' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('button', { name: /^Ouvrir autre\.md/ })).not.toBeInTheDocument();
   });
 
@@ -4748,6 +4751,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     await waitFor(() => expect(migration).toHaveBeenCalledWith('pr_w', { shared_dir: 'Global' }), partage);
     fireEvent.click(await within(filters()).findByRole('button', { name: /work-logs/ }));
     await waitFor(() => expect(filteredRead).toBe(true), partage);
+    expect(screen.getByRole('button', { name: 'Relier work-logs à un dossier…' })).toBeDisabled();
     await act(async () => { resumeMigration(); await migrationGate; });
     expect(await screen.findByText('Le dossier relié à work-logs (« Global ») n’est pas dans ce partage. « Délier work-logs de son dossier » affiche tout le partage.', undefined, partage)).toHaveAttribute('role', 'alert');
     fireEvent.click(screen.getByRole('button', { name: 'Délier work-logs de son dossier' }));
@@ -5337,16 +5341,17 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     expect(fs.existsSync(path.join(share, 'Projets'))).toBe(false);
   });
 
-  test('renommer ou supprimer un dossier relié à un projet : le lien du projet suit', async () => {
+  test('renommer ou supprimer un dossier partagé : tous les liens concernés suivent', async () => {
     seedData(api.db, { projects: [{ id: 'pr_p', name: 'Piscine' }, { id: 'pr_a', name: 'Atelier' }, { id: 'pr_x', name: 'Bureau' }] });
-    const linkOf = (id: string) => row(api.db, 'SELECT shared_dir FROM projects WHERE id=?', id).shared_dir;
+    const linksOf = async (id: string) => (await clientApi.state()).projects.find((project) => project.id === id)?.shared_dirs;
     const [fs, path] = await Promise.all([nodeFs(), nodePath()]);
     fs.mkdirSync(path.join(share, 'Piscine', 'Filtres'), { recursive: true });
+    fs.mkdirSync(path.join(share, 'Piscine', 'Pompes'));
     fs.mkdirSync(path.join(share, 'Atelier'));
     fs.mkdirSync(path.join(share, 'Bureau'));
-    api.db.prepare('UPDATE projects SET shared_dir=? WHERE id=?').run('Piscine/Filtres', 'pr_p');
-    api.db.prepare('UPDATE projects SET shared_dir=? WHERE id=?').run('Atelier', 'pr_a');
-    api.db.prepare('UPDATE projects SET shared_dir=? WHERE id=?').run('Bureau', 'pr_x');
+    await clientApi.updateProject('pr_p', { shared_dirs: ['Piscine/Filtres', 'Piscine/Pompes'] });
+    await clientApi.updateProject('pr_a', { shared_dirs: ['Atelier', 'Bureau'] });
+    await clientApi.updateProject('pr_x', { shared_dirs: ['Bureau'] });
     render(<App />);
 
     fireEvent.click(await (await tree()).findByRole('button', { name: 'Renommer ou supprimer Piscine' }));
@@ -5354,13 +5359,12 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     const form = screen.getByRole('form', { name: 'Renommer le dossier Piscine' });
     fireEvent.change(within(form).getByLabelText('Nouveau nom du dossier'), { target: { value: 'Bassin' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Renommer' }));
-    // Relié à un sous-dossier : le lien suit le dossier renommé au-dessus de lui.
-    await waitFor(() => expect(linkOf('pr_p')).toBe('Bassin/Filtres'), partage);
+    await waitFor(async () => expect(await linksOf('pr_p')).toEqual(['Bassin/Filtres', 'Bassin/Pompes']), partage);
 
     fireEvent.click(await (await tree()).findByRole('button', { name: 'Renommer ou supprimer Atelier' }));
     fireEvent.click(screen.getByRole('button', { name: 'Supprimer Atelier du partage' }));
-    await waitFor(() => expect(linkOf('pr_a')).toBeNull(), partage);
-    expect(linkOf('pr_x')).toBe('Bureau');
+    await waitFor(async () => expect(await linksOf('pr_a')).toEqual(['Bureau']), partage);
+    expect(await linksOf('pr_x')).toEqual(['Bureau']);
   });
 
   test('renommer refusé tant qu’un brouillon attend dedans : la raison sous le dossier, Échap annule', async () => {

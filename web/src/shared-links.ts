@@ -1,3 +1,5 @@
+import type { Project } from './lib';
+
 /**
  * Dossier du TSE relié à un projet. Le projet porte l'**adresse complète** du dossier
  * (`\\172.16.1.20\d\Global\…\00. PROCEDURE\2. TSE`) : synchronisée par Drive, elle vaut
@@ -13,6 +15,10 @@ export function addressKey(address: string): string {
 }
 
 const isAddress = (value: string) => /^(\\\\|\/\/)/.test(value);
+
+export function projectSharedDirs(project: Pick<Project, 'shared_dir' | 'shared_dirs'> | null | undefined): string[] {
+  return project?.shared_dirs ?? (project?.shared_dir ? [project.shared_dir] : []);
+}
 
 /** Ce que le projet enregistre pour `rel` (chemin sous la racine de cet appareil). */
 export function linkFor(rootAddress: string | null | undefined, rel: string): string {

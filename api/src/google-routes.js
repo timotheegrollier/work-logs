@@ -1,4 +1,5 @@
 import { uid, nowISO, today, tombstone } from './db.js';
+import { decodeProject, mergeProjectFolders } from './project-folders.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { decodeEntry, documentText } from './rich-document.js';
@@ -198,9 +199,16 @@ export async function importOutbox(db, { google, uploadDir }, data) {
   db.exec('BEGIN');
   try {
     for (const project of data.projects) {
-      if (!db.prepare('SELECT id FROM projects WHERE id=?').get(project.id)) {
-        db.prepare('INSERT INTO projects (id,name,color,created_at) VALUES (?,?,?,?)').run(project.id, project.name, project.color, project.created_at);
+      const current = decodeProject(db.prepare('SELECT * FROM projects WHERE id=?').get(project.id));
+      const folders = mergeProjectFolders(project, current);
+      if (!current) {
+        db.prepare('INSERT INTO projects (id,name,color,created_at,updated_at,shared_dir,shared_dirs) VALUES (?,?,?,?,?,?,?)')
+          .run(project.id, project.name, project.color, project.created_at, project.updated_at, folders.shared_dir, JSON.stringify(folders.shared_dirs));
         counts.projects++;
+      } else if (project.updated_at > (current.updated_at || current.created_at)) {
+        db.prepare('UPDATE projects SET name=?,color=?,updated_at=?,shared_dir=?,shared_dirs=? WHERE id=?')
+          .run(project.name, project.color, project.updated_at, folders.shared_dir, JSON.stringify(folders.shared_dirs), project.id);
+        counts.updated++;
       }
     }
     if (data.categories?.length) {
@@ -212,7 +220,7 @@ export async function importOutbox(db, { google, uploadDir }, data) {
         if (!current || next.updated_at > current.updated_at) { categoryMap.set(next.id, next); incoming.push(next); }
       }
       // Validate the complete prospective tree before touching any category.
-      validateBackup({ version: 2, projects: db.prepare('SELECT * FROM projects').all(), categories: [...categoryMap.values()], entries: [], tasks: [], task_entries: [], attachments: [] });
+      validateBackup({ version: 2, projects: db.prepare('SELECT * FROM projects').all().map(decodeProject), categories: [...categoryMap.values()], entries: [], tasks: [], task_entries: [], attachments: [] });
       const category = db.prepare(`INSERT INTO categories (id,name,project_id,parent_id,color,created_at,updated_at) VALUES (?,?,?,NULL,?,?,?)
         ON CONFLICT(id) DO UPDATE SET name=excluded.name,parent_id=NULL,color=excluded.color,updated_at=excluded.updated_at`);
       for (const next of incoming) category.run(next.id, next.name, next.project_id, next.color, next.created_at, next.updated_at);

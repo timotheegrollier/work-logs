@@ -40,6 +40,37 @@ function mockGoogle(box) {
 }
 
 describe('boîte mobile', () => {
+  test('la boîte mobile conserve tous les dossiers et propage les éditions récentes et la déliaison', async () => {
+    const payload = outbox({ entries: [], tasks: [], task_entries: [], attachments: [] });
+    Object.assign(payload.projects[0], { shared_dirs: ['TSE', 'Archives'], updated_at: T0 });
+    const box = { payload };
+    const api = await startApi({ google: mockGoogle(box) });
+    const folders = async () => (await api.get('/api/state')).body.projects.find(({ id }) => id === 'pr_mob');
+    try {
+      assert.equal((await api.post('/api/google/outbox/ob-1/import')).status, 200);
+      assert.deepEqual((await folders()).shared_dirs, ['TSE', 'Archives']);
+      assert.equal((await folders()).shared_dir, 'TSE');
+      delete payload.projects[0].shared_dirs;
+      Object.assign(payload.projects[0], { name: 'Renommé par un ancien client', shared_dir: 'TSE', updated_at: '2026-09-18T11:00:00.000Z' });
+      await api.post('/api/google/outbox/ob-1/import');
+      assert.deepEqual((await folders()).shared_dirs, ['TSE', 'Archives']);
+      Object.assign(payload.projects[0], { shared_dirs: ['Archives', 'TSE'], updated_at: T1 });
+      assert.equal((await api.post('/api/google/outbox/ob-1/import')).body.updated, 1);
+      assert.deepEqual((await folders()).shared_dirs, ['Archives', 'TSE']);
+      Object.assign(payload.projects[0], { shared_dirs: ['Ancien'], updated_at: T0 });
+      await api.post('/api/google/outbox/ob-1/import');
+      assert.deepEqual((await folders()).shared_dirs, ['Archives', 'TSE']);
+      Object.assign(payload.projects[0], { shared_dirs: [], updated_at: '2026-09-18T13:00:00.000Z' });
+      await api.post('/api/google/outbox/ob-1/import');
+      assert.deepEqual((await folders()).shared_dirs, []);
+      assert.equal((await folders()).shared_dir, null);
+      delete payload.projects[0].shared_dirs;
+      Object.assign(payload.projects[0], { shared_dir: 'Historique', updated_at: '2026-09-18T14:00:00.000Z' });
+      await api.post('/api/google/outbox/ob-1/import');
+      assert.deepEqual((await folders()).shared_dirs, ['Historique']);
+    } finally { await api.close(); }
+  });
+
   test('un bilan plus récent ne ressuscite pas une source supprimée ; une nouvelle saisie le peut', async () => {
     const payload = outbox({ attachments: [] });
     const box = { payload };

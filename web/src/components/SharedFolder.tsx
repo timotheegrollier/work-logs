@@ -4,7 +4,7 @@ import { badgesFor, REACH_HELP, REACH_LABELS, sinceLabel } from '../shared-sessi
 import { editorKind } from '../file-formats';
 import { previewKind } from '../file-preview';
 import { fileNameProblem, NEW_FILE_TYPES, newFileBytes, PROCEDURE_EXPORT_TYPES, procedureFileBytes, withExtension, type NewFileType, type ProcedureExportExt } from '../new-files';
-import { followDir, linkFor, localDir } from '../shared-links';
+import { followDir, linkFor, localDir, projectSharedDirs } from '../shared-links';
 import { richToMarkdown } from '../rich-markdown';
 import { flushPendingSaves } from '../autosave';
 import { saveBlob } from '../attachment-download';
@@ -30,6 +30,7 @@ const within = (path: string, dir: string) => path === dir || path.startsWith(di
 /** `path` une fois le dossier `from` renommé en `to` (inchangé s'il n'est pas dedans). */
 const movedPath = (path: string, from: string, to: string) => (within(path, from) ? to + path.slice(from.length) : path);
 const plural = (count: number, word: string) => `${count} ${word}${count > 1 ? 's' : ''}`;
+const pathKey = (path: string) => path.normalize('NFC').toLowerCase();
 
 /**
  * Section « Dossier partagé » de la colonne Procédures : le dossier du TSE monté
@@ -50,8 +51,8 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
   onDeleted: (path: string) => void;
   /** Un dossier renommé : ce qui était dedans a changé de chemin. */
   onRenamed: (from: string, to: string) => void;
-  /** Le dossier relié est porté par le projet : après l'avoir changé, l'écran relit les projets. */
-  onProjectsChanged: () => void;
+  /** Le projet porte ses dossiers reliés : l'écran relit les projets après chaque changement. */
+  onProjectsChanged: () => Promise<void>;
   /** Une procédure locale a été supprimée après son envoi : recharger le journal. */
   onLocalChanged: () => void;
 }) {
@@ -69,6 +70,7 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
   const [transferNotice, setTransferNotice] = useState('');
   /** Choix du sous-dossier du projet filtré : chaque dossier de l'arbre propose « Relier ici ». */
   const [linking, setLinking] = useState(false);
+  const [folderChoice, setFolderChoice] = useState<{ projectId: string; address: string } | null>(null);
   /** Adresse du partage à monter (\\serveur\partage) ; formulaire visible sans dossier, ou sur demande. */
   const [address, setAddress] = useState('');
   /** Compte Windows du partage (`SRVMURGAT\TonNom`), facultatif : le mot de passe se saisit dans la fenêtre du système. */
@@ -101,14 +103,17 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
   expandedRef.current = expanded;
 
   const project = projects.find((candidate) => candidate.id === projectId);
-  // Le projet porte l'adresse du dossier relié (synchronisée par Drive) ; traduite ici vers
-  // un chemin sous la racine de cet appareil. `null` : pas relié, ou relié hors de ce partage.
-  const sharedDir = project?.shared_dir ?? null;
-  const linked = projectId ? localDir(status?.address, sharedDir) : null;
-  const linkedElsewhere = Boolean(projectId && sharedDir && linked === null);
-  const root = projectId && linked ? linked : '';
+  const sharedDirs = projectSharedDirs(project);
+  const linkedFolders = sharedDirs.map((address) => ({ address, dir: localDir(status?.address, address) }));
+  const linkedKeys = new Set(linkedFolders.flatMap(({ dir }) => dir === null ? [] : [pathKey(dir)]));
+  const activeFolder = linkedFolders.find(({ address, dir }) => dir !== null && folderChoice?.projectId === projectId && folderChoice.address === address)
+    ?? linkedFolders.find(({ dir }) => dir !== null);
+  const root = linking ? '' : activeFolder?.dir ?? '';
   useLayoutEffect(() => {
     setUploading(null);
+    setCreating(null);
+    setCreatingDir(null);
+    setImporting(null);
     setTransferNotice('');
   }, [projectId, root]);
 
@@ -134,7 +139,8 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
 
   const refreshAll = useCallback(async () => {
     await refreshStatus();
-    await Promise.all([root, ...expandedRef.current].map((dir) => loadDir(dir)));
+    const children = [...expandedRef.current].filter((dir) => dir !== root && (!root || within(dir, root)));
+    await Promise.all([root, ...children].map((dir) => loadDir(dir)));
   }, [refreshStatus, loadDir, root]);
 
   useEffect(() => {
@@ -162,27 +168,35 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
 
   // Liens d'avant (table de la machine, puis du relais) : repris une fois sur le projet, puis effacés.
   const migrating = useRef(false);
+  const [migratingLegacy, setMigratingLegacy] = useState(false);
+  const legacyDir = status?.projects?.[projectId];
   useEffect(() => {
     const legacy = Object.entries(status?.projects ?? {});
-    if (!status?.available || !legacy.length || migrating.current) return;
+    if (!status?.available || !legacy.length || migrating.current || linking) return;
     const owned = legacy.filter(([id]) => projects.some((candidate) => candidate.id === id));
     if (!owned.length) return;
     migrating.current = true;
+    setMigratingLegacy(true);
     void (async () => {
+      let saved = false;
       try {
         for (const [id, dir] of owned) {
-          if (!projects.find((candidate) => candidate.id === id)?.shared_dir) await api.updateProject(id, { shared_dir: linkFor(status.address, dir) });
+          if (!projectSharedDirs(projects.find((candidate) => candidate.id === id)).length) {
+            await api.updateProject(id, { shared_dir: linkFor(status.address, dir) });
+            saved = true;
+          }
           await api.unlinkSharedFolder(id);
         }
-        onProjectsChanged();
         await refreshStatus();
       } catch {
         // Réessayé au prochain affichage : rien n'est perdu, l'ancien lien reste en place.
       } finally {
+        if (saved) await onProjectsChanged();
         migrating.current = false;
+        setMigratingLegacy(false);
       }
     })();
-  }, [status, projects, onProjectsChanged, refreshStatus]);
+  }, [status, projects, linking, onProjectsChanged, refreshStatus]);
   useEffect(() => {
     const words = query.trim();
     setSearch(null);
@@ -239,12 +253,19 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
     }
   };
 
+  const isLinked = (path: string) => linkedKeys.has(pathKey(path));
+
   const link = async (dir: string) => {
+    const address = linkFor(status.address, dir);
+    if (busy || !address || isLinked(dir) || (migrating.current && legacyDir !== undefined)) return;
     setBusy(true);
     setError('');
     try {
-      await api.updateProject(projectId, { shared_dir: linkFor(status?.address, dir) });
-      onProjectsChanged();
+      const legacyAddress = !sharedDirs.length && legacyDir !== undefined ? linkFor(status.address, legacyDir) : '';
+      const addresses = legacyAddress && legacyAddress !== address ? [legacyAddress, address] : [...sharedDirs, address];
+      await api.updateProject(projectId, { shared_dirs: addresses });
+      setFolderChoice({ projectId, address });
+      await onProjectsChanged();
       setLinking(false);
       setExpanded(new Set());
     } catch (e) {
@@ -253,22 +274,38 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
       setBusy(false);
     }
   };
-  /** Un dossier renommé ou supprimé : les projets reliés à lui (ou dessous) le suivent, le lien étant porté par le projet. */
+  /** Tous les liens vers un dossier renommé ou supprimé (et ses descendants) le suivent. */
   const followLinks = async (from: string, to: string | null) => {
-    const moves = projects.flatMap((each) => {
-      const next = followDir(status?.address, each.shared_dir, from, to);
-      return next === undefined ? [] : [{ id: each.id, next }];
-    });
-    for (const { id, next } of moves) await api.updateProject(id, { shared_dir: next });
-    if (moves.length) onProjectsChanged();
+    let changed = false;
+    try {
+      for (const each of projects) {
+        const addresses = projectSharedDirs(each);
+        const moves = addresses.map((address) => followDir(status.address, address, from, to));
+        if (moves.every((address) => address === undefined)) continue;
+        const next = addresses.flatMap((address, index) => moves[index] === null ? [] : [moves[index] ?? address]);
+        await api.updateProject(each.id, { shared_dirs: next });
+        changed = true;
+        setFolderChoice((current) => {
+          if (!current || current.projectId !== each.id) return current;
+          const moved = moves[addresses.indexOf(current.address)];
+          if (moved === undefined) return current;
+          return moved === null ? null : { ...current, address: moved };
+        });
+      }
+    } finally {
+      if (changed) await onProjectsChanged();
+    }
   };
-  const unlink = async () => {
+  const unlink = async (address: string) => {
     setBusy(true);
     setError('');
     try {
-      await api.updateProject(projectId, { shared_dir: null });
-      onProjectsChanged();
-      setExpanded(new Set());
+      await api.updateProject(projectId, { shared_dirs: sharedDirs.filter((link) => link !== address) });
+      await onProjectsChanged();
+      if (activeFolder?.address === address) {
+        setFolderChoice(null);
+        setExpanded(new Set());
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -593,7 +630,8 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
       if (dir && dir === root && project && !listing.denied) {
         return (
           <p className="error shared-dir-error" role="alert">
-            Le dossier relié à {project.name} (« {root} ») n’est pas dans ce partage. « Délier {project.name} de son dossier » affiche tout le partage.
+            Le dossier relié à {project.name} (« {root} ») n’est pas dans ce partage.
+            {sharedDirs.length === 1 && <> « Délier {project.name} de son dossier » affiche tout le partage.</>}
           </p>
         );
       }
@@ -654,8 +692,8 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
                     <span className="shared-file-name" title={entry.name}>{entry.name}</span>
                   </button>
                   {linking && project ? (
-                    <button className="ghost shared-link-here" disabled={busy} aria-label={`Relier ${project.name} au dossier ${entry.path}`} onClick={() => void link(entry.path)}>
-                      Relier ici
+                    <button className="ghost shared-link-here" disabled={busy || isLinked(entry.path)} aria-label={`Relier ${project.name} au dossier ${entry.path}`} onClick={() => void link(entry.path)}>
+                      {isLinked(entry.path) ? 'Déjà relié' : 'Relier ici'}
                     </button>
                   ) : editable && (
                     <button
@@ -734,32 +772,42 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
           ) : <p className="empty">Aucun dossier partagé n’est configuré.</p>
         ) : (
           <>
-            <p className="shared-root" title={status.root}>
-              {status.label}{root && <> · {project?.name ?? 'projet'} : <strong>{root}</strong></>}
-            </p>
-            {project && (
+            <p className="shared-root" title={status.root}>{status.label}</p>
+            {project && <>
+              {linkedFolders.length > 0 && <ul className="shared-tree shared-linked-roots" aria-label={`Dossiers liés à ${project.name}`}>
+                {linkedFolders.map(({ address, dir }) => {
+                  const label = dir === null ? address : dir || status.label || 'Racine du partage';
+                  return <li className="shared-dir-row" key={address}>
+                    <button className="shared-dir" disabled={busy || dir === null || linking}
+                      aria-pressed={!linking && activeFolder?.address === address} aria-label={`Afficher le dossier lié ${label}`}
+                      onClick={() => { setFolderChoice({ projectId, address }); setError(''); }}>
+                      <FileIcon folder open={!linking && activeFolder?.address === address} />
+                      <span className="shared-file-name" title={label}>{label}</span>
+                    </button>
+                    <button className="ghost shared-link-here" disabled={busy || linking} onClick={() => void unlink(address)}
+                      aria-label={sharedDirs.length === 1 ? `Délier ${project.name} de son dossier` : `Délier le dossier ${label} du projet ${project.name}`}>
+                      Délier
+                    </button>
+                  </li>;
+                })}
+              </ul>}
               <div className="shared-project-link">
-                {sharedDir ? (
-                  <button className="ghost" disabled={busy} aria-label={`Délier ${project.name} de son dossier`} onClick={() => void unlink()}>
-                    Délier {project.name} de son dossier
-                  </button>
-                ) : linking ? (
-                  <>
-                    <span>Choisis le dossier de {project.name} dans l’arbre.</span>
-                    <button className="ghost" onClick={() => setLinking(false)}>Annuler</button>
-                  </>
-                ) : (
-                  <button className="ghost" disabled={busy || reach !== 'ok'} onClick={() => setLinking(true)}>
-                    Relier {project.name} à un dossier…
+                {linking ? <>
+                  <span>Choisis un dossier de {project.name} dans l’arbre.</span>
+                  <button className="ghost" disabled={busy} onClick={() => setLinking(false)}>Annuler</button>
+                </> : (
+                  <button className="ghost" disabled={busy || reach !== 'ok' || (migratingLegacy && legacyDir !== undefined)}
+                    onClick={() => { setQuery(''); setError(''); setLinking(true); }}>
+                    {sharedDirs.length ? 'Relier un autre dossier…' : `Relier ${project.name} à un dossier…`}
                   </button>
                 )}
               </div>
-            )}
-            {linkedElsewhere && project && (
-              <p className="notice">
-                {project.name} est relié à « {sharedDir} », qui n’est pas dans ce partage : tout le partage est affiché.
-              </p>
-            )}
+              {!linking && linkedFolders.filter(({ dir }) => dir === null).map(({ address }) => (
+                <p className="notice" key={address}>
+                  Le dossier lié « {address} » est hors de ce partage.{!activeFolder && ' Tout le partage est affiché.'}
+                </p>
+              ))}
+            </>}
             {status.relayError ? (
               <p className="notice">Le relais du dossier partagé ne répond pas ({status.relayError}). Tailscale est-il allumé sur ce téléphone ?</p>
             ) : REACH_HELP[reach] && <p className="notice">{REACH_HELP[reach]}</p>}
@@ -771,7 +819,7 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
             {connecting && !showConnect && <p className="notice" role="status">Connexion à {connecting}… saisis ton mot de passe dans la fenêtre « Authentification requise » si elle s’ouvre (parfois derrière WorkLogs).</p>}
             {error && <p className="error" role="alert">{error}</p>}
             {transferNotice && <p className="notice" role="status">{transferNotice}</p>}
-            {uploading ? (
+            {!linking && (uploading ? (
               <form className="shared-new" aria-label="Importer des fichiers depuis le PC"
                 onSubmit={(event) => { event.preventDefault(); void uploadFromComputer(); }}>
                 <label>
@@ -908,8 +956,8 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
                   ＋ Depuis une procédure…
                 </button>
               </div>
-            )}
-            <input
+            ))}
+            {!linking && <input
               className="shared-search"
               type="search"
               aria-label="Chercher dans le partage"
@@ -917,8 +965,8 @@ export function SharedFolder({ active, projectId, projects, procedures, selected
               value={query}
               spellCheck={false}
               onChange={(event) => setQuery(event.target.value)}
-            />
-            {query.trim().replace(/\s+/g, '').length >= 2 ? (
+            />}
+            {!linking && query.trim().replace(/\s+/g, '').length >= 2 ? (
               <div className="shared-search-results" role="region" aria-label="Résultats de la recherche">
                 {searchError ? <p className="error" role="alert">{searchError}</p> : searching || !search ? <p className="empty">Recherche…</p> : (
                   <>

@@ -12,6 +12,7 @@ import { registerGithubRoutes } from './github-routes.js';
 import { attachmentHeader, inlineHeader } from './disposition.js';
 import { categoryFor, nextCategory, categoryDescendants, registerCategoryRoutes } from './categories.js';
 import { checklistProgress } from './checklist.js';
+import { decodeProject, nextProjectFolders } from './project-folders.js';
 import { inheritTaskCategories } from './task-categories.js';
 import { createFollowUpAccess, registerFollowUpRoutes } from './follow-up-routes.js';
 import { assertExpectedTaskPlanning, taskPlanningUsesDocuments } from './task-planning.js';
@@ -108,7 +109,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     ).all(id);
     return { ...task, documents };
   };
-  const getProject = (id) => db.prepare('SELECT * FROM projects WHERE id=?').get(id);
+  const getProject = (id) => decodeProject(db.prepare('SELECT * FROM projects WHERE id=?').get(id));
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, ts: nowISO() }));
   registerCategoryRoutes(app, db);
@@ -225,7 +226,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
                   (SELECT COUNT(*) FROM tasks t WHERE t.project_id = projects.id AND t.status != 'done') open_tasks
            FROM projects ORDER BY name`
         )
-        .all(),
+        .all().map(decodeProject),
       entries,
       tasks,
       categories: db.prepare(`SELECT c.*,
@@ -725,27 +726,22 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   });
 
   // ---------------------------------------------------------------- projets
-  /** Dossier du TSE relié : une adresse (`\\serveur\partage\…`) ou un chemin relatif ; vide = aucun. */
-  const sharedDir = (value) => {
-    if (value === null || value === undefined || value === '') return null;
-    const text = String(value);
-    if (text.length > 2000 || /[\x00-\x1f]/.test(text)) throw Object.assign(new Error('dossier relié invalide'), { status: 400 });
-    return text;
-  };
-
   app.post('/api/projects', (req, res) => {
     const b = req.body || {};
     const name = str(b.name);
     if (!name) return bad(res, 'nom requis');
-    let dir;
-    try { dir = sharedDir(b.shared_dir); } catch (error) { return bad(res, error.message); }
+    let folders;
+    try { folders = nextProjectFolders(b); } catch (error) { return bad(res, error.message); }
     const id = uid('pr_');
-    db.prepare('INSERT INTO projects (id,name,color,created_at,shared_dir) VALUES (?,?,?,?,?)').run(
+    const time = nowISO();
+    db.prepare('INSERT INTO projects (id,name,color,created_at,updated_at,shared_dir,shared_dirs) VALUES (?,?,?,?,?,?,?)').run(
       id,
       name,
       str(b.color) || '#4f7cff',
-      nowISO(),
-      dir
+      time,
+      time,
+      folders.shared_dir,
+      JSON.stringify(folders.shared_dirs)
     );
     res.status(201).json(getProject(id));
   });
@@ -756,12 +752,13 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const b = req.body || {};
     const name = pick(b, 'name', cur.name, str);
     if (!name) return bad(res, 'nom requis');
-    let dir;
-    try { dir = pick(b, 'shared_dir', cur.shared_dir ?? null, sharedDir); } catch (error) { return bad(res, error.message); }
-    db.prepare('UPDATE projects SET name=?, color=?, shared_dir=?, updated_at=? WHERE id=?').run(
+    let folders;
+    try { folders = nextProjectFolders(b, cur); } catch (error) { return bad(res, error.message); }
+    db.prepare('UPDATE projects SET name=?, color=?, shared_dir=?, shared_dirs=?, updated_at=? WHERE id=?').run(
       name,
       pick(b, 'color', cur.color, (v) => str(v) || cur.color),
-      dir,
+      folders.shared_dir,
+      JSON.stringify(folders.shared_dirs),
       nowISO(),
       cur.id
     );

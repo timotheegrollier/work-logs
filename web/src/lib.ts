@@ -61,8 +61,10 @@ export interface Project {
   name: string;
   color: string;
   created_at: string;
-  /** Dossier du TSE relié : son adresse (`\\serveur\partage\…`), synchronisée par Drive (§29). */
+  /** Adresse du premier dossier relié, pour les anciens clients. */
   shared_dir?: string | null;
+  /** Adresses des dossiers reliés au projet, synchronisées par Drive (§29). */
+  shared_dirs?: string[];
   entries: number;
   open_tasks: number;
 }
@@ -609,9 +611,9 @@ export const remoteApi = {
   unlinkTaskDocument: (taskId: string, entryId: string) =>
     send<{ ok: true }>('DELETE', `/api/tasks/${taskId}/documents/${entryId}`),
 
-  createProject: (body: { name: string; color?: string }) =>
+  createProject: (body: { name: string; color?: string; shared_dir?: string | null; shared_dirs?: string[] }) =>
     send<Project>('POST', '/api/projects', body),
-  updateProject: (id: string, body: { name?: string; color?: string; shared_dir?: string | null }) =>
+  updateProject: (id: string, body: { name?: string; color?: string; shared_dir?: string | null; shared_dirs?: string[] }) =>
     send<Project>('PUT', `/api/projects/${id}`, body),
   deleteProject: (id: string) => send<{ ok: true }>('DELETE', `/api/projects/${id}`),
 

@@ -66,3 +66,63 @@ test('les procédures copient leurs pièces vers le dossier lié, joignent depui
     fs.rmSync(share, { recursive: true, force: true });
   }
 });
+
+test('la barre des procédures conserve plusieurs dossiers et permet de choisir où transférer un fichier', async ({ page, request }) => {
+  const projectName = 'Dossiers de la procédure';
+  const project = await (await request.post('/api/projects', { data: { name: projectName } })).json();
+  const first = `Mesures-${project.id}`;
+  const second = `Plans-${project.id}`;
+  const measurements = path.resolve('.e2e-share', first);
+  const plans = path.resolve('.e2e-share', second);
+  const entry = await (await request.post('/api/entries', { data: {
+    title: 'Réception des travaux', kind: 'procedure', project_id: project.id,
+  } })).json();
+  try {
+    fs.mkdirSync(measurements);
+    fs.mkdirSync(plans);
+    fs.writeFileSync(path.join(measurements, 'mesure.txt'), '124 mm');
+    fs.writeFileSync(path.join(plans, 'plan.md'), '# Plan');
+    await page.addInitScript(({ projectId, entryId }) => {
+      localStorage.setItem('worklogs-project', projectId);
+      localStorage.setItem('worklogs-entry', entryId);
+      localStorage.setItem('worklogs-show-procedures', '1');
+    }, { projectId: project.id, entryId: entry.id });
+    await page.goto('/');
+
+    await page.getByRole('button', { name: `Relier ${projectName} à un dossier…`, exact: true }).click();
+    await page.getByRole('button', { name: `Relier ${projectName} au dossier ${first}`, exact: true }).click();
+    await expect(page.getByRole('button', { name: /^Ouvrir mesure\.txt/ })).toBeVisible();
+    await page.getByRole('button', { name: 'Relier un autre dossier…', exact: true }).click();
+    await page.getByRole('button', { name: `Relier ${projectName} au dossier ${second}`, exact: true }).click();
+    const show = (folder: string) => page.getByRole('button', { name: `Afficher le dossier lié ${folder}`, exact: true });
+    await expect(show(second)).toBeVisible();
+    await page.reload();
+    await show(first).click();
+    await expect(page.getByRole('button', { name: /^Ouvrir mesure\.txt/ })).toBeVisible();
+    await show(second).click();
+    await expect(page.getByRole('button', { name: /^Ouvrir plan\.md/ })).toBeVisible();
+
+    const panel = page.getByRole('region', { name: 'Procédures du projet', exact: true });
+    await panel.getByRole('button', { name: `Joindre depuis le dossier lié à ${entry.title}`, exact: true }).click();
+    await panel.getByRole('combobox', { name: `Dossier source pour ${entry.title}`, exact: true }).selectOption(first);
+    await panel.getByRole('button', { name: `Joindre mesure.txt à ${entry.title}`, exact: true }).click();
+    await panel.getByRole('button', { name: 'Choisir le dossier où copier mesure.txt', exact: true }).click();
+    await panel.getByRole('combobox', { name: 'Dossier de destination pour mesure.txt', exact: true }).selectOption(second);
+    await panel.getByRole('button', { name: 'Copier', exact: true }).click();
+    await expect(panel.getByText('Copié dans le dossier lié.', { exact: true })).toBeVisible();
+    expect(fs.readFileSync(path.join(plans, 'mesure.txt'), 'utf8')).toBe('124 mm');
+
+    await page.getByRole('button', { name: `Délier le dossier ${second} du projet ${projectName}`, exact: true }).click();
+    await expect(page.getByRole('button', { name: /^Ouvrir plan\.md/ })).toBeHidden();
+    await expect(page.getByRole('button', { name: /^Ouvrir mesure\.txt/ })).toBeVisible();
+    const { projects } = await (await request.get('/api/state')).json();
+    expect(projects.find(({ id }: { id: string }) => id === project.id)).toMatchObject({ shared_dir: first, shared_dirs: [first] });
+    expect(fs.readFileSync(path.join(plans, 'plan.md'), 'utf8')).toBe('# Plan');
+  } finally {
+    await page.goto('about:blank');
+    await request.delete(`/api/entries/${entry.id}`);
+    await request.delete(`/api/projects/${project.id}`);
+    fs.rmSync(measurements, { recursive: true, force: true });
+    fs.rmSync(plans, { recursive: true, force: true });
+  }
+});

@@ -1391,6 +1391,17 @@ describe('lecture et préparation des procédures du partage', () => {
     expect(content).not.toHaveBeenCalled();
   });
 
+  test('l’assistant cherche dans tous les dossiers du projet et trouve un document du deuxième lien', async () => {
+    setupShare();
+    mockState({ projects: [{ ...project('p', 'Atelier'), shared_dir: 'Ancien', shared_dirs: ['Équipe', 'Infra'] }] });
+    const calls = stubAi(json({ shared_search: ['sauvegarde'] }), json({ reply: 'Document retrouvé.', show_shared: [1] }));
+    const answer = await ask({ text: 'Retrouve la sauvegarde.', projectId: 'p' });
+    expect(calls).toHaveLength(2);
+    expect(user(calls[0])).toContain('limitées aux dossiers reliés au projet affiché');
+    expect(vi.mocked(api.searchShared).mock.calls).toEqual([['sauvegarde', 'Équipe'], ['sauvegarde', 'Infra']]);
+    expect(answer.sharedDocuments).toEqual([{ path: file.path, title: file.name }]);
+  });
+
   test('borne les recherches successives et écarte le chemin de destination inventé', async () => {
     const { create } = setupShare();
     const calls = stubAi(

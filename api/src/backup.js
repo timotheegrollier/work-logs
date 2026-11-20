@@ -1,6 +1,7 @@
 import { nowISO } from './db.js';
 import { decodeEntry } from './rich-document.js';
 import { decodeFollowUpRow } from './follow-up.js';
+import { decodeProject } from './project-folders.js';
 import { BACKUP_VERSION, validateBackup } from './backup-format.js';
 export { BACKUP_NAME, BACKUP_VERSION, MAX_BACKUP_BYTES, validateBackup } from './backup-format.js';
 
@@ -17,7 +18,7 @@ export function buildBackup(db) {
   return {
     version: BACKUP_VERSION,
     exported_at: nowISO(),
-    projects: db.prepare('SELECT * FROM projects ORDER BY name, id').all(),
+    projects: db.prepare('SELECT * FROM projects ORDER BY name, id').all().map(decodeProject),
     categories: db.prepare('SELECT * FROM categories ORDER BY name, id').all(),
     entries: db.prepare('SELECT * FROM entries ORDER BY entry_date DESC, updated_at DESC, id').all().map(decodeEntry),
     tasks: db.prepare('SELECT * FROM tasks ORDER BY status, position, id').all().map(decodeFollowUpRow),
@@ -36,8 +37,11 @@ export function restoreBackup(db, input, { tombstones = null } = {}) {
   db.exec('BEGIN');
   try {
     db.exec('DELETE FROM task_entries; DELETE FROM google_documents; DELETE FROM attachments; DELETE FROM tasks; DELETE FROM entries; DELETE FROM categories; DELETE FROM projects;');
-    const project = db.prepare('INSERT INTO projects (id,name,color,created_at,updated_at,shared_dir) VALUES (?,?,?,?,?,?)');
-    for (const value of data.projects) project.run(value.id, value.name, value.color, value.created_at, value.updated_at || value.created_at, value.shared_dir ?? null);
+    const project = db.prepare('INSERT INTO projects (id,name,color,created_at,updated_at,shared_dir,shared_dirs) VALUES (?,?,?,?,?,?,?)');
+    for (const row of data.projects) {
+      const value = decodeProject(row);
+      project.run(value.id, value.name, value.color, value.created_at, value.updated_at || value.created_at, value.shared_dir, JSON.stringify(value.shared_dirs));
+    }
     const category = db.prepare('INSERT INTO categories (id,name,project_id,parent_id,color,created_at,updated_at) VALUES (?,?,?,NULL,?,?,?)');
     for (const value of data.categories) category.run(value.id, value.name, value.project_id, value.color, value.created_at, value.updated_at);
     const parent = db.prepare('UPDATE categories SET parent_id=? WHERE id=?');

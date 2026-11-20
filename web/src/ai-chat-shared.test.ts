@@ -84,6 +84,87 @@ describe('procédures du partage dans l’assistant', () => {
     expect(client.searchShared).not.toHaveBeenCalled();
   });
 
+  it('recherche dans le deuxième dossier lié et refuse les résultats et destinations hors de tous les liens', async () => {
+    const client = mockShare();
+    const second: SharedSearchResult = { name: 'Suivi.md', path: 'Suivi/Suivi.md', dir: 'Suivi', type: 'file', ext: 'md' };
+    const outside: SharedSearchResult = { ...second, path: 'Autre/Suivi.md', dir: 'Autre' };
+    client.searchShared.mockImplementation(async (query, dir = '') => ({ query, dir, results: [word, second, outside], offline: false, partial: false, denied: 0 }));
+    const share = await readChatShare(client, [projectDir, `${address}\\Suivi`]);
+    const results = await searchChatShare(share, ['sauvegarde']);
+    expect(client.searchShared.mock.calls).toEqual([['sauvegarde', 'Équipe'], ['sauvegarde', 'Suivi']]);
+    expect(results.files).toEqual([word, second]);
+    expect(results.directories).toEqual(['Équipe', 'Suivi', 'Équipe/Infra']);
+    expect(prepareChatSharedProcedure(share, results.directories, { title: 'Mode opératoire', content: 'Vérifier.' }).path).toBe('Équipe/Mode opératoire.docx');
+    expect(prepareChatSharedProcedure(share, results.directories, { title: 'Mode opératoire', content: 'Vérifier.', directory: 2 }).path).toBe('Suivi/Mode opératoire.docx');
+    share.indexedDirectories.add('Autre');
+    expect(() => prepareChatSharedProcedure(share, ['Autre'], { title: 'Hors périmètre', content: 'Vérifier.' })).toThrow(/destination inconnu/);
+    client.sharedList.mockResolvedValue(listing(second.dir, [listed(second)]));
+    client.sharedFile.mockResolvedValue(seen(second));
+    client.sharedContent.mockResolvedValue(new TextEncoder().encode('Consigne du deuxième dossier.'));
+    expect(await readChatSharedExcerpt(share, second)).toBe('Consigne du deuxième dossier.');
+    await expect(readChatSharedExcerpt(share, outside)).rejects.toThrow(/inconnu/);
+  });
+
+  it('évite les scans imbriqués en gardant le premier lien compatible comme destination par défaut', async () => {
+    const client = mockShare();
+    const share = await readChatShare(client, [`${projectDir}\\Infra`, projectDir, projectDir, '\\\\serveur\\ailleurs\\Projet']);
+    const results = await searchChatShare(share, ['sauvegarde']);
+    expect(client.searchShared.mock.calls).toEqual([['sauvegarde', 'Équipe']]);
+    expect(results.files).toEqual([word]);
+    expect(results.directories).toEqual(['Équipe/Infra', 'Équipe']);
+    expect(results.notice).toContain('Certains dossiers');
+    expect(prepareChatSharedProcedure(share, results.directories, { title: 'Mode opératoire', content: 'Vérifier.' }).path).toBe('Équipe/Infra/Mode opératoire.docx');
+    client.sharedList.mockClear();
+    await searchChatShare(share, []);
+    expect(client.sharedList.mock.calls).toEqual([['Équipe']]);
+  });
+
+  it('sans lien compatible, ne liste ni ne recherche la racine du partage', async () => {
+    const client = mockShare();
+    const share = await readChatShare(client, ['\\\\serveur\\ailleurs\\Projet', '\\\\serveur\\autre\\Équipe']);
+    expect(await searchChatShare(share, ['sauvegarde'])).toEqual({ files: [], directories: [], notice: expect.stringContaining('en dehors') });
+    expect(await searchChatShare(share, [])).toEqual({ files: [], directories: [], notice: expect.stringContaining('en dehors') });
+    expect(client.sharedList).not.toHaveBeenCalled();
+    expect(client.searchShared).not.toHaveBeenCalled();
+    const compatible = await readChatShare(client, ['\\\\serveur\\ailleurs\\Projet', projectDir]);
+    expect(compatible.dirs[0]).toBe('Équipe');
+  });
+
+  it('borne à deux les recherches simultanées sur plusieurs dossiers liés', async () => {
+    const client = mockShare();
+    const pending: (() => void)[] = [];
+    let running = 0;
+    let maximum = 0;
+    client.searchShared.mockImplementation(async (query, dir = '') => {
+      running += 1;
+      maximum = Math.max(maximum, running);
+      await new Promise<void>((resolve) => pending.push(resolve));
+      running -= 1;
+      return { query, dir, results: [], offline: false, partial: false, denied: 0 };
+    });
+    const share = await readChatShare(client, ['Équipe', 'Suivi', 'Archives']);
+    const search = searchChatShare(share, ['sauvegarde']);
+    await vi.waitFor(() => expect(client.searchShared).toHaveBeenCalledTimes(2));
+    pending[0](); pending[1]();
+    await vi.waitFor(() => expect(client.searchShared).toHaveBeenCalledTimes(3));
+    pending[2]();
+    await search;
+    expect(maximum).toBe(2);
+  });
+
+  it('une racine illisible ne devient pas la destination par défaut quand un autre lien peut être listé', async () => {
+    const client = mockShare();
+    client.sharedList.mockImplementation(async (dir = '') => {
+      if (dir === 'Fermé') throw new Error('Accès refusé.');
+      return listing(dir);
+    });
+    const share = await readChatShare(client, ['Fermé', 'Suivi']);
+    const result = await searchChatShare(share, []);
+    expect(result.directories).toEqual(['Suivi']);
+    expect(result.notice).not.toBe('');
+    expect(prepareChatSharedProcedure(share, result.directories, { title: 'Consigne', content: 'Vérifier.' }).path).toBe('Suivi/Consigne.docx');
+  });
+
   it('lit le Word indexé à partir de sa version distante, sans son brouillon ni sa base locale', async () => {
     const client = mockShare();
     const bytes = await procedureFileBytes('docx', { title: 'Sauvegarde', markdown: '## Étapes\n\n1. Vérifier le journal.', author: 'Timo' });

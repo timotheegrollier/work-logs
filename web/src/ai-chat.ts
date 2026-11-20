@@ -16,6 +16,7 @@ import { getChecklistItems, hasHtmlOrImage, updateChecklistItems } from './markd
 import { markdownToRich, richToMarkdown } from './rich-markdown';
 import { richExtensions } from './rich-extensions';
 import { findMatches } from './rich-search';
+import { projectSharedDirs } from './shared-links';
 
 type TaskChanges = Partial<Pick<Task, 'title' | 'status' | 'priority' | 'due_date' | 'project_id' | 'category_id' | 'pinned'>>;
 type EntryChanges = Partial<Pick<Entry, 'title' | 'status' | 'entry_date' | 'project_id' | 'category_id' | 'archived' | 'content_md' | 'content_json'>>;
@@ -289,7 +290,7 @@ function userPrompt(settings: AiSettings, input: ChatInput, context: ChatContext
     `Date du jour : ${weekday} ${today}`,
     settings.profile.trim() && `Profil : ${truncate(settings.profile, 300)}`,
     `Projet affiché : ${shown ? `${projectCode(shown.id, projects)}, ${truncate(shown.name, 40)}` : 'tous'}`,
-    shown?.shared_dir && 'Les recherches du partage sont limitées au dossier relié au projet affiché.',
+    projectSharedDirs(shown).length > 0 && 'Les recherches du partage sont limitées aux dossiers reliés au projet affiché.',
     brief && `Repères du projet affiché : ${brief}`,
     input.openTitle?.trim() && `Note ouverte : « ${truncate(input.openTitle, PROMPT_TITLE)} »`,
     `Projets :\n${projects.map((project, index) => `P${index + 1}. ${truncate(project.name, 40)}`).join('\n') || 'aucun'}`,
@@ -1028,7 +1029,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
       const local = terms.length ? searchMoreLocal(context, terms, input.projectId) : Promise.resolve(false);
       const discoverShared = async () => {
         if (!shareTerms.length && !listShare) return;
-        context.share ??= await readChatShare(api, project?.shared_dir, settings.signal);
+        context.share ??= await readChatShare(api, projectSharedDirs(project), settings.signal);
         const requested = await searchChatShare(context.share, shareTerms, settings.signal);
         const listed = listShare && shareTerms.length ? await searchChatShare(context.share, [], settings.signal) : null;
         const filesByPath = new Map([...context.sharedFiles, ...requested.files].map((file) => [file.path, file]));

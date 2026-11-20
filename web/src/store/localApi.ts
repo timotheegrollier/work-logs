@@ -21,6 +21,7 @@ import {
 import { decodeEntry, documentText, validateDocument } from '../../../api/src/rich-document.js';
 // @ts-expect-error — idem : validation 100 % pure, sans `node:sqlite`.
 import { OUTBOX_VERSION, validateBackup } from '../../../api/src/backup-format.js';
+import { decodeProject, nextProjectFolders } from '../../../api/src/project-folders.js';
 // @ts-expect-error — idem : conversion et patches ciblés, sans `node:sqlite`.
 import { googlePreservedCount } from '../../../api/src/google-preserve.js';
 // @ts-expect-error — idem : lecture et fusion Docs, sans `node:sqlite`.
@@ -145,7 +146,7 @@ interface TaskRow {
   follow_up?: FollowUp | null;
 }
 interface CategoryRow { id: string; name: string; color: string; project_id: string; parent_id: string | null; created_at: string; updated_at: string }
-interface ProjectRow { id: string; name: string; color: string; created_at: string; updated_at?: string; shared_dir?: string | null }
+interface ProjectRow { id: string; name: string; color: string; created_at: string; updated_at?: string; shared_dir?: string | null; shared_dirs?: string[] }
 interface LinkRow { id: string; task_id: string; entry_id: string; created_at: string }
 interface AttachmentRow {
   id: string; filename: string; stored: string; mime: string; size: number;
@@ -1027,7 +1028,7 @@ export const localApi: Api = {
     const allLinks = await links.all();
     const allAttachments = await attachments.all();
     const googleByEntry = new Map((await google.all()).map((row) => [row.entry_id, row]));
-    const allProjects = (await projects.all()).sort((a, b) => cmp(a.name, b.name));
+    const allProjects = (await projects.all()).map(decodeProject).sort((a, b) => cmp(a.name, b.name));
     const metadata = <T extends EntryRow | TaskRow>(kind: FollowUpKind, row: T): T & { follow_up_key?: string } => {
       const decoded = decodeFollowUpRow(row) as T;
       if (!decoded.follow_up) return decoded;
@@ -1550,7 +1551,7 @@ export const localApi: Api = {
     const name = str(body.name);
     if (!name) fail('nom requis');
     const time = nowISO();
-    const row: ProjectRow = { id: uid('pr_'), name, color: str(body.color) || '#4f7cff', created_at: time, updated_at: time, shared_dir: str((body as { shared_dir?: string }).shared_dir) || null };
+    const row: ProjectRow = { id: uid('pr_'), name, color: str(body.color) || '#4f7cff', created_at: time, updated_at: time, ...nextProjectFolders(body) };
     await projects.put(row);
     track('projects', row.id);
     // Comme le serveur (`SELECT *`), sans les compteurs de `/api/state`.
@@ -1560,7 +1561,7 @@ export const localApi: Api = {
   updateProject: async (id, body) => {
     const { projects } = await tables();
     const current = (await projects.get(id)) ?? fail('projet introuvable');
-    const patch = (body ?? {}) as { name?: string; color?: string; shared_dir?: string | null };
+    const patch = body ?? {};
     const name = pick(patch as Record<string, unknown>, 'name', current.name, (v) => str(v));
     if (!name) fail('nom requis');
     const next = {
@@ -1568,7 +1569,7 @@ export const localApi: Api = {
       name,
       color: pick(patch as Record<string, unknown>, 'color', current.color, (v) => str(v) || current.color),
       // Dossier du TSE relié : son adresse, synchronisée par Drive avec le projet (§29).
-      shared_dir: pick(patch as Record<string, unknown>, 'shared_dir', current.shared_dir ?? null, (v) => str(v) || null),
+      ...nextProjectFolders(patch, current),
       updated_at: nowISO(),
     };
     await projects.put(next);
@@ -1703,7 +1704,7 @@ async function backupObject() {
   return {
     version: BACKUP_VERSION,
     exported_at: nowISO(),
-    projects: await projects.all(),
+    projects: (await projects.all()).map(decodeProject),
     categories: await categories.all(),
     entries: (await entries.all()).map((row) => decodeEntry(row)),
     tasks: (await tasks.all()).map((row) => decodeFollowUpRow(row)),
@@ -1803,7 +1804,10 @@ async function applySyncSnapshotUnlocked(merged: SyncSnapshot, base: SyncSnapsho
       changed++;
     }
   }
-  await sync(t.projects, merged.projects, base.projects, (row) => (row as ProjectRow).id, (row) => ({ ...row }), ['name', 'color']);
+  await sync({
+    all: async () => (await t.projects.all()).map(decodeProject),
+    put: (row: ProjectRow) => t.projects.put(row), remove: (id: string) => t.projects.remove(id),
+  }, merged.projects, base.projects, (row) => row.id, (row) => decodeProject(row), ['name', 'color', 'shared_dir', 'shared_dirs']);
   await sync(t.categories, merged.categories || [], base.categories || [], (row) => (row as CategoryRow).id, (row) => ({ ...row }), ['name', 'color', 'project_id', 'parent_id']);
   const noteWrites: StoreWrite[] = [];
   await sync(t.entries, merged.entries, base.entries, (row) => (row as EntryRow).id,
@@ -1917,7 +1921,7 @@ async function exportLocalOutboxUnlocked(baseExportedAt: string | null): Promise
     exported_at: nowISO(),
     base_exported_at: baseExportedAt,
     device: 'pwa',
-    projects: await take(t.projects, [...projectIds]),
+    projects: (await take(t.projects, [...projectIds])).map(decodeProject),
     categories,
     entries: entryRows.map((row) => ({ ...row, status: row.status ?? 'todo', content_json: row.content_json ? (JSON.parse(row.content_json) as RichDocument) : null })),
     tasks,

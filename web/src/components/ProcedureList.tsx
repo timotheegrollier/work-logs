@@ -2,6 +2,7 @@ import { lazy, memo, Suspense, useState, type CSSProperties } from 'react';
 import { api, plainText, type Attachment, type Category, type EntrySummary, type Project } from '../lib';
 import { flushPendingSaves } from '../autosave';
 import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-download';
+import { projectSharedDirs } from '../shared-links';
 
 import { groupByCategory } from '../categories';
 import { CategoryBadge } from './CategoryPicker';
@@ -144,7 +145,7 @@ export const ProcedureList = memo(function ProcedureList({
       <ol className="procedure-items">
         {group.items.map((entry) => {
           const entryFiles = files.filter((file) => file.entry_id === entry.id);
-          const linkedProject = projects.find((candidate) => candidate.id === entry.project_id && candidate.shared_dir);
+          const linkedFolders = projectSharedDirs(projects.find((candidate) => candidate.id === entry.project_id));
           return (
             <li key={entry.id}>
               <button
@@ -195,8 +196,8 @@ export const ProcedureList = memo(function ProcedureList({
                   />
                 </label>
               </div>
-              {linkedProject && <AttachFromLinkedFolder key={`${entry.id}:${linkedProject.shared_dir}`} entryId={entry.id} title={entry.title}
-                project={linkedProject} disabled={busy} onAttached={onChanged} />}
+              {linkedFolders.length > 0 && <AttachFromLinkedFolder key={JSON.stringify(linkedFolders)} entryId={entry.id} title={entry.title}
+                folders={linkedFolders} disabled={busy} onAttached={onChanged} />}
               {entryFiles.length > 0 && (
                 <ul className="procedure-files" aria-label={`Pièces jointes de ${entry.title}`}>
                   {entryFiles.map((file) => (
@@ -223,7 +224,7 @@ export const ProcedureList = memo(function ProcedureList({
                       >
                         ↓
                       </a>
-                      {linkedProject && <CopyAttachmentToLinkedFolder file={file} project={linkedProject} disabled={busy} onCopied={onSharedChanged} />}
+                      {linkedFolders.length > 0 && <CopyAttachmentToLinkedFolder file={file} folders={linkedFolders} disabled={busy} onCopied={onSharedChanged} />}
                       {file.driveFileId
                         ? <small className="picker-source is-google" title="Conservé sur Google Drive">☁ Drive</small>
                         : <small className="picker-source" title="Uniquement sur cet appareil tant que Google Drive n’est pas connecté">local seul</small>}

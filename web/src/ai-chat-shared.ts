@@ -29,7 +29,8 @@ interface ShareIdentity {
 
 export interface ChatShare {
   client: SharedClient;
-  dir: string;
+  /** Première racine compatible, proposée par défaut pour les créations. */
+  dirs: string[];
   available: boolean;
   notice: string;
   online: boolean;
@@ -57,6 +58,7 @@ const sameShare = (left: ShareIdentity, right: ShareIdentity | null) =>
   left.root === right?.root && left.address === right.address && left.relay === right.relay;
 const validPath = (path: string) => path === '' || (path.length <= 1024 && !/[\\\x00-\x1f\x7f]/.test(path) && path.split('/').every((part) => part && part !== '.' && part !== '..'));
 const within = (path: string, dir: string) => validPath(path) && (!dir || path === dir || path.startsWith(`${dir}/`));
+const withinShare = (path: string, share: ChatShare) => share.dirs.some((dir) => within(path, dir));
 const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')));
 
 /** Les routes existantes ont leur propre délai. Arrêter ici rend aussi la main sans attendre leur réponse. */
@@ -77,7 +79,7 @@ async function readWithin<T>(read: () => Promise<T>, signal?: AbortSignal, timeo
 }
 
 /** Fige le relais de la PWA pour toute la lecture. Le montage desktop reste vérifié par l’API. */
-export async function readChatShare(client: SharedClient, projectSharedDir?: string | null, signal?: AbortSignal): Promise<ChatShare> {
+export async function readChatShare(client: SharedClient, projectSharedDir?: string | string[] | null, signal?: AbortSignal): Promise<ChatShare> {
   const relay = relayUrl(client);
   const bound = relay ? sharedClient(relay) : client;
   const status = await readWithin(() => bound.sharedStatus(), signal, 5000).catch((error: unknown) => {
@@ -85,16 +87,36 @@ export async function readChatShare(client: SharedClient, projectSharedDir?: str
     return null;
   });
   const identity = status && identify(status, relay);
-  const linked = localDir(status?.address, projectSharedDir);
-  const compatible = !projectSharedDir || linked !== null && validPath(linked);
+  const links = (typeof projectSharedDir === 'string' ? [projectSharedDir] : projectSharedDir ?? []).filter(Boolean);
+  const linked = links.map((link) => localDir(status?.address, link)).filter((dir): dir is string => dir !== null && validPath(dir));
+  const dirs = links.length ? [...new Set(linked)] : [''];
+  const compatible = dirs.length > 0;
   const available = Boolean(identity && compatible);
   const online = Boolean(available && status && isOnline(status));
-  const dir = linked ?? '';
   return {
-    client: bound, dir, available, online, identity,
-    notice: !identity ? UNAVAILABLE : !compatible ? 'Le dossier relié au projet est en dehors du partage configuré.' : online ? '' : offlineNotice(status, relay),
-    indexedFiles: new Set(), indexedDirectories: new Set(online ? [dir] : []),
+    client: bound, dirs, available, online, identity,
+    notice: !identity ? UNAVAILABLE : !compatible ? 'Les dossiers reliés au projet sont en dehors du partage configuré.'
+      : !online ? offlineNotice(status, relay) : linked.length < links.length ? 'Certains dossiers reliés au projet sont en dehors du partage configuré.' : '',
+    indexedFiles: new Set(), indexedDirectories: new Set(online ? dirs : []),
   };
+}
+
+/** Deux lectures simultanées au plus, dans le délai partagé de la recherche. */
+async function readScopes<T>(dirs: string[], read: (dir: string) => Promise<T>, deadline: number, signal?: AbortSignal) {
+  const results: { dir: string; value: T | null }[] = [];
+  for (let index = 0; index < dirs.length; index += 2) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    results.push(...await Promise.all(dirs.slice(index, index + 2).map(async (dir) => {
+      try {
+        return { dir, value: await readWithin(() => read(dir), signal, remaining) };
+      } catch (error) {
+        if (error instanceof AiCancelled) throw error;
+        return { dir, value: null };
+      }
+    })));
+  }
+  return { results, partial: results.length < dirs.length };
 }
 
 /** Recherche les noms dans le partage et conserve uniquement les chemins relatifs rendus par ce partage. */
@@ -102,48 +124,57 @@ export async function searchChatShare(share: ChatShare, terms: string[], signal?
   if (!share.available) return { files: [], directories: [], notice: share.notice };
   const queries = [...new Set(terms.map((term) => term.trim()).filter((term) => term.length <= 100 && term.replace(/\s/g, '').length >= 2))].slice(0, 3);
   const found = new Map<string, { file: SharedSearchResult; matches: number }>();
-  const directories = new Set(share.online ? [share.dir] : []);
+  const directories = new Set(share.online ? share.dirs : []);
   const fileParents = new Set<string>();
   let notice = share.notice;
   const deadline = Date.now() + READ_TIMEOUT_MS;
+  // Un parent couvre déjà ses sous-dossiers, même s’il arrive après eux dans les liens.
+  const scopes = share.dirs.filter((dir) => !share.dirs.some((parent) => parent !== dir && within(dir, parent)));
 
   if (queries.length === 0 && share.online) {
-    try {
-      const listing = await readWithin(() => share.client.sharedList(share.dir), signal);
-      if (listing.offline || listing.reach !== 'ok') return { files: [], directories: [], notice: OFFLINE };
+    const listings = await readScopes(scopes, (dir) => share.client.sharedList(dir), deadline, signal);
+    const listedScopes: string[] = [];
+    const children = new Set<string>();
+    for (const { dir, value: listing } of listings.results) {
+      if (!listing || listing.offline || listing.reach !== 'ok') {
+        notice ||= listing ? OFFLINE : UNAVAILABLE;
+        continue;
+      }
+      listedScopes.push(dir);
       for (const entry of listing.entries) {
-        if (entry.type === 'dir' && within(entry.path, share.dir) && parentOf(entry.path) === share.dir) directories.add(entry.path);
+        if (entry.type === 'dir' && within(entry.path, dir) && parentOf(entry.path) === dir) children.add(entry.path);
       }
       if (listing.truncated) notice ||= PARTIAL;
-    } catch (error) {
-      if (error instanceof AiCancelled) throw error;
-      return { files: [], directories: [], notice: UNAVAILABLE };
     }
+    directories.clear();
+    share.dirs.filter((dir) => listedScopes.some((scope) => within(dir, scope))).forEach((dir) => directories.add(dir));
+    children.forEach((dir) => directories.add(dir));
+    if (listedScopes.length && listedScopes.length < listings.results.length && !share.notice) notice = PARTIAL;
+    if (listings.partial) notice ||= PARTIAL;
   }
 
   for (const query of queries) {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) { notice ||= PARTIAL; break; }
-    try {
-      const search = await readWithin(() => share.client.searchShared(query, share.dir), signal, remaining);
+    const searches = await readScopes(scopes, (dir) => share.client.searchShared(query, dir), deadline, signal);
+    let offline = false;
+    for (const { dir, value: search } of searches.results) {
+      if (!search) { notice ||= found.size > 0 ? PARTIAL : UNAVAILABLE; continue; }
       if (search.offline) {
         notice = share.notice || OFFLINE;
         directories.clear();
         fileParents.clear();
+        offline = true;
       } else if (search.partial || search.denied > 0) notice ||= PARTIAL;
       for (const file of search.results) {
-        if (!file.path || !within(file.path, share.dir) || file.dir !== parentOf(file.path)) continue;
+        if (!file.path || !within(file.path, dir) || file.dir !== parentOf(file.path)) continue;
         if (file.type === 'file') {
           found.set(file.path, { file, matches: (found.get(file.path)?.matches ?? 0) + 1 });
           if (!search.offline) fileParents.add(file.dir);
         } else if (file.type === 'dir' && !search.offline) directories.add(file.path);
       }
-      if (search.offline) break;
-    } catch (error) {
-      if (error instanceof AiCancelled) throw error;
-      notice ||= found.size > 0 ? PARTIAL : UNAVAILABLE;
-      break;
     }
+    if (notice === UNAVAILABLE && searches.results.some(({ value }) => value !== null)) notice = PARTIAL;
+    if (searches.partial) notice ||= PARTIAL;
+    if (offline || searches.partial || searches.results.every(({ value }) => value === null)) break;
   }
 
   const files = [...found.values()].sort((a, b) => b.matches - a.matches).slice(0, MAX_RESULTS).map(({ file }) => file);
@@ -156,7 +187,7 @@ export async function searchChatShare(share: ChatShare, terms: string[], signal?
 /** Extrait de la version visible sur le serveur. Les brouillons, envois et versions en cache restent locaux. */
 export async function readChatSharedExcerpt(share: ChatShare, file: SharedSearchResult, signal?: AbortSignal): Promise<string> {
   if (!share.online || !share.identity) throw new Error(share.notice || OFFLINE);
-  if (!share.indexedFiles.has(file.path) || file.type !== 'file' || file.dir !== parentOf(file.path)) throw new Error('Fichier partagé inconnu.');
+  if (!share.indexedFiles.has(file.path) || !withinShare(file.path, share) || file.type !== 'file' || file.dir !== parentOf(file.path)) throw new Error('Fichier partagé inconnu.');
   const kind = editorKind(file.ext);
   if (kind !== 'text' && kind !== 'markdown' && kind !== 'docx') throw new Error('L’assistant peut lire le texte des documents Word, Markdown et texte.');
   const limit = kind === 'docx' ? MAX_DOCX_BYTES : MAX_TEXT_BYTES;
@@ -208,7 +239,7 @@ async function readWordExcerpt(bytes: Uint8Array): Promise<string> {
 export function prepareChatSharedProcedure(share: ChatShare, directories: string[], { title: rawTitle, content, directory }: { title: unknown; content: unknown; directory?: unknown }): ChatSharedProposal {
   if (!share.identity || !share.online) throw new Error(share.notice || UNAVAILABLE);
   const dir = directory === undefined ? directories[0] : Number.isInteger(directory) ? directories[(directory as number) - 1] : undefined;
-  if (dir === undefined || !share.indexedDirectories.has(dir) || !within(dir, share.dir)) throw new Error('Dossier de destination inconnu.');
+  if (dir === undefined || !share.indexedDirectories.has(dir) || !withinShare(dir, share)) throw new Error('Dossier de destination inconnu.');
   const title = typeof rawTitle === 'string' ? rawTitle.trim().replace(/\s+/g, ' ').replace(/\.docx$/i, '').trimEnd() : '';
   const name = withExtension(title, 'docx');
   const problem = fileNameProblem(title) || fileNameProblem(name);

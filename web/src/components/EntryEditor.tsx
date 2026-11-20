@@ -8,6 +8,7 @@ import { markdownToRich, richToMarkdown } from '../rich-markdown';
 import { deleteAttachmentQuestion, downloadAttachment } from '../attachment-download';
 import { Autosave } from '../autosave';
 import { DocumentTabs } from './DocumentTabs';
+import { projectSharedDirs } from '../shared-links';
 import { GoogleDocsEditor } from './GoogleDocsEditor';
 import { ProcedureDraft } from './ProcedureDraft';
 import { AiContextDetails } from './AiContextDetails';
@@ -513,7 +514,7 @@ export function EntryEditor({
   // Markdown, procédure ou note complétée. Une procédure ou une note riche passe
   // par le Markdown (`rich-markdown.ts`) ; un document Google reste exclu (§23).
   const isProcedure = entry.kind === 'procedure';
-  const linkedProject = isProcedure ? projects.find((project) => project.id === draft.project_id && project.shared_dir) : undefined;
+  const linkedFolders = isProcedure ? projectSharedDirs(projects.find((project) => project.id === draft.project_id)) : [];
   // Écrire / Lire : les entrées Markdown, et les procédures riches locales ; un
   // document Google garde son propre parcours d'édition.
   const hasModes = !draft.content_json || (isProcedure && !googleSync);
@@ -1287,8 +1288,8 @@ export function EntryEditor({
             }}
           />
         </label>
-        {linkedProject && <AttachFromLinkedFolder key={`${entry.id}:${linkedProject.shared_dir}`} entryId={entry.id} title={draft.title}
-          project={linkedProject} disabled={syncing} onAttached={(added) => { setAttachments((current) => [added, ...current]); onChanged(); }} />}
+        {linkedFolders.length > 0 && <AttachFromLinkedFolder key={`${entry.id}:${JSON.stringify(linkedFolders)}`} entryId={entry.id} title={draft.title}
+          folders={linkedFolders} disabled={syncing} onAttached={(added) => { setAttachments((current) => [added, ...current]); onChanged(); }} />}
         {attachments.map((file) => (
           <span className="file" key={file.id}>
             <FileIcon name={file.filename} />
@@ -1303,7 +1304,7 @@ export function EntryEditor({
               {file.filename}
             </a>
             <small>{formatSize(file.size)}</small>
-            {linkedProject && <CopyAttachmentToLinkedFolder file={file} project={linkedProject} disabled={syncing} onCopied={onSharedChanged} />}
+            {linkedFolders.length > 0 && <CopyAttachmentToLinkedFolder file={file} folders={linkedFolders} disabled={syncing} onCopied={onSharedChanged} />}
             {file.driveFileId
               ? <small className="picker-source is-google" title="Binaire conservé sur Google Drive">☁ Drive</small>
               : <small className="picker-source" title="Fichier uniquement sur cet appareil">local seul</small>}

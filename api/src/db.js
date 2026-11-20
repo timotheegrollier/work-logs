@@ -315,6 +315,7 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   // (`\\serveur\partage\…`), synchronisée par Drive avec le projet — chaque appareil
   // la traduit vers sa propre racine (desktop, relais de la PWA). §25, §29.
   if (!columns(db, 'projects').includes('shared_dir')) db.exec('ALTER TABLE projects ADD COLUMN shared_dir TEXT');
+  if (!columns(db, 'projects').includes('shared_dirs')) db.exec('ALTER TABLE projects ADD COLUMN shared_dirs TEXT');
   db.exec(`CREATE TABLE IF NOT EXISTS sync_tombstones (
     kind TEXT NOT NULL, id TEXT NOT NULL, deleted_at TEXT NOT NULL, PRIMARY KEY (kind, id))`);
   const googleSchema = `CREATE TABLE IF NOT EXISTS google_documents (
