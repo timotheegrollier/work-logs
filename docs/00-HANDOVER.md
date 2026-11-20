@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Ajouts de texte et dossiers reliés — 2026-11-20
+## Ajouts de texte et dossiers reliés — 2026-11-20, v0.86.0
 
 - Pour un ajout ou une correction ciblée, WorkLogs relit le texte de l’entrée sur cet appareil
   avant de préparer la proposition. Une réécriture complète ou un changement de cases utilise
