@@ -572,6 +572,57 @@ test('l’assistant ajoute des puces à une note dont la liste est en cases', as
   }
 });
 
+test('l’assistant demande la forme voulue après un second refus et applique le choix', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Projet commandes forme' });
+  try {
+    const title = 'Retour de la prise de commande';
+    const content = '## À faire\n\n- [ ] Valider la saisie client';
+    const note = await post(request, '/api/entries', { title, project_id: project.id, content_md: content });
+    await configure(page, project.id, note.id);
+    // La note ouverte n’est pas forcément le document n° 1 : lire son numéro dans le prompt.
+    const noteNumber = (prompt: string) => Number(prompt.split('\n')
+      .find((line) => /^\d+\.\s/.test(line) && line.includes(title))?.match(/^(\d+)\./)?.[1]);
+    const prompts = await stubAssistant(page,
+      (prompt) => ({ reply: 'J’ajoute un point.', actions: [{ kind: 'update_entry', n: noteNumber(prompt), append_content: 'Paragraphe isolé.' }] }),
+      (prompt) => ({ reply: 'Je ne peux pas respecter la forme.', actions: [{ kind: 'update_entry', n: noteNumber(prompt), append_content: 'Autre paragraphe.' }] }),
+      (prompt) => ({ reply: 'Voici les points en puces.', actions: [{ kind: 'update_entry', n: noteNumber(prompt), append_content: '- Premier point\n- Second point' }] }),
+    );
+
+    await page.goto('/');
+    const editor = page.getByRole('region', { name: 'Entrée', exact: true });
+    await expect(editor.getByLabel('Titre de l’entrée')).toHaveValue(title);
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    const chat = assistant(page);
+    await messageField(page).fill('Ajoute ces deux points à la note.');
+    await messageField(page).press('Enter');
+
+    // Deux paragraphes refusés : l’assistant pose la question au lieu de rester muet.
+    const question = 'Je n’ai pas pu ajouter ces points sans casser la forme de la note. Comment veux-tu que je les ajoute ?';
+    await expect(chat.getByText(question, { exact: true })).toBeVisible();
+    expect(prompts).toHaveLength(2);
+    expect(noteNumber(prompts[0])).toBeGreaterThan(0);
+    for (const choice of ['Ajoute-les en cases à cocher', 'Ajoute-les en puces', 'Ouvre une rubrique « ## »'])
+      await expect(chat.getByRole('button', { name: choice, exact: true })).toBeVisible();
+    expect(await (await request.get(`/api/entries/${note.id}`)).json()).toMatchObject({ content_md: content });
+
+    await chat.getByRole('button', { name: 'Ajoute-les en puces', exact: true }).click();
+    await expect.poll(() => prompts.length).toBe(3);
+    expect(prompts[2]).toContain('Ajoute-les en puces');
+    const apply = chat.getByRole('button', { name: /^Appliquer/ });
+    await expect(apply).toBeVisible();
+
+    await apply.click();
+    await expect(chat.getByText('✓ Appliqué', { exact: true })).toBeVisible();
+    expect(await (await request.get(`/api/entries/${note.id}`)).json())
+      .toMatchObject({ content_md: `${content}\n\n- Premier point\n- Second point` });
+    await page.keyboard.press('Escape');
+    await expect(editor.getByText('Premier point', { exact: true })).toBeVisible();
+    await expect(editor.getByText('Second point', { exact: true })).toBeVisible();
+  } finally {
+    await cleanProject(page, request, project.id);
+  }
+});
+
 test('l’assistant refuse une correction ciblée qui casse la forme d’une liste', async ({ page, request }) => {
   const project = await post(request, '/api/projects', { name: 'Projet contrôles' });
   try {
