@@ -446,6 +446,47 @@ test('l’assistant coche la sous-tâche choisie et actualise la note de tâche 
   }
 });
 
+test('l’assistant ajoute des cases à une note même si le fournisseur n’a pas demandé son texte', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Projet commandes' });
+  try {
+    const title = 'Retours sur la saisie des commandes';
+    const content = `${'Compte rendu de la réunion. '.repeat(12).trim()}\n\n- [x] Valider la saisie client`;
+    const checklist = ['Exiger une option par article', 'Vérifier la répartition de la marge',
+      'Afficher tous les tarifs du client', 'Expliquer le calcul des frais dans une infobulle'];
+    const append = checklist.map((label) => `- [ ] ${label}`).join('\n');
+    const note = await post(request, '/api/entries', { title, project_id: project.id, content_md: content });
+    await configure(page, project.id, note.id);
+    const prompts = await stubAssistant(page, {
+      reply: 'Je propose d’ajouter ces quatre points à la note.',
+      actions: [{ kind: 'update_entry', n: 1, append_content: append }],
+    });
+
+    await page.goto('/');
+    const editor = page.getByRole('region', { name: 'Entrée', exact: true });
+    await expect(editor.getByLabel('Titre de l’entrée')).toHaveValue(title);
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    const chat = assistant(page);
+    await messageField(page).fill(`Dans « ${title} » du projet commandes, ajoute ces quatre points à vérifier : ${checklist.join(', ')}.`);
+    await messageField(page).press('Enter');
+
+    const apply = chat.getByRole('button', { name: /^Appliquer/ });
+    await expect(apply).toBeVisible();
+    await expect(chat.getByText(/action écartée/)).toHaveCount(0);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).not.toContain('Valider la saisie client');
+    const readEntry = async () => (await request.get(`/api/entries/${note.id}`)).json();
+    expect(await readEntry()).toMatchObject({ content_md: content });
+
+    await apply.click();
+    await expect(chat.getByText('✓ Appliqué', { exact: true })).toBeVisible();
+    expect(await readEntry()).toMatchObject({ content_md: `${content}\n\n${append}` });
+    await page.keyboard.press('Escape');
+    for (const label of checklist) await expect(editor.getByText(label, { exact: true })).toBeVisible();
+  } finally {
+    await cleanProject(page, request, project.id);
+  }
+});
+
 test('sur téléphone, la liste ouvre une seule conversation et conserve les brouillons', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto('/');

@@ -1575,6 +1575,104 @@ describe('application des propositions, sur la vraie API', () => {
     expect((await api.entry('e')).content_md).toBe('Corps saisi ailleurs.');
   });
 
+  test.each([
+    ['ajout', { append_content: '- [ ] Vérifier les fiches client.' }, (text: string) => `${text}\n\n- [ ] Vérifier les fiches client.`],
+    ['correction', { text_edits: [{ find: 'Client absent.', replace: 'Fiche client à créer.' }] }, (text: string) => text.replace('Client absent.', 'Fiche client à créer.')],
+  ])('relit localement la cible d’un %s proposé sans read_entries, sans nouvel appel IA', async (_name, changes, expectedText) => {
+    const original = `Client absent.\n\n${'Détails du retour à conserver. '.repeat(20)}\n\nDernier point hors extrait.`;
+    seedData(server.db, { projects: [{ id: 'p', name: 'Atelier' }], entries: [{ id: 'e', title: 'Retour de recette', project_id: 'p', content_md: original }] });
+    const read = vi.spyOn(api, 'entry');
+    const calls = stubAi(json({ reply: 'Voici la modification.', actions: [{ kind: 'update_entry', n: 1, ...changes }] }));
+    const { proposals, notice } = await ask({ text: 'Complète Retour de recette dans Atelier.', projectId: 'p' });
+    expect(calls).toHaveLength(1);
+    expect(user(calls[0])).not.toContain('Dernier point hors extrait.');
+    expect(read).toHaveBeenCalledExactlyOnceWith('e');
+    expect(notice).toBe('');
+    expect(proposals).toEqual([expect.objectContaining({
+      kind: 'update_entry', entryId: 'e', changes: { content_md: expectedText(original) }, expected: expect.objectContaining({ source_key: expect.any(String) }),
+    })]);
+    expect(row('SELECT content_md FROM entries WHERE id=?', 'e').content_md).toBe(original);
+    await applyChatProposal(proposals[0]);
+    expect((await api.entry('e')).content_md).toBe(expectedText(original));
+  });
+
+  test('la lecture locale de secours conserve le refus d’une révision concurrente et d’un remplacement intégral non lu', async () => {
+    seedData(server.db, { entries: [{ id: 'e', title: 'Retour de recette', content_md: 'Texte initial.' }] });
+    stubAi(json({ actions: [{ kind: 'update_entry', n: 1, append_content: 'Nouveau point.' }] }));
+    const { proposals } = await ask({ text: 'Complète cette note.', openEntryId: 'e' });
+    expect(proposals).toHaveLength(1);
+    await api.updateEntry('e', { content_md: 'Saisie concurrente.' });
+    await expect(applyChatProposal(proposals[0])).rejects.toThrow('Cette entrée a changé depuis la proposition');
+    stubAi(json({ actions: [{ kind: 'update_entry', n: 1, content: 'Remplacement fabriqué sans lecture.' }] }));
+    const read = vi.spyOn(api, 'entry');
+    await expect(ask({ text: 'Réécris Retour de recette.' })).resolves.toMatchObject({
+      proposals: [], notice: expect.stringContaining('texte Markdown complet requis'),
+    });
+    expect(read).not.toHaveBeenCalled();
+    expect(row('SELECT content_md FROM entries WHERE id=?', 'e').content_md).toBe('Saisie concurrente.');
+  });
+
+  test('l’instantané relu pour un ajout ne débloque ni réécriture complète ni cases non présentées au modèle', async () => {
+    const original = '- [ ] Vérifier la commande';
+    seedData(server.db, { entries: [{ id: 'e', title: 'Retour de recette', content_md: original }] });
+    stubAi(json({ actions: [
+      { kind: 'update_entry', n: 1, content: 'Remplacement non lu.' },
+      { kind: 'update_entry', n: 1, checklist_updates: [{ n: 1, checked: true }] },
+      { kind: 'update_entry', n: 1, append_content: 'Complément demandé.' },
+    ] }));
+    const { proposals, notice } = await ask({ text: 'Complète cette note.', openEntryId: 'e' });
+    expect(proposals).toEqual([expect.objectContaining({ entryId: 'e', changes: { content_md: `${original}\n\nComplément demandé.` } })]);
+    expect(notice).toContain('2 actions écartées');
+    expect(notice).toContain('texte Markdown complet requis');
+    expect(notice).toContain('lire la note Markdown');
+  });
+
+  test('termine une correction locale après deux autres lectures de textes et quatre appels IA', async () => {
+    seedData(server.db, { entries: [
+      { id: 'e', title: 'Retour de recette', content_md: 'Contexte à conserver.' },
+      { id: 'a', title: 'Retour annexe', content_md: 'Source annexe.' },
+      { id: 'b', title: 'Retour précédent', content_md: 'Autre source.' },
+      { id: 'nouveau', title: 'Repère complémentaire', content_md: 'repèretrouvé' },
+    ] });
+    const calls = stubAi(
+      json({ read_entries: [2] }),
+      json({ read_entries: [3] }),
+      json({ search: ['repèretrouvé'] }),
+      json({ read_entries: [1], actions: [
+        { kind: 'update_entry', n: 2, append_content: 'Repère pour l’annexe.' },
+        { kind: 'update_entry', n: 3, append_content: 'Repère précédent.' },
+        { kind: 'update_entry', n: 1, append_content: '- [ ] Vérifier le retour.' },
+      ] }),
+    );
+    const { proposals, notice } = await ask({ text: 'Complète le retour de recette.', openEntryId: 'e' });
+    expect(calls).toHaveLength(4);
+    expect(system(calls[3])).toContain('Dernière étape');
+    expect(user(calls[3])).not.toContain('"content":"Contexte à conserver."');
+    expect(notice).toBe('');
+    expect(proposals).toHaveLength(3);
+    expect(proposals[2]).toMatchObject({ entryId: 'e', changes: { content_md: 'Contexte à conserver.\n\n- [ ] Vérifier le retour.' } });
+  });
+
+  test('résout le read_entries d’une action ciblée dans la dernière réponse et conserve la proposition', async () => {
+    seedData(server.db, { entries: [
+      { id: 'e', title: 'Retour de recette', content_md: 'Texte initial.' },
+      { id: 'a', title: 'Retour annexe', content_md: 'Source annexe.' },
+    ] });
+    vi.spyOn(api, 'sharedStatus').mockResolvedValue({ available: true, root: '/procédures', reach: 'ok' });
+    vi.spyOn(api, 'searchShared').mockResolvedValue({ dir: '', query: '', results: [], offline: false, partial: false, denied: 0 });
+    const calls = stubAi(
+      json({ shared_search: ['commande'] }),
+      json({ shared_search: ['retour'] }),
+      json({ read_entries: [2] }),
+      json({ read_entries: [1], actions: [{ kind: 'update_entry', n: 1, append_content: 'Point complémentaire.' }] }),
+    );
+    const { proposals, notice } = await ask({ text: 'Complète le retour de recette.', openEntryId: 'e' });
+    expect(calls).toHaveLength(4);
+    expect(proposals).toEqual([expect.objectContaining({ entryId: 'e', changes: { content_md: 'Texte initial.\n\nPoint complémentaire.' } })]);
+    expect(notice).not.toContain('Limite de lectures');
+    expect(notice).not.toContain('action écartée');
+  });
+
   test('corrige un document riche au texte cité, en gardant les marques autour', async () => {
     seedData(server.db, { entries: [{ id: 'e', title: 'Contrôle', content_md: '' }] });
     server.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(JSON.stringify({

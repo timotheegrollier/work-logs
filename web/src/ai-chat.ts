@@ -102,7 +102,7 @@ Actions, avec les seuls champs utiles (status : todo, doing, done ; priority : l
 - {"kind":"create_shared_procedure","title":"…","content":"…","directory":1} : fichier Word neuf, dans un dossier numéroté du partage, avec le dossier courant par défaut.
 À la création, rédige « content » en Markdown sans HTML ni images, avec les faits connus et « À préciser » si besoin. Donne à chaque nouvelle tâche des sous-tâches « - [ ] » sous « ## Étapes », et les étapes d’une procédure. Pour une note, contexte et « ## Actions à mener » si utile. Coche « - [x] » seulement si fait avéré.
 Sans « project », utilise le projet de la catégorie ou le projet affiché. Statut et archivage sont indépendants.
-Lis l’entrée via « read_entries » avant « update_entry » : « append_content » ajoute, « text_edits » corrige des passages uniques, « content » réécrit tout si editable:true. Un seul de ces champs. Ajouts et corrections gardent styles et objets. Une tâche s’écrit dans « note principale Dn » ; pour « cette tâche », repère « créée ici ». Modifie les documents demandés en gardant leur identité.
+« update_entry » garde l’identité : « append_content » ajoute les éléments fournis à une cible claire, « text_edits » corrige une citation exacte unique, « content » réécrit tout après « read_entries » si editable:true. Un seul de ces champs. Lis pour trouver les passages ; ajouts/corrections gardent styles et objets. Une tâche s’écrit dans « note principale Dn » ; « cette tâche » = « créée ici ».
 Pour les cases, utilise les numéros de « checklist » après lecture, dans « checklist_updates » sans « content ». Groupe par entrée. Change, termine ou archive sur demande ou fait explicite. Préserve les cases en réécrivant le texte.
 Hors périmètre : supprimer ou archiver tâche/projet, lire Google Docs ou les annexes, remplacer un fichier partagé, agir hors de WorkLogs.
 Réponds uniquement par un objet JSON, sans commentaire :
@@ -128,6 +128,8 @@ interface ChatContext {
   categories: Category[];
   openedEntryId?: string;
   entriesRead: Map<string, Entry>;
+  /** Instantanés relus pour valider une correction ciblée, sans envoi au modèle. */
+  entrySnapshots: Map<string, Entry>;
   share?: ChatShare;
   sharedFiles: SharedSearchResult[];
   directories: string[];
@@ -696,7 +698,7 @@ function readProposal(raw: unknown, context: ChatContext, shownProject: string |
         expected.source_key = entryMergeSourceKey(source);
       }
     } else if (action.append_content !== undefined || action.text_edits !== undefined) {
-      const source = context.entriesRead.get(entry.id);
+      const source = context.entriesRead.get(entry.id) ?? context.entrySnapshots.get(entry.id);
       if (!source) return refuse('texte complet requis pour compléter ou corriger cette entrée');
       if (action.append_content !== undefined) {
         const content = readContent(action.append_content, entry.kind === 'note' ? 'note' : 'procédure');
@@ -887,6 +889,18 @@ async function readChatEntry(context: ChatContext, entry: EntrySummary): Promise
   context.readingNotices.push(`Texte indisponible pour « ${truncate(entry.title, PROMPT_TITLE)} ».`);
 }
 
+/** Les ajouts et corrections ciblées ont besoin du corps pour la précondition locale. */
+function actionEntrySources(value: Record<string, unknown> | null, context: ChatContext): EntrySummary[] {
+  return unique(listOf(value?.actions).slice(0, MAX_ACTIONS).flatMap((raw) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+    const action = raw as Record<string, unknown>;
+    if (action.kind !== 'update_entry' || action.content !== undefined
+      || !Number.isInteger(action.n) || action.checklist_updates !== undefined
+      || !['append_content', 'text_edits'].some((field) => action[field] !== undefined)) return [];
+    return numbered(action.n, context.documents).filter((entry) => !googleDocument(entry));
+  }));
+}
+
 /** `history` : les échanges précédents, sans le message en cours. */
 export async function askAssistant(settings: AiSettings, input: ChatInput): Promise<ChatAnswer> {
   if (!input.allowSharedContent && input.history.some(({ sharedContent }) => sharedContent)) {
@@ -941,7 +955,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
   const context: ChatContext = {
     today, projects, tasks, documents, recentTaskIds,
     category, categories, openedEntryId: input.openEntryId,
-    entriesRead: new Map(), sharedFiles: [], directories: [], sharedExcerpts: new Map(),
+    entriesRead: new Map(), entrySnapshots: new Map(), sharedFiles: [], directories: [], sharedExcerpts: new Map(),
     sharedContentInHistory: input.history.some(({ sharedContent }) => sharedContent === true), consultedLinks: [], readingNotices: [],
     totalTasks: state.stats.tasks.todo + state.stats.tasks.doing + state.stats.tasks.done,
   };
@@ -950,6 +964,15 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
   const sharedTerms = new Set<string>();
   const readShared = new Set<string>();
   const readEntries = new Set<string>();
+  const finishAnswer = async (raw: string, value: Record<string, unknown> | null, conversationTitle?: string) => {
+    if (settings.signal?.aborted) throw new AiCancelled();
+    // Ces lectures servent la validation et le calcul locaux, sans renvoyer le texte au modèle.
+    const sources = actionEntrySources(value, context).filter(({ id }) => !context.entriesRead.has(id) && !context.entrySnapshots.has(id)).slice(0, MAX_SOURCE_READS);
+    const localContext = { ...context, entriesRead: context.entrySnapshots };
+    await Promise.all(sources.map((entry) => readChatEntry(localContext, entry)));
+    if (settings.signal?.aborted) throw new AiCancelled();
+    return readAnswer(raw, value, context, shownProject, conversationTitle);
+  };
 
   try {
     const selected = selectChatAttachments(input);
@@ -986,10 +1009,15 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
       const listShare: boolean = !listedShare && response?.shared_list === true;
       const sources = numbered(response?.read_entries, context.documents).filter(({ id }) => !readEntries.has(id)).slice(0, MAX_SOURCE_READS - readEntries.size);
       const sharedSources = numbered(response?.read_shared, context.sharedFiles).filter(({ path }) => !readShared.has(path)).slice(0, MAX_SOURCE_READS - readShared.size);
-      if (!terms.length && !shareTerms.length && !listShare && !sources.length && !sharedSources.length) return readAnswer(raw, response, context, shownProject, conversationTitle);
+      if (!terms.length && !shareTerms.length && !listShare && !sources.length && !sharedSources.length) return finishAnswer(raw, response, conversationTitle);
       if (finalStep) {
-        context.readingNotices.push('Limite de lectures atteinte pour ce message.');
-        return { ...readAnswer(raw, response, context, shownProject, conversationTitle), proposals: [] };
+        const answer = await finishAnswer(raw, response, conversationTitle);
+        const localTargets = new Set(actionEntrySources(response, context).filter(({ id }) => context.entriesRead.has(id) || context.entrySnapshots.has(id)).map(({ id }) => id));
+        const pendingReads = terms.length || shareTerms.length || listShare || sharedSources.length || sources.some(({ id }) => !localTargets.has(id));
+        return pendingReads ? {
+          ...answer, notice: [answer.notice, 'Limite de lectures atteinte pour ce message.'].filter(Boolean).join(' '),
+          proposals: answer.proposals.filter((proposal) => proposal.kind === 'update_entry' && localTargets.has(proposal.entryId)),
+        } : answer;
       }
 
       searchedLocal ||= terms.length > 0;
@@ -1031,7 +1059,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
       ]);
       if (settings.signal?.aborted) throw new AiCancelled();
       if (!newLocalResults && !shareTerms.length && !listShare && !sources.length && !sharedSources.length) {
-        return { ...readAnswer(raw, response, context, shownProject, conversationTitle), reply: `Rien de plus trouvé pour « ${terms.join(' », « ')} ».` };
+        return { ...await finishAnswer(raw, response, conversationTitle), reply: `Rien de plus trouvé pour « ${terms.join(' », « ')} ».` };
       }
     }
   } catch (cause) {
