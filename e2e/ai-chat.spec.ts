@@ -527,7 +527,7 @@ test('l’assistant ajoute un point à une liste à puces existante sans en chan
   }
 });
 
-test('l’assistant ajoute des puces à une note dont la liste est en cases', async ({ page, request }) => {
+test('l’assistant rejette les puces après une checklist et réessaie en cases', async ({ page, request }) => {
   const project = await post(request, '/api/projects', { name: 'Projet commandes MM' });
   try {
     const title = 'Retour de la prise de commande';
@@ -538,13 +538,20 @@ test('l’assistant ajoute des puces à une note dont la liste est en cases', as
       'Afficher tous les tarifs dans la fiche client',
       'Ajouter une infobulle sur le calcul du tarif livraison',
     ];
-    const addition = points.map((point) => `- ${point}`).join('\n');
+    const wrongAddition = points.map((point) => `- ${point}`).join('\n');
+    const addition = points.map((point) => `- [ ] ${point}`).join('\n');
     const note = await post(request, '/api/entries', { title, project_id: project.id, content_md: content });
     await configure(page, project.id, note.id);
-    const prompts = await stubAssistant(page, {
-      reply: 'J’ajoute ces quatre points à la note.',
-      actions: [{ kind: 'update_entry', n: 1, append_content: addition }],
-    });
+    const prompts = await stubAssistant(page,
+      {
+        reply: 'J’ajoute ces quatre points à la note.',
+        actions: [{ kind: 'update_entry', n: 1, append_content: wrongAddition }],
+      },
+      {
+        reply: 'Je reprends ces points en cases à cocher.',
+        actions: [{ kind: 'update_entry', n: 1, append_content: addition }],
+      },
+    );
 
     await page.goto('/');
     const editor = page.getByRole('region', { name: 'Entrée', exact: true });
@@ -556,9 +563,8 @@ test('l’assistant ajoute des puces à une note dont la liste est en cases', as
 
     const apply = chat.getByRole('button', { name: /^Appliquer/ });
     await expect(apply).toBeVisible();
-    // Une puce après des cases continue la liste : l’ajout ne doit pas être écarté.
     await expect(chat.getByText(/action écartée/)).toHaveCount(0);
-    expect(prompts).toHaveLength(1);
+    expect(prompts).toHaveLength(2);
     const readEntry = async () => (await request.get(`/api/entries/${note.id}`)).json();
     expect(await readEntry()).toMatchObject({ content_md: content });
 
@@ -585,7 +591,7 @@ test('l’assistant demande la forme voulue après un second refus et applique l
     const prompts = await stubAssistant(page,
       (prompt) => ({ reply: 'J’ajoute un point.', actions: [{ kind: 'update_entry', n: noteNumber(prompt), append_content: 'Paragraphe isolé.' }] }),
       (prompt) => ({ reply: 'Je ne peux pas respecter la forme.', actions: [{ kind: 'update_entry', n: noteNumber(prompt), append_content: 'Autre paragraphe.' }] }),
-      (prompt) => ({ reply: 'Voici les points en puces.', actions: [{ kind: 'update_entry', n: noteNumber(prompt), append_content: '- Premier point\n- Second point' }] }),
+      (prompt) => ({ reply: 'Voici les points en cases.', actions: [{ kind: 'update_entry', n: noteNumber(prompt), append_content: '- [ ] Premier point\n- [ ] Second point' }] }),
     );
 
     await page.goto('/');
@@ -601,20 +607,20 @@ test('l’assistant demande la forme voulue après un second refus et applique l
     await expect(chat.getByText(question, { exact: true })).toBeVisible();
     expect(prompts).toHaveLength(2);
     expect(noteNumber(prompts[0])).toBeGreaterThan(0);
-    for (const choice of ['Ajoute-les en cases à cocher', 'Ajoute-les en puces', 'Ouvre une rubrique « ## »'])
+    for (const choice of ['Garde le format de la liste en place', 'Ouvre une rubrique « ## »'])
       await expect(chat.getByRole('button', { name: choice, exact: true })).toBeVisible();
     expect(await (await request.get(`/api/entries/${note.id}`)).json()).toMatchObject({ content_md: content });
 
-    await chat.getByRole('button', { name: 'Ajoute-les en puces', exact: true }).click();
+    await chat.getByRole('button', { name: 'Garde le format de la liste en place', exact: true }).click();
     await expect.poll(() => prompts.length).toBe(3);
-    expect(prompts[2]).toContain('Ajoute-les en puces');
+    expect(prompts[2]).toContain('Garde le format de la liste en place');
     const apply = chat.getByRole('button', { name: /^Appliquer/ });
     await expect(apply).toBeVisible();
 
     await apply.click();
     await expect(chat.getByText('✓ Appliqué', { exact: true })).toBeVisible();
     expect(await (await request.get(`/api/entries/${note.id}`)).json())
-      .toMatchObject({ content_md: `${content}\n\n- Premier point\n- Second point` });
+      .toMatchObject({ content_md: `${content}\n\n- [ ] Premier point\n- [ ] Second point` });
     await page.keyboard.press('Escape');
     await expect(editor.getByText('Premier point', { exact: true })).toBeVisible();
     await expect(editor.getByText('Second point', { exact: true })).toBeVisible();

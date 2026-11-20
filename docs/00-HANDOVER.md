@@ -1,25 +1,25 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Format des listes préservé, assistant qui réessaie — 2026-11-20, v0.87.1
+## Conservation stricte du format des listes — correctif local après v0.87.1
 
 - Une proposition de l’assistant qui casse la forme d’une entrée est écartée à la validation :
-  un ajout après une liste reste une ligne de liste (case, puce ou numéro, quelle que soit la
-  famille) ou ouvre une rubrique « ## », un paragraphe isolé est refusé ; une correction ciblée
-  ne peut ni retirer ni changer le marqueur de la ligne touchée.
+  un ajout après une liste doit garder sa famille (une checklist reçoit des cases, pas des puces
+  ordinaires) ou ouvrir une rubrique « ## » ; un paragraphe isolé est refusé. Une correction
+  ciblée ne peut ni retirer ni changer le marqueur de la ligne touchée.
   Cocher une case ou corriger un libellé reste permis. **Reformuler**, **Compléter**, le
   **bilan du jour** et le **suivi IA** suivent la même consigne (`05-DECISIONS.md` §91).
 - Quand toutes les actions d’une réponse sont écartées, l’assistant rejoue une fois sa demande
   avec le motif du refus ; si le second passage échoue encore sur la forme, il pose une question
-  avec des choix (cases, puces, rubrique) au lieu de laisser l’utilisateur sans suite.
+  pour garder la forme existante ou ouvrir une rubrique, au lieu de laisser l’utilisateur sans suite.
 - Les pièces jointes `.xlsx`, `.ods`, `.csv` et `.tsv` s’ouvrent directement dans la colonne
   **Écriture** en cliquant leur nom. Elles réutilisent leurs grilles dédiées et s’enregistrent
   en copie dans l’entrée ; l’original reste intact. Ce n’est pas une parité Excel complète :
   `.xls` reste confié au logiciel système, `.xlsm` est en lecture seule et les classeurs ne
   prennent pas en charge les outils avancés de mise en forme ou de structure (`05-DECISIONS.md` §92).
-- Tests : 4 dans `ai-chat.test.ts` (ajout hors liste et autre famille acceptée, correction ciblée
-  sur un marqueur, réessai, question après second refus) et 4 parcours navigateur
-  (`e2e/ai-chat.spec.ts`, ajout dans une liste à puces, puces ajoutées à une note en cases,
-  question après un second refus puis choix appliqué, correction ciblée refusée).
+- Tests : 4 scénarios concernés dans `ai-chat.test.ts` (famille de liste conservée, correction
+  ciblée sur un marqueur, réessai, question après second refus) et 4 parcours navigateur
+  (`e2e/ai-chat.spec.ts`, ajout dans une liste à puces, puces refusées après une checklist puis
+  réessai en cases, question après un second refus puis choix appliqué, correction ciblée refusée).
 - `./scripts/check.sh` (étapes lancées séparément, navigateur sur `WORKLOGS_E2E_PORT=8414`)
   passe avec **2 121 tests**, dont un échec attendu. 365 API · 1 478 front · 49 desktop
   unitaires · 56 scripts · 8 Worker · 11 relais · 132 navigateurs · 22 Electron.

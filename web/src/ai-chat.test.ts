@@ -694,8 +694,8 @@ describe('réponse du modèle', () => {
     expect(system(calls[1])).toContain('avant les actions, avec 2 à');
     expect(system(calls[1])).toContain('Si la cible, l’endroit ou le format restent ambigus, demande avant d’agir.');
     expect(system(calls[1])).toContain('Si la demande est précise, avance.');
-    expect(system(calls[1])).toContain('Repère la forme en place');
-    expect(system(calls[1])).toContain('jamais un paragraphe isolé ni un format neuf à la fin');
+    expect(system(calls[1])).toContain('checklist → cases « - [ ] »');
+    expect(system(calls[1])).toContain('jamais de puces ordinaires après une checklist');
     expect(result.question).toEqual(question);
     expect(result.proposals).toEqual([]);
   });
@@ -1642,7 +1642,7 @@ describe('application des propositions, sur la vraie API', () => {
     expect(notice).toContain('lire la note Markdown');
   });
 
-  test('écarte un paragraphe ajouté à une liste et accepte une autre famille de liste', async () => {
+  test('écarte un ajout qui change la famille de liste et conserve la forme existante', async () => {
     const original = '## Suivi\n\n- [ ] Recherche création article direct\n- [ ] Cindy voir œuf';
     seedData(server.db, { entries: [{ id: 'e', title: 'Retours de recette', content_md: original }] });
     const input = { text: 'Ajoute ce point à la note.', openEntryId: 'e' };
@@ -1653,12 +1653,12 @@ describe('application des propositions, sur la vraie API', () => {
     const paragraph = await attempt('Par défaut non composable en vivant.');
     expect(paragraph.proposals).toEqual([]);
     expect(paragraph.notice).toContain('ajout hors du format de la liste existante');
-    // Une puce après des cases continue la liste : la forme en place n’est pas cassée.
     const bullet = await attempt('- Par défaut non composable en vivant.');
-    expect(bullet.notice).toBe('');
-    expect(bullet.proposals).toEqual([expect.objectContaining({
-      entryId: 'e', changes: { content_md: `${original}\n\n- Par défaut non composable en vivant.` },
-    })]);
+    expect(bullet.proposals).toEqual([]);
+    expect(bullet.notice).toContain('ajout hors du format de la liste existante');
+    const mixed = await attempt('- [ ] Premier point\n- Deuxième point.');
+    expect(mixed.proposals).toEqual([]);
+    expect(mixed.notice).toContain('ajout hors du format de la liste existante');
     const same = await attempt('- [ ] Par défaut non composable en vivant.');
     expect(same.notice).toBe('');
     expect(same.proposals).toEqual([expect.objectContaining({
@@ -1666,6 +1666,17 @@ describe('application des propositions, sur la vraie API', () => {
     })]);
     const section = await attempt('## Points à vérifier\n\nRien de neuf.');
     expect(section.proposals[0]).toMatchObject({ changes: { content_md: `${original}\n\n## Points à vérifier\n\nRien de neuf.` } });
+
+    const bulletList = '## À suivre\n\n- Première vérification\n- Deuxième vérification';
+    await api.updateEntry('e', { content_md: bulletList });
+    const checkbox = await attempt('- [ ] Troisième vérification');
+    expect(checkbox.proposals).toEqual([]);
+    expect(checkbox.notice).toContain('ajout hors du format de la liste existante');
+    const sameBullet = await attempt('- Troisième vérification');
+    expect(sameBullet.notice).toBe('');
+    expect(sameBullet.proposals).toEqual([expect.objectContaining({
+      entryId: 'e', changes: { content_md: `${bulletList}\n\n- Troisième vérification` },
+    })]);
   });
 
   test('écarte une correction ciblée qui change le marqueur d’une ligne de liste', async () => {
@@ -1707,7 +1718,7 @@ describe('application des propositions, sur la vraie API', () => {
     expect(answer.notice).toContain('ajout hors du format de la liste existante');
     expect(answer.question).toEqual({
       text: 'Je n’ai pas pu ajouter ces points sans casser la forme de la note. Comment veux-tu que je les ajoute ?',
-      options: ['Ajoute-les en cases à cocher', 'Ajoute-les en puces', 'Ouvre une rubrique « ## »'],
+      options: ['Garde le format de la liste en place', 'Ouvre une rubrique « ## »'],
     });
     expect(answer.reply).toBe('Je ne peux pas respecter la forme.');
   });
@@ -1716,7 +1727,7 @@ describe('application des propositions, sur la vraie API', () => {
     const original = '## Suivi\n\n- [ ] Vérifier la commande';
     seedData(server.db, { entries: [{ id: 'e', title: 'Retours de recette', content_md: original }] });
     const calls = stubAi(
-      json({ actions: [{ kind: 'update_entry', n: 1, append_content: 'Paragraphe isolé.' }] }),
+      json({ actions: [{ kind: 'update_entry', n: 1, append_content: '- Point ajouté.' }] }),
       json({ actions: [{ kind: 'update_entry', n: 1, append_content: '- [ ] Point ajouté.' }] }),
     );
     const answer = await ask({ text: 'Ajoute ce point à la note.', openEntryId: 'e' });

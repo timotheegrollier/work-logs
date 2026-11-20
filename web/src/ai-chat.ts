@@ -103,7 +103,7 @@ Actions, avec les seuls champs utiles (status : todo, doing, done ; priority : l
 - {"kind":"create_shared_procedure","title":"…","content":"…","directory":1} : fichier Word neuf, dans un dossier numéroté du partage, avec le dossier courant par défaut.
 À la création, rédige « content » en Markdown sans HTML ni images, avec les faits connus et « À préciser » si besoin. Donne à chaque nouvelle tâche des sous-tâches « - [ ] » sous « ## Étapes », et les étapes d’une procédure. Pour une note, contexte et « ## Actions à mener » si utile. Coche « - [x] » seulement si fait avéré.
 Sans « project », utilise le projet de la catégorie ou le projet affiché. Statut et archivage sont indépendants.
-« update_entry » garde l’identité : « append_content » ajoute les éléments fournis à une cible claire, « text_edits » corrige une citation exacte unique, « content » réécrit tout après « read_entries » si editable:true. Un seul de ces champs. Lis pour trouver les passages ; ajouts/corrections gardent styles et objets. Repère la forme en place (titres, puces ou numéros, cases « - [ ] », rubriques) et suis-la : une ligne de la même liste, jamais un paragraphe isolé ni un format neuf à la fin. Une tâche s’écrit dans « note principale Dn » ; « cette tâche » = « créée ici ».
+« update_entry » garde l’identité : « append_content » ajoute les éléments fournis à une cible claire, « text_edits » corrige une citation exacte unique, « content » réécrit tout après « read_entries » si editable:true. Un seul de ces champs. Lis pour trouver les passages ; ajouts/corrections gardent styles et objets. Suis le format des listes : checklist → cases « - [ ] », puces → puces, numéros → numéros ; jamais de puces ordinaires après une checklist. Pas de paragraphe isolé ni de format neuf à la fin. Une tâche s’écrit dans « note principale Dn » ; « cette tâche » = « créée ici ».
 Pour les cases, utilise les numéros de « checklist » après lecture, dans « checklist_updates » sans « content ». Groupe par entrée. Change, termine ou archive sur demande ou fait explicite. Préserve les cases en réécrivant le texte.
 Hors périmètre : supprimer ou archiver tâche/projet, lire Google Docs ou les annexes, remplacer un fichier partagé, agir hors de WorkLogs.
 Réponds uniquement par un objet JSON, sans commentaire :
@@ -478,14 +478,15 @@ function listKind(line: string): 'case' | 'puce' | 'numéro' | null {
 }
 
 /**
- * Un ajout collé après une liste doit rester une ligne de liste : un paragraphe ajouté
- * à la fin aplatirait la forme en place. Une puce après des cases (ou l’inverse) continue
- * la liste sans la casser, et une rubrique « ## » ouvre une nouvelle section.
+ * Un ajout collé après une liste doit rester dans sa famille : une puce ordinaire ne
+ * prolonge pas une checklist. Une rubrique initiale « ## » ouvre une nouvelle section.
  */
 function keepsListPattern(text: string, addition: string): boolean {
-  if (!listKind(text.trimEnd().split('\n').at(-1) ?? '')) return true;
-  const first = addition.split('\n').find((line) => line.trim()) ?? '';
-  return /^#{1,6}\s/.test(first) || listKind(first) !== null;
+  const existingKind = listKind(text.trimEnd().split('\n').at(-1) ?? '');
+  if (!existingKind) return true;
+  const lines = addition.split('\n').filter((line) => line.trim());
+  if (/^#{1,6}\s/.test(lines[0] ?? '')) return true;
+  return lines.length > 0 && lines.every((line) => listKind(line) === existingKind);
 }
 
 /**
@@ -496,7 +497,7 @@ function formQuestion(notice: string): ChatQuestion | undefined {
   if (notice.includes('ajout hors du format')) {
     return {
       text: 'Je n’ai pas pu ajouter ces points sans casser la forme de la note. Comment veux-tu que je les ajoute ?',
-      options: ['Ajoute-les en cases à cocher', 'Ajoute-les en puces', 'Ouvre une rubrique « ## »'],
+      options: ['Garde le format de la liste en place', 'Ouvre une rubrique « ## »'],
     };
   }
   if (notice.includes('correction hors du format')) {
@@ -759,7 +760,7 @@ function readProposal(raw: unknown, context: ChatContext, shownProject: string |
         const content = readContent(action.append_content, entry.kind === 'note' ? 'note' : 'procédure');
         if (!content) return refuse('texte à ajouter manquant');
         if (!keepsListPattern(entryMarkdown(source), content)) {
-          return refuse('ajout hors du format de la liste existante : propose une ligne du même type (case, puce ou numéro) ou une rubrique « ## »');
+          return refuse('ajout hors du format de la liste existante : poursuis avec le même type de liste (case, puce ou numéro) ou ouvre une rubrique « ## »');
         }
         if (source.content_json) {
           const addition = markdownToRich(content);
