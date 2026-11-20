@@ -1642,7 +1642,7 @@ describe('application des propositions, sur la vraie API', () => {
     expect(notice).toContain('lire la note Markdown');
   });
 
-  test('écarte un ajout qui casse la liste en place et accepte la même forme', async () => {
+  test('écarte un paragraphe ajouté à une liste et accepte une autre famille de liste', async () => {
     const original = '## Suivi\n\n- [ ] Recherche création article direct\n- [ ] Cindy voir œuf';
     seedData(server.db, { entries: [{ id: 'e', title: 'Retours de recette', content_md: original }] });
     const input = { text: 'Ajoute ce point à la note.', openEntryId: 'e' };
@@ -1650,11 +1650,15 @@ describe('application des propositions, sur la vraie API', () => {
       stubAi(json({ actions: [{ kind: 'update_entry', n: 1, append_content: append }] }));
       return ask(input);
     };
-    for (const append of ['Par défaut non composable en vivant.', '- Par défaut non composable en vivant.']) {
-      const answer = await attempt(append);
-      expect(answer.proposals).toEqual([]);
-      expect(answer.notice).toContain('ajout hors du format de la liste existante');
-    }
+    const paragraph = await attempt('Par défaut non composable en vivant.');
+    expect(paragraph.proposals).toEqual([]);
+    expect(paragraph.notice).toContain('ajout hors du format de la liste existante');
+    // Une puce après des cases continue la liste : la forme en place n’est pas cassée.
+    const bullet = await attempt('- Par défaut non composable en vivant.');
+    expect(bullet.notice).toBe('');
+    expect(bullet.proposals).toEqual([expect.objectContaining({
+      entryId: 'e', changes: { content_md: `${original}\n\n- Par défaut non composable en vivant.` },
+    })]);
     const same = await attempt('- [ ] Par défaut non composable en vivant.');
     expect(same.notice).toBe('');
     expect(same.proposals).toEqual([expect.objectContaining({
@@ -1688,6 +1692,24 @@ describe('application des propositions, sur la vraie API', () => {
     const wording = await attempt([{ find: 'Relancer le client', replace: 'Rappeler le client' }]);
     expect(wording.notice).toBe('');
     expect(wording.proposals[0]).toMatchObject({ changes: { content_md: original.replace('Relancer le client', 'Rappeler le client') } });
+  });
+
+  test('après un second refus de forme, demande comment ajouter les points', async () => {
+    const original = '## Suivi\n\n- [ ] Vérifier la commande';
+    seedData(server.db, { entries: [{ id: 'e', title: 'Retours de recette', content_md: original }] });
+    const calls = stubAi(
+      json({ actions: [{ kind: 'update_entry', n: 1, append_content: 'Paragraphe isolé.' }] }),
+      json({ reply: 'Je ne peux pas respecter la forme.', actions: [{ kind: 'update_entry', n: 1, append_content: 'Autre paragraphe.' }] }),
+    );
+    const answer = await ask({ text: 'Ajoute ces points à la note.', openEntryId: 'e' });
+    expect(calls).toHaveLength(2);
+    expect(answer.proposals).toEqual([]);
+    expect(answer.notice).toContain('ajout hors du format de la liste existante');
+    expect(answer.question).toEqual({
+      text: 'Je n’ai pas pu ajouter ces points sans casser la forme de la note. Comment veux-tu que je les ajoute ?',
+      options: ['Ajoute-les en cases à cocher', 'Ajoute-les en puces', 'Ouvre une rubrique « ## »'],
+    });
+    expect(answer.reply).toBe('Je ne peux pas respecter la forme.');
   });
 
   test('rejoue une fois une proposition écartée pour laisser le modèle corriger sa forme', async () => {

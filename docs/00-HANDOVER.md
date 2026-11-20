@@ -1,19 +1,23 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Format des listes préservé, assistant qui réessaie — 2026-11-20, v0.87.0
+## Format des listes préservé, assistant qui réessaie — 2026-11-20, v0.87.1
 
 - Une proposition de l’assistant qui casse la forme d’une entrée est écartée à la validation :
-  un ajout après une liste reprend son marqueur (case, puce ou numéro) ou ouvre une rubrique
-  « ## » ; une correction ciblée ne peut ni retirer ni changer le marqueur de la ligne touchée.
+  un ajout après une liste reste une ligne de liste (case, puce ou numéro, quelle que soit la
+  famille) ou ouvre une rubrique « ## », un paragraphe isolé est refusé ; une correction ciblée
+  ne peut ni retirer ni changer le marqueur de la ligne touchée.
   Cocher une case ou corriger un libellé reste permis. **Reformuler**, **Compléter**, le
   **bilan du jour** et le **suivi IA** suivent la même consigne (`05-DECISIONS.md` §91).
 - Quand toutes les actions d’une réponse sont écartées, l’assistant rejoue une fois sa demande
-  avec le motif du refus ; sans correction, le motif reste affiché avec l’absence de proposition.
-- Tests : 3 dans `ai-chat.test.ts` (ajout hors liste, correction ciblée sur un marqueur, réessai
-  après refus) et 2 parcours navigateur (`e2e/ai-chat.spec.ts`, ajout dans une liste à puces et
+  avec le motif du refus ; si le second passage échoue encore sur la forme, il pose une question
+  avec des choix (cases, puces, rubrique) au lieu de laisser l’utilisateur sans suite.
+- Tests : 4 dans `ai-chat.test.ts` (ajout hors liste et autre famille acceptée, correction ciblée
+  sur un marqueur, réessai, question après second refus) et 3 parcours navigateur
+  (`e2e/ai-chat.spec.ts`, ajout dans une liste à puces, puces ajoutées à une note en cases,
   correction ciblée refusée).
-- `./scripts/check.sh` passe avec **2 112 tests**, dont un échec attendu. 365 API · 1 471 front ·
-  49 desktop unitaires · 56 scripts · 8 Worker · 11 relais · 130 navigateurs · 22 Electron.
+- `./scripts/check.sh` (étapes lancées séparément, navigateur sur `WORKLOGS_E2E_PORT=8413`)
+  passe avec **2 114 tests**, dont un échec attendu. 365 API · 1 472 front · 49 desktop
+  unitaires · 56 scripts · 8 Worker · 11 relais · 131 navigateurs · 22 Electron.
 
 ## Ajouts de texte et dossiers reliés — 2026-11-20, v0.86.0
 

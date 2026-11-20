@@ -527,6 +527,51 @@ test('l’assistant ajoute un point à une liste à puces existante sans en chan
   }
 });
 
+test('l’assistant ajoute des puces à une note dont la liste est en cases', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Projet commandes MM' });
+  try {
+    const title = 'Retour de la prise de commande';
+    const content = '## À faire\n\n- [ ] Valider la saisie client\n- [ ] Vérifier la marge livraison';
+    const points = [
+      'Rendre impossible la création d’un article sans option en vivant',
+      'Vérifier comment est répartie la marge livraison',
+      'Afficher tous les tarifs dans la fiche client',
+      'Ajouter une infobulle sur le calcul du tarif livraison',
+    ];
+    const addition = points.map((point) => `- ${point}`).join('\n');
+    const note = await post(request, '/api/entries', { title, project_id: project.id, content_md: content });
+    await configure(page, project.id, note.id);
+    const prompts = await stubAssistant(page, {
+      reply: 'J’ajoute ces quatre points à la note.',
+      actions: [{ kind: 'update_entry', n: 1, append_content: addition }],
+    });
+
+    await page.goto('/');
+    const editor = page.getByRole('region', { name: 'Entrée', exact: true });
+    await expect(editor.getByLabel('Titre de l’entrée')).toHaveValue(title);
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    const chat = assistant(page);
+    await messageField(page).fill(`Met à jour « ${title} » : ${points.join(', ')}.`);
+    await messageField(page).press('Enter');
+
+    const apply = chat.getByRole('button', { name: /^Appliquer/ });
+    await expect(apply).toBeVisible();
+    // Une puce après des cases continue la liste : l’ajout ne doit pas être écarté.
+    await expect(chat.getByText(/action écartée/)).toHaveCount(0);
+    expect(prompts).toHaveLength(1);
+    const readEntry = async () => (await request.get(`/api/entries/${note.id}`)).json();
+    expect(await readEntry()).toMatchObject({ content_md: content });
+
+    await apply.click();
+    await expect(chat.getByText('✓ Appliqué', { exact: true })).toBeVisible();
+    expect(await readEntry()).toMatchObject({ content_md: `${content}\n\n${addition}` });
+    await page.keyboard.press('Escape');
+    for (const point of points) await expect(editor.getByText(point, { exact: true })).toBeVisible();
+  } finally {
+    await cleanProject(page, request, project.id);
+  }
+});
+
 test('l’assistant refuse une correction ciblée qui casse la forme d’une liste', async ({ page, request }) => {
   const project = await post(request, '/api/projects', { name: 'Projet contrôles' });
   try {

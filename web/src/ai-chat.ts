@@ -478,15 +478,31 @@ function listKind(line: string): 'case' | 'puce' | 'numéro' | null {
 }
 
 /**
- * Un ajout collé après une liste doit continuer cette liste dans le même format :
- * un paragraphe ajouté à la fin casserait la liste existante. Une rubrique « ## »
- * commence une nouvelle section et reste permise.
+ * Un ajout collé après une liste doit rester une ligne de liste : un paragraphe ajouté
+ * à la fin aplatirait la forme en place. Une puce après des cases (ou l’inverse) continue
+ * la liste sans la casser, et une rubrique « ## » ouvre une nouvelle section.
  */
 function keepsListPattern(text: string, addition: string): boolean {
-  const kind = listKind(text.trimEnd().split('\n').at(-1) ?? '');
-  if (!kind) return true;
+  if (!listKind(text.trimEnd().split('\n').at(-1) ?? '')) return true;
   const first = addition.split('\n').find((line) => line.trim()) ?? '';
-  return /^#{1,6}\s/.test(first) || listKind(first) === kind;
+  return /^#{1,6}\s/.test(first) || listKind(first) !== null;
+}
+
+/**
+ * Après un second refus de forme, l’assistant demande la forme voulue au lieu de laisser
+ * l’utilisateur sans proposition ni question.
+ */
+function formQuestion(notice: string): ChatQuestion | undefined {
+  if (notice.includes('ajout hors du format')) {
+    return {
+      text: 'Je n’ai pas pu ajouter ces points sans casser la forme de la note. Comment veux-tu que je les ajoute ?',
+      options: ['Ajoute-les en cases à cocher', 'Ajoute-les en puces', 'Ouvre une rubrique « ## »'],
+    };
+  }
+  if (notice.includes('correction hors du format')) {
+    return { text: 'Cette correction changerait le marqueur de la ligne. Que veux-tu modifier exactement, sans toucher au marqueur ?', options: [] };
+  }
+  return undefined;
 }
 
 interface TextEdit { find: string; replace: string }
@@ -846,6 +862,8 @@ function readQuestion(raw: unknown): ChatQuestion | undefined {
   return { text: label, options: [...choices.values()], ...(multiple === true && { multiple }) };
 }
 
+const EMPTY_REPLY = 'Réponse vide de l’IA : reformule ta demande.';
+
 function readAnswer(raw: string, value: Record<string, unknown> | null, context: ChatContext, shownProject: string | null, conversationTitle?: string, question?: ChatQuestion): ChatAnswer {
   const usedSharedContent = context.sharedExcerpts.size > 0 || context.sharedContentInHistory;
   const fromSources = {
@@ -886,7 +904,7 @@ function readAnswer(raw: string, value: Record<string, unknown> | null, context:
   const reply = typeof value.reply === 'string' ? clip(value.reply, MAX_REPLY) : '';
   const hasResults = proposals.length + tasks.length + documents.length + sharedDocuments.length > 0;
   return {
-    reply: question ? reply : reply || (hasResults ? 'Voici ce que je te propose.' : 'Réponse vide de l’IA : reformule ta demande.'),
+    reply: question ? reply : reply || (hasResults ? 'Voici ce que je te propose.' : EMPTY_REPLY),
     notice: [...new Set(context.readingNotices), ...(dropped.length ? [`${dropped.length} action${dropped.length > 1 ? 's' : ''} écartée${dropped.length > 1 ? 's' : ''} : ${[...new Set(dropped)].join(' ; ')}.`] : [])].join(' '),
     tasks, documents, proposals, usedAi: true,
     ...(question && { question }),
@@ -1043,6 +1061,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
         input.needsConversationTitle && CONVERSATION_TITLE_PROMPT,
         searchedLocal && SEARCH_DONE,
         retryHint && `Ta proposition précédente a été écartée (${retryHint}). Corrige-la et propose une action valide, sans changer l’intention.`,
+        retried && 'Si la forme en place reste impossible à respecter, pose une « question » sur la forme voulue au lieu de renvoyer une action vide.',
         finalStep && 'Dernière étape : réponds avec les résultats disponibles, sans demander de nouvelle lecture.',
       ].filter(Boolean).join('\n');
       const raw = await call(instructions);
@@ -1067,8 +1086,10 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
           retryHint = answer.notice;
           continue;
         }
-        return !answer.proposals.length && rejectedNotice
-          ? { ...answer, notice: [answer.notice, rejectedNotice].filter(Boolean).join(' ') } : answer;
+        const notice = [answer.notice, rejectedNotice].filter(Boolean).join(' ');
+        const question = answer.proposals.length ? undefined : formQuestion(answer.notice);
+        if (!question) return !answer.proposals.length && rejectedNotice ? { ...answer, notice } : answer;
+        return { ...answer, notice, question, ...(answer.reply === EMPTY_REPLY && { reply: '' }) };
       }
       if (finalStep) {
         const answer = await finishAnswer(raw, response, conversationTitle);

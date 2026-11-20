@@ -3696,8 +3696,9 @@ recherche utilisent le nom du fichier du partage.
 
 Une proposition d’écriture respecte la forme de l’entrée. Avant un ajout, la validation
 regarde le Markdown relu : si sa dernière ligne est une case, une puce ou un numéro, l’ajout
-commence par le même type ; une rubrique « ## » reste autorisée pour ouvrir une section.
-Sinon l’action est écartée au lieu d’aplatir la liste. Une correction ciblée (`text_edits`)
+commence par une ligne de liste, quelle que soit sa famille — une puce après des cases
+continue la liste sans la casser — et une rubrique « ## » reste autorisée pour ouvrir une
+section. Un paragraphe isolé est écarté au lieu d’aplatir la forme en place. Une correction ciblée (`text_edits`)
 ne change pas non plus le marqueur de la ligne qu’elle touche : retirer « - [ ] » ou remplacer
 une case par une puce est refusé, tandis que cocher une case ou corriger son libellé reste
 permis. Reformuler et Compléter reçoivent la même consigne pour leurs listes. Le bilan du
@@ -3713,4 +3714,6 @@ un marqueur, qui est un nœud et non du texte.
 Quand toutes les actions d’une réponse sont écartées, l’assistant rejoue une fois sa demande
 avec le motif du refus et le même contexte. Une correction valide remplace le message
 d’échec ; sinon le motif reste affiché avec l’absence de proposition. Un seul réessai a lieu,
-jamais en boucle.
+jamais en boucle. Si le second passage échoue encore sur la forme, l’assistant ne laisse pas
+l’utilisateur sans suite : il pose une question avec des choix (cases à cocher, puces,
+rubrique « ## »), et la consigne du réessai l’autorise à demander lui-même la forme voulue.
