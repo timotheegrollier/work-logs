@@ -3691,3 +3691,26 @@ copier une pièce jointe dans le dossier de son projet et d’y choisir un fichi
 joindre. Les transferts réutilisent la création exclusive du partage et la lecture
 des octets par empreinte. Les téléchargements depuis l’arbre ou les résultats de
 recherche utilisent le nom du fichier du partage.
+
+## 91. L’assistant suit le format en place et corrige sa proposition — 2026-11-20
+
+Une proposition d’écriture respecte la forme de l’entrée. Avant un ajout, la validation
+regarde le Markdown relu : si sa dernière ligne est une case, une puce ou un numéro, l’ajout
+commence par le même type ; une rubrique « ## » reste autorisée pour ouvrir une section.
+Sinon l’action est écartée au lieu d’aplatir la liste. Une correction ciblée (`text_edits`)
+ne change pas non plus le marqueur de la ligne qu’elle touche : retirer « - [ ] » ou remplacer
+une case par une puce est refusé, tandis que cocher une case ou corriger son libellé reste
+permis. Reformuler et Compléter reçoivent la même consigne pour leurs listes. Le bilan du
+jour et le suivi IA ne proposent qu’un changement d’état de case : le marqueur et l’ordre de
+la liste restent ceux du texte, et leurs consignes interdisent de reformater la liste.
+
+**Pourquoi côté validation.** Le modèle peut ignorer une consigne de forme, et l’utilisateur
+ne relit pas toujours la structure avant d’appliquer. Le garde-fou couvre les ajouts et les
+corrections ciblées ; une réécriture complète (`content`) reste sous la responsabilité du
+modèle et de la relecture. Dans un document riche, une correction ciblée ne peut pas changer
+un marqueur, qui est un nœud et non du texte.
+
+Quand toutes les actions d’une réponse sont écartées, l’assistant rejoue une fois sa demande
+avec le motif du refus et le même contexte. Une correction valide remplace le message
+d’échec ; sinon le motif reste affiché avec l’absence de proposition. Un seul réessai a lieu,
+jamais en boucle.

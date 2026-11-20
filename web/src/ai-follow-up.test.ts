@@ -31,6 +31,8 @@ describe('bilan du suivi IA', () => {
     expect(body.messages[0].content).toContain('les informations explicitement datées les plus récentes');
     expect(body.messages[0].content).toContain('Ne reconstruis aucun historique absent');
     expect(body.messages[0].content).toContain('recopie en tête la date écrite dans la source');
+    expect(body.messages[0].content).toContain('seul l’état coché change');
+    expect(body.messages[0].content).toContain('ne transforme jamais une puce ou un numéro en case');
   });
 
   test('propose seulement des cases connues avec une preuve citée dans une note lue', async () => {

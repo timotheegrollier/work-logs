@@ -103,12 +103,12 @@ Actions, avec les seuls champs utiles (status : todo, doing, done ; priority : l
 - {"kind":"create_shared_procedure","title":"…","content":"…","directory":1} : fichier Word neuf, dans un dossier numéroté du partage, avec le dossier courant par défaut.
 À la création, rédige « content » en Markdown sans HTML ni images, avec les faits connus et « À préciser » si besoin. Donne à chaque nouvelle tâche des sous-tâches « - [ ] » sous « ## Étapes », et les étapes d’une procédure. Pour une note, contexte et « ## Actions à mener » si utile. Coche « - [x] » seulement si fait avéré.
 Sans « project », utilise le projet de la catégorie ou le projet affiché. Statut et archivage sont indépendants.
-« update_entry » garde l’identité : « append_content » ajoute les éléments fournis à une cible claire, « text_edits » corrige une citation exacte unique, « content » réécrit tout après « read_entries » si editable:true. Un seul de ces champs. Lis pour trouver les passages ; ajouts/corrections gardent styles et objets. Une tâche s’écrit dans « note principale Dn » ; « cette tâche » = « créée ici ».
+« update_entry » garde l’identité : « append_content » ajoute les éléments fournis à une cible claire, « text_edits » corrige une citation exacte unique, « content » réécrit tout après « read_entries » si editable:true. Un seul de ces champs. Lis pour trouver les passages ; ajouts/corrections gardent styles et objets. Repère la forme en place (titres, puces ou numéros, cases « - [ ] », rubriques) et suis-la : une ligne de la même liste, jamais un paragraphe isolé ni un format neuf à la fin. Une tâche s’écrit dans « note principale Dn » ; « cette tâche » = « créée ici ».
 Pour les cases, utilise les numéros de « checklist » après lecture, dans « checklist_updates » sans « content ». Groupe par entrée. Change, termine ou archive sur demande ou fait explicite. Préserve les cases en réécrivant le texte.
 Hors périmètre : supprimer ou archiver tâche/projet, lire Google Docs ou les annexes, remplacer un fichier partagé, agir hors de WorkLogs.
 Réponds uniquement par un objet JSON, sans commentaire :
 {"reply":"…","show_tasks":[n],"show_documents":[n],"actions":[…],"search":["mot"]}
-Clarifie ce qui change le résultat (cible, livrable, périmètre) : lis le contexte, puis pose la « question » utile {"text":"…","options":[]} avant les actions, avec 2 à ${MAX_OPTIONS} choix concrets et « multiple »: true si cumulables. Si la demande est précise, avance. Reprends les réponses précédentes ; la demande actuelle prime sur l’objectif initial.
+Clarifie ce qui change le résultat (cible, rubrique, format, livrable, périmètre) : lis le contexte, puis pose la « question » utile {"text":"…","options":[]} avant les actions, avec 2 à ${MAX_OPTIONS} choix concrets et « multiple »: true si cumulables. Si la cible, l’endroit ou le format restent ambigus, demande avant d’agir. Si la demande est précise, avance. Reprends les réponses précédentes ; la demande actuelle prime sur l’objectif initial.
 Lectures : « shared_search » (3 termes), « shared_list » (true : dossiers), « read_entries » (numéros locaux), « read_shared » (numéros du partage), « show_shared » (à afficher).
 Lis seulement si nécessaire, puis propose. Pour créer sur le partage, repère la destination avec « shared_list » ou « shared_search ».
 « reply » en français, en texte brut sans Markdown ni codes internes. « show_tasks » et « show_documents » affichent ces éléments. « search » prend 3 mots pour la recherche locale.`;
@@ -469,6 +469,26 @@ function readContent(value: unknown, name: string): string {
   return content;
 }
 
+/** Famille d’une ligne de liste Markdown : case à cocher, puce ou numéro. */
+function listKind(line: string): 'case' | 'puce' | 'numéro' | null {
+  if (/^\s*[-*+]\s+\[[ xX]\]\s/.test(line)) return 'case';
+  if (/^\s*[-*+]\s+/.test(line)) return 'puce';
+  if (/^\s*\d{1,9}[.)]\s+/.test(line)) return 'numéro';
+  return null;
+}
+
+/**
+ * Un ajout collé après une liste doit continuer cette liste dans le même format :
+ * un paragraphe ajouté à la fin casserait la liste existante. Une rubrique « ## »
+ * commence une nouvelle section et reste permise.
+ */
+function keepsListPattern(text: string, addition: string): boolean {
+  const kind = listKind(text.trimEnd().split('\n').at(-1) ?? '');
+  if (!kind) return true;
+  const first = addition.split('\n').find((line) => line.trim()) ?? '';
+  return /^#{1,6}\s/.test(first) || listKind(first) === kind;
+}
+
 interface TextEdit { find: string; replace: string }
 interface LocatedEdit { from: number; to: number; replacement: string }
 
@@ -480,8 +500,26 @@ function uniqueEdit(text: string, { find, replace }: TextEdit): LocatedEdit | nu
   return { from, to: from + find.length, replacement: replace };
 }
 
+/**
+ * Une correction ciblée ne change pas la famille d’une ligne de liste qu’elle touche :
+ * retirer ou remplacer « - [ ] », « - » ou « 1. » casserait la liste en place.
+ */
+function keepsEditListPattern(text: string, change: LocatedEdit): boolean {
+  const lineStart = text.lastIndexOf('\n', change.from - 1) + 1;
+  const lineEnd = text.indexOf('\n', change.to);
+  const line = text.slice(lineStart, lineEnd < 0 ? undefined : lineEnd);
+  const kind = listKind(line);
+  if (!kind) return true;
+  const offset = change.from - lineStart;
+  const after = `${line.slice(0, offset)}${change.replacement}${line.slice(change.to - lineStart)}`;
+  const first = after.split('\n').find((part) => part.trim()) ?? '';
+  return listKind(first) === kind;
+}
+
 function locatedEdits(text: string, edits: TextEdit[]): LocatedEdit[] {
   return edits.map((edit) => uniqueEdit(text, edit) ?? refuse('passage à modifier introuvable dans le texte relu'))
+    .map((change) => keepsEditListPattern(text, change) ? change
+      : refuse('correction hors du format de la liste existante : garde le marqueur de la ligne (case, puce ou numéro)'))
     .filter((change) => change.replacement !== text.slice(change.from, change.to))
     .sort((a, b) => b.from - a.from);
 }
@@ -704,6 +742,9 @@ function readProposal(raw: unknown, context: ChatContext, shownProject: string |
       if (action.append_content !== undefined) {
         const content = readContent(action.append_content, entry.kind === 'note' ? 'note' : 'procédure');
         if (!content) return refuse('texte à ajouter manquant');
+        if (!keepsListPattern(entryMarkdown(source), content)) {
+          return refuse('ajout hors du format de la liste existante : propose une ligne du même type (case, puce ou numéro) ou une rubrique « ## »');
+        }
         if (source.content_json) {
           const addition = markdownToRich(content);
           changes.content_json = { ...source.content_json, content: [...(source.content_json.content ?? []), ...(addition.content ?? [])] };
@@ -992,15 +1033,20 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
       4096, CHAT_TIMEOUT_MS, { effort: 'low', media });
     const maxSteps = MAX_MODEL_CALLS - links.modelCalls;
     let conversationTitle: string | undefined;
+    let rejectedNotice = '';
+    let retryHint = '';
+    let retried = false;
     for (let step = 1; ; step++) {
       const finalStep = step === maxSteps;
       const instructions = [
         SYSTEM_PROMPT,
         input.needsConversationTitle && CONVERSATION_TITLE_PROMPT,
         searchedLocal && SEARCH_DONE,
+        retryHint && `Ta proposition précédente a été écartée (${retryHint}). Corrige-la et propose une action valide, sans changer l’intention.`,
         finalStep && 'Dernière étape : réponds avec les résultats disponibles, sans demander de nouvelle lecture.',
       ].filter(Boolean).join('\n');
       const raw = await call(instructions);
+      retryHint = '';
       const response = replyObject(raw);
       if (input.needsConversationTitle) conversationTitle = readConversationTitle(response?.conversation_title) ?? conversationTitle;
       const question = readQuestion(response?.question);
@@ -1010,7 +1056,20 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
       const listShare: boolean = !listedShare && response?.shared_list === true;
       const sources = numbered(response?.read_entries, context.documents).filter(({ id }) => !readEntries.has(id)).slice(0, MAX_SOURCE_READS - readEntries.size);
       const sharedSources = numbered(response?.read_shared, context.sharedFiles).filter(({ path }) => !readShared.has(path)).slice(0, MAX_SOURCE_READS - readShared.size);
-      if (!terms.length && !shareTerms.length && !listShare && !sources.length && !sharedSources.length) return finishAnswer(raw, response, conversationTitle);
+      if (!terms.length && !shareTerms.length && !listShare && !sources.length && !sharedSources.length) {
+        const answer = await finishAnswer(raw, response, conversationTitle);
+        // Toutes les actions refusées à la validation repartent une fois avec le motif : le modèle
+        // corrige sa forme au lieu de laisser l’utilisateur sans proposition. Sans correction,
+        // le motif reste affiché.
+        if (!retried && !answer.proposals.length && answer.notice.includes('écartée') && step < maxSteps) {
+          retried = true;
+          rejectedNotice = answer.notice;
+          retryHint = answer.notice;
+          continue;
+        }
+        return !answer.proposals.length && rejectedNotice
+          ? { ...answer, notice: [answer.notice, rejectedNotice].filter(Boolean).join(' ') } : answer;
+      }
       if (finalStep) {
         const answer = await finishAnswer(raw, response, conversationTitle);
         const localTargets = new Set(actionEntrySources(response, context).filter(({ id }) => context.entriesRead.has(id) || context.entrySnapshots.has(id)).map(({ id }) => id));
@@ -1060,7 +1119,11 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
       ]);
       if (settings.signal?.aborted) throw new AiCancelled();
       if (!newLocalResults && !shareTerms.length && !listShare && !sources.length && !sharedSources.length) {
-        return { ...await finishAnswer(raw, response, conversationTitle), reply: `Rien de plus trouvé pour « ${terms.join(' », « ')} ».` };
+        const answer = await finishAnswer(raw, response, conversationTitle);
+        return {
+          ...answer, reply: `Rien de plus trouvé pour « ${terms.join(' », « ')} ».`,
+          notice: [answer.notice, !answer.proposals.length ? rejectedNotice : ''].filter(Boolean).join(' '),
+        };
       }
     }
   } catch (cause) {

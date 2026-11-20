@@ -459,7 +459,8 @@ describe('lecture locale et classement', () => {
       history: Array.from({ length: 12 }, (_, index) => ({ role: index % 2 ? 'assistant' as const : 'user' as const, text: `h${index} ${'y'.repeat(1000)}` })),
     }, { ...settings, profile: 'P'.repeat(3000) });
     const prompt = user(calls[0]);
-    expect(system(calls[0]).length + prompt.length - MAX_CHAT_MESSAGE).toBeLessThan(17_000);
+    // Plafond relevé avec la règle de préservation du format d’écriture dans le prompt de l’assistant.
+    expect(system(calls[0]).length + prompt.length - MAX_CHAT_MESSAGE).toBeLessThan(17_300);
     expect(lines(prompt, 'Projets')).toHaveLength(30);
     expect(titles(prompt)).toHaveLength(50);
     expect(titles(prompt).every((title) => title.length <= 60)).toBe(true);
@@ -691,7 +692,10 @@ describe('réponse du modèle', () => {
     expect(user(calls[1])).toContain('Contrôler la pression et la température.');
     expect(system(calls[1])).toContain('lis le contexte, puis pose la « question » utile');
     expect(system(calls[1])).toContain('avant les actions, avec 2 à');
+    expect(system(calls[1])).toContain('Si la cible, l’endroit ou le format restent ambigus, demande avant d’agir.');
     expect(system(calls[1])).toContain('Si la demande est précise, avance.');
+    expect(system(calls[1])).toContain('Repère la forme en place');
+    expect(system(calls[1])).toContain('jamais un paragraphe isolé ni un format neuf à la fin');
     expect(result.question).toEqual(question);
     expect(result.proposals).toEqual([]);
   });
@@ -1629,13 +1633,78 @@ describe('application des propositions, sur la vraie API', () => {
     stubAi(json({ actions: [
       { kind: 'update_entry', n: 1, content: 'Remplacement non lu.' },
       { kind: 'update_entry', n: 1, checklist_updates: [{ n: 1, checked: true }] },
-      { kind: 'update_entry', n: 1, append_content: 'Complément demandé.' },
+      { kind: 'update_entry', n: 1, append_content: '- [ ] Complément demandé.' },
     ] }));
     const { proposals, notice } = await ask({ text: 'Complète cette note.', openEntryId: 'e' });
-    expect(proposals).toEqual([expect.objectContaining({ entryId: 'e', changes: { content_md: `${original}\n\nComplément demandé.` } })]);
+    expect(proposals).toEqual([expect.objectContaining({ entryId: 'e', changes: { content_md: `${original}\n\n- [ ] Complément demandé.` } })]);
     expect(notice).toContain('2 actions écartées');
     expect(notice).toContain('texte Markdown complet requis');
     expect(notice).toContain('lire la note Markdown');
+  });
+
+  test('écarte un ajout qui casse la liste en place et accepte la même forme', async () => {
+    const original = '## Suivi\n\n- [ ] Recherche création article direct\n- [ ] Cindy voir œuf';
+    seedData(server.db, { entries: [{ id: 'e', title: 'Retours de recette', content_md: original }] });
+    const input = { text: 'Ajoute ce point à la note.', openEntryId: 'e' };
+    const attempt = async (append: string) => {
+      stubAi(json({ actions: [{ kind: 'update_entry', n: 1, append_content: append }] }));
+      return ask(input);
+    };
+    for (const append of ['Par défaut non composable en vivant.', '- Par défaut non composable en vivant.']) {
+      const answer = await attempt(append);
+      expect(answer.proposals).toEqual([]);
+      expect(answer.notice).toContain('ajout hors du format de la liste existante');
+    }
+    const same = await attempt('- [ ] Par défaut non composable en vivant.');
+    expect(same.notice).toBe('');
+    expect(same.proposals).toEqual([expect.objectContaining({
+      entryId: 'e', changes: { content_md: `${original}\n\n- [ ] Par défaut non composable en vivant.` },
+    })]);
+    const section = await attempt('## Points à vérifier\n\nRien de neuf.');
+    expect(section.proposals[0]).toMatchObject({ changes: { content_md: `${original}\n\n## Points à vérifier\n\nRien de neuf.` } });
+  });
+
+  test('écarte une correction ciblée qui change le marqueur d’une ligne de liste', async () => {
+    const original = '## Suivi\n\n- [ ] Vérifier la commande\n- [ ] Relancer le client';
+    seedData(server.db, { entries: [{ id: 'e', title: 'Retours de recette', content_md: original }] });
+    const input = { text: 'Corrige ce point de la note.', openEntryId: 'e' };
+    const attempt = async (edits: { find: string; replace: string }[]) => {
+      stubAi(json({ actions: [{ kind: 'update_entry', n: 1, text_edits: edits }] }));
+      return ask(input);
+    };
+    for (const edits of [
+      [{ find: '- [ ] Vérifier la commande', replace: 'Vérifier la commande' }],
+      [{ find: '- [ ] Vérifier la commande', replace: '- Relancer la commande' }],
+    ]) {
+      const answer = await attempt(edits);
+      expect(answer.proposals).toEqual([]);
+      expect(answer.notice).toContain('correction hors du format de la liste existante');
+    }
+    const ticked = await attempt([{ find: '- [ ] Vérifier la commande', replace: '- [x] Vérifier la commande' }]);
+    expect(ticked.notice).toBe('');
+    expect(ticked.proposals[0]).toMatchObject({
+      entryId: 'e', changes: { content_md: '## Suivi\n\n- [x] Vérifier la commande\n- [ ] Relancer le client' },
+    });
+    const wording = await attempt([{ find: 'Relancer le client', replace: 'Rappeler le client' }]);
+    expect(wording.notice).toBe('');
+    expect(wording.proposals[0]).toMatchObject({ changes: { content_md: original.replace('Relancer le client', 'Rappeler le client') } });
+  });
+
+  test('rejoue une fois une proposition écartée pour laisser le modèle corriger sa forme', async () => {
+    const original = '## Suivi\n\n- [ ] Vérifier la commande';
+    seedData(server.db, { entries: [{ id: 'e', title: 'Retours de recette', content_md: original }] });
+    const calls = stubAi(
+      json({ actions: [{ kind: 'update_entry', n: 1, append_content: 'Paragraphe isolé.' }] }),
+      json({ actions: [{ kind: 'update_entry', n: 1, append_content: '- [ ] Point ajouté.' }] }),
+    );
+    const answer = await ask({ text: 'Ajoute ce point à la note.', openEntryId: 'e' });
+    expect(calls).toHaveLength(2);
+    expect(system(calls[1])).toContain('Ta proposition précédente a été écartée');
+    expect(system(calls[1])).toContain('ajout hors du format de la liste existante');
+    expect(answer.notice).toBe('');
+    expect(answer.proposals).toEqual([expect.objectContaining({
+      entryId: 'e', changes: { content_md: `${original}\n\n- [ ] Point ajouté.` },
+    })]);
   });
 
   test('termine une correction locale après deux autres lectures de textes et quatre appels IA', async () => {
@@ -1773,10 +1842,13 @@ describe('application des propositions, sur la vraie API', () => {
     const input = { text: 'Coche la mesure de pression.', openEntryId: 'e' };
     const update = { kind: 'update_entry', n: 1, checklist_updates: [{ n: 1, checked: true }] };
     const action = (value: unknown) => json({ actions: [value] });
+    // Chaque refus est rejoué une fois (réessai automatique) avant que le motif ne reste affiché.
     stubAi(
-      action(update),
+      action(update), action(update),
       json({ read_entries: [1] }), action({ ...update, checklist_updates: [{ n: 3, checked: true }] }),
+      action({ ...update, checklist_updates: [{ n: 3, checked: true }] }),
       json({ read_entries: [1] }), action({ ...update, content: 'Texte de remplacement.' }),
+      action({ ...update, content: 'Texte de remplacement.' }),
       json({ read_entries: [1] }), action(update),
     );
     await expect(ask(input)).resolves.toMatchObject({ proposals: [], notice: expect.stringContaining('lire la note Markdown') });

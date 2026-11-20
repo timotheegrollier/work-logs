@@ -597,6 +597,8 @@ describe('mise en page', () => {
     const prompt = buildProofreadPrompt(' Réunion ', 'on a decidé', ' Dev solo ');
     expect(prompt.user).toBe('Profil : Dev solo\nTitre : Réunion\n\nTexte :\non a decidé');
     expect(prompt.system).toMatch(/sans rien inventer/);
+    expect(prompt.system).toContain('garde la forme des listes en place (puces, numéros, cases)');
+    expect(prompt.system).toContain('ne transforme jamais une liste en paragraphes, ni un paragraphe en liste');
     expect(prompt.system).toMatch(/uniquement avec le texte corrigé/);
     expect(buildProofreadPrompt('T', 'x').user).toBe('Titre : T\n\nTexte :\nx');
   });
@@ -735,6 +737,8 @@ describe('note complétée', () => {
     expect(prompt.user).toBe('Profil : Pisciculteur\nNote : Panne de la pompe\nProjet : Ferme\nTâches liées : Réparer la pompe\nPièces jointes : photo.jpg\nDéjà écrit :\n- pompe arrêtée\n- [x] disjoncteur relevé\n- [ ] commander un joint');
     expect(prompt.system).toMatch(/note complète, en Markdown et en français, à partir de son titre et de ce qui est déjà écrit/);
     expect(prompt.system).toMatch(/développe chaque point en phrases courtes/);
+    expect(prompt.system).toContain('Reprends la forme déjà écrite (titres, puces, numéros, cases « - [ ] »)');
+    expect(prompt.system).toContain('jamais en la remplaçant par un paragraphe ou par un autre type de liste');
     expect(prompt.system).toMatch(/Garde toutes les informations déjà écrites \(.*cases cochées ou non\).*sans jamais rien retirer/);
     expect(prompt.system).toContain('un passage distinct de cette note atteste explicitement que l’action correspondante a été accomplie, rouverte ou reste à faire');
     expect(prompt.system).toContain('Une action seulement prévue reste à faire');

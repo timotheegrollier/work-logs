@@ -487,6 +487,82 @@ test('l’assistant ajoute des cases à une note même si le fournisseur n’a p
   }
 });
 
+test('l’assistant ajoute un point à une liste à puces existante sans en changer la forme', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Projet saisie articles' });
+  try {
+    const title = 'Retours sur la saisie des articles';
+    const content = '## À faire\n\n- Recherche création article direct\n- Cindy voir œuf';
+    const addition = '- Vérifier la répartition de la marge livraison';
+    const note = await post(request, '/api/entries', { title, project_id: project.id, content_md: content });
+    await configure(page, project.id, note.id);
+    const prompts = await stubAssistant(page, {
+      reply: 'J’ajoute ce point à la liste existante.',
+      actions: [{ kind: 'update_entry', n: 1, append_content: addition }],
+    });
+
+    await page.goto('/');
+    const editor = page.getByRole('region', { name: 'Entrée', exact: true });
+    await expect(editor.getByLabel('Titre de l’entrée')).toHaveValue(title);
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    const chat = assistant(page);
+    await messageField(page).fill(`Ajoute à la liste de « ${title} » : Vérifier la répartition de la marge livraison.`);
+    await messageField(page).press('Enter');
+
+    const apply = chat.getByRole('button', { name: /^Appliquer/ });
+    await expect(apply).toBeVisible();
+    expect(prompts).toHaveLength(1);
+    const readEntry = async () => (await request.get(`/api/entries/${note.id}`)).json();
+    expect(await readEntry()).toMatchObject({ content_md: content });
+
+    await apply.click();
+    await expect(chat.getByText('✓ Appliqué', { exact: true })).toBeVisible();
+    expect(await readEntry()).toMatchObject({ content_md: `${content}\n\n${addition}` });
+    await page.keyboard.press('Escape');
+    await expect(editor.locator('li')).toHaveCount(3);
+    for (const label of ['Recherche création article direct', 'Cindy voir œuf', 'Vérifier la répartition de la marge livraison']) {
+      await expect(editor.getByText(label, { exact: true })).toBeVisible();
+    }
+  } finally {
+    await cleanProject(page, request, project.id);
+  }
+});
+
+test('l’assistant refuse une correction ciblée qui casse la forme d’une liste', async ({ page, request }) => {
+  const project = await post(request, '/api/projects', { name: 'Projet contrôles' });
+  try {
+    const title = 'Contrôles de la semaine';
+    const content = '## À faire\n\n- [ ] Vérifier la commande\n- [ ] Relancer le client';
+    const note = await post(request, '/api/entries', { title, project_id: project.id, content_md: content });
+    await configure(page, project.id, note.id);
+    // Le second appel est le réessai automatique : le modèle ne corrige pas sa forme.
+    const prompts = await stubAssistant(page,
+      {
+        reply: 'Je corrige ce point.',
+        actions: [{ kind: 'update_entry', n: 1, text_edits: [{ find: '- [ ] Vérifier la commande', replace: 'Vérifier la commande' }] }],
+      },
+      { reply: 'Je ne peux pas corriger sans casser la liste.', actions: [] },
+    );
+
+    await page.goto('/');
+    const editor = page.getByRole('region', { name: 'Entrée', exact: true });
+    await expect(editor.getByLabel('Titre de l’entrée')).toHaveValue(title);
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    const chat = assistant(page);
+    await messageField(page).fill(`Corrige le libellé de « ${title} ».`);
+    await messageField(page).press('Enter');
+
+    await expect(chat.getByText(/correction hors du format de la liste existante/)).toBeVisible();
+    await expect(chat.getByRole('button', { name: /^Appliquer/ })).toHaveCount(0);
+    expect(prompts).toHaveLength(2);
+    expect(await (await request.get(`/api/entries/${note.id}`)).json()).toMatchObject({ content_md: content });
+    await page.keyboard.press('Escape');
+    await expect(editor.getByText('Vérifier la commande', { exact: true })).toBeVisible();
+    await expect(editor.getByText('Relancer le client', { exact: true })).toBeVisible();
+  } finally {
+    await cleanProject(page, request, project.id);
+  }
+});
+
 test('sur téléphone, la liste ouvre une seule conversation et conserve les brouillons', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto('/');

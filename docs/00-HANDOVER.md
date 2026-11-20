@@ -1,5 +1,20 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Format des listes préservé, assistant qui réessaie — 2026-11-20, v0.87.0
+
+- Une proposition de l’assistant qui casse la forme d’une entrée est écartée à la validation :
+  un ajout après une liste reprend son marqueur (case, puce ou numéro) ou ouvre une rubrique
+  « ## » ; une correction ciblée ne peut ni retirer ni changer le marqueur de la ligne touchée.
+  Cocher une case ou corriger un libellé reste permis. **Reformuler**, **Compléter**, le
+  **bilan du jour** et le **suivi IA** suivent la même consigne (`05-DECISIONS.md` §91).
+- Quand toutes les actions d’une réponse sont écartées, l’assistant rejoue une fois sa demande
+  avec le motif du refus ; sans correction, le motif reste affiché avec l’absence de proposition.
+- Tests : 3 dans `ai-chat.test.ts` (ajout hors liste, correction ciblée sur un marqueur, réessai
+  après refus) et 2 parcours navigateur (`e2e/ai-chat.spec.ts`, ajout dans une liste à puces et
+  correction ciblée refusée).
+- `./scripts/check.sh` passe avec **2 112 tests**, dont un échec attendu. 365 API · 1 471 front ·
+  49 desktop unitaires · 56 scripts · 8 Worker · 11 relais · 130 navigateurs · 22 Electron.
+
 ## Ajouts de texte et dossiers reliés — 2026-11-20, v0.86.0
 
 - Pour un ajout ou une correction ciblée, WorkLogs relit le texte de l’entrée sur cet appareil

@@ -168,6 +168,8 @@ describe('bilan quotidien des suivis', () => {
     const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
     const data = JSON.parse(body.messages[1].content.split('\n\n')[1]);
     expect(data.checklists[0]).toMatchObject({ n: 1, evidence: [quote], items: [{ n: 1, text: 'Poser le joint', checked: false }, { n: 2, text: 'Vérifier la vanne', checked: true }] });
+    expect(body.messages[0].content).toContain('ne reformate aucune case');
+    expect(body.messages[0].content).toContain('restent ceux du texte');
     expect(body.messages[1].content).not.toContain('en_secret');
   });
 
