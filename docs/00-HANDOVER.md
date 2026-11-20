@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Conservation stricte du format des listes — correctif local après v0.87.1
+## Conservation stricte du format des listes — 2026-11-20, v0.87.2
 
 - Une proposition de l’assistant qui casse la forme d’une entrée est écartée à la validation :
   un ajout après une liste doit garder sa famille (une checklist reçoit des cases, pas des puces
