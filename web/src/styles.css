@@ -5,32 +5,37 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #0c1017;
-  --surface: #131924;
-  --surface-2: #1a2130;
-  --surface-3: #222b3c;
-  --line: #273145;
-  --line-soft: #1e2636;
-  --text: #eaeef6;
-  --muted: #8f9aae;
-  --faint: #6a7589;
-  --accent: #8fa7ff;
+  --bg: #090d14;
+  --surface: #111725;
+  --surface-2: #192031;
+  --surface-3: #222c40;
+  --line: #293449;
+  --line-soft: #1d2534;
+  --text: #eef1f8;
+  --muted: #98a3b8;
+  --faint: #6f7a8f;
+  --accent: #93a9ff;
   /* Aplats pleins (boutons primaires) : assez sombres pour porter du blanc. */
-  --accent-solid: #3b63e4;
-  --accent-soft: #1a2546;
+  --accent-solid: #3d63e8;
+  --accent-strong: #5478ff;
+  --accent-soft: #1a2547;
   /* L'ambre du marque-page : aujourd'hui, les tâches épinglées. */
-  --mark: #f0b43f;
+  --mark: #f2ba4d;
   --mark-soft: #3a2b0f;
   /* La page au centre : entre le fond et les panneaux. */
-  --paper: #10151f;
+  --paper: #0e131d;
   /* Le fil du journal : l'encre qui relie les jours. */
-  --rule: #2b3548;
+  --rule: #303b51;
   --search-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%238f9aae' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.6'/%3E%3Cpath d='m10.6 10.6 3.4 3.4'/%3E%3C/svg%3E");
   --danger: #f2667f;
   --danger-soft: #3a1a24;
   --ok: #4ad67f;
   --ok-soft: #10301f;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 18px 40px -20px rgb(0 0 0 / 0.7);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.28), 0 8px 24px -18px rgb(0 0 0 / 0.8);
+  --shadow-card-hover: 0 2px 4px rgb(0 0 0 / 0.3), 0 14px 32px -18px rgb(0 0 0 / 0.85);
+  --glow: radial-gradient(1100px 520px at 18% -12%, rgb(61 99 232 / 0.16), transparent 70%),
+    radial-gradient(900px 460px at 100% 0%, rgb(242 186 77 / 0.06), transparent 65%);
 }
 :root[data-theme='light'] {
   color-scheme: light;
@@ -45,6 +50,7 @@
   --faint: #8893a6;
   --accent: #2250d2;
   --accent-solid: #2451d3;
+  --accent-strong: #1c43bf;
   --accent-soft: #e7edff;
   --mark: #b2720a;
   --mark-soft: #fff0d3;
@@ -56,6 +62,10 @@
   --ok: #12874e;
   --ok-soft: #e3f6ea;
   --shadow: 0 1px 2px rgb(15 25 45 / 0.06), 0 18px 40px -20px rgb(15 25 45 / 0.35);
+  --shadow-card: 0 1px 2px rgb(15 25 45 / 0.05), 0 8px 22px -18px rgb(15 25 45 / 0.3);
+  --shadow-card-hover: 0 2px 6px rgb(15 25 45 / 0.07), 0 16px 32px -20px rgb(15 25 45 / 0.35);
+  --glow: radial-gradient(1100px 520px at 18% -12%, rgb(36 81 211 / 0.08), transparent 70%),
+    radial-gradient(900px 460px at 100% 0%, rgb(178 114 10 / 0.05), transparent 65%);
 }
 :root {
   /* Pas de police embarquée (zéro dépendance) : les sans-serif humanistes des
@@ -63,6 +73,14 @@
      monospace du système. */
   --font-ui: Inter, 'Noto Sans', Lato, Cantarell, Ubuntu, 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', 'Noto Sans Mono', 'DejaVu Sans Mono', Menlo, Consolas, monospace;
+  /* Rayons, mouvement et anneau de focus : une seule échelle pour toute l'app. */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 * {
@@ -76,8 +94,10 @@ body,
 body {
   margin: 0;
   background: var(--bg);
+  background-image: var(--glow);
+  background-attachment: fixed;
   color: var(--text);
-  font: 14px/1.5 var(--font-ui);
+  font: 14px/1.55 var(--font-ui);
   -webkit-font-smoothing: antialiased;
   font-variant-numeric: tabular-nums;
 }
@@ -135,6 +155,7 @@ select:focus-visible,
 textarea:focus-visible {
   outline-offset: 0;
   border-color: var(--accent);
+  box-shadow: var(--focus-ring);
 }
 input[type='checkbox'] {
   accent-color: var(--accent);
@@ -490,9 +511,10 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 50px;
-  padding: 7px 14px 7px 16px;
+  min-height: 54px;
+  padding: 8px 14px 8px 16px;
   background: var(--surface);
+  border-bottom: 1px solid var(--line-soft);
   position: relative;
   /* Au-dessus des barres collantes du contenu (barres d'outils, z-index 3) : le
      menu du compte s'ouvre par-dessus les colonnes au lieu de passer dessous. */
@@ -530,20 +552,24 @@ button:disabled {
   background: var(--surface-2);
 }
 .head input.search {
-  flex: 0 1 340px;
-  min-width: 160px;
-  height: 34px;
-  border-radius: 9px;
-  border-color: transparent;
-  padding-left: 34px;
+  flex: 1 1 300px;
+  max-width: 420px;
+  min-width: 150px;
+  height: 36px;
+  border-radius: 11px;
+  border-color: color-mix(in srgb, var(--line) 70%, transparent);
+  background-color: var(--surface-2);
+  padding-left: 35px;
   /* Loupe en SVG intégré : aucune ressource externe, teinte par thème. */
   background-image: var(--search-icon);
   background-position: 11px 50%;
   background-repeat: no-repeat;
   margin-left: 6px;
+  transition: background-color 0.16s var(--ease), border-color 0.16s var(--ease);
 }
 .head input.search:hover {
   border-color: var(--line);
+  background-color: var(--surface);
 }
 .head input.search:focus-visible {
   border-color: var(--accent);
@@ -607,10 +633,10 @@ button:disabled {
   display: flex;
   gap: 2px;
   padding: 3px;
-  height: 34px;
+  height: 36px;
   background: var(--surface-2);
-  border: 1px solid transparent;
-  border-radius: 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 11px;
 }
 .panel-toggle {
   display: inline-flex;
@@ -708,6 +734,24 @@ button:disabled {
 .right {
   flex: 0 1 var(--col-right, 320px);
   min-width: 120px;
+  container-type: inline-size;
+  container-name: tasks;
+}
+/* Le panneau des tâches se rétrécit avec sa poignée : les cartes se resserrent sur
+   leur propre largeur, pas sur celle de la fenêtre. */
+@container tasks (max-width: 320px) {
+  .quick {
+    gap: 6px;
+  }
+  .quick button:not(:disabled) {
+    padding-inline: 10px;
+  }
+  .card {
+    padding: 10px 11px;
+  }
+  .card-meta {
+    gap: 5px;
+  }
 }
 /* Conteneur : élargir un panneau rétrécit l'Écriture sans toucher à la fenêtre, ses
    formulaires se replient donc sur la largeur de la colonne (`@container`). */
@@ -1222,18 +1266,28 @@ button:disabled {
 }
 
 /* ------------------------------------------------------------ journal */
+/* Les deux créations restent dans le fil : rien ne flotte au-dessus des entrées
+   qui défilent (même règle que les cartes de tâches). */
+.journal-new {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 4px;
+  padding: 0;
+}
 .new-entry {
-  background: var(--accent-solid);
+  background: linear-gradient(180deg, var(--accent-strong), var(--accent-solid));
   color: #fff;
   font-weight: 600;
   height: 38px;
   padding: 0 12px;
   width: 100%;
   border-radius: 10px;
-  transition: filter 0.12s ease, transform 0.12s ease;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18), 0 6px 16px -10px var(--accent-solid);
+  transition: filter 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
 }
 .new-entry:hover:not(:disabled) {
-  filter: brightness(1.08);
+  filter: brightness(1.07);
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.2), 0 10px 22px -12px var(--accent-solid);
 }
 .new-entry:active {
   transform: translateY(1px);
@@ -1241,7 +1295,7 @@ button:disabled {
 /* Le second geste de création, en texte sous le premier : pas deux boutons rivaux. */
 .new-document {
   width: 100%;
-  margin: -4px 0 0;
+  margin: 0;
   padding: 6px 10px;
   border-color: transparent;
   background: transparent;
@@ -1321,9 +1375,10 @@ button:disabled {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 7px 10px;
-  border-radius: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
   border: 1px solid transparent;
+  transition: background-color 0.14s var(--ease), box-shadow 0.14s var(--ease);
 }
 .entry:hover:not(:disabled) {
   background: var(--surface-2);
@@ -1331,8 +1386,8 @@ button:disabled {
 /* La ligne ouverte porte un filet de la couleur de son projet. */
 .entry.is-selected {
   background: var(--accent-soft);
-  box-shadow: inset 3px 0 0 var(--project);
-  border-radius: 3px 8px 8px 3px;
+  box-shadow: inset 2px 0 0 var(--project), inset 0 0 0 1px color-mix(in srgb, var(--project) 28%, transparent);
+  border-radius: 4px 10px 10px 4px;
 }
 .entry-title {
   display: flex;
@@ -1934,7 +1989,7 @@ button:disabled {
 .editor {
   max-width: 1040px;
   margin: 0 auto;
-  padding: 22px 32px 64px;
+  padding: clamp(16px, 3.4cqi, 28px) clamp(16px, 4cqi, 36px) 72px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1944,6 +1999,8 @@ button:disabled {
   align-items: center;
   justify-content: center;
   color: var(--faint);
+  font-size: 14.5px;
+  text-align: center;
 }
 .editor-bar {
   display: flex;
@@ -1953,10 +2010,10 @@ button:disabled {
 .title {
   flex: 1;
   min-width: 0;
-  font-size: 28px;
-  line-height: 1.2;
+  font-size: clamp(24px, 3.2cqi + 14px, 31px);
+  line-height: 1.18;
   font-weight: 700;
-  letter-spacing: -0.022em;
+  letter-spacing: -0.024em;
   background: none !important;
   border: none !important;
   padding: 2px 0 !important;
@@ -3367,20 +3424,26 @@ div.google-preserved {
   gap: 8px;
   background: var(--surface);
   border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  padding: 11px 13px;
   cursor: grab;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.16s var(--ease), box-shadow 0.16s var(--ease), transform 0.16s var(--ease);
 }
 .card:hover {
   border-color: var(--line);
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
 }
 .card:focus-within {
   border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
 }
 /* Épinglée : le marque-page ambré, comme aujourd'hui dans le journal. */
 .card.is-pinned {
-  box-shadow: inset 3px 0 0 var(--mark);
+  box-shadow: inset 2px 0 0 var(--mark), var(--shadow-card);
+}
+.card.is-pinned:hover {
+  box-shadow: inset 2px 0 0 var(--mark), var(--shadow-card-hover);
 }
 .card.is-done {
   opacity: 0.7;
@@ -4379,6 +4442,38 @@ div.google-preserved {
   width: 100%;
   min-height: calc(3lh + 14px);
   resize: vertical;
+}
+/* IA intégrée : l'état se lit d'abord, la clé reste facultative. */
+.ai-device-status {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
+.ai-device-status p {
+  margin: 0;
+  color: var(--muted);
+}
+.ai-device-status b {
+  color: var(--text);
+}
+.ai-device-status.is-available {
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--line));
+  background: var(--ok-soft);
+}
+.ai-device-status.is-available b {
+  color: var(--ok);
+}
+.ai-device-status button {
+  min-height: 34px;
+}
+.ai-device-status.is-downloadable {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: var(--accent-soft);
 }
 /* Endpoint et modèle repliés : la clé et son test suffisent au quotidien. */
 .ai-advanced-settings {
@@ -5429,17 +5524,18 @@ div.google-preserved {
 
 /* ------------------------------------------------------------ adaptatif */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--line);
+  background: color-mix(in srgb, var(--line) 80%, transparent);
   border-radius: 99px;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
   background-clip: padding-box;
+  transition: background-color 0.16s var(--ease);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
+  background: color-mix(in srgb, var(--muted) 70%, var(--line));
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-track {
@@ -5619,6 +5715,13 @@ div.google-preserved {
     content: 'Tâches';
   }
   /* La sidebar Procédures porte déjà son titre (compteur + projet). */
+  /* La page défile en entier : la création ne s'épingle pas sous l'intitulé. */
+  .journal-new {
+    position: static;
+    margin: 0;
+    padding: 0;
+    background: none;
+  }
   .editor {
     padding: 16px;
   }
@@ -5996,20 +6099,33 @@ div.google-preserved {
   /* Journal : les deux créations côte à côte, une rangée au lieu de deux. */
   .journal {
     display: grid;
-    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     column-gap: 8px;
   }
   .journal > * {
     grid-column: 1 / -1;
   }
-  .journal > .new-entry {
-    grid-column: 1;
-  }
-  .journal > .new-document {
-    grid-column: 2;
+  .journal-new {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: 8px;
     margin: 0;
-    padding: 12px 8px;
+    padding: 0;
+    background: none;
+  }
+  .journal-new .new-entry {
+    padding: 0 8px;
     font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .journal-new .new-document {
+    margin: 0;
+    padding: 0 6px;
+    min-height: 44px;
+    font-size: 13px;
     border: 1px solid var(--line);
     border-radius: 10px;
     background: var(--surface-2);
@@ -6017,7 +6133,7 @@ div.google-preserved {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .journal > .new-document + * {
+  .journal-new + * {
     margin-top: 14px;
   }
 
@@ -7567,6 +7683,7 @@ button.lane-name:hover {
   max-height: none;
   border-width: 0 0 0 1px;
   border-radius: 0;
+  box-shadow: -24px 0 60px -30px rgb(0 0 0 / 0.55);
 }
 .column-resizer-ai-chat {
   display: block;
@@ -7714,11 +7831,27 @@ button.lane-name:hover {
 }
 .ai-chat-working {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 8px;
   min-height: 30px;
+  padding: 4px 14px;
   color: var(--muted);
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.ai-chat-activity {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.ai-chat-activity summary {
+  cursor: pointer;
+}
+.ai-chat-activity ol {
+  margin: 6px 0 0;
+  padding-inline-start: 24px;
 }
 .ai-chat-working-icon {
   flex: none;
@@ -7766,9 +7899,63 @@ button.lane-name:hover {
   gap: 20px;
 }
 .ai-chat-empty {
-  max-width: 360px;
-  margin: 12px 0;
+  display: grid;
+  gap: 10px;
+  max-width: 560px;
+  margin: clamp(8px, 6vh, 56px) 0 12px;
+  padding: clamp(16px, 3vw, 24px);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent-soft) 65%, var(--surface)), var(--surface));
   color: var(--muted);
+  box-shadow: var(--shadow-card);
+}
+.ai-chat-empty > p {
+  margin: 0;
+}
+.ai-chat-empty-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.ai-chat-empty-title span {
+  color: var(--mark);
+}
+.ai-chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ai-chat-suggestions button {
+  font-size: 12.5px;
+  text-align: left;
+  white-space: normal;
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+.ai-chat-suggestions button:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  color: var(--accent);
+}
+.ai-chat-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ai-chat-error .error {
+  flex: 1 1 220px;
+  margin: 0;
+}
+.ai-chat-error button {
+  flex: none;
 }
 .ai-chat-turn {
   display: grid;
@@ -7782,15 +7969,20 @@ button.lane-name:hover {
 .ai-chat-bubble {
   justify-self: start;
   max-width: 92%;
-  padding: 8px 12px;
-  border-radius: 12px;
+  padding: 9px 13px;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px var(--radius-lg) var(--radius-lg) var(--radius-lg);
   background: var(--surface-2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .ai-chat-bubble.is-user {
   justify-self: end;
-  background: var(--accent-soft);
+  border-color: transparent;
+  border-radius: var(--radius-lg) var(--radius-lg) 4px var(--radius-lg);
+  background: linear-gradient(160deg, var(--accent-solid), color-mix(in srgb, var(--accent-solid) 82%, #000));
+  color: #fff;
+  box-shadow: 0 6px 16px -12px var(--accent-solid);
 }
 .ai-chat-question {
   border-inline-start: 2px solid var(--accent);
@@ -7915,6 +8107,12 @@ button.lane-name:hover {
   min-height: 36px;
   max-height: 30vh;
   resize: none;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  transition: border-color 0.16s var(--ease), box-shadow 0.16s var(--ease);
+}
+.ai-chat-composer:focus-within textarea {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
 }
 .ai-chat-composer button {
   flex: none;

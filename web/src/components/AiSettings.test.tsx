@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi, afterEach } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AiSettings } from './AiSettings';
 import { pacificDay } from '../ai-budget';
@@ -27,9 +27,11 @@ describe('réglages IA', () => {
     expect(screen.getByLabelText('Clé IA')).toBeVisible();
     expect(screen.getByLabelText('Clé IA')).toHaveAttribute('type', 'password');
     expect(screen.getByRole('button', { name: 'Tester la connexion' })).toBeVisible();
-    expect(screen.getByRole('status')).toHaveTextContent('Assistance inactive : clé IA manquante.');
-    expect(screen.getByText('Colle ta clé IA pour activer l’assistance.')).toBeVisible();
-    expect(screen.getByText('Modèle choisi : Gemini 3 Flash (preview)')).toBeVisible();
+    expect(screen.getByRole('status')).toHaveTextContent('Sans clé : recherche locale, aucune dépense.');
+    expect(screen.getByText('Aucune clé nécessaire : l’IA intégrée prend le relais quand elle est disponible.')).toBeVisible();
+    expect(screen.getByText(/Sans clé, tout reste gratuit/)).toBeVisible();
+    expect(screen.getByText('Modèle choisi : recherche locale, sans service externe')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Créer une clé OpenRouter' })).toHaveAttribute('href', 'https://openrouter.ai/settings/keys');
     expect(screen.getByLabelText('Endpoint IA')).not.toBeVisible();
     expect(screen.getByLabelText('Modèle IA')).not.toBeVisible();
     await user.click(screen.getByText('Réglages avancés'));
@@ -70,39 +72,34 @@ describe('réglages IA', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  test('le select propose les modèles vérifiés et le défaut est sélectionné', async () => {
+  test('le sélecteur propose le routeur gratuit par défaut et un modèle personnalisé', async () => {
     const user = userEvent.setup();
     render(<AiSettings />);
     await user.click(screen.getByText('Réglages avancés'));
     const select = screen.getByLabelText('Modèle IA');
-    expect(select).toHaveValue('gemini-3-flash-preview');
+    expect(select).toHaveValue('openrouter/free');
     const options = [...(select as HTMLSelectElement).options].map((option) => option.value);
-    expect(options).toEqual([
-      'gemini-3-flash-preview',
-      'gemini-2.5-flash',
-      'gemini-3.6-flash',
-      'gemini-3.5-flash-lite',
-      'gemini-3.1-flash-lite',
-      'personnalise',
-    ]);
+    expect(options).toEqual(['openrouter/free', 'personnalise']);
   });
 
   test('choisir un modèle l’enregistre sur l’appareil', async () => {
     const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-model', 'vieux-modele');
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
     render(<AiSettings />);
     await user.click(screen.getByText('Réglages avancés'));
-    await user.selectOptions(screen.getByLabelText('Modèle IA'), 'gemini-3.6-flash');
-    expect(localStorage.getItem('worklogs-ai-model')).toBe('gemini-3.6-flash');
+    await user.selectOptions(screen.getByLabelText('Modèle IA'), 'openrouter/free');
+    expect(localStorage.getItem('worklogs-ai-model')).toBe('openrouter/free');
   });
 
   test('la consommation du jour s’affiche et le plafond quotidien reste borné', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-usage', JSON.stringify({ day: pacificDay(), requests: 12, tokens: 18_400, background: 2 }));
     render(<AiSettings />);
-    expect(screen.getByText('Aujourd’hui : 12 / 150 requêtes · ≈ 18 400 jetons')).toBeVisible();
+    expect(screen.getByText('Aujourd’hui : 12 / 50 requêtes · ≈ 18 400 jetons')).toBeVisible();
     await user.click(screen.getByText('Réglages avancés'));
     const limit = screen.getByLabelText('Plafond de requêtes IA par jour');
-    expect(limit).toHaveValue(150);
+    expect(limit).toHaveValue(50);
     expect(limit).toHaveAttribute('min', '10');
     expect(limit).toHaveAttribute('max', '5000');
     await user.clear(limit);
@@ -127,21 +124,22 @@ describe('réglages IA', () => {
     render(<AiSettings />);
     expect(screen.queryByText(/jamais automatiquement/)).not.toBeInTheDocument();
     expect(screen.getByText(/Sans clic, seuls les\s+éléments ajoutés au suivi IA/)).toBeInTheDocument();
-    expect(screen.getByText(/d’un projet sans facturation ne coûte rien/)).toHaveTextContent('le compteur porte sur cet appareil');
+    expect(screen.getByText(/sans achat de crédits/)).toBeVisible();
+    expect(screen.getByText(/Le compteur porte sur cet appareil/)).toHaveTextContent('Le service peut atteindre son propre quota');
   });
 
-  test('la gratuité n’est garantie qu’avec un modèle de la chaîne de secours sur l’endpoint Gemini', async () => {
+  test('un modèle payant ou un autre service rétablit l’avertissement de prix', async () => {
     const user = userEvent.setup();
     const warning = /ne peut pas garantir la gratuité/;
     render(<AiSettings />);
     expect(screen.queryByText(warning)).not.toBeInTheDocument();
     await user.click(screen.getByText('Réglages avancés'));
-    await user.selectOptions(screen.getByLabelText('Modèle IA'), 'gemini-3.6-flash');
-    expect(screen.queryByText(warning)).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('Modèle IA'), 'personnalise');
-    await user.type(screen.getByLabelText('Modèle personnalisé'), 'modele-payant');
+    await user.type(screen.getByLabelText('Modèle personnalisé'), 'studio/modele-payant');
     expect(screen.getByText(warning)).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Restaurer les réglages Gemini' }));
+    await user.type(screen.getByLabelText('Modèle personnalisé'), ':free');
+    expect(screen.queryByText(warning)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Restaurer les réglages gratuits' }));
     expect(screen.queryByText(warning)).not.toBeInTheDocument();
     await user.clear(screen.getByLabelText('Endpoint IA'));
     await user.type(screen.getByLabelText('Endpoint IA'), 'https://ia.example/v1');
@@ -151,6 +149,7 @@ describe('réglages IA', () => {
   test('modèle inconnu enregistré : saisie libre préremplie', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-model', 'vieux-modele');
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
     render(<AiSettings />);
     expect(screen.getByText('Modèle choisi : vieux-modele')).toBeVisible();
     await user.click(screen.getByText('Réglages avancés'));
@@ -170,7 +169,7 @@ describe('réglages IA', () => {
     await user.click(screen.getByRole('button', { name: 'Tester la connexion' }));
     expect(await screen.findByText(/Connexion vérifiée/)).toBeVisible();
     const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
-    expect(body.model).toBe('gemini-3-flash-preview');
+    expect(body.model).toBe('openrouter/free');
   });
 
   test('« Tester la connexion » en échec affiche le motif du fournisseur', async () => {
@@ -189,13 +188,13 @@ describe('réglages IA', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/inconnu/);
   });
 
-  test('« Tester la connexion » sans clé renvoie aux Paramètres sans appel réseau', async () => {
+  test('« Tester la connexion » sans clé ni IA intégrée explique le repli local sans appel réseau', async () => {
     const user = userEvent.setup();
     const fetch = vi.fn(async () => okResponse('OK'));
     vi.stubGlobal('fetch', fetch);
     render(<AiSettings />);
     await user.click(screen.getByRole('button', { name: 'Tester la connexion' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/Colle ta clé IA/);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Aucune IA intégrée/);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -209,7 +208,7 @@ describe('réglages IA', () => {
     await user.type(screen.getByLabelText('Mon contexte de travail'), 'Maintenance');
     expect(screen.getByRole('status')).toHaveTextContent(/Connexion vérifiée/);
     if (field !== 'Clé IA') await user.click(screen.getByText('Réglages avancés'));
-    if (field === 'Modèle IA') await user.selectOptions(screen.getByLabelText(field), 'gemini-3.6-flash');
+    if (field === 'Modèle IA') await user.selectOptions(screen.getByLabelText(field), 'personnalise');
     else await user.type(screen.getByLabelText(field), 'x');
     expect(screen.getByRole('status')).toHaveTextContent('Connexion non testée.');
     expect(screen.queryByText(/Connexion vérifiée/)).not.toBeInTheDocument();
@@ -238,25 +237,38 @@ describe('réglages IA', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  test('restaurer les réglages avancés conserve clé et contexte et demande un nouveau diagnostic', async () => {
+  test('restaurer les réglages gratuits sur le même service conserve clé et contexte', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('fetch', vi.fn(async () => okResponse('OK')));
     localStorage.setItem('worklogs-ai-key', 'cle-test');
-    localStorage.setItem('worklogs-ai-endpoint', 'https://ia.example/v1');
+    localStorage.setItem('worklogs-ai-endpoint', 'https://openrouter.ai/api/v1/');
     localStorage.setItem('worklogs-ai-model', 'modele-perso');
     localStorage.setItem('worklogs-ai-profile', 'Maintenance');
     render(<AiSettings />);
     await user.click(screen.getByRole('button', { name: 'Tester la connexion' }));
     await screen.findByText(/Connexion vérifiée/);
     await user.click(screen.getByText('Réglages avancés'));
-    await user.click(screen.getByRole('button', { name: 'Restaurer les réglages Gemini' }));
-    expect(screen.getByLabelText('Modèle IA')).toHaveValue('gemini-3-flash-preview');
-    expect(screen.getByLabelText('Endpoint IA')).toHaveValue('https://generativelanguage.googleapis.com/v1beta/openai');
+    await user.click(screen.getByRole('button', { name: 'Restaurer les réglages gratuits' }));
+    expect(screen.getByLabelText('Modèle IA')).toHaveValue('openrouter/free');
+    expect(screen.getByLabelText('Endpoint IA')).toHaveValue('https://openrouter.ai/api/v1');
     expect(screen.getByLabelText('Clé IA')).toHaveValue('cle-test');
     expect(screen.getByLabelText('Mon contexte de travail')).toHaveValue('Maintenance');
     expect(screen.getByLabelText('Mon contexte de travail')).toHaveAttribute('maxlength', '2000');
     expect(screen.getByRole('status')).toHaveTextContent('Connexion non testée.');
     expect(screen.queryByLabelText('Modèle personnalisé')).not.toBeInTheDocument();
-    expect(localStorage.getItem('worklogs-ai-model')).toBe('gemini-3-flash-preview');
+    expect(localStorage.getItem('worklogs-ai-model')).toBe('openrouter/free');
+  });
+
+  test('modifier l’adresse garde la clé sur la même origine et la vide en changeant d’origine', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-key', 'cle-openrouter');
+    render(<AiSettings />);
+    await user.click(screen.getByText('Réglages avancés'));
+    const endpoint = screen.getByLabelText('Endpoint IA');
+    fireEvent.change(endpoint, { target: { value: 'https://openrouter.ai/api/v1/' } });
+    expect(screen.getByLabelText('Clé IA')).toHaveValue('cle-openrouter');
+    fireEvent.change(endpoint, { target: { value: 'https://ia.example/v1' } });
+    expect(screen.getByLabelText('Clé IA')).toHaveValue('');
+    expect(localStorage.getItem('worklogs-ai-key')).toBe('');
   });
 });

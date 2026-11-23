@@ -93,8 +93,11 @@ http://localhost:8410. Application desktop : `npm run desktop`.
 Markdown géré : titres, gras/italique, listes, **cases à cocher**, **tableaux**,
 citations, blocs de code, liens, images.
 
-L’assistant utilise la clé IA configurée dans les paramètres. Relis ses propositions
-avant d’appliquer les changements ou de créer un Word dans le dossier partagé.
+L’IA ne demande **ni clé, ni compte, ni abonnement** : dans Chrome ou la PWA, WorkLogs
+utilise l’IA intégrée au navigateur (« Préparer l’IA gratuite » télécharge le modèle une
+fois). Ailleurs, la recherche et les propositions locales prennent le relais. Une clé
+externe ou un modèle local (Ollama) restent facultatifs. L’assistant affiche ses
+recherches et lectures, puis te laisse relire ses propositions avant de les appliquer.
 [Utiliser l’assistant](docs/03-UTILISATION.md#lassistant).
 
 Les documents riches s’enregistrent automatiquement en local ; l’export JSON conserve

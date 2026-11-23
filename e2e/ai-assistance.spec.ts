@@ -245,11 +245,11 @@ test('réglages IA : projet actif, clé accessible et paramètres techniques rep
     const note = await post(request, '/api/entries', { title: 'Note des réglages', project_id: project.id });
     await configure(page, project.id, note.id);
     await page.setViewportSize({ width: 412, height: 915 });
-    let calls = 0;
+    const calls: { url: string; model: string }[] = [];
     await page.route('**/chat/completions', async (route) => {
       const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
       if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-      calls += 1;
+      calls.push({ url: route.request().url(), model: route.request().postDataJSON().model });
       return route.fulfill({ headers, json: { choices: [{ message: { content: 'OK' } }] } });
     });
     await page.goto('/');
@@ -261,16 +261,19 @@ test('réglages IA : projet actif, clé accessible et paramètres techniques rep
     await expect(settings.getByLabel('Endpoint IA', { exact: true })).toBeHidden();
     await expect(settings.getByLabel('Modèle IA', { exact: true })).toBeHidden();
     await settings.getByLabel('Contexte IA du projet', { exact: true }).fill('Commandes Linux, procédures concises.');
-    expect(calls).toBe(0);
+    expect(calls).toHaveLength(0);
     await settings.getByText('Réglages avancés', { exact: true }).click();
     await expect(settings.getByLabel('Endpoint IA', { exact: true })).toBeVisible();
-    await settings.getByLabel('Modèle IA', { exact: true }).selectOption('gemini-2.5-flash');
-    expect(calls).toBe(0);
+    await settings.getByLabel('Modèle IA', { exact: true }).selectOption('personnalise');
+    await settings.getByLabel('Modèle personnalisé', { exact: true }).fill('studio/modele-test');
+    await settings.getByRole('button', { name: 'Restaurer les réglages gratuits', exact: true }).click();
+    await expect(settings.getByLabel('Modèle IA', { exact: true })).toHaveValue('openrouter/free');
+    expect(calls).toHaveLength(0);
     expect(await settings.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBeTruthy();
     await settings.getByText('Réglages avancés', { exact: true }).click();
     await settings.getByRole('button', { name: 'Tester la connexion', exact: true }).click();
     await expect(settings.getByRole('region', { name: 'Assistance IA', exact: true }).getByRole('status')).toContainText('Connexion vérifiée');
-    expect(calls).toBe(1);
+    expect(calls).toEqual([{ url: 'https://openrouter.ai/api/v1/chat/completions', model: 'openrouter/free' }]);
   } finally {
     await cleanProject(page, request, project.id);
   }

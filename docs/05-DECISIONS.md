@@ -3696,10 +3696,9 @@ recherche utilisent le nom du fichier du partage.
 
 Une proposition d’écriture respecte la forme de l’entrée. Avant un ajout, la validation
 regarde le Markdown relu : si sa dernière ligne est une case, une puce ou un numéro, l’ajout
-commence par une ligne de la même famille — une checklist reste en cases, une liste à puces
-en puces et une liste numérotée en numéros — et une rubrique « ## » reste autorisée pour ouvrir
-une section. Une puce ordinaire après des cases (ou l’inverse) est écartée, tout comme un
-paragraphe isolé, au lieu de changer la forme en place. Une correction ciblée (`text_edits`)
+commence par une ligne de liste, quelle que soit sa famille — une puce après des cases
+continue la liste sans la casser — et une rubrique « ## » reste autorisée pour ouvrir une
+section. Un paragraphe isolé est écarté au lieu d’aplatir la forme en place. Une correction ciblée (`text_edits`)
 ne change pas non plus le marqueur de la ligne qu’elle touche : retirer « - [ ] » ou remplacer
 une case par une puce est refusé, tandis que cocher une case ou corriger son libellé reste
 permis. Reformuler et Compléter reçoivent la même consigne pour leurs listes. Le bilan du
@@ -3716,21 +3715,83 @@ Quand toutes les actions d’une réponse sont écartées, l’assistant rejoue 
 avec le motif du refus et le même contexte. Une correction valide remplace le message
 d’échec ; sinon le motif reste affiché avec l’absence de proposition. Un seul réessai a lieu,
 jamais en boucle. Si le second passage échoue encore sur la forme, l’assistant ne laisse pas
-l’utilisateur sans suite : il pose une question pour garder le format en place ou ouvrir une
-rubrique « ## », et la consigne du réessai l’autorise à demander lui-même la forme voulue.
+l’utilisateur sans suite : il pose une question avec des choix (cases à cocher, puces,
+rubrique « ## »), et la consigne du réessai l’autorise à demander lui-même la forme voulue.
 
-## 92. Les tableurs joints s’ouvrent dans Écriture — 2026-11-20
+## 92. Un routeur gratuit pour toute l’IA et l’activité réelle dans l’assistant — 2026-11-23
 
-Cliquer le nom d’une pièce jointe `.xlsx`, `.ods`, `.csv` ou `.tsv` ouvre sa grille
-dans la colonne **Écriture**, sans dialogue qui recouvre l’application. Les onglets
-de feuille restent en bas pour les classeurs. **Enregistrer une copie modifiée**
-ajoute une nouvelle pièce jointe dans la même entrée ; l’original reste intact.
-Les classeurs du dossier partagé utilisent aussi l’éditeur ODS.
+OpenRouter remplace Gemini par défaut dans le client d’IA commun. `openrouter/free`
+choisit parmi les modèles gratuits disponibles selon les besoins de chaque demande.
+Une clé OpenRouter suffit sans achat de crédits. Le fournisseur annonce 50 requêtes par
+jour et 20 par minute pour les variantes gratuites sur un compte sans crédits.
+[Routeur](https://openrouter.ai/docs/guides/routing/routers/free-router) ·
+[Limites](https://openrouter.ai/collections/free-models).
 
-Il ne s’agit pas d’une reproduction complète d’Excel : la grille modifie les cellules
-et conserve le reste du classeur, sans édition des graphiques, des formats ou de la
-structure avancée. ODS conserve la mise en forme existante et invalide les résultats
-en cache des formules à recalculer au prochain chargement dans un tableur ; les
-formules saisies acceptent les références simples à la feuille active. `.xls` et
-`.numbers` restent confiés à l’application système ; `.xlsm` reste en lecture seule.
-Aucune dépendance de tableur n’est ajoutée.
+- Les anciens réglages Gemini enregistrés sont relus avec le nouveau défaut et une clé
+  vide. Le contexte reste enregistré. Une clé Google ne part pas vers OpenRouter. La
+  CSP desktop autorise les deux hôtes précis pour le nouveau défaut et le transport
+  Google historique utilisé par une configuration explicite.
+- Le routage gratuit exige un prix d’inférence nul et exclut les fournisseurs qui
+  collectent les données. WorkLogs désactive la recherche web OpenRouter et demande le
+  moteur gratuit Cloudflare pour convertir les PDF, sans OCR payant. Une URL publique
+  est transmise comme référence. La lecture GitHub locale conserve son fonctionnement.
+  [Routage](https://openrouter.ai/docs/guides/routing/provider-selection) ·
+  [PDF](https://openrouter.ai/docs/guides/overview/multimodal/pdfs).
+- Le chat, le suivi, les conseils et le bilan demandent un objet JSON à OpenRouter.
+  Les champs des réponses restent validés par WorkLogs. Les autres gestes gardent
+  leur format de sortie, dont les tableaux JSON et le Markdown.
+- Un 5xx HTTP immédiat peut rejouer une fois la même requête gratuite dans son délai
+  initial. Le diagnostic, le suivi automatique et les refus de quota ne sont pas rejoués.
+  Le compteur par appareil part de 50 requêtes par défaut, soit 500 000 jetons, avec
+  un tiers réservé au maximum au suivi automatique. Les plafonds enregistrés gardent
+  leur valeur. Le compteur local se remet à zéro à minuit à Los Angeles et ne représente
+  pas le quota restant du compte OpenRouter.
+- Dans l’assistant, chaque message peut montrer les recherches, les lectures et la
+  validation effectuées par WorkLogs. Les étapes sont séparées par conversation.
+  Les changements proposés restent soumis au clic **Appliquer**.
+
+Kilo répond anonymement aux appels serveur de recette, mais ses en-têtes ne
+permettent pas les appels directs depuis la PWA. OpenRouter permet ces appels avec
+la clé personnelle, via le même transport que dans l’application desktop. Les
+tests automatisés simulent l’inférence. La recette avec une clé figure au §14 de
+`04-RECETTES.md`.
+
+## 93. Une même échelle de formes, et le panneau qui décide de sa largeur — 2026-11-23
+
+Refonte visuelle et responsive sans nouvelle dépendance : les couleurs, rayons, ombres et
+l'anneau de focus passent par des jetons dans `styles.css`. Le nom du panneau garde la
+main sur les replis qui le concernent : les cartes de tâches se resserrent en requête de
+conteneur (`container: tasks`), le titre de l'écriture suit la largeur de la colonne
+(`clamp()` en `cqi`), pas celle de la fenêtre.
+
+- L'en-tête reste opaque : un `backdrop-filter` y créait un bloc conteneur, et la barre
+  du bas du téléphone (position fixe, enfant de l'en-tête) remontait avec lui.
+- La création du journal (Nouvelle entrée, Nouveau document) reste dans le fil : rien ne
+  flotte au-dessus des entrées qui défilent, comme pour les cartes de tâches. Les deux
+  boutons tiennent côte à côte sur téléphone ; le nom du document n'y est plus tronqué.
+- Une conversation vide propose quatre demandes de départ : un clic remplit le champ,
+  rien n'est envoyé. Une demande qui a échoué (réseau, panne) se repose à l'identique avec
+  ses pièces jointes, sans repasser par le brouillon ; l'échange en échec est remplacé.
+  Les suggestions et la relance ne modifient ni le plafond ni le circuit d'écriture :
+  les propositions restent soumises à **Appliquer**.
+
+## 94. L’IA gratuite d’abord : sur l’appareil, sans clé ni compte — 2026-11-23
+
+Condition posée : aucune clé, aucun abonnement, aucun compte. La seule IA qui remplisse
+cette condition sans dépendance ni service tiers est celle **intégrée au navigateur**
+(Prompt API de Chrome, exécution sur l’appareil). Elle passe donc avant tout le reste.
+
+- `web/src/ai-device.ts` lit `LanguageModel.availability()` (ou l’ancien
+  `ai.languageModel.capabilities()`), crée une session avec la consigne système et rend le
+  texte. Le JSON est extrait des clôtures Markdown du petit modèle. Un média ou une URL à
+  lire n’est pas de son ressort : ces gestes gardent leur circuit.
+- Aucun téléchargement implicite : un modèle seulement `downloadable` n’est pas créé tout
+  seul. **Préparer l’IA gratuite** dans les Paramètres déclenche le téléchargement unique
+  du navigateur, sur un clic. Le statut est affiché (prête, téléchargeable, absente).
+- Sans clé ni IA intégrée, `postChatCompletions` lance `aiUnavailableMessage()` et les
+  écrans retombent sur la recherche et les propositions locales. La clé redevient ce
+  qu’elle aurait dû rester : une option pour un service externe. Un endpoint local
+  (`127.0.0.1`, `localhost`) est accepté sans clé, sans en-tête `Authorization`.
+- Le plafond quotidien ne compte que les appels distants ; l’IA de l’appareil ne consomme
+  rien. OpenRouter gratuit reste proposé aux personnes qui collent une clé, mais n’est
+  plus présenté comme nécessaire.

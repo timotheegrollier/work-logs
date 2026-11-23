@@ -1,8 +1,8 @@
 # WorkLogs
 
-**État v0.86.0** (`package.json` fait foi). `./scripts/check.sh` passe le 2026-11-20 avec
-**2 107 tests**, dont un échec attendu. 365 API · 1 468 front · 49 desktop · 56 scripts ·
-8 Worker · 11 relais · 128 navigateur · 22 desktop e2e.
+**État v0.88.0** (`package.json` fait foi). `./scripts/check.sh` passe le 2026-11-23 avec
+**2 136 tests**, dont un échec attendu. 365 API · 1 492 front (+1 attendu) · 49 desktop ·
+56 scripts · 8 Worker · 11 relais · 132 navigateur · 22 desktop e2e.
 
 **Lot publié en v0.12.0 : éditeur Google Docs natif** (`codex/google-docs-integrated-editor`).
 Lire `docs/08-GOOGLE-DOCS.md` : la vraie page Google s'affiche dans la colonne centrale,

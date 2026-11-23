@@ -2,13 +2,11 @@
  * Assistance IA avec une clé personnelle ; seul le suivi activé explicitement
  * peut se réactualiser après enregistrement.
  *
- * Le client compatible OpenAI (`POST {endpoint}/chat/completions`,
- * `Authorization: Bearer <clé>`) parle aussi bien à OpenAI qu'à la clé
- * gratuite d'AI Studio via l'endpoint OpenAI-compatible de Gemini
- * (`https://generativelanguage.googleapis.com/v1beta/openai`, modèle
- * `gemini-3-flash-preview` par défaut, chaîne de secours sur les autres modèles gratuits).
- * Les PDF Gemini et la consultation de liens utilisent generateContent.
+ * Le client utilise le protocole OpenAI. Le routeur gratuit d'OpenRouter choisit
+ * un modèle disponible sans dépendre du nom d'une version particulière.
  */
+
+import { deviceCompletion, isLocalAiEndpoint, readDeviceAiStatus } from './ai-device';
 
 export interface AiSettings {
   endpoint: string;
@@ -22,26 +20,21 @@ export interface AiSettings {
   background?: boolean;
 }
 
-export const DEFAULT_AI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai';
-export const DEFAULT_AI_MODEL = 'gemini-3-flash-preview';
+export const DEFAULT_AI_ENDPOINT = 'https://openrouter.ai/api/v1';
+export const DEFAULT_AI_MODEL = 'openrouter/free';
+export const GEMINI_AI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai';
+const normalizedEndpoint = (endpoint: string) => endpoint.trim().replace(/\/+$/, '');
+const isOpenRouter = (endpoint: string) => normalizedEndpoint(endpoint) === DEFAULT_AI_ENDPOINT;
+const googleKey = (key: string) => key.startsWith('AIza');
+
+export function isFreeAi({ endpoint, model }: Pick<AiSettings, 'endpoint' | 'model'>): boolean {
+  const id = model.trim();
+  return isOpenRouter(endpoint) && (id === DEFAULT_AI_MODEL || /^[\w.-]+\/[\w.-]+:free$/.test(id));
+}
+
 /**
- * Défaut jusqu'à la 0.41.0, saturé chez Google depuis (503 ou 20–60 s sans réponse).
- * Les Paramètres l'enregistrent avec la clé : sans cette relecture, le nouveau défaut
- * ne toucherait personne. Seule cette valeur exacte est migrée ; un autre choix reste.
- */
-const PREVIOUS_DEFAULT_MODEL = 'gemini-3.5-flash-lite';
-/**
- * Chaîne de secours sur l'endpoint Gemini, du plus fiable au moins fiable d'après
- * des appels réels le 2026-09-24 (trois passages, clé gratuite) : `3-flash-preview`
- * et `2.5-flash` 3/3 en ~3 s ; `3.5-flash` lent (15–25 s) ; `3.6-flash` 2/3 ;
- * `3.5-flash-lite`, `3.1-flash-lite`, `flash-latest` et `3.7/3.8-flash` en 503
- * « high demand » presque à chaque fois. Depuis, `3.5-flash` est routé vers
- * `3.6-flash` (il a quitté la chaîne) et `3.8-flash` y ajoute un quota gratuit.
- * Mesures de septembre : ordre à remesurer avec une vraie clé avant le 2026-12-01,
- * date à laquelle `2.5-flash` sera routé vers `3.5-flash-lite`. Les modèles gratuits
- * servent les clés gratuites en dernier : aucun n'est sûr seul, plusieurs le sont
- * ensemble. Un modèle refusé à une clé (404 : `2.5-flash-lite` pour les nouvelles
- * clés) est simplement sauté.
+ * Chaîne historique, utilisée uniquement quand l’endpoint Google est configuré.
+ * Ordre consigné dans les décisions §17 et §77.
  */
 export const GEMINI_FALLBACK_MODELS = [
   'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash-lite',
@@ -53,19 +46,8 @@ export interface AiModelOption {
   label: string;
 }
 
-/**
- * Modèles proposés dans le select des Paramètres, du plus fiable au moins fiable
- * d'après les mesures du 2026-09-24 (voir `GEMINI_FALLBACK_MODELS`) ; la chaîne de
- * secours couvre les autres quand celui choisi est saturé. `gemini-2.5-flash-lite` en est exclu : Google le refuse en 404
- * (« no longer available to new users »). Le bouton « Tester » de l'écran ne
- * sert plus qu'au diagnostic de connexion.
- */
 export const AI_MODELS: AiModelOption[] = [
-  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (preview) — le plus fiable en gratuit (défaut)' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — fiable, parfois indisponible aux nouvelles clés' },
-  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash — le plus capable, souvent lent' },
-  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — souvent saturé en gratuit' },
-  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — souvent saturé en gratuit' },
+  { id: DEFAULT_AI_MODEL, label: 'OpenRouter gratuit — sélection automatique (défaut)' },
 ];
 
 /** Valeur du select quand le modèle enregistré n'est dans aucune option. */
@@ -96,22 +78,29 @@ const LS_PROFILE = 'worklogs-ai-profile';
 export function readAiSettings(): AiSettings {
   const stored = (key: string) => {
     try {
-      return localStorage.getItem(key) ?? '';
+      return localStorage.getItem(key)?.trim() ?? null;
     } catch {
-      return '';
+      return null;
     }
   };
   // Clés de test locales (`.env.local`, jamais committé) : ignorées en test
   // pour que `npm test` reste déterministe avec ou sans fichier local.
   const envDefault = (name: string) =>
     import.meta.env.MODE === 'test' ? '' : import.meta.env[name] || '';
-  return {
-    endpoint: stored(LS_ENDPOINT).trim() || envDefault('VITE_DEFAULT_AI_ENDPOINT') || DEFAULT_AI_ENDPOINT,
-    model: [stored(LS_MODEL).trim()].map((model) => (model === PREVIOUS_DEFAULT_MODEL ? '' : model))[0]
-      || envDefault('VITE_DEFAULT_AI_MODEL') || DEFAULT_AI_MODEL,
-    key: stored(LS_KEY).trim() || envDefault('VITE_DEFAULT_AI_KEY'),
-    profile: stored(LS_PROFILE).trim(),
-  };
+  const savedEndpoint = stored(LS_ENDPOINT) ?? '';
+  const savedModel = stored(LS_MODEL) ?? '';
+  const profile = stored(LS_PROFILE) ?? '';
+  // Les anciens réglages peuvent aussi ne contenir que le modèle et la clé.
+  // Les identifiants du service précédent ne doivent pas partir vers le nouveau.
+  if (normalizedEndpoint(savedEndpoint) === GEMINI_AI_ENDPOINT || (!savedEndpoint && /^gemini-/i.test(savedModel))) {
+    return { endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL, key: '', profile };
+  }
+  const envEndpoint = envDefault('VITE_DEFAULT_AI_ENDPOINT') || DEFAULT_AI_ENDPOINT;
+  const endpoint = savedEndpoint || envEndpoint;
+  const envModel = normalizedEndpoint(endpoint) === normalizedEndpoint(envEndpoint) ? envDefault('VITE_DEFAULT_AI_MODEL') : '';
+  const model = savedModel || (isOpenRouter(endpoint) && /^gemini-/i.test(envModel) ? '' : envModel) || DEFAULT_AI_MODEL;
+  const key = stored(LS_KEY) ?? (savedEndpoint ? '' : envDefault('VITE_DEFAULT_AI_KEY')).trim();
+  return { endpoint, model, key: isOpenRouter(endpoint) && googleKey(key) ? '' : key, profile };
 }
 
 export function saveAiSettings(settings: AiSettings): void {
@@ -395,7 +384,21 @@ export const GEMINI_ENDPOINT = /^https:\/\/generativelanguage\.googleapis\.com\/
 const OVERLOADED_MESSAGE = 'Modèle IA surchargé chez le fournisseur : réessaie dans quelques minutes, ou choisis un autre modèle dans ⚙ Paramètres.';
 /** Le temps laissé à une pointe 5xx du fournisseur avant le dernier essai. */
 const OVERLOAD_RETRY_MS = 1_000;
-const KEY_REFUSED_MESSAGE = 'Clé IA refusée : vérifie-la dans ⚙ Paramètres (une clé AI Studio suffit).';
+const KEY_REFUSED_MESSAGE = 'Clé IA refusée : vérifie-la dans ⚙ Paramètres.';
+/** Message commun quand aucun modèle gratuit n'est disponible sur cet appareil. */
+export function aiUnavailableMessage(feature: string): string {
+  return `Aucune IA intégrée sur cet appareil pour ${feature} : WorkLogs utilise sa recherche locale. Prépare l’IA gratuite de Chrome dans ⚙ Paramètres, ou branche un modèle local sans clé.`;
+}
+/**
+ * Une IA gratuite est-elle utilisable ? Clé ou endpoint local déclarés, sinon l'IA
+ * intégrée déjà prête. Sert à ne pas charger tout le contexte pour rien.
+ */
+export async function canUseAi(settings: AiSettings): Promise<boolean> {
+  if (settings.key.trim() || isLocalAiEndpoint(settings.endpoint)) return true;
+  return (await readDeviceAiStatus()).state === 'available';
+}
+const OPENROUTER_QUOTA_MESSAGE = 'Limite des modèles gratuits d’OpenRouter atteinte. Réessaie plus tard.';
+const OPENROUTER_CREDIT_MESSAGE = 'OpenRouter demande des crédits pour cette requête. Vérifie la clé et le modèle dans ⚙ Paramètres.';
 
 /**
  * Motif renvoyé par le fournisseur (ex. Google `models/… is not found`) :
@@ -403,15 +406,10 @@ const KEY_REFUSED_MESSAGE = 'Clé IA refusée : vérifie-la dans ⚙ Paramètres
  * avec une clé valide vient presque toujours du modèle ou de l'endpoint
  * enregistrés en Paramètres, pas de la clé — autant le montrer.
  */
-async function providerDetail(res: Response): Promise<string> {
-  try {
-    const data = await res.json();
-    const body = Array.isArray(data) ? data[0] : data;
-    const message = body?.error?.message ?? body?.message;
-    return typeof message === 'string' && message.trim() ? message.trim().slice(0, 200) : '';
-  } catch {
-    return '';
-  }
+function providerDetail(data: unknown): string {
+  const body = (Array.isArray(data) ? data[0] : data) as { error?: { message?: unknown }; message?: unknown } | null;
+  const message = body?.error?.message ?? body?.message;
+  return typeof message === 'string' ? message.trim().slice(0, 200) : '';
 }
 
 export interface AiMediaInput {
@@ -423,6 +421,8 @@ export interface AiMediaInput {
 interface CompletionOptions {
   effort?: 'minimal' | 'low';
   only?: boolean;
+  /** Le résultat attendu est un objet JSON, pas un tableau ni un document. */
+  json?: boolean;
   media?: readonly AiMediaInput[];
   onUrlsRead?: (urls: string[]) => void;
 }
@@ -449,10 +449,9 @@ function geminiUrls(candidate: {
 
 /**
  * Une demande explicite ou un suivi automatique activé = un appel, jamais de boucle.
- * Sur l'endpoint Gemini, si le modèle choisi est saturé (503…) ou ne répond pas à
- * temps, les modèles de secours sont essayés, chacun une fois (deux modèles au plus
- * pour un suivi automatique). Ils n'auraient aucun sens ailleurs (un autre fournisseur
- * n'a pas ces modèles). Tout échec rend un message français, jamais d'exception réseau brute.
+ * OpenRouter choisit le modèle en amont. Un 5xx immédiat mérite au plus un
+ * nouvel essai dans le même délai, avec les mêmes contraintes de routage.
+ * Les réglages Gemini explicites gardent leur chaîne historique.
  */
 export async function postChatCompletions(
   settings: AiSettings,
@@ -464,7 +463,22 @@ export async function postChatCompletions(
   options: CompletionOptions = {}
 ): Promise<string> {
   const key = settings.key.trim();
-  if (!key) throw new AiError(`Colle ta clé IA dans ⚙ Paramètres pour activer ${feature}.`);
+  const local = isLocalAiEndpoint(settings.endpoint);
+  if (!key && !local) {
+    // Sans clé ni compte : l'IA intégrée au navigateur, sur l'appareil. Les
+    // lectures de médias et d'URL ne sont pas de son ressort : le repli local
+    // de chaque écran prend alors le relais.
+    if (!options.media?.length && !options.onUrlsRead) {
+      const answer = await deviceCompletion(system, user, {
+        json: options.json, signal: settings.signal, timeoutMs,
+      });
+      if (answer !== null) return answer;
+    }
+    throw new AiError(aiUnavailableMessage(feature));
+  }
+  if (isOpenRouter(settings.endpoint) && googleKey(key)) {
+    throw new AiError('Colle une clé OpenRouter dans ⚙ Paramètres pour remplacer la clé Google.');
+  }
   const refusal = aiBudgetRefusal(Boolean(settings.background));
   if (refusal) throw new AiBudgetError(refusal);
   // Arrêtée avant, pendant ou juste après un essai : ni réponse rendue, ni modèle suivant.
@@ -472,15 +486,26 @@ export async function postChatCompletions(
     if (settings.signal?.aborted) throw new AiCancelled();
   };
   const model = settings.model.trim();
-  // Un autre fournisseur n'a pas ces modèles, et « only » veut juger celui-là : un seul essai.
+  // Les modèles de secours historiques ne concernent que l’endpoint Google.
   if (options.only || !GEMINI_ENDPOINT.test(settings.endpoint.trim())) {
     stopped();
-    const content = await postOnce(settings, model, key, system, user, maxTokens, timeoutMs, options).catch((e: unknown) => {
+    const deadline = Date.now() + timeoutMs;
+    try {
+      const content = await postOnce(settings, model, key, system, user, maxTokens, timeoutMs, options);
       stopped();
-      throw e;
-    });
-    stopped();
-    return content;
+      return content;
+    } catch (e) {
+      stopped();
+      if (options.only || settings.background || !isFreeAi(settings) || !(e instanceof AiTryNext && e.retryable)
+        || deadline - Date.now() <= OVERLOAD_RETRY_MS) throw e;
+      await pause(OVERLOAD_RETRY_MS, settings.signal);
+      stopped();
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw e;
+      const content = await postOnce(settings, model, key, system, user, maxTokens, remaining, options);
+      stopped();
+      return content;
+    }
   }
   // Chaque modèle au plus une fois, dans un budget total borné : pas une boucle.
   // Un 503 répond en ~0,5 s, un essai raté coûte donc peu ; seul un modèle qui
@@ -576,16 +601,21 @@ async function postReserved(
   mediaTokens: number
 ): Promise<string> {
   const background = Boolean(settings.background);
-  const endpoint = settings.endpoint.trim().replace(/\/+$/, '');
+  const endpoint = normalizedEndpoint(settings.endpoint);
   const gemini = GEMINI_ENDPOINT.test(settings.endpoint.trim());
-  const { effort, media = [], onUrlsRead } = options;
-  const native = gemini && (onUrlsRead || media.some(({ mimeType }) => mimeType === 'application/pdf'));
+  const openRouter = isOpenRouter(endpoint);
+  const free = isFreeAi({ endpoint, model });
+  const { effort, media = [], onUrlsRead, json } = options;
+  const hasPdf = media.some(({ mimeType }) => mimeType === 'application/pdf');
+  const native = gemini && (onUrlsRead || hasPdf);
   // « none » coupe la réflexion des 2.5 Flash ; 2.5 Pro ne la coupe pas, « minimal » la réduit.
   const reasoning = !gemini || native || !effort || effortRefused.has(model) ? undefined
     : effort === 'minimal' && model.startsWith('gemini-2.5-flash') ? 'none' : effort;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (native) headers['x-goog-api-key'] = key;
-  else headers.Authorization = `Bearer ${key}`;
+  if (key) {
+    if (native) headers['x-goog-api-key'] = key;
+    else headers.Authorization = `Bearer ${key}`;
+  }
   const request = native ? {
     url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.replace(/^models\//, ''))}:generateContent`,
     body: {
@@ -605,6 +635,20 @@ async function postReserved(
       temperature: 0.4,
       max_tokens: maxTokens,
       ...(reasoning && { reasoning_effort: reasoning }),
+      ...(openRouter && json && { response_format: { type: 'json_object' } }),
+      ...(free && {
+        provider: {
+          data_collection: 'deny',
+          max_price: { prompt: 0, completion: 0, request: 0, image: 0 },
+          ...(json && { require_parameters: true }),
+        },
+        plugins: [
+          { id: 'web', enabled: false },
+          hasPdf
+            ? { id: 'file-parser', pdf: { engine: 'cloudflare-ai' } }
+            : { id: 'file-parser', enabled: false },
+        ],
+      }),
     },
   };
   const controller = new AbortController();
@@ -612,15 +656,35 @@ async function postReserved(
   const stop = () => controller.abort();
   settings.signal?.addEventListener('abort', stop);
   let res: Response;
+  let body;
   try {
     res = await fetch(request.url, {
       method: 'POST',
       headers,
       body: JSON.stringify(request.body),
-      ...(native && { redirect: 'error' }),
+      ...((native || openRouter) && { redirect: 'error' }),
       signal: controller.signal,
     });
-  } catch {
+    if ([500, 502, 503, 504].includes(res.status)) {
+      throw new AiTryNext(OVERLOADED_MESSAGE, true, false, false, true);
+    }
+    if (res.status === 401 || (res.status === 403 && !openRouter)) {
+      throw new AiError(KEY_REFUSED_MESSAGE);
+    }
+    if (res.status === 402 && openRouter) throw new AiError(OPENROUTER_CREDIT_MESSAGE);
+    if (res.status === 429) {
+      throw new AiTryNext(gemini
+        ? `Quota gratuit de Google atteint : réessaie dans une minute. S’il s’agit du quota du jour, il revient à ${aiResetTime()}.`
+        : openRouter ? OPENROUTER_QUOTA_MESSAGE : 'Limite du service IA atteinte : réessaie dans une minute.', false, true);
+    }
+    // OpenRouter peut envoyer les en-têtes avant que le modèle ait terminé.
+    // Le délai et « Arrêter » couvrent aussi la lecture du corps.
+    body = await res.json().catch((cause: unknown) => {
+      if (controller.signal.aborted) throw cause;
+      return null;
+    });
+  } catch (cause) {
+    if (cause instanceof AiError) throw cause;
     // Abandon après envoi : le fournisseur a pu traiter la demande.
     if (controller.signal.aborted) recordAiUsage(estimateTokens(system + user) + mediaTokens, background);
     if (settings.signal?.aborted) throw new AiCancelled();
@@ -631,20 +695,8 @@ async function postReserved(
     clearTimeout(timer);
     settings.signal?.removeEventListener('abort', stop);
   }
-  if (res.status === 503 || res.status === 502 || res.status === 504 || res.status === 500) {
-    throw new AiTryNext(OVERLOADED_MESSAGE, true, false, false, true);
-  }
-  if (res.status === 401 || res.status === 403) {
-    throw new AiError(KEY_REFUSED_MESSAGE);
-  }
-  if (res.status === 429) {
-    // Le quota gratuit est compté par modèle : un autre peut encore répondre.
-    throw new AiTryNext(gemini
-      ? `Quota gratuit de Google atteint : réessaie dans une minute. S’il s’agit du quota du jour, il revient à ${aiResetTime()}.`
-      : 'Limite du service IA atteinte : réessaie dans une minute.', false, true);
-  }
   if (!res.ok) {
-    const detail = await providerDetail(res);
+    const detail = providerDetail(body);
     if (res.status === 400 && /api.?key/i.test(detail)) throw new AiError(KEY_REFUSED_MESSAGE);
     if (res.status === 400 && reasoning) {
       effortRefused.add(model);
@@ -658,8 +710,17 @@ async function postReserved(
         : `Service IA indisponible (${res.status}) : réessaie plus tard.`
     );
   }
-  const body = await res.json().catch(() => null);
   const choice = body?.choices?.[0];
+  // Une génération interrompue peut contenir du texte partiel et une erreur dans un HTTP 200.
+  const generationError = body?.error ?? choice?.error;
+  if (openRouter && (generationError || choice?.finish_reason === 'error')) {
+    const code = Number(generationError?.code);
+    if (code === 429) throw new AiError(OPENROUTER_QUOTA_MESSAGE);
+    if (code === 402) throw new AiError(OPENROUTER_CREDIT_MESSAGE);
+    if (code === 401) throw new AiError(KEY_REFUSED_MESSAGE);
+    if (code >= 500) throw new AiError(OVERLOADED_MESSAGE);
+    throw new AiError('OpenRouter n’a pas terminé la demande. Réessaie ou vérifie le modèle dans ⚙ Paramètres.');
+  }
   const candidate = body?.candidates?.[0];
   const parts = candidate?.content?.parts;
   const content = native ? (Array.isArray(parts) ? parts.flatMap((part) =>
@@ -1508,7 +1569,7 @@ export async function adviseTaskOrder(
   if (!open.length) throw new AiError('Aucune tâche ouverte à conseiller.');
   if (open.length > MAX_ADVICE_TASKS) throw new AiError(`Trop de tâches à analyser (${open.length}, ${MAX_ADVICE_TASKS} au plus) : filtre un projet ou une catégorie.`);
   const prompt = buildTaskAdvicePrompt(open, { ...options, profile: settings.profile });
-  const reply = await postChatCompletions(settings, 'les conseils sur les tâches', prompt.system, prompt.user, DOCUMENT_MAX_TOKENS, options.timeoutMs ?? answerMs(open.length * 300));
+  const reply = await postChatCompletions(settings, 'les conseils sur les tâches', prompt.system, prompt.user, DOCUMENT_MAX_TOKENS, options.timeoutMs ?? answerMs(open.length * 300), { json: true });
   const parsed = parseJsonArray(reply);
   if (!parsed) throw new AiError('Réponse IA illisible : les conseils doivent être un tableau JSON. Réessaie.');
   const pending = new Map(open.map((task, index) => [index + 1, task.id]));
@@ -1680,7 +1741,7 @@ function parseFollowUpReport(reply: string, warnings: string[], checklistDocumen
 export async function generateFollowUp(settings: AiSettings, source: FollowUpSource): Promise<FollowUpReportDraft> {
   if (settings.signal?.aborted) throw new AiCancelled();
   const prompt = await buildFollowUpPrompt(source, settings.profile);
-  const reply = await postChatCompletions(settings, 'le suivi IA', prompt.system, prompt.user, DOCUMENT_MAX_TOKENS, AI_TIMEOUT_MS);
+  const reply = await postChatCompletions(settings, 'le suivi IA', prompt.system, prompt.user, DOCUMENT_MAX_TOKENS, AI_TIMEOUT_MS, { json: true });
   return parseFollowUpReport(reply, prompt.warnings, prompt.checklistDocuments);
 }
 
@@ -1881,7 +1942,7 @@ export async function generateDailyReview(
 ): Promise<DailyReview> {
   if (settings.signal?.aborted) throw new AiCancelled();
   const prompt = buildDailyReviewPrompt(items, { ...options, profile: settings.profile });
-  const reply = await postChatCompletions(settings, 'le bilan du jour', prompt.system, prompt.user, DOCUMENT_MAX_TOKENS, AI_TIMEOUT_MS);
+  const reply = await postChatCompletions(settings, 'le bilan du jour', prompt.system, prompt.user, DOCUMENT_MAX_TOKENS, AI_TIMEOUT_MS, { json: true });
   // Le contrat des listes est le même que celui d'un suivi, sans état global inventé.
   const text = reply.trim();
   for (const candidate of [text, /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(text)?.[1] ?? '', text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)]) {

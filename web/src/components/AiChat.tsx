@@ -13,6 +13,7 @@ const CHAT_WIDTH_KEY = 'worklogs-assistant-width';
 const CHAT_MIN_WIDTH = 500;
 const CHAT_DEFAULT_WIDTH = 1460;
 const CHAT_MAX_WIDTH = 2400;
+const MAX_ACTIVITY_STEPS = 24;
 
 function readChatWidth() {
   try {
@@ -37,6 +38,13 @@ const conversationTitle = (session: ChatSession) => session.title
 const conversationActivity = (session: ChatSession) => isRunning(session) ? 'Recherche en cours' : isApplying(session) ? 'Écriture en cours' : '';
 
 const PROPOSAL_WORDS: Record<ChatProposalItem['status'], string> = { open: 'proposée', applying: 'en cours', applied: 'appliquée', ignored: 'ignorée', failed: 'échouée' };
+/** Départs proposés dans une conversation vide : un clic remplit le champ, rien n'est envoyé. */
+const QUICK_PROMPTS = [
+  'Quelles tâches sont en retard ?',
+  'Qu’est-ce qui est en cours ?',
+  'Résume ma semaine de travail',
+  'Quelles tâches n’ont pas encore de projet ?',
+];
 type ProposalTarget = { item: ChatProposalItem; index: number };
 interface AttachmentFeedback { reading?: boolean; error?: string }
 const attachmentCountError = `Tu peux joindre jusqu’à ${MAX_CHAT_ATTACHMENTS} fichiers ou liens par message.`;
@@ -66,6 +74,7 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
   const closeRef = useRef<HTMLButtonElement>(null);
   const focusNewPane = useRef(false);
   const requests = useRef(new Map<number, { controller: AbortController; turnId: number }>());
+  const [progress, setProgress] = useState<Record<number, string>>({});
   const attachmentReads = useRef(new Set<number>());
   const [attachmentFeedback, setAttachmentFeedback] = useState<Record<number, AttachmentFeedback>>({});
   const pendingProposals = useRef(new Set<string>());
@@ -230,12 +239,19 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
       return false;
     }
   };
-  const send = async (sessionId: number, choice?: string) => {
+  const clearProgress = (turnId: number) => setProgress((current) => {
+    if (!(turnId in current)) return current;
+    const next = { ...current };
+    delete next[turnId];
+    return next;
+  });
+  const send = async (sessionId: number, choice?: string, retry?: ChatTurn) => {
     const session = currentSessions.current.find(({ id }) => id === sessionId);
     if (!session || requests.current.has(sessionId) || attachmentReads.current.has(sessionId)) return;
-    const draft = choice ?? session.draft;
+    const draft = retry?.question ?? choice ?? session.draft;
     const text = draft.trim() ? draft : '';
-    const attachments = choice === undefined && session.draftAttachments?.length ? session.draftAttachments : undefined;
+    const isDraft = choice === undefined && !retry;
+    const attachments = retry?.attachments ?? (isDraft && session.draftAttachments?.length ? session.draftAttachments : undefined);
     if (!text && !attachments) return;
     const id = ++lastTurnId.current;
     const patch = (next: Partial<ChatTurn>) => onTurns(sessionId, (current) => current.map((turn) => (turn.id === id ? { ...turn, ...next } : turn)));
@@ -257,13 +273,14 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
     });
     updateSession(sessionId, (current) => ({
       ...current,
-      ...(choice === undefined && { draft: '', draftAttachments: undefined }),
-      turns: [...current.turns, { id, question: text, ...(attachments && { attachments }) }],
+      ...(isDraft && { draft: '', draftAttachments: undefined }),
+      turns: [...current.turns.filter((turn) => turn.id !== retry?.id), { id, question: text, ...(attachments && { attachments }) }],
     }));
-    if (choice === undefined) setFeedback(sessionId, {});
+    if (isDraft) setFeedback(sessionId, {});
     const controller = new AbortController();
     requests.current.set(sessionId, { controller, turnId: id });
     const isCurrent = () => requests.current.get(sessionId)?.controller === controller;
+    const activity: string[] = [];
     try {
       const { proposals, conversationTitle: title, ...answer } = await askAssistant({ ...readAiSettings(), signal: controller.signal }, {
         text, history, projectId, categoryId, openTitle,
@@ -271,20 +288,30 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
         ...(openEntryId && { openEntryId }),
         ...(!session.title && { needsConversationTitle: true }),
         ...(session.allowSharedContent && { allowSharedContent: true }),
+        onProgress: (label) => {
+          const step = truncate(label, 180);
+          if (!isCurrent() || !step || step === activity.at(-1)) return;
+          if (activity.length === MAX_ACTIVITY_STEPS) activity.shift();
+          activity.push(step);
+          setProgress((current) => ({ ...current, [id]: step }));
+        },
       });
       if (isCurrent()) {
         updateSession(sessionId, (current) => ({
           ...current,
           ...(!current.title && title && { title }),
           turns: current.turns.map((turn) => turn.id === id
-            ? { ...turn, answer: { ...answer, proposals: proposals.map((proposal) => ({ proposal, status: 'open' })) } }
+            ? { ...turn, answer: { ...answer, ...(activity.length && { activity }), proposals: proposals.map((proposal) => ({ proposal, status: 'open' })) } }
             : turn),
         }));
       }
     } catch (cause) {
       if (isCurrent()) patch(cause instanceof AiCancelled ? { stopped: true } : { error: (cause as Error).message || 'La demande à l’assistant a échoué.' });
     } finally {
-      if (isCurrent()) requests.current.delete(sessionId);
+      if (isCurrent()) {
+        requests.current.delete(sessionId);
+        clearProgress(id);
+      }
     }
   };
   const stop = (sessionId: number) => {
@@ -292,6 +319,7 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
     if (!running) return;
     requests.current.delete(sessionId);
     running.controller.abort();
+    clearProgress(running.turnId);
     onTurns(sessionId, (current) => current.map((turn) => turn.id === running.turnId ? { ...turn, stopped: true } : turn));
   };
   const selectConversation = (id: number) => {
@@ -424,6 +452,8 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
               hidden={session.id !== active.id}
               onFocus={() => setActiveId(session.id)}
               onSend={(choice) => void send(session.id, choice)}
+              onRetry={(turn) => void send(session.id, undefined, turn)}
+              progress={progress[session.turns.at(-1)?.id ?? 0]}
               onStop={() => stop(session.id)}
               onDraft={(draft) => updateSession(session.id, (current) => ({ ...current, draft }))}
               attachmentFeedback={attachmentFeedback[session.id]}
@@ -455,13 +485,15 @@ function WorkingIcon() {
 }
 
 function ChatPane({
-  session, hidden, onFocus, onSend, onStop, onDraft, attachmentFeedback, onFiles, onLink, onForget,
+  session, hidden, onFocus, onSend, onRetry, progress, onStop, onDraft, attachmentFeedback, onFiles, onLink, onForget,
   onAllowShared, onApply, onIgnore, onRemove, canRemove, compact, navigation,
 }: {
   session: ChatSession;
   hidden: boolean;
   onFocus: () => void;
   onSend: (choice?: string) => void;
+  onRetry: (turn: ChatTurn) => void;
+  progress?: string;
   onStop: () => void;
   onDraft: (text: string) => void;
   attachmentFeedback?: AttachmentFeedback;
@@ -528,7 +560,19 @@ function ChatPane({
       </header>
       <div className="ai-chat-log" role="log" aria-label="Conversation avec l’assistant" aria-busy={busy} ref={logRef}>
         <div className="ai-chat-log-content">
-          {turns.length === 0 && <p className="ai-chat-empty">Cherche une tâche, une note ou une procédure. Demande un ajout, un classement ou un changement de statut. Rien n’est écrit sans ton clic.</p>}
+          {turns.length === 0 && (
+            <div className="ai-chat-empty">
+              <p className="ai-chat-empty-title"><span aria-hidden="true">✨</span> Par où commencer ?</p>
+              <p>Cherche une tâche, une note ou une procédure. Demande un ajout, un classement ou un changement de statut. Rien n’est écrit sans ton clic.</p>
+              <ul className="ai-chat-suggestions" aria-label="Demandes suggérées">
+                {QUICK_PROMPTS.map((prompt) => (
+                  <li key={prompt}>
+                    <button className="ghost" type="button" onClick={() => { onDraft(prompt); fieldRef.current?.focus(); }}>{prompt}</button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {turns.map((turn) => {
             const { answer } = turn;
             const targets = (answer?.proposals ?? []).map((item, index) => ({ item, index })).filter(({ item }) => item.status === 'open' || item.status === 'failed');
@@ -537,8 +581,21 @@ function ChatPane({
                 {turn.question && <p className="ai-chat-bubble is-user">{turn.question}</p>}
                 {turn.attachments?.length ? <ChatAttachments attachments={turn.attachments} /> : null}
                 {turn.stopped && <p className="ai-hint">Demande arrêtée.</p>}
-                {turn.error && <p className="error" role="alert">{turn.error}</p>}
+                {turn.error && (
+                  <div className="ai-chat-error">
+                    <p className="error" role="alert">{turn.error}</p>
+                    {turn === turns.at(-1) && !busy && (
+                      <button className="ghost" type="button" disabled={reading} onClick={() => onRetry(turn)}>Réessayer la demande</button>
+                    )}
+                  </div>
+                )}
                 {answer && <>
+                  {Boolean(answer.activity?.length) && (
+                    <details className="ai-chat-activity">
+                      <summary>Étapes de l’assistant</summary>
+                      <ol>{answer.activity?.map((step, index) => <li key={index}>{step}</li>)}</ol>
+                    </details>
+                  )}
                   {answer.reply && answer.reply !== answer.question?.text && <p className="ai-chat-bubble">{answer.reply}</p>}
                   {answer.question && <ChatQuestionCard question={answer.question}
                     onReply={turn === turns.at(-1) && !busy && !reading ? (choice) => {
@@ -564,9 +621,9 @@ function ChatPane({
               </div>
             );
           })}
-          {busy && <div className="ai-chat-working" role="status"><WorkingIcon />L’assistant cherche et prépare sa réponse…</div>}
         </div>
       </div>
+      {busy && <div className="ai-chat-working" role="status"><WorkingIcon /><span>{progress ?? 'L’assistant cherche et prépare sa réponse…'}</span></div>}
       <footer className="ai-chat-footer">
         <form className="ai-chat-composer" onSubmit={(event) => { event.preventDefault(); submit(); }}>
           <textarea
@@ -621,7 +678,7 @@ function ChatPane({
         <details className="overview-ai-scope ai-chat-data">
           <summary>Données envoyées au service IA</summary>
           <p>Le service IA reçoit ta demande, les derniers échanges, ton profil, les repères du projet affiché, le nom des projets et catégories, les tâches pertinentes, le titre de la note ouverte et le début des notes utiles. Il peut lire le texte de notes et procédures locales dans une limite de taille. Pour un document Google, il reçoit le titre et la date seuls. Une recherche dans le dossier partagé lui transmet les chemins trouvés.</p>
-          <p>Les fichiers et liens que tu joins sont transmis au service IA à l’envoi et peuvent resservir dans la suite de cette conversation. Pour les fichiers texte, Word et Excel, il reçoit le texte extrait par WorkLogs. Les autres fichiers restent dans la conversation : le service IA reçoit seulement leur nom, sans leur contenu. Sur cet ordinateur, les liens GitHub peuvent être lus avec la connexion GitHub locale. Seul l’extrait lu est transmis au service IA.</p>
+          <p>Les fichiers et liens que tu joins sont transmis au service IA à l’envoi et peuvent resservir dans la suite de cette conversation. WorkLogs extrait le texte des fichiers Word, Excel et texte. Les images et PDF sont envoyés tels quels. Pour une pièce marquée « Non lu », seuls son nom et son type sont transmis. Sur cet ordinateur, les liens GitHub peuvent être lus avec la connexion GitHub locale. Seul l’extrait lu est transmis au service IA.</p>
           <label className="ai-chat-content-setting">
             <input type="checkbox" checked={allowSharedContent} onChange={(event) => onAllowShared(event.target.checked)} />
             Autoriser l’envoi d’extraits des fichiers partagés dans cette conversation

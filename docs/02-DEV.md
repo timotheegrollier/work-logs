@@ -108,6 +108,10 @@ npm run test:e2e      # build + parcours navigateur Playwright
 8. **Trois `tsconfig`** : `app` (le front, exclut les tests), `node` (vite.config), `test`
    (les tests, avec les types Node). `tsc -b` les compile tous les trois.
 9. **`screen`** : les sessions `wl-api` / `wl-web` ne survivent pas au redémarrage de la machine.
+10. **Lancé depuis l'AppImage DeepAI Code**, `check.sh` hérite de `APPIMAGE` : le test
+    `installKind` de `desktop/test/update.test.mjs` croit alors tourner dans le paquet WorkLogs
+    et échoue (`appimage` au lieu de `dev`). Lancer `env -u APPIMAGE ./scripts/check.sh`.
+    Playwright peut aussi manquer son navigateur : `npx playwright install chromium`.
 
 ## Inspecter la base
 ```bash

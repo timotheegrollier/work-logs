@@ -314,7 +314,7 @@ describe('replanification des tâches selon leur importance', () => {
       (config: typeof settings & { signal?: AbortSignal }) => generateDailyReview(config, [item], { today }),
       (config: typeof settings & { signal?: AbortSignal }) => replanTasks(config, [task], { today }),
     ]) {
-      await expect(generate({ ...settings, key: '' })).rejects.toThrow('Colle ta clé IA');
+      await expect(generate({ ...settings, key: '' })).rejects.toThrow(/Aucune IA intégrée/);
       const stopped = new AbortController(); stopped.abort();
       const calls = fetch.mock.calls.length;
       await expect(generate({ ...settings, signal: stopped.signal })).rejects.toBeInstanceOf(AiCancelled);

@@ -360,7 +360,7 @@ test('le travail automatique est compté à part jusqu’au transport, jamais un
 
 test('un refus du tiers automatique reprend seul le lendemain, message effacé', async () => {
   const transport = await realTransport();
-  spend(50);
+  spend(17);
   await edited([entry('a', 'a1'), entry('b', 'b1')]);
   expect(sent()).toEqual([['a', true]]);
   expect(transport).not.toHaveBeenCalled();
@@ -380,7 +380,7 @@ test('un refus du tiers automatique reprend seul le lendemain, message effacé',
 
 test('un plafond relevé le même jour relance les éléments refusés, sans changement d’état', async () => {
   const transport = await realTransport();
-  spend(150);
+  spend(50);
   await edited([entry('a', 'a1')]);
   expect(screen.getByRole('alert')).toHaveTextContent('Plafond quotidien');
   saveDailyLimit(1000);
@@ -458,7 +458,7 @@ test('après une reprise, un échec isolé laisse toujours partir le suivant', a
 
 test('un « Actualiser » refusé par le plafond ne repart pas seul le lendemain', async () => {
   const transport = await realTransport();
-  spend(150);
+  spend(50);
   mount([entry('a', 'a2', followed(report('a1')))]);
   click('Actualiser a');
   await advance(0);

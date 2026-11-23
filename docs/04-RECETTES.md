@@ -258,8 +258,9 @@ Et mettre à jour, dans le même diff : `01-ARCHITECTURE.md` si le schéma ou l'
 
 ## 14. Juger la pertinence de l'assistance IA
 
-Les tests automatisés utilisent un service simulé. Avec une vraie clé, reprendre des
-exemples anonymisés du travail courant et vérifier les résultats sur place. Ne pas
+Les tests automatisés utilisent un service simulé. Reprendre des exemples anonymisés du
+travail courant et vérifier les résultats sur place, d’abord **sans clé** avec l’IA
+intégrée du navigateur, puis avec un service externe si l’on en configure un. Ne pas
 confondre « le modèle répond » et « la proposition aide ».
 
 | Cas | Résultat attendu |
@@ -306,32 +307,35 @@ confondre « le modèle répond » et « la proposition aide ».
 | Note suivie, écriture entrecoupée de pauses | Premier bilan tout de suite à l’activation ; ensuite une actualisation après huit secondes de pause, au plus une par minute et par élément, le bilan restant affiché avec « Actualisation en cours… ». Le compteur monte d’au plus une requête par minute. |
 | Plafond réglé à 10, puis atteint | Refus avec l’heure locale du retour (minuit à Los Angeles) ; l’assistant passe en recherche locale ; aucun appel ne part. |
 | Tiers du plafond atteint par le suivi automatique | « Suspendue pour aujourd’hui », **Actualiser** reste disponible ; reprise seule le lendemain, ou dans la minute qui suit un plafond relevé. |
-| Compteur comparé à AI Studio, sur un seul appareil | Les requêtes du jour restent proches ; noter si Google compte les requêtes en échec. |
-| Quota gratuit réellement épuisé (429 sur tous les modèles) | « Quota gratuit de Google atteint » avec l’heure de retour ; aucune boucle. |
+| Sans clé, Chrome avec IA intégrée prête | Les gestes IA répondent depuis l’appareil ; aucune requête ne part vers un fournisseur et le plafond ne bouge pas. |
+| Sans clé, navigateur ou application sans IA intégrée | Message clair avec les solutions gratuites, repli sur la recherche locale, aucun appel réseau. |
+| Endpoint local (Ollama) sans clé | La requête part vers `127.0.0.1` sans en-tête `Authorization` ; aucune dépense. |
+| Quota gratuit OpenRouter épuisé (429) | La limite du fournisseur s’affiche ; l’assistant montre les résultats locaux. Aucun nouvel essai. |
+| Ancien réglage Gemini enregistré | L’endpoint et le modèle deviennent ceux d’OpenRouter. Le profil revient, le champ de clé est vide et le test de connexion n’envoie rien avant la saisie. |
 
 Pour chaque cas, relever : proposition utilisable, corrections nécessaires, détails
 inventés, doublons et temps ressenti. Comparer les mêmes exemples avant/après toute
 modification de prompt ou de modèle ; conserver les exemples localement sans clé ni
 donnée confidentielle dans le dépôt.
 
-**À faire avec une vraie clé, avant le 2026-12-01.** Ces points n’ont été vérifiés qu’avec un
-service simulé (`05-DECISIONS.md` §77).
+**Recette sans clé ni compte (IA intégrée)**, sur des données fictives.
 
-1. **`reasoning_effort`, modèle par modèle.** Pour chacun des sept `GEMINI_FALLBACK_MODELS` (les
-   absents du select passent par **Modèle personnalisé**), onglet Réseau ouvert : **Tester la
-   connexion** (`minimal`, ou `none` sur un 2.5 Flash), puis une **Mise en page** (`low`). Un seul POST
-   en 200 : le paramètre passe. Un 400 suivi d’un second POST sans `reasoning_effort` : le modèle
-   le refuse, et le ✓ ne le montre pas.
-2. **Effet de l’effort.** Comparer les mêmes exemples avec et sans (`effort` retiré localement,
-   jamais committé) : temps, longueur, détails perdus. Les gestes de jugement (priorités, conseils,
-   replanification, suivi, bilan, tâches suggérées) n’en envoient aucun : ne l’ajouter que si la
-   comparaison le justifie.
-3. **Ordre des modèles.** Trois passages par modèle, comme au §17 (réponses, temps, 503, 429), puis
-   réordonner `GEMINI_FALLBACK_MODELS`, `AI_MODELS` et le défaut si les mesures le demandent. Dès le
-   2026-12-01, `gemini-2.5-flash` répond par `gemini-3.5-flash-lite` : la chaîne essaie alors deux
-   fois le même quota, et `none` peut être refusé.
-4. **Quotas réels.** Relever dans AI Studio les limites gratuites du projet, et ajuster
-   `DEFAULT_DAILY_REQUESTS` si 150 n’est pas le bon ordre de grandeur.
+1. Dans Chrome récent, ouvrir **Paramètres → Assistance IA** : lire l’état de l’IA intégrée.
+   Si elle est seulement téléchargeable, cliquer **Préparer l’IA gratuite** et attendre.
+2. Couper le réseau, puis demander **Suggérer des tâches**, **Compléter** et une question à
+   l’assistant. Chacun doit répondre ou annoncer le repli local, sans requête sortante.
+3. Ouvrir WorkLogs dans un navigateur sans IA intégrée (ou l’application desktop) : vérifier
+   le message « Aucune IA intégrée… recherche locale » et l’absence d’appel réseau.
+
+**Recette OpenRouter avec un compte sans crédits**, sur des données fictives (§92).
+
+1. Saisir une clé dans **Paramètres → Assistance IA** et lancer **Tester la connexion**.
+   Vérifier dans l’activité OpenRouter que le coût de l’essai est nul.
+2. Demander une recherche suivie d’une lecture et d’une proposition de changement. Relire
+   l’activité du message puis appliquer la proposition. Vérifier le résultat dans le journal.
+3. Essayer **Mise en page**, **Prioriser**, le **Bilan du jour**, une image et un PDF contenant du texte.
+   Vérifier les formats des réponses, les coûts affichés et le comportement lorsque la capacité
+   gratuite est indisponible. Une page publique jointe seule reste une référence.
 
 
 ## 15. Catégories et sous-catégories (2026-10-26)

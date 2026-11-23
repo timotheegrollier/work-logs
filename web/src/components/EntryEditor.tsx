@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { api, COLUMNS, PRIORITIES, dayLabel, formatSize, googleHelpUrl, isFollowed, subtasksMd, type Attachment, type Category, type Entry, type EntrySummary, type Project, type Priority, type RichDocument, type Status, type Task, type TaskMetadata } from '../lib';
-import { AiCancelled, completeNote, draftProcedure, noteCompletionContext, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
+import { AiCancelled, aiUnavailableMessage, canUseAi, completeNote, draftProcedure, noteCompletionContext, parseChecklist, proofreadEntry, readAiSettings, suggestEntryTasks, suggestProcedure, suggestSubtasks, type AiWorkContext, type DraftedProcedure, type ExtractedAction } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
 import { checklistProgress, insertCodeFence, renderAiProposal, renderMarkdown, toggleChecklistItem } from '../markdown';
 import { markdownToRich, richToMarkdown } from '../rich-markdown';
@@ -418,9 +418,10 @@ export function EntryEditor({
     setProcedureDraft(null);
     setActionsProposal(null);
   };
-  const settingsForAi = (feature: string) => {
+  const settingsForAi = async (feature: string) => {
+    // Aucune clé requise : l'IA intégrée de l'appareil répond, sinon le repli local.
     const settings = readAiSettings();
-    if (!settings.key) throw new Error(`Colle ta clé IA dans ⚙ Paramètres pour activer ${feature}.`);
+    if (!await canUseAi(settings)) throw new Error(aiUnavailableMessage(feature));
     aiRequest.current = new AbortController();
     return { ...settings, signal: aiRequest.current.signal };
   };
@@ -448,7 +449,7 @@ export function EntryEditor({
     setError('');
     setTaskMessage('');
     try {
-      const settings = settingsForAi('les suggestions');
+      const settings = await settingsForAi('les suggestions');
       await autosave.flush();
       if (!mounted.current) return;
       const current = draftRef.current;
@@ -531,7 +532,7 @@ export function EntryEditor({
     setAiBusy(mode);
     setError('');
     try {
-      const settings = settingsForAi(mode === 'layout' ? 'la mise en page' : mode === 'note' ? 'la complétion de la note' : 'les suggestions de procédure');
+      const settings = await settingsForAi(mode === 'layout' ? 'la mise en page' : mode === 'note' ? 'la complétion de la note' : 'les suggestions de procédure');
       await autosave.flush();
       if (!mounted.current) return;
       const current = draftRef.current;
@@ -615,7 +616,7 @@ export function EntryEditor({
     setDrafting(true);
     setError('');
     try {
-      const settings = settingsForAi('la création de procédure');
+      const settings = await settingsForAi('la création de procédure');
       await autosave.flush();
       if (!mounted.current) return;
       const current = draftRef.current;
@@ -665,7 +666,7 @@ export function EntryEditor({
     setError('');
     setActionsMessage('');
     try {
-      const settings = settingsForAi('les suggestions de tâches');
+      const settings = await settingsForAi('les suggestions de tâches');
       await autosave.flush();
       if (!mounted.current) return;
       const current = draftRef.current;

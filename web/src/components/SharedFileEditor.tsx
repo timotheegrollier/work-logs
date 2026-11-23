@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, formatSize, type SharedFile, type SharedSendResult, type SharedVersion } from '../lib';
 import { Autosave } from '../autosave';
-import { AiCancelled, proofreadEntry, readAiSettings, suggestProcedure, type AiWorkContext } from '../ai-suggest';
+import { AiCancelled, aiUnavailableMessage, canUseAi, proofreadEntry, readAiSettings, suggestProcedure, type AiWorkContext } from '../ai-suggest';
 import { loadAiContext, selectedAiContext } from '../ai-context';
 import { AiContextDetails } from './AiContextDetails';
 import { AiMenu, AiPending } from './AiMenu';
@@ -542,7 +542,7 @@ export function SharedFileEditor({ path, projectId = null, onOpenPath, onChanged
       const format = handle.ai.format;
       aiRequest.current = new AbortController();
       const settings = { ...readAiSettings(), signal: aiRequest.current.signal };
-      if (!settings.key) throw new Error(`Colle ta clé IA dans ⚙ Paramètres pour activer ${mode === 'layout' ? 'la mise en page' : 'les suggestions de procédure'}.`);
+      if (!await canUseAi(settings)) throw new Error(aiUnavailableMessage(mode === 'layout' ? 'la mise en page' : 'les suggestions de procédure'));
       // « Tout » n'est pas un projet : seul un projet explicitement sélectionné
       // apporte des notes locales à un fichier du partage.
       const loadedContext = projectId ? await loadAiContext({ projectId, title, text: request.text }) : {};

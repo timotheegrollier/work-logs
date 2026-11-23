@@ -1,11 +1,8 @@
 /**
- * Plafond quotidien de l'IA. Google compte par projet et par modèle, remet ses
- * requêtes à zéro à minuit heure du Pacifique et ne publie pas ses chiffres gratuits :
- * la requête est la ressource rare, c'est elle que ce compteur protège.
+ * Plafond quotidien de WorkLogs, par appareil. La remise à zéro historique
+ * reste à minuit heure du Pacifique, indépendamment des limites du fournisseur.
  */
-// shortcut: compteur par appareil alors que Google compte par projet, à revoir si WorkLogs peut lire la consommation du projet.
-
-export const DEFAULT_DAILY_REQUESTS = 150; // ordre de grandeur arrondi : 7 modèles gratuits × 20 requêtes (le plus bas relevé) = 140
+export const DEFAULT_DAILY_REQUESTS = 50;
 export const MIN_DAILY_REQUESTS = 10;
 export const MAX_DAILY_REQUESTS = 5000;
 export const TOKENS_PER_REQUEST = 10_000; // plafond de jetons = requêtes × ce volume
@@ -22,7 +19,7 @@ const LS_LIMIT = 'worklogs-ai-daily-limit';
 const PACIFIC_DATE = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' });
 const requestsInFlight = new Set<{ background: boolean; tokens: number }>();
 
-/** AAAA-MM-JJ à Los Angeles : le jour du quota, pas celui de l'utilisateur. */
+/** AAAA-MM-JJ à Los Angeles : la journée de comptage WorkLogs. */
 export function pacificDay(now = new Date()): string {
   const { year, month, day } = Object.fromEntries(PACIFIC_DATE.formatToParts(now).map((part) => [part.type, part.value]));
   return `${year}-${month}-${day}`;

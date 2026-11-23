@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { COLUMNS, PRIORITIES, TASK_VIEWS, api, dayLabel, isOverdue, overviewOrder, priorityLabel, subtasksMd, todayISO, type Category, type Entry, type EntrySummary, type Priority, type Project, type Status, type Task, type TaskView } from '../lib';
-import { AiCancelled, draftProcedure, MAX_SOURCE_DOCUMENTS, prioritizeTasks, readAiSettings, suggestSearchTerms, suggestSubtasks, taskSuggestContext, type AiWorkContext, type DraftedProcedure, type TaskPriorityProposal } from '../ai-suggest';
+import { AiCancelled, aiUnavailableMessage, canUseAi, draftProcedure, MAX_SOURCE_DOCUMENTS, prioritizeTasks, readAiSettings, suggestSearchTerms, suggestSubtasks, taskSuggestContext, type AiWorkContext, type DraftedProcedure, type TaskPriorityProposal } from '../ai-suggest';
 import { loadAiContext, readProjectAiBrief, selectedAiContext } from '../ai-context';
 import { findDocuments, type FoundDocument } from '../doc-finder';
 import { richToMarkdown } from '../rich-markdown';
@@ -551,9 +551,11 @@ function TaskCard({
   // la suivante repart d'un contrôleur neuf. Une carte qui disparaît coupe les siennes.
   const aiRequest = useRef<AbortController | null>(null);
   useEffect(() => () => aiRequest.current?.abort(), []);
-  const aiSettings = () => {
+  const aiSettings = async (feature = 'les suggestions') => {
+    const settings = readAiSettings();
+    if (!await canUseAi(settings)) throw new Error(aiUnavailableMessage(feature));
     if (!aiRequest.current || aiRequest.current.signal.aborted) aiRequest.current = new AbortController();
-    return { ...readAiSettings(), signal: aiRequest.current.signal };
+    return { ...settings, signal: aiRequest.current.signal };
   };
   const stopAi = () => aiRequest.current?.abort();
 
@@ -576,8 +578,7 @@ function TaskCard({
     setSuggesting(true);
     setSuggestError('');
     try {
-      const settings = aiSettings();
-      if (!settings.key) throw new Error('Colle ta clé IA dans ⚙ Paramètres pour activer les suggestions.');
+      const settings = await aiSettings('les suggestions');
       const edited = entryTitle.trim();
       // Le prompt ne nomme la tâche nulle part ailleurs : un titre d'entrée la complète sans la remplacer.
       const subject = edited && edited !== task.title ? `${task.title} — ${edited}` : task.title;
@@ -627,8 +628,7 @@ function TaskCard({
     setDrafting(true);
     setDraftError('');
     try {
-      const settings = aiSettings();
-      if (!settings.key) throw new Error('Colle ta clé IA dans ⚙ Paramètres pour activer la création de procédure.');
+      const settings = await aiSettings('la création de procédure');
       const suggestContext = taskSuggestContext(task, tasks, entries, projects);
       const fullContext = await contextForTask(version);
       const context = selectedAiContext(fullContext, excludedSourceIds);
@@ -686,7 +686,7 @@ function TaskCard({
     setFound(null);
     try {
       const suggestContext = taskSuggestContext(task, tasks, entries, projects);
-      const settings = aiSettings();
+      const settings = await aiSettings('la recherche de documentation');
       const terms = await suggestSearchTerms(settings, {
         title: task.title,
         status: COLUMNS.find((column) => column.id === task.status)?.label,

@@ -709,6 +709,14 @@ test('une note ouverte révisée depuis l’assistant affiche son nouveau texte 
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).not.toContain('Détail après l’extrait.');
     expect(prompts[1]).toContain('Détail après l’extrait.');
+    await chat.getByText('Étapes de l’assistant', { exact: true }).click();
+    await expect(chat.locator('.ai-chat-activity li')).toHaveText([
+      'Lecture du contexte de travail…',
+      'Préparation de la réponse, étape 1…',
+      'Lecture de « Vérification du filtre »…',
+      'Préparation de la réponse, étape 2…',
+      'Vérification des changements proposés…',
+    ]);
     await chat.getByText('Relire le texte proposé', { exact: true }).click();
     await expect(chat.locator('pre')).toContainText('Pièces contrôlées, intervention clôturée.');
     const readEntry = async () => (await request.get(`/api/entries/${note.id}`)).json();
@@ -722,6 +730,10 @@ test('une note ouverte révisée depuis l’assistant affiche son nouveau texte 
     await expect(editor.getByLabel('Statut de l’entrée : Terminée')).toBeVisible();
     await expect(editor.getByText('Pièces contrôlées, intervention clôturée.')).toBeVisible();
     expect(await readEntry()).toMatchObject({ title: 'Vérification validée', content_md: body, status: 'done', archived: 0 });
+    await page.reload();
+    await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+    await chat.getByText('Étapes de l’assistant', { exact: true }).click();
+    await expect(chat.getByText('Lecture de « Vérification du filtre »…', { exact: true })).toBeVisible();
   } finally {
     await cleanProject(page, request, project.id);
   }

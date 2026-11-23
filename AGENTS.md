@@ -1,9 +1,11 @@
 # WorkLogs — règles agents
 
 ## Reprise
-- **État v0.86.0** (`package.json` fait foi). `./scripts/check.sh` passe le 2026-11-20 avec
-  **2 107 tests**, dont un échec attendu. 365 API · 1 468 front · 49 desktop · 56 scripts ·
-  8 Worker · 11 relais · 128 navigateur · 22 desktop e2e.
+- **État v0.88.0** (`package.json` fait foi). `./scripts/check.sh` passe le 2026-11-23 avec
+  **2 136 tests**, dont un échec attendu. 365 API · 1 492 front (+1 attendu) · 49 desktop ·
+  56 scripts · 8 Worker · 11 relais · 132 navigateur · 22 desktop e2e.
+  Lancé depuis l'AppImage DeepAI Code : `env -u APPIMAGE ./scripts/check.sh` (piège n° 10 de
+  `docs/02-DEV.md`).
   Lots et bilans : `docs/00-HANDOVER.md`.
 - Publication : `docs/07-RELEASES.md`. `./scripts/check.sh` reste la validation requise (desktop compris).
 - **Éditeur Google Docs natif** : la vraie page Google s'affiche dans la colonne centrale

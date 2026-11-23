@@ -70,16 +70,16 @@ describe('refus', () => {
     seed({ requests: DEFAULT_DAILY_REQUESTS - 1 });
     expect(aiBudgetRefusal(false)).toBeNull();
     seed({ requests: DEFAULT_DAILY_REQUESTS });
-    expect(aiBudgetRefusal(false)).toBe(requests('150'));
-    expect(aiBudgetRefusal(true)).toBe(requests('150'));
+    expect(aiBudgetRefusal(false)).toBe(requests('50'));
+    expect(aiBudgetRefusal(true)).toBe(requests('50'));
   });
 
   test('plafond de jetons : requêtes × volume, avec les milliers espacés', () => {
     expect(TOKENS_PER_REQUEST).toBe(10_000);
-    seed({ tokens: 1_499_999 });
+    seed({ tokens: 499_999 });
     expect(aiBudgetRefusal(false)).toBeNull();
-    seed({ tokens: 1_500_000 });
-    expect(aiBudgetRefusal(false)).toBe(tokens('1 500 000'));
+    seed({ tokens: 500_000 });
+    expect(aiBudgetRefusal(false)).toBe(tokens('500 000'));
   });
 
   test('un plafond enregistré change les deux seuils', () => {
@@ -96,9 +96,9 @@ describe('refus', () => {
   });
 
   test('l’automatique s’arrête au tiers du plafond ; les gestes explicites continuent', () => {
-    seed({ background: 49 });
+    seed({ background: 16 });
     expect(aiBudgetRefusal(true)).toBeNull();
-    seed({ background: 50 });
+    seed({ background: 17 });
     expect(aiBudgetRefusal(true)).toBe(automatic);
     expect(aiBudgetRefusal(false)).toBeNull();
     saveDailyLimit(10); // tiers arrondi au-dessus : 4
@@ -109,8 +109,8 @@ describe('refus', () => {
   });
 
   test('le plafond atteint prime sur la suspension de l’automatique', () => {
-    seed({ requests: 150, background: 150 });
-    expect(aiBudgetRefusal(true)).toBe(requests('150'));
+    seed({ requests: 50, background: 50 });
+    expect(aiBudgetRefusal(true)).toBe(requests('50'));
   });
 });
 
@@ -130,7 +130,7 @@ describe('compteur', () => {
 
   test('libellé du jour', () => {
     seed({ requests: 12, tokens: 18_400 });
-    expect(aiUsageLabel()).toBe('Aujourd’hui : 12 / 150 requêtes · ≈ 18 400 jetons');
+    expect(aiUsageLabel()).toBe('Aujourd’hui : 12 / 50 requêtes · ≈ 18 400 jetons');
   });
 });
 
@@ -149,7 +149,7 @@ describe('stockage', () => {
     expect(() => recordAiUsage(10, true)).not.toThrow();
     expect(() => saveDailyLimit(20)).not.toThrow();
     expect(aiBudgetRefusal(true)).toBeNull();
-    expect(aiUsageLabel()).toBe('Aujourd’hui : 0 / 150 requêtes · ≈ 0 jetons');
+    expect(aiUsageLabel()).toBe('Aujourd’hui : 0 / 50 requêtes · ≈ 0 jetons');
   });
 
   test.each([
@@ -182,7 +182,7 @@ describe('stockage', () => {
 
 describe('bornes du plafond', () => {
   test('défaut, borne basse, borne haute et arrondi', () => {
-    expect(readDailyLimit()).toBe(150);
+    expect(readDailyLimit()).toBe(50);
     saveDailyLimit(1);
     expect(readDailyLimit()).toBe(MIN_DAILY_REQUESTS);
     saveDailyLimit(99_999);

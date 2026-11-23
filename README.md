@@ -93,8 +93,11 @@ Desktop app: `npm run desktop`.
 Supported Markdown: headings, bold/italic, lists, **check boxes**, **tables**,
 quotes, code blocks, links, images.
 
-The assistant uses the AI key configured in Settings. Review its proposals before
-applying changes or creating a Word document in your shared folder.
+AI needs **no key, account or subscription**: in Chrome or the PWA, WorkLogs uses the
+browser's built-in on-device AI ("Prepare free AI" downloads the model once). Elsewhere
+it falls back to local search and local proposals. An external key or a local model
+(Ollama) remains optional. The assistant shows its searches and reads, then lets you
+review its proposals before applying changes.
 [Assistant guide in French](docs/03-UTILISATION.md#lassistant).
 
 Rich documents autosave locally and retain formatting in JSON exports. In the desktop

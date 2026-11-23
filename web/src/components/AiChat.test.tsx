@@ -97,7 +97,7 @@ describe('assistant : conversation', () => {
     expect(chat().getByText('1 action écartée : statut inconnu.')).toBeInTheDocument();
     expect(field()).toHaveValue('');
     expect(ask).toHaveBeenCalledOnce();
-    expect(ask.mock.calls[0][1]).toEqual({ text: 'Première ligne', history: [], projectId: 'pj_1', openTitle: 'Note ouverte', needsConversationTitle: true });
+    expect(ask.mock.calls[0][1]).toMatchObject({ text: 'Première ligne', history: [], projectId: 'pj_1', openTitle: 'Note ouverte', needsConversationTitle: true });
   });
 
   test('Entrée pendant une composition IME n’envoie pas', () => {
@@ -215,6 +215,30 @@ describe('assistant : conversation', () => {
     expect(chat().getByRole('button', { name: 'Envoyer' })).toBeDisabled();
   });
 
+  test('les demandes suggérées remplissent le champ sans envoyer', () => {
+    render(<Host />);
+    const suggestions = chat().getByRole('list', { name: 'Demandes suggérées' });
+    fireEvent.click(within(suggestions).getByRole('button', { name: 'Quelles tâches sont en retard ?' }));
+    expect(field()).toHaveValue('Quelles tâches sont en retard ?');
+    expect(field()).toHaveFocus();
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  test('une demande échouée se repose avec le même texte et efface l’alerte', async () => {
+    render(<Host />);
+    const pending = pendingAnswer();
+    say('Où en est la pompe ?');
+    await pending.reject(new Error('Réseau coupé.'));
+    ask.mockResolvedValueOnce(answer({ reply: 'La pompe est réparée.' }));
+    fireEvent.click(chat().getByRole('button', { name: 'Réessayer la demande' }));
+    expect(await chat().findByText('La pompe est réparée.')).toBeInTheDocument();
+    expect(ask).toHaveBeenCalledTimes(2);
+    expect(ask.mock.calls[1][1]).toMatchObject({ text: 'Où en est la pompe ?' });
+    expect(chat().queryByRole('alert')).not.toBeInTheDocument();
+    expect(log().getAllByText('Où en est la pompe ?')).toHaveLength(1);
+    expect(chat().getByRole('log')).toHaveAttribute('aria-busy', 'false');
+  });
+
   test('refermer laisse finir la demande en arrière-plan et garde le brouillon', async () => {
     const view = render(<Host />);
     const pending = pendingAnswer();
@@ -238,6 +262,8 @@ describe('assistant : conversation', () => {
     await answered(answer({ reply: 'Un premier échange.' }), 'Question A');
     const first = pendingAnswer();
     say('Suite de A');
+    const progressA = ask.mock.calls[1][1].onProgress;
+    act(() => progressA?.('Lecture de la note A…'));
     fireEvent.change(field(), { target: { value: 'Brouillon de A' } });
     const firstSignal = ask.mock.calls[1][0].signal!;
     expect(ask.mock.calls[1][1]).toMatchObject({
@@ -253,22 +279,27 @@ describe('assistant : conversation', () => {
     expect(chat().queryByText('Un premier échange.')).not.toBeInTheDocument();
     const second = pendingAnswer();
     say('Question B');
+    act(() => ask.mock.calls[2][1].onProgress?.('Recherche dans le dossier B…'));
     const secondSignal = ask.mock.calls[2][0].signal!;
     expect(ask.mock.calls[2][1]).toMatchObject({ projectId: 'pj_2', openEntryId: 'en_2', history: [] });
     expect(firstSignal.aborted).toBe(false);
     expect(workspace().getByText('2 conversations en cours')).toBeInTheDocument();
-    expect(within(pane('2')).getByRole('status')).toHaveTextContent('L’assistant cherche');
+    expect(within(pane('2')).getByRole('status')).toHaveTextContent('Recherche dans le dossier B…');
     expect(conversations().getAllByText('Recherche en cours')).toHaveLength(2);
     fireEvent.change(field(), { target: { value: 'Brouillon de B' } });
 
     await second.resolve(answer({ reply: 'B a fini.' }));
     expect(chat().getByText('B a fini.')).toBeInTheDocument();
+    const activityB = chat().getByText('Étapes de l’assistant').closest('details')!;
+    expect(activityB).not.toHaveAttribute('open');
+    expect(activityB).toHaveTextContent('Recherche dans le dossier B…');
+    expect(activityB).not.toHaveTextContent('Lecture de la note A…');
     expect(workspace().getByText('1 conversation en cours')).toBeInTheDocument();
     expect(within(pane('2')).queryByRole('status')).not.toBeInTheDocument();
     switchConversation('1');
     expect(field()).toHaveValue('Brouillon de A');
     expect(field()).toHaveFocus();
-    expect(chat().getByRole('status')).toHaveTextContent('L’assistant cherche');
+    expect(chat().getByRole('status')).toHaveTextContent('Lecture de la note A…');
     expect(chat().queryByText('B a fini.')).not.toBeInTheDocument();
     switchConversation('2');
     await first.resolve(answer({ reply: 'A a fini.' }));
@@ -278,6 +309,7 @@ describe('assistant : conversation', () => {
     expect(firstSignal.aborted).toBe(false);
     switchConversation('1');
     expect(chat().getByText('A a fini.')).toBeInTheDocument();
+    expect(chat().getByText('Étapes de l’assistant').closest('details')).toHaveTextContent('Lecture de la note A…');
     expect(log().getByText('Un premier échange.')).toBeInTheDocument();
     expect(field()).toHaveValue('Brouillon de A');
     switchConversation('2');
@@ -296,13 +328,18 @@ describe('assistant : conversation', () => {
     let resolve!: (value: ChatAnswer) => void;
     ask.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
     say('Recherche à arrêter');
+    const report = ask.mock.calls[1][1].onProgress;
     const signal = ask.mock.calls[1][0].signal!;
     fireEvent.click(chat().getByRole('button', { name: 'Arrêter la demande IA' }));
     expect(signal.aborted).toBe(true);
     expect(firstSignal.aborted).toBe(false);
     expect(chat().getByText('Demande arrêtée.')).toBeInTheDocument();
-    await act(async () => resolve(answer({ reply: 'Trop tard.' })));
+    await act(async () => {
+      report?.('Étape arrivée trop tard.');
+      resolve(answer({ reply: 'Trop tard.' }));
+    });
     expect(chat().queryByText('Trop tard.')).not.toBeInTheDocument();
+    expect(chat().queryByText('Étape arrivée trop tard.')).not.toBeInTheDocument();
     fireEvent.click(chat().getByRole('button', { name: 'Effacer la conversation' }));
     expect(chat().queryByText('Recherche à arrêter')).not.toBeInTheDocument();
     expect(log().getByText('Recherche à garder')).toBeInTheDocument();
@@ -456,7 +493,7 @@ describe('assistant : conversation', () => {
     render(<Host />);
     expect(chat().getByText(/Pour un document Google, il reçoit le titre et la date seuls/)).toBeInTheDocument();
     expect(chat().getByText(/le texte de notes et procédures locales dans une limite de taille/)).toBeInTheDocument();
-    expect(conversations().getByText(/^Aujourd’hui : 0 \/ 150 requêtes/)).toBeInTheDocument();
+    expect(conversations().getByText(/^Aujourd’hui : 0 \/ 50 requêtes/)).toBeInTheDocument();
     await answered(answer(), 'Une question confidentielle');
     expect(localStorage.length).toBe(0);
   });

@@ -366,8 +366,8 @@ automatiquement. Une note déjà incluse dans une tâche suivie est signalée po
 suivi redondant. Aucun bouton d’activation n’encombre chaque ligne de la liste ; une tâche
 suivie porte seulement une pastille « ✦ Suivi IA ».
 
-Le service IA et la clé sont ceux des **Paramètres**. Le texte enregistré est envoyé à ce
-service après activation. L’analyse lit au plus huit documents et 24 000 caractères de texte,
+L’IA gratuite de l’appareil, ou le service configuré s’il y en a un, prépare le bilan. Le
+texte enregistré lui est envoyé après activation. L’analyse lit au plus huit documents et 24 000 caractères de texte,
 avec début et fin conservés pour les longs documents ; les coupes sont annoncées. Les
 documents Google utilisent leur copie locale enregistrée, qui peut être en retard sur Google.
 Les pièces jointes et fichiers du dossier partagé ne sont pas lus. L’état proposé ne change
@@ -376,15 +376,23 @@ synchronisation habituelles.
 
 ## Assistance IA
 
-Dans **⚙ Paramètres → Assistance IA**, renseigner le profil métier général et,
-facultativement, le **Contexte IA du projet** : objectif, environnement, contraintes et
-termes utiles. Chaque fiche est conservée **sur cet appareil uniquement**.
+**Aucune clé, aucun compte, aucun abonnement n’est nécessaire.** Dans Chrome ou la PWA,
+WorkLogs utilise l’**IA intégrée au navigateur** : elle tourne sur l’appareil et le texte
+n’est pas envoyé à un service. Si le navigateur annonce seulement un modèle
+« téléchargeable », **Préparer l’IA gratuite** le télécharge une fois, sur ton clic. Sans
+IA intégrée (Firefox, application desktop), les gestes IA retombent sur la recherche et les
+propositions locales : l’application reste utilisable et ne dépense rien.
 
-La section commence par la **Clé IA** et **Tester la connexion** : un seul appel, au seul
-modèle affiché, sans modèle de secours, dont le résultat s'efface dès que la clé, l'endpoint
-ou le modèle change. Endpoint, modèle, plafond quotidien et **Restaurer les réglages Gemini**
-sont repliés sous **Réglages avancés**. Le contexte IA s'ouvre sur la fiche du projet
-sélectionné dans le bandeau.
+Une **clé d’un service externe** reste possible, sous **Paramètres → Assistance IA**, pour
+choisir un autre modèle. Elle est facultative et enregistrée sur cet appareil. Le bouton
+**Tester la connexion** envoie un appel au modèle affiché ; son résultat s’efface quand tu
+changes la clé, l’endpoint ou le modèle. L’endpoint, le modèle, le plafond quotidien et
+**Restaurer les réglages gratuits** se trouvent sous **Réglages avancés**. Un endpoint local
+(Ollama, LM Studio) fonctionne aussi sans clé.
+
+Tu peux aussi renseigner **Mon contexte de travail** et le **Contexte IA du projet** pour
+indiquer l’objectif, les contraintes et le vocabulaire utile. Chaque fiche reste sur cet
+appareil. Le contexte du projet s’ouvre sur la fiche du projet sélectionné dans le bandeau.
 
 Un clic d'assistance lit aussi des documents locaux du même projet : documents liés
 d'abord, puis notes et procédures dont le titre, l'extrait ou le texte entier correspond au
@@ -464,10 +472,11 @@ créées en **À faire**.
 ### L’assistant
 
 **Assistant**, dans l’en-tête (sur téléphone, dans le bandeau du projet), ouvre le chat.
-**Nouvelle conversation** garde la précédente. Sur ordinateur, les conversations s’affichent
-côte à côte. La liste à gauche permet de rejoindre une colonne si elle est hors écran.
-Sur téléphone, **Conversations** ouvre la liste et affiche ensuite la conversation choisie.
-Un indicateur animé signale les demandes en cours dans chaque conversation.
+**Nouvelle conversation** garde la précédente. La liste permet de changer de conversation.
+Sur téléphone, ouvre-la avec **Conversations**. Un indicateur animé signale les demandes
+en cours. L’assistant affiche les étapes qu’il effectue, comme la recherche dans le journal,
+la lecture d’une note et la préparation de la réponse. Tu peux revoir ces étapes dans
+l’activité du message une fois la réponse reçue.
 **Entrée** envoie, **Maj+Entrée** va à la ligne et **Arrêter** coupe la demande de la conversation
 affichée. Les demandes continuent quand le panneau est fermé.
 WorkLogs nomme chaque conversation d’après son sujet et le projet concerné. L’historique et
@@ -486,8 +495,8 @@ les fichiers texte, Markdown, CSV et code. Tu peux coller directement du code da
 message, avec ses sauts de ligne et son indentation. Les autres formats, comme les
 présentations ou les archives, restent joints à la conversation : l’assistant reçoit
 seulement leur nom, sans leur contenu, et la pièce est marquée **Non lu**. **Lien**
-ajoute une adresse web publique. Avec Gemini, l’assistant peut consulter la page. Les
-autres services compatibles reçoivent l’adresse comme référence.
+ajoute une adresse web publique comme référence. Pour que l’assistant lise son contenu,
+colle le passage utile ou joins-le comme fichier.
 
 Un lien vers un dépôt, un dossier ou un fichier `https://github.com/…` est d’abord lu
 par cet ordinateur avec la connexion GitHub CLI déjà configurée (`gh auth login`).
@@ -526,39 +535,44 @@ une nouvelle proposition. Le partage refuse la création si le nom du fichier es
 Une proposition appliquée affiche un bouton pour ouvrir le résultat dans WorkLogs. Une tâche
 créée donne accès à sa carte et à son brouillon lié.
 
-Le fournisseur reçoit la demande, les derniers échanges de la conversation, le profil, le
+Avec l’IA intégrée, ces éléments restent sur l’appareil. Avec un service externe configuré,
+il reçoit la demande, les derniers échanges de la conversation, le profil, le
 projet et ses repères, les catégories et des résumés des tâches, des entrées et de leurs liens.
 Quand une demande en a besoin, l’assistant peut consulter le texte d’entrées locales et les noms du partage.
 Pour les documents Google associés, le fournisseur reçoit les titres et les dates.
 Les pièces jointes lisibles au chat partent à l’envoi. WorkLogs extrait le texte des fichiers
-Word, Excel et texte. La mention **Extrait** indique un contenu abrégé. Les autres pièces
+Word, Excel et texte. Avec OpenRouter, WorkLogs sélectionne le moteur gratuit pour convertir
+les PDF. La mention **Extrait** indique un contenu abrégé. Les autres pièces
 restent dans la conversation : le fournisseur reçoit leur nom et leur type, jamais leurs
 octets. Les pièces récentes peuvent aussi servir aux réponses suivantes de la conversation.
 
-Un message comporte jusqu’à quatre étapes IA selon les lectures nécessaires. Le plafond
+Un message comporte jusqu’à quatre étapes IA selon les lectures nécessaires. La phase en
+cours s’affiche pendant la demande. Déplie **Étapes de l’assistant** dans la réponse pour
+retrouver les recherches, les lectures et les vérifications. Le plafond
 quotidien s’applique aux conversations en parallèle. Si le service est indisponible ou que
 le plafond est atteint, l’assistant affiche les résultats de recherche qu’il a pu obtenir.
 
-### Plafond quotidien et gratuité
+### Gratuité et plafond quotidien
 
-Une clé AI Studio d’un projet **sans facturation** ne coûte rien : au pire, Google répond
-« quota atteint ». C’est elle qui fait la gratuité. WorkLogs n’emploie en secours que des modèles
-gratuits, et **⚙ Paramètres** prévient si le modèle choisi n’en fait pas partie ou si le service
-n’est pas Gemini. Avec un projet facturé, le plafond borne la dépense sans l’annuler. Gratuit ne
-veut pas dire confidentiel : sur ce niveau, Google indique se servir des contenus reçus pour
-améliorer ses produits (tarifs relus le 2026-11-09).
+L’**IA intégrée** ne coûte rien, ne demande ni clé ni compte et ne compte pas dans le
+plafond : elle répond sur l’appareil. C’est le chemin par défaut.
 
-La consommation du jour s’affiche dans les Paramètres et au pied de l’assistant : « Aujourd’hui :
-12 / 150 requêtes · ≈ 18 400 jetons ». Le plafond est de **150 requêtes par jour** et de
-1 500 000 jetons ; il se règle de 10 à 5 000 requêtes sous **Réglages avancés**, et celui des
-jetons suit (10 000 par requête). Une fois atteint, aucune demande ne part, pas même vers un
-modèle de secours, et le message dit à quelle heure il revient : les quotas de Google repartent à
-minuit heure du Pacifique, vers 9 h en France.
+Si tu configures un service externe, le routeur **OpenRouter gratuit** (`openrouter/free`)
+choisit parmi les modèles gratuits disponibles pour la demande. WorkLogs impose un prix
+maximal de zéro pour ces requêtes et demande d’écarter les fournisseurs de modèles qui
+collectent les données. OpenRouter reçoit le contenu envoyé et le traite selon sa
+politique. Si tu configures un autre service ou un modèle payant, vérifie ses tarifs.
+[Routeur gratuit](https://openrouter.ai/docs/guides/routing/routers/free-router) ·
+[Données traitées par OpenRouter](https://openrouter.ai/docs/guides/privacy/data-collection).
 
-Le compteur porte sur **cet appareil**, alors que Google compte par projet : un ordinateur et un
-téléphone qui utilisent la même clé ont chacun leur compteur pour un seul quota, et Google peut
-donc répondre « quota atteint » avant le plafond. Comme ses quotas sont comptés par modèle, un
-autre modèle prend alors le relais tant qu’il lui en reste.
+Le compteur de WorkLogs apparaît dans les Paramètres et au pied de l’assistant. Le plafond
+par défaut est de **50 requêtes par jour** et de 500 000 jetons. Tu peux régler le nombre de
+requêtes de 10 à 5 000 sous **Réglages avancés**. Le plafond de jetons suit à raison
+de 10 000 jetons par requête. Le compteur local repart à minuit heure du Pacifique.
+
+OpenRouter applique ses propres limites au compte, même si tu utilises plusieurs appareils.
+Le service peut donc répondre « quota atteint » avant le plafond affiché par WorkLogs.
+[Limites d’OpenRouter](https://openrouter.ai/docs/api/reference/limits).
 
 ## Projets
 
@@ -632,7 +646,7 @@ clic. Les mêmes actions existent pour les fichiers du dossier partagé (ci-dess
 
 **Tirer une procédure de son travail, avec l'IA.** Dans une entrée du journal,
 **✨ IA › Créer une procédure**, et de même au pied d'une carte de tâche. L'IA (le service
-réglé dans ⚙ Paramètres, Gemini par défaut) lit l'entrée — ou la tâche et ses documents
+réglé dans ⚙ Paramètres, OpenRouter gratuit par défaut) lit l'entrée — ou la tâche et ses documents
 liés — et rédige un mode opératoire concis, comme ci-dessus : un titre, l'objectif, des
 étapes d'une ligne (10 au plus), prérequis et vérification seulement s'il y en a ;
 « à préciser » là où la source ne dit rien. La proposition se relit sur place : corriger

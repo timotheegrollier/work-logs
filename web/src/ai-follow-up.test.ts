@@ -180,7 +180,7 @@ describe('bilan du suivi IA', () => {
       init.signal!.addEventListener('abort', () => reject(new DOMException('arrêté', 'AbortError')));
     }));
     vi.stubGlobal('fetch', fetch);
-    await expect(generateFollowUp({ ...settings, key: '' }, source)).rejects.toThrow('Colle ta clé IA');
+    await expect(generateFollowUp({ ...settings, key: '' }, source)).rejects.toThrow(/Aucune IA intégrée/);
     const stopped = new AbortController(); stopped.abort();
     await expect(generateFollowUp({ ...settings, signal: stopped.signal }, source)).rejects.toBeInstanceOf(AiCancelled);
     expect(fetch).not.toHaveBeenCalled();

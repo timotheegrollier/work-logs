@@ -3,7 +3,7 @@ import { pacificDay, readAiUsage, recordAiUsage, saveDailyLimit } from './ai-bud
 import { applyChatProposal, askAssistant, MAX_CHAT_MESSAGE, type ChatProposal } from './ai-chat';
 import { createChatLink, MAX_CHAT_ATTACHMENTS, type ChatAttachment } from './ai-chat-attachments';
 import { saveProjectAiBrief } from './ai-context';
-import { AiCancelled, DEFAULT_AI_ENDPOINT, DEFAULT_AI_MODEL, localToday, resetAiFallbackMemory, type AiSettings } from './ai-suggest';
+import { AiCancelled, GEMINI_AI_ENDPOINT, localToday, resetAiFallbackMemory, type AiSettings } from './ai-suggest';
 import { Autosave, discardPendingSaves } from './autosave';
 import { api, type AppState, type Category, type EntrySummary, type Project, type SharedFile, type SharedSearchResult, type Task } from './lib';
 import { seedData, useRealApi } from './test/server';
@@ -65,6 +65,7 @@ const system = (call: AiCall) => call.messages[0].content;
 const user = (call: AiCall) => call.messages[1].content;
 const lines = (prompt: string, heading: string) => (prompt.split('\n\n').find((part) => part.startsWith(heading)) ?? '').split('\n').slice(1);
 const titles = (prompt: string, heading = 'Tâches') => lines(prompt, heading).map((line) => line.replace(/^\d+\. /, '').replace(/ \[.*$/, ''));
+const legacyGeminiModel = 'gemini-3-flash-preview';
 const ask = (input: Partial<Parameters<typeof askAssistant>[1]> = {}, options: AiSettings = settings) => askAssistant(options, { text: 'bonjour', history: [], projectId: '', ...input });
 const json = (value: unknown) => JSON.stringify(value);
 
@@ -132,10 +133,10 @@ describe('pièces jointes de la conversation', () => {
     }));
     vi.stubGlobal('fetch', fetch);
     const pdf: ChatAttachment = { id: 'rapport', kind: 'pdf', name: 'rapport.pdf', file: new Blob(['%PDF-'], { type: 'application/pdf' }) };
-    await expect(ask({ attachments: [pdf] }, { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL })).resolves.toMatchObject({ reply: 'PDF lu.' });
+    await expect(ask({ attachments: [pdf] }, { ...settings, endpoint: GEMINI_AI_ENDPOINT, model: legacyGeminiModel })).resolves.toMatchObject({ reply: 'PDF lu.' });
     expect(fetch).toHaveBeenCalledTimes(1);
     const [url, request] = fetch.mock.calls[0];
-    expect(url).toBe(`https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_AI_MODEL}:generateContent`);
+    expect(url).toBe(`https://generativelanguage.googleapis.com/v1beta/models/${legacyGeminiModel}:generateContent`);
     expect(request.headers).toMatchObject({ 'x-goog-api-key': settings.key });
     const body = JSON.parse(request.body as string);
     expect(body.contents[0].parts).toEqual([
@@ -167,7 +168,7 @@ describe('pièces jointes de la conversation', () => {
     const result = await ask({
       text: 'Compare les deux guides et ignore https://example.net/dossier.',
       attachments: [first, second],
-    }, { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL });
+    }, { ...settings, endpoint: GEMINI_AI_ENDPOINT, model: legacyGeminiModel });
     expect(result.notice).toContain(second.text);
     expect(result.reply).toContain('pompe doseuse');
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -184,7 +185,7 @@ describe('pièces jointes de la conversation', () => {
     await ask({ text: 'Peux-tu détailler le premier ?', history: [
       { role: 'user', text: '', attachments: [first, second] },
       { role: 'assistant', text: result.reply, consultedLinks: result.consultedLinks },
-    ] }, { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL });
+    ] }, { ...settings, endpoint: GEMINI_AI_ENDPOINT, model: legacyGeminiModel });
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(fetch.mock.calls[2][0]).toContain('/chat/completions');
     expect(user(JSON.parse(fetch.mock.calls[2][1].body as string))).toContain('Le guide décrit la pompe doseuse.');
@@ -217,7 +218,7 @@ describe('pièces jointes de la conversation', () => {
     const attachment = createChatLink('https://github.com/Murgat-Ingenierie/deployer');
     vi.spyOn(api, 'readGithubLink').mockResolvedValue({ url: attachment.text!, text: 'Le README du dépôt privé est lu.', private: true });
     const calls = stubAi(json({ reply: 'Lecture terminée.' }));
-    const result = await ask({ attachments: [attachment] }, { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL });
+    const result = await ask({ attachments: [attachment] }, { ...settings, endpoint: GEMINI_AI_ENDPOINT, model: legacyGeminiModel });
     expect(calls).toHaveLength(1);
     expect(user(calls[0])).toContain('Le README du dépôt privé est lu.');
     expect(result.notice).toBe('');
@@ -260,7 +261,7 @@ describe('pièces jointes de la conversation', () => {
       }] })
       : aiResponse(json({ reply: 'Le projet est décrit dans son README.' })));
     vi.stubGlobal('fetch', fetch);
-    const result = await ask({ attachments: [createChatLink(url)] }, { ...settings, endpoint: DEFAULT_AI_ENDPOINT });
+    const result = await ask({ attachments: [createChatLink(url)] }, { ...settings, endpoint: GEMINI_AI_ENDPOINT });
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(result.notice).toBe('');
     expect(result.consultedLinks).toEqual([{ url, text: 'Le README public présente le projet.' }]);
@@ -272,7 +273,7 @@ describe('pièces jointes de la conversation', () => {
     for (let count = 0; count < 9; count++) recordAiUsage(20, false);
     const calls = stubAi(json({ reply: 'Je peux travailler à partir du lien.' }));
     const attachment = createChatLink('https://example.com/guide');
-    const result = await ask({ attachments: [attachment] }, { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL });
+    const result = await ask({ attachments: [attachment] }, { ...settings, endpoint: GEMINI_AI_ENDPOINT, model: legacyGeminiModel });
     expect(calls).toHaveLength(1);
     expect(user(calls[0])).toContain(attachment.text);
     expect(result.usedAi).toBe(true);
@@ -562,7 +563,7 @@ describe('appels au modèle', () => {
   test('un seul appel pour un message, avec l’effort bas de Gemini et 4 096 jetons', async () => {
     mockState({ tasks: [task('t1')] });
     const calls = stubAi(json({ reply: 'Une tâche.', show_tasks: [1, 1, 9, 'x'] }));
-    const answer = await ask({}, { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL });
+    const answer = await ask({}, { ...settings, endpoint: GEMINI_AI_ENDPOINT, model: legacyGeminiModel });
     expect(calls).toHaveLength(1);
     expect(calls[0].max_tokens).toBe(4096);
     expect(calls[0].reasoning_effort).toBe('low');
@@ -573,7 +574,7 @@ describe('appels au modèle', () => {
   test('sans clé, le message d’activation nomme l’assistant', async () => {
     mockState();
     const answer = await ask({}, { ...settings, key: '' });
-    expect(answer.notice).toBe('Colle ta clé IA dans ⚙ Paramètres pour activer l’assistant.');
+    expect(answer.notice).toMatch(/Aucune IA intégrée.*recherche locale/);
   });
 
   test('une recherche demandée : termes bornés, nouveaux éléments à la suite, second appel sans « search », deux appels au plus', async () => {
@@ -586,7 +587,8 @@ describe('appels au modèle', () => {
       json({ reply: 'Je cherche.', search: ['vanne', ' vanne ', 3, '', 'fuite', 'joint', 'quatrieme'] }),
       json({ reply: 'Trouvé.', show_tasks: [41], show_documents: [2], actions: [{ kind: 'update_task', n: 41, status: 'doing' }], search: ['encore'] }),
     );
-    const answer = await ask({ text: 'pompe' });
+    const progress = vi.fn();
+    const answer = await ask({ text: 'pompe', onProgress: progress });
     expect(calls).toHaveLength(2);
     expect(state.mock.calls.map(([q]) => q)).toEqual(['', 'pompe', 'vanne', 'fuite', 'joint']);
     const first = titles(user(calls[0]));
@@ -597,6 +599,13 @@ describe('appels au modèle', () => {
     expect(lines(user(calls[1]), 'Documents').map((line) => line.split(' | ')[1])).toEqual(['Pompe', 'Autre écrit']);
     expect(system(calls[0])).not.toContain('interdit');
     expect(system(calls[1])).toContain('« search » est interdit');
+    expect(progress.mock.calls.map(([label]) => label)).toEqual([
+      'Lecture du contexte de travail…',
+      'Préparation de la réponse, étape 1…',
+      'Recherche dans les tâches et les notes…',
+      'Préparation de la réponse, étape 2…',
+      'Vérification des changements proposés…',
+    ]);
     expect(answer.reply).toBe('Trouvé.');
     expect(answer.proposals).toEqual([expect.objectContaining({ kind: 'update_task', taskId: 'cherchee' })]);
     expect(answer.tasks.map(({ id }) => id)).toEqual(['cherchee']);
@@ -1145,14 +1154,14 @@ describe('repli local', () => {
     const calls = stubAi();
     const answer = await ask({ text: 'pompe' }, { ...settings, key: ' ' });
     expect(calls).toHaveLength(0);
-    expect(answer).toEqual(expect.objectContaining({ usedAi: false, reply: 'Recherche locale : 13 résultats.', proposals: [], notice: 'Colle ta clé IA dans ⚙ Paramètres pour activer l’assistant.' }));
+    expect(answer).toEqual(expect.objectContaining({ usedAi: false, reply: 'Recherche locale : 13 résultats.', proposals: [], notice: expect.stringMatching(/Aucune IA intégrée/) }));
     expect(answer.tasks).toHaveLength(8);
     expect(answer.documents).toHaveLength(5);
     expect(answer.tasks.map(({ id }) => id)).not.toContain('hors');
   });
 
   test('plafond quotidien atteint : aucun appel, sa raison annoncée', async () => {
-    localStorage.setItem('worklogs-ai-usage', JSON.stringify({ day: pacificDay(), requests: 150, tokens: 0, background: 0 }));
+    localStorage.setItem('worklogs-ai-usage', JSON.stringify({ day: pacificDay(), requests: 50, tokens: 0, background: 0 }));
     mockState(data);
     const calls = stubAi();
     const answer = await ask({ text: 'pompe' });

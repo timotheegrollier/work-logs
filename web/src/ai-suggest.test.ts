@@ -47,7 +47,9 @@ import {
   truncate,
   DEFAULT_AI_ENDPOINT,
   DEFAULT_AI_MODEL,
+  GEMINI_AI_ENDPOINT,
   GEMINI_FALLBACK_MODELS,
+  postChatCompletions,
   resetAiFallbackMemory,
 } from './ai-suggest';
 
@@ -481,7 +483,7 @@ describe('vocabulaire auto-appris', () => {
 });
 
 describe('réglages', () => {
-  test('défauts Gemini gratuits, clé vide sans collage', () => {
+  test('routeur gratuit OpenRouter par défaut, clé vide', () => {
     expect(readAiSettings()).toEqual({ endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL, key: '', profile: '' });
   });
 
@@ -493,6 +495,116 @@ describe('réglages', () => {
   test('les valeurs collées en Paramètres sont relues et rognées', () => {
     saveAiSettings({ endpoint: 'https://autre/v1/ ', model: '  perso ', key: ' k ', profile: ' solo ' });
     expect(readAiSettings()).toEqual({ endpoint: 'https://autre/v1/', model: 'perso', key: 'k', profile: 'solo' });
+  });
+
+  test.each([
+    [GEMINI_AI_ENDPOINT, 'gemini-3-flash-preview', 'cle-google'],
+    ['', 'gemini-3.5-flash-lite', 'cle-google'],
+    ['', '', 'AIza-ancienne-cle'],
+  ])('migre %s / %s vers OpenRouter sans réutiliser la clé Google', (endpoint, model, key) => {
+    saveAiSettings({ endpoint, model, key, profile: 'Maintenance' });
+    expect(readAiSettings()).toEqual({ endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL, key: '', profile: 'Maintenance' });
+  });
+});
+
+describe('OpenRouter gratuit', () => {
+  const free = { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL };
+
+  test('les suggestions gardent le texte libre et demandent un routage à prix zéro', async () => {
+    const fetch = vi.fn(async () => aiResponse('Relire'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks(free, 'Dossier')).resolves.toBe('Relire');
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
+    expect(init).toMatchObject({ redirect: 'error', headers: { Authorization: 'Bearer cle-test' } });
+    const body = JSON.parse(init.body as string);
+    expect(body).toMatchObject({
+      model: 'openrouter/free',
+      provider: { data_collection: 'deny', max_price: { prompt: 0, completion: 0, request: 0, image: 0 } },
+      plugins: [{ id: 'web', enabled: false }, { id: 'file-parser', enabled: false }],
+    });
+    expect(body).not.toHaveProperty('reasoning_effort');
+    expect(body).not.toHaveProperty('response_format');
+  });
+
+  test('le chat avec PDF demande un objet JSON et un moteur PDF gratuit', async () => {
+    const fetch = vi.fn(async () => aiResponse('{"reply":"Document lu."}'));
+    vi.stubGlobal('fetch', fetch);
+    await postChatCompletions(free, 'l’assistant', 'Réponds en JSON', 'Lis le document', 4096, 1000, {
+      json: true,
+      media: [{ name: 'test.pdf', mimeType: 'application/pdf', data: 'T0s=' }],
+    });
+    expect(bodyOf(fetch.mock.calls[0])).toMatchObject({
+      response_format: { type: 'json_object' },
+      provider: { require_parameters: true },
+      plugins: [{ id: 'web', enabled: false }, { id: 'file-parser', pdf: { engine: 'cloudflare-ai' } }],
+      messages: [
+        { role: 'system' },
+        { role: 'user', content: [
+          { type: 'text', text: 'Lis le document' },
+          { type: 'file', file: { filename: 'test.pdf', file_data: 'data:application/pdf;base64,T0s=' } },
+        ] },
+      ],
+    });
+  });
+
+  test('une clé Google collée directement n’est pas envoyée', async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks({ ...free, key: 'AIza-ancienne-cle' }, 'Dossier')).rejects.toThrow(/clé OpenRouter/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test('un 503 immédiat ne déclenche qu’un réessai avec les mêmes réglages gratuits', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn().mockResolvedValueOnce(aiResponse('', 503)).mockResolvedValue(aiResponse('Relire'));
+      vi.stubGlobal('fetch', fetch);
+      const answer = suggestSubtasks(free, 'Dossier');
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(answer).resolves.toBe('Relire');
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(bodyOf(fetch.mock.calls[1])).toEqual(bodyOf(fetch.mock.calls[0]));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('le délai couvre aussi le corps reçu après les en-têtes', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn(async (_url: string, init: RequestInit) => ({
+        ok: true, status: 200, json: () => hangUntilAborted(_url, init),
+      }) as Response);
+      vi.stubGlobal('fetch', fetch);
+      const answer = expect(suggestSubtasks(free, 'Dossier', { timeoutMs: 500 })).rejects.toThrow(/surchargé/);
+      await vi.advanceTimersByTimeAsync(500);
+      await answer;
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(readAiUsage().requests).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test.each([
+    [402, /demande des crédits/], [429, /Limite des modèles gratuits/],
+  ])('un refus %i s’affiche sans nouvel essai', async (status, message) => {
+    const fetch = vi.fn(async () => aiResponse('', status));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks(free, 'Dossier')).rejects.toThrow(message);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('une génération interrompue ne rend pas un brouillon partiel comme résultat', async () => {
+    const fetch = vi.fn(async () => rawResponse({ choices: [{
+      message: { content: 'Relire le premier paragraphe' },
+      finish_reason: 'error',
+      error: { code: 503 },
+    }] }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks(free, 'Dossier')).rejects.toThrow(/surchargé/);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -624,7 +736,7 @@ describe('mise en page', () => {
     vi.stubGlobal('fetch', fetch);
     await expect(proofreadEntry(settings, 'T', '   ')).rejects.toThrow(/vide/);
     await expect(proofreadEntry(settings, 'T', 'a'.repeat(MAX_PROOFREAD_CHARS + 1))).rejects.toThrow(/trop long/);
-    await expect(proofreadEntry({ ...settings, key: '' }, 'T', 'texte')).rejects.toThrow('activer la mise en page');
+    await expect(proofreadEntry({ ...settings, key: '' }, 'T', 'texte')).rejects.toThrow(/Aucune IA intégrée.*mise en page/);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -694,7 +806,7 @@ describe('procédures', () => {
     await expect(suggestProcedure(settings, 'Sans titre')).rejects.toThrow(/Donne un titre/);
     await expect(suggestProcedure(settings, '  ')).rejects.toThrow(/Donne un titre/);
     await expect(suggestProcedure(settings, 'T', { context: { text: 'a'.repeat(MAX_PROOFREAD_CHARS + 1) } })).rejects.toThrow(/trop longue/);
-    await expect(suggestProcedure({ ...settings, key: '' }, 'Vidange')).rejects.toThrow('activer les suggestions de procédure');
+    await expect(suggestProcedure({ ...settings, key: '' }, 'Vidange')).rejects.toThrow(/Aucune IA intégrée.*suggestions de procédure/);
     expect(fetch).not.toHaveBeenCalled();
     // « Sans titre » mais déjà du texte : l'IA a de quoi travailler.
     await expect(suggestProcedure(settings, 'Sans titre', { context: { text: 'Vider le bassin' } })).resolves.toBe('1. Étape');
@@ -818,7 +930,7 @@ describe('note complétée', () => {
     await expect(completeNote(settings, 'Sans titre')).rejects.toThrow('Donne un titre à la note ou note quelques points');
     await expect(completeNote(settings, '  ', { context: { text: '  ' } })).rejects.toThrow(/Donne un titre à la note/);
     await expect(completeNote(settings, 'T', { context: { text: 'a'.repeat(MAX_PROOFREAD_CHARS + 1) } })).rejects.toThrow(/Note trop longue/);
-    await expect(completeNote({ ...settings, key: '' }, 'Réunion')).rejects.toThrow('activer la complétion de la note');
+    await expect(completeNote({ ...settings, key: '' }, 'Réunion')).rejects.toThrow(/Aucune IA intégrée.*complétion de la note/);
     expect(fetch).not.toHaveBeenCalled();
     // « Sans titre », mais déjà des points : l'IA a de quoi rédiger.
     await expect(completeNote(settings, 'Sans titre', { context: { text: '- vanne fermée' } })).resolves.toBe('Note rédigée.');
@@ -920,7 +1032,7 @@ describe('procédure tirée d’une entrée ou d’une tâche', () => {
     await expect(draftProcedure(settings, { origin: 'entry', title: 'Sans titre', text: '  ' })).rejects.toThrow(/Rien à transformer/);
     // Le contenu d'un document Google ne compte pas : il ne part jamais.
     await expect(draftProcedure(settings, { origin: 'task', title: ' ', documents: [{ title: 'G', text: 'x', google: true }] })).rejects.toThrow(/Rien à transformer/);
-    await expect(draftProcedure({ ...settings, key: '' }, { origin: 'task', title: 'Réparer la pompe' })).rejects.toThrow('activer la création de procédure');
+    await expect(draftProcedure({ ...settings, key: '' }, { origin: 'task', title: 'Réparer la pompe' })).rejects.toThrow(/Aucune IA intégrée.*création de procédure/);
     expect(fetch).not.toHaveBeenCalled();
     // « Sans titre », mais déjà du texte : l'IA a de quoi travailler.
     await expect(draftProcedure(settings, { origin: 'entry', title: 'Sans titre', text: 'Vider le bassin' })).resolves.toMatchObject({ title: 'T' });
@@ -935,7 +1047,7 @@ describe('procédure tirée d’une entrée ou d’une tâche', () => {
 });
 
 describe('modèle saturé', () => {
-  const gemini = { endpoint: DEFAULT_AI_ENDPOINT, model: 'gemini-3.5-flash-lite', key: 'cle-test', profile: '' };
+  const gemini = { endpoint: GEMINI_AI_ENDPOINT, model: 'gemini-3.5-flash-lite', key: 'cle-test', profile: '' };
   const modelOf = (call: unknown) => JSON.parse((call as [string, RequestInit])[1].body as string).model;
 
   const hang = (_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
@@ -1055,17 +1167,6 @@ describe('modèle saturé', () => {
     await expect(suggestSubtasks(settings, 'T', { timeoutMs: 50 })).rejects.toThrow(/surchargé/);
   });
 
-  test('l’ancien défaut enregistré se lit comme le nouveau ; tout autre choix est gardé tel quel', () => {
-    localStorage.setItem('worklogs-ai-model', 'gemini-3.5-flash-lite');
-    expect(readAiSettings().model).toBe(DEFAULT_AI_MODEL);
-    expect(DEFAULT_AI_MODEL).toBe('gemini-3-flash-preview');
-    localStorage.setItem('worklogs-ai-model', 'gemini-3.5-flash');
-    expect(readAiSettings().model).toBe('gemini-3.5-flash');
-    // Choix explicite conservé : pas de migration silencieuse (un modèle peut
-    // marcher pour une ancienne clé et pas pour une nouvelle).
-    localStorage.setItem('worklogs-ai-model', 'gemini-2.5-flash-lite');
-    expect(readAiSettings().model).toBe('gemini-2.5-flash-lite');
-  });
 });
 
 describe('mots pour retrouver la doc d’une tâche', () => {
@@ -1118,13 +1219,13 @@ describe('mots pour retrouver la doc d’une tâche', () => {
     }
     fetch.mockClear();
     await expect(suggestSearchTerms({ ...settings, key: '' }, { title: 'T' }))
-      .rejects.toThrow('Colle ta clé IA dans ⚙ Paramètres pour activer la recherche de documentation.');
+      .rejects.toThrow(/Aucune IA intégrée.*recherche de documentation/);
     expect(fetch).not.toHaveBeenCalled();
   });
 });
 
 describe('arrêter une demande', () => {
-  const gemini = { endpoint: DEFAULT_AI_ENDPOINT, model: 'gemini-3.5-flash-lite', key: 'cle-test', profile: '' };
+  const gemini = { endpoint: GEMINI_AI_ENDPOINT, model: 'gemini-3.5-flash-lite', key: 'cle-test', profile: '' };
   const hang = (_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
     init.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
   });
@@ -1309,7 +1410,7 @@ describe('conseils IA pour organiser les tâches', () => {
 });
 
 const rawResponse = (data: unknown, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => data }) as Response;
-const geminiOn = (model: string) => ({ endpoint: DEFAULT_AI_ENDPOINT, model, key: 'cle-test', profile: '' });
+const geminiOn = (model: string) => ({ endpoint: GEMINI_AI_ENDPOINT, model, key: 'cle-test', profile: '' });
 const bodyOf = (call: unknown) => JSON.parse((call as [string, RequestInit])[1].body as string);
 const modelOf = (call: unknown) => bodyOf(call).model;
 const effortOf = (call: unknown) => bodyOf(call).reasoning_effort;
@@ -1327,25 +1428,25 @@ describe('plafond quotidien et comptage', () => {
   test('plafond atteint : refus en français avant tout appel, la clé manquante restant signalée d’abord', async () => {
     const fetch = vi.fn(async () => aiResponse('Relire'));
     vi.stubGlobal('fetch', fetch);
-    seedUsage({ requests: 150 });
+    seedUsage({ requests: 50 });
     const refused = suggestSubtasks(settings, 'T');
     await expect(refused).rejects.toBeInstanceOf(AiBudgetError);
     await expect(refused).rejects.toBeInstanceOf(AiError);
-    await expect(refused).rejects.toThrow(`Plafond quotidien d’IA atteint sur cet appareil (150 requêtes) : il revient à ${aiResetTime()}, ou relève-le dans ⚙ Paramètres.`);
-    await expect(suggestSubtasks({ ...settings, key: '' }, 'T')).rejects.toThrow('Colle ta clé IA');
-    seedUsage({ tokens: 1_500_000 });
-    await expect(suggestSubtasks(settings, 'T')).rejects.toThrow(`Plafond quotidien d’IA atteint sur cet appareil (1 500 000 jetons) : il revient à ${aiResetTime()}, ou relève-le dans ⚙ Paramètres.`);
+    await expect(refused).rejects.toThrow(`Plafond quotidien d’IA atteint sur cet appareil (50 requêtes) : il revient à ${aiResetTime()}, ou relève-le dans ⚙ Paramètres.`);
+    await expect(suggestSubtasks({ ...settings, key: '' }, 'T')).rejects.toThrow(/Aucune IA intégrée/);
+    seedUsage({ tokens: 500_000 });
+    await expect(suggestSubtasks(settings, 'T')).rejects.toThrow(`Plafond quotidien d’IA atteint sur cet appareil (500 000 jetons) : il revient à ${aiResetTime()}, ou relève-le dans ⚙ Paramètres.`);
     expect(fetch).not.toHaveBeenCalled();
     // Relever le plafond rouvre l'accès.
     saveDailyLimit(200);
-    seedUsage({ requests: 150 });
+    seedUsage({ requests: 50 });
     await expect(suggestSubtasks(settings, 'T')).resolves.toBe('Relire');
   });
 
   test('le suivi automatique s’arrête au tiers du plafond, pas les gestes explicites', async () => {
     const fetch = vi.fn(async () => aiResponse('Relire'));
     vi.stubGlobal('fetch', fetch);
-    seedUsage({ requests: 50, background: 50 });
+    seedUsage({ requests: 17, background: 17 });
     const refused = suggestSubtasks({ ...settings, background: true }, 'T');
     await expect(refused).rejects.toBeInstanceOf(AiBudgetError);
     await expect(refused).rejects.toThrow('Actualisation automatique suspendue pour aujourd’hui : elle ne prend qu’un tiers du plafond quotidien. « Actualiser » reste disponible.');
@@ -1365,7 +1466,7 @@ describe('plafond quotidien et comptage', () => {
   });
 
   test('les appels parallèles réservent les dernières requêtes et un refus réseau libère sa place', async () => {
-    seedUsage({ requests: 148 });
+    seedUsage({ requests: 48 });
     const complete: ((response: Response) => void)[] = [];
     const fetch = vi.fn(() => new Promise<Response>((resolve) => complete.push(resolve)));
     vi.stubGlobal('fetch', fetch);
@@ -1375,7 +1476,7 @@ describe('plafond quotidien et comptage', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     await expect(suggestSubtasks(settings, 'Troisième')).rejects.toThrow(/demandes IA en cours occupent le quota/);
     expect(fetch).toHaveBeenCalledTimes(2);
-    expect(readAiUsage().requests).toBe(148);
+    expect(readAiUsage().requests).toBe(48);
 
     complete[1](aiResponse('x', 503));
     await expect(second).rejects.toThrow(/surchargé/);
@@ -1384,7 +1485,7 @@ describe('plafond quotidien et comptage', () => {
     complete[2](aiResponse('Valider'));
     complete[0](aiResponse('Relire'));
     await expect(Promise.all([first, third])).resolves.toEqual(['Relire', 'Valider']);
-    expect(readAiUsage().requests).toBe(150);
+    expect(readAiUsage().requests).toBe(50);
     await expect(suggestSubtasks(settings, 'Quatrième')).rejects.toBeInstanceOf(AiBudgetError);
     expect(fetch).toHaveBeenCalledTimes(3);
   });
@@ -1403,25 +1504,25 @@ describe('plafond quotidien et comptage', () => {
     const gemini = geminiOn('gemini-3.5-flash-lite');
     let fetch = vi.fn().mockResolvedValue(aiResponse('   '));
     vi.stubGlobal('fetch', fetch);
-    seedUsage({ requests: 149 });
+    seedUsage({ requests: 49 });
     await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow(/illisible/);
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(readAiUsage().requests).toBe(150);
+    expect(readAiUsage().requests).toBe(50);
     fetch = vi.fn().mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValue(aiResponse('Relire'));
     vi.stubGlobal('fetch', fetch);
-    seedUsage({ requests: 149 });
+    seedUsage({ requests: 49 });
     await expect(suggestSubtasks(gemini, 'T')).resolves.toBe('Relire');
     expect(fetch).toHaveBeenCalledTimes(2);
-    expect(readAiUsage().requests).toBe(150);
+    expect(readAiUsage().requests).toBe(50);
   });
 
   test('chaîne Gemini : le suivi automatique qui atteint son tiers sur une réponse vide n’essaie pas un autre modèle', async () => {
     const fetch = vi.fn().mockResolvedValueOnce(aiResponse('   ')).mockResolvedValue(aiResponse('Relire'));
     vi.stubGlobal('fetch', fetch);
-    seedUsage({ requests: 49, background: 49 });
+    seedUsage({ requests: 16, background: 16 });
     await expect(suggestSubtasks({ ...geminiOn('gemini-3.5-flash-lite'), background: true }, 'T')).rejects.toThrow(/illisible/);
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(readAiUsage()).toMatchObject({ requests: 50, background: 50 });
+    expect(readAiUsage()).toMatchObject({ requests: 17, background: 17 });
   });
 
   test('délai dépassé ou Arrêter après l’envoi : une requête, estimée sur l’entrée seule', async () => {
@@ -1456,8 +1557,6 @@ describe('chaîne de modèles et paramètres Gemini', () => {
 
   test('la chaîne quitte 3.5-flash, routé vers 3.6-flash, et gagne le quota de 3.8-flash ; le select suit', () => {
     expect(GEMINI_FALLBACK_MODELS).toEqual(['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash']);
-    expect(AI_MODELS.map((option) => option.id)).not.toContain('gemini-3.5-flash');
-    expect(AI_MODELS.find((option) => option.id === 'gemini-3.6-flash')?.label).toBe('Gemini 3.6 Flash — le plus capable, souvent lent');
   });
 
   test('suivi automatique : deux modèles au plus, même tous saturés', async () => {
@@ -1594,7 +1693,7 @@ describe('chaîne de modèles et paramètres Gemini', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  const keyMessage = 'Clé IA refusée : vérifie-la dans ⚙ Paramètres (une clé AI Studio suffit).';
+  const keyMessage = 'Clé IA refusée : vérifie-la dans ⚙ Paramètres.';
 
   test('clé refusée en 400 dans un corps en tableau : message de clé, sans autre essai ni renvoi', async () => {
     const fetch = vi.fn(async () => rawResponse([{ error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT' } }], 400));

@@ -50,10 +50,12 @@ export const EntryList = memo(function EntryList({
           <button className="ghost" onClick={() => onPick([])}>Annuler</button>
         </div>
       )}
-      <button className="new-entry" onClick={() => onCreate()}>
-        <span aria-hidden="true">＋</span> Nouvelle entrée
-      </button>
-      <button className="ghost new-document" onClick={onCreateDocument}>＋ Nouveau document</button>
+      <div className="journal-new">
+        <button className="new-entry" onClick={() => onCreate()}>
+          <span aria-hidden="true">＋</span> Nouvelle entrée
+        </button>
+        <button className="ghost new-document" onClick={onCreateDocument}>＋ Nouveau document</button>
+      </div>
 
       {active.length === 0 && (
         <p className="empty">

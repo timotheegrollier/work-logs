@@ -592,8 +592,13 @@ describe('gestion Google Drive', () => {
 });
 
 describe('réglages IA', () => {
-  test('endpoint, modèle et clé modifiables, avec valeurs Gemini gratuites', async () => {
+  test('les anciens réglages Gemini invitent à saisir une clé OpenRouter avant tout appel', async () => {
     const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-endpoint', 'https://generativelanguage.googleapis.com/v1beta/openai');
+    localStorage.setItem('worklogs-ai-model', 'gemini-3-flash-preview');
+    localStorage.setItem('worklogs-ai-key', 'cle-google');
+    localStorage.setItem('worklogs-ai-profile', 'Dev solo en pisciculture');
+    mockAiSuggest('OK');
     render(<App />);
     await screen.findByRole('region', { name: 'Journal' });
 
@@ -603,26 +608,22 @@ describe('réglages IA', () => {
     expect(within(dialog).getByLabelText('Endpoint IA')).not.toBeVisible();
     expect(within(dialog).getByLabelText('Modèle IA')).not.toBeVisible();
     expect(within(dialog).getByLabelText('Clé IA')).toBeVisible();
-    expect(within(dialog).getByRole('button', { name: 'Tester la connexion' })).toBeVisible();
-    await user.click(within(dialog).getByText('Réglages avancés', { selector: 'summary' }));
-    expect(within(dialog).getByLabelText('Endpoint IA')).toHaveValue(
-      'https://generativelanguage.googleapis.com/v1beta/openai'
-    );
-    expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('gemini-3-flash-preview');
     expect(within(dialog).getByLabelText('Clé IA')).toHaveValue('');
+    expect(within(dialog).getByLabelText('Mon contexte de travail')).toHaveValue('Dev solo en pisciculture');
+    const testConnection = within(dialog).getByRole('button', { name: 'Tester la connexion' });
+    await user.click(testConnection);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/Aucune IA intégrée/);
+    expect(aiBodies).toHaveLength(0);
 
+    await user.click(within(dialog).getByText('Réglages avancés', { selector: 'summary' }));
+    expect(within(dialog).getByLabelText('Endpoint IA')).toHaveValue('https://openrouter.ai/api/v1');
+    expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('openrouter/free');
     await user.type(within(dialog).getByLabelText('Clé IA'), 'cle-test');
     expect(localStorage.getItem('worklogs-ai-key')).toBe('cle-test');
 
-    await user.selectOptions(within(dialog).getByLabelText('Modèle IA'), 'gemini-3.6-flash');
-    expect(localStorage.getItem('worklogs-ai-model')).toBe('gemini-3.6-flash');
-    await user.click(within(dialog).getByRole('button', { name: 'Restaurer les réglages Gemini' }));
-    expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('gemini-3-flash-preview');
-    // La clé collée survit au reset des valeurs.
-    expect(within(dialog).getByLabelText('Clé IA')).toHaveValue('cle-test');
-
-    await user.type(within(dialog).getByLabelText('Mon contexte de travail'), 'Dev solo en pisciculture');
-    expect(localStorage.getItem('worklogs-ai-profile')).toBe('Dev solo en pisciculture');
+    await user.click(testConnection);
+    expect(await within(dialog).findByText(/Connexion vérifiée/)).toBeVisible();
+    expect(aiBodies).toMatchObject([{ model: 'openrouter/free' }]);
   });
 
   test('ouvre la fiche du projet actif et teste la connexion sans ouvrir les réglages avancés', async () => {
@@ -2337,12 +2338,14 @@ describe('organiser les tâches', () => {
 
   test('« Tout » range les tâches ouvertes en une liste ; ✨ IA › Prioriser propose, relit, applique ou ignore', async () => {
     const user = userEvent.setup();
+    const future = new Date();
+    future.setUTCDate(future.getUTCDate() + 7);
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     seedData(api.db, {
       projects: [{ id: 'pr_a', name: 'Pisciculture' }, { id: 'pr_b', name: 'Site web' }],
       tasks: [
         { id: 'tk_photos', title: 'Photos des bassins', project_id: 'pr_b' },
-        { id: 'tk_filtre', title: 'Changer le filtre', project_id: 'pr_a', due_date: '2026-11-20' },
+        { id: 'tk_filtre', title: 'Changer le filtre', project_id: 'pr_a', due_date: future.toISOString().slice(0, 10) },
         { id: 'tk_tarifs', title: 'Page tarifs', project_id: 'pr_b', status: 'doing' },
         { id: 'tk_fini', title: 'Déjà fait', project_id: 'pr_a', status: 'done' },
       ],
@@ -5243,7 +5246,7 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     render(<App />);
     await openFromTree('notes.md');
     fireEvent.click(await aiAction('Mettre en page', sharedEditor()));
-    expect(await within(sharedEditor()).findByRole('alert')).toHaveTextContent('Colle ta clé IA dans ⚙ Paramètres pour activer la mise en page.');
+    expect(await within(sharedEditor()).findByRole('alert')).toHaveTextContent(/Aucune IA intégrée.*mise en page/);
     expect(calls.some((url) => url.includes('chat/completions'))).toBe(false);
   });
 
@@ -6087,7 +6090,7 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     const state = vi.spyOn(clientApi, 'state');
     const readEntry = vi.spyOn(clientApi, 'entry');
     fireEvent.click(button);
-    expect(await screen.findByRole('alert')).toHaveTextContent('Colle ta clé IA');
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Aucune IA intégrée/);
     expect(state).not.toHaveBeenCalled();
     expect(readEntry).not.toHaveBeenCalled();
   });
@@ -6569,7 +6572,7 @@ describe('suivi IA des entrées et tâches', () => {
     const picker = within(overview).getByRole('region', { name: 'Choisir les suivis IA' });
     fireEvent.click(within(picker).getByRole('checkbox', { name: /^Remonter la pompe/ }));
     fireEvent.click(within(picker).getByRole('button', { name: 'Suivre la sélection (1)' }));
-    expect(await within(overview).findByRole('alert', {}, backend)).toHaveTextContent('Colle ta clé IA');
+    expect(await within(overview).findByRole('alert', {}, backend)).toHaveTextContent(/Aucune IA intégrée/);
     expect(within(overview).getByText('1 suivi activé.')).toBeInTheDocument();
   }, 20_000);
 

@@ -1,27 +1,65 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Conservation stricte du format des listes — 2026-11-20, v0.87.2
+## Refonte visuelle, replis au conteneur et assistant plus guidé — 2026-11-23, v0.88.0
+
+- **Design.** Une même échelle de couleurs, rayons, ombres et anneau de focus dans
+  `styles.css` ; en-tête opaque et séparé, recherche plus large, surfaces teintées par
+  thème. Les cartes de tâches respirent (ombre douce, 2 px d'épingle) et le titre de
+  l'écriture suit la largeur de sa colonne (`clamp()` en `cqi`).
+- **Responsive.** Les cartes et la saisie du panneau Tâches se resserrent en requête de
+  conteneur, pas sur la fenêtre. Sur téléphone, **Nouvelle entrée** et **Nouveau document**
+  tiennent côte à côte, nom compris ; la barre du bas reste fixe (l'en-tête a perdu son
+  `backdrop-filter`, qui en faisait le bloc conteneur et la remontait). Rien ne flotte
+  au-dessus du journal : la création reste dans le fil, comme les cartes de tâches.
+- **Assistant, sans clé ni compte.** L'IA intégrée au navigateur (Chrome, PWA) répond sur
+  l'appareil : aucune clé, aucun abonnement, le texte ne part pas. Sans IA intégrée
+  (Firefox, Electron), WorkLogs utilise sa recherche et ses propositions locales. La clé
+  OpenRouter et un endpoint local sans clé restent optionnels (§94, après §92).
+- Une conversation vide propose quatre demandes de départ (un clic remplit le champ). Une
+  demande qui a échoué se repose avec le même texte et ses pièces jointes. L'étape en cours
+  s'affiche pendant la réponse et reste consultable sous la demande terminée.
+- Tests ajoutés : 8 dans `ai-device.test.ts` (état, téléchargement sur clic, JSON, endpoint
+  local sans clé, repli), 2 dans `AiChat.test.tsx` (suggestions, relance d'une demande
+  échouée), plus les ajustements du lot OpenRouter. `./scripts/check.sh` (lancé avec
+  `env -u APPIMAGE`, piège n° 10 de `02-DEV.md`) est vert avec **2 136 tests**, dont un
+  échec attendu : 365 API · 1 492 front (+1 attendu) · 49 desktop unitaires · 56 scripts ·
+  8 Worker · 11 relais · 132 navigateurs · 22 Electron. Le poste a dû télécharger le
+  navigateur Playwright 1243 (`npx playwright install chromium`, absent du cache local).
+
+## OpenRouter gratuit et étapes de l’assistant — 2026-11-23
+
+- L’assistant et les actions IA passent par `openrouter/free`. Dans **Paramètres →
+  Assistance IA**, coller une clé OpenRouter et tester la connexion. L’ancien réglage
+  Gemini est remplacé sans transférer sa clé. Le profil et le contexte des projets sont
+  conservés. Le nouveau plafond par défaut est de 50 requêtes par appareil et par jour.
+- L’assistant indique son étape en cours et conserve les recherches, lectures et
+  validations dans **Étapes de l’assistant** sous chaque demande terminée. Les propositions
+  de changement attendent toujours **Appliquer**.
+- Voir `05-DECISIONS.md` §92 et `04-RECETTES.md` §14 pour le transport et la recette avec
+  un compte OpenRouter sans crédits. Les tests automatisés utilisent des réponses simulées.
+- Validation par étapes : tests IA, build PWA et 22 parcours Electron verts. Un test front
+  d’aperçu Markdown a passé après réexécution isolée. 131 parcours navigateur sur 132
+  passent dans la copie de travail ; le bandeau de création épinglé du journal recouvre
+  une entrée. Le parcours passe en neutralisant le positionnement du bandeau dans une
+  copie de diagnostic.
+
+## Format des listes préservé, assistant qui réessaie — 2026-11-20, v0.87.1
 
 - Une proposition de l’assistant qui casse la forme d’une entrée est écartée à la validation :
-  un ajout après une liste doit garder sa famille (une checklist reçoit des cases, pas des puces
-  ordinaires) ou ouvrir une rubrique « ## » ; un paragraphe isolé est refusé. Une correction
-  ciblée ne peut ni retirer ni changer le marqueur de la ligne touchée.
+  un ajout après une liste reste une ligne de liste (case, puce ou numéro, quelle que soit la
+  famille) ou ouvre une rubrique « ## », un paragraphe isolé est refusé ; une correction ciblée
+  ne peut ni retirer ni changer le marqueur de la ligne touchée.
   Cocher une case ou corriger un libellé reste permis. **Reformuler**, **Compléter**, le
   **bilan du jour** et le **suivi IA** suivent la même consigne (`05-DECISIONS.md` §91).
 - Quand toutes les actions d’une réponse sont écartées, l’assistant rejoue une fois sa demande
   avec le motif du refus ; si le second passage échoue encore sur la forme, il pose une question
-  pour garder la forme existante ou ouvrir une rubrique, au lieu de laisser l’utilisateur sans suite.
-- Les pièces jointes `.xlsx`, `.ods`, `.csv` et `.tsv` s’ouvrent directement dans la colonne
-  **Écriture** en cliquant leur nom. Elles réutilisent leurs grilles dédiées et s’enregistrent
-  en copie dans l’entrée ; l’original reste intact. Ce n’est pas une parité Excel complète :
-  `.xls` reste confié au logiciel système, `.xlsm` est en lecture seule et les classeurs ne
-  prennent pas en charge les outils avancés de mise en forme ou de structure (`05-DECISIONS.md` §92).
-- Tests : 4 scénarios concernés dans `ai-chat.test.ts` (famille de liste conservée, correction
-  ciblée sur un marqueur, réessai, question après second refus) et 4 parcours navigateur
-  (`e2e/ai-chat.spec.ts`, ajout dans une liste à puces, puces refusées après une checklist puis
-  réessai en cases, question après un second refus puis choix appliqué, correction ciblée refusée).
+  avec des choix (cases, puces, rubrique) au lieu de laisser l’utilisateur sans suite.
+- Tests : 4 dans `ai-chat.test.ts` (ajout hors liste et autre famille acceptée, correction ciblée
+  sur un marqueur, réessai, question après second refus) et 4 parcours navigateur
+  (`e2e/ai-chat.spec.ts`, ajout dans une liste à puces, puces ajoutées à une note en cases,
+  question après un second refus puis choix appliqué, correction ciblée refusée).
 - `./scripts/check.sh` (étapes lancées séparément, navigateur sur `WORKLOGS_E2E_PORT=8414`)
-  passe avec **2 121 tests**, dont un échec attendu. 365 API · 1 478 front · 49 desktop
+  passe avec **2 115 tests**, dont un échec attendu. 365 API · 1 472 front · 49 desktop
   unitaires · 56 scripts · 8 Worker · 11 relais · 132 navigateurs · 22 Electron.
 
 ## Ajouts de texte et dossiers reliés — 2026-11-20, v0.86.0

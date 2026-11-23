@@ -1,15 +1,15 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Project } from '../lib';
 import { MAX_DAILY_REQUESTS, MIN_DAILY_REQUESTS, aiUsageLabel, readDailyLimit, saveDailyLimit } from '../ai-budget';
+import { readDeviceAiStatus, prepareDeviceAi, type DeviceStatus } from '../ai-device';
 import { readProjectAiBrief, saveProjectAiBrief } from '../ai-context';
 import {
   AI_CUSTOM_MODEL,
   AI_MODELS,
   DEFAULT_AI_ENDPOINT,
   DEFAULT_AI_MODEL,
-  GEMINI_ENDPOINT,
-  GEMINI_FALLBACK_MODELS,
   MAX_AI_PROFILE,
+  isFreeAi,
   readAiSettings,
   saveAiSettings,
   testAiConnection,
@@ -18,13 +18,16 @@ import {
 
 type Probe = { state: 'idle' } | { state: 'testing' } | { state: 'ok'; ms: number } | { state: 'error'; message: string };
 
-/**
- * Réglages IA du dialogue Paramètres : endpoint compatible OpenAI, modèle en
- * liste (options testées pour de vrai + saisie libre) avec bouton de diagnostic,
- * et clé personnelle (gratuite : Google AI Studio). Sauvegarde immédiate sur
- * l'appareil, comme les largeurs de colonnes. Aucun appel n'est fait ici,
- * sauf « Tester ».
- */
+function endpointOrigin(endpoint: string): string | null {
+  try {
+    const url = new URL(endpoint.trim());
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Réglages enregistrés sur l’appareil. Seul « Tester la connexion » appelle le service IA. */
 export function AiSettings({ projects = [], projectId = null }: { projects?: Pick<Project, 'id' | 'name'>[]; projectId?: string | null }) {
   const initialProject = projects.some((project) => project.id === projectId) ? projectId ?? '' : '';
   const [form, setForm] = useState<AiSettingsValues>(readAiSettings);
@@ -35,9 +38,23 @@ export function AiSettings({ projects = [], projectId = null }: { projects?: Pic
   const [customModel, setCustomModel] = useState(knownModel ? '' : form.model);
   // Le texte saisi reste libre le temps de la frappe : « 2 » en route vers « 200 » n'est pas ramené à 10.
   const [dailyLimit, setDailyLimit] = useState(() => String(readDailyLimit()));
-  const freeGuaranteed = GEMINI_ENDPOINT.test(form.endpoint.trim()) && GEMINI_FALLBACK_MODELS.includes(form.model.trim());
+  const free = isFreeAi(form);
+  const origin = endpointOrigin(form.endpoint);
+  const openRouter = origin === endpointOrigin(DEFAULT_AI_ENDPOINT);
   const [probe, setProbe] = useState<Probe>({ state: 'idle' });
+  const [device, setDevice] = useState<DeviceStatus>({ state: 'unsupported' });
+  const [preparing, setPreparing] = useState(false);
   const probeVersion = useRef(0);
+  useEffect(() => {
+    let alive = true;
+    void readDeviceAiStatus().then((status) => { if (alive) setDevice(status); });
+    return () => { alive = false; };
+  }, []);
+  const prepareDevice = async () => {
+    setPreparing(true);
+    setDevice(await prepareDeviceAi());
+    setPreparing(false);
+  };
   const invalidateProbe = () => {
     probeVersion.current += 1;
     setProbe({ state: 'idle' });
@@ -45,7 +62,9 @@ export function AiSettings({ projects = [], projectId = null }: { projects?: Pic
   const setText =
     (field: 'endpoint' | 'key' | 'profile') =>
     (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      const next = { ...form, [field]: event.target.value };
+      const value = event.target.value;
+      const next = { ...form, [field]: value };
+      if (field === 'endpoint' && (!origin || endpointOrigin(value) !== origin)) next.key = '';
       if (field !== 'profile') invalidateProbe();
       setForm(next);
       saveAiSettings(next);
@@ -63,8 +82,8 @@ export function AiSettings({ projects = [], projectId = null }: { projects?: Pic
     setForm(next);
     saveAiSettings(next);
   };
-  const resetGemini = () => {
-    const next = { ...form, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL };
+  const resetFree = () => {
+    const next = { ...form, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL, key: openRouter ? form.key : '' };
     setForm(next);
     setCustomModel('');
     invalidateProbe();
@@ -84,25 +103,46 @@ export function AiSettings({ projects = [], projectId = null }: { projects?: Pic
   return (
     <section className="ai-settings" aria-label="Assistance IA">
       <h3>Assistance IA</h3>
+      <div className={'ai-device-status is-' + device.state}>
+        {device.state === 'available' && <p><b>✓ IA intégrée prête.</b> Elle fonctionne sans clé, sans compte et sans abonnement, sur cet appareil.</p>}
+        {device.state === 'downloadable' && <>
+          <p><b>IA intégrée disponible.</b> Le navigateur peut télécharger son modèle une fois : ensuite, l’assistance marche sans clé et sur l’appareil.</p>
+          <button className="ghost" type="button" disabled={preparing} onClick={() => void prepareDevice()}>
+            {preparing ? 'Préparation…' : 'Préparer l’IA gratuite'}
+          </button>
+        </>}
+        {device.state === 'downloading' && <p><b>Téléchargement du modèle en cours</b> par le navigateur. L’assistance locale prend le relais en attendant.</p>}
+        {(device.state === 'unsupported' || device.state === 'unavailable') && <p><b>Sans clé, tout reste gratuit.</b> Ce navigateur n’expose pas d’IA intégrée : WorkLogs utilise sa recherche et ses propositions locales.</p>}
+      </div>
       <label>
-        Clé IA
+        Clé d’un service externe <span className="ai-hint">(facultative)</span>
         <input aria-label="Clé IA" type="password" value={form.key} onChange={setText('key')} autoComplete="off" />
       </label>
       <p className="ai-hint">
-        {form.key.trim() ? 'Clé enregistrée sur cet appareil uniquement.' : 'Colle ta clé IA pour activer l’assistance.'}{' '}
-        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">Obtenir une clé Google AI Studio</a>
+        {form.key.trim() ? 'Clé enregistrée sur cet appareil uniquement.' : 'Aucune clé nécessaire : l’IA intégrée prend le relais quand elle est disponible.'}{' '}
+        {openRouter && <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noreferrer">Créer une clé OpenRouter</a>}
       </p>
       <div>
         <button type="button" onClick={testModel} disabled={probe.state === 'testing'}>
           Tester la connexion
         </button>
       </div>
-      {probe.state === 'idle' && <p role="status">{form.key.trim() ? 'Connexion non testée.' : 'Assistance inactive : clé IA manquante.'}</p>}
+      {probe.state === 'idle' && <p role="status">{form.key.trim()
+        ? 'Connexion non testée.'
+        : device.state === 'available'
+          ? 'Sans clé : l’IA intégrée de cet appareil répond.'
+          : 'Sans clé : recherche locale, aucune dépense.'}</p>}
       {probe.state === 'testing' && <p role="status">Test en cours…</p>}
       {probe.state === 'ok' && <p role="status">✓ Connexion vérifiée ({(probe.ms / 1000).toFixed(1)} s)</p>}
       {probe.state === 'error' && <p role="alert">{probe.message}</p>}
-      <p className="ai-hint">Modèle choisi : {modelLabel}</p>
-      {!freeGuaranteed && <p className="notice">Avec ce modèle ou ce service, WorkLogs ne peut pas garantir la gratuité : vérifie ses tarifs.</p>}
+      <p className="ai-hint">Modèle choisi : {form.key.trim()
+        ? modelLabel
+        : device.state === 'available'
+          ? 'IA intégrée de l’appareil (sans clé)'
+          : 'recherche locale, sans service externe'}</p>
+      {free
+        ? <p className="ai-hint">Un compte OpenRouter suffit, sans achat de crédits. Les quotas et les modèles disponibles dépendent d’OpenRouter.</p>
+        : <p className="notice">Avec ce modèle ou ce service, WorkLogs ne peut pas garantir la gratuité : vérifie ses tarifs.</p>}
       <p className="ai-hint">{aiUsageLabel()}</p>
       <label>
         Mon contexte de travail
@@ -189,12 +229,11 @@ export function AiSettings({ projects = [], projectId = null }: { projects?: Pic
           />
         </label>
         <p className="ai-hint">
-          Une clé AI Studio d’un projet sans facturation ne coûte rien : au pire, Google répond « quota atteint ».
-          WorkLogs n’utilise que des modèles gratuits en secours et s’arrête au plafond ; le compteur porte sur cet appareil.
+          Le compteur porte sur cet appareil. Le service peut atteindre son propre quota avant ce plafond.
         </p>
         <div>
-          <button className="ghost" type="button" onClick={resetGemini}>
-            Restaurer les réglages Gemini
+          <button className="ghost" type="button" onClick={resetFree}>
+            Restaurer les réglages gratuits
           </button>
         </div>
       </details>
