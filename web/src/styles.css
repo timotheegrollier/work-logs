@@ -1653,10 +1653,10 @@ button:disabled {
   max-width: 100%;
 }
 .procedure-files .procedure-file-transfer,
-.file .procedure-file-transfer {
+.entry-file .procedure-file-transfer {
   flex-basis: 100%;
 }
-.file:has(.procedure-file-transfer) {
+.entry-file:has(.procedure-file-transfer) {
   flex-wrap: wrap;
   max-width: 100%;
 }
@@ -2687,13 +2687,104 @@ button:disabled {
   text-underline-offset: 2px;
 }
 
-.files {
+/* Fichiers joints à une entrée : une carte discrète, une grille qui se replie
+   d'elle-même (une colonne sur téléphone, deux ou plus dans l'écriture). */
+.entry-files {
+  margin-top: 4px;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+.entry-files-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
-  padding-top: 12px;
-  border-top: 1px solid var(--line-soft);
+  justify-content: space-between;
+}
+.entry-files-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.entry-files-title h3 {
+  margin: 0;
+  font-size: 13.5px;
+}
+.entry-files-title small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.entry-files-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.entry-file-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+.entry-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 9px;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+}
+.entry-file:hover {
+  border-color: var(--line);
+}
+.entry-file-body {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+.entry-file-name {
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.entry-file-name:hover {
+  text-decoration: underline;
+}
+.entry-file-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.entry-file-meta small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.entry-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.entry-file-actions .file-preview {
+  padding: 3px 6px;
+  font-size: 11.5px;
+}
+.entry-file .procedure-file-transfer {
+  flex-basis: 100%;
 }
 .file-button {
   display: inline-flex;
@@ -2703,28 +2794,6 @@ button:disabled {
 }
 .file-button input {
   display: none;
-}
-.file {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
-  padding: 5px 8px;
-}
-.file small {
-  color: var(--muted);
-}
-.file:hover {
-  border-color: var(--line);
-}
-.file a {
-  text-decoration: none;
-}
-.file a:hover {
-  text-decoration: underline;
 }
 .file-preview {
   font-size: 12px;
@@ -4596,6 +4665,177 @@ div.google-preserved {
   }
   .documents-list li .documents-name {
     grid-column: 1 / -1;
+  }
+}
+
+/* Fichiers des projets : même cadre que Documents Google, groupés par projet. */
+.files-dialog {
+  width: min(860px, calc(100vw - 24px));
+}
+.files-content {
+  max-height: calc(100vh - 100px);
+  overflow: auto;
+}
+.files-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.files-toolbar input[type='search'] {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.files-total {
+  color: var(--muted);
+  font-size: 12px;
+}
+.files-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.files-chips .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.files-empty {
+  padding: 20px 8px;
+  color: var(--muted);
+  text-align: center;
+}
+.project-files-group {
+  display: grid;
+  gap: 6px;
+  padding-top: 2px;
+}
+.project-files-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.project-files-heading h3 {
+  margin: 0;
+  font-size: 13.5px;
+}
+.project-files-heading small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+.project-files-dirs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.project-files-dirs button {
+  padding: 2px 6px;
+  font-size: 12px;
+}
+.project-files-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+.project-files-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(90px, 170px) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.project-files-list li[aria-busy='true'] {
+  opacity: 0.6;
+}
+.project-file-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.project-file-name > span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.project-file-name strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-file-name small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.project-file-name:hover strong {
+  color: var(--accent);
+}
+.project-file-entry {
+  min-width: 0;
+  overflow: hidden;
+  padding: 4px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-file-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+}
+@media (max-width: 600px) {
+  .files-dialog {
+    width: calc(100vw - 12px);
+    max-height: calc(100vh - 12px);
+  }
+  .project-files-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .project-file-name {
+    grid-column: 1 / -1;
+  }
+  .project-file-entry {
+    grid-column: 1;
+  }
+  .project-files-list .picker-source {
+    grid-column: 2;
+    justify-self: end;
+  }
+  .project-file-actions {
+    grid-column: 1 / -1;
+  }
+  .entry-files {
+    padding: 10px;
+  }
+  .entry-file-list {
+    grid-template-columns: 1fr;
+  }
+  .entry-file {
+    align-items: flex-start;
+  }
+  .entry-file-actions {
+    width: 100%;
+    justify-content: flex-start;
+    padding-left: 28px;
   }
 }
 

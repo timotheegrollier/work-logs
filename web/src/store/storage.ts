@@ -29,10 +29,10 @@ function keyOf(table: string, value: object, stores = LOCAL_STORES): string {
 }
 
 /** Backend volatil : tests et repli si IndexedDB est indisponible. */
-export function createMemoryDatabase(): Database {
+export function createMemoryDatabase(schema: Record<string, string> = LOCAL_STORES): Database {
   const stores = new Map<string, Map<string, Record<string, unknown>>>();
   const store = (name: string) => {
-    if (!(name in LOCAL_STORES)) throw new Error(`Table inconnue : ${name}.`);
+    if (!(name in schema)) throw new Error(`Table inconnue : ${name}.`);
     let map = stores.get(name);
     if (!map) {
       map = new Map();
@@ -56,7 +56,7 @@ export function createMemoryDatabase(): Database {
       } else if (row.operation === 'delete') {
         batch.set(row.key, null);
       } else {
-        const key = keyOf(row.table, row.value);
+        const key = keyOf(row.table, row.value, schema);
         const exists = batch.has(key) ? batch.get(key) !== null : !cleared.has(row.table) && target.has(key);
         if (row.operation === 'add' && exists) throw new Error(`Clé déjà présente dans ${row.table}.`);
         batch.set(key, { ...row.value });
@@ -80,7 +80,7 @@ export function createMemoryDatabase(): Database {
         all: async () => [...map.values()].map((row) => ({ ...row }) as T),
         get: async (key) => (map.has(key) ? ({ ...map.get(key) }) as T : undefined),
         put: async (value) => {
-          map.set(keyOf(name, value), { ...value } as Record<string, unknown>);
+          map.set(keyOf(name, value, schema), { ...value } as Record<string, unknown>);
         },
         remove: async (key) => {
           map.delete(key);

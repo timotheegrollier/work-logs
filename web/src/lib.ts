@@ -254,6 +254,15 @@ export interface Attachment {
   /** Renseigné quand le binaire est adossé à Drive : survit à une restauration. */
   driveFileId?: string | null;
 }
+/** Pièce jointe d'une entrée, vue depuis le panneau « Fichiers des projets ». */
+export interface ProjectFile extends Attachment {
+  entry_title: string;
+  entry_kind: 'note' | 'procedure';
+  entry_date: string;
+  project_id: string | null;
+  project_name: string | null;
+}
+
 export interface Stats {
   entries: number;
   entriesThisWeek: number;
@@ -641,6 +650,8 @@ export const remoteApi = {
   sharedPreviewUrl: (hash: string, name: string): string | null =>
     '/api/shared/preview?hash=' + enc(hash) + '&name=' + enc(name),
 
+  /** Toutes les pièces jointes, avec leur entrée et leur projet (filtre projet facultatif). */
+  projectFiles: (projectId = '') => req<ProjectFile[]>('/api/project-files' + (projectId ? '?project_id=' + enc(projectId) : '')),
   deleteAttachment: (id: string) => send<{ ok: true; driveTrashed?: boolean }>('DELETE', `/api/attachments/${id}`),
   fileUrl: (stored: string) => `/api/files/${stored}`,
   /** Même fichier, servi `inline` : sert l'aperçu intégré, jamais le téléchargement. */

@@ -1775,6 +1775,25 @@ describe('écrire une entrée', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Aperçu de notes.md' })).not.toBeInTheDocument());
   });
 
+  test('le menu du compte ouvre les fichiers des projets, groupés, et mène à leur entrée', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, {
+      projects: [{ id: 'p_villa', name: 'Villa' }],
+      entries: [{ id: 'en_files', title: 'Sauvegarde', project_id: 'p_villa', kind: 'procedure' }],
+    });
+    await api.upload('plan.pdf', '%PDF', { entry_id: 'en_files' });
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Compte et paramètres' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Fichiers des projets' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Fichiers des projets' }));
+    const group = within(await dialog.findByRole('region', { name: 'Fichiers du projet Villa' }));
+    expect(group.getByRole('button', { name: 'Ouvrir plan.pdf' })).toBeInTheDocument();
+    await user.click(group.getByRole('button', { name: 'Ouvrir l’entrée Sauvegarde' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Fichiers des projets' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Sauvegarde'));
+    expect(api.db.prepare('SELECT COUNT(*) n FROM attachments').get()).toEqual({ n: 1 });
+  });
+
   test('un document Word s’affiche dans l’aperçu : titres, liste, lien, image', async () => {
     const user = userEvent.setup();
     seedData(api.db, { entries: [{ id: 'en_docx', title: 'Étiqueteuse' }] });

@@ -12,6 +12,7 @@ import {
   type FollowUpSnapshot,
   type GoogleStatus,
   type Project,
+  type ProjectFile,
   type RichDocument,
   type Status,
   type Task,
@@ -45,6 +46,7 @@ import { normalizeTaskNotes } from '../../../api/src/task-notes.js';
 // @ts-expect-error — validation commune des statuts et de l’avancement.
 import { changedChecklistProgress, noteChecklistProgress, taskCreationStamp, taskIdForNote, taskState } from '../../../api/src/task-state.js';
 import { readRelay } from '../relay-settings';
+import { keepSharedBytes, keepSharedFile, sharedBytesCopy, sharedFileCopy, sharedListingCopy } from './shared-copies';
 import { beginWebLogin, builtinWebClientId, clearWebClient, disconnectWeb, downloadDriveBinary, webGoogleRequest, webGoogleStatus } from './google-web';
 
 /** Projet et présence locale de chaque document Drive (ses onglets partagent le projet). */
@@ -124,6 +126,9 @@ function relayClient() {
   return settings ? sharedClient(settings.url) : null;
 }
 const relay = () => relayClient() ?? fail(SHARED_DESKTOP_ONLY);
+/** Relais ou partage injoignable : on sert ce qui est gardé sur l'appareil. */
+const unreachable = (error: unknown): boolean =>
+  error instanceof TypeError || (error instanceof ApiError && error.code === 'SHARED_OFFLINE');
 const fail = (message: string): never => {
   throw new ApiError(message);
 };
@@ -1614,9 +1619,40 @@ export const localApi: Api = {
       };
     }
   },
-  sharedList: async (dir) => relay().sharedList(dir),
-  sharedFile: async (path) => relay().sharedFile(path),
-  sharedContent: async (hash) => relay().sharedContent(hash),
+  // Le relais coupé, la liste se reconstruit avec les fichiers déjà ouverts ici.
+  sharedList: async (dir) => {
+    try {
+      return await relay().sharedList(dir);
+    } catch (error) {
+      if (!unreachable(error)) throw error;
+      const root = dir ?? '';
+      const copy = await sharedListingCopy(root);
+      return { dir: root, reach: 'offline', entries: copy.entries, truncated: false, offline: true, listed_at: copy.listed_at };
+    }
+  },
+  // Ouvert une fois en ligne, le fichier reste lisible sans relais : la copie est gardée sur ce téléphone.
+  sharedFile: async (path) => {
+    try {
+      const file = await relay().sharedFile(path);
+      await keepSharedFile(file).catch(() => {});
+      return file;
+    } catch (error) {
+      const copy = unreachable(error) ? await sharedFileCopy(path) : undefined;
+      if (!copy) throw error;
+      return { ...copy, source: 'cache', reach: 'offline' };
+    }
+  },
+  sharedContent: async (hash) => {
+    try {
+      const bytes = await relay().sharedContent(hash);
+      await keepSharedBytes(hash, bytes).catch(() => {});
+      return bytes;
+    } catch (error) {
+      const copy = unreachable(error) ? await sharedBytesCopy(hash) : undefined;
+      if (!copy) throw error;
+      return copy;
+    }
+  },
   saveSharedDraft: async (path, body) => relay().saveSharedDraft(path, body),
   discardSharedDraft: async (path, bytes) => relay().discardSharedDraft(path, bytes),
   pushShared: async (path, base, bytes) => relay().pushShared(path, base, bytes),
@@ -1638,6 +1674,29 @@ export const localApi: Api = {
   setSharedDisplayName: async (displayName) => relay().setSharedDisplayName(displayName),
   // Pas d'aperçu PDF par le relais (en-tête d'autorisation) : le PDF garde son téléchargement.
   sharedPreviewUrl: () => null,
+  // Même liste que le desktop : les pièces jointes de toutes les entrées, avec leur projet.
+  projectFiles: async (projectId = '') => {
+    const { entries, attachments, projects } = await tables();
+    const byId = new Map((await entries.all()).map((entry) => [entry.id, entry]));
+    const projectNames = new Map((await projects.all()).map((project) => [project.id, project.name]));
+    return (await attachments.all())
+      .map((file) => {
+        const parent = byId.get(file.entry_id) ?? fail('entrée de la pièce jointe introuvable');
+        const { blob: _blob, ...meta } = file;
+        return {
+          ...meta,
+          driveFileId: file.driveFileId ?? null,
+          entry_title: parent.title,
+          entry_kind: (parent.kind ?? 'note') as ProjectFile['entry_kind'],
+          entry_date: parent.entry_date,
+          project_id: parent.project_id ?? null,
+          project_name: parent.project_id ? projectNames.get(parent.project_id) ?? null : null,
+        };
+      })
+      .filter((file) => !projectId || file.project_id === projectId)
+      .sort((a, b) => cmp(b.created_at, a.created_at));
+  },
+
   deleteAttachment: async (id) => {
     const { attachments } = await tables();
     const row = (await attachments.get(id)) ?? fail('pièce jointe introuvable');

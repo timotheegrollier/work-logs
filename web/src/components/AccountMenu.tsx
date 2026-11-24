@@ -17,6 +17,7 @@ export function AccountMenu({
   sync,
   onSettings,
   onDocuments,
+  onProjectFiles,
   onConnect,
   onSwitch,
   onDisconnect,
@@ -26,6 +27,7 @@ export function AccountMenu({
   sync?: SyncInfo | null;
   onSettings: () => void;
   onDocuments: () => void;
+  onProjectFiles: () => void;
   onConnect: () => void;
   onSwitch: () => void;
   onDisconnect: () => void;
@@ -126,6 +128,7 @@ export function AccountMenu({
             <button type="button" role="menuitem" className="is-primary" onClick={choose(onConnect)}>Se connecter avec Google</button>
           )}
           {connected && <button type="button" role="menuitem" onClick={choose(onDocuments)}>Documents Google</button>}
+          <button type="button" role="menuitem" onClick={choose(onProjectFiles)}>Fichiers des projets</button>
           {connected && onSyncNow && !status?.expired && (
             <button type="button" role="menuitem" disabled={sync?.state === 'syncing'} onClick={choose(onSyncNow)}>Synchroniser maintenant</button>
           )}

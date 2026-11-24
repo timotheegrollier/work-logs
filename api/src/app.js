@@ -846,6 +846,30 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     res.sendFile(found.file);
   });
 
+  /**
+   * Fichiers utilisés par les projets : toutes les pièces jointes des entrées,
+   * avec leur entrée et leur projet, pour le panneau « Fichiers des projets ».
+   * Métadonnées seules ; les binaires restent servis par /api/files.
+   */
+  app.get('/api/project-files', (req, res) => {
+    const projectId = str(req.query.project_id);
+    const rows = db
+      .prepare(
+        `SELECT a.id, a.filename, a.stored, a.mime, a.size, a.entry_id, a.created_at, a.drive_file_id,
+                entries.title entry_title, entries.kind entry_kind, entries.entry_date, entries.project_id,
+                projects.name project_name
+         FROM attachments a
+         JOIN entries ON entries.id = a.entry_id
+         LEFT JOIN projects ON projects.id = entries.project_id
+          ${projectId ? 'WHERE entries.project_id = ?' : ''}
+         ORDER BY a.created_at DESC
+         LIMIT 1000`
+      )
+      .all(...(projectId ? [projectId] : []))
+      .map(formatAttachment);
+    res.json(rows);
+  });
+
   app.delete('/api/attachments/:id', async (req, res) => {
     const att = db.prepare('SELECT * FROM attachments WHERE id=?').get(req.params.id);
     if (!att) return notFound(res, 'pièce jointe introuvable');

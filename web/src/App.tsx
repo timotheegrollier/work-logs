@@ -35,6 +35,7 @@ const isPwa = import.meta.env.VITE_PWA === '1';
 // précache quand même (`emit-sw.mjs`) : la PWA les a hors ligne.
 const SharedFileEditor = lazy(() => import('./components/SharedFileEditor').then((m) => ({ default: m.SharedFileEditor })));
 const GoogleDocuments = lazy(() => import('./components/GoogleDocuments').then((m) => ({ default: m.GoogleDocuments })));
+const ProjectFiles = lazy(() => import('./components/ProjectFiles').then((m) => ({ default: m.ProjectFiles })));
 const GoogleDrive = lazy(() => import('./components/GoogleDrive').then((m) => ({ default: m.GoogleDrive })));
 const loading = <p className="empty">Chargement…</p>;
 
@@ -95,6 +96,7 @@ export default function App() {
   const [showProcedures, setShowProcedures] = usePersisted('worklogs-show-procedures', readPanel(false), writePanel);
   const [showSettings, setShowSettings] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
+  const [showProjectFiles, setShowProjectFiles] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const chatOpener = useRef<HTMLButtonElement>(null);
   // Compte Google au niveau de l'app : le menu de l'en-tête le montre partout.
@@ -907,6 +909,7 @@ export default function App() {
           status={google}
           onSettings={() => setShowSettings(true)}
           onDocuments={() => setShowDocuments(true)}
+          onProjectFiles={() => setShowProjectFiles(true)}
           onConnect={googleAction(api.connectGoogle)}
           onSwitch={googleAction(api.switchGoogleAccount)}
           onDisconnect={googleAction(api.disconnectGoogle)}
@@ -1211,6 +1214,21 @@ export default function App() {
         onDocument={openChatDocument}
         onSharedDocument={openChatShared}
       />
+      {showProjectFiles && (
+        <Suspense fallback={loading}>
+          <ProjectFiles
+            projects={state?.projects ?? []}
+            onClose={() => setShowProjectFiles(false)}
+            onOpenEntry={(id, project) => void openEntry(id, project ?? '')}
+            onSharedFolder={(id) => {
+              void switchProject(id);
+              if (phone) goTo('procedures');
+              else setShowProcedures(true);
+            }}
+            onChanged={reload}
+          />
+        </Suspense>
+      )}
       {showDocuments && (
         <Suspense fallback={loading}>
           <GoogleDocuments

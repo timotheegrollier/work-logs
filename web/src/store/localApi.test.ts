@@ -543,6 +543,21 @@ describe('projets et fichiers', () => {
     await expect(localApi.deleteAttachment(saved.id)).rejects.toThrow('pièce jointe introuvable');
   });
 
+  test('fichiers des projets : chaque pièce jointe porte son entrée et son projet', async () => {
+    const villa = await localApi.createProject({ name: 'Villa' });
+    const procedure = await localApi.createEntry({ title: 'Sauvegarde', kind: 'procedure', project_id: villa.id });
+    const free = await localApi.createEntry({ title: 'Sans projet' });
+    await localApi.upload(new File(['a'], 'plan.pdf', { type: 'application/pdf' }), procedure.id);
+    await localApi.upload(new File(['b'], 'libre.txt'), free.id);
+    const files = await localApi.projectFiles();
+    expect(files).toHaveLength(2);
+    const plan = files.find((file) => file.filename === 'plan.pdf');
+    expect(plan).toMatchObject({ entry_title: 'Sauvegarde', entry_kind: 'procedure', project_id: villa.id, project_name: 'Villa' });
+    expect(plan && 'blob' in plan).toBe(false);
+    expect(files.find((file) => file.filename === 'libre.txt')).toMatchObject({ project_id: null, project_name: null });
+    expect((await localApi.projectFiles(villa.id)).map((file) => file.filename)).toEqual(['plan.pdf']);
+  });
+
   test('URL de pièce jointe reste dans le sous-dossier de la PWA', () => {
     const originalPath = window.location.pathname;
     window.history.replaceState(null, '', '/work-logs/');

@@ -1275,71 +1275,91 @@ export function EntryEditor({
 
       </div>
       </div>}
-      {(!nativeGoogle || attachments.length > 0) && <div className="files no-print">
-        <label className="ghost file-button">
-          📎 Joindre un fichier
-          <input
-            type="file"
-            multiple
-            disabled={syncing}
-            aria-label="Joindre un fichier"
-            onChange={(e) => {
-              addFiles(e.target.files);
-              e.target.value = '';
-            }}
-          />
-        </label>
-        {linkedFolders.length > 0 && <AttachFromLinkedFolder key={`${entry.id}:${JSON.stringify(linkedFolders)}`} entryId={entry.id} title={draft.title}
-          folders={linkedFolders} disabled={syncing} onAttached={(added) => { setAttachments((current) => [added, ...current]); onChanged(); }} />}
-        {attachments.map((file) => {
-          const sheet = ['xlsx', 'xlsm', 'ods', 'csv', 'tsv'].includes(file.filename.split('.').pop()?.toLowerCase() ?? '');
-          return <span className="file" key={file.id}>
-            <FileIcon name={file.filename} />
-            <a
-              href={api.fileUrl(file.stored)}
-              onClick={(event) => {
-                event.preventDefault();
-                setError('');
-                if (sheet) setPreviewing(file);
-                else void downloadAttachment(file).catch((e: Error) => setError(e.message));
-              }}
-            >
-              {file.filename}
-            </a>
-            <small>{formatSize(file.size)}</small>
-            {linkedFolders.length > 0 && <CopyAttachmentToLinkedFolder file={file} folders={linkedFolders} disabled={syncing} onCopied={onSharedChanged} />}
-            {file.driveFileId
-              ? <small className="picker-source is-google" title="Binaire conservé sur Google Drive">☁ Drive</small>
-              : <small className="picker-source" title="Fichier uniquement sur cet appareil">local seul</small>}
-            <button
-              className="ghost file-preview"
-              type="button"
-              aria-label={`${sheet ? 'Ouvrir dans l’écriture' : 'Aperçu de'} ${file.filename}`}
-              onClick={() => setPreviewing(file)}
-            >
-              {sheet ? '✎ Ouvrir' : '👁 Aperçu'}
-            </button>
-            {file.driveFileId && <button
-              className="ghost file-preview"
-              type="button"
-              disabled={fetchingId === file.id}
-              title="Retélécharger le binaire depuis Google Drive"
-              aria-label={`Récupérer ${file.filename} depuis Drive`}
-              onClick={() => void fetchFromDrive(file)}
-            >
-              {fetchingId === file.id ? 'Récupération…' : '⬇ Récupérer'}
-            </button>}
-            <button
-              className="icon"
-              aria-label={`Supprimer ${file.filename}`}
-              onClick={() => removeFile(file)}
-            >
-              ✕
-            </button>
-          </span>;
-        })}
+      {(!nativeGoogle || attachments.length > 0) && <section className="entry-files no-print" aria-label="Fichiers joints">
+        <div className="entry-files-head">
+          <div className="entry-files-title">
+            <h3>Fichiers joints</h3>
+            <small>{attachments.length === 0
+              ? 'Aucun fichier pour cette entrée'
+              : `${attachments.length} fichier${attachments.length > 1 ? 's' : ''} · ${formatSize(attachments.reduce((sum, file) => sum + (file.size || 0), 0))}`}</small>
+          </div>
+          <div className="entry-files-tools">
+            <label className="ghost file-button">
+              📎 Joindre un fichier
+              <input
+                type="file"
+                multiple
+                disabled={syncing}
+                aria-label="Joindre un fichier"
+                onChange={(e) => {
+                  addFiles(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            {linkedFolders.length > 0 && <AttachFromLinkedFolder key={`${entry.id}:${JSON.stringify(linkedFolders)}`} entryId={entry.id} title={draft.title}
+              folders={linkedFolders} disabled={syncing} onAttached={(added) => { setAttachments((current) => [added, ...current]); onChanged(); }} />}
+          </div>
+        </div>
+        {attachments.length > 0 && <ul className="entry-file-list">
+          {attachments.map((file) => {
+            const sheet = ['xlsx', 'xlsm', 'ods', 'csv', 'tsv'].includes(file.filename.split('.').pop()?.toLowerCase() ?? '');
+            return <li className="entry-file" key={file.id}>
+              <FileIcon name={file.filename} />
+              <div className="entry-file-body">
+                <a
+                  className="entry-file-name"
+                  href={api.fileUrl(file.stored)}
+                  title={sheet ? 'Tableur : ouvre l’aperçu pour l’écrire' : file.filename}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setError('');
+                    if (sheet) setPreviewing(file);
+                    else void downloadAttachment(file).catch((e: Error) => setError(e.message));
+                  }}
+                >
+                  {file.filename}
+                </a>
+                <span className="entry-file-meta">
+                  <small>{formatSize(file.size)}</small>
+                  {file.driveFileId
+                    ? <small className="picker-source is-google" title="Binaire conservé sur Google Drive">☁ Drive</small>
+                    : <small className="picker-source" title="Fichier uniquement sur cet appareil">local seul</small>}
+                </span>
+              </div>
+              <div className="entry-file-actions">
+                <button
+                  className="ghost file-preview"
+                  type="button"
+                  aria-label={`${sheet ? 'Ouvrir dans l’écriture' : 'Aperçu de'} ${file.filename}`}
+                  onClick={() => setPreviewing(file)}
+                >
+                  {sheet ? '✎ Ouvrir' : '👁 Aperçu'}
+                </button>
+                {file.driveFileId && <button
+                  className="ghost file-preview"
+                  type="button"
+                  disabled={fetchingId === file.id}
+                  title="Retélécharger le binaire depuis Google Drive"
+                  aria-label={`Récupérer ${file.filename} depuis Drive`}
+                  onClick={() => void fetchFromDrive(file)}
+                >
+                  {fetchingId === file.id ? 'Récupération…' : '⬇ Récupérer'}
+                </button>}
+                {linkedFolders.length > 0 && <CopyAttachmentToLinkedFolder file={file} folders={linkedFolders} disabled={syncing} onCopied={onSharedChanged} />}
+                <button
+                  className="icon"
+                  aria-label={`Supprimer ${file.filename}`}
+                  onClick={() => removeFile(file)}
+                >
+                  ✕
+                </button>
+              </div>
+            </li>;
+          })}
+        </ul>}
         {driveNotice && <p className="drive-success" role="status">{driveNotice}</p>}
-      </div>}
+      </section>}
       {previewing && <Suspense fallback={null}><FileViewer key={previewing.id + (previewing.driveFileId || '')} file={previewing} inlineSpreadsheet onClose={() => setPreviewing(null)} onFetch={() => previewing && void fetchFromDrive(previewing)} fetching={fetchingId === previewing.id}
         onSaved={(updated) => { setPreviewing(updated); setAttachments((current) => [updated, ...current.filter((file) => file.id !== updated.id)]); onChanged(); }} /></Suspense>}
     </section>

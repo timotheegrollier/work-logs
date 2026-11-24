@@ -11,7 +11,7 @@ const connected: GoogleStatus = {
 };
 
 function setup(status: GoogleStatus | null, sync = null as Parameters<typeof AccountMenu>[0]['sync']) {
-  const handlers = { onSettings: vi.fn(), onDocuments: vi.fn(), onConnect: vi.fn(), onSwitch: vi.fn(), onDisconnect: vi.fn(), onSyncNow: vi.fn() };
+  const handlers = { onSettings: vi.fn(), onDocuments: vi.fn(), onProjectFiles: vi.fn(), onConnect: vi.fn(), onSwitch: vi.fn(), onDisconnect: vi.fn(), onSyncNow: vi.fn() };
   render(<><AccountMenu status={status} sync={sync} {...handlers} /><p>Ailleurs</p></>);
   return handlers;
 }
@@ -39,11 +39,11 @@ describe('menu du compte', () => {
     expect(screen.getByRole('menu')).toHaveTextContent('Google a refusé la connexion');
   });
 
-  test('sans client configuré : seulement les Paramètres', async () => {
+  test('sans client configuré : les fichiers et les Paramètres', async () => {
     const user = userEvent.setup();
     setup({ ...base, configured: false });
     await user.click(screen.getByRole('button', { name: 'Compte et paramètres' }));
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Paramètres']);
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Fichiers des projets', 'Paramètres']);
   });
 
   test('connecté : photo, nom, e-mail, état de synchro et toutes les actions', async () => {
@@ -58,10 +58,13 @@ describe('menu du compte', () => {
     expect(menu).toHaveTextContent('timo@example.com');
     expect(menu).toHaveTextContent('Synchronisé à l’instant');
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
-      'Documents Google', 'Synchroniser maintenant', 'Paramètres', 'Changer de compte', 'Se déconnecter',
+      'Documents Google', 'Fichiers des projets', 'Synchroniser maintenant', 'Paramètres', 'Changer de compte', 'Se déconnecter',
     ]);
     await user.click(screen.getByRole('menuitem', { name: 'Documents Google' }));
     expect(handlers.onDocuments).toHaveBeenCalledOnce();
+    await user.click(trigger);
+    await user.click(screen.getByRole('menuitem', { name: 'Fichiers des projets' }));
+    expect(handlers.onProjectFiles).toHaveBeenCalledOnce();
     await user.click(trigger);
     await user.click(screen.getByRole('menuitem', { name: 'Changer de compte' }));
     expect(handlers.onSwitch).toHaveBeenCalledOnce();
