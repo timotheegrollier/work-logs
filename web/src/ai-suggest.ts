@@ -68,8 +68,9 @@ export function isFreeAi({ endpoint, model }: Pick<AiSettings, 'endpoint' | 'mod
  * Chaîne historique, utilisée uniquement quand l’endpoint Google est configuré.
  * Ordre consigné dans les décisions §17 et §77.
  */
-// Modèles confirmés gratuits par Google. Le secours ne bascule jamais sur un modèle payant.
-export const GEMINI_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
+// Modèle gratuit chez Google, jamais payant. Un alias : il suit les versions de Google au lieu de
+// disparaître comme `gemini-2.5-flash-lite`, fermé aux nouvelles clés en novembre 2026.
+export const GEMINI_FALLBACK_MODELS = ['gemini-flash-latest'];
 
 export interface AiModelOption {
   id: string;
@@ -80,7 +81,6 @@ export const AI_MODELS: AiModelOption[] = [
   { id: DEFAULT_AI_MODEL, label: 'WorkLogs gratuit — Gemini Flash-Lite et Flash, Gemma 4 en secours (défaut)' },
   { id: GEMINI_DEFAULT_MODEL, label: 'Gemini 3.5 Flash-Lite — gratuit' },
   { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — gratuit' },
-  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite — gratuit' },
 ];
 
 /** Valeur du select quand le modèle enregistré n'est dans aucune option. */
@@ -414,7 +414,8 @@ export function resetAiFallbackMemory(): void {
 class AiTryNext extends AiError {
   // explains : ce motif dit mieux l'échec qu'un 5xx ou 404 ; charged : réponse 200 déjà comptée au plafond ;
   // retryable : un 5xx, souvent une pointe de quelques secondes, mérite un nouvel essai.
-  constructor(message: string, readonly overloaded = false, readonly explains = false, readonly charged = false, readonly retryable = false) { super(message); }
+  // absent : 404, le modèle n'existe pas pour cette clé.
+  constructor(message: string, readonly overloaded = false, readonly explains = false, readonly charged = false, readonly retryable = false, readonly absent = false) { super(message); }
 }
 
 /** Attente annulable : l'utilisateur qui arrête n'attend pas la fin de la pause. */
@@ -624,6 +625,8 @@ export async function postChatCompletions(
     } catch (e) {
       // Clé refusée ou pas de réseau : insister sur un autre modèle n'y changera rien.
       if (!(e instanceof AiTryNext)) throw e;
+      // Un secours absent pour cette clé ne masque pas l'échec du modèle choisi, ni son dernier essai.
+      if (e.absent && candidate !== model) continue;
       // Un quota épuisé ou un filtre expliquent mieux l'échec qu'un dernier 5xx ou 404.
       if (!last?.explains) last = e;
       allOverloaded &&= e.overloaded;
@@ -805,12 +808,12 @@ async function postReserved(
       if (settings.signal?.aborted) throw new AiCancelled();
       return postReserved(settings, model, key, system, user, maxTokens, timeoutMs, { ...options, effort: undefined }, mediaTokens);
     }
+    const message = detail
+      ? `Service IA indisponible (${res.status}) : ${detail} — vérifie le modèle et l’endpoint dans ⚙ Paramètres.`
+      : `Service IA indisponible (${res.status}) : réessaie plus tard.`;
     // 404 : modèle absent pour cette clé ; le suivant a sa chance.
-    throw new (res.status === 404 ? AiTryNext : AiError)(
-      detail
-        ? `Service IA indisponible (${res.status}) : ${detail} — vérifie le modèle et l’endpoint dans ⚙ Paramètres.`
-        : `Service IA indisponible (${res.status}) : réessaie plus tard.`
-    );
+    if (res.status === 404) throw new AiTryNext(message, false, false, false, false, true);
+    throw new AiError(message);
   }
   const choice = body?.choices?.[0];
   // Une génération interrompue peut contenir du texte partiel et une erreur dans un HTTP 200.

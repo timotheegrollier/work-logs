@@ -3825,6 +3825,12 @@ ressemble à une clé Google (`AIza`, ou `AQ.` : le format que AI Studio délivr
 
 > **2026-11-24, soir** : les clés `AQ.` étaient jetées à la lecture des réglages, sans message ;
 > l'assistant affichait alors « Aucune IA intégrée sur cet appareil ». Les deux formats sont acceptés.
+>
+> **v0.90.2** : Google ferme `gemini-2.5-flash-lite` aux nouvelles clés (404 « no longer available
+> to new users »). Il quitte le menu et le secours, remplacé par l'alias `gemini-flash-latest`
+> (gratuit, suit les versions de Google). Un secours absent (404) ne remplace plus l'erreur du
+> modèle choisi ni son dernier essai : avant, une panne passagère de 3.5 Flash-Lite s'affichait
+> comme ce 404.
 
 - Le sélecteur de modèle est directement visible dans **Paramètres → Assistance IA** ; le lien
   de création de clé pointe vers Google AI Studio.

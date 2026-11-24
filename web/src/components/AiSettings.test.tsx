@@ -84,9 +84,9 @@ describe('réglages IA', () => {
     const select = screen.getByLabelText('Modèle IA');
     expect(select).toHaveValue(GEMINI_DEFAULT_MODEL);
     const options = [...(select as HTMLSelectElement).options].map((option) => option.value);
-    expect(options).toEqual(['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite', 'personnalise']);
-    fireEvent.change(select, { target: { value: 'gemini-2.5-flash-lite' } });
-    expect(localStorage.getItem('worklogs-ai-model')).toBe('gemini-2.5-flash-lite');
+    expect(options).toEqual(['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'personnalise']);
+    fireEvent.change(select, { target: { value: 'gemini-3.1-flash-lite' } });
+    expect(localStorage.getItem('worklogs-ai-model')).toBe('gemini-3.1-flash-lite');
   });
 
   test('Google ne reçoit rien tant que la case de confidentialité n’est pas acceptée', async () => {

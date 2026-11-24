@@ -1212,7 +1212,17 @@ describe('modèle saturé', () => {
     const fetch = vi.fn().mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('## Propre'));
     vi.stubGlobal('fetch', fetch);
     expect(await proofreadEntry(gemini, 'Titre', 'brouillon', { timeoutMs: 600 })).toBe('## Propre');
-    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', 'gemini-2.5-flash-lite']);
+    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', 'gemini-flash-latest']);
+  });
+
+  test('un secours absent pour cette clé (404) ne masque pas la panne du modèle choisi', async () => {
+    const gone = { ok: false, status: 404, json: async () => ({ error: { code: 404, message: 'This model models/gemini-flash-latest is no longer available to new users.' } }) } as Response;
+    const fetch = vi.fn().mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(gone).mockResolvedValueOnce(aiResponse('Relire'));
+    vi.stubGlobal('fetch', fetch);
+    expect(await suggestSubtasks(gemini, 'T')).toBe('Relire');
+    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', 'gemini-flash-latest', 'gemini-3.5-flash-lite']);
+    fetch.mockReset().mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(gone).mockResolvedValueOnce(aiResponse('x', 503));
+    await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow(/surchargé/);
   });
 
   test('tous saturés : un appel par modèle, puis un seul nouvel essai du modèle choisi', async () => {
@@ -1229,7 +1239,7 @@ describe('modèle saturé', () => {
     fetch.mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('x', 503))
       .mockResolvedValueOnce(aiResponse('Relire'));
     expect(await suggestSubtasks(gemini, 'T')).toBe('Relire');
-    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', 'gemini-2.5-flash-lite', 'gemini-3.5-flash-lite']);
+    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', 'gemini-flash-latest', 'gemini-3.5-flash-lite']);
   });
 
   test('budget total borné : des modèles qui traînent ne font pas attendre indéfiniment', async () => {
@@ -1691,7 +1701,7 @@ describe('chaîne de modèles et paramètres Gemini', () => {
   const gemini = geminiOn('gemini-3.5-flash-lite');
 
   test('la chaîne de secours reste limitée au modèle gratuit Gemini retenu', () => {
-    expect(GEMINI_FALLBACK_MODELS).toEqual(['gemini-2.5-flash-lite']);
+    expect(GEMINI_FALLBACK_MODELS).toEqual(['gemini-flash-latest']);
   });
 
   test('suivi automatique : deux modèles au plus, même tous saturés', async () => {
@@ -1915,7 +1925,7 @@ describe('chaîne de modèles et paramètres Gemini', () => {
     const fetch = vi.fn().mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('x', 429));
     vi.stubGlobal('fetch', fetch);
     await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow(quotaMessage());
-    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', 'gemini-2.5-flash-lite']);
+    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', 'gemini-flash-latest']);
     expect(readAiUsage().requests).toBe(0);
   });
 

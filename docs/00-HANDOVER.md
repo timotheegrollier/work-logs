@@ -1,7 +1,9 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Gemini Flash par le Worker, modèles et quotas affichés — 2026-11-24, v0.90.1 (§98)
+## Gemini Flash par le Worker, modèles et quotas affichés — 2026-11-24, v0.90.2 (§98)
 
+- v0.90.2 : clé Google personnelle, secours `gemini-flash-latest` au lieu de `gemini-2.5-flash-lite`,
+  fermé aux nouvelles clés ; son 404 masquait la vraie panne du modèle choisi (§95).
 - v0.90.1 : Flash-Lite passe devant Flash dans le Worker. Les clés Google au nouveau format
   `AQ.` (AI Studio) étaient jetées sans message, d'où « Aucune IA intégrée » avec une clé valide.
 - Le Worker essaie Gemini Flash-Lite, Flash, puis Gemma 4, avec la clé gratuite gardée en
@@ -10,7 +12,7 @@
 - Compteur partagé (objet durable `AiUsage`) et `GET /ai/status` ; **Paramètres → Assistance
   IA → Modèles et quotas** l'affiche et le relit chaque minute et après chaque réponse.
 - OVHcloud retiré (client et CSP desktop).
-- `./scripts/check.sh` vert avec **2 212 tests**, dont un échec attendu (367 API · 1 543 front +1 ·
+- `./scripts/check.sh` vert avec **2 213 tests**, dont un échec attendu (367 API · 1 544 front +1 ·
   49 desktop · 56 scripts · 30 Worker · 11 relais · 133 navigateur · 22 Electron).
 - Assistant plus agent : consigne d'initiative sur les messages vagues, réflexion `medium` pour Gemini.
 - **Par où commencer** envoie la demande au clic ; après une réponse, jusqu'à 3 suites (`suggestions`
