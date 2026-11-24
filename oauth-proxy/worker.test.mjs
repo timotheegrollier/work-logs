@@ -1,5 +1,6 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import worker from './worker.mjs';
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -135,8 +136,10 @@ test('secret absent ou Google injoignable : erreur explicite, jamais de plantage
 });
 
 const PDF_PATH = 'https://relais.test/ai/pdf';
-// Port tiré au démarrage par `desktop/server.mjs`.
-const DESKTOP = 'http://127.0.0.1:43127';
+// Lue dans `desktop/main.mjs` : le 2026-11-24, une valeur recopiée à tort a fait refuser
+// toutes les demandes IA de l’application desktop (403).
+const DESKTOP = readFileSync(new URL('../desktop/main.mjs', import.meta.url), 'utf8').match(/^const origin = '([^']+)';$/m)[1];
+const DEV_SERVER = 'http://127.0.0.1:43127';
 const PDF = '%PDF-1.7\n1 0 obj\n<< >>\nendobj\n%%EOF\n';
 const MIB = 1024 * 1024;
 
@@ -190,7 +193,7 @@ test('PDF : le texte renvoyé est borné et la coupe signalée', async () => {
 
 test('PDF : seuls les clients WorkLogs peuvent envoyer une pièce en CORS, sans élargir les droits OAuth', async () => {
   const { env, conversions, limits } = fakePdfBindings();
-  for (const origin of [PWA, PWA_GITHUB, DESKTOP, 'http://localhost:8411', 'http://127.0.0.1:8410']) {
+  for (const origin of [PWA, PWA_GITHUB, DESKTOP, DEV_SERVER, 'http://localhost:8411']) {
     const response = await worker.fetch(new Request(PDF_PATH, {
       method: 'OPTIONS',
       headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' },
@@ -201,7 +204,7 @@ test('PDF : seuls les clients WorkLogs peuvent envoyer une pièce en CORS, sans 
     assert.equal(response.headers.get('Access-Control-Allow-Headers'), 'Content-Type');
     assert.equal(response.headers.get('Access-Control-Allow-Credentials'), null);
   }
-  for (const origin of ['', 'null', 'https://pirate.example', 'worklogs://app', 'http://127.0.0.1.pirate.example:8410', 'https://127.0.0.1:8410', 'http://192.168.1.10:8410']) {
+  for (const origin of ['', 'null', 'https://pirate.example', 'worklogs://pirate', 'http://127.0.0.1.pirate.example:8410', 'https://127.0.0.1:8410', 'http://192.168.1.10:8410']) {
     const response = await postPdf(env, { origin });
     assert.equal(response.status, 403);
     assert.equal(response.headers.get('Access-Control-Allow-Origin'), null);
@@ -328,7 +331,7 @@ test('discussion sans clé : réponse OpenAI et modèle fixe avec des paramètre
 
 test('discussion : préflight pour les mêmes clients WorkLogs que l’extraction PDF', async () => {
   const { env, calls, limits } = fakeChatBindings();
-  for (const origin of [PWA, PWA_GITHUB, DESKTOP, 'http://localhost:8411', 'http://127.0.0.1:8410']) {
+  for (const origin of [PWA, PWA_GITHUB, DESKTOP, DEV_SERVER, 'http://localhost:8411']) {
     const response = await worker.fetch(new Request(CHAT_PATH, {
       method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' },
     }), env);
@@ -338,7 +341,7 @@ test('discussion : préflight pour les mêmes clients WorkLogs que l’extractio
     assert.equal(response.headers.get('Access-Control-Allow-Credentials'), null);
     assert.equal(response.headers.get('Cache-Control'), 'no-store');
   }
-  for (const origin of ['', 'null', 'https://pirate.example', 'worklogs://app', 'http://127.0.0.1.pirate.example:8410', 'https://127.0.0.1:8410', 'http://192.168.1.10:8410']) {
+  for (const origin of ['', 'null', 'https://pirate.example', 'worklogs://pirate', 'http://127.0.0.1.pirate.example:8410', 'https://127.0.0.1:8410', 'http://192.168.1.10:8410']) {
     const response = await postChat(env, { origin });
     assert.equal(response.status, 403);
     assert.equal(response.headers.get('Access-Control-Allow-Origin'), null);

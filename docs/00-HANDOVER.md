@@ -13,9 +13,11 @@
 - Le Worker doit être déployé pour servir l’inférence et convertir les PDF à texte
   sélectionnable. Seul l’extrait est transmis au modèle. Voir `07-RELEASES.md` §9.
 - Voir `05-DECISIONS.md` §96 et `04-RECETTES.md` §14.
-- Desktop : le Worker admet toute origine `http://127.0.0.1:<port>` / `localhost`, car
-  `desktop/server.mjs` tire son port au démarrage (sans cela, chaque demande desktop
-  partait en 403 puis sur OVHcloud saturé).
+- **Correctif du 2026-11-24 (Worker seul, sans nouvelle version desktop).** La v0.88.0 du
+  Worker refusait l’origine de la fenêtre desktop, `worklogs://app` (`desktop/main.mjs:34`),
+  remplacée à tort par celle du serveur interne. Toutes les demandes desktop partaient en
+  403, puis sur OVHcloud saturé : l’écran disait « quota atteint ». Le test du Worker lit
+  désormais l’origine dans `main.mjs`. Les origines locales de dev restent admises.
 - `./scripts/check.sh` vert le 2026-11-24 avec **2 177 tests**, dont un échec attendu :
   365 API · 1 519 front (+1 attendu) · 49 desktop · 56 scripts · 21 Worker · 11 relais ·
   133 navigateur · 22 Electron. L’inférence réelle reste à vérifier après déploiement du

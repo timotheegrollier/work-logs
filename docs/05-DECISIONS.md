@@ -3845,10 +3845,13 @@ passent au Worker. Les choix avancés explicites restent disponibles.
   cookie et sans suivre de redirection. Le Worker utilise le modèle
   `@cf/google/gemma-4-26b-a4b-it` via le binding Workers AI. Les routes d’inférence et
   de conversion nécessitent le déploiement du Worker WorkLogs.
-  Origines admises : celles de la PWA et toute origine `http://127.0.0.1:<port>` ou
-  `http://localhost:<port>`, car l’application desktop sert sa page sur un port tiré au
-  démarrage (`desktop/server.mjs`). L’origine n’est qu’un filtre de navigateur : la
-  limite par adresse IP reste la vraie protection du quota partagé.
+  Origines admises : celles de la PWA, `worklogs://app` (la fenêtre desktop,
+  `desktop/main.mjs`) et `http://127.0.0.1:<port>` / `http://localhost:<port>` pour les
+  serveurs de dev. Le test du Worker lit l’origine desktop dans `main.mjs` : en v0.88.0,
+  elle avait été remplacée à tort par celle du serveur interne (`desktop/server.mjs`), et le
+  Worker refusait toutes les demandes desktop (403, masqué par le 429 du secours OVHcloud).
+  L’origine n’est qu’un filtre de navigateur : la limite par adresse IP reste la vraie
+  protection du quota partagé.
   [Modèle Gemma 4 26B](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/).
 - Le compte d’hébergement reste sur Workers Free. L’allocation de 10 000 neurones par
   jour est partagée et se renouvelle à minuit UTC. Au-delà, Cloudflare refuse les appels.

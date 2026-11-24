@@ -31,10 +31,11 @@ const REDIRECTS = [
 ];
 const CLIENT_ID = /^[\w.-]+\.apps\.googleusercontent\.com$/;
 const MAX_BODY = 8192;
-// Routes IA : aussi l’application desktop, servie sur un port local tiré au démarrage
-// (`desktop/server.mjs`), et le serveur de dev. La limite par IP reste la vraie garde.
+// Routes IA : aussi la fenêtre desktop (`worklogs://app`, `desktop/main.mjs`) et les
+// serveurs locaux de dev, à tout port. La limite par IP reste la vraie garde du quota.
+const DESKTOP_ORIGIN = 'worklogs://app';
 const LOOPBACK_ORIGIN = /^http:\/\/(?:127\.0\.0\.1|localhost):\d{1,5}$/;
-const aiOrigin = (origin) => ORIGINS.includes(origin) || LOOPBACK_ORIGIN.test(origin);
+const aiOrigin = (origin) => ORIGINS.includes(origin) || origin === DESKTOP_ORIGIN || LOOPBACK_ORIGIN.test(origin);
 const MIB = 1024 * 1024;
 const MAX_PDF_BYTES = 10 * MIB;
 const MAX_PDF_TEXT = 16_000;
