@@ -3915,11 +3915,14 @@ quotas affichés, détaillés et actualisés automatiquement.
   jamais du Worker. Sans ce secret, Gemma 4 répond seul.
 - Ordre d'essai dans le Worker (`oauth-proxy/ai-engines.mjs`) : Gemini Flash, Gemini
   Flash-Lite, puis Gemma 4 26B sur Workers AI. Les modèles Gemini viennent de la liste de
-  Google (`GET /v1beta/models`, relue au plus toutes les 6 h) : l'alias `gemini-flash-latest`
-  s'il existe (Google prévient deux semaines avant de changer la version derrière), sinon la
-  version stable la plus haute ; de même pour Flash-Lite. Sans liste lue : les deux alias.
+  Google (`GET /v1beta/models`, relue au plus toutes les 6 h) : la version stable la plus haute,
+  que Google conseille en production, l'alias `gemini-flash-latest` faute de mieux ; de même pour
+  Flash-Lite. Sans liste lue : les deux alias. Premier essai réel, le 2026-11-24 : l'alias de
+  Flash ne répondait pas en 25 s quand Flash-Lite répondait en moins d'une seconde. Un modèle
+  trop lent est écarté 15 min, pour qu'une seule demande paie l'attente.
 - Un refus de Google écarte le modèle : quota du jour jusqu'à minuit heure du Pacifique, limite
-  par minute selon le délai conseillé, clé refusée 1 h, modèle introuvable 6 h. Un refus propre
+  par minute selon le délai conseillé, trop lent 15 min, clé refusée 1 h, modèle introuvable 6 h,
+  panne 1 min avec son code (« 503 UNAVAILABLE »). Un refus propre
   à une demande (400) n'écarte rien et reste noté comme dernière erreur.
 - `temperature` n'est pas transmise à Gemini (ignorée depuis 3.6, bientôt refusée) ;
   `reasoning_effort: low` limite la réflexion, qu'on ne peut plus couper sur Gemini 3.

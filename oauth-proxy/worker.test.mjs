@@ -575,6 +575,14 @@ test('Gemini : limite par minute, clé refusée et refus d’une demande mènent
   await postChat(overloaded.env);
   const [flash503] = (await status(overloaded.env)).models;
   assert.equal(flash503.blocked_reason, 'Google indisponible (503 UNAVAILABLE)');
+
+  // Trop lent : écarté un quart d'heure, Flash-Lite répond tout de suite.
+  const slow = geminiEnv();
+  stubGemini(() => { throw new DOMException('délai dépassé', 'TimeoutError'); }, () => geminiAnswer('gemini-flash-lite-latest'));
+  assert.equal((await (await postChat(slow.env)).json()).model, 'gemini-flash-lite-latest');
+  const [late] = (await status(slow.env)).models;
+  assert.equal(late.blocked_reason, 'Google trop lent (plus de 25 s)');
+  assert.ok(Date.parse(late.blocked_until) - Date.now() > 14 * 60_000);
 });
 
 test('Gemma aussi au bout de son quota : 429 avec l’heure de retour, sans appeler personne', async () => {
@@ -636,8 +644,16 @@ test('quotas : jour du Pacifique pour Google, UTC pour Cloudflare ; refus 429 lu
     { kind: 'tokens_per_minute', value: 250000, retrySeconds: 42 });
   assert.deepEqual(geminiRefusal([{ error: { details: [{ violations: [{ quotaId: 'GenerateContentInputTokensPerModelPerDay-FreeTier', quotaValue: '1000000' }] }] } }]),
     { kind: 'tokens_per_day', value: 1000000, retrySeconds: null });
-  assert.deepEqual(pickGemini([{ name: 'models/gemini-flash-latest', displayName: 'Gemini Flash Latest', supportedGenerationMethods: ['generateContent'] }]),
+  const generate = ['generateContent'];
+  assert.deepEqual(pickGemini([{ name: 'models/gemini-flash-latest', displayName: 'Gemini Flash Latest', supportedGenerationMethods: generate }]),
     [{ id: 'gemini-flash-latest', label: 'Gemini Flash Latest', version: null }]);
+  // Une version stable passe avant l'alias, que Google déconseille en production.
+  assert.deepEqual(pickGemini([
+    { name: 'models/gemini-flash-latest', supportedGenerationMethods: generate },
+    { name: 'models/gemini-3.6-flash', displayName: 'Gemini 3.6 Flash', supportedGenerationMethods: generate },
+    { name: 'models/gemini-3.8-flash', displayName: 'Gemini 3.8 Flash', supportedGenerationMethods: generate },
+    { name: 'models/gemini-flash-lite-latest', displayName: 'Gemini Flash-Lite Latest', supportedGenerationMethods: generate },
+  ]).map(({ id }) => id), ['gemini-3.8-flash', 'gemini-flash-lite-latest']);
 });
 
 test('Gemini : l’effort de réflexion demandé est transmis, borné, et jamais envoyé à Gemma', async () => {

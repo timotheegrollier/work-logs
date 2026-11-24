@@ -12,6 +12,9 @@ export const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 /** Sans liste de modèles encore lue : les alias de Google suivent ses nouvelles versions. */
 export const DEFAULT_GEMINI_CHAIN = ['gemini-flash-latest', 'gemini-flash-lite-latest'];
 const CATALOG_MAX_AGE = 6 * 3600_000;
+/** À changer quand la règle de choix change : le catalogue gardé est alors relu. */
+const CATALOG_VERSION = 2;
+const SLOW_BLOCK = 15 * 60_000;
 // Barème Workers AI de Gemma 4 (neurones par million de jetons, page tarifs du 2026-11-18).
 const GEMMA_NEURONS = { input: 9091, output: 27273 };
 export const GEMMA_DAILY_NEURONS = 10_000;
@@ -46,12 +49,16 @@ const newer = (a, b) => {
   return 0;
 };
 
-/** Flash et Flash-Lite retenus dans la liste de Google : l'alias « latest », sinon la version la plus haute. */
+/**
+ * Flash et Flash-Lite retenus dans la liste de Google : la version stable la plus haute (Google la
+ * conseille en production), l'alias « latest » faute de mieux. Le 2026-11-24, l'alias de Flash
+ * ne répondait pas en 25 s quand Flash-Lite répondait en moins d'une seconde.
+ */
 export function pickGemini(models) {
   const usable = new Map((Array.isArray(models) ? models : [])
     .filter((m) => typeof m?.name === 'string' && m.supportedGenerationMethods?.includes('generateContent'))
     .map((m) => [m.name.replace(/^models\//, ''), m]));
-  const pick = (alias, pattern) => usable.has(alias) ? alias : [...usable.keys()].filter((id) => pattern.test(id)).sort(newer)[0];
+  const pick = (alias, pattern) => [...usable.keys()].filter((id) => pattern.test(id)).sort(newer)[0] ?? (usable.has(alias) ? alias : undefined);
   return [
     pick('gemini-flash-latest', /^gemini-\d+(?:\.\d+)*-flash$/),
     pick('gemini-flash-lite-latest', /^gemini-\d+(?:\.\d+)*-flash-lite$/),
@@ -83,7 +90,7 @@ export function geminiRefusal(body) {
 /** Événements appliqués dans l'ordre par l'objet durable : lecture-écriture sans course. */
 export function applyEvent(state, event, now) {
   if (event?.type === 'catalog') {
-    state.catalog = { checked_at: now, models: Array.isArray(event.models) ? event.models : [] };
+    state.catalog = { checked_at: now, version: CATALOG_VERSION, models: Array.isArray(event.models) ? event.models : [] };
     return state;
   }
   const id = typeof event?.model === 'string' ? event.model : null;
@@ -149,15 +156,16 @@ export function usageStore(env) {
   };
 }
 
-/** Modèles Gemini à essayer : catalogue lu, sinon les alias de Google. */
+/** Modèles Gemini à essayer : catalogue lu selon la règle en vigueur, sinon les alias de Google. */
 export function geminiChain(state) {
-  const models = state?.catalog?.models;
+  const models = state?.catalog?.version === CATALOG_VERSION ? state.catalog.models : null;
   return Array.isArray(models) && models.length ? models.map(({ id }) => id) : DEFAULT_GEMINI_CHAIN;
 }
 
 /** Liste des modèles relue toutes les 6 h au plus, avec la clé du Worker. */
 export async function refreshCatalog(env, state, store, now) {
-  if (!env.GEMINI_API_KEY || (state?.catalog && now - state.catalog.checked_at < CATALOG_MAX_AGE)) return state;
+  const fresh = state?.catalog?.version === CATALOG_VERSION && now - state.catalog.checked_at < CATALOG_MAX_AGE;
+  if (!env.GEMINI_API_KEY || fresh) return state;
   try {
     const response = await fetch(`${GEMINI_BASE}/models?pageSize=1000`, {
       headers: { 'x-goog-api-key': env.GEMINI_API_KEY }, signal: AbortSignal.timeout(5000),
@@ -235,8 +243,9 @@ export async function askGemini(model, params, key, now) {
       signal: AbortSignal.timeout(25_000),
     });
   } catch (error) {
-    const slow = error?.name === 'TimeoutError';
-    return { block: { until: now + 60_000, reason: slow ? 'Google trop lent (plus de 25 s)' : 'Google injoignable' } };
+    // Trop lent : écarté un quart d'heure, sinon chaque minute une demande paierait l'attente.
+    if (error?.name === 'TimeoutError') return { block: { until: now + SLOW_BLOCK, reason: 'Google trop lent (plus de 25 s)' } };
+    return { block: { until: now + 60_000, reason: 'Google injoignable' } };
   }
   const body = await response.json().catch(() => null);
   // Code HTTP et statut Google (« 503 UNAVAILABLE ») : affichés tels quels dans les quotas.
