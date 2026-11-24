@@ -8,6 +8,8 @@
 - Compteur partagé (objet durable `AiUsage`) et `GET /ai/status` ; **Paramètres → Assistance
   IA → Modèles et quotas** l'affiche et le relit chaque minute et après chaque réponse.
 - OVHcloud retiré (client et CSP desktop).
+- `./scripts/check.sh` vert avec **2 211 tests**, dont un échec attendu (367 API · 1 542 front +1 ·
+  49 desktop · 56 scripts · 30 Worker · 11 relais · 133 navigateur · 22 Electron).
 - Assistant plus agent : consigne d'initiative sur les messages vagues, réflexion `medium` pour Gemini.
 - **Par où commencer** envoie la demande au clic ; après une réponse, jusqu'à 3 suites (`suggestions`
   du JSON du modèle) s'envoient aussi d'un clic, sous la dernière réponse seulement.

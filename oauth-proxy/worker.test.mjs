@@ -2,7 +2,7 @@ import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import worker, { AiUsage } from './worker.mjs';
-import { geminiRefusal, nextReset, pickGemini, quotaDay } from './ai-engines.mjs';
+import { applyEvent, geminiRefusal, nextReset, pickGemini, quotaDay } from './ai-engines.mjs';
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
@@ -576,13 +576,31 @@ test('Gemini : limite par minute, clé refusée et refus d’une demande mènent
   const [flash503] = (await status(overloaded.env)).models;
   assert.equal(flash503.blocked_reason, 'Google indisponible (503 UNAVAILABLE)');
 
-  // Trop lent : écarté un quart d'heure, Flash-Lite répond tout de suite.
+  // Trop lent : écarté 5 min, Flash-Lite répond tout de suite.
   const slow = geminiEnv();
   stubGemini(() => { throw new DOMException('délai dépassé', 'TimeoutError'); }, () => geminiAnswer('gemini-flash-lite-latest'));
   assert.equal((await (await postChat(slow.env)).json()).model, 'gemini-flash-lite-latest');
   const [late] = (await status(slow.env)).models;
   assert.equal(late.blocked_reason, 'Google trop lent (plus de 25 s)');
-  assert.ok(Date.parse(late.blocked_until) - Date.now() > 14 * 60_000);
+  const away = Date.parse(late.blocked_until) - Date.now();
+  assert.ok(away > 4.9 * 60_000 && away <= 5 * 60_000);
+});
+
+test('pannes passagères : écart doublé à chaque échec d’affilée, une heure au plus, remis à zéro au succès', () => {
+  const now = Date.parse('2026-11-24T12:00:00Z');
+  const state = { models: {}, catalog: null };
+  const fail = () => applyEvent(state, { type: 'blocked', model: 'gemini-3.8-flash', provider: 'google', backoff: 60_000, reason: 'Google indisponible (503 UNAVAILABLE)' }, now);
+  const away = () => (state.models['gemini-3.8-flash'].blocked_until - now) / 60_000;
+  fail(); assert.equal(away(), 1);
+  fail(); assert.equal(away(), 2);
+  fail(); assert.equal(away(), 4);
+  for (let i = 0; i < 6; i++) fail();
+  assert.equal(away(), 60);
+  applyEvent(state, { type: 'success', model: 'gemini-3.8-flash', provider: 'google' }, now);
+  fail(); assert.equal(away(), 1);
+  // Un quota du jour garde son échéance exacte, sans doublement.
+  applyEvent(state, { type: 'blocked', model: 'gemini-3.8-flash', provider: 'google', until: now + 7_200_000, reason: 'quota du jour atteint' }, now);
+  assert.equal(away(), 120);
 });
 
 test('Gemma aussi au bout de son quota : 429 avec l’heure de retour, sans appeler personne', async () => {

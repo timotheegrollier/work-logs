@@ -3918,11 +3918,13 @@ quotas affichés, détaillés et actualisés automatiquement.
   Google (`GET /v1beta/models`, relue au plus toutes les 6 h) : la version stable la plus haute,
   que Google conseille en production, l'alias `gemini-flash-latest` faute de mieux ; de même pour
   Flash-Lite. Sans liste lue : les deux alias. Premier essai réel, le 2026-11-24 : l'alias de
-  Flash ne répondait pas en 25 s quand Flash-Lite répondait en moins d'une seconde. Un modèle
-  trop lent est écarté 15 min, pour qu'une seule demande paie l'attente.
+  Flash ne répondait pas en 25 s quand Flash-Lite répondait en moins d'une seconde ; une heure plus
+  tard, 3.8 Flash renvoyait `503 UNAVAILABLE` ou dépassait 25 s, Flash-Lite une fois sur deux.
 - Un refus de Google écarte le modèle : quota du jour jusqu'à minuit heure du Pacifique, limite
-  par minute selon le délai conseillé, trop lent 15 min, clé refusée 1 h, modèle introuvable 6 h,
-  panne 1 min avec son code (« 503 UNAVAILABLE »). Un refus propre
+  par minute selon le délai conseillé, clé refusée 1 h, modèle introuvable 6 h. Panne (« 503
+  UNAVAILABLE », affiché avec son code) : 1 min, trop lent : 5 min, doublés à chaque échec
+  d'affilée jusqu'à 1 h et remis à zéro au premier succès : un modèle en panne toute la journée
+  ne coûte qu'une demande lente par heure. Un refus propre
   à une demande (400) n'écarte rien et reste noté comme dernière erreur.
 - `temperature` n'est pas transmise à Gemini (ignorée depuis 3.6, bientôt refusée) ;
   `reasoning_effort: low` limite la réflexion, qu'on ne peut plus couper sur Gemini 3.

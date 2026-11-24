@@ -14,7 +14,10 @@ export const DEFAULT_GEMINI_CHAIN = ['gemini-flash-latest', 'gemini-flash-lite-l
 const CATALOG_MAX_AGE = 6 * 3600_000;
 /** À changer quand la règle de choix change : le catalogue gardé est alors relu. */
 const CATALOG_VERSION = 2;
-const SLOW_BLOCK = 15 * 60_000;
+/** Pannes passagères : écart doublé à chaque échec d'affilée, une heure au plus, remis à zéro au succès. */
+const SLOW_BACKOFF = 5 * 60_000;
+const DOWN_BACKOFF = 60_000;
+const MAX_BACKOFF = 3600_000;
 // Barème Workers AI de Gemma 4 (neurones par million de jetons, page tarifs du 2026-11-18).
 const GEMMA_NEURONS = { input: 9091, output: 27273 };
 export const GEMMA_DAILY_NEURONS = 10_000;
@@ -108,8 +111,13 @@ export function applyEvent(state, event, now) {
     entry.last_used_at = now;
     if (typeof event.resolved === 'string' && event.resolved) entry.resolved = event.resolved;
     if ((entry.blocked_until ?? 0) <= now) delete entry.blocked_reason;
+    entry.failures = 0;
   } else if (event.type === 'blocked') {
-    entry.blocked_until = Number(event.until) || now + 60_000;
+    entry.failures = (entry.failures ?? 0) + 1;
+    const backoff = Number(event.backoff);
+    entry.blocked_until = backoff > 0
+      ? now + Math.min(backoff * 2 ** (entry.failures - 1), MAX_BACKOFF)
+      : Number(event.until) || now + 60_000;
     entry.blocked_reason = String(event.reason ?? 'indisponible');
     if (event.limit?.kind && Number.isSafeInteger(event.limit.value)) {
       entry.limits[event.limit.kind] = { value: event.limit.value, learned_at: now };
@@ -243,9 +251,9 @@ export async function askGemini(model, params, key, now) {
       signal: AbortSignal.timeout(25_000),
     });
   } catch (error) {
-    // Trop lent : écarté un quart d'heure, sinon chaque minute une demande paierait l'attente.
-    if (error?.name === 'TimeoutError') return { block: { until: now + SLOW_BLOCK, reason: 'Google trop lent (plus de 25 s)' } };
-    return { block: { until: now + 60_000, reason: 'Google injoignable' } };
+    // Trop lent : 5 min, puis 10, 20… pour qu'une seule demande paie l'attente de temps en temps.
+    if (error?.name === 'TimeoutError') return { block: { backoff: SLOW_BACKOFF, reason: 'Google trop lent (plus de 25 s)' } };
+    return { block: { backoff: DOWN_BACKOFF, reason: 'Google injoignable' } };
   }
   const body = await response.json().catch(() => null);
   // Code HTTP et statut Google (« 503 UNAVAILABLE ») : affichés tels quels dans les quotas.
@@ -270,5 +278,5 @@ export async function askGemini(model, params, key, now) {
     if (/api key/i.test(message) || response.status !== 400) return { block: { until: now + 3600_000, reason: 'clé Gemini refusée' } };
     return { skip: `demande refusée par Google (${code})` };
   }
-  return { block: { until: now + 60_000, reason: `Google indisponible (${code})` } };
+  return { block: { backoff: DOWN_BACKOFF, reason: `Google indisponible (${code})` } };
 }
