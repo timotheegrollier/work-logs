@@ -18,6 +18,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'workflow_call' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # `check.sh` en trois parties parallèles (§99) : la recette est la même qu'en local, mais
+  # Playwright (~3 min) et Electron ne s'ajoutent plus aux tests unitaires.
   validate:
     name: Types et tests
     runs-on: ubuntu-22.04
@@ -45,9 +47,7 @@ jobs:
             ~/.cache/electron-builder
           key: ci-caches-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: ci-caches-${{ runner.os }}-
-      - run: npx playwright install --with-deps chromium
-      - run: sudo apt-get update && sudo apt-get install -y xvfb rpm
-      - run: ./scripts/check.sh
+      - run: ./scripts/check.sh unit
       - name: Vérifier la version
         env:
           REQUESTED_REF: ${{ inputs.ref || github.ref }}
@@ -59,10 +59,76 @@ jobs:
           else
             node scripts/check-release.mjs
           fi
+
+  browser:
+    name: Parcours navigateur
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
+            web/package-lock.json
+      - run: npm ci && npm --prefix api ci && npm --prefix web ci
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: ci-caches-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: ci-caches-${{ runner.os }}-
+      - run: npx playwright install --with-deps chromium
+      - run: ./scripts/check.sh browser
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: test-reports
+          name: test-reports-browser
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+
+  desktop:
+    name: Parcours Electron
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      WORKLOGS_TEST_NO_SANDBOX: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
+            web/package-lock.json
+      - run: npm ci && npm --prefix api ci && npm --prefix web ci
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: ci-caches-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: ci-caches-${{ runner.os }}-
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: ./scripts/check.sh desktop
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: test-reports-desktop
           path: |
             test-results/
             playwright-report/

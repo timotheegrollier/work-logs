@@ -99,6 +99,19 @@ describe('workflow CI Linux (tests et paquets en parallèle)', () => {
     assert.ok('pull_request' in wf.on, 'toujours déclenché sur pull_request');
   });
 
+  test('check.sh en trois parties parallèles qui couvrent toute la recette, chacune une fois', () => {
+    const runs = Object.entries(wf.jobs).flatMap(([id, job]) => job.steps.filter((step) => step.run?.includes('scripts/check.sh')).map((step) => [id, step.run.trim()]));
+    assert.deepEqual(runs, [['validate', './scripts/check.sh unit'], ['browser', './scripts/check.sh browser'], ['desktop', './scripts/check.sh desktop']]);
+    const check = readFileSync('./scripts/check.sh', 'utf8');
+    assert.match(check, /all \| unit \| browser \| desktop\)/, 'les mêmes parties dans check.sh');
+    assert.ok(JSON.stringify(wf.jobs.browser).includes('playwright install --with-deps chromium'));
+    assert.ok(JSON.stringify(wf.jobs.desktop).includes('install -y xvfb'));
+    assert.equal(wf.jobs.desktop.env.WORKLOGS_TEST_NO_SANDBOX, '1');
+    assert.ok(JSON.stringify(wf.jobs.validate).includes('check-release.mjs'), 'la version reste vérifiée');
+    const reports = ['browser', 'desktop'].map((id) => wf.jobs[id].steps.find((step) => step.with?.name?.startsWith('test-reports')).with.name);
+    assert.deepEqual(reports, ['test-reports-browser', 'test-reports-desktop']);
+  });
+
   test('les paquets se construisent sans attendre les tests, une cible par job', () => {
     assert.ok(wf.jobs.build, 'job build présent');
     assert.equal(wf.jobs.build['timeout-minutes'], 15);

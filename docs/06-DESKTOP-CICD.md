@@ -43,7 +43,7 @@ Trois conséquences :
 
 | Fichier | Nom sur GitHub | Déclencheurs | Jobs | Concurrence | Publie |
 |---|---|---|---|---|---|
-| `.github/workflows/ci.yml` | CI Linux | `push` sur toute branche, `pull_request`, `workflow_call` (entrée `ref`) | `validate` ; `build` × 3 (AppImage, deb, rpm), puis `packages` × 3 et `merge` | `ci-<workflow>-<ref>` ; un nouveau push annule le run en cours de la même ref, sauf sur un tag | rien (artefact `linux-packages`) |
+| `.github/workflows/ci.yml` | CI Linux | `push` sur toute branche, `pull_request`, `workflow_call` (entrée `ref`) | `validate`, `browser`, `desktop` ; `build` × 3 (AppImage, deb, rpm), puis `packages` × 3 et `merge` | `ci-<workflow>-<ref>` ; un nouveau push annule le run en cours de la même ref, sauf sur un tag | rien (artefact `linux-packages`) |
 | `.github/workflows/release.yml` | Release Linux | `push` d'un tag `v*`, `workflow_dispatch` (entrée `tag`) | `precheck`, `validate` si besoin, `release` | `release-<tag>`, sans annulation | GitHub Release |
 | `.github/workflows/repos.yml` | Dépôts | `workflow_run` à la fin de « Release Linux », `workflow_dispatch` (entrée `tag`) | `repos` | `gh-pages`, sans annulation | `gh-pages/rpm/`, `gh-pages/deb/` |
 | `.github/workflows/pwa.yml` | PWA | `push` sur master filtré par chemins, `workflow_dispatch` | `deploy` | `pages`, sans annulation | GitHub Pages |
@@ -60,18 +60,22 @@ plus depuis que Pages publie par artefact (dernier run le 2026-11-10 à 11:28).
 
 ### 2.1 CI Linux (`ci.yml`)
 
-Le job `validate` (« Types et tests ») tourne sur `ubuntu-22.04`, 25 min au plus, avec
-`WORKLOGS_TEST_NO_SANDBOX=1`. Ses étapes, dans l'ordre :
-1. checkout de `inputs.ref` (vide hors appel) ; Node de `.nvmrc` (24.20.0) ; cache npm des trois
-   lockfiles ;
-2. `npm ci && npm --prefix api ci && npm --prefix web ci` ;
-3. cache de `~/.cache/ms-playwright`, `~/.cache/electron` et `~/.cache/electron-builder`, clé
-   calculée sur `package-lock.json` ;
-4. `npx playwright install --with-deps chromium`, puis
-   `sudo apt-get update && sudo apt-get install -y xvfb rpm` ;
-5. `./scripts/check.sh` (§6) ;
-6. `node scripts/check-release.mjs`, avec le tag en argument quand la ref en est un ;
-7. envoi de `test-reports` (`test-results/`, `playwright-report/`) en cas d'échec.
+`check.sh` (§6) y tourne en trois parties parallèles (§99 des décisions), chacune dans son job
+sur `ubuntu-22.04`, 25 min au plus. Les trois commencent pareil : checkout de `inputs.ref` (vide
+hors appel), Node de `.nvmrc` (24.20.0) avec le cache npm des trois lockfiles,
+`npm ci && npm --prefix api ci && npm --prefix web ci`, puis le cache de `~/.cache/ms-playwright`,
+`~/.cache/electron` et `~/.cache/electron-builder` (clé calculée sur `package-lock.json`).
+- `validate` (« Types et tests », `WORKLOGS_TEST_NO_SANDBOX=1`) : `./scripts/check.sh unit`
+  (types, API, front, desktop unitaires, scripts, Worker, relais), puis
+  `node scripts/check-release.mjs`, avec le tag en argument quand la ref en est un.
+- `browser` (« Parcours navigateur ») : `npx playwright install --with-deps chromium`, puis
+  `./scripts/check.sh browser` (build et Playwright) ; `test-reports-browser` en cas d'échec.
+- `desktop` (« Parcours Electron », `WORKLOGS_TEST_NO_SANDBOX=1`) : `sudo apt-get install -y xvfb`,
+  puis `./scripts/check.sh desktop` (build et parcours Electron dans `xvfb-run`) ;
+  `test-reports-desktop` en cas d'échec.
+
+En local, `./scripts/check.sh` sans argument joue les trois parties à la suite : c'est lui qui fait
+foi avant et après un lot.
 
 Le job `build` (« Paquet `<cible>` ») ne dépend d'aucun test : il part en même temps que
 `validate` et chevauche ses minutes. Sa matrice construit une cible par job, AppImage, deb et rpm,
@@ -274,7 +278,7 @@ répond normalement.
 
 | Script | Rôle | Appelé par |
 |---|---|---|
-| `scripts/check.sh` | types (web, desktop), tests API, front, desktop unitaires, scripts, Worker, relais, build, Playwright, Electron ; finit par « CHECK OK — tout est vert. » | CI `validate`, poste |
+| `scripts/check.sh` | types (web, desktop), tests API, front, desktop unitaires, scripts, Worker, relais, build, Playwright, Electron ; finit par « CHECK OK — tout est vert. » Avec `unit`, `browser` ou `desktop`, une seule partie (« CHECK OK — partie … verte. ») | CI `validate`, `browser`, `desktop` ; poste, toujours entier |
 | `scripts/check-release.mjs` | version `X.Y.Z` ou `X.Y.Z-(alpha\|beta\|rc).N`, tag égal à `v<version>`, `package-lock.json` aligné à ses deux endroits | CI, job `release`, poste |
 | `scripts/stage-desktop.mjs` | prépare `.desktop-app/` : liste fermée de fichiers, garde-fou des imports de `desktop/`, client Google intégré si les secrets sont là, `npm ci --omit=dev --ignore-scripts` | `npm run desktop:dist` |
 | `scripts/verify-package.mjs` | lit l'ASAR : refuse `api/data`, `.env`, `.git`, `.db`, `.sqlite`, exige 8 fichiers, compare la version à `package.json` | CI |

@@ -4009,10 +4009,13 @@ Timo demande d'accélérer les tests et la CI. Mesures avant : `check.sh` ~9 min
   construction commune (l'entrée de l'AppImage d'abord, `path` et `sha512` de tête à elle, puis
   deb et rpm, avec son sérialiseur) et vérifie la taille et le sha512 de chaque fichier. Sur les
   vrais AppImage et deb de la 0.90.2, la structure est celle du `latest-linux.yml` publié.
+- **Tests en trois jobs** : avec les paquets en parallèle, leur chemin tombe à 257–302 s et le job
+  `validate` (320–418 s) devient seul le chemin critique. `check.sh` accepte une partie (`unit`,
+  `browser`, `desktop`) ; la CI joue chacune dans son job, la recette locale reste `check.sh` entier.
+  `rpm` et `xvfb` quittent les tests unitaires : ils servaient quand `validate` construisait les
+  paquets.
 - Écarté : Playwright à plusieurs workers (les specs partagent la base du serveur) ; `check.sh`
-  en parallèle (sous charge, les attentes DOM expirent) ; découper
-  le job `validate` en jobs parallèles, qui ne gagne rien tant que le chemin paquets + installation
-  (~6 min) reste aussi long.
+  en parallèle sur le poste (sous charge, les attentes DOM expirent).
 
 ## 100. Mistral puis Groq avant Gemini — 2026-11-24
 
