@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Gemini Flash par le Worker, modèles et quotas affichés — 2026-11-24 (§98)
+## Gemini Flash par le Worker, modèles et quotas affichés — 2026-11-24, v0.90.0 (§98)
 
 - Le Worker essaie Gemini Flash, Flash-Lite, puis Gemma 4, avec la clé gratuite gardée en
   secret `GEMINI_API_KEY` : rien à saisir dans l'app. **Tant que ce secret n'est pas posé,
