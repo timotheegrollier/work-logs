@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## PWA sur GitHub Pages seulement — 2026-11-24 (§97)
+## PWA sur GitHub Pages seulement — 2026-11-24, v0.88.1 (§97)
 
 - Le Worker Cloudflare ne sert plus la PWA : `https://timotheegrollier.github.io/work-logs/` est
   la seule adresse. Le Worker garde le relais de jetons Google (`/token`) et l'IA (`/ai/*`), et
