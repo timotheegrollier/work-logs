@@ -234,10 +234,14 @@ export async function askGemini(model, params, key, now) {
       }),
       signal: AbortSignal.timeout(25_000),
     });
-  } catch {
-    return { block: { until: now + 60_000, reason: 'Google injoignable' } };
+  } catch (error) {
+    const slow = error?.name === 'TimeoutError';
+    return { block: { until: now + 60_000, reason: slow ? 'Google trop lent (plus de 25 s)' : 'Google injoignable' } };
   }
   const body = await response.json().catch(() => null);
+  // Code HTTP et statut Google (« 503 UNAVAILABLE ») : affichés tels quels dans les quotas.
+  const googleStatus = String((Array.isArray(body) ? body[0] : body)?.error?.status ?? '').match(/^[A-Z_]{1,40}$/)?.[0];
+  const code = `${response.status}${googleStatus ? ` ${googleStatus}` : ''}`;
   if (response.ok) return { result: body };
   if (response.status === 429) {
     const refusal = geminiRefusal(body);
@@ -255,7 +259,7 @@ export async function askGemini(model, params, key, now) {
   if ([400, 401, 403].includes(response.status)) {
     const message = String((Array.isArray(body) ? body[0] : body)?.error?.message ?? '');
     if (/api key/i.test(message) || response.status !== 400) return { block: { until: now + 3600_000, reason: 'clé Gemini refusée' } };
-    return { skip: 'demande refusée par Google' };
+    return { skip: `demande refusée par Google (${code})` };
   }
-  return { block: { until: now + 60_000, reason: 'Google indisponible' } };
+  return { block: { until: now + 60_000, reason: `Google indisponible (${code})` } };
 }

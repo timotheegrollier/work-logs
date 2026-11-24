@@ -567,7 +567,14 @@ test('Gemini : limite par minute, clé refusée et refus d’une demande mènent
   await postChat(other.env);
   await postChat(other.env);
   assert.equal(google.filter((c) => c.body.model === 'gemini-flash-latest').length, 2);
-  assert.equal((await status(other.env)).models[0].last_error.reason, 'demande refusée par Google');
+  assert.equal((await status(other.env)).models[0].last_error.reason, 'demande refusée par Google (400)');
+
+  // Panne de Google : le code et le statut s'affichent, le modèle est écarté une minute.
+  const overloaded = geminiEnv();
+  stubGemini(() => Response.json([{ error: { code: 503, status: 'UNAVAILABLE', message: 'The model is overloaded.' } }], { status: 503 }));
+  await postChat(overloaded.env);
+  const [flash503] = (await status(overloaded.env)).models;
+  assert.equal(flash503.blocked_reason, 'Google indisponible (503 UNAVAILABLE)');
 });
 
 test('Gemma aussi au bout de son quota : 429 avec l’heure de retour, sans appeler personne', async () => {
