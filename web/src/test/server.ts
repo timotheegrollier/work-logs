@@ -65,6 +65,9 @@ export async function useRealApi({ sharedRoot = '' }: { sharedRoot?: string } = 
       globalThis.fetch = realFetch;
       await shared?.stop();
       server.close();
+      // Sans ça, une requête encore en vol à la fin du test garde sa connexion keep-alive
+      // jusqu'à ce que le client la lâche, 3 s plus tard : 3 s de plus par test d'App.
+      server.closeAllConnections();
       await once(server, 'close');
       db.close();
       fs.rmSync(dir, { recursive: true, force: true });

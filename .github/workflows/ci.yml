@@ -69,7 +69,8 @@ jobs:
           retention-days: 14
 
   # Les paquets ne dépendent d'aucun test : ils partent en même temps que
-  # `validate` et chevauchent ses 7 minutes. `packages` attend leur artefact.
+  # `validate` et chevauchent sa durée. `packages` attend leur artefact.
+  # Les deux chemins font ~6 min : accélérer l'un seul ne raccourcit plus la CI.
   build:
     name: Paquets desktop
     runs-on: ubuntu-22.04
@@ -90,6 +91,9 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y rpm
       - run: npm run desktop:dist
         env:
+          # fpm compresse le .deb par `tar -J`, sur un seul cœur avec le xz d'Ubuntu 22.04 :
+          # tous les cœurs le rendent ~4× plus vite. Le .rpm est déjà en xz multithread.
+          XZ_DEFAULTS: -T0
           # Client Google « Application de bureau » intégré au paquet (connexion
           # en un clic). Absent (fork, PR) : configuration manuelle, comme avant.
           WORKLOGS_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}

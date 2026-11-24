@@ -29,7 +29,7 @@
 
 ## Règles
 - **Aucune fonctionnalité sans test.** Un endpoint → un test dans `api/test/` ; un geste
-  utilisateur → un test dans `web/src/App.test.tsx` ou `e2e/`.
+  utilisateur → un test dans le `web/src/App*.test.tsx` de son sujet ou `e2e/`.
 - `./scripts/check.sh` doit être vert avant et après chaque lot.
 - Petits diffs. Pas de refonte silencieuse.
 - **Zéro nouvelle dépendance sans accord explicite.** Socle actuel : express, cors, multer /

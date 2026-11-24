@@ -3982,3 +3982,26 @@ politique de confidentialité.
 **Validation.** `oauth-proxy/worker.test.mjs` (chaîne, refus, compteur, `/ai/status`, jours de
 quota), `web/src/components/AiQuotas.test.tsx`, `AiChat.test.tsx`, `ai-suggest.test.ts`, et le
 parcours des réglages de `e2e/ai-assistance.spec.ts` (affichage sur téléphone).
+
+## 99. Tests et CI plus rapides — 2026-11-24
+
+Timo demande d'accélérer les tests et la CI. Mesures avant : `check.sh` ~9 min en local, CI ~8,4 min.
+
+- **Le fichier `App.test.tsx` (312 tests, 4 min 30 s) tournait seul sur un worker** pendant que
+  les trois autres s'arrêtaient au bout de 15 s. Il est découpé par sujet : `App.test.tsx`
+  (écran, réglages, panneaux), `App.tasks` (catégories, tâches, projets, vue d'ensemble),
+  `App.shared` (dossier partagé, ~80 s : le plancher), `App.writing` (écriture, assistant),
+  `App.ai` (IA des notes, suivi). Socle commun : `web/src/test/app-harness.ts` (`useAppHarness()`,
+  `api` et `reopenApi()` pour relancer l'API, aides de requête). Un nouveau geste va dans le
+  fichier de son sujet.
+- **`useRealApi().close()` attendait 3 s par test** : une requête encore en vol gardait sa
+  connexion keep-alive jusqu'à ce que le client la lâche (5 s annoncées par le serveur, moins 2 s
+  de marge). `closeAllConnections()` la coupe. Un test d'App simple passe de 3,3 s à 0,4 s.
+- Vitest : 258 s → 112 s. Même nombre de tests, les mêmes assertions.
+- CI : le `.deb` est compressé en xz par `tar -J`, sur un seul cœur avec le xz d'Ubuntu 22.04 ;
+  `XZ_DEFAULTS=-T0` utilise les quatre (mesuré 4× plus vite en local). Le xz reste obligatoire :
+  en gzip le paquet dépasse 100 Mo, refusés par GitHub (commentaire de `electron-builder.yml`).
+- Écarté : Playwright à plusieurs workers (les specs partagent la base du serveur) ; `check.sh`
+  en parallèle (sous charge, les attentes DOM expirent) ; découper
+  le job `validate` en jobs parallèles, qui ne gagne rien tant que le chemin paquets + installation
+  (~6 min) reste aussi long.

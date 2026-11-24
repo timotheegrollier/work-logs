@@ -2,6 +2,8 @@
 
 ## Gemini Flash par le Worker, modèles et quotas affichés — 2026-11-24, v0.90.2 (§98)
 
+- Tests plus rapides (§99) : `App.test.tsx` découpé en cinq `App*.test.tsx` sur un socle commun
+  (`web/src/test/app-harness.ts`), 3 s de keep-alive en moins par test ; vitest 258 s → 112 s.
 - v0.90.2 : clé Google personnelle, secours `gemini-flash-latest` au lieu de `gemini-2.5-flash-lite`,
   fermé aux nouvelles clés ; son 404 masquait la vraie panne du modèle choisi (§95).
 - v0.90.1 : Flash-Lite passe devant Flash dans le Worker. Les clés Google au nouveau format

@@ -60,7 +60,7 @@ test('conserve le champ mood', async () => {
 **⑤ L'interface — `web/src/components/EntryEditor.tsx`** : ajouter le champ au `draft` initial,
 un contrôle dans `.editor-meta` avec un `aria-label` explicite, et `update({ mood: … })`.
 
-**⑥ Le test d'interface — `web/src/App.test.tsx`**
+**⑥ Le test d'interface — `web/src/App.writing.test.tsx`** (un fichier `App*.test.tsx` par sujet, §99)
 ```js
 await user.type(screen.getByLabelText('Humeur'), 'bonne journée');
 await waitFor(() => expect(row(api.db, 'SELECT * FROM entries').mood).toBe('bonne journée'));
@@ -94,7 +94,7 @@ await waitFor(() => expect(row(api.db, 'SELECT * FROM entries').mood).toBe('bonn
 3. Après une mutation, appeler `onChanged()` : cela rejoue `/api/state` et remet tout l'écran à
    jour d'un coup.
 4. Styles dans `web/src/styles.css` **uniquement**, dans la section correspondante.
-5. Test dans `App.test.tsx`. Si le geste dépend du vrai navigateur (glisser-déposer, fichier,
+5. Test dans le `App*.test.tsx` du sujet (§99). Si le geste dépend du vrai navigateur (glisser-déposer, fichier,
    impression), le test va dans `e2e/worklogs.spec.ts`.
 
 ---

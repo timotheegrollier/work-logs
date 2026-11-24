@@ -30,7 +30,7 @@ au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + V
 ## Les trois règles qui comptent
 
 - **Aucune fonctionnalité sans test.** Route API → test dans `api/test/`. Geste utilisateur →
-  test dans `web/src/App.test.tsx`, ou dans `e2e/` si ça dépend d'un vrai navigateur.
+  test dans le `web/src/App*.test.tsx` de son sujet, ou dans `e2e/` si ça dépend d'un vrai navigateur.
 - **`./scripts/check.sh` vert avant et après.** Il enchaîne types, tests API, front (dont un échec
   attendu), desktop (serveur/OAuth/mise à jour/vue Google/dossier partagé), scripts de release,
   relais Google (Worker), mise à jour du relais de la VM, build, parcours navigateur et parcours
