@@ -4014,6 +4014,9 @@ Timo demande d'accélérer les tests et la CI. Mesures avant : `check.sh` ~9 min
   `browser`, `desktop`) ; la CI joue chacune dans son job, la recette locale reste `check.sh` entier.
   `rpm` et `xvfb` quittent les tests unitaires : ils servaient quand `validate` construisait les
   paquets.
+- Mesuré sur la branche (run 45439968623) : CI 395 s → **302 s**. Unitaires 158 s, navigateur
+  237 s, Electron 97 s ; paquets finis à 144 s (rpm), installations à 302 s, désormais le chemin
+  critique. Paquets en parallèle seuls : 409 et 418 s, le job `validate` gardant tout.
 - Écarté : Playwright à plusieurs workers (les specs partagent la base du serveur) ; `check.sh`
   en parallèle sur le poste (sous charge, les attentes DOM expirent).
 
