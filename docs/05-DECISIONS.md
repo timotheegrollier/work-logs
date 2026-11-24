@@ -3821,7 +3821,10 @@ propose aussi `gemini-3.1-flash-lite` et `gemini-2.5-flash-lite`. WorkLogs ne te
 que `gemini-2.5-flash-lite` et aucun autre modèle gratuit ou payant. Les anciennes configurations
 OpenRouter/free migrent vers Gemini, en supprimant leur clé OpenRouter ; les autres endpoints
 explicitement choisis restent intacts. Une ancienne clé Google est gardée uniquement si elle
-ressemble à une clé Google (`AIza`).
+ressemble à une clé Google (`AIza`, ou `AQ.` : le format que AI Studio délivre désormais).
+
+> **2026-11-24, soir** : les clés `AQ.` étaient jetées à la lecture des réglages, sans message ;
+> l'assistant affichait alors « Aucune IA intégrée sur cet appareil ». Les deux formats sont acceptés.
 
 - Le sélecteur de modèle est directement visible dans **Paramètres → Assistance IA** ; le lien
   de création de clé pointe vers Google AI Studio.
@@ -3913,8 +3916,10 @@ quotas affichés, détaillés et actualisés automatiquement.
 - La clé gratuite de l'API Gemini (créée par Timo dans AI Studio, sans facturation) est un
   secret du Worker, `GEMINI_API_KEY` : l'application n'en demande aucune et la clé ne sort
   jamais du Worker. Sans ce secret, Gemma 4 répond seul.
-- Ordre d'essai dans le Worker (`oauth-proxy/ai-engines.mjs`) : Gemini Flash, Gemini
-  Flash-Lite, puis Gemma 4 26B sur Workers AI. Les modèles Gemini viennent de la liste de
+- Ordre d'essai dans le Worker (`oauth-proxy/ai-engines.mjs`) : Gemini Flash-Lite, Gemini
+  Flash, puis Gemma 4 26B sur Workers AI. Flash-Lite passe en tête le soir même, à la demande de
+  Timo : c'est lui qui répondait, vite ; Flash ne fait plus attendre chaque demande.
+  `CATALOG_VERSION` passe à 3 pour que la liste gardée suive le nouvel ordre. Les modèles Gemini viennent de la liste de
   Google (`GET /v1beta/models`, relue au plus toutes les 6 h) : la version stable la plus haute,
   que Google conseille en production, l'alias `gemini-flash-latest` faute de mieux ; de même pour
   Flash-Lite. Sans liste lue : les deux alias. Premier essai réel, le 2026-11-24 : l'alias de

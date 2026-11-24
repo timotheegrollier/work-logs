@@ -1,6 +1,6 @@
 // Moteurs de l'IA gratuite et compteur partagé de leur usage (décision §98).
 //
-// Ordre : Gemini Flash, puis Flash-Lite, avec la clé gratuite du propriétaire gardée en secret
+// Ordre : Gemini Flash-Lite, puis Flash, avec la clé gratuite du propriétaire gardée en secret
 // du Worker (`GEMINI_API_KEY`), puis Gemma 4 sur Workers AI quand Google refuse. Google ne publie
 // ses limites gratuites que dans AI Studio et ne les expose par aucune API : le Worker compte
 // donc lui-même l'usage, pour tous les appareils, et retient les limites que Google cite en
@@ -10,10 +10,10 @@
 export const GEMMA_MODEL = '@cf/google/gemma-4-26b-a4b-it';
 export const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 /** Sans liste de modèles encore lue : les alias de Google suivent ses nouvelles versions. */
-export const DEFAULT_GEMINI_CHAIN = ['gemini-flash-latest', 'gemini-flash-lite-latest'];
+export const DEFAULT_GEMINI_CHAIN = ['gemini-flash-lite-latest', 'gemini-flash-latest'];
 const CATALOG_MAX_AGE = 6 * 3600_000;
 /** À changer quand la règle de choix change : le catalogue gardé est alors relu. */
-const CATALOG_VERSION = 2;
+const CATALOG_VERSION = 3;
 /** Pannes passagères : écart doublé à chaque échec d'affilée, une heure au plus, remis à zéro au succès. */
 const SLOW_BACKOFF = 5 * 60_000;
 const DOWN_BACKOFF = 60_000;
@@ -53,9 +53,9 @@ const newer = (a, b) => {
 };
 
 /**
- * Flash et Flash-Lite retenus dans la liste de Google : la version stable la plus haute (Google la
- * conseille en production), l'alias « latest » faute de mieux. Le 2026-11-24, l'alias de Flash
- * ne répondait pas en 25 s quand Flash-Lite répondait en moins d'une seconde.
+ * Flash-Lite puis Flash, retenus dans la liste de Google : la version stable la plus haute (Google
+ * la conseille en production), l'alias « latest » faute de mieux. Flash-Lite d'abord : le 2026-11-24,
+ * Flash ne répondait pas en 25 s quand Flash-Lite répondait en moins de deux secondes.
  */
 export function pickGemini(models) {
   const usable = new Map((Array.isArray(models) ? models : [])
@@ -63,8 +63,8 @@ export function pickGemini(models) {
     .map((m) => [m.name.replace(/^models\//, ''), m]));
   const pick = (alias, pattern) => [...usable.keys()].filter((id) => pattern.test(id)).sort(newer)[0] ?? (usable.has(alias) ? alias : undefined);
   return [
-    pick('gemini-flash-latest', /^gemini-\d+(?:\.\d+)*-flash$/),
     pick('gemini-flash-lite-latest', /^gemini-\d+(?:\.\d+)*-flash-lite$/),
+    pick('gemini-flash-latest', /^gemini-\d+(?:\.\d+)*-flash$/),
   ].filter(Boolean).map((id) => {
     const m = usable.get(id);
     return { id, label: String(m.displayName || id), version: m.version ? String(m.version) : null };

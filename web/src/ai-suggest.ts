@@ -22,7 +22,7 @@ export interface AiSettings {
 export const GEMINI_AI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai';
 export const GEMINI_DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 export const DEFAULT_AI_ENDPOINT = WORKLOGS_AI_ENDPOINT;
-/** Le Worker choisit : Gemini Flash, puis Flash-Lite, puis Gemma 4 (`oauth-proxy/ai-engines.mjs`, §98). */
+/** Le Worker choisit : Gemini Flash-Lite, puis Flash, puis Gemma 4 (`oauth-proxy/ai-engines.mjs`, §98). */
 export const DEFAULT_AI_MODEL = 'worklogs-auto';
 /** Ancien secours de la v0.88.0, retiré : un réglage qui le désigne revient au Worker. */
 const LEGACY_OVH_ENDPOINT = 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1';
@@ -33,7 +33,8 @@ const LEGACY_GEMINI_DEFAULTS = new Set([GEMINI_DEFAULT_MODEL, 'gemini-3-flash-pr
 const normalizedEndpoint = (endpoint: string) => endpoint.trim().replace(/\/+$/, '');
 const isOpenRouter = (endpoint: string) => normalizedEndpoint(endpoint) === OPENROUTER_AI_ENDPOINT;
 const isGeminiEndpoint = (endpoint: string) => normalizedEndpoint(endpoint) === GEMINI_AI_ENDPOINT;
-const googleKey = (key: string) => key.startsWith('AIza');
+// AI Studio délivre désormais des clés `AQ.` ; les anciennes commencent par `AIza`.
+const googleKey = (key: string) => /^(AIza|AQ\.)/.test(key);
 
 export function isAnonymousAi({ endpoint }: Pick<AiSettings, 'endpoint'>): boolean {
   const url = normalizedEndpoint(endpoint);
@@ -76,7 +77,7 @@ export interface AiModelOption {
 }
 
 export const AI_MODELS: AiModelOption[] = [
-  { id: DEFAULT_AI_MODEL, label: 'WorkLogs gratuit — Gemini Flash, Gemma 4 en secours (défaut)' },
+  { id: DEFAULT_AI_MODEL, label: 'WorkLogs gratuit — Gemini Flash-Lite et Flash, Gemma 4 en secours (défaut)' },
   { id: GEMINI_DEFAULT_MODEL, label: 'Gemini 3.5 Flash-Lite — gratuit' },
   { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — gratuit' },
   { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite — gratuit' },

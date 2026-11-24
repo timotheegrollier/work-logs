@@ -563,7 +563,7 @@ sans attendre la CI (06, D6). Il exige deux secrets GitHub :
 il échoue en le disant. Le secret Google du relais reste stocké côté Worker
 (`wrangler secret put`), et le déploiement le conserve.
 
-Le même Worker sert `/ai/chat/completions` (Gemini Flash, Flash-Lite, puis Gemma 4 26B),
+Le même Worker sert `/ai/chat/completions` (Gemini Flash-Lite, Flash, puis Gemma 4 26B),
 `/ai/status` (modèles et quotas, compteur partagé `AI_USAGE`) et `/ai/pdf` (conversion des PDF
 joints). Ces routes nécessitent un déploiement avec le binding Workers AI et l’objet durable,
 créé au premier déploiement (décision §98).

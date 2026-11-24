@@ -460,7 +460,7 @@ test('discussion : indisponibilité et réponse invalide restent des erreurs 503
 
 const STATUS_PATH = 'https://relais.test/ai/status';
 const GEMINI_CHAT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-const geminiAnswer = (model = 'gemini-3.8-flash', content = '{"reply":"ok"}') => Response.json({
+const geminiAnswer = (model = 'gemini-3.5-flash-lite', content = '{"reply":"ok"}') => Response.json({
   model, choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
   usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 },
 });
@@ -507,40 +507,40 @@ test('Gemini : la clé reste dans le Worker, sans température, et le modèle qu
   }) });
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.equal(body.model, 'gemini-3.8-flash');
+  assert.equal(body.model, 'gemini-3.5-flash-lite');
   assert.equal(body.choices[0].message.content, '{"reply":"ok"}');
   assert.equal(google.length, 1);
   assert.equal(google[0].url, GEMINI_CHAT);
   assert.equal(google[0].headers.get('Authorization'), 'Bearer cle-gemini-test');
   assert.deepEqual(google[0].body, {
-    model: 'gemini-flash-latest', messages: CHAT_REQUEST.messages, max_tokens: 900,
+    model: 'gemini-flash-lite-latest', messages: CHAT_REQUEST.messages, max_tokens: 900,
     reasoning_effort: 'low', response_format: { type: 'json_object' },
   });
   assert.deepEqual(gemma, []);
   const view = await status(env);
   assert.equal(view.gemini_configured, true);
-  assert.deepEqual(view.models.map((m) => m.id), ['gemini-flash-latest', 'gemini-flash-lite-latest', CHAT_MODEL]);
+  assert.deepEqual(view.models.map((m) => m.id), ['gemini-flash-lite-latest', 'gemini-flash-latest', CHAT_MODEL]);
   assert.deepEqual(view.models[0].today, { requests: 1, input_tokens: 120, output_tokens: 30 });
-  assert.equal(view.models[0].resolved, 'gemini-3.8-flash');
+  assert.equal(view.models[0].resolved, 'gemini-3.5-flash-lite');
   assert.equal(view.models[0].last_minute, 1);
 });
 
-test('Gemini : quota du jour cité par Google → Flash-Lite, limite retenue, Flash écarté jusqu’à minuit (Pacifique)', async () => {
+test('Gemini : quota du jour cité par Google → Flash, limite retenue, Flash-Lite écarté jusqu’à minuit (Pacifique)', async () => {
   const { env } = geminiEnv();
-  const google = stubGemini(() => quota429('GenerateRequestsPerDayPerProjectPerModel-FreeTier', 20), () => geminiAnswer('gemini-3.5-flash-lite'));
+  const google = stubGemini(() => quota429('GenerateRequestsPerDayPerProjectPerModel-FreeTier', 20), () => geminiAnswer('gemini-3.8-flash'));
   const first = await postChat(env);
-  assert.equal((await first.json()).model, 'gemini-3.5-flash-lite');
-  assert.deepEqual(google.map((c) => c.body.model), ['gemini-flash-latest', 'gemini-flash-lite-latest']);
+  assert.equal((await first.json()).model, 'gemini-3.8-flash');
+  assert.deepEqual(google.map((c) => c.body.model), ['gemini-flash-lite-latest', 'gemini-flash-latest']);
   const view = await status(env);
-  const flash = view.models[0];
-  assert.equal(flash.blocked_reason, 'quota du jour atteint');
-  assert.equal(Date.parse(flash.blocked_until), nextReset('google', Date.parse(view.updated_at)));
-  assert.equal(flash.limits.requests_per_day.value, 20);
+  const lite = view.models[0];
+  assert.equal(lite.blocked_reason, 'quota du jour atteint');
+  assert.equal(Date.parse(lite.blocked_until), nextReset('google', Date.parse(view.updated_at)));
+  assert.equal(lite.limits.requests_per_day.value, 20);
   assert.equal(view.models[1].today.requests, 1);
-  // Demande suivante : Flash n'est plus essayé avant minuit.
+  // Demande suivante : Flash-Lite n'est plus essayé avant minuit.
   google.length = 0;
   await postChat(env);
-  assert.deepEqual(google.map((c) => c.body.model), ['gemini-flash-lite-latest']);
+  assert.deepEqual(google.map((c) => c.body.model), ['gemini-flash-latest']);
 });
 
 test('Gemini : limite par minute, clé refusée et refus d’une demande mènent à Gemma, avec le motif affiché', async () => {
@@ -553,11 +553,11 @@ test('Gemini : limite par minute, clé refusée et refus d’une demande mènent
   assert.equal((await response.json()).model, CHAT_MODEL);
   assert.equal(gemma.length, 1);
   const before = Date.now();
-  const [flash, lite, cloudflare] = (await status(env)).models;
-  assert.equal(flash.blocked_reason, 'limite par minute atteinte');
-  assert.ok(Date.parse(flash.blocked_until) - before <= 18_000 && Date.parse(flash.blocked_until) - before > 15_000);
-  assert.equal(flash.limits.requests_per_minute.value, 15);
-  assert.equal(lite.blocked_reason, 'clé Gemini refusée');
+  const [lite, flash, cloudflare] = (await status(env)).models;
+  assert.equal(lite.blocked_reason, 'limite par minute atteinte');
+  assert.ok(Date.parse(lite.blocked_until) - before <= 18_000 && Date.parse(lite.blocked_until) - before > 15_000);
+  assert.equal(lite.limits.requests_per_minute.value, 15);
+  assert.equal(flash.blocked_reason, 'clé Gemini refusée');
   assert.equal(cloudflare.today.requests, 1);
   assert.deepEqual(cloudflare.neurons, { used: 0, limit: 10_000 });
 
@@ -566,20 +566,20 @@ test('Gemini : limite par minute, clé refusée et refus d’une demande mènent
   const google = stubGemini(() => Response.json({ error: { code: 400, message: 'Invalid image' } }, { status: 400 }));
   await postChat(other.env);
   await postChat(other.env);
-  assert.equal(google.filter((c) => c.body.model === 'gemini-flash-latest').length, 2);
+  assert.equal(google.filter((c) => c.body.model === 'gemini-flash-lite-latest').length, 2);
   assert.equal((await status(other.env)).models[0].last_error.reason, 'demande refusée par Google (400)');
 
   // Panne de Google : le code et le statut s'affichent, le modèle est écarté une minute.
   const overloaded = geminiEnv();
   stubGemini(() => Response.json([{ error: { code: 503, status: 'UNAVAILABLE', message: 'The model is overloaded.' } }], { status: 503 }));
   await postChat(overloaded.env);
-  const [flash503] = (await status(overloaded.env)).models;
-  assert.equal(flash503.blocked_reason, 'Google indisponible (503 UNAVAILABLE)');
+  const [lite503] = (await status(overloaded.env)).models;
+  assert.equal(lite503.blocked_reason, 'Google indisponible (503 UNAVAILABLE)');
 
-  // Trop lent : écarté 5 min, Flash-Lite répond tout de suite.
+  // Trop lent : écarté 5 min, Flash répond tout de suite.
   const slow = geminiEnv();
-  stubGemini(() => { throw new DOMException('délai dépassé', 'TimeoutError'); }, () => geminiAnswer('gemini-flash-lite-latest'));
-  assert.equal((await (await postChat(slow.env)).json()).model, 'gemini-flash-lite-latest');
+  stubGemini(() => { throw new DOMException('délai dépassé', 'TimeoutError'); }, () => geminiAnswer('gemini-flash-latest'));
+  assert.equal((await (await postChat(slow.env)).json()).model, 'gemini-flash-latest');
   const [late] = (await status(slow.env)).models;
   assert.equal(late.blocked_reason, 'Google trop lent (plus de 25 s)');
   const away = Date.parse(late.blocked_until) - Date.now();
@@ -630,7 +630,7 @@ test('/ai/status : catalogue relu avec la clé, sans elle seul Gemma, et réserv
   assert.equal(google[0].url, 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000');
   assert.equal(google[0].headers.get('x-goog-api-key'), 'cle-gemini-test');
   assert.deepEqual(view.models.map((m) => [m.id, m.label]), [
-    ['gemini-3.8-flash', 'Gemini 3.8 Flash'], ['gemini-3.10-flash-lite', 'Gemini 3.10 Flash-Lite'],
+    ['gemini-3.10-flash-lite', 'Gemini 3.10 Flash-Lite'], ['gemini-3.8-flash', 'Gemini 3.8 Flash'],
     [CHAT_MODEL, 'Gemma 4 26B (Cloudflare Workers AI)'],
   ]);
   assert.ok(view.catalog_checked_at);
@@ -638,7 +638,7 @@ test('/ai/status : catalogue relu avec la clé, sans elle seul Gemma, et réserv
   await status(env);
   assert.equal(google.length, 1);
   // Le catalogue lu décide aussi des modèles essayés.
-  stubGemini(() => geminiAnswer('gemini-3.8-flash'));
+  stubGemini(() => geminiAnswer('gemini-3.10-flash-lite'));
   await postChat(env);
   assert.equal((await status(env)).models[0].today.requests, 1);
 
@@ -671,7 +671,7 @@ test('quotas : jour du Pacifique pour Google, UTC pour Cloudflare ; refus 429 lu
     { name: 'models/gemini-3.6-flash', displayName: 'Gemini 3.6 Flash', supportedGenerationMethods: generate },
     { name: 'models/gemini-3.8-flash', displayName: 'Gemini 3.8 Flash', supportedGenerationMethods: generate },
     { name: 'models/gemini-flash-lite-latest', displayName: 'Gemini Flash-Lite Latest', supportedGenerationMethods: generate },
-  ]).map(({ id }) => id), ['gemini-3.8-flash', 'gemini-flash-lite-latest']);
+  ]).map(({ id }) => id), ['gemini-flash-lite-latest', 'gemini-3.8-flash']);
 });
 
 test('Gemini : l’effort de réflexion demandé est transmis, borné, et jamais envoyé à Gemma', async () => {

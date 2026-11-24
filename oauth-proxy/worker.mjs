@@ -2,7 +2,7 @@
 // La PWA est sur GitHub Pages (décision §97) : ce Worker ne sert plus de front, et
 // renvoie toute autre adresse vers la même page de GitHub Pages.
 // `/ai/pdf` extrait le texte d'un PDF joint explicitement à une demande IA.
-// `/ai/chat/completions` sert l'assistant : Gemini Flash avec la clé gratuite du Worker, puis
+// `/ai/chat/completions` sert l'assistant : Gemini Flash-Lite puis Flash, avec la clé gratuite du Worker, puis
 // Gemma 4 sur Workers Free (`ai-engines.mjs`, décision §98). `/ai/status` montre modèles et quotas.
 // Vérification : ouvrir `/token` dans un navigateur (`{"ok":true,…}`).
 //

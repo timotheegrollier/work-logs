@@ -540,6 +540,15 @@ describe('réglages', () => {
     expect(readAiSettings()).toEqual(legacy);
   });
 
+  test('une clé Google au nouveau format `AQ.` est gardée, et jamais envoyée à OpenRouter', async () => {
+    saveAiSettings({ endpoint: GEMINI_AI_ENDPOINT, model: GEMINI_DEFAULT_MODEL, key: 'AQ.Ab8-cle-test', profile: '' });
+    expect(readAiSettings().key).toBe('AQ.Ab8-cle-test');
+    saveAiSettings({ endpoint: GEMINI_AI_ENDPOINT, model: GEMINI_DEFAULT_MODEL, key: 'sk-or-autre-service', profile: '' });
+    expect(readAiSettings().key).toBe('');
+    saveAiSettings({ endpoint: OPENROUTER_AI_ENDPOINT, model: 'perso', key: 'AQ.Ab8-cle-test', profile: '' });
+    expect(readAiSettings().key).toBe('');
+  });
+
   test('conserve un modèle Gemini personnalisé enregistré avant la migration', () => {
     localStorage.setItem('worklogs-ai-endpoint', GEMINI_AI_ENDPOINT);
     localStorage.setItem('worklogs-ai-model', 'gemini-modele-personnalise');

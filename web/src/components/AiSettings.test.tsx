@@ -33,7 +33,7 @@ describe('réglages IA', () => {
     expect(screen.queryByLabelText('Clé IA')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tester la connexion' })).toBeVisible();
     expect(screen.getByText('IA gratuite sans clé.')).toBeVisible();
-    expect(screen.getByText(/Gemini Flash chez Google/)).toHaveTextContent('puis Gemma 4 chez Cloudflare');
+    expect(screen.getByText(/Gemini Flash-Lite puis Flash chez Google/)).toHaveTextContent('puis Gemma 4 chez Cloudflare');
     expect(screen.getByRole('region', { name: 'Modèles et quotas de l’IA' })).toHaveTextContent('Lecture des quotas…');
     expect(screen.queryByLabelText('Accepter l’envoi à Google')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Endpoint IA')).not.toBeVisible();
