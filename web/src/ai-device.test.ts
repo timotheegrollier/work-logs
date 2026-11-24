@@ -26,10 +26,24 @@ describe('IA intégrée au navigateur', () => {
   test('disponible : la réponse part sans clé, sans réseau, et la session est libérée', async () => {
     const destroy = vi.fn();
     const prompt = vi.fn(async () => '  Réponse locale.  ');
-    vi.stubGlobal('LanguageModel', { availability: async () => 'available', create: async () => ({ prompt, destroy }) });
+    const create = vi.fn(async (_options?: Record<string, unknown>) => ({ prompt, destroy }));
+    vi.stubGlobal('LanguageModel', { availability: async () => 'available', create });
     expect(await deviceCompletion('Tu es WorkLogs.', 'Résume.')).toBe('Réponse locale.');
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ initialPrompts: [{ role: 'system', content: 'Tu es WorkLogs.' }] }));
+    expect(create.mock.calls[0][0]).not.toHaveProperty('maxOutputTokens');
     expect(prompt).toHaveBeenCalledWith('Résume.', expect.objectContaining({ signal: undefined }));
     expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  test('l’annulation interrompt aussi la création de session locale', async () => {
+    const controller = new AbortController();
+    const create = vi.fn(() => new Promise(() => {}));
+    vi.stubGlobal('LanguageModel', { availability: async () => 'available', create });
+    const pending = deviceCompletion('système', 'demande', { signal: controller.signal });
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
   });
 
   test('seulement téléchargeable : aucun téléchargement dans le dos de l’utilisateur', async () => {

@@ -873,6 +873,59 @@ test('l’assistant discute du besoin, puis reçoit les réponses aux sondages d
   await expect(chat.getByRole('group', { name: 'Quand faut-il faire le point ?' })).toHaveCount(0);
 });
 
+test('l’assistant sans clé lit une image et un extrait de PDF dans le même message', async ({ page }) => {
+  let conversions = 0;
+  let inference = 0;
+  const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7ePmUAAAAASUVORK5CYII=';
+  const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type' };
+  await page.route('https://worklogs-google.cocodexcocoder.workers.dev/ai/pdf', async (route) => {
+    const request = route.request();
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    expect(request.method()).toBe('POST');
+    expect(request.headers()).toMatchObject({ 'content-type': 'application/pdf' });
+    expect(await request.headerValue('authorization')).toBeNull();
+    expect(request.postDataBuffer()?.toString()).toBe('%PDF-1.7\nTest');
+    conversions++;
+    return route.fulfill({ headers, json: { text: 'La pression cible est de trois bars.', truncated: false } });
+  });
+  await page.route('**/chat/completions', async (route) => {
+    const request = route.request();
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    expect(request.url()).toBe('https://worklogs-google.cocodexcocoder.workers.dev/ai/chat/completions');
+    expect(await request.headerValue('authorization')).toBeNull();
+    const body = request.postDataJSON();
+    expect(body.model).toBe('@cf/google/gemma-4-26b-a4b-it');
+    expect(body.messages[1].content).toEqual([
+      { type: 'text', text: expect.stringContaining('La pression cible est de trois bars.') },
+      { type: 'image_url', image_url: { url: `data:image/png;base64,${image}` } },
+    ]);
+    expect(body.messages[1].content[0].text).not.toContain('%PDF-');
+    inference++;
+    return route.fulfill({ headers, json: { choices: [{ message: { content: JSON.stringify({ reply: 'La pression cible est de trois bars.' }) } }] } });
+  });
+  await page.goto('/');
+  await page.getByRole('banner').getByRole('button', { name: 'Ouvrir l’assistant IA', exact: true }).click();
+  const chat = assistant(page);
+  await chat.getByLabel('Fichiers à joindre').setInputFiles([
+    { name: 'manuel.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\nTest') },
+    { name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from(image, 'base64') },
+  ]);
+  const draft = chat.getByRole('list', { name: 'Pièces jointes du brouillon' });
+  await expect(draft.getByText('manuel.pdf')).toBeVisible();
+  await expect(draft.getByText('photo.png')).toBeVisible();
+  expect(conversions).toBe(0);
+  expect(inference).toBe(0);
+
+  await messageField(page).fill('Quelle pression appliquer ?');
+  await chat.getByRole('button', { name: 'Envoyer', exact: true }).click();
+  await expect(chat.getByText('La pression cible est de trois bars.', { exact: true })).toBeVisible();
+  const sent = chat.getByRole('list', { name: 'Pièces jointes envoyées' });
+  await expect(sent.getByText('manuel.pdf')).toBeVisible();
+  await expect(sent.getByText('photo.png')).toBeVisible();
+  expect(conversions).toBe(1);
+  expect(inference).toBe(1);
+});
+
 test('sélectionne, colle et dépose des pièces, puis récupère le brouillon avant de l’envoyer', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('worklogs-ai-key', 'cle-e2e');

@@ -12,10 +12,12 @@ const { default: App } = await import('./App');
 const { localApi, setLocalDatabase } = await import('./store/localApi');
 const { createMemoryDatabase } = await import('./store/storage');
 const { checkRelayAgain } = await import('./store/sync-web');
+const { saveGoogleAiConsent } = await import('./ai-suggest');
 
 beforeEach(() => {
   setLocalDatabase(createMemoryDatabase());
   localStorage.clear();
+  saveGoogleAiConsent(true);
   vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
 // Un brouillon en échec fait lever `flushPendingSaves` : le test reste rouge avec ce

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AiCancelled, MAX_DAILY_FOLLOW_UPS, MAX_REPLANNED_TASKS, generateDailyReview, localToday, readAiSettings, replanTasks, type AiSettings, type DailyChecklistChange, type DailyChecklistInput, type DailyFollowUpInput, type DailyReview, type TaskScheduleProposal } from '../ai-suggest';
+import { AiCancelled, aiDailyDefault, MAX_DAILY_FOLLOW_UPS, MAX_REPLANNED_TASKS, generateDailyReview, localToday, readAiSettings, replanTasks, type AiSettings, type DailyChecklistChange, type DailyChecklistInput, type DailyFollowUpInput, type DailyReview, type TaskScheduleProposal } from '../ai-suggest';
 import { aiBudgetRefusal } from '../ai-budget';
 import { readProjectAiBrief } from '../ai-context';
 import { flushPendingSaves } from '../autosave';
@@ -181,7 +181,7 @@ export function OverviewAiActions({ tasks, entries, projects, missingOpen = 0, m
           if (request.signal.aborted) return;
           if (hasMissingOpenTasks(snapshot) || planningKey(snapshot.tasks, snapshot.projects) !== originalPlan || localToday() !== day) throw new Error(dailyChangedMessage);
 
-          const refusal = aiBudgetRefusal(false);
+          const refusal = aiBudgetRefusal(false, aiDailyDefault(settings));
           if (refusal) throw new Error(refusal);
           const changes = active.flatMap((task) => {
             const choice = byId.get(task.id);

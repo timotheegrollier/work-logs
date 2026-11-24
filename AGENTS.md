@@ -1,9 +1,9 @@
 # WorkLogs — règles agents
 
 ## Reprise
-- **État v0.88.0** (`package.json` fait foi). `./scripts/check.sh` passe le 2026-11-23 avec
-  **2 136 tests**, dont un échec attendu. 365 API · 1 492 front (+1 attendu) · 49 desktop ·
-  56 scripts · 8 Worker · 11 relais · 132 navigateur · 22 desktop e2e.
+- **État v0.88.0** (`package.json` fait foi). `./scripts/check.sh` passe le 2026-11-24 avec
+  **2 177 tests**, dont un échec attendu. 365 API · 1 519 front (+1 attendu) · 49 desktop ·
+  56 scripts · 21 Worker · 11 relais · 133 navigateur · 22 desktop e2e.
   Lancé depuis l'AppImage DeepAI Code : `env -u APPIMAGE ./scripts/check.sh` (piège n° 10 de
   `docs/02-DEV.md`).
   Lots et bilans : `docs/00-HANDOVER.md`.

@@ -9,12 +9,20 @@ import { discardPendingSaves, flushPendingSaves, hasPendingSaves } from './autos
 import { setLeaveGuard } from './shared-leave';
 import { api as clientApi, type Project } from './lib';
 import { TaskAdvice } from './components/TaskAdvice';
+import { DEFAULT_AI_MODEL, resetAiFallbackMemory, saveGoogleAiConsent } from './ai-suggest';
 
 let api: Awaited<ReturnType<typeof useRealApi>>;
 
 beforeEach(async () => {
   api = await useRealApi();
   localStorage.clear();
+  resetAiFallbackMemory();
+  const diverted = globalThis.fetch;
+  vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('/chat/completions')) throw new Error('Ce test doit simuler la réponse IA.');
+    return diverted(input, init);
+  });
+  saveGoogleAiConsent(true);
   vi.spyOn(window, 'confirm').mockReturnValue(true);
 });
 // Un brouillon en échec fait lever `flushPendingSaves` : le test reste rouge avec ce
@@ -26,6 +34,7 @@ afterEach(async () => {
   } finally {
     discardPendingSaves();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     await api.close();
   }
 });
@@ -592,11 +601,11 @@ describe('gestion Google Drive', () => {
 });
 
 describe('réglages IA', () => {
-  test('les anciens réglages Gemini invitent à saisir une clé OpenRouter avant tout appel', async () => {
+  test('les anciens réglages Gemini passent au Worker WorkLogs sans demander de clé et gardent le contexte', async () => {
     const user = userEvent.setup();
     localStorage.setItem('worklogs-ai-endpoint', 'https://generativelanguage.googleapis.com/v1beta/openai');
     localStorage.setItem('worklogs-ai-model', 'gemini-3-flash-preview');
-    localStorage.setItem('worklogs-ai-key', 'cle-google');
+    localStorage.setItem('worklogs-ai-key', 'AIza-cle-google');
     localStorage.setItem('worklogs-ai-profile', 'Dev solo en pisciculture');
     mockAiSuggest('OK');
     render(<App />);
@@ -606,24 +615,13 @@ describe('réglages IA', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
     const dialog = await screen.findByRole('dialog', { name: 'Paramètres' });
     expect(within(dialog).getByLabelText('Endpoint IA')).not.toBeVisible();
-    expect(within(dialog).getByLabelText('Modèle IA')).not.toBeVisible();
-    expect(within(dialog).getByLabelText('Clé IA')).toBeVisible();
-    expect(within(dialog).getByLabelText('Clé IA')).toHaveValue('');
+    expect(within(dialog).getByText('IA gratuite sans clé.')).toBeVisible();
+    expect(within(dialog).queryByLabelText('Clé IA')).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText('Mon contexte de travail')).toHaveValue('Dev solo en pisciculture');
     const testConnection = within(dialog).getByRole('button', { name: 'Tester la connexion' });
     await user.click(testConnection);
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/Aucune IA intégrée/);
-    expect(aiBodies).toHaveLength(0);
-
-    await user.click(within(dialog).getByText('Réglages avancés', { selector: 'summary' }));
-    expect(within(dialog).getByLabelText('Endpoint IA')).toHaveValue('https://openrouter.ai/api/v1');
-    expect(within(dialog).getByLabelText('Modèle IA')).toHaveValue('openrouter/free');
-    await user.type(within(dialog).getByLabelText('Clé IA'), 'cle-test');
-    expect(localStorage.getItem('worklogs-ai-key')).toBe('cle-test');
-
-    await user.click(testConnection);
     expect(await within(dialog).findByText(/Connexion vérifiée/)).toBeVisible();
-    expect(aiBodies).toMatchObject([{ model: 'openrouter/free' }]);
+    expect(aiBodies).toMatchObject([{ model: DEFAULT_AI_MODEL }]);
   });
 
   test('ouvre la fiche du projet actif et teste la connexion sans ouvrir les réglages avancés', async () => {
@@ -643,7 +641,7 @@ describe('réglages IA', () => {
     expect(settings.getByLabelText('Projet du contexte IA')).toHaveValue('pr_atelier');
     expect(settings.getByLabelText('Contexte IA du projet')).toHaveValue('Postes Linux');
     expect(settings.getByLabelText('Endpoint IA')).not.toBeVisible();
-    await user.type(settings.getByLabelText('Clé IA'), 'cle-test');
+    expect(settings.queryByLabelText('Clé IA')).not.toBeInTheDocument();
     await user.click(settings.getByRole('button', { name: 'Tester la connexion' }));
     await settings.findByText(/Connexion vérifiée/);
     expect(aiBodies).toHaveLength(1);
@@ -1021,8 +1019,9 @@ describe('écrire une entrée', () => {
     expect(within(card).queryByRole('button', { name: 'Effacer la suggestion' })).not.toBeInTheDocument();
   });
 
-  test('sans clé IA, la suggestion renvoie aux Paramètres sans appeler personne', async () => {
+  test('avec un service personnalisé sans clé, la suggestion renvoie aux Paramètres sans appeler personne', async () => {
     const user = userEvent.setup();
+    localStorage.setItem('worklogs-ai-endpoint', 'https://ia.example/v1');
     const calls: string[] = [];
     const diverted = globalThis.fetch;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1662,7 +1661,7 @@ describe('écrire une entrée', () => {
     expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Document du jour');
   });
 
-  test('pas de procédure tirée d’une procédure ni d’un document Google ; sans clé, rien ne part', async () => {
+  test('pas de procédure tirée d’une procédure ni d’un document Google ; sans clé pour un service personnalisé, rien ne part', async () => {
     const user = userEvent.setup();
     const calls: string[] = [];
     const diverted = globalThis.fetch;
@@ -1677,6 +1676,7 @@ describe('écrire une entrée', () => {
     seedGoogleLink(api.db, 'en_google', 'doc-consignes');
     api.db.prepare('UPDATE entries SET content_json=? WHERE id=?').run(richText('Couper l’eau.'), 'en_proc');
     localStorage.setItem('worklogs-entry', 'en_google');
+    localStorage.setItem('worklogs-ai-endpoint', 'https://ia.example/v1');
     render(<App />);
 
     await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Consignes Google'));
@@ -5235,13 +5235,14 @@ describe('dossier partagé', { timeout: 30_000 }, () => {
     expect(area).toHaveValue('service web et base\n');
   });
 
-  test('IA du partage sans clé : le bouton l’explique, rien ne part', async () => {
+  test('IA du partage avec un service personnalisé sans clé : le bouton l’explique, rien ne part', async () => {
     const calls: string[] = [];
     const diverted = globalThis.fetch;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push(String(input));
       return diverted(input, init);
     }));
+    localStorage.setItem('worklogs-ai-endpoint', 'https://ia.example/v1');
     await write('notes.md', 'Laver le filtre.\n');
     render(<App />);
     await openFromTree('notes.md');
@@ -6083,7 +6084,8 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Autre note');
   });
 
-  test('sans clé, suggérer des tâches explique le réglage requis avant de charger le contexte', async () => {
+  test('un service personnalisé sans clé explique le réglage requis avant de charger le contexte des suggestions', async () => {
+    localStorage.setItem('worklogs-ai-endpoint', 'https://ia.example/v1');
     seedData(api.db, { entries: [{ id: 'en_note', title: 'Note', content_md: 'Appeler le client.' }] });
     render(<App />);
     const button = await aiAction('Suggérer des tâches avec l’IA');
@@ -6564,6 +6566,7 @@ describe('suivi IA des entrées et tâches', () => {
   test('la sélection annonce l’activation sans promettre un bilan que rien ne prépare', async () => {
     prepare();
     localStorage.removeItem('worklogs-ai-key');
+    localStorage.setItem('worklogs-ai-endpoint', 'https://ia.example/v1');
     render(<App />);
     await screen.findByDisplayValue('Note évolutive');
     fireEvent.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
@@ -6674,6 +6677,7 @@ describe('suivi IA des entrées et tâches', () => {
 
   test('Arrêter et un refus du fournisseur conservent le dernier bilan et ne relancent pas la même version', async () => {
     prepare();
+    localStorage.setItem('worklogs-ai-endpoint', 'https://ia.example/v1');
     const diverted = globalThis.fetch;
     let finish!: (value: Response) => void;
     let calls = 0;

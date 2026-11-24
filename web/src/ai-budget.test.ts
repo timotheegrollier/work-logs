@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
-  aiBudgetRefusal, aiResetTime, aiUsageLabel, DEFAULT_DAILY_REQUESTS, estimateTokens, MAX_DAILY_REQUESTS,
+  aiBudgetRefusal, aiResetTime, aiUsageLabel, DEFAULT_DAILY_REQUESTS, DEFAULT_WORKLOGS_DAILY_REQUESTS, estimateTokens, MAX_DAILY_REQUESTS,
   MIN_DAILY_REQUESTS, nextAiReset, pacificDay, readAiUsage, readDailyLimit, recordAiUsage, saveDailyLimit,
   TOKENS_PER_REQUEST,
   type AiUsage,
@@ -72,6 +72,16 @@ describe('refus', () => {
     seed({ requests: DEFAULT_DAILY_REQUESTS });
     expect(aiBudgetRefusal(false)).toBe(requests('50'));
     expect(aiBudgetRefusal(true)).toBe(requests('50'));
+  });
+
+  test('le plafond WorkLogs gratuit s’applique en l’absence de choix enregistré', () => {
+    seed({ requests: 50 });
+    expect(aiBudgetRefusal(false, DEFAULT_WORKLOGS_DAILY_REQUESTS)).toBeNull();
+    expect(aiBudgetRefusal(false)).toBe(requests('50'));
+    seed({ requests: 150 });
+    expect(aiBudgetRefusal(false, DEFAULT_WORKLOGS_DAILY_REQUESTS)).toBe(requests('150'));
+    saveDailyLimit(60);
+    expect(readDailyLimit(DEFAULT_WORKLOGS_DAILY_REQUESTS)).toBe(60);
   });
 
   test('plafond de jetons : requêtes × volume, avec les milliers espacés', () => {

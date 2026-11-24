@@ -133,3 +133,305 @@ test('secret absent ou Google injoignable : erreur explicite, jamais de plantage
   assert.equal(garbled.status, 503);
   assert.deepEqual(await garbled.json(), { error: 'invalid_google_response' });
 });
+
+const PDF_PATH = 'https://relais.test/ai/pdf';
+// Port tiré au démarrage par `desktop/server.mjs`.
+const DESKTOP = 'http://127.0.0.1:43127';
+const PDF = '%PDF-1.7\n1 0 obj\n<< >>\nendobj\n%%EOF\n';
+const MIB = 1024 * 1024;
+
+function fakePdfBindings({ answer = { format: 'text', data: '  Texte du PDF.  ' }, allowed = true } = {}) {
+  const conversions = [];
+  const limits = [];
+  const env = {
+    AI: { async toMarkdown(document, options) {
+      conversions.push({ document, options });
+      if (answer instanceof Error) throw answer;
+      return answer;
+    } },
+    PDF_LIMITER: { async limit(params) {
+      limits.push(params);
+      return { success: allowed };
+    } },
+  };
+  return { env, conversions, limits };
+}
+
+const postPdf = (env, { origin = PWA, body = PDF, headers = {} } = {}) => worker.fetch(new Request(PDF_PATH, {
+  method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/pdf', ...headers },
+  body, duplex: 'half',
+}), env);
+
+test('PDF sans clé : le texte seul revient et le convertisseur reçoit la pièce sans son nom original', async () => {
+  const { env, conversions, limits } = fakePdfBindings();
+  const response = await postPdf(env, { origin: DESKTOP, headers: {
+    'Content-Disposition': 'attachment; filename=confidentiel.pdf',
+    'CF-Connecting-IP': '192.0.2.17',
+  } });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), DESKTOP);
+  assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  assert.deepEqual(await response.json(), { text: 'Texte du PDF.', truncated: false });
+  assert.deepEqual(limits, [{ key: '192.0.2.17' }]);
+  assert.equal(conversions.length, 1);
+  const [{ document, options }] = conversions;
+  assert.deepEqual(Object.keys(document).sort(), ['blob', 'name']);
+  assert.equal(document.name, 'document.pdf');
+  assert.equal(document.blob.type, 'application/pdf');
+  assert.equal(await document.blob.text(), PDF);
+  assert.deepEqual(options, { conversionOptions: { pdf: { metadata: false }, output: { format: 'text' } } });
+});
+
+test('PDF : le texte renvoyé est borné et la coupe signalée', async () => {
+  const { env } = fakePdfBindings({ answer: { format: 'text', data: 'a'.repeat(16_001) } });
+  const response = await postPdf(env);
+  assert.deepEqual(await response.json(), { text: 'a'.repeat(16_000), truncated: true });
+});
+
+test('PDF : seuls les clients WorkLogs peuvent envoyer une pièce en CORS, sans élargir les droits OAuth', async () => {
+  const { env, conversions, limits } = fakePdfBindings();
+  for (const origin of [PWA, PWA_GITHUB, DESKTOP, 'http://localhost:8411', 'http://127.0.0.1:8410']) {
+    const response = await worker.fetch(new Request(PDF_PATH, {
+      method: 'OPTIONS',
+      headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' },
+    }), env);
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get('Access-Control-Allow-Origin'), origin);
+    assert.equal(response.headers.get('Access-Control-Allow-Methods'), 'POST');
+    assert.equal(response.headers.get('Access-Control-Allow-Headers'), 'Content-Type');
+    assert.equal(response.headers.get('Access-Control-Allow-Credentials'), null);
+  }
+  for (const origin of ['', 'null', 'https://pirate.example', 'worklogs://app', 'http://127.0.0.1.pirate.example:8410', 'https://127.0.0.1:8410', 'http://192.168.1.10:8410']) {
+    const response = await postPdf(env, { origin });
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.get('Access-Control-Allow-Origin'), null);
+  }
+  const oauth = await post(EXCHANGE, { origin: DESKTOP });
+  assert.equal(oauth.status, 403);
+  assert.equal(conversions.length, 0);
+  assert.equal(limits.length, 0);
+});
+
+test('PDF : type et signature invalides sont refusés avant conversion', async () => {
+  const { env, conversions } = fakePdfBindings();
+  for (const [options, status] of [
+    [{ body: '<html>', headers: { 'Content-Type': 'text/html' } }, 415],
+    [{ body: '<html>' }, 400],
+    [{ body: null }, 400],
+  ]) {
+    assert.equal((await postPdf(env, options)).status, status);
+  }
+  assert.equal(conversions.length, 0);
+});
+
+test('PDF : les 10 Mio sont vérifiés avec ou sans taille annoncée', async () => {
+  const { env, conversions } = fakePdfBindings();
+  const declared = await postPdf(env, { headers: { 'Content-Length': String(10 * MIB + 1) } });
+  assert.equal(declared.status, 413);
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(PDF));
+      controller.enqueue(new Uint8Array(6 * MIB));
+      controller.enqueue(new Uint8Array(4 * MIB));
+      controller.close();
+    },
+  });
+  assert.equal((await postPdf(env, { body })).status, 413);
+  assert.equal(conversions.length, 0);
+});
+
+test('PDF : la limite de débit refuse avant conversion sans demander de compte', async () => {
+  const { env, conversions } = fakePdfBindings({ allowed: false });
+  const response = await postPdf(env);
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('Retry-After'), '60');
+  assert.equal(conversions.length, 0);
+});
+
+test('PDF sans texte ou service indisponible : le client reçoit un motif sans diagnostic interne', async () => {
+  for (const answer of [{ format: 'text', data: '\n ' }, { format: 'error', error: 'détails internes' }]) {
+    const { env } = fakePdfBindings({ answer });
+    const response = await postPdf(env);
+    assert.equal(response.status, 422);
+    assert.deepEqual(await response.json(), { error: 'Aucun texte lisible dans ce PDF.' });
+  }
+  const down = fakePdfBindings({ answer: new Error('détails internes') });
+  for (const env of [{}, down.env]) {
+    const response = await postPdf(env);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: 'La lecture des PDF est indisponible. Réessaie plus tard.' });
+  }
+});
+
+const CHAT_PATH = 'https://relais.test/ai/chat/completions';
+const CHAT_MODEL = '@cf/google/gemma-4-26b-a4b-it';
+const CHAT_REQUEST = { messages: [{ role: 'user', content: 'Dis bonjour.' }] };
+const CHAT_ANSWER = {
+  choices: [{ index: 0, message: { role: 'assistant', content: 'Bonjour !' }, finish_reason: 'stop' }],
+  usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 },
+};
+
+function fakeChatBindings({ answer = () => Response.json(CHAT_ANSWER), allowed = true } = {}) {
+  const calls = [];
+  const limits = [];
+  const env = {
+    AI: { async run(model, params, options) {
+      calls.push({ model, params, options });
+      return answer();
+    } },
+    CHAT_LIMITER: { async limit(params) {
+      limits.push(params);
+      return { success: allowed };
+    } },
+  };
+  return { env, calls, limits };
+}
+
+const postChat = (env, { origin = PWA, body = JSON.stringify(CHAT_REQUEST), headers = {} } = {}) =>
+  worker.fetch(new Request(CHAT_PATH, {
+    method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', ...headers },
+    body, duplex: 'half',
+  }), env);
+
+const imagePart = (url) => ({ type: 'image_url', image_url: { url } });
+const mediaBody = (...parts) => JSON.stringify({ messages: [{ role: 'user', content: parts }] });
+
+test('discussion sans clé : réponse OpenAI et modèle fixe avec des paramètres bornés', async () => {
+  const { env, calls, limits } = fakeChatBindings();
+  const response = await postChat(env, {
+    origin: DESKTOP,
+    headers: { 'CF-Connecting-IP': '192.0.2.17' },
+    body: JSON.stringify({
+      model: 'autre-modele', max_tokens: 9000, temperature: 0.25, store: true, stream: true,
+      messages: [{ role: 'system', content: 'Réponds en français.', name: 'identifiant' }, ...CHAT_REQUEST.messages],
+      response_format: { type: 'json_object', schema: { title: 'Champ ignoré' } },
+      tools: [{ type: 'web_search' }], n: 4, metadata: { user: 'identifiant' },
+    }),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), DESKTOP);
+  assert.deepEqual(await response.json(), CHAT_ANSWER);
+  assert.deepEqual(limits, [{ key: '192.0.2.17' }]);
+  assert.deepEqual(calls, [{
+    model: CHAT_MODEL,
+    params: {
+      messages: [{ role: 'system', content: 'Réponds en français.' }, ...CHAT_REQUEST.messages],
+      temperature: 0.25,
+      max_completion_tokens: 8000,
+      chat_template_kwargs: { enable_thinking: false },
+      response_format: { type: 'json_object' },
+    },
+    options: { returnRawResponse: true },
+  }]);
+});
+
+test('discussion : préflight pour les mêmes clients WorkLogs que l’extraction PDF', async () => {
+  const { env, calls, limits } = fakeChatBindings();
+  for (const origin of [PWA, PWA_GITHUB, DESKTOP, 'http://localhost:8411', 'http://127.0.0.1:8410']) {
+    const response = await worker.fetch(new Request(CHAT_PATH, {
+      method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' },
+    }), env);
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get('Access-Control-Allow-Origin'), origin);
+    assert.equal(response.headers.get('Access-Control-Allow-Headers'), 'Content-Type');
+    assert.equal(response.headers.get('Access-Control-Allow-Credentials'), null);
+    assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  }
+  for (const origin of ['', 'null', 'https://pirate.example', 'worklogs://app', 'http://127.0.0.1.pirate.example:8410', 'https://127.0.0.1:8410', 'http://192.168.1.10:8410']) {
+    const response = await postChat(env, { origin });
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.get('Access-Control-Allow-Origin'), null);
+  }
+  const otherMethod = await worker.fetch(new Request(CHAT_PATH, { headers: { Origin: PWA } }), env);
+  assert.equal(otherMethod.status, 405);
+  assert.equal(otherMethod.headers.get('Allow'), 'POST, OPTIONS');
+  assert.deepEqual(limits, []);
+  assert.deepEqual(calls, []);
+});
+
+test('discussion : les images intégrées arrivent au modèle, les URL et les autres médias sont refusés', async () => {
+  const { env, calls } = fakeChatBindings();
+  const image = imagePart('data:image/png;base64,iVBORw0KGgo=');
+  const text = { type: 'text', text: 'Décris cette image.' };
+  const response = await postChat(env, { body: mediaBody(text, { ...image, image_url: { ...image.image_url, detail: 'high' } }) });
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls[0].params.messages, [{ role: 'user', content: [text, image] }]);
+  for (const part of [
+    imagePart('https://example.com/image.png'),
+    imagePart('file:///tmp/image.png'),
+    imagePart('data:image/svg+xml;base64,AAAA'),
+    imagePart('data:image/png;base64,http://example.com'),
+    imagePart('data:image/png;base64,AAA=AAAA'),
+    { type: 'file', file: { file_data: 'data:application/pdf;base64,AAAA' } },
+  ]) {
+    const response = await postChat(env, { body: mediaBody(text, part) });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error.message, /demande IA est invalide/);
+  }
+  assert.equal(calls.length, 1);
+});
+
+test('discussion : le JSON et les limites de taille sont contrôlés avant l’inférence', async () => {
+  const { env, calls } = fakeChatBindings();
+  const huge = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(8 * MIB));
+      controller.enqueue(new Uint8Array(7 * MIB));
+      controller.close();
+    },
+  });
+  const largeImage = (size) => imagePart(`data:image/webp;base64,${'A'.repeat(4 * Math.ceil(size / 3))}`);
+  for (const [options, status] of [
+    [{ headers: { 'Content-Type': 'text/plain' } }, 415],
+    [{ body: '{' }, 400],
+    [{ body: null }, 400],
+    [{ body: JSON.stringify({ messages: [{ role: 'tool', content: 'Résultat' }] }) }, 400],
+    [{ body: JSON.stringify({ ...CHAT_REQUEST, max_tokens: -10 }) }, 400],
+    [{ body: JSON.stringify({ ...CHAT_REQUEST, response_format: { type: 'json_schema' } }) }, 400],
+    [{ headers: { 'Content-Length': String(14 * MIB + 1) } }, 413],
+    [{ body: huge }, 413],
+    [{ body: JSON.stringify({ messages: [{ role: 'user', content: 'a'.repeat(128_001) }] }) }, 413],
+    [{ body: mediaBody(largeImage(5 * MIB + 1)) }, 413],
+    [{ body: mediaBody(...Array(3).fill(largeImage(4 * MIB))) }, 413],
+    [{ body: mediaBody(...Array(6).fill(imagePart('data:image/jpeg;base64,AAAA'))) }, 413],
+  ]) {
+    assert.equal((await postChat(env, options)).status, status);
+  }
+  assert.deepEqual(calls, []);
+});
+
+test('discussion : quotas IP et Cloudflare remontent en 429 avec délai accessible en CORS', async () => {
+  const limited = fakeChatBindings({ allowed: false });
+  const dailyLimit = () => Response.json({ internalCode: 3036, description: 'Détail fournisseur' }, { status: 429 });
+  const globalLimit = () => Response.json({ errors: [{ code: 3021, message: 'Détail fournisseur' }] }, {
+    status: 429, headers: { 'Retry-After': '17' },
+  });
+  for (const [env, expectedDelay, message] of [
+    [limited.env, '60', /Trop de demandes/],
+    [fakeChatBindings({ answer: dailyLimit }).env, /^\d+$/, /Quota gratuit/],
+    [fakeChatBindings({ answer: globalLimit }).env, '17', /Limite du service/],
+  ]) {
+    const response = await postChat(env);
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get('Access-Control-Expose-Headers'), 'Retry-After');
+    const delay = response.headers.get('Retry-After');
+    if (typeof expectedDelay === 'string') assert.equal(delay, expectedDelay);
+    else assert.match(delay, expectedDelay);
+    assert.match((await response.json()).error.message, message);
+  }
+  assert.deepEqual(limited.calls, []);
+});
+
+test('discussion : indisponibilité et réponse invalide restent des erreurs 503 sans détail interne', async () => {
+  for (const env of [
+    {},
+    fakeChatBindings({ answer: () => { throw new Error('détail interne'); } }).env,
+    fakeChatBindings({ answer: () => Response.json(null) }).env,
+    fakeChatBindings({ answer: () => Response.json({ internalCode: 3040 }, { status: 429 }) }).env,
+  ]) {
+    const response = await postChat(env);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: { message: 'Le service IA est temporairement indisponible. Réessaie plus tard.' } });
+  }
+});

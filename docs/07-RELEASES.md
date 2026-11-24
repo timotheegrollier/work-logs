@@ -564,6 +564,12 @@ qui touche `web/`, `oauth-proxy/` ou la version, sans attendre la CI (06, D6). U
 il échoue en le disant. Le secret Google du relais reste stocké côté Worker
 (`wrangler secret put`), et le déploiement le conserve.
 
+Le même Worker sert `/ai/chat/completions` (Gemma 4 26B) et `/ai/pdf` (conversion des
+PDF joints). Ces routes nécessitent un déploiement avec le binding Workers AI. Garder le
+compte Cloudflare sur **Workers Free** pour que les requêtes au-delà du quota partagé de
+10 000 neurones par jour soient refusées. Après le déploiement, vérifier la connexion sans
+clé depuis **Paramètres → Assistance IA**, puis suivre la recette IA dans `04-RECETTES.md` §14.
+
 Recette manuelle, en secours ou si le workflow est rouge, depuis la racine :
 
 ```bash

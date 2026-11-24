@@ -3,6 +3,7 @@
  * reste à minuit heure du Pacifique, indépendamment des limites du fournisseur.
  */
 export const DEFAULT_DAILY_REQUESTS = 50;
+export const DEFAULT_WORKLOGS_DAILY_REQUESTS = 150;
 export const MIN_DAILY_REQUESTS = 10;
 export const MAX_DAILY_REQUESTS = 5000;
 export const TOKENS_PER_REQUEST = 10_000; // plafond de jetons = requêtes × ce volume
@@ -50,15 +51,15 @@ export function readAiUsage(now = new Date()): AiUsage {
   }
 }
 
-const boundedLimit = (limit: number) => Number.isFinite(limit)
+const boundedLimit = (limit: number, fallback = DEFAULT_DAILY_REQUESTS) => Number.isFinite(limit)
   ? Math.min(MAX_DAILY_REQUESTS, Math.max(MIN_DAILY_REQUESTS, Math.round(limit)))
-  : DEFAULT_DAILY_REQUESTS;
+  : fallback;
 
-export function readDailyLimit(): number {
+export function readDailyLimit(fallback = DEFAULT_DAILY_REQUESTS): number {
   try {
-    return boundedLimit(Number(localStorage.getItem(LS_LIMIT) || NaN));
+    return boundedLimit(Number(localStorage.getItem(LS_LIMIT) || NaN), fallback);
   } catch {
-    return DEFAULT_DAILY_REQUESTS;
+    return fallback;
   }
 }
 
@@ -74,8 +75,8 @@ export function saveDailyLimit(limit: number): void {
 const formatted = (count: number) => count.toLocaleString('fr-FR').replace(/\s/g, ' ');
 
 /** Motif du refus, ou null : le suivi automatique ne peut pas assécher les gestes explicites. */
-export function aiBudgetRefusal(background: boolean): string | null {
-  return budgetRefusal(readAiUsage(), readDailyLimit(), background);
+export function aiBudgetRefusal(background: boolean, fallback?: number): string | null {
+  return budgetRefusal(readAiUsage(), readDailyLimit(fallback), background);
 }
 
 function budgetRefusal(usage: AiUsage, limit: number, background: boolean): string | null {
@@ -89,9 +90,9 @@ function budgetRefusal(usage: AiUsage, limit: number, background: boolean): stri
 }
 
 /** Garde une place pendant l’appel. Seule une réponse facturable alimente le compteur persistant. */
-export function reserveAiRequest(background: boolean, estimatedTokens: number): { release: () => void } | { reason: string; temporary: boolean } {
+export function reserveAiRequest(background: boolean, estimatedTokens: number, fallback?: number): { release: () => void } | { reason: string; temporary: boolean } {
   const usage = readAiUsage();
-  const limit = readDailyLimit();
+  const limit = readDailyLimit(fallback);
   const refusal = budgetRefusal(usage, limit, background);
   if (refusal) return { reason: refusal, temporary: false };
 
@@ -127,7 +128,7 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-export function aiUsageLabel(): string {
+export function aiUsageLabel(fallback?: number): string {
   const usage = readAiUsage();
-  return `Aujourd’hui : ${formatted(usage.requests)} / ${formatted(readDailyLimit())} requêtes · ≈ ${formatted(usage.tokens)} jetons`;
+  return `Aujourd’hui : ${formatted(usage.requests)} / ${formatted(readDailyLimit(fallback))} requêtes · ≈ ${formatted(usage.tokens)} jetons`;
 }

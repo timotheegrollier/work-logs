@@ -3756,6 +3756,22 @@ la clé personnelle, via le même transport que dans l’application desktop. Le
 tests automatisés simulent l’inférence. La recette avec une clé figure au §14 de
 `04-RECETTES.md`.
 
+## 92 bis. Les tableurs joints s’ouvrent dans Écriture — 2026-11-20
+
+Cliquer le nom d’une pièce jointe `.xlsx`, `.ods`, `.csv` ou `.tsv` ouvre sa grille
+dans la colonne **Écriture**, sans dialogue qui recouvre l’application. Les onglets
+de feuille restent en bas pour les classeurs. **Enregistrer une copie modifiée**
+ajoute une nouvelle pièce jointe dans la même entrée ; l’original reste intact.
+Les classeurs du dossier partagé utilisent aussi l’éditeur ODS.
+
+Il ne s’agit pas d’une reproduction complète d’Excel : la grille modifie les cellules
+et conserve le reste du classeur, sans édition des graphiques, des formats ou de la
+structure avancée. ODS conserve la mise en forme existante et invalide les résultats
+en cache des formules à recalculer au prochain chargement dans un tableur ; les
+formules saisies acceptent les références simples à la feuille active. `.xls` et
+`.numbers` restent confiés à l’application système ; `.xlsm` reste en lecture seule.
+Aucune dépendance de tableur n’est ajoutée.
+
 ## 93. Une même échelle de formes, et le panneau qui décide de sa largeur — 2026-11-23
 
 Refonte visuelle et responsive sans nouvelle dépendance : les couleurs, rayons, ombres et
@@ -3793,5 +3809,60 @@ cette condition sans dépendance ni service tiers est celle **intégrée au navi
   qu’elle aurait dû rester : une option pour un service externe. Un endpoint local
   (`127.0.0.1`, `localhost`) est accepté sans clé, sans en-tête `Authorization`.
 - Le plafond quotidien ne compte que les appels distants ; l’IA de l’appareil ne consomme
-  rien. OpenRouter gratuit reste proposé aux personnes qui collent une clé, mais n’est
-  plus présenté comme nécessaire.
+  rien. Les services externes restent une option, mais ne sont pas présentés comme nécessaires.
+
+## 95. Gemini Flash-Lite facultatif : choix du modèle et consentement explicite — 2026-11-24
+
+Gemini redevient le fournisseur externe par défaut, avec `gemini-3.5-flash-lite` ; le menu
+propose aussi `gemini-3.1-flash-lite` et `gemini-2.5-flash-lite`. WorkLogs ne tente en secours
+que `gemini-2.5-flash-lite` et aucun autre modèle gratuit ou payant. Les anciennes configurations
+OpenRouter/free migrent vers Gemini, en supprimant leur clé OpenRouter ; les autres endpoints
+explicitement choisis restent intacts. Une ancienne clé Google est gardée uniquement si elle
+ressemble à une clé Google (`AIza`).
+
+- Le sélecteur de modèle est directement visible dans **Paramètres → Assistance IA** ; le lien
+  de création de clé pointe vers Google AI Studio.
+- Avant tout appel Google avec une clé, un consentement local est exigé. L’écran avertit que les
+  prompts et réponses du palier gratuit peuvent servir à l’amélioration Google et à l’examen humain,
+  qu’il ne faut pas transmettre de données sensibles, que quota et prix peuvent changer,
+  et que la clé est visible côté navigateur. La facturation n’est jamais activée par WorkLogs.
+- La clé est enregistrée uniquement dans le stockage de l’appareil, pas dans le dépôt. Les appels
+  directs depuis un navigateur restent un compromis pour un usage personnel, pas une méthode
+  recommandée pour une application publique ; restreindre la clé dans Google Cloud lorsque c’est
+  possible. Aucun relais serveur ni dépendance n’est ajouté.
+- Les tests simulent l’inférence et vérifient le blocage avant le réseau si le consentement manque.
+  La vraie clé, si recette souhaitée, est créée et saisie par l’utilisateur ; elle ne doit jamais
+  être demandée dans le chat ni ajoutée à Git.
+
+## 96. Premier appel IA sans compte ni clé — 2026-11-24
+
+WorkLogs tente le modèle intégré s’il est prêt pour une demande manuelle de texte.
+Le Worker Cloudflare de WorkLogs traite le texte et les images avec Gemma 4 26B sur
+desktop et PWA. Les profils utilisant les anciens défauts Gemini, OpenRouter ou OVHcloud
+passent au Worker. Les choix avancés explicites restent disponibles.
+
+- Le client peut joindre le Worker à `/ai/chat/completions` sans authentification, sans
+  cookie et sans suivre de redirection. Le Worker utilise le modèle
+  `@cf/google/gemma-4-26b-a4b-it` via le binding Workers AI. Les routes d’inférence et
+  de conversion nécessitent le déploiement du Worker WorkLogs.
+  Origines admises : celles de la PWA et toute origine `http://127.0.0.1:<port>` ou
+  `http://localhost:<port>`, car l’application desktop sert sa page sur un port tiré au
+  démarrage (`desktop/server.mjs`). L’origine n’est qu’un filtre de navigateur : la
+  limite par adresse IP reste la vraie protection du quota partagé.
+  [Modèle Gemma 4 26B](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/).
+- Le compte d’hébergement reste sur Workers Free. L’allocation de 10 000 neurones par
+  jour est partagée et se renouvelle à minuit UTC. Au-delà, Cloudflare refuse les appels.
+  Le plafond WorkLogs s’applique sur l’appareil. Sa valeur par défaut est de 150 requêtes
+  par jour pour le service gratuit intégré et de 50 pour les services personnalisés.
+  [Quota de Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/).
+- Les demandes manuelles peuvent essayer les modèles gratuits compatibles du catalogue
+  OVHcloud en cas de panne ou de saturation. Un refus de débit écarte temporairement
+  le modèle, selon `Retry-After` si accessible. Le suivi automatique se limite à un essai.
+  L’accès anonyme est limité à deux appels par minute, par modèle et par adresse IP.
+  [Catalogue](https://www.ovhcloud.com/en/public-cloud/ai-endpoints/catalog/) ·
+  [Limites](https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-capabilities).
+- Le PDF joint est converti au clic **Envoyer**, par la route `/ai/pdf` du Worker
+  WorkLogs. Cette route accepte uniquement un PDF de 10 Mio au plus et extrait du
+  texte sans passer par un modèle d’inférence payant. Le modèle reçoit l’extrait,
+  plafonné à 16 000 caractères. Une conversion refusée ou sans texte laisse la
+  pièce jointe non lue. [Conversion PDF](https://developers.cloudflare.com/workers-ai/features/markdown-conversion/how-it-works/#pdfs).

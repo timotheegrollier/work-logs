@@ -171,7 +171,7 @@
   <header>
     <p class="eyebrow">WorkLogs</p>
     <h1>Politique de confidentialité</h1>
-    <p class="updated">Dernière mise à jour le 23 novembre 2026</p>
+    <p class="updated">Dernière mise à jour le 24 novembre 2026</p>
   </header>
 
   <p class="lead">
@@ -188,7 +188,7 @@
       <li>WorkLogs fonctionne par défaut sans compte et sans serveur : vos notes, tâches, projets et pièces jointes restent sur votre appareil.</li>
       <li>La connexion Google est facultative. Elle sert uniquement à synchroniser vos documents et sauvegardes avec votre propre Google Drive et à afficher le compte connecté.</li>
       <li>WorkLogs ne vend, ne loue et ne partage pas vos données à des fins publicitaires. Aucun traceur publicitaire ni outil de mesure d’audience n’est intégré.</li>
-      <li>L’assistance IA est facultative : le contenu que vous lui soumettez est envoyé au fournisseur que vous configurez, avec votre clé.</li>
+      <li>L’assistance IA fonctionne sans clé ni compte. Le service en ligne utilise le Worker WorkLogs chez Cloudflare, avec l’accès anonyme d’OVHcloud en secours. Les demandes manuelles de texte peuvent rester sur votre appareil si le modèle du navigateur est prêt. Le Worker convertit les PDF joints lors de l’envoi.</li>
       <li>Vous pouvez déconnecter Google, révoquer l’accès et supprimer vos données à tout moment.</li>
     </ul>
   </section>
@@ -260,20 +260,21 @@
 
   <h3>1.4 Assistance IA (facultative)</h3>
   <p>
-    Par défaut, l’assistance utilise l’IA intégrée au navigateur : elle s’exécute sur votre
-    appareil et rien n’est envoyé à un service. Aucune clé, aucun compte et aucun abonnement
-    ne sont nécessaires ; si l’IA intégrée manque, WorkLogs se limite à une recherche locale.
-    Si vous configurez une clé IA dans les Paramètres, les actions « Suggérer »,
-    « Compléter », « Mettre en page » et leurs équivalents envoient au fournisseur choisi les
+    Les demandes manuelles de texte peuvent être traitées sur votre appareil si le modèle
+    intégré au navigateur est prêt. Le service par défaut utilise Gemma 4 dans Workers AI
+    chez Cloudflare. L’accès anonyme d’OVHcloud peut prendre le relais. Les actions
+    « Suggérer », « Compléter », « Mettre en page » et leurs
+    équivalents envoient au service externe les
     éléments nécessaires : titre, projet, contenu de la note ou de la procédure, tâches liées,
-    repères de projet et, le cas échéant, sources sélectionnées. La clé IA est stockée localement
-    et sert à authentifier les requêtes auprès du service configuré. Les suivis IA que vous
-    activez peuvent aussi transmettre du texte enregistré après une modification. Avec
-    OpenRouter gratuit, WorkLogs demande un routage qui écarte les fournisseurs de modèles
-    qui collectent les données. OpenRouter traite les requêtes et les transmet au fournisseur
-    choisi pour la réponse. <a href="https://openrouter.ai/docs/guides/privacy/data-collection"
-    rel="noreferrer">Données traitées par OpenRouter</a>.
-    Vous pouvez désactiver l’IA en supprimant la clé.
+    repères de projet et, le cas échéant, sources sélectionnées. Cloudflare et OVHcloud
+    indiquent que les contenus traités par ces services ne servent pas à entraîner leurs modèles.
+    <a href="https://developers.cloudflare.com/workers-ai/platform/data-usage/" rel="noreferrer">Traitement des données par Cloudflare Workers AI</a>.
+    <a href="https://www.ovhcloud.com/en/public-cloud/ai-endpoints/" rel="noreferrer">Traitement des données par OVHcloud AI Endpoints</a>.
+    Les suivis IA que vous activez peuvent aussi transmettre du texte enregistré après une
+    modification. Si vous configurez un autre service, la clé éventuelle est conservée sur
+    cet appareil et utilisée par le navigateur. Les règles de ce service s’appliquent.
+    Pour Gemini, WorkLogs demande un consentement distinct avant tout envoi. Vous pouvez
+    le retirer dans les paramètres.
   </p>
   <p>
     L’assistant, ouvert par le bouton « Assistant », n’envoie rien tant que vous ne lui écrivez
@@ -283,10 +284,12 @@
     notes et procédures pertinentes. Pour une demande qui nécessite une lecture, l’assistant
     peut envoyer jusqu’à 8 000 caractères par texte local, dans la limite de deux documents par
     message. Pour les documents Google, le fournisseur reçoit seulement des métadonnées.
-    Les images et PDF joints au message peuvent être envoyés. WorkLogs extrait le texte des
-    documents Word, des classeurs Excel et des fichiers texte lisibles. Avec le service par
-    défaut, les PDF peuvent être traités par le moteur de conversion gratuit de Cloudflare
-    via OpenRouter. Une pièce non lue transmet uniquement son nom et son type.
+    Les images jointes peuvent être envoyées à Cloudflare ou à OVHcloud. Avec le service par
+    défaut, le PDF joint est transmis au convertisseur du Worker WorkLogs chez Cloudflare au
+    clic sur « Envoyer ». Seul l’extrait de texte accompagne la demande au modèle, y compris
+    si OVHcloud prend le relais. WorkLogs extrait localement
+    le texte des documents Word, des classeurs Excel et des fichiers texte lisibles.
+    Une pièce non lue transmet uniquement son nom et son type au modèle.
   </p>
   <p>
     Une recherche dans le dossier partagé peut envoyer les chemins relatifs des résultats au
@@ -351,9 +354,9 @@
   <p>WorkLogs ne partage pas vos données avec des tiers, sauf :</p>
   <ul>
     <li>Google, lorsque vous activez la connexion Google (Drive, Docs, comptes) ;</li>
-    <li>Cloudflare, qui héberge la PWA et le relais de jetons ;</li>
+    <li>Cloudflare, qui héberge la PWA et le relais de jetons, traite les demandes IA et convertit les PDF joints ;</li>
     <li>GitHub, qui héberge le code, les releases, les mises à jour et le site public ;</li>
-    <li>le fournisseur d’IA que vous configurez, lorsque vous utilisez l’assistance IA ;</li>
+    <li>OVHcloud quand il prend le relais pour une demande IA, ou le fournisseur d’IA que vous configurez ;</li>
     <li>votre propre relais de dossier partagé, si vous l’activez.</li>
   </ul>
   <p>
@@ -428,9 +431,11 @@
       <code>openid email profile</code> to display the connected account. Tokens are stored
       locally; on desktop they are encrypted with the OS keychain. The PWA sends its refresh
       token over HTTPS to a Cloudflare Worker token relay that does not store or log tokens.
-      Google Drive files remain in your Google account. AI features work without a key or
-      account using the browser's built-in on-device AI; only if you configure an external
-      provider does the content you submit leave your device for that provider.
+      Google Drive files remain in your Google account. AI features need no key or
+      account. Manual text requests can use the browser’s built-in model when ready.
+      The default online service uses Gemma 4 on WorkLogs’ Cloudflare Worker, with
+      OVHcloud’s anonymous API as a fallback. The Worker converts attached PDFs at send time
+      and the model receives an excerpt of the text.
       Assistant conversations and drafts are
       saved in the local profile and can be deleted from the assistant. WorkLogs does not sell
       or rent your data, does not use it for advertising, and does not use Google user data to train AI models.

@@ -434,6 +434,22 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 const send = <T>(method: string, url: string, body?: unknown) =>
   req<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
 
+export const WORKLOGS_AI_ENDPOINT = 'https://worklogs-google.cocodexcocoder.workers.dev/ai';
+
+/** Conversion du PDF joint. Le relais reçoit le fichier seul, sans son nom ni la conversation. */
+export async function convertChatPdf(file: Blob, signal: AbortSignal): Promise<{ text: string; truncated: boolean }> {
+  const res = await fetch(`${WORKLOGS_AI_ENDPOINT}/pdf`, {
+    method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: file,
+    credentials: 'omit', redirect: 'error', signal,
+  });
+  if (!res.ok) throw new ApiError('Conversion du PDF indisponible.');
+  const result: unknown = await res.json();
+  if (!result || typeof result !== 'object' || !('text' in result) || typeof result.text !== 'string' || !result.text.trim()) {
+    throw new ApiError('Aucun texte lisible dans le PDF.');
+  }
+  return { text: result.text, truncated: 'truncated' in result && result.truncated === true };
+}
+
 const enc = encodeURIComponent;
 /**
  * Envoi d'octets au dossier partagé. 202 (en attente) et 409 (conflit) ne sont pas

@@ -6,12 +6,13 @@ import { EditorState } from '@tiptap/pm/state';
 import { entryMergeSourceKey } from '../../api/src/entry-merge.js';
 import { contextWords, readProjectAiBrief } from './ai-context';
 import { readAiUsage, readDailyLimit } from './ai-budget';
-import { chatAttachmentBytes, MAX_CHAT_ATTACHMENT_BYTES, MAX_CHAT_ATTACHMENTS, type ChatAttachment } from './ai-chat-attachments';
+import { chatAttachmentBytes, MAX_CHAT_ATTACHMENT_BYTES, MAX_CHAT_ATTACHMENT_TEXT, MAX_CHAT_ATTACHMENTS, type ChatAttachment } from './ai-chat-attachments';
 import { applyChatSharedProcedure, prepareChatSharedProcedure, readChatShare, readChatSharedExcerpt, searchChatShare, type ChatShare, type ChatSharedProposal } from './ai-chat-shared';
-import { AI_TIMEOUT_MS, AiCancelled, AiError, GEMINI_ENDPOINT, localToday, postChatCompletions, REFERENCE_RULE, truncate, validDueDate, type AiMediaInput, type AiSettings } from './ai-suggest';
+import { isLocalAiEndpoint } from './ai-device';
+import { AI_TIMEOUT_MS, AiCancelled, AiError, canUseAi, GEMINI_ENDPOINT, isAnonymousAi, localToday, postChatCompletions, REFERENCE_RULE, truncate, validDueDate, type AiMediaInput, type AiSettings } from './ai-suggest';
 import { flushPendingSaves } from './autosave';
 import { toBase64 } from './docx-preview';
-import { api, ApiError, COLUMNS, dayLabel, isOverdue, plainText, PRIORITIES, priorityLabel, type AppState, type Category, type Entry, type EntryEditSnapshot, type EntrySummary, type Priority, type Project, type RichDocument, type SharedSearchResult, type Status, type Task, type TaskPlanningSnapshot } from './lib';
+import { api, ApiError, COLUMNS, convertChatPdf, dayLabel, isOverdue, plainText, PRIORITIES, priorityLabel, type AppState, type Category, type Entry, type EntryEditSnapshot, type EntrySummary, type Priority, type Project, type RichDocument, type SharedSearchResult, type Status, type Task, type TaskPlanningSnapshot } from './lib';
 import { getChecklistItems, hasHtmlOrImage, updateChecklistItems } from './markdown';
 import { markdownToRich, richToMarkdown } from './rich-markdown';
 import { richExtensions } from './rich-extensions';
@@ -41,6 +42,7 @@ export interface ChatAnswer {
   activity?: string[];
   question?: ChatQuestion;
   consultedLinks?: ChatLinkExcerpt[];
+  unreadAttachmentIds?: string[];
   conversationTitle?: string;
   sharedDocuments?: { path: string; title: string }[];
   usedSharedContent?: boolean;
@@ -79,6 +81,7 @@ const MAX_MODEL_CALLS = 4;
  * chaque essai était coupé avant la fin et tout finissait en « surchargé ».
  */
 const CHAT_TIMEOUT_MS = 45_000;
+const PDF_PREPARATION_TIMEOUT_MS = 15_000;
 const MAX_SOURCE_READS = 2;
 /** Un terme part en query string : démesuré, le serveur refuse la lecture et le message échoue. */
 const MAX_SEARCH_TERM = 100;
@@ -140,6 +143,7 @@ interface ChatContext {
   sharedContentInHistory: boolean;
   consultedLinks: ChatLinkExcerpt[];
   readingNotices: string[];
+  unreadAttachmentIds: string[];
   /** Compté dans `stats` : `state()` peut tronquer ses listes. */
   totalTasks: number;
 }
@@ -343,16 +347,54 @@ function selectChatAttachments(input: ChatInput) {
   return selected;
 }
 
-async function prepareChatAttachments(selected: ReturnType<typeof selectChatAttachments>) {
+// Les mêmes pièces peuvent resservir aux messages suivants. L’extrait reste en mémoire
+// tant que son fichier est présent dans la conversation et peut être relu après rechargement.
+const pdfExcerpts = new WeakMap<Blob, { text: string; truncated: boolean }>();
+
+async function prepareChatAttachments(selected: ReturnType<typeof selectChatAttachments>, settings: AiSettings, context: ChatContext) {
   const media: AiMediaInput[] = [];
   const sources = [];
+  const anonymous = isAnonymousAi(settings);
+  const supportsBinary = anonymous || Boolean(settings.key.trim()) || isLocalAiEndpoint(settings.endpoint);
+  const pdfTimeout = anonymous && selected.some(({ attachment }) => attachment.kind === 'pdf')
+    ? AbortSignal.timeout(PDF_PREPARATION_TIMEOUT_MS) : undefined;
+  const pdfSignal = pdfTimeout && settings.signal ? AbortSignal.any([pdfTimeout, settings.signal]) : pdfTimeout;
   for (const { attachment, previous } of selected) {
+    if (settings.signal?.aborted) throw new AiCancelled();
     const metadata = { name: attachment.name, type: attachment.kind, ...(previous && { previous: true }) };
-    if (attachment.kind === 'file') {
+    const unread = () => {
       sources.push({ ...metadata, unread: true });
+      if (!previous) context.unreadAttachmentIds.push(attachment.id);
+    };
+    if (attachment.kind === 'file') {
+      unread();
+      continue;
+    }
+    if (attachment.kind === 'pdf' && pdfSignal) {
+      try {
+        const { file } = attachment;
+        let excerpt = pdfExcerpts.get(file);
+        if (!excerpt) {
+          if (!file.size || file.size > MAX_CHAT_ATTACHMENT_BYTES || file.type !== 'application/pdf') throw new Error();
+          const result = await convertChatPdf(file, pdfSignal);
+          if (settings.signal?.aborted) throw new AiCancelled();
+          excerpt = { text: clip(result.text, MAX_CHAT_ATTACHMENT_TEXT), truncated: result.truncated || result.text.trim().length > MAX_CHAT_ATTACHMENT_TEXT };
+          pdfExcerpts.set(file, excerpt);
+        }
+        sources.push({ ...metadata, text: excerpt.text, ...(excerpt.truncated && { truncated: true }) });
+      } catch {
+        if (settings.signal?.aborted) throw new AiCancelled();
+        unread();
+        context.readingNotices.push(`Texte indisponible pour le PDF « ${truncate(attachment.name, PROMPT_TITLE)} ». Joins un extrait texte si besoin.`);
+      }
       continue;
     }
     if (attachment.kind === 'image' || attachment.kind === 'pdf') {
+      if (!supportsBinary) {
+        unread();
+        context.readingNotices.push('L’IA intégrée ne lit pas les images ni les PDF dans l’assistant.');
+        continue;
+      }
       const { file, name } = attachment;
       media.push({ name, mimeType: file.type, data: toBase64(new Uint8Array(await file.arrayBuffer())) });
       sources.push({ ...metadata, part: media.length });
@@ -365,7 +407,7 @@ async function prepareChatAttachments(selected: ReturnType<typeof selectChatAtta
 
 async function readAttachedLinks(settings: AiSettings, urls: string[], notices: string[], progress: (label: string) => void) {
   const excerpts: ChatLinkExcerpt[] = [];
-  if (!urls.length || !settings.key.trim()) return { excerpts, modelCalls: 0 };
+  if (!urls.length) return { excerpts, modelCalls: 0 };
   const unread: string[] = [];
   const githubFailures = new Map<string, string>();
   // Les comptes GitHub restent sur l’appareil. La lecture locale rend seulement le contenu.
@@ -389,7 +431,7 @@ async function readAttachedLinks(settings: AiSettings, urls: string[], notices: 
   }
   if (!unread.length) return { excerpts, modelCalls: 0 };
   const githubNotices = () => notices.push(...githubFailures.values());
-  if (!GEMINI_ENDPOINT.test(settings.endpoint.trim())) {
+  if (!settings.key.trim() || !GEMINI_ENDPOINT.test(settings.endpoint.trim())) {
     githubNotices();
     if (unread.some((url) => !githubFailures.has(url))) {
       notices.push('Les liens joints servent de références. Pour analyser une page publique, joins son contenu.');
@@ -874,6 +916,7 @@ function readAnswer(raw: string, value: Record<string, unknown> | null, context:
   const fromSources = {
     ...(usedSharedContent && { usedSharedContent }),
     ...(context.consultedLinks.length && { consultedLinks: context.consultedLinks }),
+    ...(context.unreadAttachmentIds.length && { unreadAttachmentIds: context.unreadAttachmentIds }),
   };
   if (!value) {
     // Du protocole illisible ne s'affiche pas et ne part pas dans l'historique du message suivant.
@@ -1026,7 +1069,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
     today, projects, tasks, documents, recentTaskIds,
     category, categories, openedEntryId: input.openEntryId,
     entriesRead: new Map(), entrySnapshots: new Map(), sharedFiles: [], directories: [], sharedExcerpts: new Map(),
-    sharedContentInHistory: input.history.some(({ sharedContent }) => sharedContent === true), consultedLinks: [], readingNotices: [],
+    sharedContentInHistory: input.history.some(({ sharedContent }) => sharedContent === true), consultedLinks: [], readingNotices: [], unreadAttachmentIds: [],
     totalTasks: state.stats.tasks.todo + state.stats.tasks.doing + state.stats.tasks.done,
   };
   let searchedLocal = false;
@@ -1047,10 +1090,11 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
 
   try {
     const selected = selectChatAttachments(input);
-    const hasKey = Boolean(settings.key.trim());
-    if (hasKey && selected.length) progress('Préparation des pièces jointes…');
-    const { media, sources: attachmentSources } = hasKey ? await prepareChatAttachments(selected) : { media: [], sources: '' };
-    const urls = [...new Set(selected.flatMap(({ attachment, previous }) =>
+    const hasAccess = await canUseAi(settings);
+    if (settings.signal?.aborted) throw new AiCancelled();
+    if (hasAccess && selected.length) progress('Préparation des pièces jointes…');
+    const { media, sources: attachmentSources } = hasAccess ? await prepareChatAttachments(selected, settings, context) : { media: [], sources: '' };
+    const urls = [...new Set((hasAccess ? selected : []).flatMap(({ attachment, previous }) =>
       !previous && attachment.kind === 'link' ? [attachment.text] : []))];
     const links = await readAttachedLinks(settings, urls, context.readingNotices, progress);
     context.consultedLinks = links.excerpts;
@@ -1077,7 +1121,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
         retried && 'Si la forme en place reste impossible à respecter, pose une « question » sur la forme voulue au lieu de renvoyer une action vide.',
         finalStep && 'Dernière étape : réponds avec les résultats disponibles, sans demander de nouvelle lecture.',
       ].filter(Boolean).join('\n');
-      if (hasKey) progress(retryHint ? 'Correction de la proposition…' : `Préparation de la réponse, étape ${step}…`);
+      if (hasAccess) progress(retryHint ? 'Correction de la proposition…' : `Préparation de la réponse, étape ${step}…`);
       const raw = await call(instructions);
       retryHint = '';
       const response = replyObject(raw);
@@ -1183,6 +1227,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
     const conversationTitle = subject && readConversationTitle(subjectProject ? `${subject.title} — ${subjectProject.name}` : subject.title);
     return {
       reply: `Recherche locale : ${count} résultat${count > 1 ? 's' : ''}.`, notice: [cause.message, ...new Set(context.readingNotices)].join(' '), tasks, documents, proposals: [], usedAi: false,
+      ...(context.unreadAttachmentIds.length && { unreadAttachmentIds: context.unreadAttachmentIds }),
       ...(conversationTitle && { conversationTitle }),
       ...(sharedDocuments.length > 0 && { sharedDocuments }),
     };

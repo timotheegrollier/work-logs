@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { aiUsageLabel } from '../ai-budget';
 import { applyChatProposal, askAssistant, MAX_CHAT_MESSAGE, type ChatHistoryItem, type ChatProposal, type ChatQuestion } from '../ai-chat';
 import { chatAttachmentBytes, createChatLink, MAX_CHAT_ATTACHMENTS, MAX_CHAT_ATTACHMENT_BYTES, readChatAttachment, type ChatAttachment } from '../ai-chat-attachments';
-import { AiCancelled, readAiSettings, truncate } from '../ai-suggest';
+import { AiCancelled, aiDailyDefault, readAiSettings, truncate } from '../ai-suggest';
 import { COLUMNS, type Task } from '../lib';
 import { readChatConversations, writeChatConversations, type ChatProposalItem, type ChatSession, type ChatTurn } from '../store/chat-conversations';
 import { ColumnResizer } from './ColumnResizer';
@@ -441,7 +441,7 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
               );
             })}
           </ul>
-          <p className="ai-chat-usage ai-hint">{aiUsageLabel()}</p>
+          <p className="ai-chat-usage ai-hint">{aiUsageLabel(aiDailyDefault(readAiSettings()))}</p>
         </nav>
 
         <div className="ai-chat-columns" ref={columnsRef} hidden={mobileSidebar}>
@@ -579,7 +579,7 @@ function ChatPane({
             return (
               <div className="ai-chat-turn" key={turn.id} ref={turn === turns.at(-1) ? lastTurnRef : undefined}>
                 {turn.question && <p className="ai-chat-bubble is-user">{turn.question}</p>}
-                {turn.attachments?.length ? <ChatAttachments attachments={turn.attachments} /> : null}
+                {turn.attachments?.length ? <ChatAttachments attachments={turn.attachments} unreadIds={answer?.unreadAttachmentIds} /> : null}
                 {turn.stopped && <p className="ai-hint">Demande arrêtée.</p>}
                 {turn.error && (
                   <div className="ai-chat-error">
@@ -678,7 +678,7 @@ function ChatPane({
         <details className="overview-ai-scope ai-chat-data">
           <summary>Données envoyées au service IA</summary>
           <p>Le service IA reçoit ta demande, les derniers échanges, ton profil, les repères du projet affiché, le nom des projets et catégories, les tâches pertinentes, le titre de la note ouverte et le début des notes utiles. Il peut lire le texte de notes et procédures locales dans une limite de taille. Pour un document Google, il reçoit le titre et la date seuls. Une recherche dans le dossier partagé lui transmet les chemins trouvés.</p>
-          <p>Les fichiers et liens que tu joins sont transmis au service IA à l’envoi et peuvent resservir dans la suite de cette conversation. WorkLogs extrait le texte des fichiers Word, Excel et texte. Les images et PDF sont envoyés tels quels. Pour une pièce marquée « Non lu », seuls son nom et son type sont transmis. Sur cet ordinateur, les liens GitHub peuvent être lus avec la connexion GitHub locale. Seul l’extrait lu est transmis au service IA.</p>
+          <p>Les pièces jointes sont utilisées à l’envoi et peuvent resservir dans cette conversation. WorkLogs extrait le texte des fichiers Word, Excel et texte. Avec le service gratuit, le Worker WorkLogs hébergé chez Cloudflare convertit les PDF en texte. Le modèle reçoit seulement l’extrait du PDF. Les images peuvent être envoyées telles quelles. Pour une pièce marquée « Non lu », le modèle ne reçoit que son nom et son type. Les liens GitHub peuvent être lus avec la connexion GitHub locale. Seul l’extrait lu est transmis au service IA.</p>
           <label className="ai-chat-content-setting">
             <input type="checkbox" checked={allowSharedContent} onChange={(event) => onAllowShared(event.target.checked)} />
             Autoriser l’envoi d’extraits des fichiers partagés dans cette conversation
@@ -690,11 +690,11 @@ function ChatPane({
   );
 }
 
-function ChatAttachments({ attachments, onForget }: { attachments: ChatAttachment[]; onForget?: (id: string) => void }) {
+function ChatAttachments({ attachments, unreadIds, onForget }: { attachments: ChatAttachment[]; unreadIds?: string[]; onForget?: (id: string) => void }) {
   return <ul className={`ai-chat-attachments${onForget ? '' : ' is-sent'}`} aria-label={onForget ? 'Pièces jointes du brouillon' : 'Pièces jointes envoyées'}>
     {attachments.map((attachment) => <li key={attachment.id} title={attachment.name}>
       <span>{attachment.name}</span>
-      {attachment.kind === 'file' && <small title="Le fichier reste dans la conversation ; l’assistant ne peut pas lire son contenu.">Non lu</small>}
+      {(attachment.kind === 'file' || unreadIds?.includes(attachment.id)) && <small title="Le fichier reste dans la conversation ; l’assistant ne peut pas lire son contenu.">Non lu</small>}
       {'truncated' in attachment && attachment.truncated && <small>Extrait</small>}
       {onForget && <button type="button" className="ghost" aria-label={`Retirer ${attachment.name}`} onClick={() => onForget(attachment.id)}>×</button>}
     </li>)}

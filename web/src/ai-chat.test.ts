@@ -3,12 +3,18 @@ import { pacificDay, readAiUsage, recordAiUsage, saveDailyLimit } from './ai-bud
 import { applyChatProposal, askAssistant, MAX_CHAT_MESSAGE, type ChatProposal } from './ai-chat';
 import { createChatLink, MAX_CHAT_ATTACHMENTS, type ChatAttachment } from './ai-chat-attachments';
 import { saveProjectAiBrief } from './ai-context';
-import { AiCancelled, GEMINI_AI_ENDPOINT, localToday, resetAiFallbackMemory, type AiSettings } from './ai-suggest';
+import { AiCancelled, DEFAULT_AI_ENDPOINT, DEFAULT_AI_MODEL, GEMINI_AI_ENDPOINT, localToday, resetAiFallbackMemory, saveGoogleAiConsent, type AiSettings } from './ai-suggest';
 import { Autosave, discardPendingSaves } from './autosave';
 import { api, type AppState, type Category, type EntrySummary, type Project, type SharedFile, type SharedSearchResult, type Task } from './lib';
 import { seedData, useRealApi } from './test/server';
 
 const settings = { endpoint: 'https://ia.example/v1', model: 'flash', key: 'cle-test', profile: '' };
+const keyless = { endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL, key: '', profile: '' };
+
+beforeEach(() => {
+  localStorage.clear();
+  saveGoogleAiConsent(true);
+});
 
 afterEach(() => {
   vi.useRealTimers();
@@ -106,6 +112,77 @@ describe('pièces jointes de la conversation', () => {
     ]);
   });
 
+  test('sans clé, convertit le PDF une fois et ne transmet au modèle que son extrait et l’image', async () => {
+    mockState();
+    const pdf: ChatAttachment = { id: 'guide', name: 'guide.pdf', kind: 'pdf', file: new Blob(['%PDF-BINAIRE'], { type: 'application/pdf' }) };
+    const image: ChatAttachment = { id: 'photo', name: 'atelier.png', kind: 'image', file: new Blob(['PNG'], { type: 'image/png' }) };
+    const fetch = vi.fn(async (url: string, _init: RequestInit) => url.endsWith('/ai/pdf')
+      ? Response.json({ text: 'Relever la pression du filtre.', truncated: true })
+      : aiResponse(json({ reply: 'Pièces reçues.' })));
+    vi.stubGlobal('fetch', fetch);
+    const first = await ask({ attachments: [pdf, image] }, keyless);
+    expect(first.usedAi).toBe(true);
+    const [conversion, inference] = fetch.mock.calls;
+    expect(conversion[0]).toBe('https://worklogs-google.cocodexcocoder.workers.dev/ai/pdf');
+    expect(conversion[1]).toMatchObject({ method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: pdf.file, credentials: 'omit', redirect: 'error' });
+    expect(new Headers(conversion[1].headers).has('Authorization')).toBe(false);
+    expect(inference[0]).toBe(`${DEFAULT_AI_ENDPOINT}/chat/completions`);
+    expect(new Headers(inference[1].headers).has('Authorization')).toBe(false);
+    const prompt = JSON.parse(inference[1].body as string).messages[1].content;
+    expect(prompt).toEqual([
+      { type: 'text', text: expect.stringContaining('"name":"guide.pdf","type":"pdf","text":"Relever la pression du filtre.","truncated":true') },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,UE5H' } },
+    ]);
+
+    await ask({ text: 'Et le guide ?', history: [{ role: 'user', text: '', attachments: [pdf] }] }, keyless);
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('/ai/pdf'))).toHaveLength(1);
+    expect(JSON.parse(fetch.mock.calls.at(-1)![1].body as string).messages[1].content).toContain('Relever la pression du filtre.');
+  });
+
+  test('sans clé, un PDF indisponible reste signalé comme non lu, et le modèle reçoit tout de même la demande', async () => {
+    mockState();
+    const pdf: ChatAttachment = { id: 'scan', name: 'scan.pdf', kind: 'pdf', file: new Blob(['%PDF-BINAIRE'], { type: 'application/pdf' }) };
+    const fetch = vi.fn(async (url: string, _init: RequestInit) => url.endsWith('/ai/pdf')
+      ? new Response(null, { status: 503 }) : aiResponse(json({ reply: 'Je peux répondre sans le PDF.' })));
+    vi.stubGlobal('fetch', fetch);
+    const answer = await ask({ attachments: [pdf] }, keyless);
+    expect(answer).toMatchObject({ reply: 'Je peux répondre sans le PDF.', unreadAttachmentIds: ['scan'] });
+    expect(answer.notice).toContain('Texte indisponible pour le PDF « scan.pdf »');
+    const prompt = JSON.parse(fetch.mock.calls[1][1].body as string).messages[1].content;
+    expect(prompt).toContain('"name":"scan.pdf","type":"pdf","unread":true');
+    expect(prompt).not.toContain('BINAIRE');
+  });
+
+  test('arrêter la préparation du PDF annule l’envoi de la demande', async () => {
+    mockState();
+    const controller = new AbortController();
+    const pdf: ChatAttachment = { id: 'guide', name: 'guide.pdf', kind: 'pdf', file: new Blob(['%PDF-BINAIRE'], { type: 'application/pdf' }) };
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      controller.abort();
+      expect(init.signal?.aborted).toBe(true);
+      throw new DOMException('Lecture arrêtée', 'AbortError');
+    });
+    vi.stubGlobal('fetch', fetch);
+    await expect(ask({ attachments: [pdf] }, { ...keyless, signal: controller.signal })).rejects.toBeInstanceOf(AiCancelled);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  test('l’IA intégrée exploite le texte joint et écarte les images sans envoyer de requête', async () => {
+    mockState();
+    const prompt = vi.fn(async (_input: string) => json({ reply: 'Texte reçu.' }));
+    vi.stubGlobal('LanguageModel', { availability: async () => 'available', create: async () => ({ prompt }) });
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    const answer = await ask({ attachments: [
+      { id: 'texte', name: 'notes.txt', kind: 'text', text: 'La pompe est arrêtée.' },
+      { id: 'photo', name: 'atelier.png', kind: 'image', file: new Blob(['PNG'], { type: 'image/png' }) },
+    ] }, { ...settings, key: '' });
+    expect(answer).toMatchObject({ reply: 'Texte reçu.', unreadAttachmentIds: ['photo'] });
+    expect(prompt.mock.calls[0][0]).toContain('La pompe est arrêtée.');
+    expect(prompt.mock.calls[0][0]).toContain('"name":"atelier.png","type":"image","unread":true');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   test('annonce un fichier non lisible sans envoyer son contenu, et le garde pour la suite', async () => {
     mockState();
     const calls = stubAi(json({ reply: 'Je garde ce fichier.' }), json({ reply: 'Toujours là.' }));
@@ -197,7 +274,7 @@ describe('pièces jointes de la conversation', () => {
     const text = 'Dépôt privé Murgat-Ingenierie/deployer. README — Déployer les services depuis le tableau de bord.';
     const read = vi.spyOn(api, 'readGithubLink').mockResolvedValue({ url: attachment.text!, text, private: true });
     const calls = stubAi(json({ reply: 'Le dépôt décrit le déploiement des services.' }), json({ reply: 'Voici la suite.' }));
-    const result = await ask({ attachments: [attachment] });
+    const result = await ask({ attachments: [attachment] }, keyless);
     expect(read).toHaveBeenCalledWith(attachment.text, undefined);
     expect(result.notice).toBe('');
     expect(result.consultedLinks).toEqual([{ url: attachment.text, text }]);
@@ -206,7 +283,7 @@ describe('pièces jointes de la conversation', () => {
     await ask({ text: 'Détaille ce fonctionnement', history: [
       { role: 'user', text: '', attachments: [attachment] },
       { role: 'assistant', text: result.reply, consultedLinks: result.consultedLinks },
-    ] });
+    ] }, keyless);
     expect(read).toHaveBeenCalledTimes(1);
     expect(user(calls[1])).toContain(text);
   });

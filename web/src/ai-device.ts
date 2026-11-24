@@ -136,6 +136,7 @@ export async function deviceCompletion(
       initialPrompts: [{ role: 'system', content: system }],
       temperature: 0.4,
       topK: 3,
+      ...(signal && { signal }),
     }), TIMEOUTS.create, signal);
     const instruction = json && !/json/i.test(user)
       ? `${user}\n\nRéponds uniquement avec un objet JSON valide, sans texte autour.`
@@ -144,6 +145,7 @@ export async function deviceCompletion(
     const text = deviceText(String(answer ?? ''), json);
     return text || null;
   } catch {
+    if (signal?.aborted) throw new DOMException('Demande arrêtée.', 'AbortError');
     return null;
   } finally {
     try { session?.destroy?.(); } catch { /* déjà libérée par le navigateur. */ }

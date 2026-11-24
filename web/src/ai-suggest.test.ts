@@ -1,10 +1,11 @@
-import { describe, expect, test, vi, afterEach } from 'vitest';
+import { beforeEach, describe, expect, test, vi, afterEach } from 'vitest';
 import { aiResetTime, estimateTokens, pacificDay, readAiUsage, saveDailyLimit } from './ai-budget';
 import {
   AiBudgetError,
   AiCancelled,
   AiError,
   AI_MODELS,
+  OPENROUTER_AI_ENDPOINT,
   buildCompleteNotePrompt,
   buildMergePrompt,
   buildSearchTermsPrompt,
@@ -38,6 +39,7 @@ import {
   proofreadEntry,
   readAiSettings,
   recurringVocabulary,
+  saveGoogleAiConsent,
   saveAiSettings,
   suggestProcedure,
   suggestSearchTerms,
@@ -48,6 +50,7 @@ import {
   DEFAULT_AI_ENDPOINT,
   DEFAULT_AI_MODEL,
   GEMINI_AI_ENDPOINT,
+  GEMINI_DEFAULT_MODEL,
   GEMINI_FALLBACK_MODELS,
   postChatCompletions,
   resetAiFallbackMemory,
@@ -58,6 +61,11 @@ function aiResponse(content: unknown, status = 200) {
 }
 
 const settings = { endpoint: 'https://ia.example/v1', model: 'flash', key: 'cle-test', profile: '' };
+
+beforeEach(() => {
+  localStorage.clear();
+  saveGoogleAiConsent(true);
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -483,8 +491,21 @@ describe('vocabulaire auto-appris', () => {
 });
 
 describe('réglages', () => {
-  test('routeur gratuit OpenRouter par défaut, clé vide', () => {
+  test('le Worker WorkLogs est utilisé par défaut, clé vide', () => {
     expect(readAiSettings()).toEqual({ endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL, key: '', profile: '' });
+  });
+
+  test('une demande Gemini sans consentement échoue avant le réseau ; un consentement explicite autorise l’appel', async () => {
+    const fetch = vi.fn(async () => aiResponse('Relire'));
+    vi.stubGlobal('fetch', fetch);
+    saveGoogleAiConsent(false);
+    await expect(suggestSubtasks({ endpoint: GEMINI_AI_ENDPOINT, model: GEMINI_DEFAULT_MODEL, key: 'AIza-cle-test', profile: '' }, 'Dossier'))
+      .rejects.toThrow(/accepte l’avertissement de confidentialité/);
+    expect(fetch).not.toHaveBeenCalled();
+    saveGoogleAiConsent(true);
+    await expect(suggestSubtasks({ endpoint: GEMINI_AI_ENDPOINT, model: GEMINI_DEFAULT_MODEL, key: 'AIza-cle-test', profile: '' }, 'Dossier'))
+      .resolves.toBe('Relire');
+    expect(fetch).toHaveBeenCalledOnce();
   });
 
   test('le modèle par défaut figure dans les options du select', () => {
@@ -498,17 +519,119 @@ describe('réglages', () => {
   });
 
   test.each([
-    [GEMINI_AI_ENDPOINT, 'gemini-3-flash-preview', 'cle-google'],
-    ['', 'gemini-3.5-flash-lite', 'cle-google'],
+    [GEMINI_AI_ENDPOINT, 'gemini-3-flash-preview', 'AIza-google'],
+    [GEMINI_AI_ENDPOINT, GEMINI_DEFAULT_MODEL, 'AIza-google'],
+    ['', 'gemini-3.5-flash-lite', 'AIza-google'],
     ['', '', 'AIza-ancienne-cle'],
-  ])('migre %s / %s vers OpenRouter sans réutiliser la clé Google', (endpoint, model, key) => {
-    saveAiSettings({ endpoint, model, key, profile: 'Maintenance' });
+    [OPENROUTER_AI_ENDPOINT, 'openrouter/free', 'sk-or-ancienne'],
+    ['', 'openrouter/free', 'sk-or-ancienne'],
+    ['https://oai.endpoints.kepler.ai.cloud.ovh.net/v1', 'gemma-4-26b-a4b', 'cle-ancienne'],
+  ])('migre l’ancien défaut %s / %s sans réutiliser sa clé', (endpoint, model, key) => {
+    localStorage.setItem('worklogs-ai-endpoint', endpoint);
+    localStorage.setItem('worklogs-ai-model', model);
+    localStorage.setItem('worklogs-ai-key', key);
+    localStorage.setItem('worklogs-ai-profile', 'Maintenance');
     expect(readAiSettings()).toEqual({ endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL, key: '', profile: 'Maintenance' });
+  });
+
+  test('un choix avancé explicite garde son fournisseur et sa clé', () => {
+    const legacy = { endpoint: GEMINI_AI_ENDPOINT, model: GEMINI_DEFAULT_MODEL, key: 'AIza-test', profile: '' };
+    saveAiSettings(legacy);
+    expect(readAiSettings()).toEqual(legacy);
+  });
+
+  test('conserve un modèle Gemini personnalisé enregistré avant la migration', () => {
+    localStorage.setItem('worklogs-ai-endpoint', GEMINI_AI_ENDPOINT);
+    localStorage.setItem('worklogs-ai-model', 'gemini-modele-personnalise');
+    localStorage.setItem('worklogs-ai-key', 'AIza-test');
+    expect(readAiSettings()).toEqual({
+      endpoint: GEMINI_AI_ENDPOINT, model: 'gemini-modele-personnalise', key: 'AIza-test', profile: '',
+    });
   });
 });
 
-describe('OpenRouter gratuit', () => {
-  const free = { ...settings, endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL };
+describe('IA WorkLogs anonyme', () => {
+  const anonymous = { endpoint: DEFAULT_AI_ENDPOINT, model: DEFAULT_AI_MODEL, key: '', profile: '' };
+
+  test('le défaut répond sans clé et ne transmet jamais un ancien secret', async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => aiResponse('Vérifier le dossier'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks(readAiSettings(), 'Dossier')).resolves.toBe('Vérifier le dossier');
+    await expect(suggestSubtasks({ ...anonymous, key: 'sk-or-ancien-secret' }, 'Dossier')).resolves.toBe('Vérifier le dossier');
+    expect(fetch.mock.calls).toHaveLength(2);
+    for (const [url, init] of fetch.mock.calls) {
+      expect(url).toBe(DEFAULT_AI_ENDPOINT + '/chat/completions');
+      expect(init).toMatchObject({ credentials: 'omit', redirect: 'error', headers: { 'Content-Type': 'application/json' } });
+      expect(init.headers).not.toHaveProperty('Authorization');
+      expect(init.body).not.toContain('sk-or-ancien-secret');
+      expect(JSON.parse(String(init.body))).toMatchObject({ model: DEFAULT_AI_MODEL });
+      expect(JSON.parse(String(init.body))).not.toHaveProperty('provider');
+    }
+  });
+
+  test('le chat avec une image utilise un modèle visuel gratuit et une réponse JSON', async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => aiResponse('{"reply":"Image lue."}'));
+    vi.stubGlobal('fetch', fetch);
+    const result = await postChatCompletions(anonymous, 'l’assistant', 'Réponds en JSON', 'Lis la photo', 300, 1000, {
+      json: true,
+      media: [{ name: 'photo.png', mimeType: 'image/png', data: 'T0s=' }],
+    });
+    expect(result).toBe('{"reply":"Image lue."}');
+    expect(bodyOf(fetch.mock.calls[0])).toMatchObject({
+      model: DEFAULT_AI_MODEL,
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'system' }, { role: 'user', content: [
+        { type: 'text', text: 'Lis la photo' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,T0s=' } },
+      ] }],
+    });
+  });
+
+  test('le Worker limité laisse la place à OVHcloud et respecte Retry-After', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(null, { status: 429, headers: { 'Retry-After': '60' } }))
+      .mockResolvedValue(aiResponse('Vérifier'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks(anonymous, 'Dossier')).resolves.toBe('Vérifier');
+    await expect(suggestSubtasks(anonymous, 'Autre dossier')).resolves.toBe('Vérifier');
+    expect(fetch.mock.calls.map(modelOf)).toEqual([DEFAULT_AI_MODEL, 'gemma-4-26b-a4b', 'gemma-4-26b-a4b']);
+    const [url, init] = fetch.mock.calls[1];
+    expect(url).toBe('https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions');
+    expect(init).toMatchObject({ credentials: 'omit', redirect: 'error' });
+    expect(init.headers).not.toHaveProperty('Authorization');
+  });
+
+  test('la chaîne signale un quota saturé sans répétition ni modèle payant', async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 429 }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks(anonymous, 'Dossier')).rejects.toThrow(/quota de l’IA gratuite/);
+    expect(fetch.mock.calls.map(modelOf)).toEqual([DEFAULT_AI_MODEL, 'gemma-4-26b-a4b', 'laguna-xs-2.1', 'qwen3.6-35b-a3b']);
+    await expect(suggestSubtasks(anonymous, 'Autre dossier')).rejects.toThrow(/quota de l’IA gratuite/);
+    expect(fetch).toHaveBeenCalledTimes(4);
+  });
+
+  test('une route Worker absente déclenche le secours visuel, sans envoyer le PDF brut', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(null, { status: 405 }))
+      .mockResolvedValue(aiResponse('{"reply":"Photo lue."}'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(postChatCompletions(anonymous, 'l’assistant', 'Réponds en JSON', 'Lis la photo', 300, 1000, {
+      json: true,
+      media: [{ name: 'photo.png', mimeType: 'image/png', data: 'T0s=' }],
+    })).resolves.toBe('{"reply":"Photo lue."}');
+    expect(fetch.mock.calls.map(modelOf)).toEqual([DEFAULT_AI_MODEL, 'qwen3-vl-30b-a3b']);
+  });
+
+  test('le suivi automatique interrompt ses appels au quota du Worker', async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 429 }));
+    vi.stubGlobal('fetch', fetch);
+    const background = { ...anonymous, background: true };
+    await expect(suggestSubtasks(background, 'Dossier')).rejects.toThrow(/quota de l’IA gratuite/);
+    await expect(suggestSubtasks(background, 'Autre dossier')).rejects.toThrow(/quota de l’IA gratuite/);
+    expect(fetch.mock.calls.map(modelOf)).toEqual([DEFAULT_AI_MODEL]);
+  });
+});
+
+describe('OpenRouter gratuit explicite', () => {
+  const free = { ...settings, endpoint: OPENROUTER_AI_ENDPOINT, model: 'openrouter/free' };
 
   test('les suggestions gardent le texte libre et demandent un routage à prix zéro', async () => {
     const fetch = vi.fn(async () => aiResponse('Relire'));
@@ -1061,21 +1184,11 @@ describe('modèle saturé', () => {
     expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', GEMINI_FALLBACK_MODELS[0]]);
   });
 
-  test('saturé, absent pour la clé, quota, réponse vide ou trop lent : on passe au suivant, chaque modèle une fois', async () => {
-    const fetch = vi.fn()
-      .mockResolvedValueOnce(aiResponse('x', 503))
-      .mockImplementationOnce(hang)
-      .mockResolvedValueOnce(aiResponse('x', 404))
-      .mockResolvedValueOnce(aiResponse('x', 429))
-      .mockResolvedValueOnce(aiResponse('   '))
-      .mockResolvedValueOnce(aiResponse('## Propre'));
+  test('une pointe 503 passe au seul secours gratuit autorisé', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('## Propre'));
     vi.stubGlobal('fetch', fetch);
-    const started = Date.now();
     expect(await proofreadEntry(gemini, 'Titre', 'brouillon', { timeoutMs: 600 })).toBe('## Propre');
-    expect(Date.now() - started).toBeLessThan(900);
-    const models = fetch.mock.calls.map(modelOf);
-    expect(models).toEqual(['gemini-3.5-flash-lite', ...GEMINI_FALLBACK_MODELS.filter((m) => m !== 'gemini-3.5-flash-lite').slice(0, 5)]);
-    expect(new Set(models).size).toBe(models.length);
+    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', 'gemini-2.5-flash-lite']);
   });
 
   test('tous saturés : un appel par modèle, puis un seul nouvel essai du modèle choisi', async () => {
@@ -1086,15 +1199,13 @@ describe('modèle saturé', () => {
     expect(models).toEqual([...new Set([gemini.model, ...GEMINI_FALLBACK_MODELS]), gemini.model]);
   });
 
-  test('une pointe 5xx passée, le nouvel essai du modèle choisi rend la réponse', async () => {
+  test('une pointe 5xx persistante bénéficie d’un seul nouvel essai final', async () => {
     const fetch = vi.fn(async () => aiResponse('x', 503));
     vi.stubGlobal('fetch', fetch);
     fetch.mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('x', 503))
-      .mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('x', 503))
-      .mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('x', 503))
-      .mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('Relire'));
+      .mockResolvedValueOnce(aiResponse('Relire'));
     expect(await suggestSubtasks(gemini, 'T')).toBe('Relire');
-    expect(fetch.mock.calls.map(modelOf).at(-1)).toBe(gemini.model);
+    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', 'gemini-2.5-flash-lite', 'gemini-3.5-flash-lite']);
   });
 
   test('budget total borné : des modèles qui traînent ne font pas attendre indéfiniment', async () => {
@@ -1104,7 +1215,7 @@ describe('modèle saturé', () => {
     await expect(suggestSubtasks(gemini, 'T', { timeoutMs: 300 })).rejects.toThrow(/surchargé/);
     // 1,5 × le délai, à la marge du minuteur près.
     expect(Date.now() - started).toBeLessThan(600);
-    expect(fetch.mock.calls.length).toBeLessThan(GEMINI_FALLBACK_MODELS.length);
+    expect(fetch.mock.calls.length).toBeLessThan(3);
   });
 
   test('le secours qui a répondu passe en tête dix minutes, puis le modèle choisi retrouve sa chance', async () => {
@@ -1555,8 +1666,8 @@ describe('plafond quotidien et comptage', () => {
 describe('chaîne de modèles et paramètres Gemini', () => {
   const gemini = geminiOn('gemini-3.5-flash-lite');
 
-  test('la chaîne quitte 3.5-flash, routé vers 3.6-flash, et gagne le quota de 3.8-flash ; le select suit', () => {
-    expect(GEMINI_FALLBACK_MODELS).toEqual(['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash']);
+  test('la chaîne de secours reste limitée au modèle gratuit Gemini retenu', () => {
+    expect(GEMINI_FALLBACK_MODELS).toEqual(['gemini-2.5-flash-lite']);
   });
 
   test('suivi automatique : deux modèles au plus, même tous saturés', async () => {
@@ -1717,7 +1828,7 @@ describe('chaîne de modèles et paramètres Gemini', () => {
     let fetch = vi.fn().mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('x', 429)).mockResolvedValue(aiResponse('x', 503));
     vi.stubGlobal('fetch', fetch);
     await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow(quotaMessage());
-    expect(fetch).toHaveBeenCalledTimes(GEMINI_FALLBACK_MODELS.length);
+    expect(fetch).toHaveBeenCalledTimes(2);
     fetch = vi.fn().mockResolvedValueOnce(aiResponse('x', 429)).mockResolvedValue(aiResponse('x', 404));
     vi.stubGlobal('fetch', fetch);
     await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow(quotaMessage());
@@ -1758,7 +1869,7 @@ describe('chaîne de modèles et paramètres Gemini', () => {
     let fetch = vi.fn().mockResolvedValueOnce(blocked()).mockResolvedValue(aiResponse('x', 503));
     vi.stubGlobal('fetch', fetch);
     await expect(proofreadEntry(gemini, 'T', 'texte')).rejects.toThrow(blockedMessage);
-    expect(fetch).toHaveBeenCalledTimes(GEMINI_FALLBACK_MODELS.length);
+    expect(fetch).toHaveBeenCalledTimes(2);
     fetch = vi.fn().mockResolvedValueOnce(blocked()).mockResolvedValue(aiResponse('x', 404));
     vi.stubGlobal('fetch', fetch);
     await expect(proofreadEntry(gemini, 'T', 'texte')).rejects.toThrow(blockedMessage);
@@ -1776,18 +1887,12 @@ describe('chaîne de modèles et paramètres Gemini', () => {
     expect(readAiUsage().requests).toBe(2);
   });
 
-  test('429, 5xx et 404 ne comptent pas : seule une seconde réponse comptée arrête la chaîne', async () => {
-    const fetch = vi.fn()
-      .mockResolvedValueOnce(aiResponse('   '))
-      .mockResolvedValueOnce(aiResponse('x', 503))
-      .mockResolvedValueOnce(aiResponse('x', 429))
-      .mockResolvedValueOnce(aiResponse('x', 404))
-      .mockResolvedValueOnce(aiResponse('   '))
-      .mockResolvedValue(aiResponse('Jamais lu'));
+  test('un quota du fournisseur sur le modèle de secours est rapporté sans compter l’appel', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(aiResponse('x', 503)).mockResolvedValueOnce(aiResponse('x', 429));
     vi.stubGlobal('fetch', fetch);
     await expect(suggestSubtasks(gemini, 'T')).rejects.toThrow(quotaMessage());
-    expect(fetch).toHaveBeenCalledTimes(5);
-    expect(readAiUsage().requests).toBe(2);
+    expect(fetch.mock.calls.map(modelOf)).toEqual(['gemini-3.5-flash-lite', 'gemini-2.5-flash-lite']);
+    expect(readAiUsage().requests).toBe(0);
   });
 
   test('le délai suit la longueur de la réponse attendue ; options.timeoutMs garde la priorité', async () => {

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, type AppState, type FollowUp, type FollowUpKind, type FollowUpReport, type FollowUpChecklistChange, type FollowUpReportDraft } from './lib';
 import { aiBudgetRefusal } from './ai-budget';
-import { AiBudgetError, AiCancelled, generateFollowUp, readAiSettings } from './ai-suggest';
+import { AiBudgetError, AiCancelled, aiDailyDefault, generateFollowUp, readAiSettings } from './ai-suggest';
 import { flushPendingSaves, hasPendingSaves } from './autosave';
 import { applyChecklistChanges } from './checklist-edits';
 
@@ -317,7 +317,7 @@ export function FollowUpProvider({ state, onChanged, onEntriesChanged, children 
     mounted.current = true;
     // Minuit à Los Angeles ou un plafond relevé ne changent aucun état : seul un relevé régulier les voit, hors travail actif pour ne rien effacer d'en cours.
     const resume = setInterval(() => {
-      if (!refused.current.size || active.current || aiBudgetRefusal(true)) return;
+      if (!refused.current.size || active.current || aiBudgetRefusal(true, aiDailyDefault(readAiSettings()))) return;
       for (const key of refused.current) {
         attempted.current.delete(key);
         patch(key, idle);

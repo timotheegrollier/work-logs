@@ -376,19 +376,31 @@ synchronisation habituelles.
 
 ## Assistance IA
 
-**Aucune clé, aucun compte, aucun abonnement n’est nécessaire.** Dans Chrome ou la PWA,
-WorkLogs utilise l’**IA intégrée au navigateur** : elle tourne sur l’appareil et le texte
-n’est pas envoyé à un service. Si le navigateur annonce seulement un modèle
-« téléchargeable », **Préparer l’IA gratuite** le télécharge une fois, sur ton clic. Sans
-IA intégrée (Firefox, application desktop), les gestes IA retombent sur la recherche et les
-propositions locales : l’application reste utilisable et ne dépense rien.
+**Aucune clé, aucun compte, aucun abonnement n’est nécessaire.** Ouvre l’assistant ou
+une action ✨ IA. Le réglage par défaut utilise Gemma 4 26B sur le Worker Cloudflare
+de WorkLogs, avec OVHcloud en secours pour le texte et les images. Il fonctionne aussi
+dans l’application desktop et les navigateurs sans modèle intégré.
+Pour une demande manuelle de texte, WorkLogs préfère le modèle intégré si le navigateur
+l’a déjà prêt. **Préparer l’IA gratuite** propose de le télécharger sur ton clic.
 
-Une **clé d’un service externe** reste possible, sous **Paramètres → Assistance IA**, pour
-choisir un autre modèle. Elle est facultative et enregistrée sur cet appareil. Le bouton
-**Tester la connexion** envoie un appel au modèle affiché ; son résultat s’efface quand tu
-changes la clé, l’endpoint ou le modèle. L’endpoint, le modèle, le plafond quotidien et
-**Restaurer les réglages gratuits** se trouvent sous **Réglages avancés**. Un endpoint local
-(Ollama, LM Studio) fonctionne aussi sans clé.
+**Paramètres → Assistance IA → Tester la connexion** vérifie le service configuré.
+Le plafond quotidien et les services personnalisés sont sous **Réglages avancés**.
+Les anciens réglages par défaut Gemini, OpenRouter et OVHcloud passent au Worker WorkLogs.
+Le contexte de travail reste enregistré sur l’appareil. Un endpoint local (Ollama,
+LM Studio) peut aussi fonctionner sans clé.
+
+**Réglages avancés → Utiliser Gemini avec ma clé gratuite** règle l’endpoint Google et
+Gemini 3.5 Flash-Lite. Le lien **Créer une clé Gemini dans Google AI Studio** apparaît
+alors, avec le choix entre trois modèles Flash-Lite gratuits.
+
+**Si tu choisis Gemini dans les réglages avancés**, l’utilisation du palier gratuit n’est pas confidentielle.
+Google peut utiliser les requêtes et réponses pour améliorer ses produits et les faire examiner.
+N’y envoie aucune donnée personnelle, confidentielle ou sensible. Les quotas et conditions
+peuvent changer ; n’active pas la facturation si tu veux éviter tout coût. WorkLogs demande
+un consentement explicite avant le premier envoi à Google. La clé, même stockée localement,
+est utilisée directement par le navigateur et peut être visible côté client ; Google déconseille
+cette méthode en production. Pour un usage personnel, restreins la clé à l’API et aux sites
+autorisés dans Google Cloud lorsque c’est possible.
 
 Tu peux aussi renseigner **Mon contexte de travail** et le **Contexte IA du projet** pour
 indiquer l’objectif, les contraintes et le vocabulaire utile. Chaque fiche reste sur cet
@@ -535,14 +547,16 @@ une nouvelle proposition. Le partage refuse la création si le nom du fichier es
 Une proposition appliquée affiche un bouton pour ouvrir le résultat dans WorkLogs. Une tâche
 créée donne accès à sa carte et à son brouillon lié.
 
-Avec l’IA intégrée, ces éléments restent sur l’appareil. Avec un service externe configuré,
-il reçoit la demande, les derniers échanges de la conversation, le profil, le
+Le service externe reçoit la demande, les derniers échanges de la conversation, le profil, le
 projet et ses repères, les catégories et des résumés des tâches, des entrées et de leurs liens.
 Quand une demande en a besoin, l’assistant peut consulter le texte d’entrées locales et les noms du partage.
 Pour les documents Google associés, le fournisseur reçoit les titres et les dates.
-Les pièces jointes lisibles au chat partent à l’envoi. WorkLogs extrait le texte des fichiers
-Word, Excel et texte. Avec OpenRouter, WorkLogs sélectionne le moteur gratuit pour convertir
-les PDF. La mention **Extrait** indique un contenu abrégé. Les autres pièces
+WorkLogs extrait sur l’appareil le texte des fichiers Word, Excel et texte. Avec le réglage
+par défaut, une image jointe peut être analysée par Gemma 4 chez Cloudflare ou par un
+modèle visuel d’OVHcloud en secours. Le PDF joint est envoyé au convertisseur du Worker
+WorkLogs chez Cloudflare au clic sur **Envoyer**. Seul l’extrait de texte accompagne la
+demande au modèle. Un PDF sans texte extractible reste joint, marqué **Non lu**.
+La mention **Extrait** indique un contenu abrégé. Les autres pièces
 restent dans la conversation : le fournisseur reçoit leur nom et leur type, jamais leurs
 octets. Les pièces récentes peuvent aussi servir aux réponses suivantes de la conversation.
 
@@ -554,25 +568,29 @@ le plafond est atteint, l’assistant affiche les résultats de recherche qu’i
 
 ### Gratuité et plafond quotidien
 
-L’**IA intégrée** ne coûte rien, ne demande ni clé ni compte et ne compte pas dans le
-plafond : elle répond sur l’appareil. C’est le chemin par défaut.
+Le compte Cloudflare qui héberge le Worker dispose de **10 000 neurones par jour**
+avec Workers Free. Ce quota de calcul est partagé et repart à **minuit UTC**. La taille
+des demandes et des réponses détermine la consommation de chaque appel. À titre indicatif,
+ce quota permet environ 200 appels au total si chaque demande utilise 4 000 jetons en
+entrée et 500 en sortie, au barème de Gemma 4 26B.
+[Quota de Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/).
 
-Si tu configures un service externe, le routeur **OpenRouter gratuit** (`openrouter/free`)
-choisit parmi les modèles gratuits disponibles pour la demande. WorkLogs impose un prix
-maximal de zéro pour ces requêtes et demande d’écarter les fournisseurs de modèles qui
-collectent les données. OpenRouter reçoit le contenu envoyé et le traite selon sa
-politique. Si tu configures un autre service ou un modèle payant, vérifie ses tarifs.
-[Routeur gratuit](https://openrouter.ai/docs/guides/routing/routers/free-router) ·
-[Données traitées par OpenRouter](https://openrouter.ai/docs/guides/privacy/data-collection).
+OVHcloud fournit un accès de secours anonyme limité à deux appels par minute, par modèle
+et par adresse IP. Si les services gratuits sont indisponibles ou limités, l’assistant
+affiche les résultats locaux.
+[Limites OVHcloud](https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-capabilities).
+
+Les demandes traitées par l’IA intégrée au navigateur ne comptent pas dans le plafond.
+Les services personnalisés choisis dans les réglages avancés ont leurs propres conditions.
 
 Le compteur de WorkLogs apparaît dans les Paramètres et au pied de l’assistant. Le plafond
-par défaut est de **50 requêtes par jour** et de 500 000 jetons. Tu peux régler le nombre de
-requêtes de 10 à 5 000 sous **Réglages avancés**. Le plafond de jetons suit à raison
-de 10 000 jetons par requête. Le compteur local repart à minuit heure du Pacifique.
+par défaut est de **150 requêtes par jour** et de 1 500 000 jetons avec le service gratuit
+WorkLogs. Pour un service personnalisé, le plafond par défaut reste de 50 requêtes par jour.
+Un plafond déjà choisi reste en place. Tu peux régler le nombre de requêtes de 10 à 5 000
+sous **Réglages avancés**. Le plafond de jetons suit à raison de 10 000 jetons par requête.
+Le compteur local repart à minuit heure du Pacifique.
 
-OpenRouter applique ses propres limites au compte, même si tu utilises plusieurs appareils.
-Le service peut donc répondre « quota atteint » avant le plafond affiché par WorkLogs.
-[Limites d’OpenRouter](https://openrouter.ai/docs/api/reference/limits).
+Le service externe peut atteindre sa limite avant le plafond affiché par WorkLogs.
 
 ## Projets
 
@@ -646,7 +664,7 @@ clic. Les mêmes actions existent pour les fichiers du dossier partagé (ci-dess
 
 **Tirer une procédure de son travail, avec l'IA.** Dans une entrée du journal,
 **✨ IA › Créer une procédure**, et de même au pied d'une carte de tâche. L'IA (le service
-réglé dans ⚙ Paramètres, OpenRouter gratuit par défaut) lit l'entrée — ou la tâche et ses documents
+réglé dans ⚙ Paramètres, gratuit et sans clé par défaut) lit l’entrée ou la tâche et ses documents
 liés — et rédige un mode opératoire concis, comme ci-dessus : un titre, l'objectif, des
 étapes d'une ligne (10 au plus), prérequis et vérification seulement s'il y en a ;
 « à préciser » là où la source ne dit rien. La proposition se relit sur place : corriger

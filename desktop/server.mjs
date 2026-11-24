@@ -24,9 +24,9 @@ export async function startDesktopServer({ dataDir, staticDir, withSeed = true, 
     res.setHeader('Content-Security-Policy', [
       "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https: http:",
-      // Le renderer appelle l’IA en direct. Seuls OpenRouter et le point
-      // d’accès Google historique sont autorisés en plus de l’API locale.
-      "connect-src 'self' https://openrouter.ai https://generativelanguage.googleapis.com", "object-src 'none'",
+      // Le Worker WorkLogs sert l’IA et les PDF. OVHcloud sert de secours.
+      // Google et OpenRouter restent utilisables depuis les réglages avancés.
+      "connect-src 'self' https://oai.endpoints.kepler.ai.cloud.ovh.net https://worklogs-google.cocodexcocoder.workers.dev https://openrouter.ai https://generativelanguage.googleapis.com", "object-src 'none'",
       "base-uri 'none'", "frame-ancestors 'none'", "form-action 'none'",
     ].join('; '));
     application(req, res);

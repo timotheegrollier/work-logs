@@ -1,6 +1,42 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Refonte visuelle, replis au conteneur et assistant plus guidé — 2026-11-23, v0.88.0
+## IA gratuite disponible sans configuration — 2026-11-24, v0.88.0
+
+- L’assistant et les actions IA utilisent Gemma 4 26B sur le Worker WorkLogs pour le
+  texte et les images, avec l’accès anonyme OVHcloud en secours. Les demandes manuelles
+  de texte préfèrent le modèle intégré quand il est prêt. Les anciennes configurations
+  par défaut migrent sans réutiliser leur clé.
+- Workers Free fournit un quota partagé de 10 000 neurones par jour, remis à zéro à
+  minuit UTC. Le plafond WorkLogs reste réglable, à 150 requêtes par jour par défaut
+  pour le service gratuit intégré.
+  Garder le compte sur Workers Free.
+- Le Worker doit être déployé pour servir l’inférence et convertir les PDF à texte
+  sélectionnable. Seul l’extrait est transmis au modèle. Voir `07-RELEASES.md` §9.
+- Voir `05-DECISIONS.md` §96 et `04-RECETTES.md` §14.
+- Desktop : le Worker admet toute origine `http://127.0.0.1:<port>` / `localhost`, car
+  `desktop/server.mjs` tire son port au démarrage (sans cela, chaque demande desktop
+  partait en 403 puis sur OVHcloud saturé).
+- `./scripts/check.sh` vert le 2026-11-24 avec **2 177 tests**, dont un échec attendu :
+  365 API · 1 519 front (+1 attendu) · 49 desktop · 56 scripts · 21 Worker · 11 relais ·
+  133 navigateur · 22 Electron. L’inférence réelle reste à vérifier après déploiement du
+  Worker (la CI le déploie au push sur master ; `wrangler` n’est pas connecté sur le poste).
+
+## Gemini Flash-Lite facultatif (lot DeepAI Code, intégré) — 2026-11-24
+
+- L’IA intégrée de Chrome/PWA reste la voie sans clé et sur appareil ; ailleurs, le Worker
+  WorkLogs répond (section ci-dessus), puis la recherche locale. Le téléchargement du modèle intégré ne
+  part que sur clic. L’assistant propose des exemples et permet de relancer une demande échouée.
+- Gemini facultatif, en un clic : **Réglages avancés → Utiliser Gemini avec ma clé gratuite**
+  (jamais avec la clé d’un autre service). `gemini-3.5-flash-lite` par défaut, choix entre trois modèles Flash-Lite,
+  lien Google AI Studio et consentement explicite précédé d’un avertissement confidentialité
+  et sécurité. Pas de données sensibles ; le palier gratuit peut être examiné, les quotas varient,
+  n’active pas la facturation pour rester sans coût. La clé dans le navigateur est visible côté
+  client ; elle n’est ni demandée dans la conversation ni committée. Aucune dépendance ajoutée.
+- Les anciennes clés OpenRouter ne sont jamais transmises à Google et le secours ne choisit pas
+  de modèle payant. Voir `05-DECISIONS.md` §95, `03-UTILISATION.md` et la recette fictive de
+  `04-RECETTES.md` §14.
+
+## Refonte visuelle, replis au conteneur et assistant plus guidé — 2026-11-23
 
 - **Design.** Une même échelle de couleurs, rayons, ombres et anneau de focus dans
   `styles.css` ; en-tête opaque et séparé, recherche plus large, surfaces teintées par
@@ -11,37 +47,28 @@
   tiennent côte à côte, nom compris ; la barre du bas reste fixe (l'en-tête a perdu son
   `backdrop-filter`, qui en faisait le bloc conteneur et la remontait). Rien ne flotte
   au-dessus du journal : la création reste dans le fil, comme les cartes de tâches.
-- **Assistant, sans clé ni compte.** L'IA intégrée au navigateur (Chrome, PWA) répond sur
-  l'appareil : aucune clé, aucun abonnement, le texte ne part pas. Sans IA intégrée
-  (Firefox, Electron), WorkLogs utilise sa recherche et ses propositions locales. La clé
-  OpenRouter et un endpoint local sans clé restent optionnels (§94, après §92).
 - Une conversation vide propose quatre demandes de départ (un clic remplit le champ). Une
   demande qui a échoué se repose avec le même texte et ses pièces jointes. L'étape en cours
   s'affiche pendant la réponse et reste consultable sous la demande terminée.
-- Tests ajoutés : 8 dans `ai-device.test.ts` (état, téléchargement sur clic, JSON, endpoint
-  local sans clé, repli), 2 dans `AiChat.test.tsx` (suggestions, relance d'une demande
-  échouée), plus les ajustements du lot OpenRouter. `./scripts/check.sh` (lancé avec
-  `env -u APPIMAGE`, piège n° 10 de `02-DEV.md`) est vert avec **2 136 tests**, dont un
-  échec attendu : 365 API · 1 492 front (+1 attendu) · 49 desktop unitaires · 56 scripts ·
-  8 Worker · 11 relais · 132 navigateurs · 22 Electron. Le poste a dû télécharger le
-  navigateur Playwright 1243 (`npx playwright install chromium`, absent du cache local).
 
-## OpenRouter gratuit et étapes de l’assistant — 2026-11-23
+## Conservation stricte du format des listes — 2026-11-20, v0.87.2
 
-- L’assistant et les actions IA passent par `openrouter/free`. Dans **Paramètres →
-  Assistance IA**, coller une clé OpenRouter et tester la connexion. L’ancien réglage
-  Gemini est remplacé sans transférer sa clé. Le profil et le contexte des projets sont
-  conservés. Le nouveau plafond par défaut est de 50 requêtes par appareil et par jour.
-- L’assistant indique son étape en cours et conserve les recherches, lectures et
-  validations dans **Étapes de l’assistant** sous chaque demande terminée. Les propositions
-  de changement attendent toujours **Appliquer**.
-- Voir `05-DECISIONS.md` §92 et `04-RECETTES.md` §14 pour le transport et la recette avec
-  un compte OpenRouter sans crédits. Les tests automatisés utilisent des réponses simulées.
-- Validation par étapes : tests IA, build PWA et 22 parcours Electron verts. Un test front
-  d’aperçu Markdown a passé après réexécution isolée. 131 parcours navigateur sur 132
-  passent dans la copie de travail ; le bandeau de création épinglé du journal recouvre
-  une entrée. Le parcours passe en neutralisant le positionnement du bandeau dans une
-  copie de diagnostic.
+- Une proposition de l’assistant qui casse la forme d’une entrée est écartée à la validation :
+  un ajout après une liste doit garder sa famille (une checklist reçoit des cases, pas des puces
+  ordinaires) ou ouvrir une rubrique « ## » ; un paragraphe isolé est refusé. Une correction
+  ciblée ne peut ni retirer ni changer le marqueur de la ligne touchée.
+  Cocher une case ou corriger un libellé reste permis. **Reformuler**, **Compléter**, le
+  **bilan du jour** et le **suivi IA** suivent la même consigne (`05-DECISIONS.md` §91).
+- Quand toutes les actions d’une réponse sont écartées, l’assistant rejoue une fois sa demande
+  avec le motif du refus ; si le second passage échoue encore sur la forme, il pose une question
+  pour garder la forme existante ou ouvrir une rubrique, au lieu de laisser l’utilisateur sans suite.
+- Les pièces jointes `.xlsx`, `.ods`, `.csv` et `.tsv` s’ouvrent directement dans la colonne
+  **Écriture** en cliquant leur nom. Elles réutilisent leurs grilles dédiées et s’enregistrent
+  en copie dans l’entrée ; l’original reste intact. Ce n’est pas une parité Excel complète :
+  `.xls` reste confié au logiciel système, `.xlsm` est en lecture seule et les classeurs ne
+  prennent pas en charge les outils avancés de mise en forme ou de structure (`05-DECISIONS.md` §92 bis).
+- Tests : 4 scénarios concernés dans `ai-chat.test.ts` et 4 parcours navigateur dans
+  `e2e/ai-chat.spec.ts`. La recette v0.87.2 passe avec **2 121 tests**, dont un échec attendu.
 
 ## Format des listes préservé, assistant qui réessaie — 2026-11-20, v0.87.1
 

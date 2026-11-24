@@ -1,6 +1,8 @@
 // Relais de jetons Google de la PWA WorkLogs — Cloudflare Worker, sans dépendance.
 // Depuis l'option B, ce même Worker sert aussi le front statique (`web/dist/`,
 // voir `[assets]` dans `wrangler.toml`) : la PWA est à `/`, le relais à `/token`.
+// `/ai/pdf` extrait le texte d'un PDF joint explicitement à une demande IA.
+// `/ai/chat/completions` sert le modèle fixe de l'assistant sur Workers Free.
 // Vérification : ouvrir `/token` dans un navigateur (`{"ok":true,…}`).
 //
 // Google exige le secret d'un client OAuth « Application Web » pour échanger le
@@ -29,6 +31,24 @@ const REDIRECTS = [
 ];
 const CLIENT_ID = /^[\w.-]+\.apps\.googleusercontent\.com$/;
 const MAX_BODY = 8192;
+// Routes IA : aussi l’application desktop, servie sur un port local tiré au démarrage
+// (`desktop/server.mjs`), et le serveur de dev. La limite par IP reste la vraie garde.
+const LOOPBACK_ORIGIN = /^http:\/\/(?:127\.0\.0\.1|localhost):\d{1,5}$/;
+const aiOrigin = (origin) => ORIGINS.includes(origin) || LOOPBACK_ORIGIN.test(origin);
+const MIB = 1024 * 1024;
+const MAX_PDF_BYTES = 10 * MIB;
+const MAX_PDF_TEXT = 16_000;
+const CHAT_MODEL = '@cf/google/gemma-4-26b-a4b-it';
+const MAX_CHAT_BYTES = 14 * MIB;
+const MAX_CHAT_TEXT = 128_000;
+const MAX_CHAT_TOKENS = 8000;
+const MAX_CHAT_IMAGES = 5;
+const MAX_IMAGE_BYTES = 5 * MIB;
+const MAX_CHAT_IMAGE_BYTES = 10 * MIB;
+const IMAGE_DATA_PREFIX = /^data:image\/(?:jpeg|png|webp);base64,/;
+const CHAT_ROLES = new Set(['system', 'user', 'assistant']);
+const CHAT_FINISH_REASONS = new Set(['stop', 'length', 'content_filter']);
+const BODY_TOO_LARGE = new RangeError('Corps trop volumineux');
 
 function cors(origin) {
   return {
@@ -40,11 +60,205 @@ function cors(origin) {
   };
 }
 
-function reply(body, status, origin = '') {
+function reply(body, status, origin = '', headers = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...(origin ? cors(origin) : {}) },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...(origin ? cors(origin) : {}), ...headers },
   });
+}
+
+function boundedBody(request, maxBytes) {
+  let size = 0;
+  return request.body.pipeThrough(new TransformStream({
+    transform(chunk, controller) {
+      size += chunk.byteLength;
+      if (size > maxBytes) throw BODY_TOO_LARGE;
+      controller.enqueue(chunk);
+    },
+  }));
+}
+
+function limitKey(request) {
+  // Cette adresse est fournie par Cloudflare à l’arrivée de la requête.
+  return { key: request.headers.get('CF-Connecting-IP') || 'sans-ip' };
+}
+
+async function pdfText(request, env, origin) {
+  if (!aiOrigin(origin)) return reply({ error: 'Origine non autorisée.' }, 403);
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(origin) });
+  if (request.method !== 'POST') return reply({ error: 'Méthode non autorisée.' }, 405, origin, { Allow: 'POST, OPTIONS' });
+  const type = request.headers.get('Content-Type')?.split(';', 1)[0].trim().toLowerCase();
+  if (type !== 'application/pdf') return reply({ error: 'Seuls les fichiers PDF peuvent être lus ici.' }, 415, origin);
+  const tooLarge = () => reply({ error: 'Le PDF dépasse la limite de 10 Mio.' }, 413, origin);
+  if (Number(request.headers.get('Content-Length')) > MAX_PDF_BYTES) return tooLarge();
+  if (!request.body) return reply({ error: 'Le PDF est vide.' }, 400, origin);
+
+  const unavailable = () => reply({ error: 'La lecture des PDF est indisponible. Réessaie plus tard.' }, 503, origin);
+  if (!env.AI?.toMarkdown || !env.PDF_LIMITER?.limit) return unavailable();
+  let allowed;
+  try {
+    ({ success: allowed } = await env.PDF_LIMITER.limit(limitKey(request)));
+  } catch {
+    return unavailable();
+  }
+  if (!allowed) return reply({ error: 'Trop de PDF à lire. Réessaie dans une minute.' }, 429, origin, { 'Retry-After': '60' });
+
+  let blob;
+  try {
+    blob = await new Response(boundedBody(request, MAX_PDF_BYTES), { headers: { 'Content-Type': 'application/pdf' } }).blob();
+  } catch (error) {
+    return error === BODY_TOO_LARGE ? tooLarge() : reply({ error: 'Le PDF est illisible.' }, 400, origin);
+  }
+  if (await blob.slice(0, 5).text() !== '%PDF-') return reply({ error: 'Le fichier reçu n’est pas un PDF.' }, 400, origin);
+
+  // Le mode PDF extrait le texte déjà présent sans faire appel à un modèle
+  // de vision. Le nom d’origine et les métadonnées ne sont pas nécessaires.
+  let converted;
+  try {
+    converted = await env.AI.toMarkdown({ name: 'document.pdf', blob }, {
+      conversionOptions: { pdf: { metadata: false }, output: { format: 'text' } },
+    });
+  } catch {
+    return unavailable();
+  }
+  const text = converted?.format === 'text' && typeof converted.data === 'string' ? converted.data.trim() : '';
+  if (!text) return reply({ error: 'Aucun texte lisible dans ce PDF.' }, 422, origin);
+  return reply({ text: text.slice(0, MAX_PDF_TEXT), truncated: text.length > MAX_PDF_TEXT }, 200, origin);
+}
+
+function imageDataSize(url) {
+  const prefix = typeof url === 'string' && url.match(IMAGE_DATA_PREFIX)?.[0];
+  if (!prefix) return 0;
+  const length = url.length - prefix.length;
+  if (!length || length % 4) return 0;
+  const padding = url.endsWith('==') ? 2 : Number(url.endsWith('='));
+  if (/[^A-Za-z0-9+/]/.test(url.slice(prefix.length, url.length - padding))) return 0;
+  return length / 4 * 3 - padding;
+}
+
+function chatParams(body) {
+  if (!Array.isArray(body?.messages) || !body.messages.length || body.messages.length > 24) return null;
+  const maxTokens = body.max_completion_tokens ?? body.max_tokens ?? 1024;
+  if (!Number.isInteger(maxTokens) || maxTokens < 1) return null;
+  const format = body.response_format?.type;
+  if (body.response_format !== undefined && format !== 'json_object' && format !== 'text') return null;
+
+  const messages = [];
+  let textLength = 0;
+  let imageCount = 0;
+  let imageBytes = 0;
+  for (const message of body.messages) {
+    const { role, content } = message ?? {};
+    if (!CHAT_ROLES.has(role)) return null;
+    if (typeof content === 'string') {
+      textLength += content.length;
+      messages.push({ role, content });
+      continue;
+    }
+    if (role !== 'user' || !Array.isArray(content) || !content.length || content.length > MAX_CHAT_IMAGES + 1) return null;
+    const parts = [];
+    for (const part of content) {
+      if (part?.type === 'text' && typeof part.text === 'string') {
+        textLength += part.text.length;
+        parts.push({ type: 'text', text: part.text });
+      } else if (part?.type === 'image_url') {
+        const url = part.image_url?.url;
+        const size = imageDataSize(url);
+        if (!size) return null;
+        imageCount += 1;
+        imageBytes += size;
+        if (size > MAX_IMAGE_BYTES || imageCount > MAX_CHAT_IMAGES || imageBytes > MAX_CHAT_IMAGE_BYTES) throw BODY_TOO_LARGE;
+        parts.push({ type: 'image_url', image_url: { url } });
+      } else {
+        return null;
+      }
+    }
+    messages.push({ role, content: parts });
+  }
+  if (textLength > MAX_CHAT_TEXT) throw BODY_TOO_LARGE;
+  if (!messages.some(({ role }) => role === 'user')) return null;
+  return {
+    messages,
+    temperature: typeof body.temperature === 'number' && body.temperature >= 0 && body.temperature <= 2 ? body.temperature : 0.4,
+    max_completion_tokens: Math.min(maxTokens, MAX_CHAT_TOKENS),
+    chat_template_kwargs: { enable_thinking: false },
+    ...(format === 'json_object' && { response_format: { type: 'json_object' } }),
+  };
+}
+
+function chatError(message, status, origin, headers = {}) {
+  return reply({ error: { message } }, status, origin, headers);
+}
+
+function chatUpstreamError(status, code, retryAfter, origin) {
+  const day = 86_400;
+  const resetIn = code === 3036 ? String(day - Math.floor(Date.now() / 1000) % day) : '';
+  const retry = retryAfter || resetIn;
+  const headers = retry ? { 'Retry-After': retry, 'Access-Control-Expose-Headers': 'Retry-After' } : {};
+  if (status === 429 && code !== 3040) {
+    return chatError(code === 3036
+      ? 'Quota gratuit de WorkLogs atteint pour aujourd’hui. Il revient à minuit UTC.'
+      : 'Limite du service IA atteinte. Réessaie plus tard.', 429, origin, headers);
+  }
+  return chatError('Le service IA est temporairement indisponible. Réessaie plus tard.', 503, origin, headers);
+}
+
+async function chatCompletion(request, env, origin) {
+  if (!aiOrigin(origin)) return chatError('Origine non autorisée.', 403);
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { ...cors(origin), 'Cache-Control': 'no-store' } });
+  }
+  if (request.method !== 'POST') return chatError('Méthode non autorisée.', 405, origin, { Allow: 'POST, OPTIONS' });
+  const type = request.headers.get('Content-Type')?.split(';', 1)[0].trim().toLowerCase();
+  if (type !== 'application/json') return chatError('La demande IA doit être au format JSON.', 415, origin);
+  const invalid = () => chatError('La demande IA est invalide. Vérifie le texte et les images joints.', 400, origin);
+  const tooLarge = () => chatError('La demande IA dépasse la taille autorisée. Raccourcis le texte ou retire des images.', 413, origin);
+  if (Number(request.headers.get('Content-Length')) > MAX_CHAT_BYTES) return tooLarge();
+  if (!request.body) return invalid();
+
+  const unavailable = () => chatUpstreamError(503, undefined, '', origin);
+  if (!env.AI?.run || !env.CHAT_LIMITER?.limit) return unavailable();
+  let allowed;
+  try {
+    ({ success: allowed } = await env.CHAT_LIMITER.limit(limitKey(request)));
+  } catch {
+    return unavailable();
+  }
+  if (!allowed) {
+    return chatError('Trop de demandes IA. Réessaie dans une minute.', 429, origin, {
+      'Retry-After': '60', 'Access-Control-Expose-Headers': 'Retry-After',
+    });
+  }
+
+  let params;
+  try {
+    params = chatParams(await new Response(boundedBody(request, MAX_CHAT_BYTES)).json());
+  } catch (error) {
+    return error === BODY_TOO_LARGE ? tooLarge() : invalid();
+  }
+  if (!params) return invalid();
+
+  try {
+    const upstream = await env.AI.run(CHAT_MODEL, params, { returnRawResponse: true });
+    const result = await upstream.json().catch(() => null);
+    if (!upstream.ok) {
+      const code = Number(result?.internalCode ?? result?.errors?.[0]?.code);
+      return chatUpstreamError(upstream.status, code, upstream.headers.get('Retry-After'), origin);
+    }
+    const choice = Array.isArray(result?.choices) ? result.choices[0] : null;
+    const content = choice?.message?.content;
+    const finish = choice?.finish_reason;
+    if (!CHAT_FINISH_REASONS.has(finish) || (typeof content !== 'string' && finish !== 'content_filter')) return unavailable();
+    const usage = result.usage;
+    return reply({
+      choices: [{ index: 0, message: { role: 'assistant', content: content ?? null }, finish_reason: finish }],
+      ...(Number.isSafeInteger(usage?.total_tokens) && {
+        usage: { prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens, total_tokens: usage.total_tokens },
+      }),
+    }, 200, origin);
+  } catch {
+    return unavailable();
+  }
 }
 
 /**
@@ -72,13 +286,15 @@ function tokenParams(form) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const origin = request.headers.get('Origin') ?? '';
+    if (url.pathname === '/ai/pdf') return pdfText(request, env, origin);
+    if (url.pathname === '/ai/chat/completions') return chatCompletion(request, env, origin);
     // Vérification à la main : ouvrir `/token` dans un navigateur. En production
     // `/` sert la PWA (assets, sans passer par ce code), donc la sonde vit sur
     // `/token` ; `/` n'est gardé que pour `wrangler dev` sans assets.
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/token')) {
       return reply({ ok: true, configured: Boolean(env.GOOGLE_CLIENT_SECRET) }, 200);
     }
-    const origin = request.headers.get('Origin') ?? '';
     if (!ORIGINS.includes(origin)) return reply({ error: 'forbidden_origin' }, 403);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(origin) });
     if (request.method !== 'POST' || url.pathname !== '/token') return reply({ error: 'not_found' }, 404, origin);

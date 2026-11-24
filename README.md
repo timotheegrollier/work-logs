@@ -93,11 +93,10 @@ Desktop app: `npm run desktop`.
 Supported Markdown: headings, bold/italic, lists, **check boxes**, **tables**,
 quotes, code blocks, links, images.
 
-AI needs **no key, account or subscription**: in Chrome or the PWA, WorkLogs uses the
-browser's built-in on-device AI ("Prepare free AI" downloads the model once). Elsewhere
-it falls back to local search and local proposals. An external key or a local model
-(Ollama) remains optional. The assistant shows its searches and reads, then lets you
-review its proposals before applying changes.
+The assistant and AI actions use Gemma 4 on WorkLogs' Cloudflare Worker, with OVHcloud
+as a fallback. The service is free and requires no key, account or subscription. When the
+browser's built-in model is ready, manual text requests can run on-device. Review the
+assistant's proposals before applying them. [AI and data handling guide](docs/03-UTILISATION.md#assistance-ia).
 [Assistant guide in French](docs/03-UTILISATION.md#lassistant).
 
 Rich documents autosave locally and retain formatting in JSON exports. In the desktop

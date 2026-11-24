@@ -259,9 +259,9 @@ Et mettre à jour, dans le même diff : `01-ARCHITECTURE.md` si le schéma ou l'
 ## 14. Juger la pertinence de l'assistance IA
 
 Les tests automatisés utilisent un service simulé. Reprendre des exemples anonymisés du
-travail courant et vérifier les résultats sur place, d’abord **sans clé** avec l’IA
-intégrée du navigateur, puis avec un service externe si l’on en configure un. Ne pas
-confondre « le modèle répond » et « la proposition aide ».
+travail courant et vérifier les résultats avec le Worker WorkLogs **sans clé**, puis avec
+l’IA intégrée si elle est disponible. Relire les propositions pour vérifier qu’elles
+répondent au besoin exposé dans chaque exemple.
 
 | Cas | Résultat attendu |
 | --- | --- |
@@ -307,35 +307,44 @@ confondre « le modèle répond » et « la proposition aide ».
 | Note suivie, écriture entrecoupée de pauses | Premier bilan tout de suite à l’activation ; ensuite une actualisation après huit secondes de pause, au plus une par minute et par élément, le bilan restant affiché avec « Actualisation en cours… ». Le compteur monte d’au plus une requête par minute. |
 | Plafond réglé à 10, puis atteint | Refus avec l’heure locale du retour (minuit à Los Angeles) ; l’assistant passe en recherche locale ; aucun appel ne part. |
 | Tiers du plafond atteint par le suivi automatique | « Suspendue pour aujourd’hui », **Actualiser** reste disponible ; reprise seule le lendemain, ou dans la minute qui suit un plafond relevé. |
-| Sans clé, Chrome avec IA intégrée prête | Les gestes IA répondent depuis l’appareil ; aucune requête ne part vers un fournisseur et le plafond ne bouge pas. |
-| Sans clé, navigateur ou application sans IA intégrée | Message clair avec les solutions gratuites, repli sur la recherche locale, aucun appel réseau. |
+| Sans clé, Chrome avec IA intégrée prête | Les demandes manuelles de texte peuvent répondre depuis l’appareil ; le plafond ne bouge pas pour ces demandes. |
+| Sans clé ni modèle intégré, application ou PWA | Le premier geste IA appelle `/ai/chat/completions` sur le Worker WorkLogs, sans en-tête d’authentification. |
+| Worker indisponible ou quota Workers Free atteint | Une demande manuelle de texte ou d’image peut passer à un modèle gratuit OVHcloud. |
+| Limite anonyme OVHcloud (429) | Un autre modèle gratuit compatible peut être essayé. Après épuisement, un motif et les résultats locaux sont affichés. |
+| Assistant avec un PDF | Au clic Envoyer, `/ai/pdf` sur le même Worker reçoit le PDF et le modèle reçoit seulement l’extrait. Si la conversion échoue, la pièce reste jointe et marquée non lue. |
 | Endpoint local (Ollama) sans clé | La requête part vers `127.0.0.1` sans en-tête `Authorization` ; aucune dépense. |
-| Quota gratuit OpenRouter épuisé (429) | La limite du fournisseur s’affiche ; l’assistant montre les résultats locaux. Aucun nouvel essai. |
-| Ancien réglage Gemini enregistré | L’endpoint et le modèle deviennent ceux d’OpenRouter. Le profil revient, le champ de clé est vide et le test de connexion n’envoie rien avant la saisie. |
+| Quota Gemini gratuit épuisé (429) | La limite Google s’affiche ; aucun modèle payant n’est essayé en secours. |
+| Consentement Google retiré | Le test et les gestes IA n’envoient aucune requête Google. |
+| Ancien réglage Gemini, OpenRouter ou OVHcloud par défaut | L’endpoint devient celui du Worker WorkLogs, le profil reste présent et l’ancienne clé n’est pas utilisée. |
 
 Pour chaque cas, relever : proposition utilisable, corrections nécessaires, détails
 inventés, doublons et temps ressenti. Comparer les mêmes exemples avant/après toute
 modification de prompt ou de modèle ; conserver les exemples localement sans clé ni
 donnée confidentielle dans le dépôt.
 
-**Recette sans clé ni compte (IA intégrée)**, sur des données fictives.
+**Recette sans clé ni compte**, sur des données fictives.
 
-1. Dans Chrome récent, ouvrir **Paramètres → Assistance IA** : lire l’état de l’IA intégrée.
-   Si elle est seulement téléchargeable, cliquer **Préparer l’IA gratuite** et attendre.
-2. Couper le réseau, puis demander **Suggérer des tâches**, **Compléter** et une question à
-   l’assistant. Chacun doit répondre ou annoncer le repli local, sans requête sortante.
-3. Ouvrir WorkLogs dans un navigateur sans IA intégrée (ou l’application desktop) : vérifier
-   le message « Aucune IA intégrée… recherche locale » et l’absence d’appel réseau.
+1. Pour la recette sur le vrai service, vérifier que le Worker est déployé avec Workers Free
+   (voir `07-RELEASES.md` §9). Ouvrir un profil vierge de WorkLogs et sans changer
+   les réglages, cliquer sur **Tester la connexion**, demander une suggestion de tâche et
+   interroger l’assistant. Vérifier que les appels au Worker partent sans clé.
+2. Joindre une image, puis un PDF avec du texte sélectionnable. Vérifier leurs résultats et
+   l’arrêt possible.
+3. Si Chrome propose l’IA intégrée, la préparer puis vérifier une demande manuelle de
+   texte hors ligne. Le téléchargement seul doit être déclenché par un clic.
 
-**Recette OpenRouter avec un compte sans crédits**, sur des données fictives (§92).
+**Recette Gemini avec une clé personnelle**, exclusivement avec des données fictives.
 
-1. Saisir une clé dans **Paramètres → Assistance IA** et lancer **Tester la connexion**.
-   Vérifier dans l’activité OpenRouter que le coût de l’essai est nul.
-2. Demander une recherche suivie d’une lecture et d’une proposition de changement. Relire
-   l’activité du message puis appliquer la proposition. Vérifier le résultat dans le journal.
-3. Essayer **Mise en page**, **Prioriser**, le **Bilan du jour**, une image et un PDF contenant du texte.
-   Vérifier les formats des réponses, les coûts affichés et le comportement lorsque la capacité
-   gratuite est indisponible. Une page publique jointe seule reste une référence.
+1. Dans **Paramètres → Assistance IA → Réglages avancés**, choisir une adresse Gemini.
+   Suivre le lien **Créer une clé Gemini dans Google AI Studio**, créer la clé, puis la coller.
+   Ne jamais la mettre dans le dépôt, une capture ou un rapport.
+2. Lire l’avertissement sur le traitement Google et le risque d’une clé côté navigateur ; cocher le
+   consentement uniquement si tu acceptes ces conditions. Choisir l’un des modèles Flash-Lite, puis
+   lancer **Tester la connexion**.
+3. Vérifier le quota dans Google AI Studio, essayer une proposition et l’assistant avec des données
+   fictives, puis contrôler la sortie avant de l’appliquer. Ne pas activer la facturation. N’envoyer
+   aucune donnée personnelle, confidentielle ou sensible ; ne pas considérer cette clé comme secrète
+   vis-à-vis des personnes utilisant le navigateur.
 
 
 ## 15. Catégories et sous-catégories (2026-10-26)

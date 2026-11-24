@@ -25,7 +25,7 @@ test('serveur desktop privé, persistant et fermé avec l’application', async 
     assert.match(created.headers.get('content-security-policy'), /frame-ancestors 'none'/);
     assert.equal(
       created.headers.get('content-security-policy').split('; ').find((directive) => directive.startsWith('connect-src ')),
-      "connect-src 'self' https://openrouter.ai https://generativelanguage.googleapis.com"
+      "connect-src 'self' https://oai.endpoints.kepler.ai.cloud.ovh.net https://worklogs-google.cocodexcocoder.workers.dev https://openrouter.ai https://generativelanguage.googleapis.com"
     );
     const entry = await created.json();
     const oldOrigin = server.origin;

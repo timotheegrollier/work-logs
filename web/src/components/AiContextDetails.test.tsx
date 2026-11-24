@@ -4,6 +4,7 @@ import { discardPendingSaves, flushPendingSaves } from '../autosave';
 import { api as clientApi } from '../lib';
 import { seedData, useRealApi } from '../test/server';
 import { AiContextDetails } from './AiContextDetails';
+import { saveGoogleAiConsent } from '../ai-suggest';
 import { EntryEditor } from './EntryEditor';
 
 const VOCABULARY_ONLY = 'Pour la mise en page, seul le vocabulaire de ces documents est envoyé, pas leur texte.';
@@ -15,6 +16,7 @@ let server: Awaited<ReturnType<typeof useRealApi>>;
 beforeEach(async () => {
   server = await useRealApi();
   localStorage.clear();
+  saveGoogleAiConsent(true);
   localStorage.setItem('worklogs-ai-key', 'cle-test');
   prompts.length = 0;
   const diverted = globalThis.fetch;

@@ -493,7 +493,7 @@ describe('assistant : conversation', () => {
     render(<Host />);
     expect(chat().getByText(/Pour un document Google, il reçoit le titre et la date seuls/)).toBeInTheDocument();
     expect(chat().getByText(/le texte de notes et procédures locales dans une limite de taille/)).toBeInTheDocument();
-    expect(conversations().getByText(/^Aujourd’hui : 0 \/ 50 requêtes/)).toBeInTheDocument();
+    expect(conversations().getByText(/^Aujourd’hui : 0 \/ 150 requêtes/)).toBeInTheDocument();
     await answered(answer(), 'Une question confidentielle');
     expect(localStorage.length).toBe(0);
   });
