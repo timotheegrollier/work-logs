@@ -2,8 +2,8 @@
 
 ## Reprise
 - **État v0.91.0** (`package.json` fait foi). `./scripts/check.sh` passe le 2026-11-24 avec
-  **2 217 tests**, dont un échec attendu. 367 API · 1 544 front (+1 attendu) · 49 desktop ·
-  56 scripts · 34 Worker · 11 relais · 133 navigateur · 22 desktop e2e.
+  **2 220 tests**, dont un échec attendu. 367 API · 1 544 front (+1 attendu) · 49 desktop ·
+  59 scripts · 34 Worker · 11 relais · 133 navigateur · 22 desktop e2e.
   Lancé depuis l'AppImage DeepAI Code : `env -u APPIMAGE ./scripts/check.sh` (piège n° 10 de
   `docs/02-DEV.md`).
   Lots et bilans : `docs/00-HANDOVER.md`.

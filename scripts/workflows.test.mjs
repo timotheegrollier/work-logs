@@ -99,21 +99,43 @@ describe('workflow CI Linux (tests et paquets en parallèle)', () => {
     assert.ok('pull_request' in wf.on, 'toujours déclenché sur pull_request');
   });
 
-  test('les paquets se construisent sans attendre les tests', () => {
+  test('les paquets se construisent sans attendre les tests, une cible par job', () => {
     assert.ok(wf.jobs.build, 'job build présent');
     assert.equal(wf.jobs.build['timeout-minutes'], 15);
+    assert.deepEqual(wf.jobs.build.strategy.matrix.target, ['AppImage', 'deb', 'rpm']);
     const validate = JSON.stringify(wf.jobs.validate);
     assert.ok(!validate.includes('desktop:dist'), 'validate ne construit plus les paquets');
-    assert.ok(JSON.stringify(wf.jobs.build).includes('desktop:dist'), 'build les construit');
-    assert.ok(JSON.stringify(wf.jobs.build).includes('verify-package.mjs'), 'paquet vérifié');
-    assert.ok(JSON.stringify(wf.jobs.build).includes('appimage-blockmap.mjs'), 'blockmap vérifié');
+    const steps = wf.jobs.build.steps;
+    const dist = steps.find((step) => step.run?.includes('desktop:dist'));
+    assert.match(dist.run, /-c\.linux\.target="\$TARGET"/, 'la cible du job, pas les trois');
+    assert.equal(dist.env.XZ_DEFAULTS, '-T0');
+    assert.ok(dist.env.WORKLOGS_GOOGLE_CLIENT_ID.includes('secrets.GOOGLE_DESKTOP_CLIENT_ID'));
+    assert.ok(steps.some((step) => step.run?.includes('verify-package.mjs') && !step.if), 'chaque paquet vérifié');
+    assert.equal(steps.find((step) => step.run?.includes('appimage-blockmap.mjs')).if, "matrix.target == 'AppImage'");
+    assert.equal(steps.find((step) => step.run?.includes('install -y rpm')).if, "matrix.target == 'rpm'");
+    assert.ok(steps.some((step) => step.run?.includes('release/latest-linux-$TARGET.yml')), 'entrée de mise à jour renommée par cible');
   });
 
-  test('les installations attendent les paquets et reçoivent leur artefact', () => {
+  test('les installations attendent les trois cibles, pas leur fusion', () => {
     assert.equal(wf.jobs.packages.needs, 'build');
-    const uploads = wf.jobs.build.steps.filter((step) => step.uses?.startsWith('actions/upload-artifact'));
-    assert.ok(uploads.some((step) => step.with?.name === 'linux-packages'), 'artefact linux-packages');
-    assert.ok(uploads.some((step) => step.with?.['if-no-files-found'] === 'error'), 'artefact exigé');
+    const upload = wf.jobs.build.steps.find((step) => step.uses?.startsWith('actions/upload-artifact'));
+    assert.equal(upload.with.name, 'pkg-${{ matrix.target }}');
+    assert.equal(upload.with['if-no-files-found'], 'error');
+    const download = wf.jobs.packages.steps.find((step) => step.uses?.startsWith('actions/download-artifact'));
+    assert.deepEqual([download.with.pattern, download.with['merge-multiple']], ['pkg-*', true]);
+  });
+
+  test('la release garde son unique artefact linux-packages, avec un latest-linux.yml réuni et vérifié', () => {
+    const merge = wf.jobs.merge;
+    assert.equal(merge.needs, 'build');
+    const run = merge.steps.map((step) => step.run ?? '').join('\n');
+    assert.match(run, /node scripts\/merge-update-info\.mjs release/);
+    const upload = merge.steps.find((step) => step.uses?.startsWith('actions/upload-artifact'));
+    assert.equal(upload.with.name, 'linux-packages');
+    assert.equal(upload.with['if-no-files-found'], 'error');
+    assert.equal(upload.with['retention-days'], 14, 'le chemin rapide de la release relit un run de push');
+    assert.ok(upload.with.path.includes('release/latest-linux.yml'));
+    assert.ok(!upload.with.path.includes('latest-linux-*'), 'pas les entrées partielles');
   });
 });
 

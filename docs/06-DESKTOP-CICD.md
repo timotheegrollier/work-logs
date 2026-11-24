@@ -43,7 +43,7 @@ Trois conséquences :
 
 | Fichier | Nom sur GitHub | Déclencheurs | Jobs | Concurrence | Publie |
 |---|---|---|---|---|---|
-| `.github/workflows/ci.yml` | CI Linux | `push` sur toute branche, `pull_request`, `workflow_call` (entrée `ref`) | `validate`, puis `packages` × 3 | `ci-<workflow>-<ref>` ; un nouveau push annule le run en cours de la même ref, sauf sur un tag | rien (artefact `linux-packages`) |
+| `.github/workflows/ci.yml` | CI Linux | `push` sur toute branche, `pull_request`, `workflow_call` (entrée `ref`) | `validate` ; `build` × 3 (AppImage, deb, rpm), puis `packages` × 3 et `merge` | `ci-<workflow>-<ref>` ; un nouveau push annule le run en cours de la même ref, sauf sur un tag | rien (artefact `linux-packages`) |
 | `.github/workflows/release.yml` | Release Linux | `push` d'un tag `v*`, `workflow_dispatch` (entrée `tag`) | `precheck`, `validate` si besoin, `release` | `release-<tag>`, sans annulation | GitHub Release |
 | `.github/workflows/repos.yml` | Dépôts | `workflow_run` à la fin de « Release Linux », `workflow_dispatch` (entrée `tag`) | `repos` | `gh-pages`, sans annulation | `gh-pages/rpm/`, `gh-pages/deb/` |
 | `.github/workflows/pwa.yml` | PWA | `push` sur master filtré par chemins, `workflow_dispatch` | `deploy` | `pages`, sans annulation | GitHub Pages |
@@ -73,16 +73,24 @@ Le job `validate` (« Types et tests ») tourne sur `ubuntu-22.04`, 25 min au pl
 6. `node scripts/check-release.mjs`, avec le tag en argument quand la ref en est un ;
 7. envoi de `test-reports` (`test-results/`, `playwright-report/`) en cas d'échec.
 
-Le job `build` (« Paquets desktop ») ne dépend d'aucun test : il part en même temps que
-`validate` et chevauche ses minutes. Il refait checkout, Node et dépendances, puis
-`sudo apt-get install -y rpm`, `npm run desktop:dist` (build web puis
-`electron-builder --linux --x64 --publish never`), `node scripts/verify-package.mjs`,
-`node scripts/appimage-blockmap.mjs` (présence de `release/latest-linux.yml` et d'un
-`.blockmap`), et envoie l'artefact `linux-packages` (14 jours).
+Le job `build` (« Paquet `<cible>` ») ne dépend d'aucun test : il part en même temps que
+`validate` et chevauche ses minutes. Sa matrice construit une cible par job, AppImage, deb et rpm,
+en parallèle (§99 des décisions) : le rpm, en xz niveau 9, ne fait plus attendre les deux autres.
+Chaque job refait checkout, Node et dépendances, installe `rpm` pour la seule cible rpm, lance
+`npm run desktop:dist -- -c.linux.target=<cible>` (build web puis `electron-builder --linux --x64
+--publish never`, `XZ_DEFAULTS=-T0`), puis `node scripts/verify-package.mjs` ; l'AppImage ajoute
+`node scripts/appimage-blockmap.mjs` (un `.blockmap`). electron-builder n'y écrit que l'entrée de
+sa cible dans `latest-linux.yml`, renommé `latest-linux-<cible>.yml`, et l'artefact `pkg-<cible>`
+part pour un jour.
+
+Le job `merge` (« Paquets réunis ») attend les trois et produit l'artefact `linux-packages`
+(14 jours), le seul que lise la release : `node scripts/merge-update-info.mjs release` réunit les
+trois entrées dans un seul `latest-linux.yml`, comme une construction commune (AppImage en tête,
+puis deb et rpm), après avoir vérifié la version, la taille et le sha512 de chaque fichier.
 
 Le job `packages` (« Installation et lancement — `<distribution>` ») attend `build`. Il tourne
 sur `ubuntu-24.04`, 25 min au plus, sans `fail-fast`. Sa matrice : `mint-22-base` (image
-`ubuntu:24.04`, deb), `fedora-43` et `fedora-44` (rpm). Chaque job télécharge `linux-packages` et
+`ubuntu:24.04`, deb), `fedora-43` et `fedora-44` (rpm). Chaque job télécharge les `pkg-*`, sans attendre `merge`, et
 lance `./scripts/test-linux-package.sh <image> <format>`. Le script installe le vrai paquet dans
 un conteneur jetable, joue les 19 tests Electron sur `/opt/WorkLogs/worklogs`, puis les rejoue sur
 l'AppImage extraite. Le test « démarre en fenêtre maximisée » est sauté faute de gestionnaire de
@@ -90,7 +98,7 @@ fenêtres : chaque passage compte 18 réussites et 1 test sauté. L'AppImage est
 (`--appimage-extract`) : son montage FUSE n'est jamais exercé.
 
 La CI ne lit que deux secrets, `GOOGLE_DESKTOP_CLIENT_ID` et `GOOGLE_DESKTOP_CLIENT_SECRET`, et à
-la seule étape `desktop:dist` du job `build`. Sans eux (fork, par exemple), le paquet demande une
+la seule étape `desktop:dist` des jobs `build`. Sans eux (fork, par exemple), le paquet demande une
 configuration Google manuelle.
 
 Une PR lance deux runs pour le même commit, un par événement, dans deux groupes de concurrence.
@@ -271,6 +279,7 @@ répond normalement.
 | `scripts/stage-desktop.mjs` | prépare `.desktop-app/` : liste fermée de fichiers, garde-fou des imports de `desktop/`, client Google intégré si les secrets sont là, `npm ci --omit=dev --ignore-scripts` | `npm run desktop:dist` |
 | `scripts/verify-package.mjs` | lit l'ASAR : refuse `api/data`, `.env`, `.git`, `.db`, `.sqlite`, exige 8 fichiers, compare la version à `package.json` | CI |
 | `scripts/appimage-blockmap.mjs` | produit le `.blockmap` externe de l'AppImage avec le module d'electron-builder | CI |
+| `scripts/merge-update-info.mjs` | réunit les `latest-linux-<cible>.yml` des trois jobs `build` en un `latest-linux.yml`, avec le sérialiseur d'electron-builder ; refuse une cible absente, des versions mêlées, une taille ou un sha512 faux | CI, job `merge` |
 | `scripts/test-linux-package.sh` | `docker run` jetable : installe le paquet, lance Xvfb, joue `npm run test:desktop` sur l'installé puis sur l'AppImage extraite | job `packages`, poste |
 | `scripts/build-rpm-repo.sh` | `createrepo_c --update`, sans delta RPM ; `repos.yml` supprime `repodata/` juste avant, donc `--update` ne réutilise rien | Dépôts |
 | `scripts/build-deb-repo.sh` | dépôt apt plat : `Packages`, `Packages.gz`, `Release` | Dépôts |

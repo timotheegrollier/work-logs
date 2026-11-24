@@ -53,7 +53,7 @@ De la poussée de la branche aux dépôts vérifiés, la v0.74.0 a pris 47 minut
 34 minutes (06 §3).
 
 Depuis le 2026-11-19, le tag n'attend plus la CI de master (pas 7) : cette ligne n'est plus sur le
-chemin critique, et le job `build` des paquets chevauche `validate` (06 §2.1).
+chemin critique, et les trois jobs `build` des paquets (un par cible, §99) chevauchent `validate` (06 §2.1).
 
 ## 2. Versionnage et notes de release
 

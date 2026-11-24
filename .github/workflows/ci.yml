@@ -69,12 +69,16 @@ jobs:
           retention-days: 14
 
   # Les paquets ne dépendent d'aucun test : ils partent en même temps que
-  # `validate` et chevauchent sa durée. `packages` attend leur artefact.
-  # Les deux chemins font ~6 min : accélérer l'un seul ne raccourcit plus la CI.
+  # `validate` et chevauchent sa durée. Une cible par job (§99) : le rpm (xz niveau 9)
+  # ne fait plus attendre le deb et l'AppImage. `packages` attend les trois artefacts ;
+  # `merge` en fait le `linux-packages` que lit la release, avec un seul `latest-linux.yml`.
   build:
-    name: Paquets desktop
+    name: Paquet ${{ matrix.target }}
     runs-on: ubuntu-22.04
     timeout-minutes: 15
+    strategy:
+      matrix:
+        target: [AppImage, deb, rpm]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -88,9 +92,11 @@ jobs:
             api/package-lock.json
             web/package-lock.json
       - run: npm ci && npm --prefix api ci && npm --prefix web ci
-      - run: sudo apt-get update && sudo apt-get install -y rpm
-      - run: npm run desktop:dist
+      - if: matrix.target == 'rpm'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+      - run: npm run desktop:dist -- -c.linux.target="$TARGET"
         env:
+          TARGET: ${{ matrix.target }}
           # fpm compresse le .deb par `tar -J`, sur un seul cœur avec le xz d'Ubuntu 22.04 :
           # tous les cœurs le rendent ~4× plus vite. Le .rpm est déjà en xz multithread.
           XZ_DEFAULTS: -T0
@@ -101,10 +107,49 @@ jobs:
       - name: Vérifier le contenu empaqueté
         run: node scripts/verify-package.mjs
       - name: Blockmap différentiel de l’AppImage
+        if: matrix.target == 'AppImage'
         run: |
           node scripts/appimage-blockmap.mjs
-          test -f release/latest-linux.yml
           test -n "$(ls release/*.blockmap)"
+      # Chaque job n'écrit que son entrée : `merge` les réunit (scripts/merge-update-info.mjs).
+      - run: mv release/latest-linux.yml "release/latest-linux-$TARGET.yml"
+        env:
+          TARGET: ${{ matrix.target }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pkg-${{ matrix.target }}
+          path: |
+            release/*.deb
+            release/*.rpm
+            release/*.AppImage
+            release/*.blockmap
+            release/latest-linux-*.yml
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Paquets réunis
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      # Seulement js-yaml et builder-util d'electron-builder : ni Electron ni postinstall.
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: pkg-*
+          merge-multiple: true
+          path: release
+      - name: Un seul latest-linux.yml, chaque fichier vérifié
+        run: node scripts/merge-update-info.mjs release
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-packages
@@ -142,9 +187,11 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
+      # Les artefacts des trois cibles, sans attendre `merge`.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: linux-packages
+          pattern: pkg-*
+          merge-multiple: true
           path: release
       - name: Installer et tester le paquet natif puis l’AppImage
         env:

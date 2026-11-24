@@ -4001,6 +4001,14 @@ Timo demande d'accélérer les tests et la CI. Mesures avant : `check.sh` ~9 min
 - CI : le `.deb` est compressé en xz par `tar -J`, sur un seul cœur avec le xz d'Ubuntu 22.04 ;
   `XZ_DEFAULTS=-T0` utilise les quatre (mesuré 4× plus vite en local). Le xz reste obligatoire :
   en gzip le paquet dépasse 100 Mo, refusés par GitHub (commentaire de `electron-builder.yml`).
+- **Paquets en parallèle** : le job `build` faisait les trois cibles à la suite (AppImage 14 s, deb
+  20 s, rpm 86 s, ~198 s en tout). Une cible par job, puis un job `merge` qui produit le même
+  artefact `linux-packages` qu'avant : la release ne change pas. Le piège est `latest-linux.yml`,
+  que lit electron-updater sur les postes AppImage : construite seule, chaque cible n'y écrit que
+  son fichier. `scripts/merge-update-info.mjs` refait ce que fait electron-builder pour une
+  construction commune (l'entrée de l'AppImage d'abord, `path` et `sha512` de tête à elle, puis
+  deb et rpm, avec son sérialiseur) et vérifie la taille et le sha512 de chaque fichier. Sur les
+  vrais AppImage et deb de la 0.90.2, la structure est celle du `latest-linux.yml` publié.
 - Écarté : Playwright à plusieurs workers (les specs partagent la base du serveur) ; `check.sh`
   en parallèle (sous charge, les attentes DOM expirent) ; découper
   le job `validate` en jobs parallèles, qui ne gagne rien tant que le chemin paquets + installation

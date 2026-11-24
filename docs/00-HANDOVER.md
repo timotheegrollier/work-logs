@@ -5,6 +5,8 @@
 - **Mistral puis Groq avant Gemini (§100)** : actifs dès que `MISTRAL_API_KEY` et `GROQ_API_KEY`
   sont posés en secrets du Worker (procédure : `07-RELEASES.md` §9) ; sinon sautés et nommés
   dans **Modèles et quotas**.
+- Paquets en parallèle (§99) : un job `build` par cible (AppImage, deb, rpm), puis `merge` refait
+  `linux-packages` avec un seul `latest-linux.yml` (`scripts/merge-update-info.mjs`, vérifié).
 - Tests plus rapides (§99) : `App.test.tsx` découpé en cinq `App*.test.tsx` sur un socle commun
   (`web/src/test/app-harness.ts`), 3 s de keep-alive en moins par test ; vitest 258 s → 112 s.
 - v0.90.2 : clé Google personnelle, secours `gemini-flash-latest` au lieu de `gemini-2.5-flash-lite`,
@@ -17,8 +19,8 @@
 - Compteur partagé (objet durable `AiUsage`) et `GET /ai/status` ; **Paramètres → Assistance
   IA → Modèles et quotas** l'affiche et le relit chaque minute et après chaque réponse.
 - OVHcloud retiré (client et CSP desktop).
-- `./scripts/check.sh` vert avec **2 217 tests**, dont un échec attendu (367 API · 1 544 front +1 ·
-  49 desktop · 56 scripts · 34 Worker · 11 relais · 133 navigateur · 22 Electron).
+- `./scripts/check.sh` vert avec **2 220 tests**, dont un échec attendu (367 API · 1 544 front +1 ·
+  49 desktop · 59 scripts · 34 Worker · 11 relais · 133 navigateur · 22 Electron).
 - Assistant plus agent : consigne d'initiative sur les messages vagues, réflexion `medium` pour Gemini.
 - **Par où commencer** envoie la demande au clic ; après une réponse, jusqu'à 3 suites (`suggestions`
   du JSON du modèle) s'envoient aussi d'un clic, sous la dernière réponse seulement.
