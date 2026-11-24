@@ -4038,7 +4038,10 @@ il choisit Mistral puis Groq, Gemini et Gemma restant en secours.
 - `reasoning_effort` ne part qu'aux modèles qui raisonnent (Gemini, GPT-OSS) : Mistral et Llama
   le refuseraient.
 - Refus de Mistral et Groq : délai de `Retry-After` ou du message (« try again in 7m30s »), limite
-  citée par Groq (« (TPD): Limit 200000 ») retenue et affichée. 413 de Groq (demande plus grosse
+  citée par Groq (« (TPD): Limit 200000 ») retenue et affichée. Le type et le code du fournisseur suivent le
+  motif (« service_tier_capacity_exceeded 3505 ») : chez Mistral, un palier gratuit saturé répond
+  429 comme un quota atteint. Premier essai réel, le 2026-11-24 : Groq répond en moins d'une
+  seconde, Mistral refuse chaque demande en 429. 413 de Groq (demande plus grosse
   que sa limite par minute) : sautée, le modèle reste disponible.
 - Budget de 20 s pour toute la chaîne à clé, chaque essai au plus ce qui reste : l'app abandonne
   à 30 s et Gemma doit encore pouvoir répondre. Un modèle trop lent est écarté 5 min (§98).

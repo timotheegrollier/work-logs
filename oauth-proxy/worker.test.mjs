@@ -619,11 +619,12 @@ test('Mistral répond en premier avec sa clé, sans réflexion ; l’ordre compl
 test('Mistral au quota → Groq : réflexion pour GPT-OSS seulement, limite et délai cités par Groq retenus', async () => {
   const { env } = allKeysEnv();
   const mistral429 = () => Response.json({ message: 'Requests rate limit exceeded' }, { status: 429, headers: { 'Retry-After': '30' } });
+  const saturated = () => Response.json({ object: 'error', message: 'Service tier capacity exceeded for this model.', type: 'service_tier_capacity_exceeded', param: null, code: '3505' }, { status: 429 });
   const groqDaily = () => Response.json({ error: {
     message: 'Rate limit reached for model `openai/gpt-oss-120b` on tokens per day (TPD): Limit 200000, Used 199500, Requested 1500. Please try again in 7m30.5s.',
     type: 'tokens', code: 'rate_limit_exceeded',
   } }, { status: 429 });
-  const calls = stubGemini(mistral429, mistral429, groqDaily, () => geminiAnswer('llama-3.3-70b-versatile'));
+  const calls = stubGemini(mistral429, saturated, groqDaily, () => geminiAnswer('llama-3.3-70b-versatile'));
   const before = Date.now();
   assert.equal((await (await postChat(env, { body: JSON.stringify({ ...CHAT_REQUEST, reasoning_effort: 'medium' }) })).json()).model, 'llama-3.3-70b-versatile');
   assert.deepEqual(calls.map((c) => [c.url, c.body.model, c.body.reasoning_effort]), [
@@ -631,10 +632,11 @@ test('Mistral au quota → Groq : réflexion pour GPT-OSS seulement, limite et d
     [GROQ_CHAT, 'openai/gpt-oss-120b', 'medium'], [GROQ_CHAT, 'llama-3.3-70b-versatile', undefined],
   ]);
   assert.equal(calls[2].headers.get('Authorization'), 'Bearer cle-groq-test');
-  const [medium, , oss, llama] = (await status(env)).models;
+  const [medium, small, oss, llama] = (await status(env)).models;
   assert.equal(medium.blocked_reason, 'limite par minute atteinte');
+  assert.equal(small.blocked_reason, 'limite par minute atteinte (service_tier_capacity_exceeded 3505)');
   assert.ok(Math.abs(Date.parse(medium.blocked_until) - before - 30_000) < 2_000);
-  assert.equal(oss.blocked_reason, 'quota du jour atteint');
+  assert.equal(oss.blocked_reason, 'quota du jour atteint (tokens rate_limit_exceeded)');
   assert.ok(Math.abs(Date.parse(oss.blocked_until) - before - 451_000) < 2_000);
   assert.deepEqual(oss.limits.tokens_per_day.value, 200000);
   assert.equal(llama.today.requests, 1);

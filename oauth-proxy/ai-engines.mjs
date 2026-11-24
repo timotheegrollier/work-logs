@@ -321,10 +321,14 @@ export async function askEngine(engine, params, key, now, timeoutMs = CHAIN_BUDG
   if (response.status === 429) {
     if (!google) {
       const refusal = rateRefusal(response.headers, body);
+      // Type et code du fournisseur (« service_tier_capacity_exceeded 3505 » chez Mistral) : un
+      // palier gratuit saturé ne se distingue d'un quota que par eux.
+      const cause = [error?.type ?? body?.type, error?.code ?? body?.code]
+        .map((part) => String(part ?? '').match(/^[\w.-]{1,60}$/)?.[0]).filter(Boolean).join(' ');
       return {
         block: {
           until: refusal.retrySeconds ? now + refusal.retrySeconds * 1000 : refusal.daily ? nextReset(engine.provider, now) : now + 60_000,
-          reason: refusal.daily ? 'quota du jour atteint' : 'limite par minute atteinte',
+          reason: `${refusal.daily ? 'quota du jour atteint' : 'limite par minute atteinte'}${cause ? ` (${cause})` : ''}`,
           ...(refusal.kind && refusal.value && { limit: { kind: refusal.kind, value: refusal.value } }),
         },
       };
