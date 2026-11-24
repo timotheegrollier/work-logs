@@ -594,7 +594,7 @@ describe('gestion Google Drive', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Paramètres' }));
     const dialog = await screen.findByRole('dialog', { name: 'Paramètres' });
     const link = within(dialog).getByRole('link', { name: 'Politique de confidentialité' });
-    expect(link).toHaveAttribute('href', 'https://worklogs-google.cocodexcocoder.workers.dev/confidentialite.html');
+    expect(link).toHaveAttribute('href', 'https://timotheegrollier.github.io/work-logs/confidentialite.html');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noreferrer');
   });

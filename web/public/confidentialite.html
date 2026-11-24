@@ -311,7 +311,7 @@
   <h3>1.6 Données techniques</h3>
   <ul>
     <li>L’application desktop vérifie les mises à jour auprès de GitHub Releases ; GitHub reçoit des données techniques (adresse IP, agent utilisateur, version).</li>
-    <li>La PWA est servie par Cloudflare Workers et GitHub Pages ; ces hébergeurs peuvent traiter des journaux de connexion (adresse IP, agent utilisateur) selon leurs politiques.</li>
+    <li>La PWA est servie par GitHub Pages ; le relais de jetons et l’IA passent par Cloudflare Workers. Ces hébergeurs peuvent traiter des journaux de connexion (adresse IP, agent utilisateur) selon leurs politiques.</li>
     <li>WorkLogs n’intègre pas de cookies publicitaires ni d’outils de mesure d’audience.</li>
   </ul>
 
@@ -354,7 +354,7 @@
   <p>WorkLogs ne partage pas vos données avec des tiers, sauf :</p>
   <ul>
     <li>Google, lorsque vous activez la connexion Google (Drive, Docs, comptes) ;</li>
-    <li>Cloudflare, qui héberge la PWA et le relais de jetons, traite les demandes IA et convertit les PDF joints ;</li>
+    <li>Cloudflare, qui héberge le relais de jetons, traite les demandes IA et convertit les PDF joints ;</li>
     <li>GitHub, qui héberge le code, les releases, les mises à jour et le site public ;</li>
     <li>OVHcloud quand il prend le relais pour une demande IA, ou le fournisseur d’IA que vous configurez ;</li>
     <li>votre propre relais de dossier partagé, si vous l’activez.</li>

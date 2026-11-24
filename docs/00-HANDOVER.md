@@ -1,5 +1,14 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## PWA sur GitHub Pages seulement — 2026-11-24 (§97)
+
+- Le Worker Cloudflare ne sert plus la PWA : `https://timotheegrollier.github.io/work-logs/` est
+  la seule adresse. Le Worker garde le relais de jetons Google (`/token`) et l'IA (`/ai/*`), et
+  renvoie toute autre adresse (301) vers la même page de Pages.
+- `pwa-cloudflare.yml` → `worker-cloudflare.yml` : déploie le Worker seul, sur `oauth-proxy/**`.
+- Le lien de politique de l'app et des README pointe vers la page de Pages.
+- `./scripts/check.sh` vert avec **2 178 tests** (+1 Worker : redirections), dont un échec attendu.
+
 ## IA gratuite disponible sans configuration — 2026-11-24, v0.88.0
 
 - L’assistant et les actions IA utilisent Gemma 4 26B sur le Worker WorkLogs pour le

@@ -1,0 +1,46 @@
+name: Worker Cloudflare
+
+# Déploie `oauth-proxy/worker.mjs` sur le Cloudflare gratuit à chaque changement sur master :
+# relais de jetons Google de la PWA (`/token`) et IA gratuite (`/ai/*`). La PWA elle-même est
+# sur GitHub Pages (`pwa.yml`, décision §97) : rien à construire ici.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'oauth-proxy/**'
+      - '.github/workflows/worker-cloudflare.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency propre : ce workflow ne pousse pas sur gh-pages, il ne doit pas
+# annuler le déploiement gh-pages (« PWA »), qui partage le sien.
+concurrency:
+  group: worker-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  deploy-cloudflare:
+    name: Déployer le Worker Cloudflare (relais de jetons + IA)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Déployer le Worker Cloudflare
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo '::error::Secrets CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID absents (docs/07-RELEASES.md §9)'
+            exit 1
+          fi
+          # Même version que le lockfile racine, sans installer Electron pour autant.
+          WRANGLER=$(node -p "require('./package-lock.json').packages['node_modules/wrangler'].version")
+          # wrangler lit `oauth-proxy/wrangler.toml` : le deploy part de ce dossier.
+          cd oauth-proxy
+          npx --yes "wrangler@$WRANGLER" deploy

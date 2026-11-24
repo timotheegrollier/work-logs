@@ -1,6 +1,6 @@
 // Relais de jetons Google de la PWA WorkLogs — Cloudflare Worker, sans dépendance.
-// Depuis l'option B, ce même Worker sert aussi le front statique (`web/dist/`,
-// voir `[assets]` dans `wrangler.toml`) : la PWA est à `/`, le relais à `/token`.
+// La PWA est sur GitHub Pages (décision §97) : ce Worker ne sert plus de front, et
+// renvoie toute autre adresse vers la même page de GitHub Pages.
 // `/ai/pdf` extrait le texte d'un PDF joint explicitement à une demande IA.
 // `/ai/chat/completions` sert le modèle fixe de l'assistant sur Workers Free.
 // Vérification : ouvrir `/token` dans un navigateur (`{"ok":true,…}`).
@@ -14,9 +14,11 @@
 // Seul `default` est exporté : workerd prend tout autre export pour un point d'entrée.
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const PAGES = 'https://timotheegrollier.github.io/work-logs';
 /**
- * Origines autorisées : la PWA servie par ce Worker (option B, même URL que le
- * relais), l'ancienne PWA GitHub Pages (transition) et le serveur Vite en dev.
+ * Origines autorisées : la PWA GitHub Pages, le serveur Vite en dev, et l'ancienne PWA
+ * servie par ce Worker. shortcut: gardée pour une PWA déjà installée depuis Cloudflare,
+ * qui tourne encore sur son cache ; la retirer, avec sa redirection, quand il n'y en a plus.
  */
 const ORIGINS = [
   'https://worklogs-google.cocodexcocoder.workers.dev',
@@ -290,12 +292,12 @@ export default {
     const origin = request.headers.get('Origin') ?? '';
     if (url.pathname === '/ai/pdf') return pdfText(request, env, origin);
     if (url.pathname === '/ai/chat/completions') return chatCompletion(request, env, origin);
-    // Vérification à la main : ouvrir `/token` dans un navigateur. En production
-    // `/` sert la PWA (assets, sans passer par ce code), donc la sonde vit sur
-    // `/token` ; `/` n'est gardé que pour `wrangler dev` sans assets.
-    if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/token')) {
+    // Vérification à la main : ouvrir `/token` dans un navigateur.
+    if (request.method === 'GET' && url.pathname === '/token') {
       return reply({ ok: true, configured: Boolean(env.GOOGLE_CLIENT_SECRET) }, 200);
     }
+    // Ancienne PWA, favoris, politique liée depuis le desktop 0.88.0 : même page sur Pages.
+    if (request.method === 'GET' || request.method === 'HEAD') return Response.redirect(PAGES + url.pathname + url.search, 301);
     if (!ORIGINS.includes(origin)) return reply({ error: 'forbidden_origin' }, 403);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(origin) });
     if (request.method !== 'POST' || url.pathname !== '/token') return reply({ error: 'not_found' }, 404, origin);

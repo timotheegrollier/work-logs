@@ -1,6 +1,8 @@
 # Desktop Linux et CI/CD — référence du pipeline
 
-Dernière mise à jour : **2026-11-12**. Ce document décrit ce qui existe : la chaîne, les cinq
+Dernière mise à jour : **2026-11-12** ; le 2026-11-24, « PWA Cloudflare » est devenu « Worker
+Cloudflare » (`worker-cloudflare.yml`, relais et IA, sans front : décision §97). Les mesures
+plus bas datent d'avant. Ce document décrit ce qui existe : la chaîne, les cinq
 workflows, leurs durées mesurées, ce qui est publié et où, les secrets, le packaging desktop et
 les défauts connus. Pour **publier**, suivre [07-RELEASES.md](07-RELEASES.md) : le pas à pas, les
 vérifications et les remèdes sont là-bas, pas ici.
@@ -21,7 +23,7 @@ push d'une branche ──► CI Linux
 pull request ────────► CI Linux (second run, en plus de celui du push)
 push sur master ─────► CI Linux
                   ├──► PWA (chemins filtrés) ─────────► GitHub Pages, par artefact
-                  └──► PWA Cloudflare (chemins filtrés) ► Worker worklogs-google (le téléphone)
+                  └──► Worker Cloudflare (oauth-proxy/**) ► Worker worklogs-google (relais, IA)
 tag vX.Y.Z ──────────► Release Linux : precheck ── CI verte sur master pour ce commit ?
                                           ├─ oui ─► release ──────────────► GitHub Release
                                           └─ non ─► validate (ci.yml) ─► release
@@ -45,12 +47,11 @@ Trois conséquences :
 | `.github/workflows/release.yml` | Release Linux | `push` d'un tag `v*`, `workflow_dispatch` (entrée `tag`) | `precheck`, `validate` si besoin, `release` | `release-<tag>`, sans annulation | GitHub Release |
 | `.github/workflows/repos.yml` | Dépôts | `workflow_run` à la fin de « Release Linux », `workflow_dispatch` (entrée `tag`) | `repos` | `gh-pages`, sans annulation | `gh-pages/rpm/`, `gh-pages/deb/` |
 | `.github/workflows/pwa.yml` | PWA | `push` sur master filtré par chemins, `workflow_dispatch` | `deploy` | `pages`, sans annulation | GitHub Pages |
-| `.github/workflows/pwa-cloudflare.yml` | PWA Cloudflare | `push` sur master filtré par chemins, `workflow_dispatch` (entrée `force`, lue par aucune étape : D10) | `deploy-cloudflare` | `pwa-cloudflare`, sans annulation | Worker `worklogs-google` |
+| `.github/workflows/worker-cloudflare.yml` | Worker Cloudflare | `push` sur master touchant `oauth-proxy/**` ou le workflow, `workflow_dispatch` | `deploy-cloudflare` | `worker-cloudflare`, sans annulation | Worker `worklogs-google` |
 
-Les deux PWA partent sur `web/**`, `scripts/emit-sw.mjs`, `package.json`, `package-lock.json` et
-leur propre fichier de workflow. `scripts/pwa-sw.mjs` ne déclenche que Pages (D7), et
-`oauth-proxy/**` que Cloudflare. Le commit de version modifie `package.json` : il redéploie
-toujours les deux PWA.
+La PWA part sur `web/**`, `scripts/emit-sw.mjs`, `scripts/pwa-sw.mjs`, `package.json`,
+`package-lock.json` et son fichier de workflow : le commit de version la redéploie toujours.
+Le Worker ne part que sur `oauth-proxy/**` et son workflow.
 
 Deux workflows existent côté GitHub sans fichier dans `.github/workflows/`. `Dependabot Updates`
 suit `.github/dependabot.yml` : chaque mois, les actions GitHub de la racine et npm sur `/`,
@@ -148,18 +149,18 @@ Le job `repos` tourne si le run déclencheur a réussi, ou sur un dispatch. Il a
 
 Seul `github.token` sert. « Dépôts » démarre 2 à 4 s après la fin de « Release Linux ».
 
-### 2.4 PWA (`pwa.yml`) et PWA Cloudflare (`pwa-cloudflare.yml`)
+### 2.4 PWA (`pwa.yml`) et Worker Cloudflare (`worker-cloudflare.yml`)
 
-Les deux construisent `web/` avec `VITE_PWA=1`, `VITE_GOOGLE_CLIENT_ID` (variable, sinon secret
+La PWA construit `web/` avec `VITE_PWA=1`, `VITE_GOOGLE_CLIENT_ID` (variable, sinon secret
 `GOOGLE_WEB_CLIENT_ID`) et `VITE_GOOGLE_TOKEN_PROXY` (variable `GOOGLE_TOKEN_PROXY_URL`). Le build
 émet `sw.js` à la version de `package.json` racine.
 - PWA : `configure-pages@v5`, `upload-pages-artifact@v3` sur `web/dist`, puis `deploy-pages@v4`,
   dans l'environnement `github-pages` (branches autorisées : `master` et `gh-pages`). Ces trois
   actions sont référencées par tag ; toutes les autres actions du pipeline sont épinglées par SHA.
-- PWA Cloudflare : refus explicite si `CLOUDFLARE_API_TOKEN` ou `CLOUDFLARE_ACCOUNT_ID` manque ;
-  `wrangler` à la version du lockfile racine (4.156.0) ;
-  `cd oauth-proxy && npx --yes "wrangler@$WRANGLER" deploy`. Le Worker sert `../web/dist` en
-  assets, et `/token` passe par le Worker avant les assets (`oauth-proxy/wrangler.toml`).
+- Worker Cloudflare : rien à construire ; refus explicite si `CLOUDFLARE_API_TOKEN` ou
+  `CLOUDFLARE_ACCOUNT_ID` manque ; `wrangler` à la version du lockfile racine (4.156.0) ;
+  `cd oauth-proxy && npx --yes "wrangler@$WRANGLER" deploy`. Plus d'assets depuis le 2026-11-24 :
+  toute adresse hors `/token` et `/ai/*` renvoie (301) vers la même page de GitHub Pages.
 
 ## 3. Durées mesurées
 
@@ -218,8 +219,8 @@ dépôts vérifiés : 34 minutes.
 | GitHub Release `vX.Y.Z` | `.deb`, `.rpm`, `.AppImage`, `.AppImage.blockmap`, `latest-linux.yml`, `SHA256SUMS` ; l'attestation des cinq premiers n'est pas un fichier de la release : elle est rangée dans les attestations du dépôt, retrouvée par l'empreinte du fichier (`gh api repos/timotheegrollier/work-logs/attestations/sha256:<empreinte>`) | Release Linux | téléchargement manuel ; electron-updater (AppImage) ; applications desktop et relais, par `releases/latest` |
 | branche `gh-pages`, dossier `rpm/` | le `.rpm` de la dernière version, `repodata/`, `worklogs.repo` | Dépôts | dnf |
 | branche `gh-pages`, dossier `deb/` | le `.deb` de la dernière version, `Packages`, `Packages.gz`, `Release`, `worklogs.list` | Dépôts | apt |
-| `https://timotheegrollier.github.io/work-logs/` | la PWA | PWA | miroir de la PWA |
-| `https://worklogs-google.cocodexcocoder.workers.dev/` | la PWA à `/`, le relais de jetons Google à `/token` | PWA Cloudflare | le téléphone |
+| `https://timotheegrollier.github.io/work-logs/` | la PWA | PWA | le téléphone et le navigateur |
+| `https://worklogs-google.cocodexcocoder.workers.dev/` | le relais de jetons Google à `/token`, l'IA gratuite à `/ai/*` ; le reste renvoie vers Pages | Worker Cloudflare | la PWA, le desktop (IA) |
 | VM du relais | le relais du dossier partagé | son minuteur, à partir de la release ([09-RELAIS.md](09-RELAIS.md)) | la PWA, par Tailscale |
 
 Depuis `5ae1a21` (2026-11-10), les dépôts sont servis par
@@ -244,9 +245,9 @@ Noms seulement, relevés le 2026-11-12 :
 | Nom | Nature | Utilisé par |
 |---|---|---|
 | `GOOGLE_DESKTOP_CLIENT_ID`, `GOOGLE_DESKTOP_CLIENT_SECRET` | secrets | CI Linux, étape `desktop:dist` ; aussi le `validate` du chemin plein (`secrets: inherit`) |
-| `GOOGLE_WEB_CLIENT_ID` | secret (une variable du même nom passerait avant) | PWA, PWA Cloudflare |
-| `GOOGLE_TOKEN_PROXY_URL` | variable | PWA, PWA Cloudflare |
-| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | secrets | PWA Cloudflare |
+| `GOOGLE_WEB_CLIENT_ID` | secret (une variable du même nom passerait avant) | PWA |
+| `GOOGLE_TOKEN_PROXY_URL` | variable | PWA |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | secrets | Worker Cloudflare |
 | `GITHUB_TOKEN` | jeton automatique d'Actions | Release Linux, Dépôts |
 | `GOOGLE_CLIENT_SECRET` | secret du Worker Cloudflare, hors GitHub | relais de jetons (`/token`) |
 
@@ -277,7 +278,7 @@ répond normalement.
 | `scripts/verify-repo.mjs` | vérifie à l'adresse publique les index, leurs empreintes et les deux paquets, 10 min au plus | Dépôts, poste |
 | `scripts/release-notes.mjs` | notes en anglais depuis `git log PREV..TAG --no-merges` | job `release`, poste |
 | `scripts/emit-sw.mjs`, `scripts/pwa-sw.mjs` | `sw.js` versionné comme `package.json`, précache de tout le build ; version `X.Y.Z` stricte | `npm --prefix web run build` |
-| `scripts/workflows.test.mjs` | tests statiques de `pwa-cloudflare.yml` et de `repos.yml` seulement (D15) | `check.sh` |
+| `scripts/workflows.test.mjs` | tests statiques de `worker-cloudflare.yml` et de `repos.yml` seulement (D15) | `check.sh` |
 
 `check.sh` prend un écran virtuel avec metacity ou muffin s'ils sont installés, sinon l'écran
 courant, sinon `xvfb-run -a`. Le 2026-11-13, après la v0.77.0, il a compté 346 tests API,

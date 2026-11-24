@@ -1,11 +1,9 @@
 # Clavier : si une vue Google masquée retient le focus système, cliquer dans un champ
 # WorkLogs lui redonne la main (via le message `focus-field` de `web:google-view`).
 
-# Relais de jetons Google de la PWA (Cloudflare Worker, offre gratuite).
-# Option B : ce même Worker sert le front statique `web/dist/` (PWA à `/`,
-# relais à `/token`). Construire le front avant de déployer, depuis la racine :
-#   VITE_PWA=1 VITE_GOOGLE_TOKEN_PROXY=https://worklogs-google.cocodexcocoder.workers.dev npm --prefix web run build
-# Puis, depuis ce dossier :
+# Relais de jetons Google de la PWA et IA gratuite (Cloudflare Worker, offre gratuite).
+# La PWA elle-même est sur GitHub Pages (décision §97) : rien à construire avant.
+# Depuis ce dossier :
 #   npx wrangler login
 #   npx wrangler deploy
 #   npx wrangler secret put GOOGLE_CLIENT_SECRET   # secret du client « Application Web »
@@ -27,10 +25,3 @@ simple = { limit = 10, period = 60 }
 name = "PDF_LIMITER"
 namespace_id = "841001"
 simple = { limit = 12, period = 60 }
-
-[assets]
-directory = "../web/dist"
-binding = "ASSETS"
-not_found_handling = "single-page-application"
-# Les routes du Worker passent avant le repli vers `index.html`.
-run_worker_first = ["/token", "/ai/pdf", "/ai/chat/completions"]

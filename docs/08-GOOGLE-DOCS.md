@@ -281,9 +281,8 @@ Une ancienne autorisation sans `openid` fonctionne toujours, simplement sans com
    `timotheegrollier/timotheegrollier.github.io` (le portfolio, servi à la racine). **Ne
    jamais le supprimer** : Google revérifie la propriété.
    Les pages sources sont `web/public/accueil.html` et `web/public/confidentialite.html` ;
-   publiées avec la PWA par `pwa.yml` (GitHub Pages, `/work-logs/`) et `pwa-cloudflare.yml`
-   (même chemin sans `/work-logs/` sur le Worker). Toute modification se fait dans ces
-   fichiers, jamais dans `web/dist/`. La connexion et le relais restent sur Cloudflare.
+   publiées avec la PWA par `pwa.yml` (GitHub Pages, `/work-logs/`). Toute modification se
+   fait dans ces fichiers, jamais dans `web/dist/`. Le relais de jetons reste sur Cloudflare.
 
 ## Relais de jetons (Cloudflare Worker) — depuis le 2026-09-23
 
@@ -291,18 +290,17 @@ Une ancienne autorisation sans `openid` fonctionne toujours, simplement sans com
 (dans `check.sh`). Il détient le secret du client Web et ne fait que l'ajouter : `POST /token`
 venant de la PWA, échange du code (avec `code_verifier` et un retour de la PWA) ou
 renouvellement, réponse de Google rendue telle quelle. Pourquoi et limites : décision §22.
-Depuis l'option B, ce même Worker sert aussi le front (`[assets]` dans `wrangler.toml`,
-`web/dist/` construit avec `VITE_PWA=1`) : la PWA est à `/`, le relais à `/token`.
+Il ne sert plus de front depuis le 2026-11-24 (décision §97) : la PWA est sur GitHub Pages, et
+toute autre adresse du Worker renvoie (301) vers la même page de Pages. Il sert aussi l'IA
+gratuite (`/ai/*`, décision §96).
 
 Du 2026-10-21 au 2026-10-29, `POST /relay-key` rendait aussi la clé qui chiffrait, dans le
 Drive du compte, l'accès au relais du dossier partagé (§39). Retiré avec le code du relais : la
 copie Drive ne garde plus que l'adresse, en clair (décision §55).
 
-**Déployer** (compte Cloudflare gratuit), depuis la racine puis `oauth-proxy/` :
+**Déployer** (compte Cloudflare gratuit), depuis `oauth-proxy/` :
 
 ```bash
-VITE_PWA=1 VITE_GOOGLE_TOKEN_PROXY=https://worklogs-google.cocodexcocoder.workers.dev npm --prefix web run build
-# (+ VITE_GOOGLE_CLIENT_ID=…apps.googleusercontent.com : repris de la PWA publiée, public par nature)
 npx wrangler login                             # ouvre le navigateur (une fois)
 npx wrangler deploy                            # → https://worklogs-google.cocodexcocoder.workers.dev
 npx wrangler secret put GOOGLE_CLIENT_SECRET   # secret du client « Application Web » (conservé entre déploiements)
@@ -310,21 +308,19 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET   # secret du client « Application
 
 `wrangler` est une dépendance de développement de la racine (`package.json`) : en local, `npx`
 lance la version installée ; la CI télécharge la même, lue dans `package-lock.json`.
-Le déploiement en production est **automatisé** par `.github/workflows/pwa-cloudflare.yml` :
-il reconstruit la PWA et redéploie le Worker à chaque changement sur master
-(`web/**`, `scripts/emit-sw.mjs`, `oauth-proxy/**`, `package.json`, `package-lock.json`,
-le workflow lui-même).
+Le déploiement en production est **automatisé** par `.github/workflows/worker-cloudflare.yml` :
+il redéploie le Worker à chaque changement sur master de `oauth-proxy/**` ou du workflow.
 Le sous-domaine `workers.dev` se change dans le dashboard (Workers & Pages → Change) :
 il s'applique à tout le compte, penser à mettre à jour `ORIGINS`/`REDIRECTS`
 (`worker.mjs`), la console Google Cloud et la variable ci-dessous.
 GitHub → Settings → Secrets and variables → Actions → Variables : `GOOGLE_TOKEN_PROXY_URL`
-= l'adresse du Worker (= `VITE_GOOGLE_TOKEN_PROXY` au build), puis relancer les workflows **PWA**
-et **PWA Cloudflare** (leurs builds lisent la variable).
+= l'adresse du Worker (= `VITE_GOOGLE_TOKEN_PROXY` au build), puis relancer le workflow **PWA**
+(son build lit la variable).
 Valeur actuelle : `https://worklogs-google.cocodexcocoder.workers.dev`.
 
 **Vérifier**
 - Ouvrir `https://worklogs-google.cocodexcocoder.workers.dev/token` :
-  `{"ok":true,"configured":true}` ; `false` = secret absent. `/` sert la PWA.
+  `{"ok":true,"configured":true}` ; `false` = secret absent. `/` renvoie vers GitHub Pages.
 - Un faux code doit aller jusqu'à Google et revenir `invalid_grant` (secret accepté) ;
   `invalid_client` = mauvais secret :
 

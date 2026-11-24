@@ -1189,7 +1189,7 @@ export default function App() {
               s'ouvre dans le navigateur système : la page publique est aussi
               celle déclarée à Google Cloud. */}
           <footer className="settings-footer">
-            <a href="https://worklogs-google.cocodexcocoder.workers.dev/confidentialite.html" target="_blank" rel="noreferrer">
+            <a href="https://timotheegrollier.github.io/work-logs/confidentialite.html" target="_blank" rel="noreferrer">
               Politique de confidentialité
             </a>
             <span className="settings-version">WorkLogs {__WORKLOGS_VERSION__}</span>

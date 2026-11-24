@@ -10,23 +10,23 @@ import assert from 'node:assert/strict';
 // assertions de structure sautaient et un YAML cassé passait.
 const yaml = await import(pathToFileURL('./node_modules/js-yaml/dist/js-yaml.mjs').href);
 
-describe('workflow PWA Cloudflare (option B — PWA + relais sur le même Worker)', () => {
+describe('workflow Worker Cloudflare (relais de jetons et IA, sans front : la PWA est sur Pages)', () => {
   test('le workflow existe et est un YAML valide', () => {
-    const content = readFileSync('./.github/workflows/pwa-cloudflare.yml', 'utf8');
+    const content = readFileSync('./.github/workflows/worker-cloudflare.yml', 'utf8');
     assert.ok(content.trim().length > 0, 'fichier non vide');
     const wf = yaml.load(content);
-    assert.equal(wf.name, 'PWA Cloudflare');
+    assert.equal(wf.name, 'Worker Cloudflare');
     assert.equal(wf.on.push.branches?.[0], 'master');
-    assert.ok(wf.on.push.paths.some(p => p === 'web/**'), 'déclenche sur web/**');
     assert.ok(wf.on.push.paths.some(p => p === 'oauth-proxy/**'), 'déclenche sur oauth-proxy/**');
+    assert.ok(!wf.on.push.paths.includes('web/**'), 'un changement web ne redéploie pas le Worker');
     assert.equal(wf.jobs['deploy-cloudflare']['runs-on'], 'ubuntu-24.04');
     // Pas le groupe « gh-pages » de « Dépôts » : ce workflow ne pousse pas sur gh-pages,
     // et un run de « Dépôts » en attente serait annulé par le sien.
-    assert.equal(wf.concurrency?.group, 'pwa-cloudflare');
+    assert.equal(wf.concurrency?.group, 'worker-cloudflare');
   });
 
   test('les credentials Cloudflare sont des secrets, pas en dur', () => {
-    const content = readFileSync('./.github/workflows/pwa-cloudflare.yml', 'utf8');
+    const content = readFileSync('./.github/workflows/worker-cloudflare.yml', 'utf8');
     assert.ok(content.includes('secrets.CLOUDFLARE_API_TOKEN'), 'CLOUDFLARE_API_TOKEN est un secret GitHub');
     assert.ok(content.includes('secrets.CLOUDFLARE_ACCOUNT_ID'), 'CLOUDFLARE_ACCOUNT_ID est un secret GitHub');
     assert.ok(
@@ -40,7 +40,7 @@ describe('workflow PWA Cloudflare (option B — PWA + relais sur le même Worker
   });
 
   test('le deploy part de oauth-proxy/ (wrangler lit le wrangler.toml du relais)', () => {
-    const content = readFileSync('./.github/workflows/pwa-cloudflare.yml', 'utf8');
+    const content = readFileSync('./.github/workflows/worker-cloudflare.yml', 'utf8');
     // Sans `cd oauth-proxy`, wrangler verrait un dossier sans wrangler.toml et
     // lancerait un setup interactif (« wrangler init ») qui échoue en CI.
     assert.ok(content.includes('cd oauth-proxy'), 'deploy depuis oauth-proxy/');
@@ -49,9 +49,10 @@ describe('workflow PWA Cloudflare (option B — PWA + relais sur le même Worker
     assert.ok(!content.includes('group: gh-pages'), 'pas de groupe gh-pages partagé');
   });
 
-  test('le build est celui de la PWA (VITE_PWA), pas la version web /api', () => {
-    const content = readFileSync('./.github/workflows/pwa-cloudflare.yml', 'utf8');
-    assert.match(content, /VITE_PWA: '1'/);
+  test('aucun front construit ni publié : la PWA vit sur GitHub Pages', () => {
+    const content = readFileSync('./.github/workflows/worker-cloudflare.yml', 'utf8');
+    assert.ok(!content.includes('npm --prefix web'), 'pas de build web');
+    assert.ok(!readFileSync('./oauth-proxy/wrangler.toml', 'utf8').includes('[assets]'), 'pas d’assets dans wrangler.toml');
   });
 });
 

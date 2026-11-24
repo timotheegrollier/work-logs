@@ -43,7 +43,7 @@ workflow, relevés le 2026-11-10 (06 §3). La dernière colonne donne la mesure 
 | Pas (§3) | Ce qui part | Attente médiane | v0.74.0 |
 |---|---|---|---|
 | 3. poussée de la branche | CI Linux | 13,8 min | 13,7 min |
-| 6. avance rapide de master | CI Linux ; PWA et PWA Cloudflare, sans attendre la CI | 14,0 min pour la CI, moins d'une minute pour les PWA | 20,6 min pour la CI |
+| 6. avance rapide de master | CI Linux ; PWA (GitHub Pages) et Worker Cloudflare, sans attendre la CI | 14,0 min pour la CI, moins d'une minute pour les PWA | 20,6 min pour la CI |
 | 8. tag | Release Linux, chemin rapide | 2,7 min | 5,8 min |
 | fin de « Release Linux » | Dépôts | 4,9 min | 4,7 min |
 | dépôts publiés | cache de raw.githubusercontent.com (`max-age=300`) | jusqu'à 5 min | ancien index encore rendu à 17:03 |
@@ -184,9 +184,9 @@ git diff --quiet <sha-de-la-branche> origin/master && echo "arbre identique"
 Sans « arbre identique », ne pas taguer : une fusion après un revert a déjà perdu 148 lignes en
 silence. Le commit à taguer est alors celui de master, pas celui de la branche.
 
-L'arrivée du commit sur master, par poussée ou par fusion, déclenche « CI Linux », « PWA » et
-« PWA Cloudflare ». **Les deux PWA n'attendent pas la CI** : le téléphone reçoit ce commit en moins
-d'une minute (06, D6).
+L'arrivée du commit sur master, par poussée ou par fusion, déclenche « CI Linux », « PWA » et, si
+`oauth-proxy/` change, « Worker Cloudflare ». **Ni la PWA ni le Worker n'attendent la CI** : le
+téléphone reçoit ce commit en moins d'une minute (06, D6).
 
 **7. Taguer sans attendre une seconde CI sur master** (depuis le 2026-11-19).
 `precheck` accepte le run de push déjà vert sur ce SHA, qu'il vienne de la branche ou de master :
@@ -277,8 +277,8 @@ ne pas réintroduire :
 | Poste dnf | `cat /etc/yum.repos.d/worklogs.repo`, puis `sudo dnf upgrade --refresh worklogs` et `rpm -q worklogs` | `baseurl=https://raw.githubusercontent.com/…/rpm` ; la version X.Y.Z installée (non vérifié sur un vrai poste Fedora depuis le passage en raw) |
 | Application desktop, paquet | ouvrir l'application, ou cliquer la pastille de version à côté du logo | « Mettre à jour maintenant », mot de passe, « Redémarrer » ; dans `~/.local/share/worklogs/update.log`, « pré-vol PackageKit : X.Y.Z » puis « installation apt : succès (X.Y.Z) » (ou `dnf`) |
 | AppImage | lancer l'AppImage | « Mettre à jour », puis « Redémarrer » ; non observé pour ce document |
-| PWA du téléphone | `curl -s https://worklogs-google.cocodexcocoder.workers.dev/sw.js \| grep VERSION` et `curl -s https://worklogs-google.cocodexcocoder.workers.dev/token` | `const VERSION = 'X.Y.Z';` et `{"ok":true,"configured":true}` ; puis rouvrir la PWA |
-| PWA, miroir Pages | `curl -s https://timotheegrollier.github.io/work-logs/sw.js \| grep VERSION` | la même version |
+| PWA (GitHub Pages) | `curl -s https://timotheegrollier.github.io/work-logs/sw.js \| grep VERSION` | `const VERSION = 'X.Y.Z';` ; puis rouvrir la PWA |
+| Worker Cloudflare | `curl -s https://worklogs-google.cocodexcocoder.workers.dev/token` | `{"ok":true,"configured":true}` |
 | Relais de la VM | depuis le réseau Tailscale : `curl -s https://worklogs-relais.tail614cd0.ts.net:8443/health` | `"version":"X.Y.Z"` |
 
 La version de `sw.js` dit un numéro, pas un commit. Le 2026-11-12, `db6e5d6` était servi sous
@@ -327,7 +327,7 @@ automatique »).
 - **Relais**, sur la VM : `node /opt/worklogs-relais/mise-a-jour.mjs --simuler` dit ce qui serait
   fait.
 - **Workflows** : un YAML lisible se vérifie par
-  `python3 -c "import yaml; [yaml.safe_load(open(f'.github/workflows/{n}.yml')) for n in ('ci','release','repos','pwa','pwa-cloudflare')]; print('yaml ok')"`.
+  `python3 -c "import yaml; [yaml.safe_load(open(f'.github/workflows/{n}.yml')) for n in ('ci','release','repos','pwa','worker-cloudflare')]; print('yaml ok')"`.
   `node --test scripts/workflows.test.mjs` ne couvre que deux workflows sur cinq (06, D15).
 - **Ne pas compter sur le `workflow_dispatch` de « Release Linux ».** Il ne sert que pour un tag
   sans release publiée, et laisse un brouillon. Sur un tag déjà publié, il échoue (« Une release
@@ -377,7 +377,7 @@ Ce que voit le poste :
   l'installation, il précache tout le build, puis prend la main (`skipWaiting`, puis
   `clients.claim`) et supprime les anciens caches. Les navigations passent par le réseau d'abord,
   et `/api/` n'est jamais mis en cache. La nouvelle version se voit à la réouverture de la PWA.
-  `sw.js` est servi avec `max-age=600` sur Pages, et `max-age=0, must-revalidate` sur Cloudflare.
+  `sw.js` est servi avec `max-age=600` sur Pages : une nouvelle version peut attendre 10 min.
 - **Relais de la VM.** Le minuteur `worklogs-relais-maj.timer` passe 2 min après le démarrage,
   puis toutes les 5 min, avec 30 s de décalage aléatoire au plus. Il installe la dernière release
   publiée si elle est plus récente. Le relais doit répondre sur `/health` avec la nouvelle
@@ -548,18 +548,17 @@ Tout poste activé avant le 2026-11-10 est concerné. Aucun mécanisme de migrat
 - Les montées Dependabot se fusionnent après une CI verte. En cas d'incompatibilité réelle,
   fermer la PR avec un commentaire motivé (exemple : Express 5).
 
-## 9. PWA Cloudflare : déployée par la CI, recette manuelle en secours
+## 9. Worker Cloudflare : déployé par la CI, recette manuelle en secours
 
-Le téléphone ouvre `https://worklogs-google.cocodexcocoder.workers.dev/` : la PWA à `/`, le relais
-de jetons Google à `/token` (option B). GitHub Pages reste un miroir, publié par artefact, mais le
-téléphone ne le consulte pas. Vécu le 2026-09-27 : Cloudflare servait la 0.37.0 alors que GitHub
-servait déjà la 0.41.x, sans aucun changement visible malgré une CI verte. Le Worker n'était alors
-déployé qu'à la main.
+Depuis le 2026-11-24 (décision §97), la PWA n'est plus que sur GitHub Pages
+(`https://timotheegrollier.github.io/work-logs/`, `pwa.yml`). Le Worker
+`https://worklogs-google.cocodexcocoder.workers.dev` ne sert plus de front : il garde le relais de
+jetons Google (`/token`) et l'IA gratuite (`/ai/*`), et renvoie toute autre adresse (301) vers la
+même page de Pages, pour les favoris et le lien de politique du desktop 0.88.0.
 
-Depuis le 2026-10-06, le workflow **« PWA Cloudflare »** (`pwa-cloudflare.yml`) construit la PWA
-(`VITE_PWA=1`) et lance `wrangler deploy` depuis `oauth-proxy/`. Il part à chaque push sur master
-qui touche `web/`, `oauth-proxy/` ou la version, sans attendre la CI (06, D6). Un changement de
-`scripts/pwa-sw.mjs` seul ne le déclenche pas (06, D7). Il exige deux secrets GitHub :
+Le workflow **« Worker Cloudflare »** (`worker-cloudflare.yml`) lance `wrangler deploy` depuis
+`oauth-proxy/`, sans rien construire. Il part à chaque push sur master qui touche `oauth-proxy/`,
+sans attendre la CI (06, D6). Il exige deux secrets GitHub :
 `CLOUDFLARE_API_TOKEN` (jeton « Edit Cloudflare Workers ») et `CLOUDFLARE_ACCOUNT_ID`. Sans eux,
 il échoue en le disant. Le secret Google du relais reste stocké côté Worker
 (`wrangler secret put`), et le déploiement le conserve.
@@ -573,8 +572,6 @@ clé depuis **Paramètres → Assistance IA**, puis suivre la recette IA dans `0
 Recette manuelle, en secours ou si le workflow est rouge, depuis la racine :
 
 ```bash
-VITE_PWA=1 VITE_GOOGLE_TOKEN_PROXY=https://worklogs-google.cocodexcocoder.workers.dev npm --prefix web run build
-# (+ VITE_GOOGLE_CLIENT_ID=…apps.googleusercontent.com : repris de la PWA publiée, public par nature)
 npx wrangler login   # une fois ; impossible en CI, à faire sur un poste connecté
 npx wrangler deploy --config oauth-proxy/wrangler.toml  # → https://worklogs-google.cocodexcocoder.workers.dev
 ```
@@ -585,9 +582,8 @@ npx wrangler deploy --config oauth-proxy/wrangler.toml  # → https://worklogs-g
 > `deploy` et `preview` imposent `--config`. Ne jamais recréer de `wrangler.jsonc` à la racine, ni
 > lancer `wrangler init` à la racine.
 
-Vérifier : `sw.js` doit annoncer la version (`curl -s …/sw.js | grep VERSION`), et `/token` doit
-répondre `{"ok":true,"configured":true}`. Puis rouvrir la PWA sur le téléphone : le service worker
-se met à jour à la réouverture. Détail : `08-GOOGLE-DOCS.md`, « Relais de jetons ».
+Vérifier : `/token` doit répondre `{"ok":true,"configured":true}`, et `/` renvoyer un 301 vers
+GitHub Pages (`curl -sI …/ | grep -i location`). Détail : `08-GOOGLE-DOCS.md`, « Relais de jetons ».
 
 ## 10. Quand ça casse : symptôme, cause, remède
 
@@ -607,9 +603,9 @@ se met à jour à la réouverture. Détail : `08-GOOGLE-DOCS.md`, « Relais de j
 | « Dépôts » rouge sur `verify-repo` : « Dépôts publics non prêts pour vX.Y.Z après 600 s » | adresse publique en retard, ou fichier manquant ; vécu le 2026-11-06, quand Pages servait encore les dépôts | relancer plus tard `node scripts/verify-repo.mjs vX.Y.Z https://raw.githubusercontent.com/timotheegrollier/work-logs/gh-pages` ; s'il passe, les paquets sont servis ; sinon `gh workflow run repos.yml -f tag=vX.Y.Z` (un tel dispatch a republié la v0.73.0 sur raw le 2026-11-10, run 42810718995) |
 | « Dépôts » rouge : « Paquet(s) au-delà de 100 Mo, dépôt apt non publié » | `.deb` trop gros (06, D4) ; non observé depuis le passage en xz | le dépôt dnf est publié, le dépôt apt perd son `.deb` ; réduire le paquet ou héberger les `.deb` hors de `gh-pages`, comme le dit le job |
 | « Dépôts » sauté | « Release Linux » n'a pas fini en `success` | réparer la release, puis `gh workflow run repos.yml -f tag=vX.Y.Z` |
-| « PWA Cloudflare » rouge : « Secrets CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID absents » | secrets absents (vécu le 2026-10-06) | ajouter les deux secrets au dépôt (§9) |
-| « PWA Cloudflare » rouge sur `assets-upload-session` : « No access to the specified resource. » | cause non établie, probablement les droits du jeton ; vécu le 2026-10-06, vert ensuite sans changement identifié dans le dépôt | relancer ; sinon recette manuelle (§9) |
-| Le téléphone garde l'ancienne version | service worker pas encore remplacé, ou « PWA Cloudflare » pas passée (06, D7) | `curl -s https://worklogs-google.cocodexcocoder.workers.dev/sw.js \| grep VERSION`, fermer et rouvrir la PWA ; sinon `gh workflow run pwa-cloudflare.yml` |
+| « Worker Cloudflare » rouge : « Secrets CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID absents » | secrets absents (vécu le 2026-10-06) | ajouter les deux secrets au dépôt (§9) |
+| Le téléphone garde l'ancienne version | service worker pas encore remplacé, ou « PWA » pas passée (06, D7) | `curl -s https://timotheegrollier.github.io/work-logs/sw.js \| grep VERSION`, fermer et rouvrir la PWA ; sinon `gh workflow run pwa.yml` |
+| « PWA » rouge sur « Déployer l'artefact Pages » : « No artifacts named "github-pages" were found » | aléa GitHub : l'artefact tout juste téléversé n'est pas encore visible (vécu le 2026-11-24, v0.88.0) | relancer le job : `gh run rerun <id> --failed` |
 | Le relais répond encore l'ancienne version | minuteur pas encore passé, préparation en cours, ou version écartée après un échec | attendre ; sinon, sur la VM, `journalctl -u worklogs-relais-maj -n 20`, puis les commandes de [09-RELAIS.md](09-RELAIS.md) |
 | CI rouge sur master après une poussée directe | commit non passé par une branche (2026-11-05, 2026-11-06) | la PWA l'a déjà publié (06, D6) : corriger vite par une branche, ne pas taguer |
 

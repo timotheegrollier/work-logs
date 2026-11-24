@@ -34,9 +34,9 @@ En production, `npm start` construit le front et l'API le sert elle-même : **un
 ## PWA statique (mobile, sans serveur)
 
 Le même `web/dist/` (base relative `./`, donc rejouable à la racine comme dans
-un sous-dossier), construit avec `VITE_PWA=1`, est publié par deux workflows :
-`PWA Cloudflare` (`pwa-cloudflare.yml`, Worker, à la racine, avec le relais de jetons)
-et `PWA` (`pwa.yml`, artefact GitHub Pages, sous `/work-logs/`). Les dépôts Linux n'y
+un sous-dossier), construit avec `VITE_PWA=1`, est publié par `PWA` (`pwa.yml`, artefact
+GitHub Pages, sous `/work-logs/`). Le Worker Cloudflare (`worker-cloudflare.yml`) ne sert
+plus de front depuis le 2026-11-24 (§97) : relais de jetons et IA seulement. Les dépôts Linux n'y
 passent pas : seul « Dépôts » pousse sur la branche gh-pages (`/deb/`, `/rpm/`), servie en
 brut par `raw.githubusercontent.com`. Contenu PWA : `index.html`,
 `manifest.webmanifest`, icônes 256/512 (`web/public/icons/`, dérivées de

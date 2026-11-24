@@ -1170,6 +1170,9 @@ réenregistrer par un collègue et le rouvrir dans WorkLogs.
 
 ## 28. PWA sur Cloudflare Worker, mise à jour automatique — 2026-10-06
 
+> **Remplacée le 2026-11-24 par §97** : la PWA n'est plus que sur GitHub Pages ; le Worker
+> garde le relais de jetons et l'IA.
+
 **Le constat.** La PWA (relais de jetons + front) vit sur un Cloudflare Worker unique
 (`worklogs-google`, option B) : elle n’est plus hébergée sur gh-pages. Le problème :
 avec un Worker, une mise à jour de l’application (bump de version, correctif web) ne
@@ -3869,3 +3872,30 @@ passent au Worker. Les choix avancés explicites restent disponibles.
   texte sans passer par un modèle d’inférence payant. Le modèle reçoit l’extrait,
   plafonné à 16 000 caractères. Une conversion refusée ou sans texte laisse la
   pièce jointe non lue. [Conversion PDF](https://developers.cloudflare.com/workers-ai/features/markdown-conversion/how-it-works/#pdfs).
+
+## 97. La PWA sur GitHub Pages seulement ; le Worker garde le relais et l'IA — 2026-11-24
+
+**Décision.** Le Worker `worklogs-google` ne sert plus de front (`[assets]` retiré de
+`oauth-proxy/wrangler.toml`). La PWA est à `https://timotheegrollier.github.io/work-logs/`,
+publiée par `pwa.yml`. Le workflow `pwa-cloudflare.yml` devient `worker-cloudflare.yml`, sans
+build web : il ne part que sur `oauth-proxy/**`. Toute adresse du Worker hors `/token` et
+`/ai/*` renvoie (301) vers la même page de Pages : favoris, PWA installée depuis Cloudflare, et
+lien de politique de l'application desktop 0.88.0.
+
+**Pourquoi.** Timo n'utilise plus que l'adresse github.io. Les pages publiques demandées par
+Google y sont déjà (§72), et l'origine `timotheegrollier.github.io` comme le retour
+`…/work-logs/` sont enregistrés chez Google et acceptés par le relais. Deux PWA publiées pour
+un seul usage doublaient les déploiements et la documentation.
+
+**Ce qui reste sur Cloudflare, et pourquoi.** Le relais de jetons (`/token`) : Google exige le
+secret du client Web à l'échange du code et au renouvellement, et une page de Pages ne peut pas
+le garder (§22). Sans lui, la PWA retombe sur le flux « jeton » d'une heure. L'IA gratuite
+(`/ai/*`, §96) : sans clé ni compte, Workers Free refuse au lieu de facturer.
+
+**Gardé exprès.** L'origine et le retour `worklogs-google.cocodexcocoder.workers.dev` restent
+dans `ORIGINS`/`REDIRECTS` du relais et dans le relais de la VM : une PWA déjà installée depuis
+Cloudflare continue de tourner sur son cache. Les retirer quand plus aucune ne tourne, avec la
+redirection.
+
+**Validation.** `oauth-proxy/worker.test.mjs` (redirections et routes conservées),
+`scripts/workflows.test.mjs` (ni build web ni assets).

@@ -106,13 +106,29 @@ test('préflight CORS réservé à la PWA', async () => {
 });
 
 test('adresse ouverte dans un navigateur : dit si le secret est en place, sans le révéler', async () => {
-  const configured = await worker.fetch(new Request('https://relais.test/'), ENV);
+  const configured = await worker.fetch(new Request('https://relais.test/token'), ENV);
   assert.deepEqual(await configured.json(), { ok: true, configured: true });
-  const empty = await worker.fetch(new Request('https://relais.test/'), {});
+  const empty = await worker.fetch(new Request('https://relais.test/token'), {});
   assert.deepEqual(await empty.json(), { ok: true, configured: false });
-  // En production `/` sert la PWA : la même sonde est exposée sur `/token`.
-  const token = await worker.fetch(new Request('https://relais.test/token'), ENV);
-  assert.deepEqual(await token.json(), { ok: true, configured: true });
+});
+
+test('plus de front sur le Worker : chaque page renvoie vers la même page de GitHub Pages', async () => {
+  for (const [path, target] of [
+    ['/', 'https://timotheegrollier.github.io/work-logs/'],
+    ['/confidentialite.html', 'https://timotheegrollier.github.io/work-logs/confidentialite.html'],
+    ['/?code=abc&state=x', 'https://timotheegrollier.github.io/work-logs/?code=abc&state=x'],
+  ]) {
+    for (const method of ['GET', 'HEAD']) {
+      const response = await worker.fetch(new Request('https://relais.test' + path, { method }), ENV);
+      assert.equal(response.status, 301);
+      assert.equal(response.headers.get('Location'), target);
+    }
+  }
+  // Les routes du relais et de l'IA ne sont pas redirigées.
+  const post = await worker.fetch(new Request('https://relais.test/', { method: 'POST', headers: { Origin: PWA } }), ENV);
+  assert.equal(post.status, 404);
+  const ai = await worker.fetch(new Request('https://relais.test/ai/chat/completions', { headers: { Origin: PWA } }), ENV);
+  assert.equal(ai.status, 405);
 });
 
 test('secret absent ou Google injoignable : erreur explicite, jamais de plantage', async () => {
