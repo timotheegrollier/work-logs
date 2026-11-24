@@ -2,7 +2,7 @@ import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import worker, { AiUsage } from './worker.mjs';
-import { applyEvent, geminiRefusal, nextReset, pickGemini, quotaDay } from './ai-engines.mjs';
+import { applyEvent, geminiRefusal, nextReset, pickGemini, quotaDay, rateRefusal } from './ai-engines.mjs';
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
@@ -581,9 +581,107 @@ test('Gemini : limite par minute, clé refusée et refus d’une demande mènent
   stubGemini(() => { throw new DOMException('délai dépassé', 'TimeoutError'); }, () => geminiAnswer('gemini-flash-latest'));
   assert.equal((await (await postChat(slow.env)).json()).model, 'gemini-flash-latest');
   const [late] = (await status(slow.env)).models;
-  assert.equal(late.blocked_reason, 'Google trop lent (plus de 25 s)');
+  assert.equal(late.blocked_reason, 'Google trop lent (plus de 20 s)');
   const away = Date.parse(late.blocked_until) - Date.now();
   assert.ok(away > 4.9 * 60_000 && away <= 5 * 60_000);
+});
+
+// ── Mistral puis Groq avant Gemini (décision §100) ──
+
+const MISTRAL_CHAT = 'https://api.mistral.ai/v1/chat/completions';
+const GROQ_CHAT = 'https://api.groq.com/openai/v1/chat/completions';
+function allKeysEnv() {
+  const base = geminiEnv();
+  return { ...base, env: { ...base.env, MISTRAL_API_KEY: 'cle-mistral-test', GROQ_API_KEY: 'cle-groq-test' } };
+}
+
+test('Mistral répond en premier avec sa clé, sans réflexion ; l’ordre complet s’affiche', async () => {
+  const { env, calls: gemma } = allKeysEnv();
+  const calls = stubGemini(() => geminiAnswer('mistral-medium-2508'));
+  const body = await (await postChat(env, { body: JSON.stringify({ ...CHAT_REQUEST, reasoning_effort: 'medium', response_format: { type: 'json_object' } }) })).json();
+  assert.equal(body.model, 'mistral-medium-2508');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, MISTRAL_CHAT);
+  assert.equal(calls[0].headers.get('Authorization'), 'Bearer cle-mistral-test');
+  assert.deepEqual(calls[0].body, { model: 'mistral-medium-latest', messages: CHAT_REQUEST.messages, max_tokens: 1024, response_format: { type: 'json_object' } });
+  assert.deepEqual(gemma, []);
+  const view = await status(env);
+  assert.deepEqual(view.models.map((m) => m.id), [
+    'mistral-medium-latest', 'mistral-small-latest', 'openai/gpt-oss-120b', 'llama-3.3-70b-versatile',
+    'gemini-flash-lite-latest', 'gemini-flash-latest', CHAT_MODEL,
+  ]);
+  assert.deepEqual(view.missing_providers, []);
+  assert.equal(view.models[0].provider, 'mistral');
+  assert.equal(view.models[0].resolved, 'mistral-medium-2508');
+  assert.equal(view.models[0].today.requests, 1);
+});
+
+test('Mistral au quota → Groq : réflexion pour GPT-OSS seulement, limite et délai cités par Groq retenus', async () => {
+  const { env } = allKeysEnv();
+  const mistral429 = () => Response.json({ message: 'Requests rate limit exceeded' }, { status: 429, headers: { 'Retry-After': '30' } });
+  const groqDaily = () => Response.json({ error: {
+    message: 'Rate limit reached for model `openai/gpt-oss-120b` on tokens per day (TPD): Limit 200000, Used 199500, Requested 1500. Please try again in 7m30.5s.',
+    type: 'tokens', code: 'rate_limit_exceeded',
+  } }, { status: 429 });
+  const calls = stubGemini(mistral429, mistral429, groqDaily, () => geminiAnswer('llama-3.3-70b-versatile'));
+  const before = Date.now();
+  assert.equal((await (await postChat(env, { body: JSON.stringify({ ...CHAT_REQUEST, reasoning_effort: 'medium' }) })).json()).model, 'llama-3.3-70b-versatile');
+  assert.deepEqual(calls.map((c) => [c.url, c.body.model, c.body.reasoning_effort]), [
+    [MISTRAL_CHAT, 'mistral-medium-latest', undefined], [MISTRAL_CHAT, 'mistral-small-latest', undefined],
+    [GROQ_CHAT, 'openai/gpt-oss-120b', 'medium'], [GROQ_CHAT, 'llama-3.3-70b-versatile', undefined],
+  ]);
+  assert.equal(calls[2].headers.get('Authorization'), 'Bearer cle-groq-test');
+  const [medium, , oss, llama] = (await status(env)).models;
+  assert.equal(medium.blocked_reason, 'limite par minute atteinte');
+  assert.ok(Math.abs(Date.parse(medium.blocked_until) - before - 30_000) < 2_000);
+  assert.equal(oss.blocked_reason, 'quota du jour atteint');
+  assert.ok(Math.abs(Date.parse(oss.blocked_until) - before - 451_000) < 2_000);
+  assert.deepEqual(oss.limits.tokens_per_day.value, 200000);
+  assert.equal(llama.today.requests, 1);
+  assert.equal(llama.provider, 'groq');
+});
+
+test('Groq : demande trop longue (413) sautée sans écarter le modèle ; clé refusée écartée 1 h ; sans clé, rien n’est appelé', async () => {
+  const { env } = allKeysEnv();
+  const tooLarge = () => Response.json({ error: { message: 'Request too large for model `openai/gpt-oss-120b` on tokens per minute (TPM): Limit 8000, Requested 9500' } }, { status: 413 });
+  const refused = () => Response.json({ error: { message: 'Invalid API Key', code: 'invalid_api_key' } }, { status: 401 });
+  const calls = stubGemini(() => new Response('{}', { status: 503 }), () => new Response('{}', { status: 503 }), tooLarge, refused, () => geminiAnswer());
+  await postChat(env);
+  assert.deepEqual(calls.map((c) => c.body.model), ['mistral-medium-latest', 'mistral-small-latest', 'openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'gemini-flash-lite-latest']);
+  const [medium, , oss, llama] = (await status(env)).models;
+  assert.equal(medium.blocked_reason, 'Mistral indisponible (503)');
+  assert.equal(oss.blocked_until, null);
+  assert.equal(oss.last_error.reason, 'demande trop longue pour Groq (413)');
+  assert.equal(llama.blocked_reason, 'clé Groq refusée');
+
+  const geminiOnly = geminiEnv();
+  const google = stubGemini(() => geminiAnswer());
+  await postChat(geminiOnly.env);
+  assert.deepEqual(google.map((c) => c.url), [GEMINI_CHAT]);
+  assert.deepEqual((await status(geminiOnly.env)).missing_providers, ['Mistral', 'Groq']);
+});
+
+test('budget borné : un modèle qui traîne laisse Gemma répondre avant que l’app abandonne', async () => {
+  const { env, calls: gemma } = allKeysEnv();
+  const realNow = Date.now;
+  let shift = 0;
+  Date.now = () => realNow() + shift;
+  try {
+    const urls = [];
+    // Mistral Medium épuise presque tout le budget : plus aucun autre modèle à clé n'est essayé.
+    globalThis.fetch = async (url) => {
+      urls.push(String(url));
+      shift += 19_000;
+      throw new DOMException('délai dépassé', 'TimeoutError');
+    };
+    assert.equal((await (await postChat(env)).json()).model, CHAT_MODEL);
+    assert.deepEqual(urls, [MISTRAL_CHAT]);
+    assert.equal(gemma.length, 1);
+    const [medium] = (await status(env)).models;
+    assert.equal(medium.blocked_reason, 'Mistral trop lent (plus de 20 s)');
+  } finally {
+    Date.now = realNow;
+  }
 });
 
 test('pannes passagères : écart doublé à chaque échec d’affilée, une heure au plus, remis à zéro au succès', () => {
@@ -662,6 +760,10 @@ test('quotas : jour du Pacifique pour Google, UTC pour Cloudflare ; refus 429 lu
     { kind: 'tokens_per_minute', value: 250000, retrySeconds: 42 });
   assert.deepEqual(geminiRefusal([{ error: { details: [{ violations: [{ quotaId: 'GenerateContentInputTokensPerModelPerDay-FreeTier', quotaValue: '1000000' }] }] } }]),
     { kind: 'tokens_per_day', value: 1000000, retrySeconds: null });
+  assert.deepEqual(rateRefusal(new Headers(), { error: { message: 'on requests per minute (RPM): Limit 30, Used 30. Please try again in 1m2.5s.' } }),
+    { kind: 'requests_per_minute', value: 30, retrySeconds: 63, daily: false });
+  assert.deepEqual(rateRefusal(new Headers({ 'Retry-After': '12' }), { message: 'Requests rate limit exceeded' }),
+    { kind: null, value: null, retrySeconds: 12, daily: false });
   const generate = ['generateContent'];
   assert.deepEqual(pickGemini([{ name: 'models/gemini-flash-latest', displayName: 'Gemini Flash Latest', supportedGenerationMethods: generate }]),
     [{ id: 'gemini-flash-latest', label: 'Gemini Flash Latest', version: null }]);

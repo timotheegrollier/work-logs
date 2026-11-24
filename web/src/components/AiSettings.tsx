@@ -135,7 +135,7 @@ export function AiSettings({ projects = [], projectId = null }: { projects?: Pic
     <section className="ai-settings" aria-label="Assistance IA">
       <h3>Assistance IA</h3>
       {anonymous && <>
-        <p className="ai-hint"><b>IA gratuite sans clé.</b> Aucun compte ni abonnement. Les demandes passent par le Worker WorkLogs : Gemini Flash-Lite puis Flash chez Google, puis Gemma 4 chez Cloudflare quand le quota de Google est atteint. Avec ce palier gratuit, Google peut utiliser les demandes pour améliorer ses produits : n’y mets pas de données sensibles.</p>
+        <p className="ai-hint"><b>IA gratuite sans clé.</b> Aucun compte ni abonnement. Les demandes passent par le Worker WorkLogs : Mistral, puis Groq, puis Gemini chez Google, puis Gemma 4 chez Cloudflare, le suivant prenant le relais quand un quota est atteint. Sur leurs paliers gratuits, Mistral et Google peuvent utiliser les demandes pour améliorer leurs modèles : n’y mets pas de données sensibles.</p>
         <AiQuotas />
       </>}
       {(device.state === 'available' || device.state === 'downloadable' || device.state === 'downloading') && <div className={'ai-device-status is-' + device.state}>

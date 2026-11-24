@@ -11,6 +11,13 @@ const LIMIT_LABELS: Record<AiLimitKind, string> = {
   tokens_per_minute: 'jetons / minute',
 };
 
+/** Qui publie la limite, et où la lire quand le Worker ne l'a pas encore apprise d'un refus. */
+const LIMIT_SOURCES: Record<string, { name: string; label: string; href: string }> = {
+  google: { name: 'Google', label: 'visible dans AI Studio', href: 'https://aistudio.google.com/rate-limit' },
+  mistral: { name: 'Mistral', label: 'visible dans la console Mistral', href: 'https://admin.mistral.ai/plateforme/limits' },
+  groq: { name: 'Groq', label: 'visible dans la console Groq', href: 'https://console.groq.com/settings/limits' },
+};
+
 const count = (value: number) => value.toLocaleString('fr-FR').replace(/\s/g, ' ');
 const hour = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—');
 const day = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -46,7 +53,9 @@ export function AiQuotas() {
       {!status && !failed && <p className="ai-hint">Lecture des quotas…</p>}
       {failed && <p className="ai-hint" role="status">Quotas illisibles pour le moment : le Worker WorkLogs ne répond pas.</p>}
       {status && <>
-        {!status.gemini_configured && <p className="notice">Gemini Flash n’est pas encore activé sur le Worker WorkLogs : Gemma 4 répond seul.</p>}
+        {!!status.missing_providers?.length && (
+          <p className="notice">Pas encore activé sur le Worker WorkLogs, faute de clé : {status.missing_providers.join(', ')}.</p>
+        )}
         <ol className="ai-quota-list">
           {status.models.map((engine) => <AiEngine key={engine.id} engine={engine} />)}
         </ol>
@@ -64,6 +73,7 @@ function AiEngine({ engine }: { engine: AiEngineStatus }) {
   const { requests, input_tokens: input, output_tokens: output } = engine.today;
   const limits = Object.entries(engine.limits) as [AiLimitKind, { value: number; learned_at: string | null }][];
   const learned = limits.map(([, { learned_at: at }]) => at).filter((at): at is string => Boolean(at)).sort().at(-1);
+  const source = LIMIT_SOURCES[engine.provider] ?? LIMIT_SOURCES.google;
   return (
     <li className={engine.blocked_until ? 'is-blocked' : ''} aria-label={name}>
       <div className="ai-quota-head">
@@ -81,8 +91,8 @@ function AiEngine({ engine }: { engine: AiEngineStatus }) {
         {engine.neurons
           ? `≈ ${count(engine.neurons.used)} / ${count(engine.neurons.limit)} neurones utilisés (quota gratuit Cloudflare)`
           : limits.length
-            ? `${limits.map(([kind, { value }]) => `${count(value)} ${LIMIT_LABELS[kind]}`).join(' · ')}, indiquée par Google${learned ? ` le ${day(learned)}` : ''}`
-            : <>non publiée par Google, <a href="https://aistudio.google.com/rate-limit" target="_blank" rel="noreferrer">visible dans AI Studio</a></>}
+            ? `${limits.map(([kind, { value }]) => `${count(value)} ${LIMIT_LABELS[kind]}`).join(' · ')}, indiquée par ${source.name}${learned ? ` le ${day(learned)}` : ''}`
+            : <>non publiée par {source.name}, <a href={source.href} target="_blank" rel="noreferrer">{source.label}</a></>}
       </p>
       <p>
         Remise à zéro à {hour(engine.reset_at)}

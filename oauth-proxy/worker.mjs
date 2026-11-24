@@ -2,7 +2,7 @@
 // La PWA est sur GitHub Pages (décision §97) : ce Worker ne sert plus de front, et
 // renvoie toute autre adresse vers la même page de GitHub Pages.
 // `/ai/pdf` extrait le texte d'un PDF joint explicitement à une demande IA.
-// `/ai/chat/completions` sert l'assistant : Gemini Flash-Lite puis Flash, avec la clé gratuite du Worker, puis
+// `/ai/chat/completions` sert l'assistant : Mistral, Groq, puis Gemini Flash-Lite et Flash, avec les clés gratuites du Worker, puis
 // Gemma 4 sur Workers Free (`ai-engines.mjs`, décision §98). `/ai/status` montre modèles et quotas.
 // Vérification : ouvrir `/token` dans un navigateur (`{"ok":true,…}`).
 //
@@ -14,7 +14,7 @@
 // Déploiement et vérification : docs/08-GOOGLE-DOCS.md « Relais de jetons ».
 // Exports : `default`, et la classe du compteur partagé (objet durable déclaré dans `wrangler.toml`).
 
-import { askGemini, geminiChain, GEMMA_MODEL, nextReset, refreshCatalog, statusView, usageStore } from './ai-engines.mjs';
+import { askEngine, CHAIN_BUDGET_MS, engineChain, GEMMA_MODEL, nextReset, PROVIDERS, refreshCatalog, statusView, usageStore } from './ai-engines.mjs';
 
 export { AiUsage } from './ai-engines.mjs';
 
@@ -190,7 +190,7 @@ function chatParams(body) {
     temperature: typeof body.temperature === 'number' && body.temperature >= 0 && body.temperature <= 2 ? body.temperature : 0.4,
     max_completion_tokens: Math.min(maxTokens, MAX_CHAT_TOKENS),
     chat_template_kwargs: { enable_thinking: false },
-    // Réflexion de Gemini ; jamais transmise à Gemma (`chatCompletion`).
+    // Réflexion de Gemini et de GPT-OSS ; jamais transmise aux autres modèles (`askEngine`) ni à Gemma.
     ...(REASONING_EFFORTS.has(body.reasoning_effort) && { reasoning_effort: body.reasoning_effort }),
     ...(format === 'json_object' && { response_format: { type: 'json_object' } }),
   };
@@ -279,19 +279,22 @@ async function chatCompletion(request, env, origin) {
   const store = usageStore(env);
   const state = await store.state();
   const blockedUntil = (id) => state?.models?.[id]?.blocked_until ?? 0;
-  if (env.GEMINI_API_KEY) {
-    for (const model of geminiChain(state)) {
-      if (blockedUntil(model) > Date.now()) continue;
-      const attempt = await askGemini(model, params, env.GEMINI_API_KEY, Date.now());
-      const answer = attempt.result && chatAnswer(attempt.result, typeof attempt.result.model === 'string' ? attempt.result.model : model);
-      if (answer) {
-        await store.record({ type: 'success', model, provider: 'google', resolved: answer.model, ...tokensOf(answer) });
-        return reply(answer, 200, origin);
-      }
-      await store.record(attempt.block
-        ? { type: 'blocked', model, provider: 'google', ...attempt.block }
-        : { type: 'error', model, provider: 'google', reason: attempt.skip ?? 'réponse vide ou illisible' });
+  // Mistral, Groq puis Gemini, dans un budget borné : Gemma garde de quoi répondre avant l'app.
+  const deadline = Date.now() + CHAIN_BUDGET_MS;
+  for (const engine of engineChain(env, state)) {
+    const { id: model, provider } = engine;
+    if (blockedUntil(model) > Date.now()) continue;
+    const left = deadline - Date.now();
+    if (left < 2_000) break;
+    const attempt = await askEngine(engine, params, env[PROVIDERS[provider].secret], Date.now(), left);
+    const answer = attempt.result && chatAnswer(attempt.result, typeof attempt.result.model === 'string' ? attempt.result.model : model);
+    if (answer) {
+      await store.record({ type: 'success', model, provider, resolved: answer.model, ...tokensOf(answer) });
+      return reply(answer, 200, origin);
     }
+    await store.record(attempt.block
+      ? { type: 'blocked', model, provider, ...attempt.block }
+      : { type: 'error', model, provider, reason: attempt.skip ?? 'réponse vide ou illisible' });
   }
 
   const now = Date.now();

@@ -72,11 +72,21 @@ describe('modèles et quotas de l’IA', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(3);
   });
 
-  test('sans clé Gemini sur le Worker : Gemma seul, et le dit', async () => {
-    vi.mocked(readAiStatus).mockResolvedValue(status({ gemini_configured: false, models: status().models.slice(2) }));
+  test('clés absentes du Worker : nommées ; Mistral et Groq renvoient à leur console pour la limite', async () => {
+    const mistral = {
+      ...status().models[1], id: 'mistral-medium-latest', provider: 'mistral' as const, label: 'Mistral Medium', resolved: 'mistral-medium-2508', last_error: null,
+    };
+    const groq = {
+      ...mistral, id: 'openai/gpt-oss-120b', provider: 'groq' as const, label: 'GPT-OSS 120B (Groq)', resolved: null,
+      limits: { tokens_per_day: { value: 200_000, learned_at: '2026-11-24T09:58:00.000Z' } },
+    };
+    vi.mocked(readAiStatus).mockResolvedValue(status({ missing_providers: ['Gemini'], models: [mistral, groq, status().models[2]] }));
     render(<AiQuotas />);
-    expect(await screen.findByText(/Gemini Flash n’est pas encore activé sur le Worker WorkLogs/)).toBeVisible();
-    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(await screen.findByText('Pas encore activé sur le Worker WorkLogs, faute de clé : Gemini.')).toBeVisible();
+    const [first, second] = screen.getAllByRole('listitem');
+    expect(first).toHaveAccessibleName('Mistral Medium → Mistral Medium 2508');
+    expect(within(first).getByRole('link', { name: 'visible dans la console Mistral' })).toHaveAttribute('href', 'https://admin.mistral.ai/plateforme/limits');
+    expect(second).toHaveTextContent(/Limite : 200 000 jetons \/ jour, indiquée par Groq le 24\/11/);
   });
 
   test('lecture réelle : `/ai/status` du Worker, sans cookie ni redirection', async () => {
@@ -93,5 +103,8 @@ describe('modèles et quotas de l’IA', () => {
     expect(aiModelName('gemini-3.8-flash')).toBe('Gemini 3.8 Flash');
     expect(aiModelName('gemini-3.5-flash-lite')).toBe('Gemini 3.5 Flash-Lite');
     expect(aiModelName('@cf/google/gemma-4-26b-a4b-it')).toBe('Gemma 4 26B');
+    expect(aiModelName('mistral-small-latest')).toBe('Mistral Small');
+    expect(aiModelName('openai/gpt-oss-120b')).toBe('GPT-OSS 120B');
+    expect(aiModelName('llama-3.3-70b-versatile')).toBe('Llama 3.3 70B');
   });
 });

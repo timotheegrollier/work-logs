@@ -5,7 +5,7 @@ export type AiLimitKind = 'requests_per_day' | 'requests_per_minute' | 'tokens_p
 
 export interface AiEngineStatus {
   id: string;
-  provider: 'google' | 'cloudflare';
+  provider: 'mistral' | 'groq' | 'google' | 'cloudflare';
   label: string;
   version: string | null;
   resolved: string | null;
@@ -23,6 +23,8 @@ export interface AiEngineStatus {
 export interface AiStatus {
   updated_at: string;
   gemini_configured: boolean;
+  /** Fournisseurs dont la clé n'est pas encore posée sur le Worker (§100). */
+  missing_providers?: string[];
   catalog_checked_at: string | null;
   models: AiEngineStatus[];
 }
@@ -42,9 +44,15 @@ export function announceAiModel(model: string): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(AI_USED_EVENT, { detail: { model } }));
 }
 
-/** « gemini-3.8-flash » → « Gemini 3.8 Flash » ; « @cf/google/gemma-4-26b-a4b-it » → « Gemma 4 26B ». */
+/** « gemini-3.8-flash » → « Gemini 3.8 Flash » ; « mistral-medium-2508 » → « Mistral Medium »… */
 export function aiModelName(id: string): string {
   if (/gemma-4-26b/.test(id)) return 'Gemma 4 26B';
+  const mistral = id.match(/^mistral-([a-z]+)(?:-(\d{4}))?/);
+  if (mistral) return `Mistral ${mistral[1][0].toUpperCase()}${mistral[1].slice(1)}${mistral[2] ? ` ${mistral[2]}` : ''}`;
+  const oss = id.match(/gpt-oss-(\d+)b/);
+  if (oss) return `GPT-OSS ${oss[1]}B`;
+  const llama = id.match(/^llama-(\d+(?:\.\d+)*)-(\d+)b/);
+  if (llama) return `Llama ${llama[1]} ${llama[2]}B`;
   if (!id.startsWith('gemini-')) return id;
   return id.split('-').map((part) => (/^\d/.test(part) ? part : part[0].toUpperCase() + part.slice(1))).join(' ').replace('Flash Lite', 'Flash-Lite');
 }

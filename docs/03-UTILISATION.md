@@ -378,8 +378,9 @@ synchronisation habituelles.
 
 **Aucune clé, aucun compte, aucun abonnement n’est nécessaire.** Ouvre l’assistant ou
 une action ✨ IA. Le réglage par défaut passe par le Worker Cloudflare de WorkLogs : il
-essaie Gemini Flash-Lite, puis Gemini Flash, avec la clé gratuite gardée par le Worker, puis
-Gemma 4 26B chez Cloudflare quand le quota de Google est atteint. Il fonctionne aussi dans
+essaie Mistral, puis Groq, puis Gemini Flash-Lite et Flash, avec les clés gratuites gardées
+par le Worker, puis Gemma 4 26B chez Cloudflare : le suivant prend le relais quand un quota est
+atteint ou qu’un modèle ne répond pas. Il fonctionne aussi dans
 l’application desktop et les navigateurs sans modèle intégré. Le pied de l’assistant nomme le
 modèle qui a écrit la dernière réponse.
 Pour une demande manuelle de texte, WorkLogs préfère le modèle intégré si le navigateur
@@ -578,6 +579,10 @@ quotidien s’applique aux conversations en parallèle. Si le service est indisp
 le plafond est atteint, l’assistant affiche les résultats de recherche qu’il a pu obtenir.
 
 ### Gratuité et plafond quotidien
+
+Mistral (palier gratuit « Experiment ») et Groq passent avant Gemini. Leurs limites se lisent
+dans leur console ; **Modèles et quotas** les affiche dès qu’un refus les cite. Sur son palier
+gratuit, Mistral peut utiliser les demandes pour entraîner ses modèles.
 
 Gemini Flash et Flash-Lite utilisent le **palier gratuit** de l’API Gemini, avec une clé
 créée sans carte bancaire dans Google AI Studio. Ses quotas sont propres au projet Google,

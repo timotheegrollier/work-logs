@@ -4005,3 +4005,31 @@ Timo demande d'accélérer les tests et la CI. Mesures avant : `check.sh` ~9 min
   en parallèle (sous charge, les attentes DOM expirent) ; découper
   le job `validate` en jobs parallèles, qui ne gagne rien tant que le chemin paquets + installation
   (~6 min) reste aussi long.
+
+## 100. Mistral puis Groq avant Gemini — 2026-11-24
+
+Le palier gratuit de Gemini a refusé la moitié des demandes du jour (503, plus de 25 s), et
+Google a fermé deux modèles aux nouvelles clés. Timo veut un fournisseur gratuit plus fiable ;
+il choisit Mistral puis Groq, Gemini et Gemma restant en secours.
+
+- Comparé le 2026-11-24 (sources tierces ; les chiffres exacts sont dans chaque console) :
+  Mistral « Experiment » (sans carte, numéro de téléphone ; ~1 requête/s, 500 000 jetons/min,
+  1 milliard/mois, par modèle ; peut entraîner sur les demandes). Groq (sans carte ; par modèle
+  30 requêtes/min, 1 000/jour, 8 000 jetons/min, 200 000/jour : environ une demande de
+  l'assistant par minute). Cerebras écarté : plus de palier gratuit depuis juillet 2026.
+- Ordre (`oauth-proxy/ai-engines.mjs`, `FIXED_ENGINES`) : `mistral-medium-latest`,
+  `mistral-small-latest`, `openai/gpt-oss-120b` et `llama-3.3-70b-versatile` chez Groq, puis la
+  chaîne Gemini. Clés en secrets du Worker (`MISTRAL_API_KEY`, `GROQ_API_KEY`) ; un fournisseur
+  sans clé est sauté et nommé dans `/ai/status` (`missing_providers`).
+- `reasoning_effort` ne part qu'aux modèles qui raisonnent (Gemini, GPT-OSS) : Mistral et Llama
+  le refuseraient.
+- Refus de Mistral et Groq : délai de `Retry-After` ou du message (« try again in 7m30s »), limite
+  citée par Groq (« (TPD): Limit 200000 ») retenue et affichée. 413 de Groq (demande plus grosse
+  que sa limite par minute) : sautée, le modèle reste disponible.
+- Budget de 20 s pour toute la chaîne à clé, chaque essai au plus ce qui reste : l'app abandonne
+  à 30 s et Gemma doit encore pouvoir répondre. Un modèle trop lent est écarté 5 min (§98).
+- Données : comme Gemini, le palier gratuit de Mistral peut entraîner sur les demandes. La
+  politique de confidentialité nomme Mistral AI et Groq. Point ouvert : les titres de documents
+  Google envoyés au modèle restent des données d'API Google, dont la politique interdit l'usage
+  pour entraîner un modèle ; désactiver l'entraînement dans l'administration Mistral si elle le
+  permet.
