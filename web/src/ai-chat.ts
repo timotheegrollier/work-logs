@@ -41,6 +41,8 @@ export interface ChatAnswer {
   reply: string; notice: string; tasks: Task[]; documents: EntrySummary[]; proposals: ChatProposal[]; usedAi: boolean;
   activity?: string[];
   question?: ChatQuestion;
+  /** Suites proposées par le modèle, envoyées d'un clic sous la dernière réponse. */
+  suggestions?: string[];
   consultedLinks?: ChatLinkExcerpt[];
   unreadAttachmentIds?: string[];
   conversationTitle?: string;
@@ -83,12 +85,14 @@ const MAX_MODEL_CALLS = 4;
 const CHAT_TIMEOUT_MS = 45_000;
 const PDF_PREPARATION_TIMEOUT_MS = 15_000;
 const MAX_SOURCE_READS = 2;
+const MAX_SUGGESTIONS = 3;
+const MAX_SUGGESTION = 80;
 /** Un terme part en query string : démesuré, le serveur refuse la lecture et le message échoue. */
 const MAX_SEARCH_TERM = 100;
 /** Titres coupés dans le prompt seulement : la validation et les libellés gardent le titre entier. */
 const PROMPT_TITLE = 60;
 /** Clés du protocole : un objet qui n'en porte aucune est de la prose qui cite du JSON. */
-const PROTOCOL_KEYS = ['reply', 'question', 'actions', 'search', 'show_tasks', 'show_documents', 'show_shared', 'shared_search', 'shared_list', 'read_shared', 'read_entries', 'conversation_title'];
+const PROTOCOL_KEYS = ['reply', 'question', 'suggestions', 'actions', 'search', 'show_tasks', 'show_documents', 'show_shared', 'shared_search', 'shared_list', 'read_shared', 'read_entries', 'conversation_title'];
 const STATUS_LABELS: Record<Status, string> = { todo: 'À faire', doing: 'En cours', done: 'Terminée' };
 const STALE_PROPOSAL = 'Cette tâche a changé depuis la proposition : redemande à l’assistant.';
 
@@ -112,8 +116,9 @@ Sans « project », utilise le projet de la catégorie ou le projet affiché. St
 Pour les cases, utilise les numéros de « checklist » après lecture, dans « checklist_updates » sans « content ». Groupe par entrée. Change, termine ou archive sur demande ou fait explicite. Préserve les cases en réécrivant le texte.
 Hors périmètre : supprimer ou archiver tâche/projet, lire Google Docs ou les annexes, remplacer un fichier partagé, agir hors de WorkLogs.
 Réponds uniquement par un objet JSON, sans commentaire :
-{"reply":"…","show_tasks":[n],"show_documents":[n],"actions":[…],"search":["mot"]}
-Clarifie ce qui change le résultat (cible, rubrique, format, livrable, périmètre) : lis le contexte, puis pose la « question » utile {"text":"…","options":[]} avant les actions, avec 2 à ${MAX_OPTIONS} choix concrets et « multiple »: true si cumulables. Si la cible, l’endroit ou le format restent ambigus, demande avant d’agir. Si la demande est précise, avance. Reprends les réponses précédentes ; la demande actuelle prime sur l’objectif initial.
+{"reply":"…","show_tasks":[n],"show_documents":[n],"actions":[…],"search":["mot"],"suggestions":["…"]}
+« suggestions » : 0 à 3 suites courtes, écrites comme l’utilisateur les taperait, seulement si elles lui font gagner du temps.
+Clarifie ce qui change le résultat (cible, rubrique, format, livrable, périmètre) : lis le contexte, puis pose la « question » utile {"text":"…","options":[]} avant les actions, avec 2 à ${MAX_OPTIONS} choix concrets et « multiple »: true si cumulables. Si la cible, l’endroit ou le format restent ambigus, demande avant d’agir. Si la demande est précise, avance. Un message court ou vague (« alors ? ») porte sur le contexte affiché : fais le point sur la note ouverte et les tâches en cours, puis propose l’action suivante, sans seulement demander quoi faire. Reprends les réponses précédentes ; la demande actuelle prime sur l’objectif initial.
 Lectures : « shared_search » (3 termes), « shared_list » (true : dossiers), « read_entries » (numéros locaux), « read_shared » (numéros du partage), « show_shared » (à afficher).
 Lis seulement si nécessaire, puis propose. Pour créer sur le partage, repère la destination avec « shared_list » ou « shared_search ».
 « reply » en français, en texte brut sans Markdown ni codes internes. « show_tasks » et « show_documents » affichent ces éléments. « search » prend 3 mots pour la recherche locale.`;
@@ -909,6 +914,19 @@ function readQuestion(raw: unknown): ChatQuestion | undefined {
   return { text: label, options: [...choices.values()], ...(multiple === true && { multiple }) };
 }
 
+/** Suites du modèle : texte court lisible, sans doublon, trois au plus. */
+function readSuggestions(raw: unknown): string[] {
+  const kept = new Map<string, string>();
+  for (const value of Array.isArray(raw) ? raw : []) {
+    const text = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+    if (!/[\p{L}\p{N}]/u.test(text) || text.length > MAX_SUGGESTION) continue;
+    const key = text.normalize('NFKC').toLocaleLowerCase('fr');
+    if (!kept.has(key)) kept.set(key, text);
+    if (kept.size === MAX_SUGGESTIONS) break;
+  }
+  return [...kept.values()];
+}
+
 const EMPTY_REPLY = 'Réponse vide de l’IA : reformule ta demande.';
 
 function readAnswer(raw: string, value: Record<string, unknown> | null, context: ChatContext, shownProject: string | null, conversationTitle?: string, question?: ChatQuestion): ChatAnswer {
@@ -951,11 +969,14 @@ function readAnswer(raw: string, value: Record<string, unknown> | null, context:
   const sharedDocuments = numbered(value.show_shared, context.sharedFiles).map(({ path, name }) => ({ path, title: name }));
   const reply = typeof value.reply === 'string' ? clip(value.reply, MAX_REPLY) : '';
   const hasResults = proposals.length + tasks.length + documents.length + sharedDocuments.length > 0;
+  // Une question a déjà ses choix : pas de suites à côté.
+  const suggestions = question ? [] : readSuggestions(value.suggestions);
   return {
     reply: question ? reply : reply || (hasResults ? 'Voici ce que je te propose.' : EMPTY_REPLY),
     notice: [...new Set(context.readingNotices), ...(dropped.length ? [`${dropped.length} action${dropped.length > 1 ? 's' : ''} écartée${dropped.length > 1 ? 's' : ''} : ${[...new Set(dropped)].join(' ; ')}.`] : [])].join(' '),
     tasks, documents, proposals, usedAi: true,
     ...(question && { question }),
+    ...(suggestions.length > 0 && { suggestions }),
     ...(conversationTitle && { conversationTitle }),
     ...(sharedDocuments.length > 0 && { sharedDocuments }),
     ...fromSources,
@@ -1105,7 +1126,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
     const excerpts = [...context.consultedLinks, ...olderExcerpts];
     const call = (system: string) => postChatCompletions(settings, 'l’assistant', system,
       userPrompt(settings, input, context, attachmentSources, excerpts.length ? JSON.stringify(excerpts) : ''),
-      4096, CHAT_TIMEOUT_MS, { effort: 'low', media, json: true });
+      4096, CHAT_TIMEOUT_MS, { effort: 'medium', media, json: true });
     const maxSteps = MAX_MODEL_CALLS - links.modelCalls;
     let conversationTitle: string | undefined;
     let rejectedNotice = '';

@@ -93,8 +93,9 @@ Desktop app: `npm run desktop`.
 Supported Markdown: headings, bold/italic, lists, **check boxes**, **tables**,
 quotes, code blocks, links, images.
 
-The assistant and AI actions use Gemma 4 on WorkLogs' Cloudflare Worker, with OVHcloud
-as a fallback. The service is free and requires no key, account or subscription. When the
+The assistant and AI actions go through WorkLogs' Cloudflare Worker: Gemini Flash (Google),
+then Gemma 4 on Cloudflare when Google's free quota runs out. The service is free and requires
+no key, account or subscription; models and quotas are shown in the AI settings. When the
 browser's built-in model is ready, manual text requests can run on-device. Review the
 assistant's proposals before applying them. [AI and data handling guide](docs/03-UTILISATION.md#assistance-ia).
 [Assistant guide in French](docs/03-UTILISATION.md#lassistant).

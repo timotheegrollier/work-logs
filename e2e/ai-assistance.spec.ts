@@ -254,11 +254,28 @@ test('réglages IA : projet actif, service gratuit sans clé et paramètres tech
       });
       return route.fulfill({ headers, json: { choices: [{ message: { content: 'OK' } }] } });
     });
+    const engine = (id: string, label: string, provider: string, extra = {}) => ({
+      id, label, provider, version: null, resolved: null, today: { requests: 4, input_tokens: 8000, output_tokens: 900 }, last_minute: 0,
+      limits: {}, reset_at: '2026-11-25T08:00:00.000Z', blocked_until: null, blocked_reason: null, last_used_at: null, last_error: null, ...extra,
+    });
+    await page.route('**/ai/status', (route) => route.fulfill({ headers: { 'Access-Control-Allow-Origin': '*' }, json: {
+      updated_at: new Date().toISOString(), gemini_configured: true, catalog_checked_at: null, models: [
+        engine('gemini-flash-latest', 'Gemini Flash Latest', 'google', {
+          resolved: 'gemini-3.8-flash', limits: { requests_per_day: { value: 20, learned_at: '2026-11-24T09:00:00.000Z' } },
+          blocked_until: '2026-11-25T08:00:00.000Z', blocked_reason: 'quota du jour atteint',
+        }),
+        engine('@cf/google/gemma-4-26b-a4b-it', 'Gemma 4 26B (Cloudflare Workers AI)', 'cloudflare', { neurons: { used: 85, limit: 10000 } }),
+      ],
+    } }));
     await page.goto('/');
     await page.getByRole('button', { name: 'Compte et paramètres', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Paramètres', exact: true }).click();
     const settings = page.getByRole('dialog', { name: 'Paramètres', exact: true });
     await expect(settings.getByText('IA gratuite sans clé.', { exact: true })).toBeVisible();
+    const quotas = settings.getByRole('region', { name: 'Modèles et quotas de l’IA', exact: true });
+    await expect(quotas.getByRole('listitem', { name: 'Gemini Flash Latest → Gemini 3.8 Flash' })).toContainText(/Quota du jour atteint — retour à \d\d:\d\d/);
+    await expect(quotas.getByRole('listitem', { name: 'Gemma 4 26B (Cloudflare Workers AI)' })).toContainText('≈ 85 / 10 000 neurones');
+    expect(await quotas.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBeTruthy();
     await expect(settings.getByLabel('Clé IA', { exact: true })).toHaveCount(0);
     await expect(settings.getByLabel('Projet du contexte IA', { exact: true })).toHaveValue(project.id);
     await expect(settings.getByLabel('Endpoint IA', { exact: true })).toBeHidden();
@@ -276,7 +293,7 @@ test('réglages IA : projet actif, service gratuit sans clé et paramètres tech
     await settings.getByRole('button', { name: 'Tester la connexion', exact: true }).click();
     await expect(settings.getByRole('region', { name: 'Assistance IA', exact: true }).getByRole('status')).toContainText('Connexion vérifiée');
     expect(calls).toEqual([{
-      url: 'https://worklogs-google.cocodexcocoder.workers.dev/ai/chat/completions', model: '@cf/google/gemma-4-26b-a4b-it', authorization: null,
+      url: 'https://worklogs-google.cocodexcocoder.workers.dev/ai/chat/completions', model: 'worklogs-auto', authorization: null,
     }]);
   } finally {
     await cleanProject(page, request, project.id);

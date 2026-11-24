@@ -19,9 +19,20 @@ binding = "AI"
 [[ratelimits]]
 name = "CHAT_LIMITER"
 namespace_id = "841002"
-simple = { limit = 10, period = 60 }
+# Une demande à l’assistant fait jusqu’à 4 appels ; le suivi en ajoute.
+simple = { limit = 30, period = 60 }
 
 [[ratelimits]]
 name = "PDF_LIMITER"
 namespace_id = "841001"
 simple = { limit = 12, period = 60 }
+
+# Compteur partagé de l'usage IA (`AiUsage`, `ai-engines.mjs`) : un objet durable SQLite,
+# offert sur Workers Free, créé au premier déploiement.
+[[durable_objects.bindings]]
+name = "AI_USAGE"
+class_name = "AiUsage"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AiUsage"]

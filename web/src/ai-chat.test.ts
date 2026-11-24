@@ -537,8 +537,8 @@ describe('lecture locale et classement', () => {
       history: Array.from({ length: 12 }, (_, index) => ({ role: index % 2 ? 'assistant' as const : 'user' as const, text: `h${index} ${'y'.repeat(1000)}` })),
     }, { ...settings, profile: 'P'.repeat(3000) });
     const prompt = user(calls[0]);
-    // Plafond relevé avec la règle de préservation du format d’écriture dans le prompt de l’assistant.
-    expect(system(calls[0]).length + prompt.length - MAX_CHAT_MESSAGE).toBeLessThan(17_300);
+    // Plafond relevé avec la règle de préservation du format d’écriture, puis l’initiative et les suites (§98).
+    expect(system(calls[0]).length + prompt.length - MAX_CHAT_MESSAGE).toBeLessThan(17_700);
     expect(lines(prompt, 'Projets')).toHaveLength(30);
     expect(titles(prompt)).toHaveLength(50);
     expect(titles(prompt).every((title) => title.length <= 60)).toBe(true);
@@ -620,7 +620,7 @@ describe('lecture locale et classement', () => {
     expect(system(calls[0])).toContain('Markdown sans HTML ni images');
     expect(system(calls[0])).toContain('Donne à chaque nouvelle tâche des sous-tâches');
     expect(system(calls[0])).toContain('"checklist_updates":[{"n":1,"checked":true}]');
-    expect(system(calls[0])).toContain('{"reply":"…","show_tasks":[n],"show_documents":[n],"actions":[…],"search":["mot"]}');
+    expect(system(calls[0])).toContain('{"reply":"…","show_tasks":[n],"show_documents":[n],"actions":[…],"search":["mot"],"suggestions":["…"]}');
     for (const kind of ['create_task', 'update_task', 'create_note']) expect(system(calls[0])).toContain(`"kind":"${kind}"`);
   });
 
@@ -637,13 +637,13 @@ describe('lecture locale et classement', () => {
 });
 
 describe('appels au modèle', () => {
-  test('un seul appel pour un message, avec l’effort bas de Gemini et 4 096 jetons', async () => {
+  test('un seul appel pour un message, avec l’effort moyen de Gemini et 4 096 jetons', async () => {
     mockState({ tasks: [task('t1')] });
     const calls = stubAi(json({ reply: 'Une tâche.', show_tasks: [1, 1, 9, 'x'] }));
     const answer = await ask({}, { ...settings, endpoint: GEMINI_AI_ENDPOINT, model: legacyGeminiModel });
     expect(calls).toHaveLength(1);
     expect(calls[0].max_tokens).toBe(4096);
-    expect(calls[0].reasoning_effort).toBe('low');
+    expect(calls[0].reasoning_effort).toBe('medium');
     expect(answer).toEqual(expect.objectContaining({ reply: 'Une tâche.', notice: '', usedAi: true, proposals: [] }));
     expect(answer.tasks.map(({ id }) => id)).toEqual(['t1']);
   });
@@ -780,6 +780,7 @@ describe('réponse du modèle', () => {
     expect(system(calls[1])).toContain('avant les actions, avec 2 à');
     expect(system(calls[1])).toContain('Si la cible, l’endroit ou le format restent ambigus, demande avant d’agir.');
     expect(system(calls[1])).toContain('Si la demande est précise, avance.');
+    expect(system(calls[1])).toContain('Un message court ou vague (« alors ? ») porte sur le contexte affiché');
     expect(system(calls[1])).toContain('checklist → cases « - [ ] »');
     expect(system(calls[1])).toContain('jamais de puces ordinaires après une checklist');
     expect(result.question).toEqual(question);
@@ -800,6 +801,20 @@ describe('réponse du modèle', () => {
     expect(calls).toHaveLength(1);
     expect(state).not.toHaveBeenCalledWith('vanne');
     expect(system(calls[0])).toContain('Reprends les réponses précédentes');
+  });
+
+  test('suites proposées : texte court, sans doublon, trois au plus, et aucune à côté d’une question', async () => {
+    mockState();
+    const calls = stubAi(
+      json({ reply: 'La pompe attend une pièce.', suggestions: [' Relance  le fournisseur ', 'relance le fournisseur', 42, '', '?', 'x'.repeat(81), 'Mets la tâche en haute priorité', 'Résume la note', 'Une quatrième'] }),
+      json({ reply: '', question: { text: 'Quelle pièce ?', options: ['Joint', 'Moteur'] }, suggestions: ['Joint'] }),
+    );
+    const first = await ask({ text: 'Alors ?' });
+    expect(first.suggestions).toEqual(['Relance le fournisseur', 'Mets la tâche en haute priorité', 'Résume la note']);
+    expect(system(calls[0])).toContain('« suggestions » : 0 à 3 suites courtes');
+    const second = await ask({ text: 'Commande la pièce' });
+    expect(second.question?.text).toBe('Quelle pièce ?');
+    expect(second).not.toHaveProperty('suggestions');
   });
 
   test('les choix du sondage restent disponibles quand le modèle reprend la réponse de l’utilisateur', async () => {

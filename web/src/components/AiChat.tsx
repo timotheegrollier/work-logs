@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { aiUsageLabel } from '../ai-budget';
+import { AI_USED_EVENT, aiModelName } from '../ai-status';
 import { applyChatProposal, askAssistant, MAX_CHAT_MESSAGE, type ChatHistoryItem, type ChatProposal, type ChatQuestion } from '../ai-chat';
 import { chatAttachmentBytes, createChatLink, MAX_CHAT_ATTACHMENTS, MAX_CHAT_ATTACHMENT_BYTES, readChatAttachment, type ChatAttachment } from '../ai-chat-attachments';
 import { AiCancelled, aiDailyDefault, readAiSettings, truncate } from '../ai-suggest';
@@ -38,7 +39,7 @@ const conversationTitle = (session: ChatSession) => session.title
 const conversationActivity = (session: ChatSession) => isRunning(session) ? 'Recherche en cours' : isApplying(session) ? 'Écriture en cours' : '';
 
 const PROPOSAL_WORDS: Record<ChatProposalItem['status'], string> = { open: 'proposée', applying: 'en cours', applied: 'appliquée', ignored: 'ignorée', failed: 'échouée' };
-/** Départs proposés dans une conversation vide : un clic remplit le champ, rien n'est envoyé. */
+/** Départs proposés dans une conversation vide : un clic envoie la demande. */
 const QUICK_PROMPTS = [
   'Quelles tâches sont en retard ?',
   'Qu’est-ce qui est en cours ?',
@@ -75,6 +76,13 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
   const focusNewPane = useRef(false);
   const requests = useRef(new Map<number, { controller: AbortController; turnId: number }>());
   const [progress, setProgress] = useState<Record<number, string>>({});
+  // Modèle choisi par le Worker pour la dernière réponse (Gemini Flash, Flash-Lite ou Gemma 4).
+  const [lastModel, setLastModel] = useState('');
+  useEffect(() => {
+    const onUsed = (event: Event) => setLastModel(String((event as CustomEvent<{ model?: string }>).detail?.model ?? ''));
+    window.addEventListener(AI_USED_EVENT, onUsed);
+    return () => window.removeEventListener(AI_USED_EVENT, onUsed);
+  }, []);
   const attachmentReads = useRef(new Set<number>());
   const [attachmentFeedback, setAttachmentFeedback] = useState<Record<number, AttachmentFeedback>>({});
   const pendingProposals = useRef(new Set<string>());
@@ -441,7 +449,10 @@ export function AiChat({ open, projectId, categoryId, openTitle, openEntryId, co
               );
             })}
           </ul>
-          <p className="ai-chat-usage ai-hint">{aiUsageLabel(aiDailyDefault(readAiSettings()))}</p>
+          <p className="ai-chat-usage ai-hint">
+            {aiUsageLabel(aiDailyDefault(readAiSettings()))}
+            {lastModel && ` · Dernière réponse : ${aiModelName(lastModel)}`}
+          </p>
         </nav>
 
         <div className="ai-chat-columns" ref={columnsRef} hidden={mobileSidebar}>
@@ -567,7 +578,7 @@ function ChatPane({
               <ul className="ai-chat-suggestions" aria-label="Demandes suggérées">
                 {QUICK_PROMPTS.map((prompt) => (
                   <li key={prompt}>
-                    <button className="ghost" type="button" onClick={() => { onDraft(prompt); fieldRef.current?.focus(); }}>{prompt}</button>
+                    <button className="ghost" type="button" disabled={busy || reading} onClick={() => { focusField(); onSend(prompt); }}>{prompt}</button>
                   </li>
                 ))}
               </ul>
@@ -604,6 +615,15 @@ function ChatPane({
                     } : undefined}
                     onFreeReply={() => fieldRef.current?.focus()}
                   />}
+                  {turn === turns.at(-1) && !busy && !reading && Boolean(answer.suggestions?.length) && (
+                    <ul className="ai-chat-suggestions is-followups" aria-label="Suites suggérées">
+                      {answer.suggestions?.map((suggestion) => (
+                        <li key={suggestion}>
+                          <button className="ghost" type="button" onClick={() => { focusField(); onSend(suggestion); }}>{suggestion}</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {answer.notice && <p className="notice">{answer.notice}</p>}
                   <ChatResults answer={answer} navigation={navigation} />
                   {answer.proposals.length > 0 && (

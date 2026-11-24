@@ -377,15 +377,24 @@ synchronisation habituelles.
 ## Assistance IA
 
 **Aucune clé, aucun compte, aucun abonnement n’est nécessaire.** Ouvre l’assistant ou
-une action ✨ IA. Le réglage par défaut utilise Gemma 4 26B sur le Worker Cloudflare
-de WorkLogs, avec OVHcloud en secours pour le texte et les images. Il fonctionne aussi
-dans l’application desktop et les navigateurs sans modèle intégré.
+une action ✨ IA. Le réglage par défaut passe par le Worker Cloudflare de WorkLogs : il
+essaie Gemini Flash, puis Gemini Flash-Lite, avec la clé gratuite gardée par le Worker, puis
+Gemma 4 26B chez Cloudflare quand le quota de Google est atteint. Il fonctionne aussi dans
+l’application desktop et les navigateurs sans modèle intégré. Le pied de l’assistant nomme le
+modèle qui a écrit la dernière réponse.
 Pour une demande manuelle de texte, WorkLogs préfère le modèle intégré si le navigateur
 l’a déjà prêt. **Préparer l’IA gratuite** propose de le télécharger sur ton clic.
 
 **Paramètres → Assistance IA → Tester la connexion** vérifie le service configuré.
 Le plafond quotidien et les services personnalisés sont sous **Réglages avancés**.
 Les anciens réglages par défaut Gemini, OpenRouter et OVHcloud passent au Worker WorkLogs.
+
+**Paramètres → Assistance IA → Modèles et quotas** liste les modèles dans l’ordre d’essai.
+Pour chacun : les requêtes et jetons du jour, comptés par le Worker pour tous tes appareils,
+la limite connue, l’heure de remise à zéro et, s’il est écarté, le motif et l’heure de retour.
+Google ne publie ses limites gratuites que dans AI Studio : WorkLogs affiche celle que Google
+indique quand il refuse une demande. La liste se relit toutes les minutes et après chaque
+réponse.
 Le contexte de travail reste enregistré sur l’appareil. Un endpoint local (Ollama,
 LM Studio) peut aussi fonctionner sans clé.
 
@@ -490,7 +499,9 @@ en cours. L’assistant affiche les étapes qu’il effectue, comme la recherche
 la lecture d’une note et la préparation de la réponse. Tu peux revoir ces étapes dans
 l’activité du message une fois la réponse reçue.
 **Entrée** envoie, **Maj+Entrée** va à la ligne et **Arrêter** coupe la demande de la conversation
-affichée. Les demandes continuent quand le panneau est fermé.
+affichée. Dans une conversation vide, **Par où commencer ?** propose quatre demandes : un clic
+l’envoie. Après une réponse, l’assistant peut proposer jusqu’à trois suites utiles, envoyées elles
+aussi d’un clic ; elles disparaissent dès qu’une nouvelle demande part. Les demandes continuent quand le panneau est fermé.
 WorkLogs nomme chaque conversation d’après son sujet et le projet concerné. L’historique et
 les brouillons se retrouvent après redémarrage sur le même profil. **Effacer** supprime la
 conversation.
@@ -552,8 +563,8 @@ projet et ses repères, les catégories et des résumés des tâches, des entré
 Quand une demande en a besoin, l’assistant peut consulter le texte d’entrées locales et les noms du partage.
 Pour les documents Google associés, le fournisseur reçoit les titres et les dates.
 WorkLogs extrait sur l’appareil le texte des fichiers Word, Excel et texte. Avec le réglage
-par défaut, une image jointe peut être analysée par Gemma 4 chez Cloudflare ou par un
-modèle visuel d’OVHcloud en secours. Le PDF joint est envoyé au convertisseur du Worker
+par défaut, une image jointe est analysée par Gemini chez Google, ou par Gemma 4 chez
+Cloudflare quand le quota de Google est atteint. Le PDF joint est envoyé au convertisseur du Worker
 WorkLogs chez Cloudflare au clic sur **Envoyer**. Seul l’extrait de texte accompagne la
 demande au modèle. Un PDF sans texte extractible reste joint, marqué **Non lu**.
 La mention **Extrait** indique un contenu abrégé. Les autres pièces
@@ -568,17 +579,19 @@ le plafond est atteint, l’assistant affiche les résultats de recherche qu’i
 
 ### Gratuité et plafond quotidien
 
-Le compte Cloudflare qui héberge le Worker dispose de **10 000 neurones par jour**
-avec Workers Free. Ce quota de calcul est partagé et repart à **minuit UTC**. La taille
-des demandes et des réponses détermine la consommation de chaque appel. À titre indicatif,
-ce quota permet environ 200 appels au total si chaque demande utilise 4 000 jetons en
-entrée et 500 en sortie, au barème de Gemma 4 26B.
-[Quota de Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/).
+Gemini Flash et Flash-Lite utilisent le **palier gratuit** de l’API Gemini, avec une clé
+créée sans carte bancaire dans Google AI Studio. Ses quotas sont propres au projet Google,
+repartent à **minuit heure du Pacifique** et ne sont publiés que dans AI Studio. Avec ce
+palier, Google peut utiliser les demandes et réponses pour améliorer ses produits : n’y
+mets pas de données sensibles.
+[Limites de l’API Gemini](https://aistudio.google.com/docs/rate-limits).
 
-OVHcloud fournit un accès de secours anonyme limité à deux appels par minute, par modèle
-et par adresse IP. Si les services gratuits sont indisponibles ou limités, l’assistant
-affiche les résultats locaux.
-[Limites OVHcloud](https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-capabilities).
+Quand Google refuse, Gemma 4 prend le relais sur le compte Cloudflare qui héberge le Worker :
+**10 000 neurones par jour** avec Workers Free, repartant à **minuit UTC**, refusés au-delà
+sans facturation. Environ 200 appels si chaque demande utilise 4 000 jetons en entrée et 500
+en sortie. [Quota de Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/).
+Quand tous les quotas sont atteints, l’assistant donne l’heure de retour et affiche les
+résultats locaux.
 
 Les demandes traitées par l’IA intégrée au navigateur ne comptent pas dans le plafond.
 Les services personnalisés choisis dans les réglages avancés ont leurs propres conditions.

@@ -1,5 +1,17 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Gemini Flash par le Worker, modèles et quotas affichés — 2026-11-24 (§98)
+
+- Le Worker essaie Gemini Flash, Flash-Lite, puis Gemma 4, avec la clé gratuite gardée en
+  secret `GEMINI_API_KEY` : rien à saisir dans l'app. **Tant que ce secret n'est pas posé,
+  Gemma 4 répond seul** (procédure : `07-RELEASES.md` §9).
+- Compteur partagé (objet durable `AiUsage`) et `GET /ai/status` ; **Paramètres → Assistance
+  IA → Modèles et quotas** l'affiche et le relit chaque minute et après chaque réponse.
+- OVHcloud retiré (client et CSP desktop).
+- Assistant plus agent : consigne d'initiative sur les messages vagues, réflexion `medium` pour Gemini.
+- **Par où commencer** envoie la demande au clic ; après une réponse, jusqu'à 3 suites (`suggestions`
+  du JSON du modèle) s'envoient aussi d'un clic, sous la dernière réponse seulement.
+
 ## PWA sur GitHub Pages seulement — 2026-11-24, v0.88.1 (§97)
 
 - Le Worker Cloudflare ne sert plus la PWA : `https://timotheegrollier.github.io/work-logs/` est
@@ -58,7 +70,7 @@
   tiennent côte à côte, nom compris ; la barre du bas reste fixe (l'en-tête a perdu son
   `backdrop-filter`, qui en faisait le bloc conteneur et la remontait). Rien ne flotte
   au-dessus du journal : la création reste dans le fil, comme les cartes de tâches.
-- Une conversation vide propose quatre demandes de départ (un clic remplit le champ). Une
+- Une conversation vide propose quatre demandes de départ (un clic l’envoie, depuis la v0.90.0). Une
   demande qui a échoué se repose avec le même texte et ses pièces jointes. L'étape en cours
   s'affiche pendant la réponse et reste consultable sous la demande terminée.
 

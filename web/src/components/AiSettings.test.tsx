@@ -33,14 +33,14 @@ describe('réglages IA', () => {
     expect(screen.queryByLabelText('Clé IA')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tester la connexion' })).toBeVisible();
     expect(screen.getByText('IA gratuite sans clé.')).toBeVisible();
-    expect(screen.getByText(/Gemma 4 chez Cloudflare/)).toHaveTextContent('OVHcloud en secours');
+    expect(screen.getByText(/Gemini Flash chez Google/)).toHaveTextContent('puis Gemma 4 chez Cloudflare');
+    expect(screen.getByRole('region', { name: 'Modèles et quotas de l’IA' })).toHaveTextContent('Lecture des quotas…');
     expect(screen.queryByLabelText('Accepter l’envoi à Google')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Endpoint IA')).not.toBeVisible();
     await user.click(screen.getByText('Réglages avancés'));
     expect(screen.getByLabelText('Endpoint IA')).toBeVisible();
     expect(screen.getByLabelText('Endpoint IA')).toHaveValue(DEFAULT_AI_ENDPOINT);
     expect(screen.getByLabelText('Plafond de requêtes IA par jour')).toHaveValue(150);
-    expect(screen.getByText(/10 000 neurones par jour/)).toHaveTextContent('minuit UTC');
     await user.click(screen.getByText('Réglages avancés'));
     expect(advanced).not.toHaveAttribute('open');
     expect(fetch).not.toHaveBeenCalled();

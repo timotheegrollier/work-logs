@@ -309,8 +309,9 @@ répondent au besoin exposé dans chaque exemple.
 | Tiers du plafond atteint par le suivi automatique | « Suspendue pour aujourd’hui », **Actualiser** reste disponible ; reprise seule le lendemain, ou dans la minute qui suit un plafond relevé. |
 | Sans clé, Chrome avec IA intégrée prête | Les demandes manuelles de texte peuvent répondre depuis l’appareil ; le plafond ne bouge pas pour ces demandes. |
 | Sans clé ni modèle intégré, application ou PWA | Le premier geste IA appelle `/ai/chat/completions` sur le Worker WorkLogs, sans en-tête d’authentification. |
-| Worker indisponible ou quota Workers Free atteint | Une demande manuelle de texte ou d’image peut passer à un modèle gratuit OVHcloud. |
-| Limite anonyme OVHcloud (429) | Un autre modèle gratuit compatible peut être essayé. Après épuisement, un motif et les résultats locaux sont affichés. |
+| Quota du jour de Gemini Flash atteint | Flash-Lite répond ; **Modèles et quotas** montre Flash écarté, le motif, l’heure de retour (minuit à Los Angeles) et la limite indiquée par Google. |
+| Gemini et Gemma au bout de leur quota | « Quotas gratuits atteints. L’IA revient vers HH:MM. », sans nouvel appel jusque-là ; les résultats locaux s’affichent. |
+| Clé `GEMINI_API_KEY` absente ou refusée | Gemma 4 répond ; **Modèles et quotas** l’indique (« pas encore activé » ou « clé Gemini refusée »). |
 | Assistant avec un PDF | Au clic Envoyer, `/ai/pdf` sur le même Worker reçoit le PDF et le modèle reçoit seulement l’extrait. Si la conversion échoue, la pièce reste jointe et marquée non lue. |
 | Endpoint local (Ollama) sans clé | La requête part vers `127.0.0.1` sans en-tête `Authorization` ; aucune dépense. |
 | Quota Gemini gratuit épuisé (429) | La limite Google s’affiche ; aucun modèle payant n’est essayé en secours. |

@@ -3839,6 +3839,9 @@ ressemble à une clé Google (`AIza`).
 
 ## 96. Premier appel IA sans compte ni clé — 2026-11-24
 
+> **Moteur remplacé le 2026-11-24 par §98** : Gemini Flash avec la clé du Worker, Gemma 4 en
+> secours, OVHcloud retiré. Le PDF, les origines et la limite par IP restent ceux d'ici.
+
 WorkLogs tente le modèle intégré s’il est prêt pour une demande manuelle de texte.
 Le Worker Cloudflare de WorkLogs traite le texte et les images avec Gemma 4 26B sur
 desktop et PWA. Les profils utilisant les anciens défauts Gemini, OpenRouter ou OVHcloud
@@ -3899,3 +3902,67 @@ redirection.
 
 **Validation.** `oauth-proxy/worker.test.mjs` (redirections et routes conservées),
 `scripts/workflows.test.mjs` (ni build web ni assets).
+
+## 98. Gemini Flash par le Worker, quotas comptés et affichés — 2026-11-24
+
+**La demande.** Les réponses de Gemma 4 étaient jugées faibles, son quota trop court, et
+l'assistant peu efficace. Timo choisit Gemini Flash, « proprement », avec les modèles et les
+quotas affichés, détaillés et actualisés automatiquement.
+
+**Décision.**
+- La clé gratuite de l'API Gemini (créée par Timo dans AI Studio, sans facturation) est un
+  secret du Worker, `GEMINI_API_KEY` : l'application n'en demande aucune et la clé ne sort
+  jamais du Worker. Sans ce secret, Gemma 4 répond seul.
+- Ordre d'essai dans le Worker (`oauth-proxy/ai-engines.mjs`) : Gemini Flash, Gemini
+  Flash-Lite, puis Gemma 4 26B sur Workers AI. Les modèles Gemini viennent de la liste de
+  Google (`GET /v1beta/models`, relue au plus toutes les 6 h) : l'alias `gemini-flash-latest`
+  s'il existe (Google prévient deux semaines avant de changer la version derrière), sinon la
+  version stable la plus haute ; de même pour Flash-Lite. Sans liste lue : les deux alias.
+- Un refus de Google écarte le modèle : quota du jour jusqu'à minuit heure du Pacifique, limite
+  par minute selon le délai conseillé, clé refusée 1 h, modèle introuvable 6 h. Un refus propre
+  à une demande (400) n'écarte rien et reste noté comme dernière erreur.
+- `temperature` n'est pas transmise à Gemini (ignorée depuis 3.6, bientôt refusée) ;
+  `reasoning_effort: low` limite la réflexion, qu'on ne peut plus couper sur Gemini 3.
+- OVHcloud est retiré du client et de la CSP : saturé, il masquait la vraie erreur du Worker
+  derrière son « quota atteint ». Le client fait un seul appel et affiche le motif du Worker
+  (« Quotas gratuits atteints. L'IA revient vers HH:MM. »).
+
+**Quotas.** Google ne publie ses limites gratuites que dans AI Studio et n'expose ni limite ni
+usage par API (vérifié le 2026-11-24). Le Worker compte donc lui-même, dans un objet durable
+SQLite (`AiUsage`, offert sur Workers Free, un seul pour le compte) : requêtes et jetons du jour
+par modèle, requêtes de la dernière minute, limites citées par Google dans ses refus 429,
+blocages en cours. `GET /ai/status` rend cette vue ; Gemma y ajoute ses neurones estimés au
+barème Cloudflare (10 000 par jour, minuit UTC). **Paramètres → Assistance IA → Modèles et
+quotas** la relit toutes les minutes et après chaque réponse ; le pied de l'assistant nomme le
+modèle de la dernière réponse (champ `model` de la réponse du Worker).
+
+**Un assistant qui prend l'initiative.** À « Alors ? », Gemma répondait « Je suis prêt… Que
+souhaites-tu faire ? ». La consigne de l'assistant dit désormais qu'un message court ou vague
+porte sur le contexte affiché : faire le point sur la note ouverte et les tâches en cours, puis
+proposer l'action suivante. L'assistant demande à Gemini une réflexion `medium` (les gestes sur
+un document restent en `low`) ; le client transmet l'effort au Worker, qui le borne
+(`minimal` à `high`) et ne le passe jamais à Gemma.
+
+**Gagner du temps au clic.** Les quatre demandes de **Par où commencer** s'envoient au clic
+(elles remplissaient le champ). Le modèle peut ajouter `suggestions` : 0 à 3 suites courtes,
+écrites comme l'utilisateur les taperait ; WorkLogs garde du texte lisible de 80 caractères au
+plus, sans doublon, et n'en montre aucune à côté d'une question (ses choix en tiennent lieu).
+Elles s'affichent sous la dernière réponse seulement, et s'envoient d'un clic comme un message.
+
+**Pourquoi pas OpenCode ou Kilo dans le Worker.** Ce sont des agents de code : ils pilotent un
+modèle avec un système de fichiers, un shell et un processus qui dure. Un Worker gratuit n'a ni
+fichiers, ni processus, et 10 ms de calcul par requête ; les conteneurs Cloudflare exigent
+Workers Paid. Et leur raisonnement vient du modèle qu'ils appellent : brancher Gemini Flash dans
+la boucle existante de l'assistant (outils WorkLogs : recherche, lecture, propositions) donne
+le même gain, sans changer d'architecture. Leurs offres gratuites sont réservées à leur client.
+
+**Limites assumées.** Une limite Google reste « non publiée » tant que Google ne l'a pas citée
+en refusant. La lecture du refus suit le format observé (`QuotaFailure`, sinon le texte
+« limit: N » / « retry in Ns ») : un changement de format laisserait la limite inconnue, sans
+autre effet. L'usage compté ne voit que les appels passés par ce Worker. Avec le palier gratuit,
+Google peut utiliser les demandes pour améliorer ses produits : averti dans les réglages et la
+politique de confidentialité.
+
+**Validation.** `oauth-proxy/worker.test.mjs` (chaîne, refus, compteur, `/ai/status`, jours de
+quota), `web/src/components/AiQuotas.test.tsx`, `AiChat.test.tsx`, `ai-suggest.test.ts`, et le
+parcours des réglages de `e2e/ai-assistance.spec.ts` (affichage sur téléphone).

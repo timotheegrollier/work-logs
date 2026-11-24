@@ -563,8 +563,20 @@ sans attendre la CI (06, D6). Il exige deux secrets GitHub :
 il échoue en le disant. Le secret Google du relais reste stocké côté Worker
 (`wrangler secret put`), et le déploiement le conserve.
 
-Le même Worker sert `/ai/chat/completions` (Gemma 4 26B) et `/ai/pdf` (conversion des
-PDF joints). Ces routes nécessitent un déploiement avec le binding Workers AI. Garder le
+Le même Worker sert `/ai/chat/completions` (Gemini Flash, Flash-Lite, puis Gemma 4 26B),
+`/ai/status` (modèles et quotas, compteur partagé `AI_USAGE`) et `/ai/pdf` (conversion des PDF
+joints). Ces routes nécessitent un déploiement avec le binding Workers AI et l’objet durable,
+créé au premier déploiement (décision §98).
+
+**Clé Gemini (une fois, à faire par le propriétaire).** Créer une clé gratuite dans Google AI
+Studio (`https://aistudio.google.com/app/apikey`, sans activer la facturation), puis dans le
+tableau de bord Cloudflare : **Workers & Pages → worklogs-google → Settings → Variables and
+Secrets → Add**, type **Secret**, nom `GEMINI_API_KEY`, coller la clé, **Deploy**. Ou, depuis
+`oauth-proxy/` avec wrangler connecté : `npx wrangler secret put GEMINI_API_KEY`. Les
+déploiements suivants la conservent. Ne jamais déclarer de variable du même nom dans
+`wrangler.toml` : elle remplacerait le secret. Vérifier ensuite
+`curl -s -H 'Origin: worklogs://app' https://worklogs-google.cocodexcocoder.workers.dev/ai/status`
+(`"gemini_configured":true`). Garder le
 compte Cloudflare sur **Workers Free** pour que les requêtes au-delà du quota partagé de
 10 000 neurones par jour soient refusées. Après le déploiement, vérifier la connexion sans
 clé depuis **Paramètres → Assistance IA**, puis suivre la recette IA dans `04-RECETTES.md` §14.

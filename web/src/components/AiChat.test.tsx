@@ -75,6 +75,14 @@ async function answered(value: ChatAnswer, question = 'Une question') {
 const proposalButton = (name: string) => chat().getByRole('button', { name });
 
 describe('assistant : conversation', () => {
+  test('le pied du panneau nomme le modèle choisi par le Worker pour la dernière réponse', () => {
+    render(<Host />);
+    const usage = document.querySelector('.ai-chat-usage')!;
+    expect(usage).not.toHaveTextContent('Dernière réponse');
+    act(() => { window.dispatchEvent(new CustomEvent('worklogs:ai-used', { detail: { model: 'gemini-3.5-flash-lite' } })); });
+    expect(usage).toHaveTextContent('Dernière réponse : Gemini 3.5 Flash-Lite');
+  });
+
   test('l’historique garde ce qui était affiché, dans l’ordre de l’écran : « et la deuxième ? » a un référent', async () => {
     render(<Host />);
     const other = { ...documentSummary, id: 'en_2', title: 'Vidange' };
@@ -215,13 +223,30 @@ describe('assistant : conversation', () => {
     expect(chat().getByRole('button', { name: 'Envoyer' })).toBeDisabled();
   });
 
-  test('les demandes suggérées remplissent le champ sans envoyer', () => {
+  test('une demande suggérée part au clic, sans passer par le champ', async () => {
     render(<Host />);
+    ask.mockResolvedValueOnce(answer({ reply: 'Deux tâches sont en retard.' }));
     const suggestions = chat().getByRole('list', { name: 'Demandes suggérées' });
     fireEvent.click(within(suggestions).getByRole('button', { name: 'Quelles tâches sont en retard ?' }));
-    expect(field()).toHaveValue('Quelles tâches sont en retard ?');
-    expect(field()).toHaveFocus();
-    expect(ask).not.toHaveBeenCalled();
+    expect(await chat().findByText('Deux tâches sont en retard.')).toBeVisible();
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(ask.mock.calls[0][1].text).toBe('Quelles tâches sont en retard ?');
+    expect(field()).toHaveValue('');
+    expect(chat().queryByRole('list', { name: 'Demandes suggérées' })).not.toBeInTheDocument();
+  });
+
+  test('les suites proposées après une réponse partent d’un clic, sous la dernière réponse seulement', async () => {
+    render(<Host />);
+    await answered(answer({ reply: 'La pompe attend une pièce.', suggestions: ['Relance le fournisseur', 'Mets la tâche en priorité haute'] }), 'Alors ?');
+    const followUps = chat().getByRole('list', { name: 'Suites suggérées' });
+    expect(within(followUps).getAllByRole('button').map((button) => button.textContent)).toEqual(['Relance le fournisseur', 'Mets la tâche en priorité haute']);
+    const pending = pendingAnswer();
+    fireEvent.click(within(followUps).getByRole('button', { name: 'Relance le fournisseur' }));
+    expect(ask.mock.calls.at(-1)![1].text).toBe('Relance le fournisseur');
+    // Pendant la demande, puis sous une réponse qui n'en propose pas : plus de suites affichées.
+    expect(chat().queryByRole('list', { name: 'Suites suggérées' })).not.toBeInTheDocument();
+    await pending.resolve(answer({ reply: 'Message prêt.' }));
+    expect(chat().queryByRole('list', { name: 'Suites suggérées' })).not.toBeInTheDocument();
   });
 
   test('une demande échouée se repose avec le même texte et efface l’alerte', async () => {

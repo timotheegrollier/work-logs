@@ -2,7 +2,8 @@
 // La PWA est sur GitHub Pages (décision §97) : ce Worker ne sert plus de front, et
 // renvoie toute autre adresse vers la même page de GitHub Pages.
 // `/ai/pdf` extrait le texte d'un PDF joint explicitement à une demande IA.
-// `/ai/chat/completions` sert le modèle fixe de l'assistant sur Workers Free.
+// `/ai/chat/completions` sert l'assistant : Gemini Flash avec la clé gratuite du Worker, puis
+// Gemma 4 sur Workers Free (`ai-engines.mjs`, décision §98). `/ai/status` montre modèles et quotas.
 // Vérification : ouvrir `/token` dans un navigateur (`{"ok":true,…}`).
 //
 // Google exige le secret d'un client OAuth « Application Web » pour échanger le
@@ -11,7 +12,11 @@
 // détenir. Ce relais l'ajoute, et rien d'autre : deux échanges autorisés, la
 // seule PWA comme origine et comme retour, rien de stocké ni de journalisé.
 // Déploiement et vérification : docs/08-GOOGLE-DOCS.md « Relais de jetons ».
-// Seul `default` est exporté : workerd prend tout autre export pour un point d'entrée.
+// Exports : `default`, et la classe du compteur partagé (objet durable déclaré dans `wrangler.toml`).
+
+import { askGemini, geminiChain, GEMMA_MODEL, nextReset, refreshCatalog, statusView, usageStore } from './ai-engines.mjs';
+
+export { AiUsage } from './ai-engines.mjs';
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const PAGES = 'https://timotheegrollier.github.io/work-logs';
@@ -41,7 +46,6 @@ const aiOrigin = (origin) => ORIGINS.includes(origin) || origin === DESKTOP_ORIG
 const MIB = 1024 * 1024;
 const MAX_PDF_BYTES = 10 * MIB;
 const MAX_PDF_TEXT = 16_000;
-const CHAT_MODEL = '@cf/google/gemma-4-26b-a4b-it';
 const MAX_CHAT_BYTES = 14 * MIB;
 const MAX_CHAT_TEXT = 128_000;
 const MAX_CHAT_TOKENS = 8000;
@@ -51,6 +55,7 @@ const MAX_CHAT_IMAGE_BYTES = 10 * MIB;
 const IMAGE_DATA_PREFIX = /^data:image\/(?:jpeg|png|webp);base64,/;
 const CHAT_ROLES = new Set(['system', 'user', 'assistant']);
 const CHAT_FINISH_REASONS = new Set(['stop', 'length', 'content_filter']);
+const REASONING_EFFORTS = new Set(['minimal', 'low', 'medium', 'high']);
 const BODY_TOO_LARGE = new RangeError('Corps trop volumineux');
 
 function cors(origin) {
@@ -185,6 +190,8 @@ function chatParams(body) {
     temperature: typeof body.temperature === 'number' && body.temperature >= 0 && body.temperature <= 2 ? body.temperature : 0.4,
     max_completion_tokens: Math.min(maxTokens, MAX_CHAT_TOKENS),
     chat_template_kwargs: { enable_thinking: false },
+    // Réflexion de Gemini ; jamais transmise à Gemma (`chatCompletion`).
+    ...(REASONING_EFFORTS.has(body.reasoning_effort) && { reasoning_effort: body.reasoning_effort }),
     ...(format === 'json_object' && { response_format: { type: 'json_object' } }),
   };
 }
@@ -204,6 +211,34 @@ function chatUpstreamError(status, code, retryAfter, origin) {
       : 'Limite du service IA atteinte. Réessaie plus tard.', 429, origin, headers);
   }
   return chatError('Le service IA est temporairement indisponible. Réessaie plus tard.', 503, origin, headers);
+}
+
+/** Réponse OpenAI rendue au client, avec le modèle qui a répondu ; `null` si elle est inutilisable. */
+function chatAnswer(result, model) {
+  const choice = Array.isArray(result?.choices) ? result.choices[0] : null;
+  const content = choice?.message?.content;
+  const finish = choice?.finish_reason;
+  if (!CHAT_FINISH_REASONS.has(finish) || (typeof content !== 'string' && finish !== 'content_filter')) return null;
+  const usage = result.usage;
+  return {
+    model,
+    choices: [{ index: 0, message: { role: 'assistant', content: content ?? null }, finish_reason: finish }],
+    ...(Number.isSafeInteger(usage?.total_tokens) && {
+      usage: { prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens, total_tokens: usage.total_tokens },
+    }),
+  };
+}
+
+const tokensOf = (answer) => ({ input_tokens: answer.usage?.prompt_tokens ?? 0, output_tokens: answer.usage?.completion_tokens ?? 0 });
+
+async function aiStatus(request, env, origin) {
+  if (!aiOrigin(origin)) return chatError('Origine non autorisée.', 403);
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...cors(origin), 'Access-Control-Allow-Methods': 'GET' } });
+  if (request.method !== 'GET') return chatError('Méthode non autorisée.', 405, origin, { Allow: 'GET, OPTIONS' });
+  const store = usageStore(env);
+  const now = Date.now();
+  const state = await refreshCatalog(env, await store.state(), store, now);
+  return reply(statusView(env, state, now), 200, origin);
 }
 
 async function chatCompletion(request, env, origin) {
@@ -241,24 +276,47 @@ async function chatCompletion(request, env, origin) {
   }
   if (!params) return invalid();
 
+  const store = usageStore(env);
+  const state = await store.state();
+  const blockedUntil = (id) => state?.models?.[id]?.blocked_until ?? 0;
+  if (env.GEMINI_API_KEY) {
+    for (const model of geminiChain(state)) {
+      if (blockedUntil(model) > Date.now()) continue;
+      const attempt = await askGemini(model, params, env.GEMINI_API_KEY, Date.now());
+      const answer = attempt.result && chatAnswer(attempt.result, typeof attempt.result.model === 'string' ? attempt.result.model : model);
+      if (answer) {
+        await store.record({ type: 'success', model, provider: 'google', resolved: answer.model, ...tokensOf(answer) });
+        return reply(answer, 200, origin);
+      }
+      await store.record(attempt.block
+        ? { type: 'blocked', model, provider: 'google', ...attempt.block }
+        : { type: 'error', model, provider: 'google', reason: attempt.skip ?? 'réponse vide ou illisible' });
+    }
+  }
+
+  const now = Date.now();
+  if (blockedUntil(GEMMA_MODEL) > now) {
+    const soonest = Math.min(...Object.values(state.models).map(({ blocked_until: until }) => until ?? 0).filter((until) => until > now));
+    const time = new Date(soonest).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' });
+    return chatError(`Quotas gratuits atteints. L’IA revient vers ${time}.`, 429, origin, {
+      'Retry-After': String(Math.ceil((soonest - now) / 1000)), 'Access-Control-Expose-Headers': 'Retry-After',
+    });
+  }
   try {
-    const upstream = await env.AI.run(CHAT_MODEL, params, { returnRawResponse: true });
+    const { reasoning_effort: _effort, ...gemma } = params;
+    const upstream = await env.AI.run(GEMMA_MODEL, gemma, { returnRawResponse: true });
     const result = await upstream.json().catch(() => null);
     if (!upstream.ok) {
       const code = Number(result?.internalCode ?? result?.errors?.[0]?.code);
+      if (code === 3036) {
+        await store.record({ type: 'blocked', model: GEMMA_MODEL, provider: 'cloudflare', until: nextReset('cloudflare', now), reason: 'quota du jour atteint' });
+      }
       return chatUpstreamError(upstream.status, code, upstream.headers.get('Retry-After'), origin);
     }
-    const choice = Array.isArray(result?.choices) ? result.choices[0] : null;
-    const content = choice?.message?.content;
-    const finish = choice?.finish_reason;
-    if (!CHAT_FINISH_REASONS.has(finish) || (typeof content !== 'string' && finish !== 'content_filter')) return unavailable();
-    const usage = result.usage;
-    return reply({
-      choices: [{ index: 0, message: { role: 'assistant', content: content ?? null }, finish_reason: finish }],
-      ...(Number.isSafeInteger(usage?.total_tokens) && {
-        usage: { prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens, total_tokens: usage.total_tokens },
-      }),
-    }, 200, origin);
+    const answer = chatAnswer(result, GEMMA_MODEL);
+    if (!answer) return unavailable();
+    await store.record({ type: 'success', model: GEMMA_MODEL, provider: 'cloudflare', ...tokensOf(answer) });
+    return reply(answer, 200, origin);
   } catch {
     return unavailable();
   }
@@ -292,6 +350,7 @@ export default {
     const origin = request.headers.get('Origin') ?? '';
     if (url.pathname === '/ai/pdf') return pdfText(request, env, origin);
     if (url.pathname === '/ai/chat/completions') return chatCompletion(request, env, origin);
+    if (url.pathname === '/ai/status') return aiStatus(request, env, origin);
     // Vérification à la main : ouvrir `/token` dans un navigateur.
     if (request.method === 'GET' && url.pathname === '/token') {
       return reply({ ok: true, configured: Boolean(env.GOOGLE_CLIENT_SECRET) }, 200);

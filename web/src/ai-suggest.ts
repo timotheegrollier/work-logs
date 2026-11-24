@@ -4,6 +4,7 @@
  */
 
 import { deviceCompletion, isLocalAiEndpoint, readDeviceAiStatus } from './ai-device';
+import { announceAiModel } from './ai-status';
 import { WORKLOGS_AI_ENDPOINT, isFollowed, type EntrySummary, type FollowUp, type FollowUpChecklistChange, type FollowUpReportDraft, type FollowUpSource, type Priority, type Project, type Status, type Task } from './lib';
 
 export interface AiSettings {
@@ -21,10 +22,10 @@ export interface AiSettings {
 export const GEMINI_AI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai';
 export const GEMINI_DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 export const DEFAULT_AI_ENDPOINT = WORKLOGS_AI_ENDPOINT;
-export const DEFAULT_AI_MODEL = '@cf/google/gemma-4-26b-a4b-it';
-const OVH_AI_ENDPOINT = 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1';
-const OVH_VISION_MODELS = ['qwen3-vl-30b-a3b', 'nemotron3-omni-30b'];
-const OVH_TEXT_MODELS = ['gemma-4-26b-a4b', 'laguna-xs-2.1', 'qwen3.6-35b-a3b'];
+/** Le Worker choisit : Gemini Flash, puis Flash-Lite, puis Gemma 4 (`oauth-proxy/ai-engines.mjs`, §98). */
+export const DEFAULT_AI_MODEL = 'worklogs-auto';
+/** Ancien secours de la v0.88.0, retiré : un réglage qui le désigne revient au Worker. */
+const LEGACY_OVH_ENDPOINT = 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1';
 export const OPENROUTER_AI_ENDPOINT = 'https://openrouter.ai/api/v1';
 const GOOGLE_AI_CONSENT = 'worklogs-ai-google-consent';
 const GOOGLE_FREE_MODELS = new Set([GEMINI_DEFAULT_MODEL, 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite']);
@@ -36,7 +37,7 @@ const googleKey = (key: string) => key.startsWith('AIza');
 
 export function isAnonymousAi({ endpoint }: Pick<AiSettings, 'endpoint'>): boolean {
   const url = normalizedEndpoint(endpoint);
-  return url === DEFAULT_AI_ENDPOINT || url === OVH_AI_ENDPOINT;
+  return url === DEFAULT_AI_ENDPOINT || url === LEGACY_OVH_ENDPOINT;
 }
 
 export function isGoogleAiEndpoint(endpoint: string): boolean {
@@ -75,7 +76,7 @@ export interface AiModelOption {
 }
 
 export const AI_MODELS: AiModelOption[] = [
-  { id: DEFAULT_AI_MODEL, label: 'WorkLogs gratuit — Gemma 4 26B (défaut)' },
+  { id: DEFAULT_AI_MODEL, label: 'WorkLogs gratuit — Gemini Flash, Gemma 4 en secours (défaut)' },
   { id: GEMINI_DEFAULT_MODEL, label: 'Gemini 3.5 Flash-Lite — gratuit' },
   { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — gratuit' },
   { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite — gratuit' },
@@ -398,7 +399,8 @@ const PREFERRED_MS = 10 * 60_000;
 let preferred: { chosen: string; model: string; until: number } | null = null;
 /** Modèles qui ont répondu 400 au paramètre `reasoning_effort` : il ne leur est plus envoyé. */
 const effortRefused = new Set<string>();
-const anonymousCooldowns = new Map<string, number>();
+/** Refus du Worker retenu jusqu'à son `Retry-After`, avec son motif à réafficher. */
+const anonymousCooldowns = new Map<string, { until: number; message: string }>();
 
 /** Pour les tests : oublie le secours mémorisé et les refus de `reasoning_effort`. */
 export function resetAiFallbackMemory(): void {
@@ -446,11 +448,17 @@ const OPENROUTER_CREDIT_MESSAGE = 'OpenRouter demande des crédits pour cette re
 const FREE_QUOTA_MESSAGE = 'Le quota de l’IA gratuite est atteint. Réessaie plus tard.';
 const FREE_UNAVAILABLE_MESSAGE = 'L’IA gratuite est momentanément indisponible. Réessaie plus tard.';
 
-function rememberAnonymousLimit(model: string, response: Response): void {
+function rememberAnonymousLimit(model: string, response: Response, message = FREE_QUOTA_MESSAGE): void {
   const retry = response.headers?.get('Retry-After');
   const now = Date.now();
   const next = retry && (/^\d+$/.test(retry) ? now + Number(retry) * 1_000 : Date.parse(retry));
-  anonymousCooldowns.set(model, next && Number.isFinite(next) && next > now ? next : now + 60_000);
+  anonymousCooldowns.set(model, { until: next && Number.isFinite(next) && next > now ? next : now + 60_000, message });
+}
+
+/** Motif rédigé par le Worker WorkLogs (heure de retour du quota, etc.), sinon `null`. */
+async function workerMessage(response: Response): Promise<string | null> {
+  const text = ((await response.json().catch(() => null)) as { error?: { message?: unknown } } | null)?.error?.message;
+  return typeof text === 'string' && text.trim() ? truncate(text.trim(), 200) : null;
 }
 
 /**
@@ -472,7 +480,8 @@ export interface AiMediaInput {
 }
 
 interface CompletionOptions {
-  effort?: 'minimal' | 'low';
+  /** `medium` : l'assistant, qui planifie ses lectures ; les gestes sur un document restent en `low`. */
+  effort?: 'minimal' | 'low' | 'medium';
   only?: boolean;
   /** Le résultat attendu est un objet JSON, pas un tableau ni un document. */
   json?: boolean;
@@ -553,29 +562,18 @@ export async function postChatCompletions(
     if (options.media?.some(({ mimeType }) => mimeType === 'application/pdf')) {
       throw new AiError('Le PDF doit être converti en texte avant l’envoi au modèle gratuit.');
     }
-    const backups = options.media?.length ? OVH_VISION_MODELS : OVH_TEXT_MODELS;
-    const models = [DEFAULT_AI_MODEL, ...backups];
-    const candidates = (settings.background ? models.slice(0, 1) : models)
-      .filter((model) => (anonymousCooldowns.get(model) ?? 0) <= Date.now());
-    const deadline = Date.now() + timeoutMs;
-    const slice = candidates.length > 1 ? Math.ceil(timeoutMs * 0.65) : timeoutMs;
-    let last: AiTryNext | undefined;
-    for (const model of candidates) {
+    // Un seul appel : le Worker enchaîne lui-même les modèles gratuits et dit lequel a répondu.
+    const cooldown = anonymousCooldowns.get(DEFAULT_AI_MODEL);
+    if (cooldown && cooldown.until > Date.now()) throw new AiError(cooldown.message);
+    try {
+      const content = await postOnce({ ...settings, endpoint: DEFAULT_AI_ENDPOINT }, DEFAULT_AI_MODEL, '', system, user, maxTokens, timeoutMs, options);
       stopped();
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) break;
-      const endpoint = model === DEFAULT_AI_MODEL ? DEFAULT_AI_ENDPOINT : OVH_AI_ENDPOINT;
-      try {
-        const content = await postOnce({ ...settings, endpoint }, model, '', system, user, maxTokens, Math.min(remaining, slice), options);
-        stopped();
-        return content;
-      } catch (cause) {
-        stopped();
-        if (!(cause instanceof AiTryNext) || (cause.explains && cause.charged)) throw cause;
-        if (!last?.explains) last = cause;
-      }
+      return content;
+    } catch (cause) {
+      stopped();
+      if (!(cause instanceof AiTryNext) || (cause.explains && cause.charged)) throw cause;
+      throw new AiError(cause.message);
     }
-    throw new AiError(last?.message ?? FREE_QUOTA_MESSAGE);
   }
   const model = settings.model.trim();
   // Les modèles de secours historiques ne concernent que l’endpoint Google.
@@ -702,7 +700,7 @@ async function postReserved(
   const hasPdf = media.some(({ mimeType }) => mimeType === 'application/pdf');
   const native = gemini && (onUrlsRead || hasPdf);
   // « none » coupe la réflexion des 2.5 Flash ; 2.5 Pro ne la coupe pas, « minimal » la réduit.
-  const reasoning = !gemini || native || !effort || effortRefused.has(model) ? undefined
+  const reasoning = (!gemini && !anonymous) || native || !effort || effortRefused.has(model) ? undefined
     : effort === 'minimal' && model.startsWith('gemini-2.5-flash') ? 'none' : effort;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (key) {
@@ -771,8 +769,9 @@ async function postReserved(
     if (res.status === 402 && openRouter) throw new AiError(OPENROUTER_CREDIT_MESSAGE);
     if (res.status === 429) {
       if (anonymous) {
-        rememberAnonymousLimit(model, res);
-        throw new AiTryNext(FREE_QUOTA_MESSAGE, false, true);
+        const message = await workerMessage(res) ?? FREE_QUOTA_MESSAGE;
+        rememberAnonymousLimit(model, res, message);
+        throw new AiTryNext(message, false, true);
       }
       throw new AiTryNext(gemini
         ? `Quota gratuit de Google atteint : réessaie dans une minute. S’il s’agit du quota du jour, il revient à ${aiResetTime()}.`
@@ -839,6 +838,7 @@ async function postReserved(
   const total = native ? body?.usageMetadata?.totalTokenCount : body?.usage?.total_tokens;
   const finish = native ? candidate?.finishReason : choice?.finish_reason;
   recordAiUsage(typeof total === 'number' && total > 0 ? total : estimateTokens(system + user + (typeof content === 'string' ? content : '')) + mediaTokens, background);
+  if (anonymous && typeof body?.model === 'string') announceAiModel(body.model);
   // Avant le contenu vide : un blocage peut n'avoir aucun texte, et « réessaie » serait faux.
   if (finish === 'content_filter' || finish === 'SAFETY' || body?.promptFeedback?.blockReason) throw new AiTryNext('Réponse IA bloquée par le filtre du fournisseur : reformule ou retire le passage concerné.', false, true, true);
   if (typeof content !== 'string' || !content.trim()) throw new AiTryNext('Réponse IA illisible : réessaie.', false, false, true);

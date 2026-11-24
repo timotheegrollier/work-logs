@@ -894,7 +894,7 @@ test('l’assistant sans clé lit une image et un extrait de PDF dans le même m
     expect(request.url()).toBe('https://worklogs-google.cocodexcocoder.workers.dev/ai/chat/completions');
     expect(await request.headerValue('authorization')).toBeNull();
     const body = request.postDataJSON();
-    expect(body.model).toBe('@cf/google/gemma-4-26b-a4b-it');
+    expect(body.model).toBe('worklogs-auto');
     expect(body.messages[1].content).toEqual([
       { type: 'text', text: expect.stringContaining('La pression cible est de trois bars.') },
       { type: 'image_url', image_url: { url: `data:image/png;base64,${image}` } },

@@ -3,6 +3,7 @@ import type { Project } from '../lib';
 import { MAX_DAILY_REQUESTS, MIN_DAILY_REQUESTS, aiUsageLabel, readDailyLimit, saveDailyLimit } from '../ai-budget';
 import { readDeviceAiStatus, prepareDeviceAi, type DeviceStatus } from '../ai-device';
 import { readProjectAiBrief, saveProjectAiBrief } from '../ai-context';
+import { AiQuotas } from './AiQuotas';
 import {
   AI_CUSTOM_MODEL,
   AI_MODELS,
@@ -133,7 +134,10 @@ export function AiSettings({ projects = [], projectId = null }: { projects?: Pic
   return (
     <section className="ai-settings" aria-label="Assistance IA">
       <h3>Assistance IA</h3>
-      {anonymous && <p className="ai-hint"><b>IA gratuite sans clé.</b> Aucun compte ni abonnement. Les demandes en ligne utilisent Gemma 4 chez Cloudflare, avec OVHcloud en secours.</p>}
+      {anonymous && <>
+        <p className="ai-hint"><b>IA gratuite sans clé.</b> Aucun compte ni abonnement. Les demandes passent par le Worker WorkLogs : Gemini Flash chez Google, puis Gemma 4 chez Cloudflare quand le quota de Google est atteint. Avec ce palier gratuit, Google peut utiliser les demandes pour améliorer ses produits : n’y mets pas de données sensibles.</p>
+        <AiQuotas />
+      </>}
       {(device.state === 'available' || device.state === 'downloadable' || device.state === 'downloading') && <div className={'ai-device-status is-' + device.state}>
         {device.state === 'available' && <p><b>✓ IA intégrée prête.</b> Elle peut répondre aux demandes de texte sur cet appareil.</p>}
         {device.state === 'downloadable' && <>
@@ -274,10 +278,6 @@ export function AiSettings({ projects = [], projectId = null }: { projects?: Pic
         <p className="ai-hint">
           Le compteur porte sur cet appareil. Le service peut atteindre son propre quota avant ce plafond.
         </p>
-        {anonymous && <p className="ai-hint">
-          Les utilisateurs se partagent le quota du service Cloudflare, 10 000 neurones par jour.
-          Ce quota repart à minuit UTC.
-        </p>}
         <div>
           {!google && <button className="ghost" type="button" onClick={useGemini}>
             Utiliser Gemini avec ma clé gratuite

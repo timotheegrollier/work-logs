@@ -188,7 +188,7 @@
       <li>WorkLogs fonctionne par défaut sans compte et sans serveur : vos notes, tâches, projets et pièces jointes restent sur votre appareil.</li>
       <li>La connexion Google est facultative. Elle sert uniquement à synchroniser vos documents et sauvegardes avec votre propre Google Drive et à afficher le compte connecté.</li>
       <li>WorkLogs ne vend, ne loue et ne partage pas vos données à des fins publicitaires. Aucun traceur publicitaire ni outil de mesure d’audience n’est intégré.</li>
-      <li>L’assistance IA fonctionne sans clé ni compte. Le service en ligne utilise le Worker WorkLogs chez Cloudflare, avec l’accès anonyme d’OVHcloud en secours. Les demandes manuelles de texte peuvent rester sur votre appareil si le modèle du navigateur est prêt. Le Worker convertit les PDF joints lors de l’envoi.</li>
+      <li>L’assistance IA fonctionne sans clé ni compte. Le service en ligne passe par le Worker WorkLogs chez Cloudflare : Gemini Flash chez Google (palier gratuit), puis Gemma 4 chez Cloudflare quand le quota de Google est atteint. Les demandes manuelles de texte peuvent rester sur votre appareil si le modèle du navigateur est prêt. Le Worker convertit les PDF joints lors de l’envoi.</li>
       <li>Vous pouvez déconnecter Google, révoquer l’accès et supprimer vos données à tout moment.</li>
     </ul>
   </section>
@@ -261,15 +261,21 @@
   <h3>1.4 Assistance IA (facultative)</h3>
   <p>
     Les demandes manuelles de texte peuvent être traitées sur votre appareil si le modèle
-    intégré au navigateur est prêt. Le service par défaut utilise Gemma 4 dans Workers AI
-    chez Cloudflare. L’accès anonyme d’OVHcloud peut prendre le relais. Les actions
+    intégré au navigateur est prêt. Le service par défaut passe par le Worker WorkLogs chez
+    Cloudflare, qui transmet la demande à Gemini Flash (API Gemini de Google, palier gratuit,
+    avec la clé du Worker), puis à Gemma 4 dans Workers AI chez Cloudflare quand le quota de
+    Google est atteint. Le Worker compte les requêtes et jetons de chaque modèle pour afficher
+    les quotas ; il ne garde pas le contenu des demandes. Les actions
     « Suggérer », « Compléter », « Mettre en page » et leurs
     équivalents envoient au service externe les
     éléments nécessaires : titre, projet, contenu de la note ou de la procédure, tâches liées,
-    repères de projet et, le cas échéant, sources sélectionnées. Cloudflare et OVHcloud
-    indiquent que les contenus traités par ces services ne servent pas à entraîner leurs modèles.
+    repères de projet et, le cas échéant, sources sélectionnées. Avec le palier gratuit de
+    l’API Gemini, Google peut utiliser les demandes et les réponses pour améliorer ses
+    produits, et les faire relire par des personnes : n’y envoyez pas de données personnelles,
+    confidentielles ou sensibles. Cloudflare indique que les contenus traités par Workers AI ne
+    servent pas à entraîner ses modèles.
+    <a href="https://ai.google.dev/gemini-api/terms" rel="noreferrer">Conditions de l’API Gemini</a>.
     <a href="https://developers.cloudflare.com/workers-ai/platform/data-usage/" rel="noreferrer">Traitement des données par Cloudflare Workers AI</a>.
-    <a href="https://www.ovhcloud.com/en/public-cloud/ai-endpoints/" rel="noreferrer">Traitement des données par OVHcloud AI Endpoints</a>.
     Les suivis IA que vous activez peuvent aussi transmettre du texte enregistré après une
     modification. Si vous configurez un autre service, la clé éventuelle est conservée sur
     cet appareil et utilisée par le navigateur. Les règles de ce service s’appliquent.
@@ -284,10 +290,10 @@
     notes et procédures pertinentes. Pour une demande qui nécessite une lecture, l’assistant
     peut envoyer jusqu’à 8 000 caractères par texte local, dans la limite de deux documents par
     message. Pour les documents Google, le fournisseur reçoit seulement des métadonnées.
-    Les images jointes peuvent être envoyées à Cloudflare ou à OVHcloud. Avec le service par
+    Les images jointes peuvent être envoyées à Google ou à Cloudflare. Avec le service par
     défaut, le PDF joint est transmis au convertisseur du Worker WorkLogs chez Cloudflare au
-    clic sur « Envoyer ». Seul l’extrait de texte accompagne la demande au modèle, y compris
-    si OVHcloud prend le relais. WorkLogs extrait localement
+    clic sur « Envoyer ». Seul l’extrait de texte accompagne la demande au modèle. WorkLogs
+    extrait localement
     le texte des documents Word, des classeurs Excel et des fichiers texte lisibles.
     Une pièce non lue transmet uniquement son nom et son type au modèle.
   </p>
@@ -354,9 +360,10 @@
   <p>WorkLogs ne partage pas vos données avec des tiers, sauf :</p>
   <ul>
     <li>Google, lorsque vous activez la connexion Google (Drive, Docs, comptes) ;</li>
-    <li>Cloudflare, qui héberge le relais de jetons, traite les demandes IA et convertit les PDF joints ;</li>
+    <li>Cloudflare, qui héberge le relais de jetons et le Worker IA, traite les demandes IA quand Gemini ne répond pas et convertit les PDF joints ;</li>
+    <li>Google (API Gemini, palier gratuit), qui traite par défaut les demandes IA ;</li>
     <li>GitHub, qui héberge le code, les releases, les mises à jour et le site public ;</li>
-    <li>OVHcloud quand il prend le relais pour une demande IA, ou le fournisseur d’IA que vous configurez ;</li>
+    <li>le fournisseur d’IA que vous configurez dans les réglages avancés ;</li>
     <li>votre propre relais de dossier partagé, si vous l’activez.</li>
   </ul>
   <p>
@@ -433,8 +440,9 @@
       token over HTTPS to a Cloudflare Worker token relay that does not store or log tokens.
       Google Drive files remain in your Google account. AI features need no key or
       account. Manual text requests can use the browser’s built-in model when ready.
-      The default online service uses Gemma 4 on WorkLogs’ Cloudflare Worker, with
-      OVHcloud’s anonymous API as a fallback. The Worker converts attached PDFs at send time
+      The default online service goes through WorkLogs’ Cloudflare Worker: Gemini Flash (Gemini API
+      free tier, where Google may use prompts and responses to improve its products), then Gemma 4
+      on Cloudflare when Google’s quota is reached. The Worker converts attached PDFs at send time
       and the model receives an excerpt of the text.
       Assistant conversations and drafts are
       saved in the local profile and can be deleted from the assistant. WorkLogs does not sell

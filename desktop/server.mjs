@@ -24,9 +24,9 @@ export async function startDesktopServer({ dataDir, staticDir, withSeed = true, 
     res.setHeader('Content-Security-Policy', [
       "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https: http:",
-      // Le Worker WorkLogs sert l’IA et les PDF. OVHcloud sert de secours.
+      // Le Worker WorkLogs sert l’IA (Gemini Flash, puis Gemma 4), ses quotas et les PDF.
       // Google et OpenRouter restent utilisables depuis les réglages avancés.
-      "connect-src 'self' https://oai.endpoints.kepler.ai.cloud.ovh.net https://worklogs-google.cocodexcocoder.workers.dev https://openrouter.ai https://generativelanguage.googleapis.com", "object-src 'none'",
+      "connect-src 'self' https://worklogs-google.cocodexcocoder.workers.dev https://openrouter.ai https://generativelanguage.googleapis.com", "object-src 'none'",
       "base-uri 'none'", "frame-ancestors 'none'", "form-action 'none'",
     ].join('; '));
     application(req, res);

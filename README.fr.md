@@ -93,9 +93,10 @@ http://localhost:8410. Application desktop : `npm run desktop`.
 Markdown géré : titres, gras/italique, listes, **cases à cocher**, **tableaux**,
 citations, blocs de code, liens, images.
 
-L’assistant et les actions IA utilisent Gemma 4 sur le Worker Cloudflare de WorkLogs,
-avec OVHcloud en secours. Le service est gratuit et s’utilise sans clé, compte ni
-abonnement. Si le modèle intégré au navigateur est déjà prêt, les demandes manuelles
+L’assistant et les actions IA passent par le Worker Cloudflare de WorkLogs : Gemini Flash
+(Google), puis Gemma 4 chez Cloudflare quand le quota gratuit de Google est atteint. Le service
+est gratuit et s’utilise sans clé, compte ni abonnement ; modèles et quotas s’affichent dans
+les réglages IA. Si le modèle intégré au navigateur est déjà prêt, les demandes manuelles
 de texte peuvent rester sur l’appareil. L’assistant te laisse relire ses propositions avant
 de les appliquer. [Fonctionnement et données envoyées](docs/03-UTILISATION.md#assistance-ia).
 [Utiliser l’assistant](docs/03-UTILISATION.md#lassistant).

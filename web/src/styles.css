@@ -4544,6 +4544,54 @@ div.google-preserved {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
   background: var(--accent-soft);
 }
+/* Modèles et quotas de l'IA gratuite : un bloc par modèle, dans l'ordre d'essai. */
+.ai-quotas {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.ai-quotas h4 {
+  margin: 0;
+  font-size: 12.5px;
+}
+.ai-quota-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ai-quota-list li {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-quota-list li.is-blocked {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+.ai-quota-list p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ai-quota-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  justify-content: space-between;
+  color: var(--text);
+}
+.ai-quota-state {
+  font-size: 11.5px;
+}
+.ai-quota-list li.is-blocked .ai-quota-state {
+  color: var(--danger);
+}
 /* Endpoint et modèle repliés : la clé et son test suffisent au quotidien. */
 .ai-advanced-settings {
   min-width: 0;

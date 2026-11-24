@@ -587,37 +587,52 @@ describe('IA WorkLogs anonyme', () => {
     });
   });
 
-  test('le Worker limité laisse la place à OVHcloud et respecte Retry-After', async () => {
-    const fetch = vi.fn().mockResolvedValueOnce(new Response(null, { status: 429, headers: { 'Retry-After': '60' } }))
-      .mockResolvedValue(aiResponse('Vérifier'));
+  test('un seul appel au Worker, qui choisit le modèle ; il est annoncé à l’écran', async () => {
+    const fetch = vi.fn(async () => Response.json({ model: 'gemini-3.8-flash', choices: [{ message: { content: 'Vérifier' }, finish_reason: 'stop' }] }));
     vi.stubGlobal('fetch', fetch);
-    await expect(suggestSubtasks(anonymous, 'Dossier')).resolves.toBe('Vérifier');
-    await expect(suggestSubtasks(anonymous, 'Autre dossier')).resolves.toBe('Vérifier');
-    expect(fetch.mock.calls.map(modelOf)).toEqual([DEFAULT_AI_MODEL, 'gemma-4-26b-a4b', 'gemma-4-26b-a4b']);
-    const [url, init] = fetch.mock.calls[1];
-    expect(url).toBe('https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions');
+    const announced: string[] = [];
+    const listen = (event: Event) => announced.push((event as CustomEvent<{ model: string }>).detail.model);
+    window.addEventListener('worklogs:ai-used', listen);
+    try {
+      await expect(suggestSubtasks(anonymous, 'Dossier')).resolves.toBe('Vérifier');
+    } finally {
+      window.removeEventListener('worklogs:ai-used', listen);
+    }
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://worklogs-google.cocodexcocoder.workers.dev/ai/chat/completions');
     expect(init).toMatchObject({ credentials: 'omit', redirect: 'error' });
     expect(init.headers).not.toHaveProperty('Authorization');
+    expect(modelOf(fetch.mock.calls[0])).toBe(DEFAULT_AI_MODEL);
+    expect(announced).toEqual(['gemini-3.8-flash']);
   });
 
-  test('la chaîne signale un quota saturé sans répétition ni modèle payant', async () => {
-    const fetch = vi.fn(async () => new Response(null, { status: 429 }));
+  test('l’effort de réflexion demandé part au Worker, qui le transmet à Gemini', async () => {
+    const fetch = vi.fn(async () => aiResponse('{"reply":"ok"}'));
     vi.stubGlobal('fetch', fetch);
-    await expect(suggestSubtasks(anonymous, 'Dossier')).rejects.toThrow(/quota de l’IA gratuite/);
-    expect(fetch.mock.calls.map(modelOf)).toEqual([DEFAULT_AI_MODEL, 'gemma-4-26b-a4b', 'laguna-xs-2.1', 'qwen3.6-35b-a3b']);
-    await expect(suggestSubtasks(anonymous, 'Autre dossier')).rejects.toThrow(/quota de l’IA gratuite/);
-    expect(fetch).toHaveBeenCalledTimes(4);
+    await postChatCompletions(anonymous, 'l’assistant', 'Réponds en JSON', 'Alors ?', 300, 1000, { json: true, effort: 'medium' });
+    expect(JSON.parse(String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body))).toMatchObject({ model: DEFAULT_AI_MODEL, reasoning_effort: 'medium' });
   });
 
-  test('une route Worker absente déclenche le secours visuel, sans envoyer le PDF brut', async () => {
-    const fetch = vi.fn().mockResolvedValueOnce(new Response(null, { status: 405 }))
-      .mockResolvedValue(aiResponse('{"reply":"Photo lue."}'));
+  test('quotas épuisés : le motif du Worker s’affiche et reste retenu jusqu’à son Retry-After', async () => {
+    const fetch = vi.fn(async () => Response.json(
+      { error: { message: 'Quotas gratuits atteints. L’IA revient vers 09:00.' } },
+      { status: 429, headers: { 'Retry-After': '3600' } },
+    ));
+    vi.stubGlobal('fetch', fetch);
+    await expect(suggestSubtasks(anonymous, 'Dossier')).rejects.toThrow('Quotas gratuits atteints. L’IA revient vers 09:00.');
+    await expect(suggestSubtasks(anonymous, 'Autre dossier')).rejects.toThrow('Quotas gratuits atteints. L’IA revient vers 09:00.');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('une route Worker absente donne un motif clair, sans autre service ni PDF brut', async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 405 }));
     vi.stubGlobal('fetch', fetch);
     await expect(postChatCompletions(anonymous, 'l’assistant', 'Réponds en JSON', 'Lis la photo', 300, 1000, {
       json: true,
       media: [{ name: 'photo.png', mimeType: 'image/png', data: 'T0s=' }],
-    })).resolves.toBe('{"reply":"Photo lue."}');
-    expect(fetch.mock.calls.map(modelOf)).toEqual([DEFAULT_AI_MODEL, 'qwen3-vl-30b-a3b']);
+    })).rejects.toThrow(/IA gratuite est momentanément indisponible/);
+    expect(fetch.mock.calls.map(modelOf)).toEqual([DEFAULT_AI_MODEL]);
   });
 
   test('le suivi automatique interrompt ses appels au quota du Worker', async () => {
