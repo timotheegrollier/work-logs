@@ -2,7 +2,7 @@
 // La PWA est sur GitHub Pages (décision §97) : ce Worker ne sert plus de front, et
 // renvoie toute autre adresse vers la même page de GitHub Pages.
 // `/ai/pdf` extrait le texte d'un PDF joint explicitement à une demande IA.
-// `/ai/chat/completions` sert l'assistant : Mistral, Groq, puis Gemini Flash-Lite et Flash, avec les clés gratuites du Worker, puis
+// `/ai/chat/completions` sert l'assistant : Groq, puis Gemini Flash-Lite et Flash, avec les clés gratuites du Worker, puis
 // Gemma 4 sur Workers Free (`ai-engines.mjs`, décision §98). `/ai/status` montre modèles et quotas.
 // Vérification : ouvrir `/token` dans un navigateur (`{"ok":true,…}`).
 //
@@ -279,7 +279,7 @@ async function chatCompletion(request, env, origin) {
   const store = usageStore(env);
   const state = await store.state();
   const blockedUntil = (id) => state?.models?.[id]?.blocked_until ?? 0;
-  // Mistral, Groq puis Gemini, dans un budget borné : Gemma garde de quoi répondre avant l'app.
+  // Groq puis Gemini, dans un budget borné : Gemma garde de quoi répondre avant l'app.
   const deadline = Date.now() + CHAIN_BUDGET_MS;
   for (const engine of engineChain(env, state)) {
     const { id: model, provider } = engine;

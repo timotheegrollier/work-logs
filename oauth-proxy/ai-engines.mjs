@@ -1,8 +1,8 @@
 // Moteurs de l'IA gratuite et compteur partagé de leur usage (décision §98).
 //
-// Ordre (§100) : Mistral, puis Groq, puis Gemini Flash-Lite et Flash, chacun avec la clé
-// gratuite du propriétaire gardée en secret du Worker (`MISTRAL_API_KEY`, `GROQ_API_KEY`,
-// `GEMINI_API_KEY`) ; un fournisseur sans clé est sauté. Gemma 4 sur Workers AI répond en
+// Ordre (§100) : Groq, puis Gemini Flash-Lite et Flash, chacun avec la clé gratuite du
+// propriétaire gardée en secret du Worker (`GROQ_API_KEY`, `GEMINI_API_KEY`) ; un fournisseur
+// sans clé est sauté. Gemma 4 sur Workers AI répond en
 // dernier. Aucun ne publie ses limites gratuites par une API : le Worker compte lui-même
 // l'usage, pour tous les appareils, et retient les limites citées dans les refus. Sans dépendance : la classe Durable Object n'étend pas `cloudflare:workers`, pour que
 // `node --test` la charge telle quelle.
@@ -11,19 +11,16 @@ export const GEMMA_MODEL = '@cf/google/gemma-4-26b-a4b-it';
 export const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 /** Fournisseurs à clé, tous compatibles OpenAI ; `product` nomme la clé dans les motifs. */
 export const PROVIDERS = {
-  mistral: { name: 'Mistral', product: 'Mistral', secret: 'MISTRAL_API_KEY', url: 'https://api.mistral.ai/v1/chat/completions' },
   groq: { name: 'Groq', product: 'Groq', secret: 'GROQ_API_KEY', url: 'https://api.groq.com/openai/v1/chat/completions' },
   google: { name: 'Google', product: 'Gemini', secret: 'GEMINI_API_KEY', url: `${GEMINI_BASE}/openai/chat/completions` },
 };
 const PROVIDER_IDS = new Set([...Object.keys(PROVIDERS), 'cloudflare']);
 /**
- * Modèles fixes de Mistral et Groq, essayés avant Gemini. `effort` : modèle qui raisonne et
+ * Modèles fixes de Groq, essayés avant Gemini. `effort` : modèle qui raisonne et
  * accepte `reasoning_effort` (les autres le refusent).
  * shortcut: liste écrite à la main ; un modèle retiré répond 404 et reste écarté 6 h, à remplacer ici.
  */
 export const FIXED_ENGINES = [
-  { id: 'mistral-medium-latest', provider: 'mistral', label: 'Mistral Medium' },
-  { id: 'mistral-small-latest', provider: 'mistral', label: 'Mistral Small' },
   { id: 'openai/gpt-oss-120b', provider: 'groq', label: 'GPT-OSS 120B (Groq)', effort: true },
   { id: 'llama-3.3-70b-versatile', provider: 'groq', label: 'Llama 3.3 70B (Groq)' },
 ];
@@ -116,7 +113,7 @@ export function geminiRefusal(body) {
 const RATE_KINDS = { RPM: 'requests_per_minute', RPD: 'requests_per_day', TPM: 'tokens_per_minute', TPD: 'tokens_per_day' };
 
 /**
- * Refus 429 de Mistral ou Groq : délai (en-tête `Retry-After`, sinon « try again in 1m2.5s »)
+ * Refus 429 de Groq : délai (en-tête `Retry-After`, sinon « try again in 1m2.5s »)
  * et limite citée (Groq : « tokens per day (TPD): Limit 200000 »).
  */
 export function rateRefusal(headers, body) {
@@ -215,7 +212,7 @@ export function geminiChain(state) {
   return Array.isArray(models) && models.length ? models.map(({ id }) => id) : DEFAULT_GEMINI_CHAIN;
 }
 
-/** Modèles à clé dans l'ordre d'essai : Mistral, Groq (clé posée), puis Gemini. */
+/** Modèles à clé dans l'ordre d'essai : Groq (clé posée), puis Gemini. */
 export function engineChain(env, state) {
   const known = new Map((state?.catalog?.models ?? []).map((m) => [m.id, m]));
   return [
@@ -321,8 +318,8 @@ export async function askEngine(engine, params, key, now, timeoutMs = CHAIN_BUDG
   if (response.status === 429) {
     if (!google) {
       const refusal = rateRefusal(response.headers, body);
-      // Type et code du fournisseur (« service_tier_capacity_exceeded 3505 » chez Mistral) : un
-      // palier gratuit saturé ne se distingue d'un quota que par eux.
+      // Type et code du fournisseur (« tokens rate_limit_exceeded » chez Groq) : un palier gratuit
+      // saturé ou une clé sans allocation ne se distinguent d'un quota que par eux.
       const cause = [error?.type ?? body?.type, error?.code ?? body?.code]
         .map((part) => String(part ?? '').match(/^[\w.-]{1,60}$/)?.[0]).filter(Boolean).join(' ');
       return {

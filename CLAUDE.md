@@ -1,6 +1,6 @@
 # WorkLogs
 
-**État v0.91.0** (`package.json` fait foi). `./scripts/check.sh` passe le 2026-11-24 avec
+**État v0.91.1** (`package.json` fait foi). `./scripts/check.sh` passe le 2026-11-24 avec
 **2 221 tests**, dont un échec attendu. 367 API · 1 544 front (+1 attendu) · 49 desktop ·
 60 scripts · 34 Worker · 11 relais · 133 navigateur · 22 desktop e2e.
 

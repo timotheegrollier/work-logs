@@ -14,7 +14,6 @@ const LIMIT_LABELS: Record<AiLimitKind, string> = {
 /** Qui publie la limite, et où la lire quand le Worker ne l'a pas encore apprise d'un refus. */
 const LIMIT_SOURCES: Record<string, { name: string; label: string; href: string }> = {
   google: { name: 'Google', label: 'visible dans AI Studio', href: 'https://aistudio.google.com/rate-limit' },
-  mistral: { name: 'Mistral', label: 'visible dans la console Mistral', href: 'https://admin.mistral.ai/plateforme/limits' },
   groq: { name: 'Groq', label: 'visible dans la console Groq', href: 'https://console.groq.com/settings/limits' },
 };
 

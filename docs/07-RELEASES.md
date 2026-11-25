@@ -563,17 +563,14 @@ sans attendre la CI (06, D6). Il exige deux secrets GitHub :
 il échoue en le disant. Le secret Google du relais reste stocké côté Worker
 (`wrangler secret put`), et le déploiement le conserve.
 
-Le même Worker sert `/ai/chat/completions` (Mistral, Groq, Gemini Flash-Lite et Flash, puis Gemma 4 26B),
+Le même Worker sert `/ai/chat/completions` (Groq, Gemini Flash-Lite et Flash, puis Gemma 4 26B),
 `/ai/status` (modèles et quotas, compteur partagé `AI_USAGE`) et `/ai/pdf` (conversion des PDF
 joints). Ces routes nécessitent un déploiement avec le binding Workers AI et l’objet durable,
 créé au premier déploiement (décision §98).
 
-**Clés Mistral et Groq (une fois, à faire par le propriétaire, §100).** Même geste que pour
-Gemini ci-dessous, avec les noms `MISTRAL_API_KEY` et `GROQ_API_KEY`. Mistral : compte sur
-`https://console.mistral.ai`, palier gratuit « Experiment » (numéro de téléphone, sans carte),
-clé dans **API Keys** ; désactiver si possible l'usage des données pour l'entraînement dans
-l'administration. Groq : compte sur `https://console.groq.com`, clé dans **API Keys**, sans
-carte. Sans l'une de ces clés, le Worker saute ce fournisseur ; `/ai/status` liste les absents
+**Clé Groq (une fois, à faire par le propriétaire, §100).** Même geste que pour Gemini
+ci-dessous, avec le nom `GROQ_API_KEY` : compte sur `https://console.groq.com`, clé dans
+**API Keys**, sans carte. Sans cette clé, le Worker saute Groq ; `/ai/status` liste les absents
 dans `"missing_providers"`.
 
 **Clé Gemini (une fois, à faire par le propriétaire).** Créer une clé gratuite dans Google AI

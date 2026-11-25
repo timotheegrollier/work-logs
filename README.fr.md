@@ -93,8 +93,8 @@ http://localhost:8410. Application desktop : `npm run desktop`.
 Markdown géré : titres, gras/italique, listes, **cases à cocher**, **tableaux**,
 citations, blocs de code, liens, images.
 
-L’assistant et les actions IA passent par le Worker Cloudflare de WorkLogs : Mistral, puis
-Groq, puis Gemini (Google), puis Gemma 4 chez Cloudflare, chacun prenant le relais quand le quota gratuit du précédent est atteint. Le service
+L’assistant et les actions IA passent par le Worker Cloudflare de WorkLogs : Groq, puis
+Gemini (Google), puis Gemma 4 chez Cloudflare, chacun prenant le relais quand le quota gratuit du précédent est atteint. Le service
 est gratuit et s’utilise sans clé, compte ni abonnement ; modèles et quotas s’affichent dans
 les réglages IA. Si le modèle intégré au navigateur est déjà prêt, les demandes manuelles
 de texte peuvent rester sur l’appareil. L’assistant te laisse relire ses propositions avant

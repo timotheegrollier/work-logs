@@ -1,10 +1,11 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Gemini Flash par le Worker, modèles et quotas affichés — 2026-11-24, v0.91.0 (§98, §100)
+## Gemini Flash par le Worker, modèles et quotas affichés — 2026-11-24, v0.91.1 (§98, §100)
 
-- **Mistral puis Groq avant Gemini (§100)** : actifs dès que `MISTRAL_API_KEY` et `GROQ_API_KEY`
-  sont posés en secrets du Worker (procédure : `07-RELEASES.md` §9) ; sinon sautés et nommés
-  dans **Modèles et quotas**.
+- **Groq avant Gemini (§100)**, avec `GROQ_API_KEY` en secret du Worker (procédure :
+  `07-RELEASES.md` §9) ; sans clé, sauté et nommé dans **Modèles et quotas**. Mistral, essayé
+  puis retiré en v0.91.1 : sa clé gratuite refusait tout (`rate_limited 1300`) et Timo ne veut
+  pas payer.
 - Paquets en parallèle (§99) : un job `build` par cible (AppImage, deb, rpm), puis `merge` refait
   `linux-packages` avec un seul `latest-linux.yml` (`scripts/merge-update-info.mjs`, vérifié).
   Les tests aussi : `check.sh unit|browser|desktop`, une partie par job ; sans argument, tout.

@@ -311,8 +311,8 @@ répondent au besoin exposé dans chaque exemple.
 | Sans clé ni modèle intégré, application ou PWA | Le premier geste IA appelle `/ai/chat/completions` sur le Worker WorkLogs, sans en-tête d’authentification. |
 | Quota du jour de Gemini Flash-Lite atteint | Flash répond ; **Modèles et quotas** montre Flash-Lite écarté, le motif, l’heure de retour (minuit à Los Angeles) et la limite indiquée par Google. |
 | Gemini et Gemma au bout de leur quota | « Quotas gratuits atteints. L’IA revient vers HH:MM. », sans nouvel appel jusque-là ; les résultats locaux s’affichent. |
-| Mistral au bout de son quota ou lent | Groq répond ; **Modèles et quotas** montre Mistral écarté, le motif et l’heure de retour. |
-| Clé `MISTRAL_API_KEY` ou `GROQ_API_KEY` absente | Le fournisseur est sauté ; **Modèles et quotas** affiche « Pas encore activé sur le Worker WorkLogs, faute de clé : … ». |
+| GPT-OSS au bout de son quota ou lent | Llama 3.3 répond chez Groq ; **Modèles et quotas** montre GPT-OSS écarté, le motif et l’heure de retour. |
+| Clé `GROQ_API_KEY` absente | Le fournisseur est sauté ; **Modèles et quotas** affiche « Pas encore activé sur le Worker WorkLogs, faute de clé : … ». |
 | Clé `GEMINI_API_KEY` absente ou refusée | Gemma 4 répond ; **Modèles et quotas** l’indique (« pas encore activé » ou « clé Gemini refusée »). |
 | Assistant avec un PDF | Au clic Envoyer, `/ai/pdf` sur le même Worker reçoit le PDF et le modèle reçoit seulement l’extrait. Si la conversion échoue, la pièce reste jointe et marquée non lue. |
 | Endpoint local (Ollama) sans clé | La requête part vers `127.0.0.1` sans en-tête `Authorization` ; aucune dépense. |

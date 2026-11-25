@@ -4050,3 +4050,8 @@ il choisit Mistral puis Groq, Gemini et Gemma restant en secours.
   Google envoyés au modèle restent des données d'API Google, dont la politique interdit l'usage
   pour entraîner un modèle ; désactiver l'entraînement dans l'administration Mistral si elle le
   permet.
+
+> **v0.91.1, le soir même : Mistral retiré.** Sa clé, sur le palier « Experiment » activé, refusait
+> chaque demande dès la première (`429 rate_limited 1300`, aucune demande servie), et Timo ne veut
+> pas payer. Chaîne : GPT-OSS 120B et Llama 3.3 70B chez Groq, puis Gemini, puis Gemma 4. Le
+> secret `MISTRAL_API_KEY` n'est plus lu ; le supprimer du Worker.
