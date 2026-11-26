@@ -1,7 +1,7 @@
 # WorkLogs
 
-**État v0.91.1** (`package.json` fait foi). `./scripts/check.sh` passe le 2026-11-24 avec
-**2 221 tests**, dont un échec attendu. 367 API · 1 544 front (+1 attendu) · 49 desktop ·
+**État v0.93.0** (`package.json` fait foi). `./scripts/check.sh` passe le 2026-11-26 avec
+**2 246 tests**, dont un échec attendu. 379 API · 1 557 front (+1 attendu) · 49 desktop ·
 60 scripts · 34 Worker · 11 relais · 133 navigateur · 22 desktop e2e.
 
 **Lot publié en v0.12.0 : éditeur Google Docs natif** (`codex/google-docs-integrated-editor`).
@@ -16,8 +16,8 @@ intégrée). Lire `docs/00-HANDOVER.md`, puis **`docs/07-RELEASES.md`** avant to
 Electron et electron-builder ont été explicitement approuvés (versions : `package.json`).
 Express reste en 4 (la 5 casse les téléchargements).
 
-Journal de travail personnel, local par défaut avec Drive facultatif, **sur un seul écran** : journal à gauche, écriture
-au centre, tâches à droite. Node + Express + `node:sqlite` (`api/`), React + Vite + TS (`web/`).
+Journal de travail personnel, local par défaut avec Drive facultatif, **sur un seul écran** : journal à gauche (notes et
+tâches, une bascule, §102), écriture au centre. Node + Express + `node:sqlite` (`api/`), React + Vite + TS (`web/`).
 
 ## Avant de toucher au code
 

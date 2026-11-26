@@ -1,6 +1,6 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
-## Journal et Tâches dans une colonne, GitHub en colonne — 2026-11-26 (§101 révisé, §102)
+## Journal et Tâches dans une colonne, GitHub en colonne — 2026-11-26, v0.93.0 (§101 révisé, §102)
 
 - **Une seule colonne à gauche, « Journal »**, avec la bascule « Notes | Tâches N » (retenue).
   Plus de colonne Tâches à droite, ni de poignée, de largeur ou d'interrupteur à elle : l'écriture
