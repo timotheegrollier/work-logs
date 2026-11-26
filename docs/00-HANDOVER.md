@@ -1,5 +1,12 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Dépôt GitHub par projet — 2026-11-24, v0.92.0 (§101)
+
+- Un projet se relie à un dépôt (`projects.github_repo`). Le bouton « GitHub » de la barre des
+  projets ouvre les pull requests, actions, tickets, commits et versions, lus par `gh` sur le poste.
+  Absent de la PWA (`GITHUB_UNAVAILABLE`).
+- Tests ajoutés : `github-repo`, `github-routes`, `projects`, `outbox`, `backup` ; `ProjectGithub`, `ProjectBar`.
+
 ## Gemini Flash par le Worker, modèles et quotas affichés — 2026-11-24, v0.91.1 (§98, §100)
 
 - **Groq avant Gemini (§100)**, avec `GROQ_API_KEY` en secret du Worker (procédure :
@@ -26,7 +33,6 @@
 - Assistant plus agent : consigne d'initiative sur les messages vagues, réflexion `medium` pour Gemini.
 - **Par où commencer** envoie la demande au clic ; après une réponse, jusqu'à 3 suites (`suggestions`
   du JSON du modèle) s'envoient aussi d'un clic, sous la dernière réponse seulement.
-
 ## PWA sur GitHub Pages seulement — 2026-11-24, v0.88.1 (§97)
 
 - Le Worker Cloudflare ne sert plus la PWA : `https://timotheegrollier.github.io/work-logs/` est

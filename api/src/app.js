@@ -13,6 +13,7 @@ import { attachmentHeader, inlineHeader } from './disposition.js';
 import { categoryFor, nextCategory, categoryDescendants, registerCategoryRoutes } from './categories.js';
 import { checklistProgress } from './checklist.js';
 import { decodeProject, nextProjectFolders } from './project-folders.js';
+import { normalizeGithubRepo } from './github-repo.js';
 import { inheritTaskCategories } from './task-categories.js';
 import { createFollowUpAccess, registerFollowUpRoutes } from './follow-up-routes.js';
 import { assertExpectedTaskPlanning, taskPlanningUsesDocuments } from './task-planning.js';
@@ -731,17 +732,19 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const name = str(b.name);
     if (!name) return bad(res, 'nom requis');
     let folders;
-    try { folders = nextProjectFolders(b); } catch (error) { return bad(res, error.message); }
+    let githubRepo;
+    try { folders = nextProjectFolders(b); githubRepo = normalizeGithubRepo(b.github_repo); } catch (error) { return bad(res, error.message); }
     const id = uid('pr_');
     const time = nowISO();
-    db.prepare('INSERT INTO projects (id,name,color,created_at,updated_at,shared_dir,shared_dirs) VALUES (?,?,?,?,?,?,?)').run(
+    db.prepare('INSERT INTO projects (id,name,color,created_at,updated_at,shared_dir,shared_dirs,github_repo) VALUES (?,?,?,?,?,?,?,?)').run(
       id,
       name,
       str(b.color) || '#4f7cff',
       time,
       time,
       folders.shared_dir,
-      JSON.stringify(folders.shared_dirs)
+      JSON.stringify(folders.shared_dirs),
+      githubRepo
     );
     res.status(201).json(getProject(id));
   });
@@ -753,12 +756,17 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
     const name = pick(b, 'name', cur.name, str);
     if (!name) return bad(res, 'nom requis');
     let folders;
-    try { folders = nextProjectFolders(b, cur); } catch (error) { return bad(res, error.message); }
-    db.prepare('UPDATE projects SET name=?, color=?, shared_dir=?, shared_dirs=?, updated_at=? WHERE id=?').run(
+    let githubRepo;
+    try {
+      folders = nextProjectFolders(b, cur);
+      githubRepo = pick(b, 'github_repo', cur.github_repo ?? null, normalizeGithubRepo);
+    } catch (error) { return bad(res, error.message); }
+    db.prepare('UPDATE projects SET name=?, color=?, shared_dir=?, shared_dirs=?, github_repo=?, updated_at=? WHERE id=?').run(
       name,
       pick(b, 'color', cur.color, (v) => str(v) || cur.color),
       folders.shared_dir,
       JSON.stringify(folders.shared_dirs),
+      githubRepo,
       nowISO(),
       cur.id
     );
@@ -901,7 +909,7 @@ export function createApp({ db, uploadDir, staticDir = null, google = null, auto
   registerGoogleRoutes(app, { db, google, uploadDir, autoSync, googlePushPending });
   app.locals.shared = shared;
   registerSharedRoutes(app, { shared });
-  registerGithubRoutes(app);
+  registerGithubRoutes(app, { db });
   app.use('/api', (_req, res) => notFound(res, 'route inconnue'));
 
   // En production, l'API sert aussi le front construit : une seule URL.

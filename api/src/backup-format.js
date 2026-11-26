@@ -2,6 +2,7 @@ import { validateDocument } from './rich-document.js';
 import { readFollowUp } from './follow-up.js';
 import { normalizeTaskNotes, storedTaskProgress } from './task-notes.js';
 import { projectFolders } from './project-folders.js';
+import { normalizeGithubRepo } from './github-repo.js';
 
 /** Format de sauvegarde : 100 % pur (aucun accès disque/réseau),
  *  partageable avec le front/PWA qui valide avant d'écrire en local. */
@@ -75,6 +76,8 @@ export function validateBackup(input, { migrateTaskNotes = true } = {}) {
       created_at: timestamp(project.created_at, 'Date de création du projet'),
       shared_dir: folders.shared_dir,
       ...(project.shared_dirs !== undefined && { shared_dirs: folders.shared_dirs }),
+      // Dépôt GitHub relié : absent des anciens exports, il reste alors vide.
+      ...(project.github_repo !== undefined && { github_repo: normalizeGithubRepo(project.github_repo) }),
       // Synchro (2026-09-22) : absent des anciens exports, il vaut alors la création.
       updated_at: project.updated_at === undefined || project.updated_at === null || project.updated_at === ''
         ? timestamp(project.created_at, 'Date de création du projet')

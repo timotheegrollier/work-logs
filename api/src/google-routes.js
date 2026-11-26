@@ -1,5 +1,6 @@
 import { uid, nowISO, today, tombstone } from './db.js';
 import { decodeProject, mergeProjectFolders } from './project-folders.js';
+import { normalizeGithubRepo } from './github-repo.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { decodeEntry, documentText } from './rich-document.js';
@@ -201,13 +202,15 @@ export async function importOutbox(db, { google, uploadDir }, data) {
     for (const project of data.projects) {
       const current = decodeProject(db.prepare('SELECT * FROM projects WHERE id=?').get(project.id));
       const folders = mergeProjectFolders(project, current);
+      // Un export sans le champ (ancienne version) ne défait pas le dépôt déjà relié.
+      const githubRepo = project.github_repo === undefined ? current?.github_repo ?? null : normalizeGithubRepo(project.github_repo);
       if (!current) {
-        db.prepare('INSERT INTO projects (id,name,color,created_at,updated_at,shared_dir,shared_dirs) VALUES (?,?,?,?,?,?,?)')
-          .run(project.id, project.name, project.color, project.created_at, project.updated_at, folders.shared_dir, JSON.stringify(folders.shared_dirs));
+        db.prepare('INSERT INTO projects (id,name,color,created_at,updated_at,shared_dir,shared_dirs,github_repo) VALUES (?,?,?,?,?,?,?,?)')
+          .run(project.id, project.name, project.color, project.created_at, project.updated_at, folders.shared_dir, JSON.stringify(folders.shared_dirs), githubRepo);
         counts.projects++;
       } else if (project.updated_at > (current.updated_at || current.created_at)) {
-        db.prepare('UPDATE projects SET name=?,color=?,updated_at=?,shared_dir=?,shared_dirs=? WHERE id=?')
-          .run(project.name, project.color, project.updated_at, folders.shared_dir, JSON.stringify(folders.shared_dirs), project.id);
+        db.prepare('UPDATE projects SET name=?,color=?,updated_at=?,shared_dir=?,shared_dirs=?,github_repo=? WHERE id=?')
+          .run(project.name, project.color, project.updated_at, folders.shared_dir, JSON.stringify(folders.shared_dirs), githubRepo, project.id);
         counts.updated++;
       }
     }

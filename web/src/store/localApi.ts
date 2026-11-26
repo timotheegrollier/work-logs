@@ -23,6 +23,7 @@ import { decodeEntry, documentText, validateDocument } from '../../../api/src/ri
 // @ts-expect-error — idem : validation 100 % pure, sans `node:sqlite`.
 import { OUTBOX_VERSION, validateBackup } from '../../../api/src/backup-format.js';
 import { decodeProject, nextProjectFolders } from '../../../api/src/project-folders.js';
+import { normalizeGithubRepo } from '../../../api/src/github-repo.js';
 // @ts-expect-error — idem : conversion et patches ciblés, sans `node:sqlite`.
 import { googlePreservedCount } from '../../../api/src/google-preserve.js';
 // @ts-expect-error — idem : lecture et fusion Docs, sans `node:sqlite`.
@@ -151,7 +152,7 @@ interface TaskRow {
   follow_up?: FollowUp | null;
 }
 interface CategoryRow { id: string; name: string; color: string; project_id: string; parent_id: string | null; created_at: string; updated_at: string }
-interface ProjectRow { id: string; name: string; color: string; created_at: string; updated_at?: string; shared_dir?: string | null; shared_dirs?: string[] }
+interface ProjectRow { id: string; name: string; color: string; created_at: string; updated_at?: string; shared_dir?: string | null; shared_dirs?: string[]; github_repo?: string | null }
 interface LinkRow { id: string; task_id: string; entry_id: string; created_at: string }
 interface AttachmentRow {
   id: string; filename: string; stored: string; mime: string; size: number;
@@ -720,6 +721,9 @@ async function readGoogleSource(documentId: string, tabId = '') {
 const blankGoogleSource = () => ({ body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } });
 
 export const localApi: Api = {
+  githubList: async () => {
+    throw new ApiError('GitHub : la liaison et la lecture des dépôts utilisent GitHub CLI sur l’ordinateur, avec l’application desktop.', 'GITHUB_UNAVAILABLE');
+  },
   readGithubLink: async () => {
     throw new ApiError('GitHub : la lecture des dépôts privés utilise GitHub CLI sur l’ordinateur avec l’application desktop ou le serveur local WorkLogs.', 'GITHUB_UNAVAILABLE');
   },
@@ -1556,7 +1560,7 @@ export const localApi: Api = {
     const name = str(body.name);
     if (!name) fail('nom requis');
     const time = nowISO();
-    const row: ProjectRow = { id: uid('pr_'), name, color: str(body.color) || '#4f7cff', created_at: time, updated_at: time, ...nextProjectFolders(body) };
+    const row: ProjectRow = { id: uid('pr_'), name, color: str(body.color) || '#4f7cff', created_at: time, updated_at: time, ...nextProjectFolders(body), github_repo: normalizeGithubRepo(body.github_repo) };
     await projects.put(row);
     track('projects', row.id);
     // Comme le serveur (`SELECT *`), sans les compteurs de `/api/state`.
@@ -1575,6 +1579,8 @@ export const localApi: Api = {
       color: pick(patch as Record<string, unknown>, 'color', current.color, (v) => str(v) || current.color),
       // Dossier du TSE relié : son adresse, synchronisée par Drive avec le projet (§29).
       ...nextProjectFolders(patch, current),
+      // Dépôt GitHub relié : sans le champ, le lien existant est conservé.
+      github_repo: pick(patch as Record<string, unknown>, 'github_repo', current.github_repo ?? null, normalizeGithubRepo),
       updated_at: nowISO(),
     };
     await projects.put(next);
@@ -1866,7 +1872,7 @@ async function applySyncSnapshotUnlocked(merged: SyncSnapshot, base: SyncSnapsho
   await sync({
     all: async () => (await t.projects.all()).map(decodeProject),
     put: (row: ProjectRow) => t.projects.put(row), remove: (id: string) => t.projects.remove(id),
-  }, merged.projects, base.projects, (row) => row.id, (row) => decodeProject(row), ['name', 'color', 'shared_dir', 'shared_dirs']);
+  }, merged.projects, base.projects, (row) => row.id, (row) => decodeProject(row), ['name', 'color', 'shared_dir', 'shared_dirs', 'github_repo']);
   await sync(t.categories, merged.categories || [], base.categories || [], (row) => (row as CategoryRow).id, (row) => ({ ...row }), ['name', 'color', 'project_id', 'parent_id']);
   const noteWrites: StoreWrite[] = [];
   await sync(t.entries, merged.entries, base.entries, (row) => (row as EntryRow).id,

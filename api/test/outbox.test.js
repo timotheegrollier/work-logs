@@ -260,3 +260,24 @@ describe('boîte mobile', () => {
     }
   });
 });
+
+describe('dépôt GitHub dans la boîte mobile', () => {
+  test('le dépôt relié voyage avec la boîte et n’est pas effacé par un ancien client', async () => {
+    const payload = outbox({ entries: [], tasks: [], task_entries: [], attachments: [] });
+    Object.assign(payload.projects[0], { github_repo: 'Murgat-Ingenierie/deployer', updated_at: T1 });
+    const box = { payload };
+    const api = await startApi({ google: mockGoogle(box) });
+    const project = async () => (await api.get('/api/state')).body.projects.find(({ id }) => id === 'pr_mob');
+    try {
+      assert.equal((await api.post('/api/google/outbox/ob-1/import')).status, 200);
+      assert.equal((await project()).github_repo, 'Murgat-Ingenierie/deployer');
+      delete payload.projects[0].github_repo;
+      Object.assign(payload.projects[0], { name: 'Renommé par un ancien client', updated_at: '2026-09-18T13:00:00.000Z' });
+      await api.post('/api/google/outbox/ob-1/import');
+      assert.equal((await project()).name, 'Renommé par un ancien client');
+      assert.equal((await project()).github_repo, 'Murgat-Ingenierie/deployer');
+    } finally {
+      await api.close();
+    }
+  });
+});

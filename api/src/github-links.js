@@ -1,5 +1,6 @@
 import { execFile as runFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { GITHUB_REPO_MESSAGE, normalizeGithubRepo } from './github-repo.js';
 
 const execute = promisify(runFile);
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
@@ -68,27 +69,32 @@ function directoryText(items, path) {
     ...lines, 'Cette liste présente les noms uniquement. Le contenu des fichiers listés doit être lu depuis leurs liens.'].join('\n');
 }
 
+/** Un appel GET à l’API GitHub par `gh`, avec l’authentification déjà présente sur cet ordinateur. */
+async function ghGet(execFile, endpoint, requestSignal) {
+  try {
+    requestSignal.throwIfAborted();
+    const { stdout } = await execFile('gh', ['api', '--hostname', 'github.com', '--method', 'GET', endpoint,
+      '--header', 'Accept: application/vnd.github+json'], {
+      encoding: 'utf8', timeout: 10_000, maxBuffer: MAX_OUTPUT_BYTES, signal: requestSignal, windowsHide: true,
+      env: { ...process.env, GH_PROMPT_DISABLED: '1', GH_PAGER: 'cat', PAGER: 'cat' },
+    });
+    requestSignal.throwIfAborted();
+    if (Buffer.byteLength(stdout) > MAX_OUTPUT_BYTES) throw error(413, 'GITHUB_TOO_LARGE', 'GitHub : cette réponse dépasse la limite de lecture.');
+    return JSON.parse(stdout);
+  } catch (cause) {
+    if (cause.code?.startsWith('GITHUB_')) throw cause;
+    throw commandError(cause);
+  }
+}
+
+const requestSignalFor = (signal) => (signal ? AbortSignal.any([signal, AbortSignal.timeout(25_000)]) : AbortSignal.timeout(25_000));
+
 /** Lecture ciblée avec l’authentification GitHub CLI déjà présente sur cet ordinateur. */
 export function createGithubReader({ execFile = execute } = {}) {
   return async (value, { signal } = {}) => {
     const source = sourceUrl(value);
-    const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(25_000)]) : AbortSignal.timeout(25_000);
-    const api = async (endpoint) => {
-      try {
-        requestSignal.throwIfAborted();
-        const { stdout } = await execFile('gh', ['api', '--hostname', 'github.com', '--method', 'GET', endpoint,
-          '--header', 'Accept: application/vnd.github+json'], {
-          encoding: 'utf8', timeout: 10_000, maxBuffer: MAX_OUTPUT_BYTES, signal: requestSignal, windowsHide: true,
-          env: { ...process.env, GH_PROMPT_DISABLED: '1', GH_PAGER: 'cat', PAGER: 'cat' },
-        });
-        requestSignal.throwIfAborted();
-        if (Buffer.byteLength(stdout) > MAX_OUTPUT_BYTES) throw error(413, 'GITHUB_TOO_LARGE', 'GitHub : cette réponse dépasse la limite de lecture.');
-        return JSON.parse(stdout);
-      } catch (cause) {
-        if (cause.code?.startsWith('GITHUB_')) throw cause;
-        throw commandError(cause);
-      }
-    };
+    const requestSignal = requestSignalFor(signal);
+    const api = (endpoint) => ghGet(execFile, endpoint, requestSignal);
     const base = `/repos/${source.owner}/${source.repo}`;
     const metadata = await api(base);
     const heading = `Dépôt ${source.owner}/${source.repo}${metadata.private ? ' (privé)' : ''}.`;
@@ -131,5 +137,65 @@ export function createGithubReader({ execFile = execute } = {}) {
         `Référence ${ref || 'par défaut'}.`, directoryText(files, path), readme].filter(Boolean).join('\n\n');
     }
     return { url: source.url, text: clip(text, MAX_EXCERPT), private: metadata.private === true };
+  };
+}
+
+/** Rubriques d’un dépôt relié à un projet : 30 éléments au plus, en lecture seule. */
+const LIST_SIZE = 30;
+const text = (value, max = 300) => (typeof value === 'string' && value ? value.slice(0, max) : null);
+const webUrl = (value) => (typeof value === 'string' && value.startsWith('https://github.com/') && value.length <= 500 ? value : null);
+const login = (user) => text(user?.login, 100);
+const rowsOf = (body) => (Array.isArray(body) ? body : []).filter((row) => row && typeof row === 'object');
+const RUN_STATES = { success: 'réussie', failure: 'échouée', cancelled: 'annulée', skipped: 'ignorée', timed_out: 'expirée',
+  action_required: 'action requise', neutral: 'neutre', in_progress: 'en cours', queued: 'en attente', waiting: 'en attente',
+  requested: 'en attente', pending: 'en attente' };
+const runState = (value) => (Object.hasOwn(RUN_STATES, value) ? RUN_STATES[value] : text(value, 40));
+
+const SECTIONS = {
+  pulls: {
+    path: 'pulls?state=all&sort=updated&direction=desc&per_page=30',
+    rows: rowsOf,
+    map: (pr) => ({ id: String(pr.id), number: pr.number ?? null, title: text(pr.title), url: webUrl(pr.html_url),
+      state: pr.merged_at ? 'fusionnée' : pr.state === 'open' ? (pr.draft ? 'brouillon' : 'ouverte') : 'fermée',
+      author: login(pr.user), date: text(pr.updated_at, 40), ref: text(pr.head?.ref, 200) }),
+  },
+  issues: {
+    path: 'issues?state=all&sort=updated&direction=desc&per_page=30',
+    rows: (body) => rowsOf(body).filter((issue) => !issue.pull_request),
+    map: (issue) => ({ id: String(issue.id), number: issue.number ?? null, title: text(issue.title), url: webUrl(issue.html_url),
+      state: issue.state === 'open' ? 'ouverte' : 'fermée', author: login(issue.user), date: text(issue.updated_at, 40), ref: null }),
+  },
+  actions: {
+    path: 'actions/runs?per_page=30',
+    rows: (body) => rowsOf(body?.workflow_runs),
+    map: (run) => ({ id: String(run.id), number: run.run_number ?? null, title: text(run.display_title ?? run.name), url: webUrl(run.html_url),
+      state: runState(run.conclusion ?? run.status), author: login(run.actor), date: text(run.created_at, 40), ref: text(run.head_branch, 200) }),
+  },
+  commits: {
+    path: 'commits?per_page=30',
+    rows: rowsOf,
+    map: (commit) => ({ id: String(commit.sha), number: null, title: text(String(commit.commit?.message ?? '').split('\n')[0]), url: webUrl(commit.html_url),
+      state: null, author: login(commit.author) ?? text(commit.commit?.author?.name, 100), date: text(commit.commit?.author?.date, 40), ref: null }),
+  },
+  releases: {
+    path: 'releases?per_page=30',
+    rows: rowsOf,
+    map: (release) => ({ id: String(release.id), number: null, title: text(release.name) ?? text(release.tag_name), url: webUrl(release.html_url),
+      state: release.draft ? 'brouillon' : release.prerelease ? 'préversion' : 'publiée', author: login(release.author),
+      date: text(release.published_at ?? release.created_at, 40), ref: text(release.tag_name, 200) }),
+  },
+};
+
+export const GITHUB_SECTION_IDS = Object.keys(SECTIONS);
+
+/** Lecture d’une rubrique (`pulls`, `actions`, `issues`, `commits`, `releases`) d’un dépôt relié. */
+export function createGithubRepoReader({ execFile = execute } = {}) {
+  return async (repo, section, { signal } = {}) => {
+    const spec = Object.hasOwn(SECTIONS, section) ? SECTIONS[section] : null;
+    if (!spec) throw error(404, 'GITHUB_UNKNOWN_SECTION', 'GitHub : cette rubrique n’existe pas.');
+    const name = normalizeGithubRepo(repo);
+    if (!name) throw error(400, 'GITHUB_INVALID_REPO', GITHUB_REPO_MESSAGE);
+    const body = await ghGet(execFile, `/repos/${name}/${spec.path}`, requestSignalFor(signal));
+    return { repo: name, section, items: spec.rows(body).slice(0, LIST_SIZE).map(spec.map) };
   };
 }

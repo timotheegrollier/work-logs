@@ -5,6 +5,7 @@ import http from 'node:http';
 import express from 'express';
 import { registerGithubRoutes } from '../src/github-routes.js';
 import { startApi } from './helpers.js';
+import { createGithubRepoReader } from '../src/github-links.js';
 
 const address = 'https://github.com/Murgat-Ingenierie/deployer';
 
@@ -71,5 +72,55 @@ test('la route GitHub conserve le refus d’accès précis et masque les erreurs
       assert.equal(body.code, code);
       assert.doesNotMatch(body.error, /secret interne/);
     } finally { await server.close(); }
+  }
+});
+
+test('les rubriques GitHub d’un projet relié sont servies sans cache', async () => {
+  const api = await startApi();
+  const calls = [];
+  const app = express();
+  registerGithubRoutes(app, { db: api.db, list: async (repo, section) => {
+    calls.push([repo, section]);
+    return { repo, section, items: [{ id: '1', title: 'Liste' }] };
+  } });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const project = await api.post('/api/projects', { name: 'Déploiement', github_repo: 'a/b' });
+    const response = await fetch(`${base}/api/projects/${project.body.id}/github/releases`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await response.json(), { repo: 'a/b', section: 'releases', items: [{ id: '1', title: 'Liste' }] });
+    assert.deepEqual(calls, [['a/b', 'releases']]);
+
+    const unlinked = await api.post('/api/projects', { name: 'Sans dépôt' });
+    const notLinked = await fetch(`${base}/api/projects/${unlinked.body.id}/github/pulls`);
+    assert.equal(notLinked.status, 409);
+    assert.equal((await notLinked.json()).code, 'GITHUB_NOT_LINKED');
+
+    const missing = await fetch(`${base}/api/projects/pr_inconnu/github/pulls`);
+    assert.equal(missing.status, 404);
+    assert.equal((await missing.json()).code, 'GITHUB_PROJECT_NOT_FOUND');
+  } finally {
+    await new Promise((resolve) => { server.close(resolve); server.closeIdleConnections(); });
+    await api.close();
+  }
+});
+
+test('la vraie lecture par rubrique refuse une rubrique inconnue avec un message français', async () => {
+  const api = await startApi();
+  const app = express();
+  registerGithubRoutes(app, { db: api.db, list: createGithubRepoReader({ execFile: async () => { throw new Error('gh ne doit pas être appelé'); } }) });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const project = await api.post('/api/projects', { name: 'Déploiement', github_repo: 'a/b' });
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/projects/${project.body.id}/github/wiki`);
+    assert.equal(response.status, 404);
+    assert.equal((await response.json()).code, 'GITHUB_UNKNOWN_SECTION');
+  } finally {
+    await new Promise((resolve) => { server.close(resolve); server.closeIdleConnections(); });
+    await api.close();
   }
 });

@@ -36,6 +36,7 @@ const isPwa = import.meta.env.VITE_PWA === '1';
 const SharedFileEditor = lazy(() => import('./components/SharedFileEditor').then((m) => ({ default: m.SharedFileEditor })));
 const GoogleDocuments = lazy(() => import('./components/GoogleDocuments').then((m) => ({ default: m.GoogleDocuments })));
 const ProjectFiles = lazy(() => import('./components/ProjectFiles').then((m) => ({ default: m.ProjectFiles })));
+const ProjectGithub = lazy(() => import('./components/ProjectGithub').then((m) => ({ default: m.ProjectGithub })));
 const GoogleDrive = lazy(() => import('./components/GoogleDrive').then((m) => ({ default: m.GoogleDrive })));
 const loading = <p className="empty">Chargement…</p>;
 
@@ -97,6 +98,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   const [showProjectFiles, setShowProjectFiles] = useState(false);
+  /** Projet dont le panneau GitHub est ouvert (desktop). */
+  const [githubId, setGithubId] = useState('');
   const [showChat, setShowChat] = useState(false);
   const chatOpener = useRef<HTMLButtonElement>(null);
   // Compte Google au niveau de l'app : le menu de l'en-tête le montre partout.
@@ -820,6 +823,7 @@ export default function App() {
     </button>
   );
 
+  const githubProject = state?.projects.find((project) => project.id === githubId) ?? null;
   return (
     <FollowUpProvider state={state} onChanged={reload} onEntriesChanged={refreshEditedEntries}>
     <div className="app" ref={pageRef}>
@@ -929,6 +933,7 @@ export default function App() {
           onSelect={(id) => void switchProject(id)}
           onChanged={reload}
           compact={phone}
+          onGithub={isPwa ? undefined : (project) => setGithubId(project.id)}
         >
           <CategoryBar
             key={projectId}
@@ -1214,6 +1219,15 @@ export default function App() {
         onDocument={openChatDocument}
         onSharedDocument={openChatShared}
       />
+      {githubProject && (
+        <Suspense fallback={loading}>
+          <ProjectGithub
+            project={githubProject}
+            onClose={() => setGithubId('')}
+            onChanged={reload}
+          />
+        </Suspense>
+      )}
       {showProjectFiles && (
         <Suspense fallback={loading}>
           <ProjectFiles

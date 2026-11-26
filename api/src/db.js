@@ -316,6 +316,8 @@ export function openDb(dbPath, { withSeed = true } = {}) {
   // la traduit vers sa propre racine (desktop, relais de la PWA). §25, §29.
   if (!columns(db, 'projects').includes('shared_dir')) db.exec('ALTER TABLE projects ADD COLUMN shared_dir TEXT');
   if (!columns(db, 'projects').includes('shared_dirs')) db.exec('ALTER TABLE projects ADD COLUMN shared_dirs TEXT');
+  // Dépôt GitHub relié au projet, `propriétaire/dépôt` (lecture locale par gh, rubriques du projet).
+  if (!columns(db, 'projects').includes('github_repo')) db.exec('ALTER TABLE projects ADD COLUMN github_repo TEXT');
   db.exec(`CREATE TABLE IF NOT EXISTS sync_tombstones (
     kind TEXT NOT NULL, id TEXT NOT NULL, deleted_at TEXT NOT NULL, PRIMARY KEY (kind, id))`);
   const googleSchema = `CREATE TABLE IF NOT EXISTS google_documents (

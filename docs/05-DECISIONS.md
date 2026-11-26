@@ -4055,3 +4055,23 @@ il choisit Mistral puis Groq, Gemini et Gemma restant en secours.
 > chaque demande dès la première (`429 rate_limited 1300`, aucune demande servie), et Timo ne veut
 > pas payer. Chaîne : GPT-OSS 120B et Llama 3.3 70B chez Groq, puis Gemini, puis Gemma 4. Le
 > secret `MISTRAL_API_KEY` n'est plus lu ; le supprimer du Worker.
+## 101. Un dépôt GitHub par projet, lu en lecture seule depuis le poste — 2026-11-24
+
+**Décision.** Chaque projet peut être relié à un dépôt GitHub (`projects.github_repo`, forme
+`propriétaire/dépôt`). Le panneau « GitHub » du projet (bouton de la barre des projets, desktop
+seulement) affiche ses pull requests, actions, tickets, commits et versions. Chaque rubrique lit
+les 30 derniers éléments via `gh api` (`GET /api/projects/:id/github/:section`), sans jeton. Les
+éléments s'ouvrent sur github.com.
+
+**Pourquoi.** Le lecteur de liens (§89) passe déjà par GitHub CLI sur ce poste ; le dépôt reste
+ainsi privé sans nouvelle identification. Le lien se range sur le projet, comme les dossiers
+partagés. Le normaliseur `api/src/github-repo.js` est un module pur, partagé avec la PWA.
+
+**Limites.** Lecture seule, bornée (30 éléments par rubrique, sortie et délai limités). Pas de
+GitHub dans la PWA : `localApi.githubList` renvoie `GITHUB_UNAVAILABLE` et le bouton est masqué.
+Le dépôt relié voyage avec les exports, la boîte mobile et la synchro Drive ; un ancien export ou
+un ancien client ne l'efface pas.
+
+**Validation.** `api/test/github-repo.test.js`, `github-links.test.js`, `github-routes.test.js`,
+`projects.test.js`, `outbox.test.js`, `backup.test.js` ; `web/src/components/ProjectGithub.test.tsx`,
+`ProjectBar.test.tsx`.

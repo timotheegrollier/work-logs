@@ -65,8 +65,31 @@ export interface Project {
   shared_dir?: string | null;
   /** Adresses des dossiers reliés au projet, synchronisées par Drive (§29). */
   shared_dirs?: string[];
+  /** Dépôt GitHub relié, `propriétaire/dépôt` (ou null). */
+  github_repo?: string | null;
   entries: number;
   open_tasks: number;
+}
+
+/** Rubriques GitHub d'un projet relié (`GET /api/projects/:id/github/:section`). */
+export type GithubSection = 'pulls' | 'actions' | 'issues' | 'commits' | 'releases';
+
+/** Élément d'une rubrique : champs déjà traduits et filtrés côté serveur. */
+export interface GithubItem {
+  id: string;
+  number: number | null;
+  title: string | null;
+  url: string | null;
+  state: string | null;
+  author: string | null;
+  date: string | null;
+  ref: string | null;
+}
+
+export interface GithubList {
+  repo: string;
+  section: GithubSection;
+  items: GithubItem[];
 }
 export interface Category {
   id: string;
@@ -636,9 +659,9 @@ export const remoteApi = {
   unlinkTaskDocument: (taskId: string, entryId: string) =>
     send<{ ok: true }>('DELETE', `/api/tasks/${taskId}/documents/${entryId}`),
 
-  createProject: (body: { name: string; color?: string; shared_dir?: string | null; shared_dirs?: string[] }) =>
+  createProject: (body: { name: string; color?: string; shared_dir?: string | null; shared_dirs?: string[]; github_repo?: string | null }) =>
     send<Project>('POST', '/api/projects', body),
-  updateProject: (id: string, body: { name?: string; color?: string; shared_dir?: string | null; shared_dirs?: string[] }) =>
+  updateProject: (id: string, body: { name?: string; color?: string; shared_dir?: string | null; shared_dirs?: string[]; github_repo?: string | null }) =>
     send<Project>('PUT', `/api/projects/${id}`, body),
   deleteProject: (id: string) => send<{ ok: true }>('DELETE', `/api/projects/${id}`),
 
@@ -651,6 +674,9 @@ export const remoteApi = {
     '/api/shared/preview?hash=' + enc(hash) + '&name=' + enc(name),
 
   /** Toutes les pièces jointes, avec leur entrée et leur projet (filtre projet facultatif). */
+  /** Rubrique GitHub d'un projet relié, lue par `gh` sur l'ordinateur (lecture seule). */
+  githubList: (projectId: string, section: GithubSection) =>
+    req<GithubList>(`/api/projects/${enc(projectId)}/github/${section}`),
   projectFiles: (projectId = '') => req<ProjectFile[]>('/api/project-files' + (projectId ? '?project_id=' + enc(projectId) : '')),
   deleteAttachment: (id: string) => send<{ ok: true; driveTrashed?: boolean }>('DELETE', `/api/attachments/${id}`),
   fileUrl: (stored: string) => `/api/files/${stored}`,

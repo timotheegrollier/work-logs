@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGithubReader } from '../src/github-links.js';
+import { createGithubReader, createGithubRepoReader } from '../src/github-links.js';
+import { normalizeGithubRepo } from '../src/github-repo.js';
 
 const address = 'https://github.com/Murgat-Ingenierie/deployer';
 const metadata = { private: true, description: 'Déploiement des postes', default_branch: 'main' };
@@ -119,4 +120,63 @@ test('GitHub arrête la commande lorsque la demande est annulée', async () => {
   await pending;
   controller.abort();
   await assert.rejects(result, { code: 'GITHUB_TIMEOUT' });
+});
+
+test('un dépôt relié accepte propriétaire/dépôt ou son lien et refuse le reste', () => {
+  assert.equal(normalizeGithubRepo(' Murgat-Ingenierie/deployer '), 'Murgat-Ingenierie/deployer');
+  assert.equal(normalizeGithubRepo('https://github.com/Murgat-Ingenierie/deployer.git'), 'Murgat-Ingenierie/deployer');
+  assert.equal(normalizeGithubRepo('https://github.com/a/b/tree/main/docs'), 'a/b');
+  assert.equal(normalizeGithubRepo(''), null);
+  assert.equal(normalizeGithubRepo(null), null);
+  for (const value of ['a', 'a/b/c', 'a/..', 'https://evil.example/a/b', 'https://github.com/a', 'a/b c', 42]) {
+    assert.throws(() => normalizeGithubRepo(value), { code: 'GITHUB_INVALID_REPO', status: 400 }, value);
+  }
+});
+
+function listFixture(responses) {
+  const calls = [];
+  const list = createGithubRepoReader({ execFile: async (file, args, options) => {
+    assert.equal(file, 'gh');
+    assert.equal(options.env.GH_PROMPT_DISABLED, '1');
+    calls.push(args[5]);
+    const response = responses[calls.length - 1];
+    if (response instanceof Error) throw response;
+    return { stdout: JSON.stringify(response) };
+  } });
+  return { list, calls };
+}
+
+test('les rubriques d’un dépôt relié sont lues en lecture seule et bornées', async () => {
+  const { list, calls } = listFixture([
+    [{ id: 1, number: 7, title: 'Ajoute le déploiement', html_url: 'https://github.com/a/b/pull/7', state: 'closed', merged_at: '2026-11-20', user: { login: 'timo' }, updated_at: '2026-11-21T10:00:00Z', head: { ref: 'feat' } },
+      { id: 2, number: 8, title: 'Brouillon', html_url: 'https://evil.example/pull/8', state: 'open', draft: true, user: null, updated_at: '2026-11-22T10:00:00Z', head: { ref: 'wip' } }],
+    [{ id: 3, number: 9, title: 'Bug', html_url: 'https://github.com/a/b/issues/9', state: 'open', user: { login: 'ana' }, updated_at: '2026-11-19T08:00:00Z' },
+      { id: 4, number: 10, title: 'PR déguisée', pull_request: {}, state: 'open' }],
+    { workflow_runs: [{ id: 5, run_number: 12, display_title: 'CI', html_url: 'https://github.com/a/b/actions/runs/5', conclusion: 'failure', actor: { login: 'timo' }, created_at: '2026-11-18T09:00:00Z', head_branch: 'main' }, { id: 6, run_number: 13, name: 'Tests', status: 'in_progress', conclusion: null }] },
+    [{ sha: 'abc123', commit: { message: 'Corrige le rapport\n\nDétails', author: { name: 'Timo', date: '2026-11-17T07:00:00Z' } }, html_url: 'https://github.com/a/b/commit/abc123', author: { login: 'timo' } }],
+    [{ id: 8, name: '', tag_name: 'v1.2.0', html_url: 'https://github.com/a/b/releases/tag/v1.2.0', draft: false, prerelease: true, author: { login: 'timo' }, published_at: '2026-11-16T06:00:00Z' }],
+  ]);
+  const pulls = await list('a/b', 'pulls');
+  assert.deepEqual(pulls, { repo: 'a/b', section: 'pulls', items: [
+    { id: '1', number: 7, title: 'Ajoute le déploiement', url: 'https://github.com/a/b/pull/7', state: 'fusionnée', author: 'timo', date: '2026-11-21T10:00:00Z', ref: 'feat' },
+    { id: '2', number: 8, title: 'Brouillon', url: null, state: 'brouillon', author: null, date: '2026-11-22T10:00:00Z', ref: 'wip' },
+  ] });
+  assert.match(calls[0], /^\/repos\/a\/b\/pulls\?state=all/);
+  assert.equal((await list('a/b', 'issues')).items.length, 1);
+  assert.deepEqual((await list('a/b', 'actions')).items.map((run) => [run.title, run.state, run.ref]), [['CI', 'échouée', 'main'], ['Tests', 'en cours', null]]);
+  assert.deepEqual((await list('a/b', 'commits')).items, [{ id: 'abc123', number: null, title: 'Corrige le rapport', url: 'https://github.com/a/b/commit/abc123', state: null, author: 'timo', date: '2026-11-17T07:00:00Z', ref: null }]);
+  assert.deepEqual((await list('a/b', 'releases')).items, [{ id: '8', number: null, title: 'v1.2.0', url: 'https://github.com/a/b/releases/tag/v1.2.0', state: 'préversion', author: 'timo', date: '2026-11-16T06:00:00Z', ref: 'v1.2.0' }]);
+  assert.equal(calls.length, 5);
+});
+
+test('une rubrique inconnue ou un dépôt invalide est refusé avant gh', async () => {
+  const { list, calls } = listFixture([]);
+  await assert.rejects(list('a/b', 'secrets'), { code: 'GITHUB_UNKNOWN_SECTION', status: 404 });
+  await assert.rejects(list('a/b/../c', 'pulls'), { code: 'GITHUB_INVALID_REPO', status: 400 });
+  assert.deepEqual(calls, []);
+});
+
+test('les erreurs GitHub de la lecture par dépôt gardent leur code sans fuite de jeton', async () => {
+  const { list } = listFixture([Object.assign(new Error('secret'), { stderr: 'HTTP 404 ghp_secret' })]);
+  await assert.rejects(list('a/b', 'pulls'), (failure) => failure.code === 'GITHUB_NOT_FOUND' && !failure.message.includes('ghp_secret'));
 });

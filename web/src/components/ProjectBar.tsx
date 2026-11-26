@@ -19,6 +19,7 @@ export function ProjectBar({
   onSelect,
   onChanged,
   compact = false,
+  onGithub,
   children,
 }: {
   projects: Project[];
@@ -26,6 +27,8 @@ export function ProjectBar({
   onSelect: (id: string) => void;
   onChanged: () => void;
   compact?: boolean;
+  /** Ouvre le panneau GitHub du projet sélectionné (absent hors desktop). */
+  onGithub?: (project: Project) => void;
   /** Le filtre de catégorie, entre les pastilles et « Gérer ». */
   children?: ReactNode;
 }) {
@@ -123,6 +126,13 @@ export function ProjectBar({
       )}
 
       {children}
+
+      {onGithub && current && (
+        <button type="button" className="ghost project-github" title={`Dépôt GitHub de ${current.name}`}
+          onClick={() => onGithub(current)}>
+          GitHub
+        </button>
+      )}
 
       {!compact && <button
         ref={trigger}

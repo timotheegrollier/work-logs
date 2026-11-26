@@ -59,4 +59,24 @@ describe('projets', () => {
     assert.equal((await api.put('/api/projects/pr_nope', { name: 'x' })).status, 404);
     assert.equal((await api.del('/api/projects/pr_nope')).status, 404);
   });
+
+  test('un projet se relie à un dépôt GitHub, se délie et refuse une valeur invalide', async () => {
+    const created = await api.post('/api/projects', { name: 'Déploiement', github_repo: 'https://github.com/Murgat-Ingenierie/deployer.git' });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.github_repo, 'Murgat-Ingenierie/deployer');
+    const id = created.body.id;
+    const repoOf = async () => (await api.get('/api/state')).body.projects.find((project) => project.id === id).github_repo;
+    assert.equal(await repoOf(), 'Murgat-Ingenierie/deployer');
+
+    assert.equal((await api.put(`/api/projects/${id}`, { name: 'Déploiement v2' })).status, 200);
+    assert.equal(await repoOf(), 'Murgat-Ingenierie/deployer', 'une modification sans le champ garde le dépôt');
+
+    const invalid = await api.put(`/api/projects/${id}`, { github_repo: 'pas un dépôt' });
+    assert.equal(invalid.status, 400);
+    assert.match(invalid.body.error, /GitHub : saisis un dépôt/);
+    assert.equal(await repoOf(), 'Murgat-Ingenierie/deployer');
+
+    assert.equal((await api.put(`/api/projects/${id}`, { github_repo: '' })).body.github_repo, null);
+    assert.equal(await repoOf(), null);
+  });
 });

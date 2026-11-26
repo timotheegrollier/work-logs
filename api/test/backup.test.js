@@ -138,6 +138,29 @@ describe('sauvegardes Google Drive', () => {
     }
   });
 
+  test('le dépôt GitHub relié survit à l’export ; un ancien export le laisse vide', async () => {
+    const { restoreBackup } = await import('../src/backup.js');
+    const api = await startApi();
+    try {
+      const project = await make.project(api, 'Déploiement');
+      await api.put(`/api/projects/${project.id}`, { github_repo: 'Murgat-Ingenierie/deployer' });
+      const exported = (await api.get('/api/export')).body;
+      assert.equal(exported.projects.find((row) => row.id === project.id).github_repo, 'Murgat-Ingenierie/deployer');
+
+      await api.del(`/api/projects/${project.id}`);
+      restoreBackup(api.db, exported);
+      assert.equal(api.db.prepare('SELECT github_repo FROM projects WHERE id=?').get(project.id).github_repo, 'Murgat-Ingenierie/deployer');
+
+      const legacy = structuredClone(exported);
+      for (const row of legacy.projects) delete row.github_repo;
+      await api.del(`/api/projects/${project.id}`);
+      restoreBackup(api.db, legacy);
+      assert.equal(api.db.prepare('SELECT github_repo FROM projects WHERE id=?').get(project.id).github_repo, null);
+    } finally {
+      await api.close();
+    }
+  });
+
   test('les priorités survivent à l’export et les anciens exports reviennent en « normale »', async () => {
     const { restoreBackup } = await import('../src/backup.js');
     const api = await startApi();

@@ -54,7 +54,7 @@ client intégré (OAuth « Web ») passe par le relais de jetons `oauth-proxy/`,
 ## Base — tables synchronisées et tables de la machine
 
 ```sql
-projects(id, name, color, shared_dir, shared_dirs JSON|NULL, created_at, updated_at)
+projects(id, name, color, shared_dir, shared_dirs JSON|NULL, github_repo TEXT|NULL, created_at, updated_at)
 
 categories(id, name, project_id → projects ON DELETE CASCADE,
            parent_id → categories ON DELETE SET NULL, color, created_at, updated_at)
@@ -199,6 +199,7 @@ Deux points non évidents, couverts par `api/test/migration.test.js` :
 | DELETE | `/api/attachments/:id` | supprimer la ligne et le fichier disque |
 | GET | `/api/export` | toute la base en JSON : tâches, associations, liens Google et métadonnées de pièces jointes |
 | GET | `/api/github/link?url=` | lit localement un dépôt, un dossier ou un fichier GitHub avec GitHub CLI (`gh`) : `{url, text, private}`. Réservé à cet ordinateur (`GITHUB_LOCAL_ONLY`), borné à 128 Kio par fichier et 16 000 caractères d’extrait ; refus explicites `GITHUB_AUTH_REQUIRED`, `GITHUB_NOT_FOUND`, `GITHUB_FORBIDDEN`, `GITHUB_UNAVAILABLE` |
+| GET | `/api/projects/:id/github/:section` | rubrique GitHub d'un projet relié (`pulls`, `actions`, `issues`, `commits`, `releases`) : 30 derniers éléments via `gh api`, `{repo, section, items}`. Réservé à cet ordinateur ; `GITHUB_NOT_LINKED` (409) si le projet n'a pas de dépôt |
 | GET | `/api/shared/status` | dossier partagé : `available`, racine, montage, `reach` (`ok`, `offline`, `unmounted`, `blocked`, `unconfigured`), envois en attente, conflits |
 | GET | `/api/shared/list?dir=` | un niveau du partage : fichiers, dossiers, verrous lus, état local ; hors ligne `503` + fichiers gardés ici |
 | GET | `/api/shared/file?path=` · `/api/shared/content?hash=` | métadonnées et brouillon · octets d'une version du magasin local |
