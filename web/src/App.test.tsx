@@ -726,6 +726,27 @@ describe('panneau Procédures', () => {
     expect(screen.getByRole('region', { name: 'GitHub du projet Bravo' })).toBeInTheDocument();
   });
 
+  test('GitHub : la colonne se redimensionne par son bord, sa largeur est gardée et remise par défaut', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('worklogs-show-github', '1');
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+    const edge = screen.getByRole('separator', { name: 'Redimensionner la colonne GitHub' });
+    expect(edge).toHaveAttribute('aria-controls', 'workspace-github');
+    expect(edge).toHaveAttribute('aria-valuenow', '320');
+
+    fireEvent.keyDown(edge, { key: 'End' });
+    expect(edge).toHaveAttribute('aria-valuenow', '600');
+    expect(localStorage.getItem('worklogs-col-github')).toBe('600');
+    expect(document.documentElement.style.getPropertyValue('--col-github')).toBe('600px');
+
+    const display = await openDisplaySettings();
+    expect(display.getByLabelText('Largeur de la colonne GitHub (px)')).toHaveValue(600);
+    await user.click(display.getByRole('button', { name: 'Largeurs par défaut' }));
+    expect(display.getByLabelText('Largeur de la colonne GitHub (px)')).toHaveValue(320);
+    expect(localStorage.getItem('worklogs-col-github')).toBe('320');
+  });
+
   test('Modifier réaffiche l’écriture et permet de modifier le titre et le contenu, même déjà sélectionnés', async () => {
     const user = userEvent.setup();
     seedData(api.db, { entries: [

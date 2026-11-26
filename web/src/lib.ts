@@ -91,6 +91,21 @@ export interface GithubList {
   section: GithubSection;
   items: GithubItem[];
 }
+
+/** Comptes connectés à GitHub CLI sur ce poste ; `chosen` est celui de WorkLogs (null : le compte actif de gh). */
+export interface GithubAccounts {
+  accounts: { login: string; active: boolean; ok: boolean }[];
+  chosen: string | null;
+}
+
+/** Connexion d'un compte GitHub par code d'appareil (`gh auth login --web`). */
+export interface GithubLogin {
+  state: 'idle' | 'pending' | 'done' | 'failed';
+  code: string | null;
+  url: string | null;
+  account: string | null;
+  error: string | null;
+}
 export interface Category {
   id: string;
   name: string;
@@ -676,6 +691,11 @@ export const remoteApi = {
   /** Rubrique GitHub d'un projet relié, lue par `gh` sur l'ordinateur (lecture seule). */
   githubList: (projectId: string, section: GithubSection, signal?: AbortSignal) =>
     req<GithubList>(`/api/projects/${enc(projectId)}/github/${section}`, { signal }),
+  githubAccounts: () => req<GithubAccounts>('/api/github/accounts'),
+  chooseGithubAccount: (login: string | null) => send<GithubAccounts>('PUT', '/api/github/account', { login }),
+  startGithubLogin: () => send<GithubLogin>('POST', '/api/github/login'),
+  githubLogin: () => req<GithubLogin>('/api/github/login'),
+  cancelGithubLogin: () => send<GithubLogin>('DELETE', '/api/github/login'),
   /** Toutes les pièces jointes, avec leur entrée et leur projet (filtre projet facultatif). */
   projectFiles: (projectId = '') => req<ProjectFile[]>('/api/project-files' + (projectId ? '?project_id=' + enc(projectId) : '')),
   deleteAttachment: (id: string) => send<{ ok: true; driveTrashed?: boolean }>('DELETE', `/api/attachments/${id}`),

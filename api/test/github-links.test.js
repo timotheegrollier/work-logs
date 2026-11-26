@@ -98,6 +98,9 @@ test('GitHub traduit les refus et les limites sans exposer les sorties de la com
     [Object.assign(new Error('missing'), { code: 'ENOENT' }), 'GITHUB_UNAVAILABLE'],
     [Object.assign(new Error('gh auth login ghp_secret'), { stderr: 'gh auth login ghp_secret' }), 'GITHUB_AUTH_REQUIRED'],
     [missing(), 'GITHUB_NOT_FOUND'],
+    // Ce que renvoie vraiment execFile : `code` est le code de sortie de gh.
+    [Object.assign(new Error('Command failed: gh api'), { code: 1, stderr: 'gh: Not Found (HTTP 404)' }), 'GITHUB_NOT_FOUND'],
+    [Object.assign(new Error('Command failed: gh api'), { code: 1, stderr: 'gh: Resource protected (HTTP 403)' }), 'GITHUB_FORBIDDEN'],
     [Object.assign(new Error('secret'), { stderr: 'HTTP 403 ghp_secret' }), 'GITHUB_FORBIDDEN'],
     [Object.assign(new Error('secret'), { killed: true }), 'GITHUB_TIMEOUT'],
     [Object.assign(new Error('secret'), { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', killed: true }), 'GITHUB_TOO_LARGE'],

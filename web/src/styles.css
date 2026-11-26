@@ -824,14 +824,14 @@ button:disabled {
   border-left: 1px solid var(--line);
   background: var(--surface);
 }
-/* GitHub (§101) : colonne du dépôt, entre l'écriture et Procédures, sans poignée (base 320 px).
+/* GitHub (§101) : colonne du dépôt, entre l'écriture et Procédures, redimensionnable par son bord gauche.
    Elle cède sa place la première (rétrécissement ×3) : les cartes de tâche se serrent mal. */
 .github-bar {
   display: none;
 }
 .columns.show-github > .github-bar {
   display: flex;
-  flex: 0 3 320px;
+  flex: 0 3 var(--col-github, 320px);
   min-width: 120px;
   flex-direction: column;
   gap: 12px;
@@ -859,13 +859,15 @@ button:disabled {
   user-select: none;
   outline: none;
 }
-/* Sur le bord gauche des procédures : à cheval sur la bordure, sans piste propre. */
-.column-resizer-procedures {
+/* Sur le bord gauche des procédures et de GitHub : à cheval sur la bordure, sans piste propre. */
+.column-resizer-procedures,
+.column-resizer-github {
   display: none;
   margin: 0 -4px;
   z-index: 2;
 }
-.columns.show-procedures > .column-resizer-procedures {
+.columns.show-procedures > .column-resizer-procedures,
+.columns.show-github > .column-resizer-github {
   display: block;
 }
 /* Seule à l'écran, la colonne Procédures prend toute la largeur, et sa poignée
@@ -874,7 +876,8 @@ button:disabled {
 .columns.hide-left.hide-center > .github-bar {
   flex: 1 1 0;
 }
-.columns.hide-left.hide-center > .column-resizer-procedures {
+.columns.hide-left.hide-center > .column-resizer-procedures,
+.columns.hide-left.hide-center > .column-resizer-github {
   display: none;
 }
 .column-resizer::before {
@@ -4829,6 +4832,39 @@ div.google-preserved {
   gap: 10px;
   max-width: 460px;
 }
+.github-account {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+}
+.github-account label {
+  display: grid;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.github-account > button {
+  justify-self: start;
+}
+.github-login {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.github-login p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+}
+.github-code {
+  font-family: ui-monospace, monospace;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  user-select: all;
+}
 .github-link label {
   display: grid;
   gap: 4px;
@@ -6057,7 +6093,8 @@ div.google-preserved {
     padding: 12px 12px 0;
   }
   .column-resizer,
-  .columns.show-procedures > .column-resizer-procedures {
+  .columns.show-procedures > .column-resizer-procedures,
+  .columns.show-github > .column-resizer-github {
     display: none;
   }
   /* Une seule page qui défile : les volets de la colonne Journal suivent la page. */

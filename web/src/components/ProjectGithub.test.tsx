@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ProjectGithub } from './ProjectGithub';
-import { api, type GithubList, type Project, type Task } from '../lib';
+import { api, ApiError, type GithubAccounts, type GithubList, type GithubLogin, type Project, type Task } from '../lib';
 
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -101,4 +101,108 @@ test('délier le dépôt envoie un lien vide', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Délier' }));
   await waitFor(() => expect(onChanged).toHaveBeenCalled());
   expect(update).toHaveBeenCalledWith('pr_villa', { github_repo: null });
+});
+
+const accounts: GithubAccounts = {
+  accounts: [{ login: 'timotheegrollier', active: true, ok: true }, { login: 'claude-murgat', active: false, ok: true }, { login: 'stxtxm', active: false, ok: false }],
+  chosen: null,
+};
+const idle: GithubLogin = { state: 'idle', code: null, url: null, account: null, error: null };
+
+test('un dépôt inaccessible propose un autre compte de GitHub CLI, puis relit la rubrique avec lui', async () => {
+  const list = vi.spyOn(api, 'githubList')
+    .mockRejectedValueOnce(new ApiError('GitHub : dépôt ou contenu introuvable, ou inaccessible au compte connecté dans GitHub CLI.', 'GITHUB_NOT_FOUND'))
+    .mockResolvedValue(pulls);
+  vi.spyOn(api, 'githubAccounts').mockResolvedValue(accounts);
+  vi.spyOn(api, 'githubLogin').mockResolvedValue(idle);
+  const choose = vi.spyOn(api, 'chooseGithubAccount').mockResolvedValue({ ...accounts, chosen: 'claude-murgat' });
+  render(panel());
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('inaccessible au compte connecté');
+  const account = within(await screen.findByRole('region', { name: 'Compte GitHub' }));
+  expect(screen.getByRole('button', { name: 'Compte' })).toHaveAttribute('aria-expanded', 'true');
+  const field = await account.findByLabelText('Compte GitHub de WorkLogs');
+  expect(within(field).getAllByRole('option').map((option) => option.textContent))
+    .toEqual(['Compte actif de GitHub CLI (timotheegrollier)', 'timotheegrollier', 'claude-murgat', 'stxtxm (à reconnecter)']);
+  expect(field).toHaveValue('');
+
+  fireEvent.change(field, { target: { value: 'claude-murgat' } });
+  await waitFor(() => expect(choose).toHaveBeenCalledWith('claude-murgat'));
+  expect(await screen.findByRole('link', { name: '#12 Ajoute la liaison' })).toBeInTheDocument();
+  expect(list).toHaveBeenCalledTimes(2);
+  expect(account.getByLabelText('Compte GitHub de WorkLogs')).toHaveValue('claude-murgat');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+  // Revenir au compte actif de gh efface le choix.
+  choose.mockResolvedValue(accounts);
+  fireEvent.change(account.getByLabelText('Compte GitHub de WorkLogs'), { target: { value: '' } });
+  await waitFor(() => expect(choose).toHaveBeenLastCalledWith(null));
+});
+
+test('connecter un compte GitHub montre le code d’appareil et github.com, puis lit avec le compte autorisé', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const list = vi.spyOn(api, 'githubList').mockResolvedValue(pulls);
+    const listed = vi.spyOn(api, 'githubAccounts').mockResolvedValue(accounts);
+    const status = vi.spyOn(api, 'githubLogin').mockResolvedValue(idle);
+    const pendingLogin: GithubLogin = { ...idle, state: 'pending', code: 'AB12-CD34', url: 'https://github.com/login/device' };
+    const start = vi.spyOn(api, 'startGithubLogin').mockResolvedValue(pendingLogin);
+    const cancel = vi.spyOn(api, 'cancelGithubLogin').mockResolvedValue(idle);
+    render(panel());
+    await screen.findByRole('link', { name: '#12 Ajoute la liaison' });
+    // Sans refus, le compte reste replié derrière son bouton.
+    expect(screen.queryByRole('region', { name: 'Compte GitHub' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Compte' }));
+    const account = within(await screen.findByRole('region', { name: 'Compte GitHub' }));
+
+    fireEvent.click(await account.findByRole('button', { name: 'Connecter un compte GitHub' }));
+    expect(await account.findByText('AB12-CD34')).toBeInTheDocument();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(account.getByRole('link', { name: 'Ouvrir github.com ↗' })).toHaveAttribute('href', 'https://github.com/login/device');
+    expect(account.getByLabelText('Compte GitHub de WorkLogs')).toBeDisabled();
+
+    // Annuler arrête la connexion ; la relancer redonne un code.
+    fireEvent.click(account.getByRole('button', { name: 'Annuler' }));
+    expect(await account.findByRole('button', { name: 'Connecter un compte GitHub' })).toBeInTheDocument();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    fireEvent.click(account.getByRole('button', { name: 'Connecter un compte GitHub' }));
+    expect(await account.findByText('AB12-CD34')).toBeInTheDocument();
+
+    status.mockResolvedValueOnce(pendingLogin).mockResolvedValue({ ...idle, state: 'done', account: 'neo' });
+    // `gh auth status` est lent : la liste relue doit encore arriver, même après l'affichage suivant.
+    let answer: (value: GithubAccounts) => void = () => {};
+    listed.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(account.getByText('AB12-CD34')).toBeInTheDocument();
+    await vi.advanceTimersByTimeAsync(2000);
+    await waitFor(() => expect(listed).toHaveBeenCalledTimes(2));
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    await act(async () => { answer({ accounts: [...accounts.accounts, { login: 'neo', active: false, ok: true }], chosen: 'neo' }); });
+    expect(await account.findByText('Compte neo connecté : WorkLogs lit maintenant avec lui.')).toBeInTheDocument();
+    await waitFor(() => expect(account.getByLabelText('Compte GitHub de WorkLogs')).toHaveValue('neo'));
+    expect(list).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('une connexion GitHub en cours reprend avec son code quand la colonne se rouvre, même arrivé en retard', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    vi.spyOn(api, 'githubList').mockResolvedValue(pulls);
+    vi.spyOn(api, 'githubAccounts').mockResolvedValue(accounts);
+    // Rouvert avant que gh ait donné son code : le sondage suivant l'affiche.
+    vi.spyOn(api, 'githubLogin')
+      .mockResolvedValueOnce({ ...idle, state: 'pending' })
+      .mockResolvedValue({ ...idle, state: 'pending', code: 'ZZ99-YY88', url: 'https://github.com/login/device' });
+    render(panel());
+    fireEvent.click(await screen.findByRole('button', { name: 'Compte' }));
+    const account = within(await screen.findByRole('region', { name: 'Compte GitHub' }));
+    await waitFor(() => expect(account.queryByRole('button', { name: 'Connecter un compte GitHub' })).not.toBeInTheDocument());
+    expect(account.queryByText('ZZ99-YY88')).not.toBeInTheDocument();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await account.findByText('ZZ99-YY88')).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
 });

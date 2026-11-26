@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { api, type GithubItem, type GithubList, type GithubSection, type Project, type Task } from '../lib';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { api, type GithubAccounts, type GithubItem, type GithubList, type GithubLogin, type GithubSection, type Project, type Task } from '../lib';
 
 const SECTIONS: { id: GithubSection; label: string }[] = [
   { id: 'pulls', label: 'Pull requests' },
@@ -24,6 +24,115 @@ const itemLabel = (item: GithubItem) => {
 };
 
 const fold = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
+
+/** Refus qui tiennent souvent au compte : la colonne propose alors d'en changer ou d'en connecter un. */
+const ACCOUNT_ERRORS = ['GITHUB_NOT_FOUND', 'GITHUB_FORBIDDEN', 'GITHUB_AUTH_REQUIRED'];
+const LOGIN_POLL_MS = 2000;
+
+/**
+ * Compte GitHub de WorkLogs sur ce poste : un des comptes de GitHub CLI, sans changer son compte
+ * actif, ou un nouveau compte connecté par code d'appareil dans le navigateur système.
+ */
+function GithubAccount({ onChanged }: { onChanged: () => void }) {
+  const [accounts, setAccounts] = useState<GithubAccounts | null>(null);
+  const [login, setLogin] = useState<GithubLogin | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const pending = login?.state === 'pending';
+
+  useEffect(() => {
+    let alive = true;
+    void Promise.all([api.githubAccounts(), api.githubLogin()]).then(([nextAccounts, nextLogin]) => {
+      if (!alive) return;
+      setAccounts(nextAccounts);
+      // Une connexion lancée avant de refermer la colonne reprend avec son code.
+      if (nextLogin.state === 'pending') setLogin(nextLogin);
+    }).catch((e: Error) => {
+      if (alive) setError(e.message);
+    });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!pending) return;
+    let alive = true;
+    const timer = setInterval(() => {
+      void api.githubLogin().then(async (next) => {
+        if (!alive) return;
+        // Encore en cours : le code peut n'être arrivé qu'après l'ouverture du panneau.
+        if (next.state === 'pending') { setLogin((shown) => (shown?.code === next.code ? shown : next)); return; }
+        // Relire les comptes avant de quitter l'attente : ce sondage s'arrête avec elle.
+        if (next.state === 'done') {
+          const nextAccounts = await api.githubAccounts().catch(() => null);
+          if (!alive) return;
+          if (nextAccounts) setAccounts(nextAccounts);
+          onChanged();
+        }
+        setLogin(next);
+      }).catch(() => {});
+    }, LOGIN_POLL_MS);
+    return () => { alive = false; clearInterval(timer); };
+  }, [pending, onChanged]);
+
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setError('');
+    try {
+      await action();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const choose = (value: string) => run(async () => {
+    setAccounts(await api.chooseGithubAccount(value || null));
+    setLogin(null);
+    onChanged();
+  });
+
+  const active = accounts?.accounts.find((account) => account.active)?.login;
+  const chosen = accounts?.chosen ?? null;
+  return (
+    <section className="github-account" aria-label="Compte GitHub">
+      {accounts && (
+        <label>
+          Compte GitHub de WorkLogs
+          <select value={chosen ?? ''} disabled={busy || pending} onChange={(event) => void choose(event.target.value)}>
+            <option value="">{active ? `Compte actif de GitHub CLI (${active})` : 'Compte actif de GitHub CLI'}</option>
+            {accounts.accounts.map((account) => (
+              <option key={account.login} value={account.login}>{account.ok ? account.login : `${account.login} (à reconnecter)`}</option>
+            ))}
+            {chosen && !accounts.accounts.some((account) => account.login === chosen) && (
+              <option value={chosen}>{`${chosen} (plus connecté)`}</option>
+            )}
+          </select>
+        </label>
+      )}
+      {pending ? (
+        <div className="github-login" role="status">
+          <p>
+            Connecte-toi sur github.com avec le compte à ajouter, puis saisis ce code :{' '}
+            <strong className="github-code">{login.code}</strong>
+          </p>
+          <a href={login.url ?? 'https://github.com/login/device'} target="_blank" rel="noreferrer">Ouvrir github.com ↗</a>
+          <button type="button" className="ghost" disabled={busy}
+            onClick={() => void run(async () => { await api.cancelGithubLogin(); setLogin(null); })}>
+            Annuler
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="ghost" disabled={busy || !accounts}
+          onClick={() => void run(async () => { setLogin(await api.startGithubLogin()); })}>
+          Connecter un compte GitHub
+        </button>
+      )}
+      {login?.state === 'done' && <p className="ai-hint" role="status">Compte {login.account} connecté : WorkLogs lit maintenant avec lui.</p>}
+      {login?.state === 'failed' && <p className="error" role="alert">{login.error}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+    </section>
+  );
+}
 
 /** Une ligne de rubrique : titre cliquable (ouvre github.com), puis état, auteur, branche et date. */
 function GithubRow({ item }: { item: GithubItem }) {
@@ -62,6 +171,8 @@ export function ProjectGithub({ project, tasks, onChanged, onOpenTask, onCreateT
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [showAccount, setShowAccount] = useState(false);
+  const reread = useCallback(() => setRevision((value) => value + 1), []);
 
   useEffect(() => {
     if (!repo) return;
@@ -73,8 +184,10 @@ export function ProjectGithub({ project, tasks, onChanged, onOpenTask, onCreateT
     setList(null);
     void api.githubList(project.id, section, controller.signal).then((next) => {
       if (alive) setList(next);
-    }).catch((e: Error) => {
-      if (alive) setError(e.message);
+    }).catch((e: Error & { code?: string }) => {
+      if (!alive) return;
+      setError(e.message);
+      if (ACCOUNT_ERRORS.includes(e.code ?? '')) setShowAccount(true);
     }).finally(() => {
       if (alive) setLoading(false);
     });
@@ -117,9 +230,11 @@ export function ProjectGithub({ project, tasks, onChanged, onOpenTask, onCreateT
         <>
           <div className="github-head">
             <a href={`https://github.com/${repo}`} target="_blank" rel="noreferrer">{repo} ↗</a>
-            <button type="button" className="ghost" disabled={loading} onClick={() => setRevision((value) => value + 1)}>Actualiser</button>
+            <button type="button" className="ghost" disabled={loading} onClick={reread}>Actualiser</button>
+            <button type="button" className="ghost" aria-expanded={showAccount} onClick={() => setShowAccount((value) => !value)}>Compte</button>
             <button type="button" className="ghost" disabled={busy} onClick={() => void save(null)}>Délier</button>
           </div>
+          {showAccount && <GithubAccount onChanged={reread} />}
           <div className="files-chips" role="group" aria-label="Rubriques GitHub">
             {SECTIONS.map((item) => (
               <button key={item.id} type="button" className={'chip' + (section === item.id ? ' is-on' : '')}

@@ -4072,7 +4072,7 @@ il choisit Mistral puis Groq, Gemini et Gemma restant en secours.
 **Décision.** Chaque projet peut être relié à un dépôt GitHub (`projects.github_repo`, forme
 `propriétaire/dépôt`). La colonne « GitHub » (desktop seulement) affiche ses pull requests,
 actions, tickets, commits et versions. Chaque rubrique lit les 30 derniers éléments via `gh api`
-(`GET /api/projects/:id/github/:section`), sans jeton. Les éléments s'ouvrent sur github.com.
+(`GET /api/projects/:id/github/:section`). WorkLogs ne stocke aucun jeton. Les éléments s'ouvrent sur github.com.
 
 **Révisé le 2026-11-26 : une colonne, plus une fenêtre.** Demande de Timo : « intègre mieux la
 feat GitHub ». La fenêtre modale ouverte par un bouton de la barre des projets devient un
@@ -4085,21 +4085,45 @@ colonne annule la lecture (`AbortSignal`), ce qui arrête `gh` sur le serveur. U
 ou une issue **ouverte** se suit comme tâche (« ＋ Tâche ») : une tâche « #N titre » du projet,
 dont la note porte le lien, ouverte au centre ; une tâche de même titre déjà suivie donne
 « Ouvrir la tâche » à la place (rapprochement par titre, `shortcut:` dans `ProjectGithub.tsx`).
-Pas de poignée de largeur ni de réglage Affichage pour cette colonne (base 320 px, minimum
-120 px) ; ni téléphone (la barre du bas garde quatre zones), ni PWA.
+Ni téléphone (la barre du bas garde ses zones), ni PWA. Le même jour, à la demande de Timo, la
+colonne devient redimensionnable par son bord gauche, comme Procédures (`worklogs-col-github`,
+120 à 600 px, base 320 px, champ « GitHub » de Paramètres › Affichage).
+
+**Compte GitHub, depuis l'application (2026-11-26).** Demande de Timo : pouvoir se connecter à
+GitHub sans terminal. Le bouton « Compte » de la colonne ouvre le panneau « Compte GitHub », qui
+s'ouvre aussi tout seul sur un refus lié au compte (404, 403, 401). Ce panneau offre deux choix :
+- **Choisir un compte** parmi ceux de GitHub CLI (`gh auth status --json hosts`). Le choix est
+  un réglage de la machine (`local_settings`, clé `github.account`), jamais synchronisé. Les
+  lectures prennent alors le jeton de ce compte (`gh auth token --user`, passé en `GH_TOKEN` à
+  `gh api`, relu à chaque appel, jamais stocké ni renvoyé au front). Le compte actif de gh ne
+  change pas : d'autres outils et sessions en dépendent. Sans choix, WorkLogs suit le compte actif.
+  Un compte choisi puis retiré de gh donne un refus explicite, pas un repli silencieux.
+- **Connecter un compte GitHub.** WorkLogs lance `gh auth login --web` sans terminal. Il affiche
+  le code d'appareil et le lien github.com/login/device, ouvert dans le navigateur système. Il
+  interroge l'état toutes les 2 s. À la fin, `gh` a rendu actif le nouveau compte : WorkLogs le
+  retient, puis rend la main au compte actif d'avant (`gh auth switch`). Ce retour est tenté même
+  si la relecture des comptes échoue, et s'il échoue lui-même, le message le dit.
+
+Pas de `--git-protocol` : ce réglage vaut pour tout l'hôte, gh le garde tel quel. Une seule
+connexion à la fois. Annuler, fermer WorkLogs ou laisser le code expirer (15 min) arrête `gh`,
+et rien n'est retenu. Routes `localOnly` : `GET /api/github/accounts`, `PUT /api/github/account`,
+`POST|GET|DELETE /api/github/login` (`api/src/github-account.js`).
 
 **Pourquoi.** Le lecteur de liens (§89) passe déjà par GitHub CLI sur ce poste ; le dépôt reste
 ainsi privé sans nouvelle identification. Le lien se range sur le projet, comme les dossiers
 partagés. Le normaliseur `api/src/github-repo.js` est un module pur, partagé avec la PWA.
 
-**Limites.** Lecture seule, bornée (30 éléments par rubrique, sortie et délai limités). Pas de
+**Limites.** Sans compte choisi, `gh` lit avec le compte **actif** de GitHub CLI. Un compte sans
+accès au dépôt reçoit un 404 de GitHub, affiché « inaccessible au compte connecté dans GitHub CLI » ;
+le panneau « Compte GitHub » s'ouvre alors. Jusqu'au 2026-11-26, le code de sortie numérique de `gh` faisait planter ce tri : seul
+le message générique « impossible de lire ce contenu » apparaissait. Lecture seule, bornée (30 éléments par rubrique, sortie et délai limités). Pas de
 GitHub dans la PWA : `localApi.githubList` renvoie `GITHUB_UNAVAILABLE`, ni interrupteur ni colonne.
 Toutes les colonnes ouvertes ensemble (Journal, écriture, GitHub, Procédures) tiennent dès
 1024 px, au prix d'une colonne Journal étroite ; c'est pourquoi GitHub reste masqué par défaut.
 Le dépôt relié voyage avec les exports, la boîte mobile et la synchro Drive ; un ancien export ou
 un ancien client ne l'efface pas.
 
-**Validation.** `api/test/github-repo.test.js`, `github-links.test.js`, `github-routes.test.js`,
+**Validation.** `api/test/github-repo.test.js`, `github-links.test.js`, `github-routes.test.js`, `github-account.test.js`,
 `projects.test.js`, `outbox.test.js`, `backup.test.js` ; `web/src/components/ProjectGithub.test.tsx`
 (colonne sans fenêtre, annulation, ＋ Tâche, Ouvrir la tâche) ; `App.test.tsx` (interrupteur,
 suivi du projet, tâche créée depuis une PR) ; `App.local.test.tsx` (rien dans la PWA) ;

@@ -63,6 +63,7 @@ test('la route GitHub conserve le refus d’accès précis et masque les erreurs
   for (const [cause, status, code] of [
     [Object.assign(new Error('GitHub : connecte le compte local.'), { status: 401, code: 'GITHUB_AUTH_REQUIRED' }), 401, 'GITHUB_AUTH_REQUIRED'],
     [new Error('secret interne'), 502, 'GITHUB_READ_FAILED'],
+    [Object.assign(new Error('secret interne'), { code: 1 }), 502, 'GITHUB_READ_FAILED'],
   ]) {
     const server = await serverFor(async () => { throw cause; });
     try {

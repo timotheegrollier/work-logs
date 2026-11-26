@@ -8,6 +8,8 @@ const MAX_FILE_BYTES = 128 * 1024;
 const MAX_EXCERPT = 16_000;
 const MAX_LISTED = 60;
 const error = (status, code, message) => Object.assign(new Error(message), { status, code });
+// `code` vaut aussi le code de sortie (un nombre) quand `gh` échoue.
+export const isGithubError = (cause) => typeof cause?.code === 'string' && cause.code.startsWith('GITHUB_');
 const invalidUrl = () => error(400, 'GITHUB_INVALID_URL', 'Saisis un lien https://github.com vers un dépôt, un dossier ou un fichier.');
 const clip = (text, max) => text.length > max ? text.slice(0, max - 20) + '\n[Extrait tronqué.]' : text;
 const encodePath = (value) => value.split('/').map(encodeURIComponent).join('/');
@@ -70,31 +72,35 @@ function directoryText(items, path) {
 }
 
 /** Un appel GET à l’API GitHub par `gh`, avec l’authentification déjà présente sur cet ordinateur. */
-async function ghGet(execFile, endpoint, requestSignal) {
+async function ghGet(execFile, endpoint, requestSignal, auth = {}) {
   try {
     requestSignal.throwIfAborted();
     const { stdout } = await execFile('gh', ['api', '--hostname', 'github.com', '--method', 'GET', endpoint,
       '--header', 'Accept: application/vnd.github+json'], {
       encoding: 'utf8', timeout: 10_000, maxBuffer: MAX_OUTPUT_BYTES, signal: requestSignal, windowsHide: true,
-      env: { ...process.env, GH_PROMPT_DISABLED: '1', GH_PAGER: 'cat', PAGER: 'cat' },
+      env: { ...process.env, ...auth, GH_PROMPT_DISABLED: '1', GH_PAGER: 'cat', PAGER: 'cat' },
     });
     requestSignal.throwIfAborted();
     if (Buffer.byteLength(stdout) > MAX_OUTPUT_BYTES) throw error(413, 'GITHUB_TOO_LARGE', 'GitHub : cette réponse dépasse la limite de lecture.');
     return JSON.parse(stdout);
   } catch (cause) {
-    if (cause.code?.startsWith('GITHUB_')) throw cause;
+    if (isGithubError(cause)) throw cause;
     throw commandError(cause);
   }
 }
 
 const requestSignalFor = (signal) => (signal ? AbortSignal.any([signal, AbortSignal.timeout(25_000)]) : AbortSignal.timeout(25_000));
 
-/** Lecture ciblée avec l’authentification GitHub CLI déjà présente sur cet ordinateur. */
-export function createGithubReader({ execFile = execute } = {}) {
+/**
+ * Lecture ciblée avec l’authentification GitHub CLI déjà présente sur cet ordinateur.
+ * `auth()` donne l’environnement du compte choisi dans WorkLogs (`github-account.js`).
+ */
+export function createGithubReader({ execFile = execute, auth = async () => ({}) } = {}) {
   return async (value, { signal } = {}) => {
     const source = sourceUrl(value);
     const requestSignal = requestSignalFor(signal);
-    const api = (endpoint) => ghGet(execFile, endpoint, requestSignal);
+    const env = await auth();
+    const api = (endpoint) => ghGet(execFile, endpoint, requestSignal, env);
     const base = `/repos/${source.owner}/${source.repo}`;
     const metadata = await api(base);
     const heading = `Dépôt ${source.owner}/${source.repo}${metadata.private ? ' (privé)' : ''}.`;
@@ -189,13 +195,13 @@ const SECTIONS = {
 export const GITHUB_SECTION_IDS = Object.keys(SECTIONS);
 
 /** Lecture d’une rubrique (`pulls`, `actions`, `issues`, `commits`, `releases`) d’un dépôt relié. */
-export function createGithubRepoReader({ execFile = execute } = {}) {
+export function createGithubRepoReader({ execFile = execute, auth = async () => ({}) } = {}) {
   return async (repo, section, { signal } = {}) => {
     const spec = Object.hasOwn(SECTIONS, section) ? SECTIONS[section] : null;
     if (!spec) throw error(404, 'GITHUB_UNKNOWN_SECTION', 'GitHub : cette rubrique n’existe pas.');
     const name = normalizeGithubRepo(repo);
     if (!name) throw error(400, 'GITHUB_INVALID_REPO', GITHUB_REPO_MESSAGE);
-    const body = await ghGet(execFile, `/repos/${name}/${spec.path}`, requestSignalFor(signal));
+    const body = await ghGet(execFile, `/repos/${name}/${spec.path}`, requestSignalFor(signal), await auth());
     return { repo: name, section, items: spec.rows(body).slice(0, LIST_SIZE).map(spec.map) };
   };
 }

@@ -720,10 +720,19 @@ async function readGoogleSource(documentId: string, tabId = '') {
 
 const blankGoogleSource = () => ({ body: { content: [{ paragraph: { elements: [{ textRun: { content: '\n' } }] } }] } });
 
+const githubAccountUnavailable = async (): Promise<never> => {
+  throw new ApiError('GitHub : la connexion à GitHub passe par GitHub CLI sur l’ordinateur, avec l’application desktop.', 'GITHUB_UNAVAILABLE');
+};
+
 export const localApi: Api = {
   githubList: async () => {
     throw new ApiError('GitHub : la liaison et la lecture des dépôts utilisent GitHub CLI sur l’ordinateur, avec l’application desktop.', 'GITHUB_UNAVAILABLE');
   },
+  githubAccounts: githubAccountUnavailable,
+  chooseGithubAccount: githubAccountUnavailable,
+  startGithubLogin: githubAccountUnavailable,
+  githubLogin: githubAccountUnavailable,
+  cancelGithubLogin: githubAccountUnavailable,
   readGithubLink: async () => {
     throw new ApiError('GitHub : la lecture des dépôts privés utilise GitHub CLI sur l’ordinateur avec l’application desktop ou le serveur local WorkLogs.', 'GITHUB_UNAVAILABLE');
   },

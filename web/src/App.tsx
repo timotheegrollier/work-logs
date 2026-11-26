@@ -88,6 +88,7 @@ export default function App() {
   // La colonne de gauche porte aussi les cartes de tâche (§102) : la largeur de l'ancienne colonne Tâches.
   const [colLeft, setColLeft] = usePersisted('worklogs-col-left', readSideWidth);
   const [colProcedures, setColProcedures] = usePersisted(COL_PROC_KEY, readWidth(320, PROC_MIN));
+  const [colGithub, setColGithub] = usePersisted('worklogs-col-github', readWidth(320));
   const [showLeft, setShowLeft] = usePersisted('worklogs-show-left', readPanel(), writePanel);
   const [showCenter, setShowCenter] = usePersisted('worklogs-show-center', readPanel(), writePanel);
   // Journal et Tâches se partagent la colonne de gauche (§102) : une bascule choisit la liste montrée.
@@ -372,7 +373,8 @@ export default function App() {
   useEffect(() => {
     document.documentElement.style.setProperty('--col-left', `${colLeft}px`);
     document.documentElement.style.setProperty('--col-procedures', `${colProcedures}px`);
-  }, [colLeft, colProcedures]);
+    document.documentElement.style.setProperty('--col-github', `${colGithub}px`);
+  }, [colLeft, colProcedures, colGithub]);
   // Reprise faite une fois (`readSideWidth`) : l'ancienne largeur de la colonne Tâches s'oublie.
   useEffect(() => { localStorage.removeItem(LEGACY_COL_RIGHT); }, []);
 
@@ -1119,7 +1121,15 @@ export default function App() {
           )}
         </main>
 
-        {!isPwa && (
+        {!isPwa && (<>
+          <ColumnResizer
+            side="right"
+            area="github"
+            panelId="workspace-github"
+            label="Redimensionner la colonne GitHub"
+            value={colGithub}
+            onChange={setColGithub}
+          />
           <aside id="workspace-github" className="github-bar no-print">
             {showGithubBar && (githubProject ? (
               <Suspense fallback={loading}>
@@ -1136,7 +1146,7 @@ export default function App() {
               <p className="empty">Choisis un projet dans la barre des projets pour voir son dépôt GitHub.</p>
             ))}
           </aside>
-        )}
+        </>)}
 
         <ColumnResizer
           side="right"
@@ -1237,12 +1247,28 @@ export default function App() {
                   />
                   <span aria-hidden="true">px</span>
                 </label>
+                {!isPwa && (
+                  <label className="col-width-control">
+                    GitHub
+                    <input
+                      id="col-github-width"
+                      type="number"
+                      min={120}
+                      max={600}
+                      value={colGithub}
+                      onChange={(e) => setColGithub(Math.max(120, Math.min(600, Number(e.target.value) || 320)))}
+                      aria-label="Largeur de la colonne GitHub (px)"
+                    />
+                    <span aria-hidden="true">px</span>
+                  </label>
+                )}
                 <button
                   className="ghost"
                   type="button"
                   onClick={() => {
                     setColLeft(320);
                     setColProcedures(320);
+                    setColGithub(320);
                   }}
                   aria-label="Largeurs par défaut"
                 >

@@ -1,5 +1,20 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Compte GitHub depuis l'application, colonne GitHub redimensionnable — 2026-11-26, v0.94.0 (§101)
+
+- **Compte GitHub sans terminal** : le bouton « Compte » de la colonne GitHub (et tout refus 404,
+  403 ou 401) ouvre le panneau « Compte GitHub ». On y choisit un compte de GitHub CLI pour
+  WorkLogs (réglage de la machine `github.account`, jeton passé en `GH_TOKEN`, compte actif de gh
+  inchangé) ou on en connecte un nouveau : `gh auth login --web`, code d'appareil affiché, lien
+  github.com ouvert dans le navigateur système, puis retour au compte actif d'avant.
+  `api/src/github-account.js`, routes `localOnly` sous `/api/github/accounts|account|login`.
+- **Corrigé** : un échec de `gh` (code de sortie numérique) faisait planter le tri des erreurs ;
+  toute lecture refusée s'affichait « impossible de lire ce contenu ». Le message précis revient.
+- **Colonne GitHub redimensionnable** par son bord gauche, comme Procédures
+  (`worklogs-col-github`, 120 à 600 px, champ « GitHub » de Paramètres › Affichage).
+- Tests : `github-account.test.js` (nouveau), `github-links`/`github-routes` (code de sortie réel),
+  `ProjectGithub.test.tsx`, `App.test.tsx`, `e2e/sidebar-widths.spec.ts`.
+
 ## Journal et Tâches dans une colonne, GitHub en colonne — 2026-11-26, v0.93.0 (§101 révisé, §102)
 
 - **Une seule colonne à gauche, « Journal »**, avec la bascule « Notes | Tâches N » (retenue).
