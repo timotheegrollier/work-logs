@@ -73,8 +73,7 @@ export default function App() {
   const [entry, setEntry] = useState<Entry | null>(null);
   const [freshEntry, setFreshEntry] = useState(false);
   const [procedureEdit, setProcedureEdit] = useState({ id: '', sequence: 0 });
-  const [showDocumentTasks, setShowDocumentTasks] = useState(false);
-  // Vue rapide de la colonne Tâches (en retard, en cours…) : un filtre d'affichage,
+  // Vue rapide de la liste Tâches (en retard, en cours…) : un filtre d'affichage,
   // pas un mode — non retenu au redémarrage, levé d'un clic sur « Toutes ».
   const [taskView, setTaskView] = useState<TaskView | null>(null);
   const [taskReveal, setTaskReveal] = useState({ id: '', sequence: 0 });
@@ -86,20 +85,27 @@ export default function App() {
   const documentRef = useRef<string | undefined>(undefined);
   documentRef.current = entry?.google_sync?.document_id;
   const [theme, setTheme] = usePersisted('worklogs-theme', (stored) => (stored === 'light' ? 'light' : 'dark'));
-  const [colLeft, setColLeft] = usePersisted('worklogs-col-left', readWidth(290));
-  const [colRight, setColRight] = usePersisted('worklogs-col-right', readWidth(320));
+  // La colonne de gauche porte aussi les cartes de tâche (§102) : la largeur de l'ancienne colonne Tâches.
+  const [colLeft, setColLeft] = usePersisted('worklogs-col-left', readSideWidth);
   const [colProcedures, setColProcedures] = usePersisted(COL_PROC_KEY, readWidth(320, PROC_MIN));
   const [showLeft, setShowLeft] = usePersisted('worklogs-show-left', readPanel(), writePanel);
   const [showCenter, setShowCenter] = usePersisted('worklogs-show-center', readPanel(), writePanel);
-  const [showRight, setShowRight] = usePersisted('worklogs-show-right', readPanel(), writePanel);
+  // Journal et Tâches se partagent la colonne de gauche (§102) : une bascule choisit la liste montrée.
+  const [sideView, setSideView] = usePersisted<SideView>('worklogs-side-view', (stored) => (stored === 'tasks' ? 'tasks' : 'journal'));
+  // Une note de tâche ouverte, d'où qu'elle vienne (carte, vue d'ensemble, assistant, GitHub) :
+  // la colonne montre sa carte, seule place de la note dans les listes (§102).
+  const openTaskNote = Boolean(entry?.task && !entry.archived);
+  useEffect(() => {
+    if (openTaskNote) setSideView('tasks');
+  }, [entry?.id, openTaskNote, setSideView]);
   // Procédures : masqué par défaut pour ne pas rétrécir l'éditeur d'office ;
   // un clic suffit, l'état est retenu comme les autres panneaux.
   const [showProcedures, setShowProcedures] = usePersisted('worklogs-show-procedures', readPanel(false), writePanel);
+  // GitHub (§101) : colonne du dépôt du projet choisi, masquée par défaut, desktop seulement.
+  const [showGithub, setShowGithub] = usePersisted('worklogs-show-github', readPanel(false), writePanel);
   const [showSettings, setShowSettings] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   const [showProjectFiles, setShowProjectFiles] = useState(false);
-  /** Projet dont le panneau GitHub est ouvert (desktop). */
-  const [githubId, setGithubId] = useState('');
   const [showChat, setShowChat] = useState(false);
   const chatOpener = useRef<HTMLButtonElement>(null);
   // Compte Google au niveau de l'app : le menu de l'en-tête le montre partout.
@@ -281,10 +287,10 @@ export default function App() {
     ++navigationSequence.current;
     setOverview(false);
     setTaskView(null);
-    setShowRight(true);
-    setShowDocumentTasks(true);
+    setShowLeft(true);
+    setSideView('tasks');
     setTaskReveal((current) => ({ id: task.id, sequence: current.sequence + 1 }));
-    if (isPhone()) goTo('tasks');
+    if (isPhone()) goTo('journal');
   }, [goTo]);
   const revealTask = useCallback((task: Task) => {
     if (task.entry_id) {
@@ -329,7 +335,6 @@ export default function App() {
       setSelectedId(null);
       setEntry(null);
       setFreshEntry(false);
-      setShowDocumentTasks(false);
       setProcedureEdit({ id: '', sequence: 0 });
     }
     setProjectId(next);
@@ -366,9 +371,10 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.style.setProperty('--col-left', `${colLeft}px`);
-    document.documentElement.style.setProperty('--col-right', `${colRight}px`);
     document.documentElement.style.setProperty('--col-procedures', `${colProcedures}px`);
-  }, [colLeft, colRight, colProcedures]);
+  }, [colLeft, colProcedures]);
+  // Reprise faite une fois (`readSideWidth`) : l'ancienne largeur de la colonne Tâches s'oublie.
+  useEffect(() => { localStorage.removeItem(LEGACY_COL_RIGHT); }, []);
 
   // Une procédure affichée au centre montre d'où elle vient : la colonne Procédures se
   // déplie, une fois par procédure (la refermer ensuite tient). Archivée, elle n'y est pas.
@@ -417,10 +423,11 @@ export default function App() {
       }
       // Rien de sélectionné (premier chargement, changement de projet, entrée supprimée) :
       // on ouvre la plus récente du journal, sinon une procédure — jamais une archive,
-      // qui ne s'ouvre que si on va la chercher dans les Archives.
+      // qui ne s'ouvre que si on va la chercher dans les Archives. Une note de tâche ouverte
+      // vit dans la liste Tâches (§102) : elle ne vient qu'à défaut d'une note libre.
       const stillThere = next.entries.some((e) => e.id === selectedRef.current || (!categoryId && documentRef.current && e.google_document_id === documentRef.current));
       const active = next.entries.filter((e) => !e.archived);
-      if (!stillThere) setSelectedId((active.find((e) => e.kind !== 'procedure') ?? active[0])?.id ?? null);
+      if (!stillThere) setSelectedId((active.find((e) => e.kind !== 'procedure' && !e.task) ?? active.find((e) => e.kind !== 'procedure') ?? active[0])?.id ?? null);
     } catch {
       if (!isCurrent() || sequence !== reloadSequence.current) return;
       setError('API injoignable. Lance `npm run dev` dans /home/timo/WorkLogs.');
@@ -528,7 +535,11 @@ export default function App() {
 
   // Les procédures vivent dans leur propre sidebar, jamais dans le journal ;
   // archivées, elles restent dans les archives du journal pour être restaurées.
-  const journalEntries = useMemo(() => (state?.entries ?? []).filter((e) => e.kind !== 'procedure' || e.archived), [state?.entries]);
+  // Une note de tâche ouverte vit sur sa carte (§102) : le journal ne la répète pas. Terminée,
+  // elle reste dans ses Archives (§84).
+  const journalEntries = useMemo(() => (state?.entries ?? []).filter((e) => e.archived || (!e.task && e.kind !== 'procedure')), [state?.entries]);
+  // Une note cochée puis suivie comme tâche quitte le journal : elle ne compte plus dans la fusion.
+  const journalPicked = useMemo(() => picked.filter((id) => journalEntries.some((e) => e.id === id)), [picked, journalEntries]);
   const createProcedure = useCallback(async () => {
     if (!(await requestLeave())) return;
     const created = await api.createEntry({
@@ -555,11 +566,12 @@ export default function App() {
     selectEntry(id);
     setShowCenter(true);
   }, [selectEntry, setShowCenter]);
-  const startMerge = useCallback(() => {
+  /** `target` : la note de tâche ouverte, qui reçoit les notes cochées (§102). */
+  const startMerge = useCallback((target?: string) => {
     setMergingTasks(null);
-    setMerging(picked);
+    setMerging(target ? [target, ...journalPicked.filter((id) => id !== target)] : journalPicked);
     setShowCenter(true);
-  }, [picked, setShowCenter]);
+  }, [journalPicked, setShowCenter]);
   const startTaskMerge = useCallback((tasks: Task[]) => {
     setMerging(null);
     setMergingTasks(tasks);
@@ -621,7 +633,7 @@ export default function App() {
   const siblingTabs = useMemo(() => (googleSync?.tabs || state?.entries.filter(e => e.google_document_id === googleSync?.document_id && e.google_document_id) || [])
     .map(tab => ({ ...tab, ...state?.entries.find(e => e.id === tab.id) }))
     .sort((a, b) => (a.google_tab_order ?? 0) - (b.google_tab_order ?? 0)), [googleSync, state?.entries]);
-  // La vue d'ensemble couvre la page Google : le panneau Tâches n'a pas à disparaître.
+  // La vue d'ensemble couvre la page Google : la mise en page du document n'a pas lieu d'être.
   const isGoogleDocument = Boolean(entry?.google_sync) && !overview;
   // Session Google active (pas expirée) : la synchro automatique tourne.
   const autoSynced = Boolean(google?.connected && !google.expired);
@@ -630,23 +642,27 @@ export default function App() {
   const covering = overview && !phone;
   const shownBeside = (view: PhoneView, shown: boolean) => (phone ? phoneView === view : covering ? beside.includes(view) : shown);
   const panels: { view: PhoneView; label: string; id: string; shown: boolean; toggle: Dispatch<SetStateAction<boolean>>; what: string; icon: ReactNode }[] = [
-    { view: 'journal', label: 'Journal', id: 'workspace-journal', shown: shownBeside('journal', showLeft), toggle: setShowLeft, what: 'le journal',
+    { view: 'journal', label: 'Journal', id: 'workspace-journal', shown: shownBeside('journal', showLeft), toggle: setShowLeft, what: 'le journal et les tâches',
       icon: <><path d="M7 4v16" /><circle cx="7" cy="7.5" r="2.2" /><circle cx="7" cy="16.5" r="2.2" /><path d="M12.5 7.5H20M12.5 16.5H20" /></> },
     { view: 'editor', label: 'Écriture', id: 'workspace-editor', shown: phone ? phoneView === 'editor' : showCenter, toggle: setShowCenter, what: 'l’écriture',
       icon: <><path d="M5 19.5h3.5L19 9a2.3 2.3 0 0 0-3.3-3.3L5 16.2z" /><path d="m14 7.5 3.3 3.3" /></> },
-    { view: 'tasks', label: 'Tâches', id: 'workspace-tasks', shown: shownBeside('tasks', showRight), toggle: setShowRight, what: 'les tâches',
-      icon: <><rect x="4.5" y="4.5" width="15" height="15" rx="4" /><path d="m8.6 12.2 2.4 2.4 4.6-4.8" /></> },
     { view: 'procedures', label: 'Procédures', id: 'workspace-procedures', shown: shownBeside('procedures', showProcedures), toggle: setShowProcedures, what: 'les procédures',
       icon: <><path d="M6 4.5h12v15H7.7A1.7 1.7 0 0 1 6 17.8z" /><path d="M6 17.8a1.7 1.7 0 0 1 1.7-1.7H18M9.5 8.5h5" /></> },
+    // Lu par GitHub CLI sur ce poste : ni PWA, ni téléphone (la barre du bas garde trois zones).
+    ...(isPwa || phone ? [] : [{ view: 'github' as const, label: 'GitHub', id: 'workspace-github', shown: shownBeside('github', showGithub), toggle: setShowGithub, what: 'le dépôt GitHub du projet',
+      icon: <><circle cx="7" cy="5.5" r="2" /><circle cx="7" cy="18.5" r="2" /><circle cx="17" cy="8.5" r="2" /><path d="M7 7.5v9M17 10.5c0 4-5.5 3-9.2 6.4" /></> }]),
   ];
   const togglePanel = (panel: (typeof panels)[number]) => {
     if (phone) goTo(panel.view);
     else if (!covering) panel.toggle((v) => !v);
     else if (panel.view === 'editor') setOverview(false);
-    else setBeside((current) => (current.includes(panel.view) ? current.filter((view) => view !== panel.view) : [...current, panel.view]));
+    else {
+      setBeside((current) => (current.includes(panel.view) ? current.filter((view) => view !== panel.view) : [...current, panel.view]));
+      // La colonne GitHub invite à choisir un projet, ce qui referme la vue d'ensemble : elle reste ouverte après.
+      if (panel.view === 'github') panel.toggle(!panel.shown);
+    }
   };
-  const [showJournal, showEditor, showBoard, showProcedureBar] = panels.map((panel) => panel.shown);
-  const documentTasks = phone ? phoneView === 'tasks' : showDocumentTasks;
+  const [showJournal, showEditor, showProcedureBar, showGithubBar = false] = panels.map((panel) => panel.shown);
 
   const stats = state?.stats;
 
@@ -661,9 +677,9 @@ export default function App() {
       setSearch('');
     }
     setTaskView(view);
-    if (covering) setBeside(withView('tasks'));
-    else setShowRight(true);
-    if (isGoogleDocument) setShowDocumentTasks(true);
+    setSideView('tasks');
+    if (covering) setBeside(withView('journal'));
+    else setShowLeft(true);
   };
 
   const openDocument = useCallback((entryId: string, knownProject?: string | null) => {
@@ -675,8 +691,9 @@ export default function App() {
     void openEntry(entryId, project === undefined ? undefined : (project ?? ''));
   }, [openEntry, state]);
 
+  /** Promesse tenue une fois l'état relu : la tâche est alors dans `state.tasks`. */
   const openNewTask = useCallback((task: Task) => {
-    void openEntry(task.entry_id, undefined, { clearSearch: true, keepCategory: true }).then((opened) => {
+    return openEntry(task.entry_id, undefined, { clearSearch: true, keepCategory: true }).then((opened) => {
       if (opened) setProcedureEdit((current) => ({ id: task.entry_id, sequence: current.sequence + 1 }));
       return reload();
     });
@@ -774,7 +791,11 @@ export default function App() {
     }
   };
   const chatChanged = async (proposals: ChatProposal[]) => {
-    if (proposals.some(({ kind }) => kind === 'create_task')) setTaskView(null);
+    if (proposals.some(({ kind }) => kind === 'create_task')) {
+      setTaskView(null);
+      // La carte est la seule place de la nouvelle tâche (§102) : la colonne la montre.
+      setSideView('tasks');
+    }
     if (proposals.some(({ kind }) => kind === 'create_shared_procedure')) bumpShared();
     await refreshEditedEntries(proposals.flatMap((proposal) => proposal.kind === 'update_entry' ? [proposal.entryId] : []));
   };
@@ -823,7 +844,32 @@ export default function App() {
     </button>
   );
 
-  const githubProject = state?.projects.find((project) => project.id === githubId) ?? null;
+  // La colonne GitHub suit le projet du filtre (ou celui de la catégorie choisie).
+  // Tâches ouvertes du filtre : le compteur de la bascule annonce ce que la liste montre.
+  const openTaskCount = state?.tasks.filter((task) => task.status !== 'done').length ?? 0;
+  const githubProject = state?.projects.find((project) => project.id === creationProjectId) ?? null;
+  const createGithubTask = async (title: string, url: string | null) => {
+    if (!githubProject) return;
+    const task = await api.createTask({
+      title,
+      project_id: githubProject.id,
+      category_id: creationCategoryId,
+      content_md: url ? `[${title.replace(/[[\]\\]/g, '\\$&')}](${url})` : '',
+    });
+    // Comme la saisie rapide : une vue rapide cacherait la nouvelle carte, seule place de sa note.
+    setTaskView(null);
+    setSideView('tasks');
+    setShowLeft(true);
+    // Attendre la relecture : le bouton reste occupé tant que la tâche n'est pas dans l'état.
+    await openNewTask(task);
+  };
+  const openGithubTask = (task: Task) => {
+    // Le projet de la tâche, comme un clic sur sa carte : la colonne garde son dépôt.
+    if (task.entry_id) openDocument(task.entry_id, task.project_id);
+    else revealTask(task);
+  };
+  const mergeTitle = openNoteTitle ?? entry?.title ?? '';
+  const mergeInto = useMemo(() => (!sharedPath && entry?.task ? { id: entry.id, title: mergeTitle } : null), [sharedPath, entry?.task, entry?.id, mergeTitle]);
   return (
     <FollowUpProvider state={state} onChanged={reload} onEntriesChanged={refreshEditedEntries}>
     <div className="app" ref={pageRef}>
@@ -933,7 +979,6 @@ export default function App() {
           onSelect={(id) => void switchProject(id)}
           onChanged={reload}
           compact={phone}
-          onGithub={isPwa ? undefined : (project) => setGithubId(project.id)}
         >
           <CategoryBar
             key={projectId}
@@ -951,25 +996,60 @@ export default function App() {
         {phone && chatTrigger}
       </div>
 
-      {isGoogleDocument && <div className="workspace-switch no-print"><span>Document Google · {siblingTabs.length} onglet{siblingTabs.length > 1 ? 's' : ''}</span>
-        <button aria-expanded={showDocumentTasks} aria-controls="workspace-tasks" onClick={() => setShowDocumentTasks(!showDocumentTasks)}>{showDocumentTasks ? 'Masquer les tâches' : 'Afficher les tâches'}</button>
-      </div>}
-      <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (documentTasks ? ' with-tasks' : '') + (showJournal ? '' : ' hide-left') + (showEditor ? '' : ' hide-center') + (showBoard ? '' : ' hide-right') + (showProcedureBar ? ' show-procedures' : '')}>
-        <aside id="workspace-journal" className="left no-print">
-          <EntryList
-            categories={state?.categories ?? []}
-            grouped={groupedCategories}
-            entries={journalEntries}
-            projects={state?.projects ?? []}
-            selectedId={sharedPath ? null : selectedId}
-            onSelect={selectFromList}
-            picked={picked}
-            onPick={setPicked}
-            onMerge={startMerge}
-            onCreate={createEntry}
-            onCreateDocument={createDocument}
-            searching={query !== ''}
-          />
+      {/* Les tâches partagent la colonne du journal (§102) : elles ne prennent plus de largeur au document. */}
+      {isGoogleDocument && <div className="workspace-switch no-print"><span>Document Google · {siblingTabs.length} onglet{siblingTabs.length > 1 ? 's' : ''}</span></div>}
+      <div className={'columns' + (isGoogleDocument ? ' is-document' : '') + (showJournal ? '' : ' hide-left') + (showEditor ? '' : ' hide-center') + (showProcedureBar ? ' show-procedures' : '') + (showGithubBar ? ' show-github' : '')}>
+        <aside id="workspace-journal" className={'left no-print' + (sideView === 'tasks' ? ' shows-tasks' : '')}>
+          <div className="side-switch" role="group" aria-label="Notes ou tâches">
+            <button type="button" className={'side-switch-option' + (sideView === 'journal' ? ' is-on' : '')} aria-pressed={sideView === 'journal'}
+              aria-controls="journal-notes" onClick={() => setSideView('journal')}>
+              Notes
+            </button>
+            <button type="button" className={'side-switch-option' + (sideView === 'tasks' ? ' is-on' : '')} aria-pressed={sideView === 'tasks'}
+              aria-controls="workspace-tasks" onClick={() => setSideView('tasks')}>
+              Tâches <span className="count">{openTaskCount}</span>
+            </button>
+          </div>
+          <div id="journal-notes" className="side-pane side-notes">
+            <EntryList
+              categories={state?.categories ?? []}
+              grouped={groupedCategories}
+              entries={journalEntries}
+              projects={state?.projects ?? []}
+              selectedId={sharedPath ? null : selectedId}
+              onSelect={selectFromList}
+              picked={journalPicked}
+              onPick={setPicked}
+              onMerge={startMerge}
+              mergeInto={mergeInto}
+              onCreate={createEntry}
+              onCreateDocument={createDocument}
+              searching={query !== ''}
+            />
+          </div>
+          <div id="workspace-tasks" className="side-pane side-tasks">
+            <TaskBoard
+              categories={state?.categories ?? []}
+              categoryId={categoryId}
+              // La recherche relue, pas la saisie : chaque frappe redessinerait toutes les cartes.
+              search={query}
+              grouped={groupedCategories}
+              tasks={state?.tasks ?? []}
+              entries={state?.entries ?? []}
+              projectId={projectId}
+              projects={state?.projects ?? []}
+              view={taskView}
+              revealRequest={taskReveal}
+              selectedId={sharedPath ? null : selectedId}
+              onView={setTaskView}
+              onOpenDocument={openDocument}
+              onNewTask={openNewTask}
+              onOpenShared={openShared}
+              onProcedureCreated={openCreatedProcedure}
+              onChanged={reload}
+              onMerge={startTaskMerge}
+            />
+          </div>
         </aside>
 
         <ColumnResizer side="left" panelId="workspace-journal" value={colLeft} onChange={setColLeft} />
@@ -1039,30 +1119,24 @@ export default function App() {
           )}
         </main>
 
-        <ColumnResizer side="right" panelId="workspace-tasks" value={colRight} onChange={setColRight} />
-
-        <aside id="workspace-tasks" className="right no-print">
-          <TaskBoard
-            categories={state?.categories ?? []}
-            categoryId={categoryId}
-            // La recherche relue, pas la saisie : chaque frappe redessinerait toutes les cartes.
-            search={query}
-            grouped={groupedCategories}
-            tasks={state?.tasks ?? []}
-            entries={state?.entries ?? []}
-            projectId={projectId}
-            projects={state?.projects ?? []}
-            view={taskView}
-            revealRequest={taskReveal}
-            onView={setTaskView}
-            onOpenDocument={openDocument}
-            onNewTask={openNewTask}
-            onOpenShared={openShared}
-            onProcedureCreated={openCreatedProcedure}
-            onChanged={reload}
-            onMerge={startTaskMerge}
-          />
-        </aside>
+        {!isPwa && (
+          <aside id="workspace-github" className="github-bar no-print">
+            {showGithubBar && (githubProject ? (
+              <Suspense fallback={loading}>
+                <ProjectGithub
+                  key={githubProject.id}
+                  project={githubProject}
+                  tasks={state?.tasks ?? []}
+                  onChanged={reload}
+                  onOpenTask={openGithubTask}
+                  onCreateTask={createGithubTask}
+                />
+              </Suspense>
+            ) : (
+              <p className="empty">Choisis un projet dans la barre des projets pour voir son dépôt GitHub.</p>
+            ))}
+          </aside>
+        )}
 
         <ColumnResizer
           side="right"
@@ -1138,28 +1212,15 @@ export default function App() {
               <p className="ai-hint">Largeur des colonnes latérales, en pixels. Les poignées entre les colonnes font la même chose à la souris.</p>
               <div className="col-widths">
                 <label className="col-width-control">
-                  Journal
+                  Journal et tâches
                   <input
                     id="col-left-width"
                     type="number"
                     min={120}
                     max={600}
                     value={colLeft}
-                    onChange={(e) => setColLeft(Math.max(120, Math.min(600, Number(e.target.value) || 290)))}
+                    onChange={(e) => setColLeft(Math.max(120, Math.min(600, Number(e.target.value) || 320)))}
                     aria-label="Largeur de la colonne de gauche (px)"
-                  />
-                  <span aria-hidden="true">px</span>
-                </label>
-                <label className="col-width-control">
-                  Tâches
-                  <input
-                    id="col-right-width"
-                    type="number"
-                    min={120}
-                    max={600}
-                    value={colRight}
-                    onChange={(e) => setColRight(Math.max(120, Math.min(600, Number(e.target.value) || 320)))}
-                    aria-label="Largeur de la colonne de droite (px)"
                   />
                   <span aria-hidden="true">px</span>
                 </label>
@@ -1180,8 +1241,7 @@ export default function App() {
                   className="ghost"
                   type="button"
                   onClick={() => {
-                    setColLeft(290);
-                    setColRight(320);
+                    setColLeft(320);
                     setColProcedures(320);
                   }}
                   aria-label="Largeurs par défaut"
@@ -1219,15 +1279,6 @@ export default function App() {
         onDocument={openChatDocument}
         onSharedDocument={openChatShared}
       />
-      {githubProject && (
-        <Suspense fallback={loading}>
-          <ProjectGithub
-            project={githubProject}
-            onClose={() => setGithubId('')}
-            onChanged={reload}
-          />
-        </Suspense>
-      )}
       {showProjectFiles && (
         <Suspense fallback={loading}>
           <ProjectFiles
@@ -1286,13 +1337,20 @@ const readWidth = (fallback: number, min = 120) => (stored: string | null) => {
   const v = Number(stored);
   return Number.isFinite(v) && v >= min && v <= 600 ? v : fallback;
 };
+/** Largeur de l'ancienne colonne Tâches, avant que le journal ne l'accueille (§102). */
+const LEGACY_COL_RIGHT = 'worklogs-col-right';
+// La colonne Journal porte aussi les cartes : elle reprend la plus large des deux anciennes colonnes.
+const readSideWidth = (stored: string | null) =>
+  Math.max(readWidth(320)(stored), readWidth(0)(typeof localStorage === 'undefined' ? null : localStorage.getItem(LEGACY_COL_RIGHT)));
 /** Panneau visible par défaut ; `'0'` enregistré le replie durablement. */
 const readPanel = (fallback = true) => (stored: string | null) => (stored === null ? fallback : stored !== '0');
 const writePanel = (shown: boolean) => (shown ? '1' : '0');
 
 /** Téléphone, en portrait comme en paysage : les mêmes requêtes que `styles.css` (§53). */
 const PHONE = '(max-width: 600px), (max-width: 900px) and (max-height: 500px)';
-type PhoneView = 'journal' | 'editor' | 'tasks' | 'procedures';
+type PhoneView = 'journal' | 'editor' | 'procedures' | 'github';
+/** Liste montrée dans la colonne de gauche (§102). */
+type SideView = 'journal' | 'tasks';
 /** Ajoute un panneau à ceux rouverts à côté de la vue d'ensemble. */
 const withView = (view: PhoneView) => (current: PhoneView[]) => (current.includes(view) ? current : [...current, view]);
 const isPhone = () => Boolean(window.matchMedia?.(PHONE).matches);

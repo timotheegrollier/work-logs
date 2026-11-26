@@ -6,6 +6,10 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 const noHorizontalScroll = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
+// Notes et tâches se partagent la colonne de gauche (§102) : la bascule montre les tâches.
+const showTasks = (page: Page) =>
+  page.getByRole('group', { name: 'Notes ou tâches' }).getByRole('button', { name: /^Tâches/ }).click();
+
 async function post(request: APIRequestContext, path: string, data: unknown) {
   const response = await request.post(path, { data });
   expect(response.ok()).toBeTruthy();
@@ -13,8 +17,8 @@ async function post(request: APIRequestContext, path: string, data: unknown) {
 }
 
 test('accès direct à la vue d’ensemble même quand les panneaux sont repliés', async ({ page }) => {
+  // Tâches repliées : depuis §102, c'est la bascule de la colonne restée sur Notes (par défaut).
   await page.addInitScript(() => {
-    localStorage.setItem('worklogs-show-right', '0');
     localStorage.setItem('worklogs-show-procedures', '0');
     localStorage.setItem('worklogs-show-center', '0');
   });
@@ -57,6 +61,7 @@ test('la vue attend les données globales et se ferme si une recherche ou une ca
     const searched = page.waitForResponse(response => response.url().includes('/api/state?q=Filtre') && response.ok());
     await search.fill('Filtre unique vue');
     await searched;
+    await showTasks(page);
     await expect(page.getByRole('region', { name: 'Tâches', exact: true }).getByRole('button', { name: 'Filtre unique vue', exact: true })).toBeVisible();
 
     // Bloque la nouvelle réponse globale, pas la recherche précédente : aucune
@@ -159,6 +164,7 @@ test('une voie par projet qui tient en largeur, sur desktop comme sur téléphon
     // Tablette : la liste fusionnée ne doit pas occuper seulement un tiers du panneau.
     await page.setViewportSize({ width: 800, height: 1000 });
     await page.goto('/');
+    await showTasks(page);
     const lists = page.locator('.board-lists.is-overview');
     const listBox = (await lists.boundingBox())!;
     const columnBox = (await lists.locator('.column').first().boundingBox())!;
@@ -206,8 +212,8 @@ test('une voie par projet qui tient en largeur, sur desktop comme sur téléphon
     const box = (await lane.boundingBox())!;
     const main = (await page.locator('main.center').boundingBox())!;
     expect(box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 1);
-    // « Tâches » rouvre son panneau à côté de la vue, sans la fermer ni déborder.
-    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true }).click();
+    // « Journal » rouvre sa colonne, restée sur Tâches (§102), à côté de la vue, sans la fermer ni déborder.
+    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Journal', exact: true }).click();
     await expect(page.locator('#workspace-tasks')).toBeVisible();
     await expect(overview).toBeVisible();
     expect(await noHorizontalScroll(page)).toBe(true);
@@ -227,7 +233,9 @@ test('une voie par projet qui tient en largeur, sur desktop comme sur téléphon
     await page.setViewportSize({ width: 412, height: 860 });
     await page.reload();
     const nav = (name: string) => page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name, exact: true });
-    await nav('Tâches').click();
+    // Les tâches : le Journal, resté sur sa liste Tâches (§102).
+    await nav('Journal').click();
+    await expect(page.locator('#workspace-tasks')).toBeVisible();
     await page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true }).click();
     await expect(overview).toBeVisible();
     await expect(nav('Écriture')).toHaveAttribute('aria-pressed', 'true');
@@ -257,7 +265,6 @@ test('choisir une tâche ou une entrée suivie ferme la vue et affiche la source
     expect(result.ok()).toBeTruthy();
   }
   try {
-    await page.addInitScript(() => localStorage.setItem('worklogs-show-right', '0'));
     const overview = page.getByRole('region', { name: 'Vue d’ensemble des projets', exact: true });
     for (const viewport of [{ width: 1440, height: 900 }, { width: 800, height: 1000 }, { width: 375, height: 812 }]) {
       await page.setViewportSize(viewport);
@@ -306,7 +313,6 @@ test('une tâche ouvre sa note principale depuis un nœud ou son bilan, même av
   try {
     const state = await (await request.get('/api/state')).json();
     expect(state.tasks.find((item: { id: string }) => item.id === task.id).documents.map((item: { id: string }) => item.id)).toEqual(expect.arrayContaining([task.entry_id, latest.id, older.id]));
-    await page.addInitScript(() => localStorage.setItem('worklogs-show-right', '0'));
     for (const viewport of [{ width: 1440, height: 900 }, { width: 800, height: 1000 }, { width: 375, height: 812 }]) {
       await page.setViewportSize(viewport);
       await page.goto('/');
@@ -345,6 +351,7 @@ test('le brouillon de planification reste accessible depuis la carte après ouve
     const trigger = page.getByRole('button', { name: 'Vue d’ensemble des tâches', exact: true });
     const overview = page.getByRole('region', { name: 'Vue d’ensemble des projets', exact: true });
     const board = page.getByRole('region', { name: 'Tâches', exact: true });
+    await showTasks(page);
     await board.getByRole('button', { name: `Planifier ${task.title}`, exact: true }).click();
     const due = board.getByLabel('Échéance', { exact: true });
     await due.fill('2026-12-24');
@@ -367,6 +374,7 @@ test('le bouton pour mettre en cours se voit au repos, plein au survol', async (
   try {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
+    await showTasks(page);
     const button = page.getByRole('button', { name: 'Mettre en cours Tâche au repos vue' });
     // 0,7 : le contraste de 3:1 d'une commande, sans attendre le survol (§47).
     await expect(button).toHaveCSS('opacity', '0.7');
@@ -384,7 +392,7 @@ test.describe('tactile', () => {
     try {
       await page.setViewportSize({ width: 412, height: 860 });
       await page.goto('/');
-      await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true }).click();
+      await showTasks(page);
       const button = page.getByRole('button', { name: 'Mettre en cours Tâche tactile vue' });
       await expect(button).toBeVisible();
       await expect(button).toHaveCSS('opacity', '1');

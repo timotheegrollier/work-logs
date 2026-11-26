@@ -30,6 +30,7 @@ export const TaskBoard = memo(function TaskBoard({
   grouped = false,
   view,
   revealRequest,
+  selectedId = null,
   onView,
   onOpenDocument,
   onNewTask,
@@ -49,6 +50,8 @@ export const TaskBoard = memo(function TaskBoard({
   view: TaskView | null;
   /** Ouverture depuis la vue d'ensemble, y compris dans la liste terminée repliée. */
   revealRequest?: { id: string; sequence: number };
+  /** Note ouverte au centre : sa carte est surlignée, le journal ne la montre plus (§102). */
+  selectedId?: string | null;
   onView: (view: TaskView | null) => void;
   /** `projectId` : projet connu d'un document absent de l'état filtré, que l'ouverture suit. */
   onOpenDocument: (entryId: string, projectId?: string | null) => void;
@@ -313,6 +316,7 @@ export const TaskBoard = memo(function TaskBoard({
                         onOpenShared={onOpenShared}
                         onProcedureCreated={onProcedureCreated}
                         onChanged={onChanged}
+                        current={Boolean(task.entry_id) && task.entry_id === selectedId}
                         picked={picked.includes(task.id)}
                         onPick={onMerge ? (on) => setPicked((current) => on ? [...current, task.id] : current.filter((id) => id !== task.id)) : undefined}
                         // Position dans la colonne entière : filtres et groupes cachent des voisines.
@@ -394,6 +398,7 @@ function TaskCard({
   onOpenShared,
   onProcedureCreated,
   onChanged,
+  current = false,
   picked = false,
   onPick,
   onDrop,
@@ -420,6 +425,8 @@ function TaskCard({
   onOpenShared: (path: string) => void;
   onProcedureCreated: (procedure: Entry) => void;
   onChanged: () => void;
+  /** Sa note est ouverte au centre. */
+  current?: boolean;
   picked?: boolean;
   onPick?: (on: boolean) => void;
   onDrop?: (event: React.DragEvent) => void;
@@ -1069,7 +1076,7 @@ function TaskCard({
 
   return (
     <div
-      className={'card' + (task.pinned ? ' is-pinned' : '') + (done ? ' is-done' : '')}
+      className={'card' + (task.pinned ? ' is-pinned' : '') + (done ? ' is-done' : '') + (current ? ' is-selected' : '')}
       draggable={draggable}
       onDragStart={draggable ? (e) => e.dataTransfer.setData(DRAG_TYPE, task.id) : undefined}
       onDrop={onDrop}
@@ -1082,7 +1089,7 @@ function TaskCard({
           aria-label={done ? `Rouvrir ${task.title}` : `Terminer ${task.title}`}
           onChange={() => void patch({ status: done ? 'todo' : 'done' })}
         />
-        <button className="card-title" type="button"
+        <button className="card-title" type="button" aria-current={current || undefined}
           onClick={task.entry_id ? () => onOpenDocument(task.entry_id, task.project_id) : onEdit}
           title={task.entry_id ? 'Ouvrir la note de tâche' : 'Modifier'}>
           {task.title}

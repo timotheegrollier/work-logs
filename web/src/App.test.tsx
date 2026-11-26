@@ -25,8 +25,19 @@ describe('contrôles de largeur des colonnes', () => {
 
     await screen.findByRole('region', { name: 'Journal' });
     await openDisplaySettings();
-    expect(screen.getByLabelText('Largeur de la colonne de gauche (px)')).toHaveValue(290);
-    expect(screen.getByLabelText('Largeur de la colonne de droite (px)')).toHaveValue(320);
+    // Journal et tâches dans une seule colonne (§102) : la largeur de l'ancienne colonne Tâches.
+    expect(screen.getByLabelText('Largeur de la colonne de gauche (px)')).toHaveValue(320);
+    expect(screen.queryByLabelText('Largeur de la colonne de droite (px)')).not.toBeInTheDocument();
+  });
+
+  test('la colonne Journal reprend une fois l’ancienne largeur des tâches, si elle était plus large', async () => {
+    globalThis.localStorage.setItem('worklogs-col-left', '290');
+    globalThis.localStorage.setItem('worklogs-col-right', '380');
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue('--col-left')).toBe('380px'));
+    expect(globalThis.localStorage.getItem('worklogs-col-left')).toBe('380');
+    expect(globalThis.localStorage.getItem('worklogs-col-right')).toBeNull();
   });
 
   test('changer la largeur gauche met à jour la variable CSS et localStorage', async () => {
@@ -43,20 +54,6 @@ describe('contrôles de largeur des colonnes', () => {
     );
   });
 
-  test('changer la largeur droite met à jour la variable CSS et localStorage', async () => {
-    seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
-    render(<App />);
-    await screen.findByRole('region', { name: 'Journal' });
-    await openDisplaySettings();
-
-    const rightInput = screen.getByLabelText('Largeur de la colonne de droite (px)');
-    fireEvent.change(rightInput, { target: { value: '480' } });
-    expect(globalThis.localStorage.getItem('worklogs-col-right')).toBe('480');
-    await waitFor(() =>
-      expect(document.documentElement.style.getPropertyValue('--col-right')).toBe('480px')
-    );
-  });
-
   test('les valeurs hors plage sont ramenées aux bornes', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
     render(<App />);
@@ -64,33 +61,28 @@ describe('contrôles de largeur des colonnes', () => {
     await openDisplaySettings();
 
     const leftInput = screen.getByLabelText('Largeur de la colonne de gauche (px)');
-    const rightInput = screen.getByLabelText('Largeur de la colonne de droite (px)');
 
     fireEvent.change(leftInput, { target: { value: '80' } });
     expect(leftInput).toHaveValue(120);
     expect(globalThis.localStorage.getItem('worklogs-col-left')).toBe('120');
 
-    fireEvent.change(rightInput, { target: { value: '900' } });
-    expect(rightInput).toHaveValue(600);
-    expect(globalThis.localStorage.getItem('worklogs-col-right')).toBe('600');
+    fireEvent.change(leftInput, { target: { value: '900' } });
+    expect(leftInput).toHaveValue(600);
+    expect(globalThis.localStorage.getItem('worklogs-col-left')).toBe('600');
   });
 
   test('le bouton Par défaut restaure les largeurs d’origine', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
     globalThis.localStorage.setItem('worklogs-col-left', '360');
-    globalThis.localStorage.setItem('worklogs-col-right', '420');
     render(<App />);
     await screen.findByRole('region', { name: 'Journal' });
     await openDisplaySettings();
 
     expect(screen.getByLabelText('Largeur de la colonne de gauche (px)')).toHaveValue(360);
-    expect(screen.getByLabelText('Largeur de la colonne de droite (px)')).toHaveValue(420);
 
     fireEvent.click(screen.getByRole('button', { name: /Largeurs par défaut/ }));
-    expect(screen.getByLabelText('Largeur de la colonne de gauche (px)')).toHaveValue(290);
-    expect(screen.getByLabelText('Largeur de la colonne de droite (px)')).toHaveValue(320);
-    expect(globalThis.localStorage.getItem('worklogs-col-left')).toBe('290');
-    expect(globalThis.localStorage.getItem('worklogs-col-right')).toBe('320');
+    expect(screen.getByLabelText('Largeur de la colonne de gauche (px)')).toHaveValue(320);
+    expect(globalThis.localStorage.getItem('worklogs-col-left')).toBe('320');
   });
 });
 
@@ -164,7 +156,9 @@ describe('en-tête', () => {
     expect(within(header).getByRole('button', { name: 'Changer de thème' })).toBeInTheDocument();
     expect(within(header).getByRole('button', { name: 'Journal' })).toBeInTheDocument();
     expect(within(header).getByRole('button', { name: 'Écriture' })).toBeInTheDocument();
-    expect(within(header).getByRole('button', { name: 'Tâches' })).toBeInTheDocument();
+    expect(within(header).getByRole('button', { name: 'Procédures' })).toBeInTheDocument();
+    // Les tâches partagent la colonne Journal (§102) : plus d'interrupteur à elles.
+    expect(within(header).queryByRole('button', { name: 'Tâches' })).not.toBeInTheDocument();
     // Noms en aria-label : ils survivent au passage en icônes seules sur mobile.
     expect(within(header).getByRole('button', { name: 'Exporter' })).toHaveAttribute('aria-label', 'Exporter');
     expect(within(header).getByRole('button', { name: 'Compte et paramètres' })).toHaveAttribute('aria-haspopup', 'menu');
@@ -355,7 +349,9 @@ describe('cartes empilées (tablette) et vues du téléphone', () => {
     expect(columns()).not.toHaveClass('hide-center');
 
     await user.click(screen.getByRole('button', { name: 'Relancer — à faire' }));
-    expect(nav('Tâches')).toHaveAttribute('aria-pressed', 'true');
+    // Les tâches sont dans la vue Journal (§102), sur sa liste « Tâches ».
+    expect(nav('Journal')).toHaveAttribute('aria-pressed', 'true');
+    expect(document.getElementById('workspace-journal')).toHaveClass('shows-tasks');
     await waitFor(() => expect(document.activeElement).toBe(within(board()).getByRole('textbox', { name: 'Titre de la tâche' })));
     expect(within(board()).getByRole('textbox', { name: 'Titre de la tâche' })).toHaveValue('Relancer');
     expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument();
@@ -370,12 +366,15 @@ describe('cartes empilées (tablette) et vues du téléphone', () => {
 
     await within(journal()).findByText('Plus ancienne');
     expect(columns()).not.toHaveClass('hide-left');
-    expect(columns()).toHaveClass('hide-center', 'hide-right');
+    expect(columns()).toHaveClass('hide-center');
     expect(nav('Journal')).toHaveAttribute('aria-pressed', 'true');
+    // Trois zones : les tâches sont dans le Journal (§102), GitHub reste une colonne de bureau.
+    expect(within(screen.getByRole('group', { name: 'Panneaux latéraux' })).getAllByRole('button').map((button) => button.textContent))
+      .toEqual(['Journal', 'Écriture', 'Procédures']);
 
     await user.click(within(journal()).getByText('Plus ancienne'));
     expect(await screen.findByDisplayValue('Plus ancienne')).toBeInTheDocument();
-    expect(columns()).toHaveClass('hide-left', 'hide-right');
+    expect(columns()).toHaveClass('hide-left');
     expect(columns()).not.toHaveClass('hide-center');
     expect(nav('Écriture')).toHaveAttribute('aria-pressed', 'true');
     expect(nav('Journal')).toHaveAttribute('aria-pressed', 'false');
@@ -387,12 +386,11 @@ describe('cartes empilées (tablette) et vues du téléphone', () => {
 
     // La barre choisit sans rien replier pour le desktop.
     await user.click(nav('Procédures'));
-    expect(columns()).toHaveClass('show-procedures', 'hide-left', 'hide-center', 'hide-right');
-    await user.click(nav('Tâches'));
-    expect(columns()).not.toHaveClass('hide-right');
+    expect(columns()).toHaveClass('show-procedures', 'hide-left', 'hide-center');
+    await user.click(nav('Journal'));
+    expect(columns()).not.toHaveClass('hide-left');
     expect(columns()).not.toHaveClass('show-procedures');
     expect(localStorage.getItem('worklogs-show-left')).not.toBe('0');
-    expect(localStorage.getItem('worklogs-show-right')).not.toBe('0');
   });
 
   test('téléphone : un bouton nomme le projet courant, la liste complète choisit d’un toucher', async () => {
@@ -579,13 +577,15 @@ describe('espace Google Docs', () => {
     expect(screen.getAllByRole('tab')).toHaveLength(2);
   });
 
-  test('les tâches se replient pour le document et se rouvrent sur demande', async () => {
+  test('les tâches restent dans la colonne Journal à côté du document, sans lui prendre de largeur', async () => {
     seedTabs();
     render(<App />);
-    const show = await screen.findByRole('button', { name: 'Afficher les tâches' });
-    expect(show).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(show);
-    expect(screen.getByRole('button', { name: 'Masquer les tâches' })).toHaveAttribute('aria-expanded', 'true');
+    await screen.findByText(/Document Google · /);
+    // §102 : plus de colonne à replier pour le document, donc plus de bouton « Afficher les tâches ».
+    expect(screen.queryByRole('button', { name: 'Afficher les tâches' })).not.toBeInTheDocument();
+    expect(document.querySelector('.columns')).not.toHaveClass('with-tasks');
+    fireEvent.click(within(screen.getByRole('group', { name: 'Notes ou tâches' })).getByRole('button', { name: /^Tâches/ }));
+    expect(document.getElementById('workspace-journal')).toHaveClass('shows-tasks');
   });
 });
 
@@ -665,6 +665,65 @@ describe('panneau Procédures', () => {
     expect(document.querySelector('.columns')).not.toHaveClass('show-procedures');
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
     expect(globalThis.localStorage.getItem('worklogs-show-procedures')).toBe('0');
+  });
+
+  test('GitHub : colonne repliée par défaut, qui suit le projet choisi et suit une pull request comme tâche', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Bravo' }], tasks: [{ id: 'tk_pin', title: 'Relire la CI', project_id: 'pr_b' }] });
+    api.db.prepare("UPDATE projects SET github_repo='Timo/worklogs' WHERE id='pr_b'").run();
+    api.db.prepare("UPDATE tasks SET pinned=1 WHERE id='tk_pin'").run();
+    const list = vi.spyOn(clientApi, 'githubList').mockResolvedValue({ repo: 'Timo/worklogs', section: 'pulls', items: [
+      { id: '1', number: 12, title: 'Ajoute la liaison', url: 'https://github.com/Timo/worklogs/pull/12', state: 'ouverte', author: 'timo', date: null, ref: null },
+    ] });
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+    const columns = () => document.querySelector('.columns');
+    const toggle = within(screen.getByRole('group', { name: 'Panneaux latéraux' })).getByRole('button', { name: 'GitHub' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(columns()).not.toHaveClass('show-github');
+    // Plus de bouton dans la barre des projets ni de fenêtre : la colonne le remplace.
+    expect(screen.queryByRole('button', { name: /Dépôt GitHub de/ })).not.toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(columns()).toHaveClass('show-github');
+    expect(localStorage.getItem('worklogs-show-github')).toBe('1');
+    expect(screen.getByText('Choisis un projet dans la barre des projets pour voir son dépôt GitHub.')).toBeInTheDocument();
+    await user.click(await within(filters()).findByRole('button', { name: /Alpha/ }));
+    expect(await screen.findByLabelText('Dépôt GitHub')).toBeInTheDocument();
+    expect(list).not.toHaveBeenCalled();
+
+    await user.click(within(filters()).getByRole('button', { name: /Bravo/ }));
+    expect(await screen.findByRole('region', { name: 'GitHub du projet Bravo' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // Une vue rapide cacherait la carte, seule place de la note : « ＋ Tâche » la retire, comme la saisie rapide.
+    await user.click(await within(board()).findByRole('button', { name: /^Épinglées/ }));
+    expect(within(board()).getByRole('button', { name: /^Épinglées/ })).toHaveAttribute('aria-pressed', 'true');
+    // Un double clic ne crée qu'une tâche : le bouton reste occupé jusqu'à la relecture.
+    await user.dblClick(await screen.findByRole('button', { name: 'Suivre #12 Ajoute la liaison comme tâche' }));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('#12 Ajoute la liaison'));
+    expect(row(api.db, 'SELECT COUNT(*) n FROM tasks WHERE title=?', '#12 Ajoute la liaison').n).toBe(1);
+    expect(row(api.db, 'SELECT project_id FROM tasks WHERE title=?', '#12 Ajoute la liaison')).toEqual({ project_id: 'pr_b' });
+    expect(row(api.db, 'SELECT e.content_md FROM entries e JOIN tasks t ON t.entry_id=e.id').content_md)
+      .toBe('[#12 Ajoute la liaison](https://github.com/Timo/worklogs/pull/12)');
+    expect(await within(board()).findByRole('button', { name: '#12 Ajoute la liaison' })).toHaveAttribute('aria-current', 'true');
+    expect(within(journal()).queryByText('#12 Ajoute la liaison')).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Ouvrir la tâche #12 Ajoute la liaison' })).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(columns()).not.toHaveClass('show-github');
+    expect(localStorage.getItem('worklogs-show-github')).toBe('0');
+
+    // À côté de la vue d'ensemble, choisir le projet demandé referme la vue : la colonne reste.
+    await user.click(screen.getByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
+    await user.click(toggle);
+    expect(screen.getByText('Choisis un projet dans la barre des projets pour voir son dépôt GitHub.')).toBeInTheDocument();
+    await user.click(within(filters()).getByRole('button', { name: /Bravo/ }));
+    expect(await screen.findByRole('region', { name: 'GitHub du projet Bravo' })).toBeInTheDocument();
+    expect(columns()).toHaveClass('show-github');
+    await user.click(await screen.findByRole('button', { name: 'Ouvrir la tâche #12 Ajoute la liaison' }));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('#12 Ajoute la liaison'));
+    expect(screen.getByRole('region', { name: 'GitHub du projet Bravo' })).toBeInTheDocument();
   });
 
   test('Modifier réaffiche l’écriture et permet de modifier le titre et le contenu, même déjà sélectionnés', async () => {
@@ -866,34 +925,76 @@ describe('panneau Procédures', () => {
 
 describe('panneaux repliables', () => {
   const columns = () => document.querySelector('.columns') as HTMLElement;
-  test('masquer le journal et les tâches ne garde que l’écriture', async () => {
+  test('masquer le journal, qui porte aussi les tâches, ne garde que l’écriture', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
     render(<App />);
     await screen.findByRole('region', { name: 'Entrée' });
     const journalToggle = screen.getByRole('button', { name: 'Journal' });
     expect(journalToggle).toHaveAttribute('aria-pressed', 'true');
     expect(columns()).not.toHaveClass('hide-left');
+    // Une seule colonne pour les notes et les tâches (§102) : plus de colonne de droite.
+    expect(document.getElementById('workspace-tasks')!.closest('aside')).toBe(document.getElementById('workspace-journal'));
     fireEvent.click(journalToggle);
     expect(columns()).toHaveClass('hide-left');
     expect(journalToggle).toHaveAttribute('aria-pressed', 'false');
     expect(globalThis.localStorage.getItem('worklogs-show-left')).toBe('0');
-    fireEvent.click(screen.getByRole('button', { name: 'Tâches' }));
-    expect(columns()).toHaveClass('hide-left', 'hide-right');
     expect(screen.getByRole('region', { name: 'Entrée' })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Journal' }));
     expect(columns()).not.toHaveClass('hide-left');
     expect(globalThis.localStorage.getItem('worklogs-show-left')).toBe('1');
   });
 
-  test('l’état replié survit au rechargement', async () => {
-    globalThis.localStorage.setItem('worklogs-show-right', '0');
+  test('la colonne Journal bascule entre notes et tâches et retient son choix', async () => {
+    seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }], tasks: [{ id: 'tk_1', title: 'Relancer' }, { id: 'tk_2', title: 'Fini', status: 'done' }] });
     render(<App />);
-    await screen.findByRole('region', { name: 'Journal' });
-    expect(columns()).toHaveClass('hide-right');
-    expect(screen.getByRole('button', { name: 'Tâches' })).toHaveAttribute('aria-pressed', 'false');
+    await screen.findByRole('region', { name: 'Entrée' });
+    const side = within(screen.getByRole('group', { name: 'Notes ou tâches' }));
+    const column = document.getElementById('workspace-journal')!;
+    expect(side.getByRole('button', { name: 'Notes' })).toHaveAttribute('aria-pressed', 'true');
+    expect(column).not.toHaveClass('shows-tasks');
+    // Le compteur annonce les tâches ouvertes du filtre (la terminée n'y compte pas).
+    const tasksButton = await side.findByRole('button', { name: 'Tâches 1' });
+    fireEvent.click(tasksButton);
+    expect(column).toHaveClass('shows-tasks');
+    expect(tasksButton).toHaveAttribute('aria-pressed', 'true');
+    expect(globalThis.localStorage.getItem('worklogs-side-view')).toBe('tasks');
+    fireEvent.click(side.getByRole('button', { name: 'Notes' }));
+    expect(column).not.toHaveClass('shows-tasks');
+    expect(globalThis.localStorage.getItem('worklogs-side-view')).toBe('journal');
   });
 
-  test('masquer l’écriture garde le journal et les tâches côte à côte', async () => {
+  test('ouvrir une note de tâche met la colonne sur Tâches, où est sa carte surlignée', async () => {
+    const user = userEvent.setup();
+    seedData(api.db, { entries: [{ id: 'en_libre', title: 'Note libre' }] });
+    await clientApi.createTask({ title: 'Relancer le client' });
+    globalThis.localStorage.setItem('worklogs-side-view', 'journal');
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' }));
+    await user.click(await screen.findByRole('button', { name: /^Relancer le client — à faire/ }));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Relancer le client'));
+    expect(document.getElementById('workspace-journal')).toHaveClass('shows-tasks');
+    expect(within(board()).getByRole('button', { name: 'Relancer le client' })).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('au lancement, la note libre la plus récente s’ouvre plutôt qu’une note de tâche plus récente', async () => {
+    seedData(api.db, { entries: [{ id: 'en_libre', title: 'Note libre', date: '2026-01-05' }] });
+    await clientApi.createTask({ title: 'Relancer le client' });
+    render(<App />);
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Note libre'));
+    expect(document.getElementById('workspace-journal')).not.toHaveClass('shows-tasks');
+  });
+
+  test('l’état replié et la liste choisie survivent au rechargement', async () => {
+    globalThis.localStorage.setItem('worklogs-show-left', '0');
+    globalThis.localStorage.setItem('worklogs-side-view', 'tasks');
+    render(<App />);
+    await screen.findByRole('region', { name: 'Journal' });
+    expect(columns()).toHaveClass('hide-left');
+    expect(screen.getByRole('button', { name: 'Journal' })).toHaveAttribute('aria-pressed', 'false');
+    expect(document.getElementById('workspace-journal')).toHaveClass('shows-tasks');
+  });
+
+  test('masquer l’écriture laisse toute la place à la colonne Journal', async () => {
     seedData(api.db, { entries: [{ id: 'en_1', title: 'Entrée' }] });
     render(<App />);
     await screen.findByRole('region', { name: 'Entrée' });
@@ -904,8 +1005,8 @@ describe('panneaux repliables', () => {
     expect(columns()).toHaveClass('hide-center');
     expect(writingToggle).toHaveAttribute('aria-pressed', 'false');
     expect(globalThis.localStorage.getItem('worklogs-show-center')).toBe('0');
-    expect(screen.getByRole('region', { name: 'Journal' })).toBeVisible();
-    expect(screen.getByRole('region', { name: 'Tâches' })).toBeVisible();
+    expect(columns()).not.toHaveClass('hide-left');
+    expect(screen.getByRole('group', { name: 'Notes ou tâches' })).toBeInTheDocument();
     fireEvent.click(writingToggle);
     expect(columns()).not.toHaveClass('hide-center');
     expect(globalThis.localStorage.getItem('worklogs-show-center')).toBe('1');

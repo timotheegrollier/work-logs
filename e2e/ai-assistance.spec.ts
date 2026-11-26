@@ -45,6 +45,8 @@ test('IA sur une tâche : lit les documents liés, affine et retire une source',
       await editor.getByRole('button', { name: 'Assistance IA', exact: true }).click();
       await editor.getByRole('menuitem', { name: 'Suggérer des sous-tâches', exact: true }).click();
     };
+    // La carte est dans la liste Tâches de la colonne de gauche (§102).
+    await page.getByRole('group', { name: 'Notes ou tâches' }).getByRole('button', { name: /^Tâches/ }).click();
     await page.getByRole('region', { name: 'Tâches', exact: true }).getByRole('button', { name: task.title, exact: true }).click();
     await editor.getByRole('button', { name: 'Écrire', exact: true }).click();
     const content = editor.getByLabel('Contenu en Markdown');

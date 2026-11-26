@@ -72,7 +72,7 @@ describe('catégories et sous-catégories', () => {
     fireEvent.change(screen.getByLabelText('Nouvelle tâche'), { target: { value: 'Nouvel objectif' } });
     fireEvent.click(within(board()).getByRole('button', { name: 'Ajouter' }));
     await within(board()).findByRole('button', { name: 'Nouvel objectif' });
-    await within(journal()).findByText('Nouvel objectif');
+    expect(within(journal()).queryByText('Nouvel objectif')).not.toBeInTheDocument();
     expect(row(api.db, 'SELECT * FROM tasks WHERE title=?', 'Nouvel objectif')).toMatchObject({ project_id: 'p', category_id: parent.id });
     const linked = row(api.db, 'SELECT te.entry_id FROM task_entries te JOIN tasks t ON t.id=te.task_id WHERE t.title=?', 'Nouvel objectif');
     expect(linked).toBeTruthy();
@@ -756,9 +756,11 @@ describe('organiser les tâches', () => {
     await user.type(await screen.findByLabelText('Nouvelle tâche'), 'Rappeler le client{Enter}');
 
     expect(await within(board()).findByRole('button', { name: 'Rappeler le client' })).toBeInTheDocument();
-    expect(await within(journal()).findByText('Rappeler le client')).toBeInTheDocument();
     expect(screen.getByLabelText('Nouvelle tâche')).toHaveValue('');
     await waitFor(() => expect(within(editor()).getByLabelText('Titre de l’entrée')).toHaveValue('Rappeler le client'));
+    // Une seule place pour la note de tâche (§102) : sa carte, surlignée tant qu'elle est ouverte.
+    expect(within(journal()).queryByText('Rappeler le client')).not.toBeInTheDocument();
+    await waitFor(() => expect(within(board()).getByRole('button', { name: 'Rappeler le client' })).toHaveAttribute('aria-current', 'true'));
     expect(within(editor()).queryByRole('progressbar')).not.toBeInTheDocument();
     expect(row(api.db, 'SELECT * FROM tasks').status).toBe('todo');
   });
@@ -1042,14 +1044,17 @@ describe('organiser les tâches', () => {
         ],
       });
       localStorage.setItem('worklogs-project', 'pr_a');
-      localStorage.setItem('worklogs-show-right', '0');
+      // Journal replié, sur ses notes : le compteur doit rouvrir la colonne sur ses tâches (§102).
+      localStorage.setItem('worklogs-show-left', '0');
+      localStorage.setItem('worklogs-side-view', 'journal');
       render(<App />);
       const header = await screen.findByRole('banner');
       const alpha = () => within(filters()).getByRole('button', { name: /Alpha/ });
 
       // La tâche en cours est dans Alpha : le projet reste filtré.
       await user.click(await within(header).findByRole('button', { name: '1 en cours' }));
-      expect(within(header).getByRole('button', { name: 'Tâches' })).toHaveAttribute('aria-pressed', 'true');
+      expect(within(header).getByRole('button', { name: 'Journal' })).toHaveAttribute('aria-pressed', 'true');
+      expect(document.getElementById('workspace-journal')).toHaveClass('shows-tasks');
       expect(within(views()).getByRole('button', { name: 'En cours 1' })).toHaveAttribute('aria-pressed', 'true');
       expect(alpha()).toHaveAttribute('aria-pressed', 'true');
       expect(titles()).toEqual(['Tâche en cours']);
@@ -1472,8 +1477,8 @@ describe('vue d’ensemble des projets', () => {
     expect(await screen.findByRole('region', { name: 'Vue d’ensemble des projets' })).toBeInTheDocument();
     expect(toggle()).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('region', { name: 'Entrée' })).not.toBeInTheDocument();
-    // Elle recouvre les panneaux ; le panneau Tâches n'a plus son propre bouton.
-    expect(columns()).toHaveClass('hide-left', 'hide-right');
+    // Elle recouvre les panneaux, dont le Journal qui porte les tâches (§102).
+    expect(columns()).toHaveClass('hide-left');
     expect(columns()).not.toHaveClass('hide-center');
     expect(columns()).not.toHaveClass('show-procedures');
     expect(panel('Journal')).toHaveAttribute('aria-pressed', 'false');
@@ -1494,18 +1499,17 @@ describe('vue d’ensemble des projets', () => {
     await user.click(within(alpha).getByRole('button', { name: 'Relancer — à faire · en retard de 1 jour' }));
     await waitFor(() => expect(document.activeElement).toBe(within(board()).getByRole('textbox', { name: 'Titre de la tâche' })));
     expect(within(board()).getByRole('textbox', { name: 'Titre de la tâche' })).toHaveValue('Relancer');
-    expect(columns()).not.toHaveClass('hide-right');
-    expect(panel('Tâches')).toHaveAttribute('aria-pressed', 'true');
+    expect(columns()).not.toHaveClass('hide-left');
+    expect(document.getElementById('workspace-journal')).toHaveClass('shows-tasks');
+    expect(panel('Journal')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument();
     await user.click(toggle());
     await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
     // Les boutons de l'en-tête rouvrent un panneau à côté, ou le replient, sans fermer la vue.
     await user.click(panel('Journal'));
     expect(columns()).not.toHaveClass('hide-left');
-    await user.click(panel('Tâches'));
-    expect(columns()).not.toHaveClass('hide-right');
-    await user.click(panel('Tâches'));
-    expect(columns()).toHaveClass('hide-right');
+    await user.click(panel('Journal'));
+    expect(columns()).toHaveClass('hide-left');
     expect(page()).toBeInTheDocument();
 
     // Un nom filtre le projet et referme la vue ; depuis un projet, « Vue d’ensemble » lève le filtre.
@@ -1516,10 +1520,12 @@ describe('vue d’ensemble des projets', () => {
     await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
     await waitFor(() => expect(within(filters()).getByRole('button', { name: 'Tout' })).toHaveAttribute('aria-pressed', 'true'));
 
-    // Rouverte, elle recouvre de nouveau tout ; un compteur de l'en-tête rouvre Tâches à côté.
-    expect(columns()).toHaveClass('hide-left', 'hide-right');
+    // Rouverte, elle recouvre de nouveau tout ; un compteur de l'en-tête rouvre le Journal, sur ses tâches, à côté.
+    expect(columns()).toHaveClass('hide-left');
+    await user.click(screen.getByRole('button', { name: 'Notes' }));
     await user.click(screen.getByTitle('Voir les tâches en retard'));
-    expect(columns()).not.toHaveClass('hide-right');
+    expect(columns()).not.toHaveClass('hide-left');
+    expect(document.getElementById('workspace-journal')).toHaveClass('shows-tasks');
     expect(page()).toBeInTheDocument();
 
     // Fermer rend l'entrée et les panneaux tels quels ; « Écriture » et ouvrir une entrée referment aussi.
@@ -1527,7 +1533,6 @@ describe('vue d’ensemble des projets', () => {
     expect(await screen.findByDisplayValue('Compte rendu')).toBeInTheDocument();
     expect(toggle()).toHaveAttribute('aria-pressed', 'false');
     expect(columns()).not.toHaveClass('hide-left');
-    expect(columns()).not.toHaveClass('hide-right');
     await user.click(toggle());
     await screen.findByRole('region', { name: 'Vue d’ensemble des projets' });
     await user.click(panel('Écriture'));
@@ -1542,15 +1547,18 @@ describe('vue d’ensemble des projets', () => {
 
   test('ouvrir une tâche ferme la vue et montre sa carte même si le panneau était replié', async () => {
     const user = userEvent.setup();
-    localStorage.setItem('worklogs-show-right', '0');
+    localStorage.setItem('worklogs-show-left', '0');
+    localStorage.setItem('worklogs-side-view', 'journal');
     seedData(api.db, { projects: [{ id: 'pr_a', name: 'Alpha' }, { id: 'pr_b', name: 'Bravo' }], tasks: [{ id: 'tk_1', title: 'Relancer', project_id: 'pr_a' }] });
     render(<App />);
     await user.click(await screen.findByRole('button', { name: 'Vue d’ensemble des tâches' }));
     await user.click(await within(page()).findByRole('button', { name: 'Relancer — à faire' }));
-    expect(columns()).not.toHaveClass('hide-right');
+    expect(columns()).not.toHaveClass('hide-left');
+    expect(document.getElementById('workspace-journal')).toHaveClass('shows-tasks');
     expect(screen.queryByRole('region', { name: 'Vue d’ensemble des projets' })).not.toBeInTheDocument();
     expect(await within(board()).findByRole('textbox', { name: 'Titre de la tâche' })).toHaveValue('Relancer');
-    expect(localStorage.getItem('worklogs-show-right')).toBe('1');
+    expect(localStorage.getItem('worklogs-show-left')).toBe('1');
+    expect(localStorage.getItem('worklogs-side-view')).toBe('tasks');
   });
 
   test('ouvrir une tâche depuis la vue affiche son entrée liée la plus récente et respecte la garde de sortie', async () => {

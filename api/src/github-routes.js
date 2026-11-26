@@ -35,7 +35,7 @@ export function registerGithubRoutes(app, { db, read = createGithubReader(), lis
     const project = db.prepare('SELECT github_repo FROM projects WHERE id=?').get(req.params.id);
     if (!project) throw Object.assign(new Error('GitHub : projet introuvable.'), { status: 404, code: 'GITHUB_PROJECT_NOT_FOUND' });
     if (!project.github_repo) {
-      throw Object.assign(new Error('GitHub : ce projet n’est relié à aucun dépôt. Relie-le depuis la gestion des projets.'), { status: 409, code: 'GITHUB_NOT_LINKED' });
+      throw Object.assign(new Error('GitHub : ce projet n’est relié à aucun dépôt. Relie-le depuis la colonne GitHub.'), { status: 409, code: 'GITHUB_NOT_LINKED' });
     }
     return list(project.github_repo, req.params.section, { signal });
   }));

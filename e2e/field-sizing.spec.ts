@@ -11,8 +11,9 @@ async function fitsText(field: Locator) {
   return height;
 }
 
-const resizer = (page: Page, side: 'gauche' | 'droite') =>
-  page.getByRole('separator', { name: `Redimensionner la colonne de ${side}` });
+// Une seule colonne latérale à poignée depuis §102 (journal et tâches) ; les procédures ont la leur.
+const resizer = (page: Page, side: 'gauche' | 'des procédures') =>
+  page.getByRole('separator', { name: `Redimensionner la colonne ${side === 'gauche' ? 'de gauche' : side}` });
 const noSideScroll = (panel: Locator) => panel.evaluate((element) => element.scrollWidth <= element.clientWidth);
 
 test('la zone Markdown suit son texte, à la frappe et quand un panneau ou la fenêtre change de largeur', async ({ page, request }) => {
@@ -21,7 +22,8 @@ test('la zone Markdown suit son texte, à la frappe et quand un panneau ou la fe
   try {
     await page.addInitScript((id) => localStorage.setItem('worklogs-entry', id), entry.id);
     // ≤ 1 180 px, l'aperçu est masqué : la zone restait à 60 % de l'écran, texte caché sous un ascenseur.
-    await page.setViewportSize({ width: 1100, height: 900 });
+    // 1 000 px : sans colonne Tâches (§102), le journal élargi doit encore faire passer chaque point sur trois lignes.
+    await page.setViewportSize({ width: 1000, height: 900 });
     await page.goto('/');
     const editor = page.getByRole('region', { name: 'Entrée', exact: true });
     await editor.getByRole('button', { name: 'Écrire', exact: true }).click();
@@ -90,14 +92,16 @@ test('les formulaires de l’Écriture se replient sur la largeur de la colonne,
     for (const row of rows) expect(Math.abs(await side(row))).toBeLessThan(2);
 
     // Panneaux élargis, fenêtre inchangée : la colonne étroite empile tout et ne défile pas en largeur.
+    // Sans colonne Tâches (§102), le second panneau est celui des procédures.
+    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Procédures', exact: true }).click();
     await resizer(page, 'gauche').press('End');
-    await resizer(page, 'droite').press('End');
+    await resizer(page, 'des procédures').press('End');
     await expect(preview).toBeHidden();
     for (const row of rows) expect(await side(row)).toBeGreaterThan(20);
     expect(await noSideScroll(page.locator('#workspace-editor'))).toBe(true);
 
     await resizer(page, 'gauche').press('Home');
-    await resizer(page, 'droite').press('Home');
+    await resizer(page, 'des procédures').press('Home');
     await expect(preview).toBeVisible();
     for (const row of rows) expect(Math.abs(await side(row))).toBeLessThan(2);
   } finally {
@@ -112,7 +116,9 @@ test('le panneau Tâches étroit garde la saisie et ses champs dans la carte', a
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
     const card = page.locator('.card').filter({ has: page.getByText('Contrôle des champs du panneau', { exact: true }) });
-    await resizer(page, 'droite').press('Home');
+    // Les tâches sont dans la colonne de gauche (§102) : sa poignée la rétrécit.
+    await page.getByRole('group', { name: 'Notes ou tâches' }).getByRole('button', { name: /^Tâches/ }).click();
+    await resizer(page, 'gauche').press('Home');
     await card.getByRole('button', { name: `Planifier ${task.title}`, exact: true }).click();
     const fields = [card.getByLabel('Échéance'), card.getByLabel('Statut'), card.getByLabel('Priorité')];
     const box = (await card.boundingBox())!;

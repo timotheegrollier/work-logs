@@ -1,20 +1,21 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const handle = (page: Page, side: 'gauche' | 'droite') =>
-  page.getByRole('separator', { name: `Redimensionner la colonne de ${side}` });
+// Une seule poignée latérale depuis §102 : Journal et Tâches partagent la colonne de gauche.
+const handle = (page: Page) => page.getByRole('separator', { name: 'Redimensionner la colonne de gauche' });
+const sideSwitch = (page: Page) => page.getByRole('group', { name: 'Notes ou tâches' });
 
 /** Les champs au pixel près vivent dans Paramètres › Affichage. */
-async function widthField(page: Page, side: 'gauche' | 'droite') {
+async function widthField(page: Page) {
   await page.getByRole('button', { name: 'Compte et paramètres' }).click();
   await page.getByRole('menuitem', { name: 'Paramètres' }).click();
-  return page.getByRole('dialog', { name: 'Paramètres' }).getByLabel(`Largeur de la colonne de ${side} (px)`);
+  return page.getByRole('dialog', { name: 'Paramètres' }).getByLabel('Largeur de la colonne de gauche (px)');
 }
 async function closeSettings(page: Page) {
   await page.getByRole('dialog', { name: 'Paramètres' }).getByRole('button', { name: 'Fermer' }).click();
 }
 
-async function drag(page: Page, side: 'gauche' | 'droite', delta: number) {
-  const box = (await handle(page, side).boundingBox())!;
+async function drag(page: Page, delta: number) {
+  const box = (await handle(page).boundingBox())!;
   const x = box.x + box.width / 2, y = box.y + box.height / 2;
   await page.mouse.move(x, y);
   await page.mouse.down();
@@ -51,94 +52,92 @@ test('redimensionne l’assistant au pointeur et au clavier et mémorise sa larg
   await expect(resize).toHaveCount(0);
 });
 
-test('largeurs : glisser les deux bords ajuste les panneaux en direct et survit au rechargement', async ({ page }, testInfo) => {
-  await drag(page, 'gauche', 90);
-  await expect(page.locator('.left')).toHaveCSS('width', '380px');
+test('largeurs : glisser le bord ajuste le panneau en direct et survit au rechargement', async ({ page }, testInfo) => {
+  await drag(page, 90);
+  await expect(page.locator('.left')).toHaveCSS('width', '410px');
   await page.mouse.up();
-  await expect(await widthField(page, 'gauche')).toHaveValue('380');
+  const field = await widthField(page);
+  await expect(field).toHaveValue('410');
+  // Plus de colonne de droite (§102) : un seul réglage latéral avec celui des procédures.
+  await expect(page.getByRole('dialog', { name: 'Paramètres' }).getByLabel('Largeur de la colonne de droite (px)')).toHaveCount(0);
   await closeSettings(page);
   await page.mouse.move(700, 400);
-  await expect(page.locator('.left')).toHaveCSS('width', '380px');
-
-  await drag(page, 'droite', -100);
-  await expect(page.locator('.right')).toHaveCSS('width', '420px');
-  await page.mouse.up();
-  await expect(await widthField(page, 'droite')).toHaveValue('420');
-  await closeSettings(page);
+  await expect(page.locator('.left')).toHaveCSS('width', '410px');
   expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('');
   await expect(page.locator('.column-resizer.is-dragging')).toHaveCount(0);
 
   await page.reload();
-  await expect(page.locator('.left')).toHaveCSS('width', '380px');
-  await expect(page.locator('.right')).toHaveCSS('width', '420px');
+  await expect(page.locator('.left')).toHaveCSS('width', '410px');
   await page.screenshot({ path: testInfo.outputPath('sidebar-widths.png') });
-  await widthField(page, 'gauche');
+  await widthField(page);
   await page.getByRole('button', { name: 'Largeurs par défaut' }).click();
   await closeSettings(page);
-  await expect(page.locator('.left')).toHaveCSS('width', '290px');
-  await expect(page.locator('.right')).toHaveCSS('width', '320px');
+  await expect(page.locator('.left')).toHaveCSS('width', '320px');
 
-  await drag(page, 'gauche', 20);
-  await handle(page, 'gauche').dispatchEvent('pointercancel', { pointerId: 1 });
+  await drag(page, 20);
+  await handle(page).dispatchEvent('pointercancel', { pointerId: 1 });
   await expect(page.locator('.column-resizer.is-dragging')).toHaveCount(0);
   await page.mouse.move(700, 400);
   await page.mouse.up();
-  await expect(page.locator('.left')).toHaveCSS('width', '310px');
+  await expect(page.locator('.left')).toHaveCSS('width', '340px');
 });
 
 test('largeurs : limites au glissement, réglage au clavier et adaptation aux petits écrans', async ({ page }) => {
-  await drag(page, 'gauche', 800);
+  await expect(page.getByRole('separator', { name: 'Redimensionner la colonne de droite' })).toHaveCount(0);
+  await drag(page, 800);
   await page.mouse.up();
   await expect(page.locator('.left')).toHaveCSS('width', '600px');
-  await drag(page, 'gauche', -550);
+  await drag(page, -550);
   await page.mouse.up();
   await expect(page.locator('.left')).toHaveCSS('width', '120px');
-  await drag(page, 'droite', 280);
-  await page.mouse.up();
-  await expect(page.locator('.right')).toHaveCSS('width', '120px');
-  await drag(page, 'droite', -800);
-  await page.mouse.up();
-  await expect(page.locator('.right')).toHaveCSS('width', '600px');
 
-  await handle(page, 'gauche').focus();
+  await handle(page).focus();
   await page.keyboard.press('ArrowRight');
   await expect(page.locator('.left')).toHaveCSS('width', '130px');
   await page.keyboard.press('End');
   await expect(page.locator('.left')).toHaveCSS('width', '600px');
-  await handle(page, 'droite').focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(page.locator('.right')).toHaveCSS('width', '590px');
   await page.keyboard.press('Home');
-  await expect(page.locator('.right')).toHaveCSS('width', '120px');
+  await expect(page.locator('.left')).toHaveCSS('width', '120px');
 
   await page.setViewportSize({ width: 1100, height: 900 });
+  await handle(page).press('End');
   const before = (await page.locator('.left').boundingBox())!.width;
-  await drag(page, 'gauche', -40);
+  await drag(page, -40);
   await page.mouse.up();
   await expect.poll(async () => (await page.locator('.left').boundingBox())!.width).toBeCloseTo(before - 40, 0);
-  await handle(page, 'droite').press('End');
+  await handle(page).press('End');
   expect((await page.locator('.center').boundingBox())!.width).toBeGreaterThanOrEqual(320);
   expect(await page.locator('.columns').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('separator')).toHaveCount(0);
   await page.setViewportSize({ width: 1800, height: 1000 });
-  await expect(handle(page, 'gauche')).toBeVisible();
-  await expect(handle(page, 'droite')).toBeVisible();
+  await expect(handle(page)).toBeVisible();
   await page.emulateMedia({ media: 'print' });
   await expect(page.getByRole('separator')).toHaveCount(0);
 });
 
 test('panneaux : replier le journal et les tâches ne garde que l’écriture', async ({ page }) => {
-  await page.getByRole('button', { name: 'Journal', exact: true }).click();
+  const toggles = page.getByRole('group', { name: 'Panneaux latéraux' });
+  // Une seule colonne porte notes et tâches (§102) : l'en-tête n'a plus d'interrupteur « Tâches ».
+  await expect(toggles.getByRole('button', { name: /^Tâches/ })).toHaveCount(0);
+  await sideSwitch(page).getByRole('button', { name: /^Tâches/ }).click();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Journal', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await page.getByRole('button', { name: 'Tâches', exact: true }).click();
+
+  await toggles.getByRole('button', { name: 'Journal', exact: true }).click();
+  await expect(toggles.getByRole('button', { name: 'Journal', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeHidden();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeHidden();
   await expect(page.getByRole('region', { name: 'Entrée', exact: true })).toBeVisible();
-  await expect(page.locator('.columns')).toHaveClass(/hide-left hide-right/);
-  await page.getByRole('button', { name: 'Journal', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
+  await expect(page.locator('.columns')).toHaveClass(/hide-left/);
+
+  // Rouverte, la colonne garde la liste choisie, rechargement compris.
+  await toggles.getByRole('button', { name: 'Journal', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
+  await sideSwitch(page).getByRole('button', { name: 'Notes', exact: true }).click();
   await page.reload();
   await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeHidden();
@@ -149,8 +148,10 @@ test('panneaux : replier l’écriture garde le journal et les tâches', async (
   await expect(page.locator('.columns')).toHaveClass(/hide-center/);
   await expect(page.getByRole('button', { name: 'Écriture', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
+  await sideSwitch(page).getByRole('button', { name: /^Tâches/ }).click();
   await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
   await expect(page.getByRole('separator')).toHaveCount(0);
+  await sideSwitch(page).getByRole('button', { name: 'Notes', exact: true }).click();
   await page.getByRole('button', { name: 'Écriture', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Entrée', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Écriture', exact: true }).click();

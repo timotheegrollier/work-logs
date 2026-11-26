@@ -36,9 +36,16 @@ test('à 390 px une vue à la fois, dans une page qui défile', async ({ page })
   await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   await expect(page.locator('#workspace-editor')).toBeHidden();
   await expect(page.locator('#workspace-tasks')).toBeHidden();
-  await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true }).click();
+  const bar = page.getByRole('group', { name: 'Panneaux latéraux' });
+  await bar.getByRole('button', { name: 'Écriture', exact: true }).click();
+  await expect(page.locator('#workspace-editor')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeHidden();
+  // Les tâches sont dans le Journal, derrière sa bascule (§102).
+  await bar.getByRole('button', { name: 'Journal', exact: true }).click();
+  await page.getByRole('group', { name: 'Notes ou tâches' }).getByRole('button', { name: /^Tâches/ }).click();
   await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeHidden();
+  await expect(page.locator('#workspace-editor')).toBeHidden();
   // Modèle mobile : une seule page qui défile (l'application entière, en-tête
   // compris), pas trois fenêtres fixes.
   const metrics = await page.evaluate(() => ({
@@ -46,7 +53,8 @@ test('à 390 px une vue à la fois, dans une page qui défile', async ({ page })
     overflow: getComputedStyle(document.querySelector('.columns') as Element).overflowY,
     page: getComputedStyle(document.querySelector('.app') as Element).overflowY,
     center: getComputedStyle(document.querySelector('.center') as Element).overflowY,
+    tasks: getComputedStyle(document.querySelector('#workspace-tasks') as Element).overflowY,
     noHorizontalOverflow: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
   }));
-  expect(metrics).toEqual({ display: 'block', overflow: 'visible', page: 'auto', center: 'visible', noHorizontalOverflow: true });
+  expect(metrics).toEqual({ display: 'block', overflow: 'visible', page: 'auto', center: 'visible', tasks: 'visible', noHorizontalOverflow: true });
 });

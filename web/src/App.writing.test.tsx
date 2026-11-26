@@ -200,6 +200,9 @@ describe('écrire une entrée', () => {
 
     const cardTitle = await within(board()).findByRole('button', { name: 'Contexte de réunion' });
     const card = cardTitle.closest('.card') as HTMLElement;
+    // Suivie, la note quitte le journal (§102) : sa carte la porte, surlignée puisqu'elle est ouverte.
+    await waitFor(() => expect(within(journal()).queryByText('Contexte de réunion')).not.toBeInTheDocument());
+    expect(cardTitle).toHaveAttribute('aria-current', 'true');
     await user.click(cardTitle);
     expect(within(card).queryByRole('button', { name: /Créer une entrée liée|Retirer Contexte de réunion/ })).toBeNull();
     expect(within(taskProgress).queryByRole('progressbar')).not.toBeInTheDocument();
@@ -213,13 +216,18 @@ describe('écrire une entrée', () => {
     // Terminer archive la note de la tâche ; la rouvrir la fait revenir.
     await waitFor(() => expect(row(api.db, 'SELECT status, archived FROM entries WHERE id=?', 'en_context')).toEqual({ status: 'done', archived: 1 }));
     expect(within(taskProgress).queryByRole('progressbar')).not.toBeInTheDocument();
+    // Terminée, la note rejoint les Archives du journal (§84), seule place hors de la liste « Terminé ».
+    await user.click(await within(journal()).findByText('Archives'));
+    expect(await within(journal()).findByText('Contexte de réunion')).toBeInTheDocument();
     await user.selectOptions(status, 'doing');
     await waitFor(() => expect(row(api.db, 'SELECT status, archived FROM entries WHERE id=?', 'en_context')).toEqual({ status: 'doing', archived: 0 }));
+    await waitFor(() => expect(within(journal()).queryByText('Contexte de réunion')).not.toBeInTheDocument());
 
     await user.click(within(taskProgress).getByRole('button', { name: 'Retirer le suivi de tâche' }));
     expect(await within(editor()).findByRole('button', { name: 'Suivre comme tâche' })).toBeVisible();
     expect(row(api.db, 'SELECT COUNT(*) n FROM tasks').n).toBe(0);
     expect(within(editor()).getByText('Relire le compte rendu.')).toBeVisible();
+    expect(await within(journal()).findByText('Contexte de réunion')).toBeInTheDocument();
   });
 
   test('les cases cochées de la note de tâche règlent son avancement, sans IA', async () => {

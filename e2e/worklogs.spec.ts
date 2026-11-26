@@ -4,6 +4,10 @@ const journal = (page: Page) => page.getByRole('region', { name: 'Journal', exac
 const board = (page: Page) => page.getByRole('region', { name: 'Tâches', exact: true });
 const editor = (page: Page) => page.getByRole('region', { name: 'Entrée', exact: true });
 const title = (page: Page) => page.getByLabel('Titre de l’entrée');
+// Notes et tâches se partagent la colonne de gauche (§102) : la bascule choisit la liste visible.
+const sideSwitch = (page: Page) => page.getByRole('group', { name: 'Notes ou tâches' });
+const showTasks = (page: Page) => sideSwitch(page).getByRole('button', { name: /^Tâches/ }).click();
+const showNotes = (page: Page) => sideSwitch(page).getByRole('button', { name: 'Notes', exact: true }).click();
 
 /** Crée une entrée et renseigne son titre, avec l'assurance qu'elle est enregistrée. */
 async function newEntry(page: Page, name: string, markdown = '') {
@@ -25,10 +29,12 @@ test.beforeEach(async ({ page }) => {
 test('tout tient sur un écran, sans navigation', async ({ page }) => {
   await expect(journal(page)).toBeVisible();
   await expect(editor(page)).toBeVisible();
-  await expect(board(page)).toBeVisible();
 
-  // Aucun onglet ni menu : la page ne propose qu'une seule vue.
+  // Aucun menu : la page ne propose qu'une seule vue ; les tâches sont à un clic de la bascule.
   await expect(page.getByRole('navigation', { name: 'Projets' })).toBeVisible();
+  await showTasks(page);
+  await expect(board(page)).toBeVisible();
+  await expect(editor(page)).toBeVisible();
   for (const column of ['À faire', 'En cours', 'Terminé']) {
     await expect(board(page).getByRole('heading', { name: new RegExp(column) })).toBeVisible();
   }
@@ -99,6 +105,7 @@ test('une carte se déplace d’une colonne à l’autre au glisser-déposer', a
   await request.post('/api/projects', { data: { name: 'Chantier glisser', color: '#2f9e6f' } });
   await page.reload();
   await page.getByRole('group', { name: 'Filtrer par projet' }).getByRole('button', { name: /Chantier glisser/ }).click();
+  await showTasks(page);
   await expect(board(page).getByRole('heading', { name: /^En cours/ })).toBeVisible();
   await page.getByLabel('Nouvelle tâche').fill('Carte à glisser');
   await page.getByLabel('Nouvelle tâche').press('Enter');
@@ -131,6 +138,7 @@ test('une carte se déplace d’une colonne à l’autre au glisser-déposer', a
 });
 
 test('cocher une tâche la barre et la range dans Terminé', async ({ page }) => {
+  await showTasks(page);
   await page.getByLabel('Nouvelle tâche').fill('À cocher');
   await page.getByLabel('Nouvelle tâche').press('Enter');
 
@@ -192,16 +200,18 @@ test('affiche un fichier joint directement dans l’app', async ({ page }) => {
 
 test('la recherche filtre le journal et les tâches d’un coup', async ({ page }) => {
   await newEntry(page, 'Dossier ravalement');
+  await showTasks(page);
   await page.getByLabel('Nouvelle tâche').fill('Devis ravalement');
   await page.getByLabel('Nouvelle tâche').press('Enter');
   await expect(board(page).getByRole('button', { name: 'Devis ravalement', exact: true })).toBeVisible();
 
   await page.getByLabel('Rechercher').fill('ravalement');
 
-  await expect(journal(page).getByText('Dossier ravalement')).toBeVisible();
-  await expect(journal(page).getByText('Comment ça marche')).toBeHidden();
   await expect(board(page).getByRole('button', { name: 'Devis ravalement', exact: true })).toBeVisible();
   await expect(board(page).getByText('Créer mes projets')).toBeHidden();
+  await showNotes(page);
+  await expect(journal(page).getByText('Dossier ravalement')).toBeVisible();
+  await expect(journal(page).getByText('Comment ça marche')).toBeHidden();
 });
 
 test('filtrer par projet restreint les deux colonnes', async ({ page }) => {
@@ -209,10 +219,12 @@ test('filtrer par projet restreint les deux colonnes', async ({ page }) => {
   await filters.getByRole('button', { name: /Pro/ }).click();
 
   await expect(journal(page).getByText('Comment ça marche')).toBeHidden();
+  await showTasks(page);
   await expect(board(page).getByText('Prendre en main WorkLogs')).toBeVisible();
   await expect(board(page).getByText('Créer mes projets')).toBeHidden();
 
   await filters.getByRole('button', { name: 'Tout' }).click();
+  await showNotes(page);
   await expect(journal(page).getByText('Comment ça marche')).toBeVisible();
 });
 

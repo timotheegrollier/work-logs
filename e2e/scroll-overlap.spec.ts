@@ -41,6 +41,8 @@ test.describe('desktop', () => {
 
   test('tâches : la saisie reste en tête, la liste défile dessous sans jamais passer devant', async ({ page }) => {
     await page.goto('/');
+    // Les tâches partagent la colonne du journal (§102) : la bascule les montre.
+    await page.getByRole('group', { name: 'Notes ou tâches' }).getByRole('button', { name: /^Tâches/ }).click();
     const board = page.getByRole('region', { name: 'Tâches', exact: true });
     await expect(board.getByRole('button', { name: 'Contrôle 14 du parc', exact: true })).toBeAttached();
     const quick = board.locator('.quick');
@@ -73,8 +75,10 @@ test.describe('desktop', () => {
     await page.goto('/');
     const journal = page.getByRole('region', { name: 'Journal', exact: true });
     await expect(journal.getByText('Relevé 14')).toBeAttached();
-    const left = page.locator('.left');
+    // La liste des notes défile seule, sous la bascule de la colonne (§102).
+    const left = page.locator('#journal-notes');
     await left.evaluate((el) => el.scrollTo(0, 260));
+    expect(await left.evaluate((el) => el.scrollTop)).toBe(260);
 
     expect(await page.locator('.day').evaluateAll((all) => all.map((d) => getComputedStyle(d).position)))
       .not.toContain('sticky');
@@ -93,7 +97,9 @@ test.describe('mobile', () => {
 
   test('tâches : saisie et intitulés suivent la page, rien ne reste collé sur les cartes', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true }).click();
+    // Téléphone : les tâches sont dans le Journal, derrière sa bascule (§102).
+    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Journal', exact: true }).click();
+    await page.getByRole('group', { name: 'Notes ou tâches' }).getByRole('button', { name: /^Tâches/ }).click();
     const board = page.getByRole('region', { name: 'Tâches', exact: true });
     await expect(board.getByRole('button', { name: 'Contrôle 14 du parc', exact: true })).toBeAttached();
     const app = page.locator('.app');

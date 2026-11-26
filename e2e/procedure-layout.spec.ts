@@ -5,11 +5,16 @@ test.afterEach(async ({ request }) => {
   for (const id of createdIds.splice(0)) await request.delete(`/api/entries/${id}`);
 });
 
+/** Bits : Journal, Écriture (interrupteurs de l'en-tête), puis la liste Tâches dans la colonne Journal (§102). */
 async function showPanels(page: Page, mask: number) {
-  for (const [index, name] of ['Journal', 'Écriture', 'Tâches'].entries()) {
-    const toggle = page.getByRole('button', { name, exact: true });
-    if ((await toggle.getAttribute('aria-pressed') === 'true') !== Boolean(mask & (1 << index))) {
-      await toggle.click();
+  const toggle = (name: string) => page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name, exact: true });
+  // La bascule vit dans la colonne Journal : la montrer, choisir la liste, puis replier selon le masque.
+  if (await toggle('Journal').getAttribute('aria-pressed') !== 'true') await toggle('Journal').click();
+  await page.getByRole('group', { name: 'Notes ou tâches' })
+    .getByRole('button', mask & 4 ? { name: /^Tâches/ } : { name: 'Notes', exact: true }).click();
+  for (const [index, name] of ['Journal', 'Écriture'].entries()) {
+    if ((await toggle(name).getAttribute('aria-pressed') === 'true') !== Boolean(mask & (1 << index))) {
+      await toggle(name).click();
     }
   }
 }
@@ -49,27 +54,28 @@ for (const mode of ['local', 'google', 'google-tasks'] as const) {
         } } });
       });
     }
-    await page.addInitScript(id => {
+    await page.addInitScript(([id, github]) => {
       localStorage.setItem('worklogs-entry', id);
       localStorage.setItem('worklogs-show-procedures', '1');
-    }, document.id);
+      // La colonne GitHub (§101) s'ajoute au cas le plus chargé : document, tâches et procédures.
+      localStorage.setItem('worklogs-show-github', github ? '1' : '0');
+    }, [document.id, mode === 'google-tasks'] as const);
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto('/');
     const sidebar = page.locator('#workspace-procedures');
     await expect(sidebar.locator('.entry-title')).toContainText(title);
     await expect(page.getByRole('textbox', { name: 'Contenu du document' })).toBeVisible();
-    if (mode === 'google-tasks') await page.getByRole('button', { name: 'Afficher les tâches', exact: true }).click();
 
     for (const width of [1440, 1024]) {
       await page.setViewportSize({ width, height: 1000 });
-      // Les huit combinaisons des trois autres panneaux : une assertion de
-      // visibilité seule ne détectait pas une sidebar de seulement huit pixels.
+      // Les huit combinaisons des autres panneaux et de la bascule Notes | Tâches : une
+      // assertion de visibilité seule ne détectait pas une sidebar de seulement huit pixels.
       for (let mask = 7; mask >= 0; mask--) {
         await test.step(`${width}px, panneaux ${mask.toString(2).padStart(3, '0')}`, async () => {
           await showPanels(page, mask);
-          const visible = [Boolean(mask & 1), Boolean(mask & 2), Boolean(mask & 4) && mode !== 'google'];
-          for (const [index, id] of ['journal', 'editor', 'tasks'].entries()) {
-            await expect(page.locator(`#workspace-${id}`))[visible[index] ? 'toBeVisible' : 'toBeHidden']();
+          const visible = [Boolean(mask & 1) && !(mask & 4), Boolean(mask & 2), Boolean(mask & 1) && Boolean(mask & 4)];
+          for (const [index, id] of ['#journal-notes', '#workspace-editor', '#workspace-tasks'].entries()) {
+            await expect(page.locator(id))[visible[index] ? 'toBeVisible' : 'toBeHidden']();
           }
           const dimensions = await page.locator('.columns').evaluate(columns => {
             const procedures = document.querySelector('#workspace-procedures')!;
@@ -89,6 +95,7 @@ for (const mode of ['local', 'google', 'google-tasks'] as const) {
           expect(dimensions.fits).toBe(true);
           expect(dimensions.pageFits).toBe(true);
           expect(dimensions.sidebar.width).toBeGreaterThanOrEqual(260);
+          if (mode === 'google-tasks') expect((await page.locator('#workspace-github').boundingBox())!.width).toBeGreaterThanOrEqual(120);
           for (const control of dimensions.controls) {
             expect(control.x).toBeGreaterThanOrEqual(dimensions.sidebar.x);
             expect(control.right).toBeLessThanOrEqual(dimensions.sidebar.right);
@@ -104,19 +111,28 @@ for (const mode of ['local', 'google', 'google-tasks'] as const) {
         });
       }
     }
-    // Téléphone : une vue à la fois (§53), choisie par la barre du bas ; les tâches d'un
-    // document Google y ont leur vue, sans « Afficher les tâches ».
+    // Téléphone : une vue à la fois (§53), choisie par la barre du bas ; les tâches sont
+    // dans le Journal, derrière sa bascule (§102).
     await page.setViewportSize({ width: 412, height: 1000 });
-    for (const [name, id] of [['Journal', 'journal'], ['Écriture', 'editor'], ['Tâches', 'tasks'], ['Procédures', 'procedures']]) {
+    const fitsPage = () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+    for (const [name, id] of [['Journal', 'journal'], ['Écriture', 'editor'], ['Procédures', 'procedures']]) {
       await test.step(`412px, vue ${name}`, async () => {
         await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name, exact: true }).click();
-        for (const other of ['journal', 'editor', 'tasks', 'procedures']) {
+        for (const other of ['journal', 'editor', 'procedures']) {
           await expect(page.locator(`#workspace-${other}`))[other === id ? 'toBeVisible' : 'toBeHidden']();
         }
-        const fits = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
-        expect(fits).toBe(true);
+        expect(await fitsPage()).toBe(true);
       });
     }
+    await test.step('412px, liste Tâches du Journal', async () => {
+      await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Journal', exact: true }).click();
+      await page.getByRole('group', { name: 'Notes ou tâches' }).getByRole('button', { name: /^Tâches/ }).click();
+      await expect(page.locator('#workspace-tasks')).toBeVisible();
+      for (const other of ['#journal-notes', '#workspace-editor', '#workspace-procedures']) await expect(page.locator(other)).toBeHidden();
+      expect(await fitsPage()).toBe(true);
+    });
+    // Les mesures qui suivent portent sur la vue Procédures.
+    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Procédures', exact: true }).click();
     const phone = await sidebar.evaluate((procedures) => ({
       sidebar: procedures.getBoundingClientRect().toJSON(),
       fits: procedures.scrollWidth <= procedures.clientWidth,

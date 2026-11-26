@@ -1,7 +1,8 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 // Pixel 9a : 412 px de large CSS. Sur téléphone, une vue à la fois (§53) : la barre du
-// bas choisit Journal, Écriture, Tâches ou Procédures, comme dans une application.
+// bas choisit Journal, Écriture ou Procédures, comme dans une application. Les tâches sont
+// dans le Journal, derrière sa bascule « Notes | Tâches » (§102).
 test.use({ viewport: { width: 412, height: 860 } });
 
 const nav = (page: Page, name: string) =>
@@ -11,9 +12,10 @@ const noHorizontalScroll = (page: Page) =>
 const views = [
   ['Journal', '#workspace-journal'],
   ['Écriture', '#workspace-editor'],
-  ['Tâches', '#workspace-tasks'],
   ['Procédures', '#workspace-procedures'],
 ] as const;
+const sideSwitch = (page: Page, name: 'Notes' | 'Tâches') =>
+  page.getByRole('group', { name: 'Notes ou tâches' }).getByRole('button', name === 'Notes' ? { name, exact: true } : { name: /^Tâches/ });
 
 /** De quoi faire défiler le journal : `count` entrées, des plus anciennes aux plus récentes. */
 async function longJournal(request: APIRequestContext, count = 18) {
@@ -26,7 +28,7 @@ async function longJournal(request: APIRequestContext, count = 18) {
   return ids;
 }
 
-test('en-tête mobile : une rangée, barre du bas à quatre destinations, cibles tactiles', async ({ page }) => {
+test('en-tête mobile : une rangée, barre du bas à trois destinations, cibles tactiles', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
 
@@ -37,6 +39,7 @@ test('en-tête mobile : une rangée, barre du bas à quatre destinations, cibles
   const settings = page.getByRole('button', { name: 'Compte et paramètres' });
   const buttons = views.map(([name]) => nav(page, name));
   for (const control of [search, theme, exporter, settings, ...buttons]) await expect(control).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button')).toHaveCount(views.length);
   expect(await noHorizontalScroll(page)).toBe(true);
 
   // Logo, recherche et icônes sur une seule rangée : la recherche prend le reste.
@@ -48,7 +51,7 @@ test('en-tête mobile : une rangée, barre du bas à quatre destinations, cibles
   expect(searchBox.width).toBeGreaterThan(headBox.width * 0.4);
   expect(headBox.height).toBeLessThanOrEqual(64);
 
-  // La barre : fixée en bas, sous le pouce, quatre parts égales qui restent en place.
+  // La barre : fixée en bas, sous le pouce, trois parts égales qui restent en place.
   const viewport = page.viewportSize()!;
   const boxes = await Promise.all(buttons.map(async (button) => (await button.boundingBox())!));
   for (const box of boxes) {
@@ -59,21 +62,29 @@ test('en-tête mobile : une rangée, barre du bas à quatre destinations, cibles
   expect((await buttons[0].boundingBox())!.y).toBeCloseTo(boxes[0].y, 0);
   await page.locator('.app').evaluate((el) => el.scrollTo(0, 0));
 
-  // Cibles tactiles : 44 px dans les deux dimensions.
-  for (const box of [themeBox, ...boxes, (await exporter.boundingBox())!, (await settings.boundingBox())!]) {
+  // Cibles tactiles : 44 px dans les deux dimensions, bascule Notes | Tâches comprise (§102).
+  const switchBoxes = [(await sideSwitch(page, 'Notes').boundingBox())!, (await sideSwitch(page, 'Tâches').boundingBox())!];
+  for (const box of [themeBox, ...boxes, ...switchBoxes, (await exporter.boundingBox())!, (await settings.boundingBox())!]) {
     expect(box.height).toBeGreaterThanOrEqual(44);
     expect(box.width).toBeGreaterThanOrEqual(44);
   }
 
   // La barre choisit une vue (une seule à la fois) : elle ne replie rien.
   await expect(buttons[0]).toHaveAttribute('aria-pressed', 'true');
-  await buttons[2].click();
+  await buttons[1].click();
+  await expect(page.getByRole('region', { name: 'Entrée', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeHidden();
+  await expect(buttons[1]).toHaveAttribute('aria-pressed', 'true');
+  await expect(buttons[0]).toHaveAttribute('aria-pressed', 'false');
+  await buttons[1].click();
+  await expect(page.getByRole('region', { name: 'Entrée', exact: true })).toBeVisible();
+
+  // Les tâches : le Journal, puis sa bascule ; la barre reste sur Journal.
+  await buttons[0].click();
+  await sideSwitch(page, 'Tâches').click();
   await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeHidden();
-  await expect(buttons[2]).toHaveAttribute('aria-pressed', 'true');
-  await expect(buttons[0]).toHaveAttribute('aria-pressed', 'false');
-  await buttons[2].click();
-  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
+  await expect(buttons[0]).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('téléphone : chaque vue occupe l’écran de bord à bord, la version se lit dans Paramètres', async ({ page }) => {
@@ -100,6 +111,17 @@ test('téléphone : chaque vue occupe l’écran de bord à bord, la version se 
     expect(await page.locator(selector).evaluate((el) => getComputedStyle(el, '::before').content)).toMatch(/^(none|normal)$/);
     expect(await noHorizontalScroll(page)).toBe(true);
   }
+
+  // La liste Tâches, derrière la bascule du Journal, tient aussi dans sa largeur.
+  await nav(page, 'Journal').click();
+  await sideSwitch(page, 'Tâches').click();
+  await expect(page.locator('#workspace-tasks')).toBeVisible();
+  await expect(page.locator('#journal-notes')).toBeHidden();
+  const column = (await page.locator('#workspace-journal').boundingBox())!;
+  const tasks = (await page.locator('#workspace-tasks').boundingBox())!;
+  expect(tasks.x).toBeGreaterThanOrEqual(column.x);
+  expect(tasks.x + tasks.width).toBeLessThanOrEqual(column.x + column.width);
+  expect(await noHorizontalScroll(page)).toBe(true);
 });
 
 test('paramètres : la version reste lisible sur tablette et avec un contenu long', async ({ page }) => {
@@ -153,7 +175,7 @@ test('bandeau projets : global, sans débordement, utilisable dans chaque vue', 
   expect(stripBox.y).toBeGreaterThanOrEqual(headBox.y + headBox.height - 1);
 
   // Ailleurs que dans le journal, le filtre reste visible et cliquable.
-  await nav(page, 'Tâches').click();
+  await nav(page, 'Écriture').click();
   await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeHidden();
   await expect(filters).toBeVisible();
   expect(await noHorizontalScroll(page)).toBe(true);
@@ -191,7 +213,7 @@ test('mobile en paysage : une vue à la fois, barre horizontale et cibles tactil
   const viewport = page.viewportSize()!;
   const navigation = page.locator('.head .panel-toggles');
   const buttons = navigation.locator('.panel-toggle');
-  await expect(buttons).toHaveCount(4);
+  await expect(buttons).toHaveCount(3);
   await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   await expect(page.locator('#workspace-editor')).toBeHidden();
 
@@ -238,7 +260,7 @@ test('téléphone : ouvrir une entrée passe à l’écriture, le retour ramène
 
     // Depuis une autre vue, le journal par la barre efface la marche : un retour de plus
     // quitterait la page au lieu de revenir à l'écriture.
-    await nav(page, 'Tâches').click();
+    await nav(page, 'Procédures').click();
     await nav(page, 'Journal').click();
     await expect(journal).toBeVisible();
     await expect.poll(() => page.evaluate(() => history.state?.worklogsView ?? null)).toBeNull();

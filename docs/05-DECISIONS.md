@@ -113,6 +113,9 @@ serait alors un regroupement par mois repliable — **pas** un onglet.
 4 000 px : sur téléphone seulement, la barre du bas montre une zone à la fois. Le desktop et
 la tablette gardent l'écran unique.
 
+**Révisée le 2026-11-26 (§102).** Journal et tâches partagent la colonne de gauche, avec une
+bascule « Notes | Tâches » ; l'écriture prend la place de l'ancienne colonne de droite.
+
 ---
 
 ## 2. Ce qui a été retiré en V2, et pourquoi
@@ -2295,6 +2298,10 @@ exemple) : la réponse serait une feuille du bas, pas le retour à la page empil
 
 ---
 
+
+> **Révisé le 2026-11-26 (§102)** : trois destinations, Journal (notes et tâches, avec sa bascule),
+> Écriture et Procédures.
+
 ## 54. Téléphone : choisir un projet dans la liste, plus dans une rangée — 2026-10-29
 
 **Demande.** « Je trouve la navigation entre les différents projets encore un peu compliquée
@@ -2690,6 +2697,10 @@ commandes Drive restent présents. Rien n'est changé au pont natif ni au compte
 
 
 ---
+
+
+> **Révisé le 2026-11-26 (§102)** : les tâches sont dans la colonne Journal et ne prennent plus
+> de largeur au document ; le bouton « Afficher les tâches » a disparu.
 
 ## 63. Une vue des tâches utilisable sans panneau, et un ordre conseillé avec contexte — 2026-10-30
 
@@ -3476,7 +3487,7 @@ alors que le contenu d’une tâche se rédige dans une entrée.
 
 **Choix.** Toute nouvelle tâche créée seule reçoit, dans la même opération, une entrée Markdown
 locale vide portant son titre, son projet et sa catégorie. Elle apparaît dans le journal pour
-être complétée. Une tâche créée depuis une entrée continue de lier cette entrée existante.
+être complétée (depuis §102 : sur sa carte, le journal ne répète plus les notes des tâches ouvertes). Une tâche créée depuis une entrée continue de lier cette entrée existante.
 Les tâches déjà présentes sans lien restent lisibles ; aucune migration ne leur invente de
 contenu.
 
@@ -3583,7 +3594,8 @@ et cocher laissait donc le journal encombré. Terminer archive maintenant la not
 avec ses références, sur desktop (`archiveTaskDocuments(…, { withNote })`) comme dans la PWA.
 Les notes d’autres tâches restent exclues : elles suivent leur propre tâche. Rouvrir la tâche
 désarchive sa seule note, pour qu’une tâche active ne se cache pas dans les archives ; ses
-références restent archivées, comme avant. L’assistant annonce « sa note et ses documents liés ».
+références restent archivées, comme avant. (Depuis §102, la note d'une tâche rouverte vit sur
+sa carte, plus dans le journal ; terminée, elle reste dans ses Archives.) L’assistant annonce « sa note et ses documents liés ».
 
 Demande de Timo : la barre d’avancement suit le contenu de la note, réactualisée par l’IA, en
 restant juste et sobre en jetons (`web/src/task-progress.ts`).
@@ -4058,20 +4070,98 @@ il choisit Mistral puis Groq, Gemini et Gemma restant en secours.
 ## 101. Un dépôt GitHub par projet, lu en lecture seule depuis le poste — 2026-11-24
 
 **Décision.** Chaque projet peut être relié à un dépôt GitHub (`projects.github_repo`, forme
-`propriétaire/dépôt`). Le panneau « GitHub » du projet (bouton de la barre des projets, desktop
-seulement) affiche ses pull requests, actions, tickets, commits et versions. Chaque rubrique lit
-les 30 derniers éléments via `gh api` (`GET /api/projects/:id/github/:section`), sans jeton. Les
-éléments s'ouvrent sur github.com.
+`propriétaire/dépôt`). La colonne « GitHub » (desktop seulement) affiche ses pull requests,
+actions, tickets, commits et versions. Chaque rubrique lit les 30 derniers éléments via `gh api`
+(`GET /api/projects/:id/github/:section`), sans jeton. Les éléments s'ouvrent sur github.com.
+
+**Révisé le 2026-11-26 : une colonne, plus une fenêtre.** Demande de Timo : « intègre mieux la
+feat GitHub ». La fenêtre modale ouverte par un bouton de la barre des projets devient un
+interrupteur « GitHub » des panneaux latéraux, masqué par défaut et retenu
+(`worklogs-show-github`). La colonne se range entre l'écriture et Procédures et suit le projet du
+filtre (ou celui de la catégorie choisie) : invitation à choisir un projet sur « Tout »,
+formulaire de liaison pour un projet non relié, rubriques sinon. Elle reste à côté d'un document
+Google, que la fenêtre cachait ; la vue native suit sa zone. Changer de rubrique ou fermer la
+colonne annule la lecture (`AbortSignal`), ce qui arrête `gh` sur le serveur. Une pull request
+ou une issue **ouverte** se suit comme tâche (« ＋ Tâche ») : une tâche « #N titre » du projet,
+dont la note porte le lien, ouverte au centre ; une tâche de même titre déjà suivie donne
+« Ouvrir la tâche » à la place (rapprochement par titre, `shortcut:` dans `ProjectGithub.tsx`).
+Pas de poignée de largeur ni de réglage Affichage pour cette colonne (base 320 px, minimum
+120 px) ; ni téléphone (la barre du bas garde quatre zones), ni PWA.
 
 **Pourquoi.** Le lecteur de liens (§89) passe déjà par GitHub CLI sur ce poste ; le dépôt reste
 ainsi privé sans nouvelle identification. Le lien se range sur le projet, comme les dossiers
 partagés. Le normaliseur `api/src/github-repo.js` est un module pur, partagé avec la PWA.
 
 **Limites.** Lecture seule, bornée (30 éléments par rubrique, sortie et délai limités). Pas de
-GitHub dans la PWA : `localApi.githubList` renvoie `GITHUB_UNAVAILABLE` et le bouton est masqué.
+GitHub dans la PWA : `localApi.githubList` renvoie `GITHUB_UNAVAILABLE`, ni interrupteur ni colonne.
+Toutes les colonnes ouvertes ensemble (Journal, écriture, GitHub, Procédures) tiennent dès
+1024 px, au prix d'une colonne Journal étroite ; c'est pourquoi GitHub reste masqué par défaut.
 Le dépôt relié voyage avec les exports, la boîte mobile et la synchro Drive ; un ancien export ou
 un ancien client ne l'efface pas.
 
 **Validation.** `api/test/github-repo.test.js`, `github-links.test.js`, `github-routes.test.js`,
-`projects.test.js`, `outbox.test.js`, `backup.test.js` ; `web/src/components/ProjectGithub.test.tsx`,
-`ProjectBar.test.tsx`.
+`projects.test.js`, `outbox.test.js`, `backup.test.js` ; `web/src/components/ProjectGithub.test.tsx`
+(colonne sans fenêtre, annulation, ＋ Tâche, Ouvrir la tâche) ; `App.test.tsx` (interrupteur,
+suivi du projet, tâche créée depuis une PR) ; `App.local.test.tsx` (rien dans la PWA) ;
+`e2e/procedure-layout.spec.ts` (cinq colonnes à 1440 et 1024 px) ; `desktop/e2e/desktop.spec.ts`
+(vue Google native à côté de la colonne). `ProjectBar.test.tsx`, qui ne testait que le bouton
+retiré, est supprimé.
+
+## 102. Journal et Tâches dans une seule colonne, une bascule « Notes | Tâches » — 2026-11-26
+
+**Demande de Timo.** « Le panneau journal et tâches fait doublon […] mutualise la colonne
+(panneau) tâches et journal (juste journal) pour gagner de l'espace. » Choix proposé entre
+listes empilées et bascule : **bascule**, retenue par Timo. Depuis §79 et §83, chaque tâche
+a sa note principale : toute tâche ouverte apparaissait deux fois, en ligne du journal et en
+carte du tableau, et la colonne Tâches prenait sa propre largeur.
+
+**Décision.**
+- **Une colonne à gauche, « Journal »**, avec en tête une bascule « Notes | Tâches N » (N : tâches
+  ouvertes du filtre), retenue (`worklogs-side-view`). Les deux listes restent montées, la
+  classe `shows-tasks` choisit la visible ; le tableau garde son id `workspace-tasks`. La
+  colonne de droite, sa poignée, sa largeur (Paramètres › Affichage) et l'interrupteur
+  « Tâches » de l'en-tête disparaissent : l'écriture récupère la place.
+- **Largeur.** La colonne passe à 320 px par défaut. Au premier lancement, elle reprend la plus
+  large des deux anciennes colonnes (`worklogs-col-right`, oubliée ensuite) : à 290 px, les
+  cartes de tâche se serrent trop.
+- **La liste suit la note ouverte** : ouvrir une note de tâche, d'où que ce soit (carte, vue
+  d'ensemble, assistant, colonne GitHub), met la colonne sur Tâches, où sa carte est surlignée.
+  Les compteurs « en cours » / « en retard » de l'en-tête, une carte révélée (tâche sans note),
+  une tâche créée par l'assistant et « ＋ Tâche » de la colonne GitHub montrent aussi la liste
+  Tâches ; les compteurs, la carte révélée et « ＋ Tâche » rouvrent la colonne si elle était repliée.
+- **Plus de doublon.** La liste Notes ne montre plus les notes des tâches ouvertes
+  (`entries[].task`, non archivées) : leur place est leur carte, surlignée quand la note est
+  ouverte au centre (`is-selected`, `aria-current`). Terminée, la note est archivée (§84) et
+  reste dans les Archives des notes. « Suivre comme tâche » fait passer la note sur le tableau ;
+  « Retirer le suivi de tâche » la rend aux notes. `/api/state` ne change pas : seul
+  `journalEntries` filtre (`App.tsx`).
+- **Fusion.** Fondre des notes libres dans une note de tâche passait par les cases du journal ;
+  note de tâche ouverte et notes cochées, la barre propose « ✨ Fusionner dans « titre » », qui
+  garde le suivi. Une note cochée puis suivie comme tâche quitte la sélection.
+- **Document Google (§62 révisé).** Les tâches ne prennent plus de largeur au document : le
+  bouton « Afficher les tâches » et la mise en page `with-tasks` disparaissent.
+- **Téléphone (§53 révisé).** La barre du bas passe à trois destinations : Journal (avec sa
+  bascule), Écriture, Procédures.
+
+**Pourquoi la bascule.** Timo l'a choisie contre les listes empilées : chaque liste garde toute
+la hauteur. C'est un onglet, ce que §1 écartait ; la demande de Timo vaut accord pour celui-ci
+seulement. Écartés : un badge « tâche » sur la ligne du journal (le doublon restait), les notes
+de tâche seulement dans le journal (on perdait les commandes des cartes).
+
+**Ce que ça coûte.** Notes et tâches ne se voient plus en même temps. Une recherche ne montre
+une note de tâche ouverte que par sa carte. Le compteur « entrée(s) cette semaine » de l'en-tête
+compte encore les notes de tâche. Sans entrée choisie (premier lancement, entrée supprimée),
+l'ouverture automatique prend la note libre la plus récente ; une note de tâche ne vient qu'à
+défaut, et la colonne passe alors sur Tâches.
+Une mise en page « Écriture + Tâches » enregistrée avant (journal replié) revient sans tâches :
+rouvrir le Journal suffit. Sur tablette, en mode document, la carte du journal est bornée à 320 px
+et sa liste défile dedans.
+
+**Quand la rouvrir.** Si Timo bascule sans cesse entre les deux listes : la réponse serait alors
+les listes empilées, la deuxième option proposée.
+
+**Validation.** `App.test.tsx` (bascule retenue, colonne unique, reprise de largeur, téléphone à
+trois zones, document Google), `App.tasks.test.tsx` (compteurs, vue d'ensemble, création rapide),
+`App.writing.test.tsx` (suivre puis retirer le suivi), `App.ai.test.tsx` (« Fusionner dans »),
+`App.local.test.tsx` (même règle hors ligne) ; specs e2e adaptées ; `desktop/e2e/desktop.spec.ts`
+(vue Google native quand le Journal se replie).

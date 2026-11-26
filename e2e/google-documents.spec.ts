@@ -70,21 +70,23 @@ test('Google Docs : onglets nombreux, édition autour des objets et dans les cel
   await expect(sync.getByLabel('Autres actions du document')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeHidden();
   const leftHandle = page.getByRole('separator', { name: 'Redimensionner la colonne de gauche' });
-  const rightHandle = page.getByRole('separator', { name: 'Redimensionner la colonne de droite' });
   await expect(leftHandle).toBeVisible();
-  await expect(rightHandle).toBeHidden();
+  await expect(page.getByRole('separator', { name: 'Redimensionner la colonne de droite' })).toHaveCount(0);
   await leftHandle.press('ArrowRight');
-  await expect(page.locator('.left')).toHaveCSS('width', '300px');
-  await page.getByRole('button', { name: 'Afficher les tâches' }).click();
-  await expect(rightHandle).toBeVisible();
-  await rightHandle.press('ArrowLeft');
-  await expect(page.locator('.right')).toHaveCSS('width', '330px');
+  await expect(page.locator('.left')).toHaveCSS('width', '330px');
+  // Les tâches partagent la colonne du journal (§102) : les montrer ne prend rien au document.
+  await expect(page.getByRole('button', { name: 'Afficher les tâches' })).toHaveCount(0);
+  const sideSwitch = page.getByRole('group', { name: 'Notes ou tâches' });
+  const editorWidth = async () => (await page.locator('#workspace-editor').boundingBox())!.width;
+  const documentWidth = await editorWidth();
+  await sideSwitch.getByRole('button', { name: /^Tâches/ }).click();
+  await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
+  expect(await editorWidth()).toBe(documentWidth);
   await page.setViewportSize({ width: 1100, height: 1000 });
   await expect(leftHandle).toBeVisible();
-  await expect(rightHandle).toBeHidden();
   await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.getByRole('button', { name: 'Masquer les tâches' }).click();
+  await sideSwitch.getByRole('button', { name: 'Notes', exact: true }).click();
   const content = page.getByRole('textbox', { name: 'Contenu du document' });
   await content.locator('h2').click();
   await page.getByLabel('Style du paragraphe').selectOption('TITLE');
@@ -114,21 +116,22 @@ test('Google Docs : onglets nombreux, édition autour des objets et dans les cel
   await page.getByRole('tab', { name: /Vue d’ensemble/ }).click();
   await expect(content.locator('td').last()).toContainText('Budget : 12 400 €');
   // Écriture rétrécie par les deux panneaux, fenêtre inchangée : les onglets passent au-dessus de la page.
-  await page.getByRole('button', { name: 'Afficher les tâches' }).click();
+  // Sans colonne Tâches (§102), le second panneau est celui des procédures.
+  const toggles = page.getByRole('group', { name: 'Panneaux latéraux' });
+  await toggles.getByRole('button', { name: 'Procédures', exact: true }).click();
   await leftHandle.press('End');
-  await rightHandle.press('End');
+  await page.getByRole('separator', { name: 'Redimensionner la colonne des procédures' }).press('End');
   const tabsBox = (await page.getByRole('complementary', { name: 'Navigation du document' }).boundingBox())!;
   const pageBox = (await page.getByRole('tabpanel').boundingBox())!;
   expect(pageBox.y).toBeGreaterThanOrEqual(tabsBox.y + tabsBox.height);
   expect(Math.abs(pageBox.width - tabsBox.width)).toBeLessThan(1);
   expect(await page.locator('#workspace-editor').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await page.getByRole('button', { name: 'Masquer les tâches' }).click();
+  await toggles.getByRole('button', { name: 'Procédures', exact: true }).click();
   await page.getByRole('button', { name: 'Changer de thème' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   // Téléphone : une vue à la fois (§53), le document est dans Écriture.
   await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Écriture', exact: true }).click();
   await expect(leftHandle).toBeHidden();
-  await expect(rightHandle).toBeHidden();
   await expect(page.getByRole('tab', { name: /Vue d’ensemble/ })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Enregistrer sur Drive' })).toBeVisible();
   await expect(page.getByRole('link', { name: /Ouvrir dans Google Docs/ })).toBeVisible();

@@ -5,6 +5,10 @@ const trigger = (page: Page) => page.getByRole('button', { name: /^Catégories/ 
 const sheet = (page: Page) => page.getByRole('dialog', { name: /^Catégories/ });
 const journal = (page: Page) => page.getByRole('region', { name: 'Journal', exact: true });
 const board = (page: Page) => page.getByRole('region', { name: 'Tâches', exact: true });
+// Notes et tâches se partagent la colonne de gauche (§102) : la bascule choisit la liste visible.
+const sideSwitch = (page: Page) => page.getByRole('group', { name: 'Notes ou tâches' });
+const showTasks = (page: Page) => sideSwitch(page).getByRole('button', { name: /^Tâches/ }).click();
+const showNotes = (page: Page) => sideSwitch(page).getByRole('button', { name: 'Notes', exact: true }).click();
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
 /** La fenêtre des catégories, ouverte depuis le bandeau des projets si besoin. */
@@ -84,12 +88,14 @@ test.describe('catégories desktop', () => {
     await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Bilan installation');
     await page.getByLabel('Catégorie de l’entrée').selectOption(child.id);
     await expect.poll(async () => (await (await request.get(`/api/entries/${note.id}`)).json()).category_id).toBe(child.id);
+    await showTasks(page);
     await board(page).getByRole('button', { name: 'Planifier Préparer déploiement', exact: true }).click();
     await page.getByLabel('Catégorie de la tâche').selectOption(child.id);
     await board(page).getByRole('button', { name: 'Enregistrer', exact: true }).click();
     await expect.poll(async () => (await (await request.get('/api/state')).json()).tasks.find((item: { id: string }) => item.id === task.id).category_id).toBe(child.id);
-    await expect(journal(page).getByRole('button', { name: /Bilan installation/ }).locator('.category-badge')).toHaveText('Préparation / Déploiement');
     await expect(board(page).locator('.category-badge', { hasText: 'Préparation / Déploiement' })).toBeVisible();
+    await showNotes(page);
+    await expect(journal(page).getByRole('button', { name: /Bilan installation/ }).locator('.category-badge')).toHaveText('Préparation / Déploiement');
 
     // Les deux cibles ont un ordre manuel différent de l'ordre des groupes.
     const firstTarget = await create(request, 'tasks', { title: 'Vérifier les services', project_id: project.id, category_id: child.id, status: 'doing' });
@@ -102,12 +108,15 @@ test.describe('catégories desktop', () => {
     await expect(trigger(page)).toHaveAccessibleName('Catégories : Préparation');
     await expect(journal(page).getByRole('button', { name: /Bilan installation/ })).toBeVisible();
     await expect(journal(page).getByRole('button', { name: /Note non classée/ })).toBeHidden();
+    await showTasks(page);
     await expect(board(page).getByRole('button', { name: 'Préparer déploiement', exact: true })).toBeVisible();
     await (await categories(page)).getByLabel('Regrouper par catégorie').check();
     await page.keyboard.press('Escape');
     await expect(sheet(page)).toBeHidden();
-    await expect(journal(page).getByRole('heading', { name: /Préparation \/ Déploiement/ })).toBeVisible();
     await expect(board(page).getByRole('heading', { name: /Préparation \/ Déploiement/ }).first()).toBeVisible();
+    await showNotes(page);
+    await expect(journal(page).getByRole('heading', { name: /Préparation \/ Déploiement/ })).toBeVisible();
+    await showTasks(page);
 
     const card = (title: string) => board(page).locator('.card').filter({ has: page.getByRole('button', { name: title, exact: true }) });
     const originalTasks = (await (await request.get('/api/state')).json()).tasks;
@@ -135,10 +144,12 @@ test.describe('catégories desktop', () => {
     await expect(sheet(page).getByRole('form', { name: 'Modifier une catégorie', exact: true })).toBeHidden();
     await sheet(page).getByRole('button', { name: 'Afficher la catégorie Déploiement', exact: true }).click();
     await expect(page.getByLabel('Catégorie de l’entrée')).toHaveValue(child.id);
+    await showNotes(page);
     await expect(journal(page).getByRole('heading', { name: /Exploitation \/ Déploiement/ })).toBeVisible();
 
     // La note ouverte reçoit le parent après suppression. La prochaine frappe ne
     // doit pas réintroduire l'ancien identifiant dans l'enregistrement automatique.
+    await showTasks(page);
     await board(page).getByRole('button', { name: 'Planifier Préparer déploiement', exact: true }).click();
     await page.getByLabel('Échéance', { exact: true }).fill('2026-12-15');
     page.once('dialog', (dialog) => dialog.accept());
@@ -153,6 +164,7 @@ test.describe('catégories desktop', () => {
       const updated = (await (await request.get('/api/state')).json()).tasks.find((item: { id: string }) => item.id === task.id);
       return { category_id: updated.category_id, due_date: updated.due_date };
     }).toEqual({ category_id: destination.id, due_date: '2026-12-15' });
+    await showNotes(page);
     await journal(page).getByRole('button', { name: /^Bilan installation/ }).click();
     await expect(page.getByLabel('Titre de l’entrée')).toHaveValue('Bilan installation');
     await page.getByLabel('Titre de l’entrée').fill('Bilan installation vérifié');
@@ -172,6 +184,7 @@ test.describe('catégories desktop', () => {
     await create(request, 'entries', { title: 'Plan du câblage', project_id: project.id, category_id: category.id });
     const task = await create(request, 'tasks', { title: 'Tirer les câbles', project_id: project.id });
     await chooseProject(page, project.name);
+    await showTasks(page);
     const card = board(page).locator('.card').filter({ has: page.getByRole('button', { name: 'Tirer les câbles', exact: true }) });
     await expect(card.locator('.category-badge')).toHaveCount(0);
     await card.getByRole('button', { name: 'Lier des documents', exact: true }).click();
@@ -200,8 +213,8 @@ test.describe('catégories mobile', () => {
     await (await categories(page)).getByLabel('Regrouper par catégorie').check();
     await sheet(page).getByRole('button', { name: 'Fermer', exact: true }).click();
     await expect(journal(page).getByRole('button', { name: /Compte rendu de la prochaine intervention/ })).toBeVisible();
-    // Téléphone : une vue à la fois (§53), les tâches sont à un geste.
-    await page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Tâches', exact: true }).click();
+    // Téléphone : une vue à la fois (§53), les tâches sont à un geste, dans la bascule du Journal (§102).
+    await showTasks(page);
     await expect(board(page).getByRole('button', { name: 'Valider les postes administratifs', exact: true })).toBeVisible();
     expect(await noOverflow(page)).toBe(true);
 

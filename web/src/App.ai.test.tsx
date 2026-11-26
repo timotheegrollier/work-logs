@@ -42,6 +42,42 @@ describe('IA dans les notes : contexte, affinement et actions', () => {
     ]);
   });
 
+  test('une note libre cochée se fond dans la note de tâche ouverte, qui reste suivie (§102)', async () => {
+    localStorage.setItem('worklogs-ai-key', 'cle-test');
+    mockAiSuggest('# Réparer la vanne\n\nLa vanne fuit.\n\nLe joint est remplacé.');
+    seedData(api.db, {
+      entries: [
+        { id: 'en_vanne', title: 'Réparer la vanne', content_md: 'La vanne fuit.' },
+        { id: 'en_joint', title: 'Joint', content_md: 'Le joint est remplacé.' },
+      ],
+    });
+    render(<App />);
+    fireEvent.click(await within(journal()).findByRole('button', { name: /Réparer la vanne/ }));
+    await waitFor(() => expect(screen.getByLabelText('Titre de l’entrée')).toHaveValue('Réparer la vanne'));
+    // Cochée puis suivie comme tâche, la note quitte le journal et la sélection avec lui.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Choisir Réparer la vanne pour une fusion' }));
+    expect(screen.getByRole('group', { name: 'Entrées choisies' })).toHaveTextContent('1 choisie');
+    fireEvent.click(within(editor()).getByRole('button', { name: 'Suivre comme tâche' }));
+    await waitFor(() => expect(within(journal()).queryByText('Réparer la vanne')).not.toBeInTheDocument());
+    expect(screen.queryByRole('group', { name: 'Entrées choisies' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Choisir Joint pour une fusion' }));
+    const bar = screen.getByRole('group', { name: 'Entrées choisies' });
+    expect(within(bar).getByRole('button', { name: '✨ Fusionner' })).toBeDisabled();
+    fireEvent.click(within(bar).getByRole('button', { name: '✨ Fusionner dans « Réparer la vanne »' }));
+    const panel = await screen.findByRole('form', { name: 'Fusion d’entrées' });
+    expect(await within(panel).findByLabelText('Titre de l’entrée fusionnée')).toHaveValue('Réparer la vanne');
+    const sent = (aiBodies[0] as { messages: { content: string }[] }).messages[1].content;
+    expect(sent).toContain('La vanne fuit.');
+    expect(sent).toContain('Le joint est remplacé.');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Valider la fusion' }));
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Fusion d’entrées' })).not.toBeInTheDocument(), { timeout: 5000 });
+    const merged = row(api.db, 'SELECT id, content_md FROM entries');
+    expect(merged.content_md).toBe('La vanne fuit.\n\nLe joint est remplacé.');
+    expect(row(api.db, 'SELECT entry_id, title FROM tasks')).toEqual({ entry_id: merged.id, title: 'Réparer la vanne' });
+    expect(await within(board()).findByRole('button', { name: 'Réparer la vanne' })).toBeInTheDocument();
+    expect(within(journal()).queryByText('Joint')).not.toBeInTheDocument();
+  });
+
   test('fusionner une entrée riche envoie son Markdown : le lien et son adresse arrivent au modèle', async () => {
     localStorage.setItem('worklogs-ai-key', 'cle-test');
     mockAiSuggest('# Accès et joint\n\nVoir le [wiki](https://wiki.exemple/p).');

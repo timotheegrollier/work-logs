@@ -14,6 +14,7 @@ export const EntryList = memo(function EntryList({
   picked = [],
   onPick,
   onMerge,
+  mergeInto,
   onCreate,
   onCreateDocument,
   searching,
@@ -27,7 +28,9 @@ export const EntryList = memo(function EntryList({
   /** Entrées cochées pour une fusion (§70). */
   picked?: string[];
   onPick?: (ids: string[]) => void;
-  onMerge?: () => void;
+  onMerge?: (target?: string) => void;
+  /** Note de tâche ouverte : elle peut recevoir les notes cochées (§102). */
+  mergeInto?: { id: string; title: string } | null;
   onCreate: () => void;
   onCreateDocument: () => void;
   searching: boolean;
@@ -46,7 +49,8 @@ export const EntryList = memo(function EntryList({
       {picked.length > 0 && onPick && (
         <div className="entry-pick-bar" role="group" aria-label="Entrées choisies">
           <span>{picked.length} choisie{picked.length > 1 ? 's' : ''}</span>
-          <button className="task-primary" disabled={picked.length < 2} onClick={onMerge}>✨ Fusionner</button>
+          <button className="task-primary" disabled={picked.length < 2} onClick={() => onMerge?.()}>✨ Fusionner</button>
+          {mergeInto && picked.some((id) => id !== mergeInto.id) && <button className="task-primary" onClick={() => onMerge?.(mergeInto.id)}>✨ Fusionner dans « {mergeInto.title} »</button>}
           <button className="ghost" onClick={() => onPick([])}>Annuler</button>
         </div>
       )}

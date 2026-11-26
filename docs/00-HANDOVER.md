@@ -1,5 +1,27 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Journal et Tâches dans une colonne, GitHub en colonne — 2026-11-26 (§101 révisé, §102)
+
+- **Une seule colonne à gauche, « Journal »**, avec la bascule « Notes | Tâches N » (retenue).
+  Plus de colonne Tâches à droite, ni de poignée, de largeur ou d'interrupteur à elle : l'écriture
+  prend la place. Largeur 320 px par défaut, et reprise une fois de l'ancienne largeur des tâches
+  si elle était plus grande. Les gestes vers une tâche (vue d'ensemble, compteurs de l'en-tête,
+  assistant, colonne GitHub) montrent la liste Tâches. Téléphone : trois destinations.
+- **Plus de doublon** : la note d'une tâche ouverte n'est plus dans les Notes, seulement sur sa
+  carte, surlignée quand elle est ouverte ; terminée, elle reste dans les Archives (§84).
+  « ✨ Fusionner dans « titre » » remplace le chemin des cases pour fondre des notes dans une
+  note de tâche.
+- **Document Google** : plus de bouton « Afficher les tâches » ni de mise en page `with-tasks`.
+- **GitHub devient une colonne** : interrupteur « GitHub » des panneaux latéraux (desktop, masqué
+  par défaut), entre l'écriture et Procédures, qui suit le projet du filtre. La fenêtre modale et
+  le bouton de la barre des projets disparaissent. « ＋ Tâche » sur une PR ou une issue ouverte
+  crée la tâche « #N titre » avec le lien dans sa note ; « Ouvrir la tâche » si elle existe déjà.
+  Lectures annulées au changement de rubrique ou à la fermeture.
+- Corrigé au passage : les styles GitHub de §101 lisaient `--foreground` et `--border`, absents
+  de la feuille (séparateurs invisibles).
+- Tests : `ProjectGithub.test.tsx` réécrit, `ProjectBar.test.tsx` supprimé, `App*.test.tsx`
+  adaptés et complétés, specs e2e et `desktop/e2e/desktop.spec.ts` adaptés.
+
 ## Dépôt GitHub par projet — 2026-11-24, v0.92.0 (§101)
 
 - Un projet se relie à un dépôt (`projects.github_repo`). Le bouton « GitHub » de la barre des
@@ -2996,7 +3018,7 @@ secrets Cloudflare ci-dessus existent. « PWA Cloudflare » (concurrency `pwa-cl
 ## 1. C'est quoi ?
 Un journal de travail local. On y **écrit** ce qu'on a fait (Markdown, belle mise en page,
 impression PDF propre) et on y **suit** ses tâches. Tout tient sur un écran : journal à
-gauche, écriture au centre, tâches à droite. Ni onglet ni routeur ; aucun compte requis en local. Google Drive est facultatif.
+gauche (notes et tâches, une bascule, §102), écriture au centre. Ni onglet ni routeur ; aucun compte requis en local. Google Drive est facultatif.
 
 ## 2. Reprise en 3 commandes
 ```bash

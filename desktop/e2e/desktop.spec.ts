@@ -106,7 +106,12 @@ test('démarre en fenêtre maximisée', async () => {
 test('fenêtre autonome, renderer isolé, liens externes dans le navigateur', async () => {
   expect(page.url()).toBe('worklogs://app/');
   await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
+  // Les tâches partagent la colonne du journal (§102) : la bascule les montre, puis rend les notes.
+  const side = page.getByRole('group', { name: 'Notes ou tâches' });
+  await side.getByRole('button', { name: /^Tâches/ }).click();
   await expect(page.getByRole('region', { name: 'Tâches', exact: true })).toBeVisible();
+  await side.getByRole('button', { name: 'Notes', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Journal', exact: true })).toBeVisible();
   const preferences = await application!.evaluate(({ BrowserWindow }) => {
     const contents = BrowserWindow.getAllWindows()[0].webContents as unknown as {
       getLastWebPreferences: () => { nodeIntegration: boolean; contextIsolation: boolean; sandbox: boolean };
@@ -595,11 +600,15 @@ test('Google intégré : outils dans le canevas, isolation, dimensions et copie 
   const rect = await page.getByLabel('Zone du document Google').boundingBox();
   expect(rect!.width).toBeGreaterThan(650);
   await expect.poll(() => application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.at(-1)!.getBounds().width)).toBe(Math.round(rect!.width));
-  await page.getByRole('button', { name: 'Afficher les tâches' }).click();
-  const smaller = await page.getByLabel('Zone du document Google').boundingBox();
-  expect(smaller!.width).toBeLessThan(rect!.width);
-  // Les poignées déplacent aussi la vraie WebContentsView, sans sortir de l'éditeur.
-  for (const [side, delta] of [['gauche', 60], ['droite', -50]] as const) {
+  // Le Journal, qui porte aussi les tâches (§102), replié élargit le document ; la vue native suit.
+  const journalToggle = page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'Journal', exact: true });
+  await journalToggle.click();
+  const wider = (await page.getByLabel('Zone du document Google').boundingBox())!;
+  expect(wider.width).toBeGreaterThan(rect!.width);
+  await expect.poll(() => application!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.at(-1)!.getBounds().width)).toBe(Math.round(wider.width));
+  await journalToggle.click();
+  // La poignée déplace aussi la vraie WebContentsView, sans sortir de l'éditeur.
+  for (const [side, delta] of [['gauche', 60]] as const) {
     const handle = (await page.getByRole('separator', { name: `Redimensionner la colonne de ${side}` }).boundingBox())!;
     const before = (await page.getByLabel('Zone du document Google').boundingBox())!;
     const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
@@ -613,6 +622,20 @@ test('Google intégré : outils dans le canevas, isolation, dimensions et copie 
       const bounds = BrowserWindow.getAllWindows()[0].contentView.children.at(-1)!.getBounds();
       return { x: bounds.x, width: bounds.width };
     })).toEqual({ x: Math.round(resized.x), width: Math.round(resized.width) });
+  }
+  // La colonne GitHub (§101) se range à côté du document : la vue native suit sa zone, sans se cacher.
+  const githubToggle = page.getByRole('group', { name: 'Panneaux latéraux' }).getByRole('button', { name: 'GitHub', exact: true });
+  for (const shown of [true, false]) {
+    const before = (await page.getByLabel('Zone du document Google').boundingBox())!;
+    await githubToggle.click();
+    await expect(page.locator('#workspace-github'))[shown ? 'toBeVisible' : 'toBeHidden']();
+    const zone = (await page.getByLabel('Zone du document Google').boundingBox())!;
+    expect(shown ? zone.width < before.width : zone.width > before.width).toBe(true);
+    await expect.poll(() => application!.evaluate(({ BrowserWindow }) => {
+      const view = BrowserWindow.getAllWindows()[0].contentView.children.at(-1)!;
+      const bounds = view.getBounds();
+      return { x: bounds.x, width: bounds.width, visible: view.getVisible() };
+    })).toEqual({ x: Math.round(zone.x), width: Math.round(zone.width), visible: true });
   }
   // Une navigation interdite ne reçoit ni page locale, ni privilège WorkLogs.
   await googlePage.getByRole('link', { name: 'Interdit' }).click();

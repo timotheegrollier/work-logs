@@ -71,7 +71,11 @@ describe('PWA locale (mêmes écrans, backend IndexedDB/mémoire)', () => {
     await user.paste('Acheter des plants');
     await user.keyboard('{Enter}');
     expect(await tasks.findByText('Acheter des plants', undefined, stockage)).toBeInTheDocument();
-    expect(await list.findByText('Acheter des plants', undefined, stockage)).toBeInTheDocument();
+    // GitHub passe par GitHub CLI sur le poste : ni interrupteur ni colonne dans la PWA.
+    expect(within(screen.getByRole('group', { name: 'Panneaux latéraux' })).queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
+    expect(document.getElementById('workspace-github')).toBeNull();
+    // Sa note existe (6 entrées) mais vit sur la carte, pas dans le journal (§102).
+    expect(list.queryByText('Acheter des plants')).not.toBeInTheDocument();
     expect((await localApi.state()).stats.entries).toBe(6);
   }, 30_000);
 
@@ -128,8 +132,8 @@ describe('PWA locale (mêmes écrans, backend IndexedDB/mémoire)', () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByRole('region', { name: 'Journal' });
-    await user.click(screen.getByRole('button', { name: 'Tâches' }));
-    expect(document.querySelector('.columns')).toHaveClass('hide-right');
+    await user.click(screen.getByRole('button', { name: 'Journal' }));
+    expect(document.querySelector('.columns')).toHaveClass('hide-left');
     expect(editor()).toBeInTheDocument();
   });
 
@@ -363,7 +367,7 @@ describe('dossier partagé dans la PWA', () => {
       await chat.findByText('✓ Appliqué', undefined, stockage);
       expect((await localApi.state()).tasks.find((task) => task.title === 'Acheter des graines')).toMatchObject({ priority: 'high', status: 'todo' });
       expect(within(board()).getAllByText('Acheter des graines').length).toBeGreaterThan(0);
-      expect(await within(journal()).findByText('Acheter des graines', undefined, stockage)).toBeInTheDocument();
+      expect(within(journal()).queryByText('Acheter des graines')).not.toBeInTheDocument();
     } finally {
       vi.unstubAllGlobals();
     }

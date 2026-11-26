@@ -673,10 +673,10 @@ export const remoteApi = {
   sharedPreviewUrl: (hash: string, name: string): string | null =>
     '/api/shared/preview?hash=' + enc(hash) + '&name=' + enc(name),
 
-  /** Toutes les pièces jointes, avec leur entrée et leur projet (filtre projet facultatif). */
   /** Rubrique GitHub d'un projet relié, lue par `gh` sur l'ordinateur (lecture seule). */
-  githubList: (projectId: string, section: GithubSection) =>
-    req<GithubList>(`/api/projects/${enc(projectId)}/github/${section}`),
+  githubList: (projectId: string, section: GithubSection, signal?: AbortSignal) =>
+    req<GithubList>(`/api/projects/${enc(projectId)}/github/${section}`, { signal }),
+  /** Toutes les pièces jointes, avec leur entrée et leur projet (filtre projet facultatif). */
   projectFiles: (projectId = '') => req<ProjectFile[]>('/api/project-files' + (projectId ? '?project_id=' + enc(projectId) : '')),
   deleteAttachment: (id: string) => send<{ ok: true; driveTrashed?: boolean }>('DELETE', `/api/attachments/${id}`),
   fileUrl: (stored: string) => `/api/files/${stored}`,
