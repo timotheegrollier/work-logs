@@ -88,8 +88,9 @@ test('les lectures prennent le jeton du compte choisi, et suivent le compte acti
   const accounts = createGithubAccounts({ db, execFile: gh.execFile });
   const seen = [];
   const list = createGithubRepoReader({ auth: accounts.env, execFile: async (_file, args, options) => {
+    assert.equal(args[5], 'graphql');
     seen.push(options.env.GH_TOKEN ?? null);
-    return { stdout: '[]' };
+    return { stdout: JSON.stringify({ data: { repository: { pullRequests: { nodes: [] } } } }) };
   } });
 
   assert.deepEqual(await accounts.env(), {});

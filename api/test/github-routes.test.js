@@ -5,7 +5,7 @@ import http from 'node:http';
 import express from 'express';
 import { registerGithubRoutes } from '../src/github-routes.js';
 import { startApi } from './helpers.js';
-import { createGithubRepoReader } from '../src/github-links.js';
+import { createGithubPullReader, createGithubRepoReader } from '../src/github-links.js';
 
 const address = 'https://github.com/Murgat-Ingenierie/deployer';
 
@@ -120,6 +120,56 @@ test('la vraie lecture par rubrique refuse une rubrique inconnue avec un message
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api/projects/${project.body.id}/github/wiki`);
     assert.equal(response.status, 404);
     assert.equal((await response.json()).code, 'GITHUB_UNKNOWN_SECTION');
+  } finally {
+    await new Promise((resolve) => { server.close(resolve); server.closeIdleConnections(); });
+    await api.close();
+  }
+});
+
+test('le détail GitHub résout le dépôt du projet et bloque les appels non locaux ou invalides', async () => {
+  const api = await startApi();
+  const calls = [];
+  const app = express();
+  const pull = createGithubPullReader({ execFile: async (_file, args, { signal }) => {
+    assert.equal(signal.aborted, false);
+    calls.push(args.slice(8));
+    const pullRequest = args.at(-1) === 'number=7' ? { body: 'Déploiement', changedFiles: 1,
+      files: { nodes: [{ path: 'script.sh', additions: 1, deletions: 0, changeType: 'ADDED' }] } } : null;
+    return { stdout: JSON.stringify({ data: { repository: { pullRequest } } }) };
+  } });
+  registerGithubRoutes(app, { db: api.db, pull });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const project = await api.post('/api/projects', { name: 'Déploiement', github_repo: 'a/b' });
+    const unlinked = await api.post('/api/projects', { name: 'Sans dépôt' });
+    const path = (id, number) => `http://127.0.0.1:${server.address().port}/api/projects/${id}/github/pulls/${number}`;
+    const validPath = path(project.body.id, 7);
+    const remote = await fetch(validPath, { headers: { 'Sec-Fetch-Site': 'cross-site' } });
+    assert.equal(remote.status, 403);
+    assert.equal((await remote.json()).code, 'GITHUB_LOCAL_ONLY');
+    for (const [url, status, code] of [
+      [path(project.body.id, '7%2Ffiles'), 400, 'GITHUB_INVALID_PULL'],
+      [path(unlinked.body.id, 7), 409, 'GITHUB_NOT_LINKED'],
+      [path('projet-inconnu', 7), 404, 'GITHUB_PROJECT_NOT_FOUND'],
+    ]) {
+      const response = await fetch(url);
+      assert.equal(response.status, status);
+      assert.equal((await response.json()).code, code);
+    }
+    assert.deepEqual(calls, []);
+
+    const missing = await fetch(path(project.body.id, 8));
+    assert.equal(missing.status, 404);
+    assert.equal((await missing.json()).code, 'GITHUB_NOT_FOUND');
+    const response = await fetch(validPath);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await response.json(), {
+      body: 'Déploiement', checks: [], reviews: [], files: [{ path: 'script.sh', additions: 1, deletions: 0, status: 'added' }],
+      checksCount: 0, reviewsCount: 0, filesCount: 1,
+    });
+    assert.deepEqual(calls, ['8', '7'].map((number) => ['--raw-field', 'owner=a', '--raw-field', 'repo=b', '--field', `number=${number}`]));
   } finally {
     await new Promise((resolve) => { server.close(resolve); server.closeIdleConnections(); });
     await api.close();

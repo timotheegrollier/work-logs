@@ -1,27 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { api, type GithubAccounts, type GithubItem, type GithubList, type GithubLogin, type GithubSection, type Project, type Task } from '../lib';
+import { api, type GithubAccounts, type GithubList, type GithubLogin, type GithubSection, type Project, type Task } from '../lib';
 
-const SECTIONS: { id: GithubSection; label: string }[] = [
-  { id: 'pulls', label: 'Pull requests' },
-  { id: 'actions', label: 'Actions' },
-  { id: 'issues', label: 'Issues' },
-  { id: 'commits', label: 'Commits' },
-  { id: 'releases', label: 'Releases' },
-];
+import { GithubIcon } from './GithubIcon';
+import { FILTER_STATES, GITHUB_SECTIONS, GithubItemRow, githubItemLabel, githubStatus, stateLabel } from './GithubItemRow';
 
-/** Rubriques dont un élément ouvert se suit comme tâche : il reste du travail à faire dessus. */
-const TRACKABLE: GithubSection[] = ['pulls', 'issues'];
-const OPEN_STATES = ['ouverte', 'brouillon'];
-
-const dateText = (iso: string | null) => {
-  const date = iso ? new Date(iso) : null;
-  return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('fr-FR') : '';
-};
-
-const itemLabel = (item: GithubItem) => {
-  const title = item.title ?? '(sans titre)';
-  return item.number !== null ? `#${item.number} ${title}` : title;
-};
+const SECTIONS: GithubSection[] = ['pulls', 'actions', 'issues', 'commits', 'releases'];
 
 const fold = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
 
@@ -134,64 +117,46 @@ function GithubAccount({ onChanged }: { onChanged: () => void }) {
   );
 }
 
-/** Une ligne de rubrique : titre cliquable (ouvre github.com), puis état, auteur, branche et date. */
-function GithubRow({ item }: { item: GithubItem }) {
-  const label = itemLabel(item);
-  const details = [item.state, item.author, item.ref, dateText(item.date)].filter(Boolean).join(' · ');
-  return (
-    <>
-      {item.url
-        ? <a href={item.url} target="_blank" rel="noreferrer" className="github-title">{label}</a>
-        : <span className="github-title">{label}</span>}
-      {details && <small>{details}</small>}
-    </>
-  );
-}
-
-/**
- * Colonne « GitHub » du projet choisi (desktop) : relie un dépôt au projet, puis affiche ses
- * pull requests, actions, tickets, commits et versions. Lecture seule, via GitHub CLI sur cet
- * ordinateur ; chaque élément s'ouvre sur github.com, et une PR ou une issue se suit comme tâche.
- */
+/** Colonne GitHub du projet choisi, lue par GitHub CLI sur cet ordinateur. */
 export function ProjectGithub({ project, tasks, onChanged, onOpenTask, onCreateTask }: {
   project: Project;
-  /** Tâches de l'état : une PR ou une issue déjà suivie ouvre sa tâche au lieu d'en créer une. */
   tasks: Task[];
-  /** Lien modifié : l'appelant recharge les projets. */
   onChanged: () => void;
   onOpenTask: (task: Task) => void;
-  /** Crée la tâche `title` dans le projet, sa note portant le lien, puis l'ouvre. */
   onCreateTask: (title: string, url: string | null) => Promise<void>;
 }) {
   const repo = project.github_repo ?? null;
   const [draft, setDraft] = useState(repo ?? '');
   const [section, setSection] = useState<GithubSection>('pulls');
   const [list, setList] = useState<GithubList | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(repo));
+  const [listError, setListError] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const [showAccount, setShowAccount] = useState(false);
+  const [query, setQuery] = useState('');
+  const [stateFilter, setStateFilter] = useState('');
+  const [expandedPull, setExpandedPull] = useState<string | null>(null);
   const reread = useCallback(() => setRevision((value) => value + 1), []);
 
   useEffect(() => {
     if (!repo) return;
-    let alive = true;
     // Changer de rubrique ou fermer la colonne arrête aussi `gh` sur le serveur.
     const controller = new AbortController();
     setLoading(true);
-    setError('');
+    setListError('');
     setList(null);
     void api.githubList(project.id, section, controller.signal).then((next) => {
-      if (alive) setList(next);
-    }).catch((e: Error & { code?: string }) => {
-      if (!alive) return;
-      setError(e.message);
-      if (ACCOUNT_ERRORS.includes(e.code ?? '')) setShowAccount(true);
+      if (!controller.signal.aborted) setList(next);
+    }).catch((cause: Error & { code?: string }) => {
+      if (controller.signal.aborted) return;
+      setListError(cause.message);
+      if (ACCOUNT_ERRORS.includes(cause.code ?? '')) setShowAccount(true);
     }).finally(() => {
-      if (alive) setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     });
-    return () => { alive = false; controller.abort(); };
+    return () => controller.abort();
   }, [project.id, repo, section, revision]);
 
   const run = async (action: () => Promise<void>) => {
@@ -199,8 +164,8 @@ export function ProjectGithub({ project, tasks, onChanged, onOpenTask, onCreateT
     setError('');
     try {
       await action();
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (cause) {
+      setError((cause as Error).message);
     } finally {
       setBusy(false);
     }
@@ -208,7 +173,11 @@ export function ProjectGithub({ project, tasks, onChanged, onOpenTask, onCreateT
 
   const save = (value: string | null) => run(async () => {
     await api.updateProject(project.id, { github_repo: value });
-    if (value === null) setDraft('');
+    if (value === null) {
+      setDraft('');
+      selectSection('pulls');
+      setShowAccount(false);
+    }
     onChanged();
   });
 
@@ -217,57 +186,123 @@ export function ProjectGithub({ project, tasks, onChanged, onOpenTask, onCreateT
     void save(draft.trim() || null);
   };
 
-  // shortcut: rapprochement par titre dans l'état filtré (recherche, catégorie) ; une tâche renommée
-  // ou masquée laisse en recréer une. Passer à l'URL de la note si ça gêne.
-  const trackedTask = (label: string) => tasks.find((task) => task.project_id === project.id && fold(task.title) === fold(label));
+  function selectSection(value: GithubSection) {
+    setSection(value);
+    setQuery('');
+    setStateFilter('');
+    setExpandedPull(null);
+    setError('');
+  }
 
-  const sectionLabel = SECTIONS.find((item) => item.id === section)?.label ?? '';
+  // Le rapprochement historique par titre permet aussi de retrouver les tâches existantes.
+  const trackedTask = (label: string) => tasks.find((task) => task.project_id === project.id && fold(task.title) === fold(label));
+  const { label: sectionLabel, icon: sectionIcon } = GITHUB_SECTIONS[section];
+  const items = list?.section === section ? list.items : [];
+  const states = [...new Set([...FILTER_STATES[section], ...items.map(githubStatus).filter(Boolean)])];
+  const terms = fold(query).split(/\s+/).filter(Boolean);
+  const results = items.filter((item) => {
+    if (stateFilter && githubStatus(item) !== stateFilter) return false;
+    if (!terms.length) return true;
+    const searchable = fold([githubItemLabel(item), item.author, item.ref, item.baseRef, item.sha, item.workflow, item.event,
+      [githubStatus(item), item.checksStatus, item.reviewDecision].map((state) => stateLabel(state ?? '')).join(' '), ...(item.labels ?? []).map((value) => value.name), ...(item.assignees ?? [])]
+      .filter(Boolean).join(' '));
+    return terms.every((term) => searchable.includes(term));
+  });
+  const filtered = Boolean(terms.length || stateFilter);
 
   return (
     <section className="github-panel" aria-label={`GitHub du projet ${project.name}`}>
-      <h2 className="github-panel-title">GitHub · {project.name}</h2>
+      <header className="github-head">
+        <div className="github-heading">
+          <span className="github-brand"><GithubIcon name="github" /></span>
+          <div>
+            <h2 className="github-panel-title">GitHub</h2>
+            {repo && <a className="github-repo" title={repo} href={`https://github.com/${repo}`} target="_blank" rel="noreferrer">
+              <span>{repo}</span><GithubIcon name="external" />
+            </a>}
+          </div>
+        </div>
+        {repo && (
+          <div className="github-toolbar">
+            <button type="button" className="github-icon-button" aria-label="Actualiser" title="Actualiser"
+              disabled={loading} onClick={reread}><GithubIcon name="reload" /></button>
+            <button type="button" className="github-icon-button" aria-label="Compte" title="Compte GitHub"
+              aria-expanded={showAccount} onClick={() => setShowAccount((value) => !value)}><GithubIcon name="account" /></button>
+            <button type="button" className="github-icon-button" aria-label="Délier" title="Délier le dépôt"
+              disabled={busy} onClick={() => void save(null)}><GithubIcon name="unlink" /></button>
+          </div>
+        )}
+      </header>
       {repo ? (
         <>
-          <div className="github-head">
-            <a href={`https://github.com/${repo}`} target="_blank" rel="noreferrer">{repo} ↗</a>
-            <button type="button" className="ghost" disabled={loading} onClick={reread}>Actualiser</button>
-            <button type="button" className="ghost" aria-expanded={showAccount} onClick={() => setShowAccount((value) => !value)}>Compte</button>
-            <button type="button" className="ghost" disabled={busy} onClick={() => void save(null)}>Délier</button>
-          </div>
           {showAccount && <GithubAccount onChanged={reread} />}
-          <div className="files-chips" role="group" aria-label="Rubriques GitHub">
-            {SECTIONS.map((item) => (
-              <button key={item.id} type="button" className={'chip' + (section === item.id ? ' is-on' : '')}
-                aria-pressed={section === item.id} onClick={() => setSection(item.id)}>
-                {item.label}
-              </button>
-            ))}
+          <div className="github-nav" role="group" aria-label="Rubriques GitHub">
+            {SECTIONS.map((id) => {
+              const { label, icon } = GITHUB_SECTIONS[id];
+              return (
+                <button key={id} type="button" className="github-tab" aria-label={label} title={label}
+                  aria-pressed={section === id} onClick={() => { if (section !== id) selectSection(id); }}>
+                  <GithubIcon name={icon} /> <span className="github-tab-label">{label}</span>
+                </button>
+              );
+            })}
           </div>
-          <section className="github-section" aria-label={`${sectionLabel} de ${repo}`} aria-busy={loading}>
-            {loading && <p className="ai-hint" role="status">Chargement…</p>}
-            {list && list.items.length === 0 && <p className="ai-hint">Aucun élément dans cette rubrique.</p>}
-            {list && list.items.length > 0 && (
+          <section className="github-section" aria-label={`${sectionLabel} de ${repo}`}>
+            <div className="github-filters">
+              <label className="github-search">
+                <GithubIcon name="search" />
+                <input type="search" aria-label={`Rechercher dans ${sectionLabel}`} placeholder="Rechercher…"
+                  value={query} onChange={(event) => setQuery(event.target.value)} />
+              </label>
+              {states.length > 0 && <select className="github-filter" aria-label="Filtrer par état"
+                value={stateFilter} onChange={(event) => setStateFilter(event.target.value)}>
+                <option value="">Tous les états</option>
+                {states.map((state) => <option key={state} value={state}>{stateLabel(state)}</option>)}
+              </select>}
+            </div>
+            <div className="github-results">
+              <span role="status">{loading ? 'Chargement…' : list && !listError ?
+                `${results.length}${filtered ? `/${items.length}` : ''} résultat${results.length === 1 ? '' : 's'}` : ''}</span>
+              <a className="github-external" href={`https://github.com/${repo}/${section}`} target="_blank" rel="noreferrer"
+                title={`Voir ${sectionLabel} sur GitHub`} aria-label={`Voir ${sectionLabel} sur GitHub`}>
+                <span>Sur GitHub</span><GithubIcon name="external" />
+              </a>
+            </div>
+            {listError && (
+              <div className="github-message">
+                <p role="alert">{listError}</p>
+                <button type="button" className="ghost" onClick={reread}>Réessayer</button>
+              </div>
+            )}
+            {list && !loading && !listError && results.length === 0 && (
+              <div className="github-empty">
+                <GithubIcon name={filtered ? 'search' : sectionIcon} />
+                <p>{filtered ? 'Aucun résultat pour ces filtres.' : 'Aucun élément dans cette rubrique.'}</p>
+                {filtered && <button type="button" className="ghost" onClick={() => { setQuery(''); setStateFilter(''); }}>Effacer les filtres</button>}
+              </div>
+            )}
+            {results.length > 0 && (
               <ul className="github-list">
-                {list.items.map((item) => {
-                  const label = itemLabel(item);
-                  const followable = TRACKABLE.includes(list.section) && item.number !== null;
+                {results.map((item) => {
+                  const label = githubItemLabel(item);
+                  const followable = (section === 'pulls' || section === 'issues') && item.number !== null;
                   const tracked = followable ? trackedTask(label) : undefined;
+                  const state = githubStatus(item);
                   return (
-                    <li key={item.id}>
-                      <GithubRow item={item} />
-                      {tracked && (
+                    <GithubItemRow key={item.id} item={item} section={section} projectId={project.id} expanded={expandedPull === item.id}
+                      onToggle={() => setExpandedPull((previous) => previous === item.id ? null : item.id)}>
+                      {tracked ? (
                         <button type="button" className="ghost github-task" aria-label={`Ouvrir la tâche ${label}`}
                           onClick={() => onOpenTask(tracked)}>
-                          Ouvrir la tâche
+                          <GithubIcon name="check" /> Ouvrir la tâche
                         </button>
-                      )}
-                      {followable && !tracked && OPEN_STATES.includes(item.state ?? '') && (
+                      ) : followable && (state === 'open' || state === 'draft') && (
                         <button type="button" className="ghost github-task" aria-label={`Suivre ${label} comme tâche`} disabled={busy}
                           onClick={() => void run(() => onCreateTask(label, item.url))}>
-                          ＋ Tâche
+                          <GithubIcon name="plus" /> Tâche
                         </button>
                       )}
-                    </li>
+                    </GithubItemRow>
                   );
                 })}
               </ul>
@@ -276,10 +311,7 @@ export function ProjectGithub({ project, tasks, onChanged, onOpenTask, onCreateT
         </>
       ) : (
         <form className="github-link" onSubmit={link}>
-          <p className="ai-hint">
-            Relie un dépôt pour voir ici ses pull requests, ses actions, ses tickets, ses commits et ses versions.
-            La lecture passe par GitHub CLI sur cet ordinateur, en lecture seule.
-          </p>
+          <p className="ai-hint">Relie un dépôt pour consulter son activité dans WorkLogs.</p>
           <label>
             Dépôt GitHub
             <input value={draft} disabled={busy} placeholder="propriétaire/dépôt ou lien github.com"

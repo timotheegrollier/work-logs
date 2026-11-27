@@ -84,6 +84,30 @@ export interface GithubItem {
   author: string | null;
   date: string | null;
   ref: string | null;
+  status?: string | null;
+  baseRef?: string | null;
+  labels?: { name: string; color: string | null }[];
+  assignees?: string[];
+  comments?: number | null;
+  reviewDecision?: string | null;
+  checksStatus?: string | null;
+  mergeStatus?: string | null;
+  changedFiles?: number | null;
+  additions?: number | null;
+  deletions?: number | null;
+  workflow?: string | null;
+  event?: string | null;
+  sha?: string | null;
+}
+
+export interface GithubPullDetail {
+  body: string | null;
+  checks: { name: string; status: string | null; url: string | null }[];
+  reviews: { author: string | null; state: string | null; date: string | null; url: string | null }[];
+  files: { path: string; status: string | null; additions: number; deletions: number }[];
+  checksCount: number;
+  reviewsCount: number;
+  filesCount: number;
 }
 
 export interface GithubList {
@@ -691,6 +715,8 @@ export const remoteApi = {
   /** Rubrique GitHub d'un projet relié, lue par `gh` sur l'ordinateur (lecture seule). */
   githubList: (projectId: string, section: GithubSection, signal?: AbortSignal) =>
     req<GithubList>(`/api/projects/${enc(projectId)}/github/${section}`, { signal }),
+  githubPullDetail: (projectId: string, number: number, signal?: AbortSignal) =>
+    req<GithubPullDetail>(`/api/projects/${enc(projectId)}/github/pulls/${number}`, { signal }),
   githubAccounts: () => req<GithubAccounts>('/api/github/accounts'),
   chooseGithubAccount: (login: string | null) => send<GithubAccounts>('PUT', '/api/github/account', { login }),
   startGithubLogin: () => send<GithubLogin>('POST', '/api/github/login'),

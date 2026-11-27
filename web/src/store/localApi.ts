@@ -728,6 +728,7 @@ export const localApi: Api = {
   githubList: async () => {
     throw new ApiError('GitHub : la liaison et la lecture des dépôts utilisent GitHub CLI sur l’ordinateur, avec l’application desktop.', 'GITHUB_UNAVAILABLE');
   },
+  githubPullDetail: githubAccountUnavailable,
   githubAccounts: githubAccountUnavailable,
   chooseGithubAccount: githubAccountUnavailable,
   startGithubLogin: githubAccountUnavailable,

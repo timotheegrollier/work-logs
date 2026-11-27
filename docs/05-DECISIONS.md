@@ -4109,6 +4109,13 @@ connexion à la fois. Annuler, fermer WorkLogs ou laisser le code expirer (15 mi
 et rien n'est retenu. Routes `localOnly` : `GET /api/github/accounts`, `PUT /api/github/account`,
 `POST|GET|DELETE /api/github/login` (`api/src/github-account.js`).
 
+**Activité du dépôt, le 2026-11-27.** Les cartes utilisent les couleurs et les icônes d'état
+de GitHub et s'adaptent à la largeur de la colonne. La recherche et le filtre d'état travaillent
+sur la liste chargée. Les PR affichent leurs branches, étiquettes, vérifications, décision de
+revue et volumes de changements quand ces informations sont disponibles. Le détail d'une PR
+est lu à l'ouverture de sa carte et annulé quand elle se replie ou disparaît. Les cartes
+proposent une copie du lien, et chaque rubrique garde un accès à sa page complète sur GitHub.
+
 **Pourquoi.** Le lecteur de liens (§89) passe déjà par GitHub CLI sur ce poste ; le dépôt reste
 ainsi privé sans nouvelle identification. Le lien se range sur le projet, comme les dossiers
 partagés. Le normaliseur `api/src/github-repo.js` est un module pur, partagé avec la PWA.

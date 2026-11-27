@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGithubReader, createGithubRepoReader } from '../src/github-links.js';
+import { createGithubPullReader, createGithubReader, createGithubRepoReader } from '../src/github-links.js';
 import { normalizeGithubRepo } from '../src/github-repo.js';
 
 const address = 'https://github.com/Murgat-Ingenierie/deployer';
@@ -138,38 +138,130 @@ test('un dépôt relié accepte propriétaire/dépôt ou son lien et refuse le r
 
 function listFixture(responses) {
   const calls = [];
-  const list = createGithubRepoReader({ execFile: async (file, args, options) => {
+  const execFile = async (file, args, options) => {
     assert.equal(file, 'gh');
     assert.equal(options.env.GH_PROMPT_DISABLED, '1');
-    calls.push(args[5]);
+    assert.equal(options.env.GH_TOKEN, 'fake-local-account-token');
+    calls.push(args);
     const response = responses[calls.length - 1];
     if (response instanceof Error) throw response;
+    assert.notEqual(response, undefined, `appel inattendu ${args[5]}`);
     return { stdout: JSON.stringify(response) };
-  } });
-  return { list, calls };
+  };
+  const options = { execFile, auth: async () => ({ GH_TOKEN: 'fake-local-account-token' }) };
+  return { list: createGithubRepoReader(options), pull: createGithubPullReader(options), calls };
 }
 
 test('les rubriques d’un dépôt relié sont lues en lecture seule et bornées', async () => {
   const { list, calls } = listFixture([
-    [{ id: 1, number: 7, title: 'Ajoute le déploiement', html_url: 'https://github.com/a/b/pull/7', state: 'closed', merged_at: '2026-11-20', user: { login: 'timo' }, updated_at: '2026-11-21T10:00:00Z', head: { ref: 'feat' } },
-      { id: 2, number: 8, title: 'Brouillon', html_url: 'https://evil.example/pull/8', state: 'open', draft: true, user: null, updated_at: '2026-11-22T10:00:00Z', head: { ref: 'wip' } }],
-    [{ id: 3, number: 9, title: 'Bug', html_url: 'https://github.com/a/b/issues/9', state: 'open', user: { login: 'ana' }, updated_at: '2026-11-19T08:00:00Z' },
+    { data: { repository: { pullRequests: { nodes: [
+      { id: 'PR_7', number: 7, title: 'Ajoute le déploiement', url: 'https://github.com/a/b/pull/7', state: 'MERGED',
+        author: { login: 'timo' }, updatedAt: '2026-11-21T10:00:00Z', headRefName: 'feat', baseRefName: 'main', headRefOid: 'f'.repeat(40),
+        labels: { nodes: [{ name: 'API', color: 'a1b2c3' }, { name: 'Important', color: '#bad' }, { name: '', color: 'a1b2c3' }] },
+        assignees: { nodes: [{ login: 'ana' }, null] }, reviewDecision: 'APPROVED', mergeStateStatus: 'CLEAN',
+        statusCheckRollup: { state: 'SUCCESS' }, comments: { totalCount: 2 }, changedFiles: 5, additions: 33, deletions: 8 },
+      { id: 'PR_8', number: 8, title: 'Brouillon', url: 'https://evil.example/pull/8', state: 'OPEN', isDraft: true,
+        updatedAt: '2026-11-22T10:00:00Z', headRefName: 'wip', statusCheckRollup: { state: 'PENDING' } },
+      ...Array.from({ length: 30 }, (_, index) => ({ id: `PR_${index + 20}`, number: index + 20, state: 'CLOSED' })),
+    ] } } } },
+    [{ id: 3, number: 9, title: 'Bug', html_url: 'https://github.com/a/b/issues/9', state: 'open', user: { login: 'ana' },
+      updated_at: '2026-11-19T08:00:00Z', labels: [{ name: 'bug', color: 'abcdef' }], assignees: [{ login: 'li' }], comments: 4 },
       { id: 4, number: 10, title: 'PR déguisée', pull_request: {}, state: 'open' }],
-    { workflow_runs: [{ id: 5, run_number: 12, display_title: 'CI', html_url: 'https://github.com/a/b/actions/runs/5', conclusion: 'failure', actor: { login: 'timo' }, created_at: '2026-11-18T09:00:00Z', head_branch: 'main' }, { id: 6, run_number: 13, name: 'Tests', status: 'in_progress', conclusion: null }] },
+    { workflow_runs: [{ id: 5, run_number: 12, display_title: 'CI', name: 'Validation', html_url: 'https://github.com/a/b/actions/runs/5',
+      status: 'completed', conclusion: 'failure', actor: { login: 'timo' }, created_at: '2026-11-18T09:00:00Z', head_branch: 'main', event: 'push' },
+    { id: 6, run_number: 13, name: 'Tests', status: 'in_progress', conclusion: null }] },
     [{ sha: 'abc123', commit: { message: 'Corrige le rapport\n\nDétails', author: { name: 'Timo', date: '2026-11-17T07:00:00Z' } }, html_url: 'https://github.com/a/b/commit/abc123', author: { login: 'timo' } }],
     [{ id: 8, name: '', tag_name: 'v1.2.0', html_url: 'https://github.com/a/b/releases/tag/v1.2.0', draft: false, prerelease: true, author: { login: 'timo' }, published_at: '2026-11-16T06:00:00Z' }],
   ]);
   const pulls = await list('a/b', 'pulls');
-  assert.deepEqual(pulls, { repo: 'a/b', section: 'pulls', items: [
-    { id: '1', number: 7, title: 'Ajoute le déploiement', url: 'https://github.com/a/b/pull/7', state: 'fusionnée', author: 'timo', date: '2026-11-21T10:00:00Z', ref: 'feat' },
-    { id: '2', number: 8, title: 'Brouillon', url: null, state: 'brouillon', author: null, date: '2026-11-22T10:00:00Z', ref: 'wip' },
-  ] });
-  assert.match(calls[0], /^\/repos\/a\/b\/pulls\?state=all/);
-  assert.equal((await list('a/b', 'issues')).items.length, 1);
-  assert.deepEqual((await list('a/b', 'actions')).items.map((run) => [run.title, run.state, run.ref]), [['CI', 'échouée', 'main'], ['Tests', 'en cours', null]]);
-  assert.deepEqual((await list('a/b', 'commits')).items, [{ id: 'abc123', number: null, title: 'Corrige le rapport', url: 'https://github.com/a/b/commit/abc123', state: null, author: 'timo', date: '2026-11-17T07:00:00Z', ref: null }]);
-  assert.deepEqual((await list('a/b', 'releases')).items, [{ id: '8', number: null, title: 'v1.2.0', url: 'https://github.com/a/b/releases/tag/v1.2.0', state: 'préversion', author: 'timo', date: '2026-11-16T06:00:00Z', ref: 'v1.2.0' }]);
+  assert.equal(pulls.items.length, 30);
+  assert.deepEqual(pulls.items[0], {
+    id: 'PR_7', number: 7, title: 'Ajoute le déploiement', url: 'https://github.com/a/b/pull/7', state: 'fusionnée', status: 'merged',
+    author: 'timo', date: '2026-11-21T10:00:00Z', ref: 'feat', baseRef: 'main', sha: 'f'.repeat(40),
+    labels: [{ name: 'API', color: 'a1b2c3' }, { name: 'Important', color: null }], assignees: ['ana'], comments: 2,
+    reviewDecision: 'approved', mergeStatus: 'clean', checksStatus: 'success', changedFiles: 5, additions: 33, deletions: 8,
+  });
+  assert.deepEqual(pulls.items.slice(1, 3).map((pr) => [pr.status, pr.url, pr.checksStatus]), [['draft', null, 'pending'], ['closed', null, null]]);
+  assert.deepEqual(calls[0].slice(0, 7), ['api', '--hostname', 'github.com', '--method', 'POST', 'graphql', '--raw-field']);
+  assert.match(calls[0][7], /^query=query\(/);
+  assert.match(calls[0][7], /pullRequests\(first: 30/);
+  assert.deepEqual(calls[0].slice(8), ['--raw-field', 'owner=a', '--raw-field', 'repo=b']);
+
+  const issues = (await list('a/b', 'issues')).items;
+  assert.equal(issues.length, 1);
+  assert.deepEqual([issues[0].status, issues[0].labels, issues[0].assignees, issues[0].comments],
+    ['open', [{ name: 'bug', color: 'abcdef' }], ['li'], 4]);
+  assert.deepEqual((await list('a/b', 'actions')).items.map((run) => [run.title, run.state, run.status, run.ref, run.workflow, run.event]),
+    [['CI', 'échouée', 'failure', 'main', 'Validation', 'push'], ['Tests', 'en cours', 'in_progress', null, 'Tests', null]]);
+  assert.deepEqual((await list('a/b', 'commits')).items, [{ id: 'abc123', number: null, title: 'Corrige le rapport', url: 'https://github.com/a/b/commit/abc123', state: null, author: 'timo', date: '2026-11-17T07:00:00Z', ref: null, sha: 'abc123' }]);
+  assert.deepEqual((await list('a/b', 'releases')).items, [{ id: '8', number: null, title: 'v1.2.0', url: 'https://github.com/a/b/releases/tag/v1.2.0', state: 'préversion', status: 'prerelease', author: 'timo', date: '2026-11-16T06:00:00Z', ref: 'v1.2.0' }]);
   assert.equal(calls.length, 5);
+});
+
+test('la liste des pull requests reste disponible via REST si GraphQL la refuse', async () => {
+  const { list, calls } = listFixture([
+    Object.assign(new Error('gh: Forbidden (HTTP 403)'), { code: 1 }),
+    [{ id: 1, number: 7, title: 'Ajoute le déploiement', html_url: 'https://github.com/a/b/pull/7', state: 'closed',
+      merged_at: '2026-11-20', user: { login: 'timo' }, updated_at: '2026-11-21T10:00:00Z', head: { ref: 'feat' }, base: { ref: 'main' } }],
+  ]);
+  assert.deepEqual((await list('a/b', 'pulls')).items[0], {
+    id: '1', number: 7, title: 'Ajoute le déploiement', url: 'https://github.com/a/b/pull/7', state: 'fusionnée', status: 'merged',
+    author: 'timo', date: '2026-11-21T10:00:00Z', ref: 'feat', baseRef: 'main', sha: null, labels: [], assignees: [], comments: null,
+  });
+  assert.match(calls[1][5], /^\/repos\/a\/b\/pulls\?state=all/);
+});
+
+test('le détail d’une PR réunit contrôles, avis et fichiers sans transmettre de diff', async () => {
+  const timestamp = '2026-11-21T10:00:00Z';
+  const { pull, calls } = listFixture([{ data: { repository: { pullRequest: {
+    body: 'Déploie le nouveau rapport.\n' + 'x'.repeat(9000), changedFiles: 42,
+    files: { nodes: Array.from({ length: 42 }, (_, index) => ({ path: `src/file-${index}.js`, changeType: 'MODIFIED', additions: 2, deletions: 1 })) },
+    reviews: { totalCount: 2, nodes: [{ author: { login: 'ana' }, state: 'CHANGES_REQUESTED', submittedAt: timestamp },
+      { author: { login: 'timo' }, state: 'APPROVED', submittedAt: timestamp, url: 'https://github.com/a/b/pull/7#pullrequestreview-10' }] },
+    statusCheckRollup: { contexts: { totalCount: 35, nodes: [
+      { name: 'Tests', status: 'COMPLETED', conclusion: 'SUCCESS', url: 'https://github.com/a/b/runs/4', detailsUrl: 'https://ci.example/checks/1' },
+      { context: 'Analyse', state: 'PENDING', targetUrl: 'https://ci.example/checks/2' },
+      { context: 'Lien invalide', state: 'FAILURE', targetUrl: 'javascript:alert(1)' },
+      { context: 'Lien avec identifiants', state: 'ERROR', targetUrl: 'https://user:password@ci.example/checks/4' },
+    ] } },
+  } } } }]);
+  const result = await pull('a/b', '7');
+  assert.equal(result.body.length <= 8000, true);
+  assert.match(result.body, /Extrait tronqué/);
+  assert.deepEqual(result.checks, [
+    { name: 'Tests', status: 'success', url: 'https://github.com/a/b/runs/4' },
+    { name: 'Analyse', status: 'pending', url: 'https://ci.example/checks/2' },
+    { name: 'Lien invalide', status: 'failure', url: null },
+    { name: 'Lien avec identifiants', status: 'error', url: null },
+  ]);
+  assert.deepEqual(result.reviews, [
+    { author: 'timo', state: 'approved', date: timestamp, url: 'https://github.com/a/b/pull/7#pullrequestreview-10' },
+    { author: 'ana', state: 'changes_requested', date: timestamp, url: null },
+  ]);
+  assert.equal(result.files.length, 30);
+  assert.deepEqual(result.files[0], { path: 'src/file-0.js', status: 'modified', additions: 2, deletions: 1 });
+  assert.deepEqual([result.checksCount, result.reviewsCount, result.filesCount], [35, 2, 42]);
+  assert.match(calls[0][7], /pullRequest\(number: \$number\)/);
+  assert.doesNotMatch(calls[0][7], /diff|patch|mutation/);
+  assert.deepEqual(calls[0].slice(8), ['--raw-field', 'owner=a', '--raw-field', 'repo=b', '--field', 'number=7']);
+  assert.equal(calls.length, 1);
+});
+
+test('le détail refuse les numéros invalides et signale une pull request absente', async () => {
+  const { pull, calls } = listFixture([{ data: { repository: { pullRequest: null } } }]);
+  for (const number of ['0', '-2', '2.5', '0007', '2147483648', '7/files']) {
+    await assert.rejects(pull('a/b', number), { status: 400, code: 'GITHUB_INVALID_PULL' });
+  }
+  await assert.rejects(pull('a/b/../c', '7'), { status: 400, code: 'GITHUB_INVALID_REPO' });
+  assert.equal(calls.length, 0);
+  await assert.rejects(pull('a/b', '7'), { status: 404, code: 'GITHUB_NOT_FOUND' });
+});
+
+test('le détail traduit aussi un refus GraphQL NOT_FOUND sans réponse HTTP 404', async () => {
+  const { pull } = listFixture([Object.assign(new Error('commande GitHub en échec'), {
+    code: 1, stderr: 'gh: Could not resolve to a PullRequest with the number of 42.',
+  })]);
+  await assert.rejects(pull('a/b', '42'), { status: 404, code: 'GITHUB_NOT_FOUND' });
 });
 
 test('une rubrique inconnue ou un dépôt invalide est refusé avant gh', async () => {

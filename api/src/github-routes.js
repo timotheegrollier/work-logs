@@ -1,5 +1,5 @@
 import { createGithubAccounts } from './github-account.js';
-import { createGithubReader, createGithubRepoReader, isGithubError } from './github-links.js';
+import { createGithubPullReader, createGithubReader, createGithubRepoReader, isGithubError } from './github-links.js';
 import { localOnly } from './shared-routes.js';
 
 const LOCAL_ONLY = { error: 'GitHub : accès réservé à cet ordinateur.', code: 'GITHUB_LOCAL_ONLY' };
@@ -26,6 +26,7 @@ async function answer(req, res, task) {
 export function registerGithubRoutes(app, {
   db, accounts = createGithubAccounts({ db }),
   read = createGithubReader({ auth: accounts.env }), list = createGithubRepoReader({ auth: accounts.env }),
+  pull = createGithubPullReader({ auth: accounts.env }),
 } = {}) {
   // Même frontière locale que les fichiers d’équipe. L’authentification reste dans gh.
   const local = (req, res, next) => localOnly(req, res, next, LOCAL_ONLY);
@@ -38,13 +39,17 @@ export function registerGithubRoutes(app, {
   app.get('/api/github/login', local, (req, res) => answer(req, res, async () => accounts.loginStatus()));
   app.delete('/api/github/login', local, (req, res) => answer(req, res, async () => accounts.cancelLogin()));
 
-  // Rubriques (pull requests, Actions, issues, commits, releases) du dépôt relié au projet.
-  app.get('/api/projects/:id/github/:section', local, (req, res) => answer(req, res, async (signal) => {
-    const project = db.prepare('SELECT github_repo FROM projects WHERE id=?').get(req.params.id);
+  function linkedRepo(id) {
+    const project = db.prepare('SELECT github_repo FROM projects WHERE id=?').get(id);
     if (!project) throw Object.assign(new Error('GitHub : projet introuvable.'), { status: 404, code: 'GITHUB_PROJECT_NOT_FOUND' });
     if (!project.github_repo) {
       throw Object.assign(new Error('GitHub : ce projet n’est relié à aucun dépôt. Relie-le depuis la colonne GitHub.'), { status: 409, code: 'GITHUB_NOT_LINKED' });
     }
-    return list(project.github_repo, req.params.section, { signal });
-  }));
+    return project.github_repo;
+  }
+
+  app.get('/api/projects/:id/github/:section', local, (req, res) => answer(req, res,
+    (signal) => list(linkedRepo(req.params.id), req.params.section, { signal })));
+  app.get('/api/projects/:id/github/pulls/:number', local, (req, res) => answer(req, res,
+    (signal) => pull(linkedRepo(req.params.id), req.params.number, { signal })));
 }

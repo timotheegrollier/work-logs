@@ -1,7 +1,8 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ProjectGithub } from './ProjectGithub';
-import { api, ApiError, type GithubAccounts, type GithubList, type GithubLogin, type Project, type Task } from '../lib';
+import { api, ApiError, type GithubAccounts, type GithubList, type GithubLogin, type GithubPullDetail, type Project, type Task } from '../lib';
 
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -12,7 +13,9 @@ const pulls: GithubList = {
   repo: 'Timo/worklogs',
   section: 'pulls',
   items: [
-    { id: '1', number: 12, title: 'Ajoute la liaison', url: 'https://github.com/Timo/worklogs/pull/12', state: 'ouverte', author: 'timo', date: '2026-11-20T10:00:00Z', ref: 'feat/github' },
+    { id: '1', number: 12, title: 'Ajoute la liaison', url: 'https://github.com/Timo/worklogs/pull/12', state: 'ouverte', author: 'timo', date: '2026-11-20T10:00:00Z', ref: 'feat/github',
+      status: 'open', baseRef: 'main', labels: [{ name: 'À relire', color: '5319e7' }], checksStatus: 'failure',
+      reviewDecision: 'changes_requested', mergeStatus: 'dirty', changedFiles: 2, additions: 16, deletions: 7 },
     { id: '2', number: 9, title: 'Ancienne branche', url: 'https://github.com/Timo/worklogs/pull/9', state: 'fusionnée', author: 'timo', date: '2026-11-10T10:00:00Z', ref: 'old' },
   ],
 };
@@ -39,9 +42,16 @@ test('un projet relié affiche les pull requests puis change de rubrique, en ann
     section === 'pulls' ? pulls : { repo: 'Timo/worklogs', section, items: [] });
   render(panel());
   const region = within(await screen.findByRole('region', { name: 'Pull requests de Timo/worklogs' }));
-  const row = region.getByRole('link', { name: '#12 Ajoute la liaison' });
+  const row = await region.findByRole('link', { name: '#12 Ajoute la liaison' });
   expect(row).toHaveAttribute('href', 'https://github.com/Timo/worklogs/pull/12');
-  expect(region.getByText(/ouverte · timo · feat\/github/)).toBeInTheDocument();
+  expect(region.getByText('Ouverte', { selector: '.github-badge' })).toHaveAttribute('data-tone', 'open');
+  expect(region.getByText('Fusionnée', { selector: '.github-badge' })).toHaveAttribute('data-tone', 'merged');
+  expect(region.getByText('CI échouée')).toHaveAttribute('data-tone', 'failure');
+  expect(region.getByText('Modifications demandées')).toBeInTheDocument();
+  expect(region.getByText('Conflits')).toBeInTheDocument();
+  expect(region.getByText('feat/github')).toBeInTheDocument();
+  expect(region.getByText('main')).toBeInTheDocument();
+  expect(region.getByText('À relire')).toHaveAttribute('data-color', '#5319e7');
   const first = list.mock.calls[0][2] as AbortSignal;
   expect(first.aborted).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
@@ -205,4 +215,96 @@ test('une connexion GitHub en cours reprend avec son code quand la colonne se ro
   } finally {
     vi.useRealTimers();
   }
+});
+
+test('le filtre d’état et la recherche par étiquette, branche ou numéro se combinent et se réinitialisent', async () => {
+  const list = vi.spyOn(api, 'githubList').mockResolvedValue(pulls);
+  render(panel());
+  const search = screen.getByRole('searchbox', { name: 'Rechercher dans Pull requests' });
+  const filter = screen.getByRole('combobox', { name: 'Filtrer par état' });
+  await screen.findByRole('link', { name: '#12 Ajoute la liaison' });
+
+  fireEvent.change(search, { target: { value: 'a relire feat/github #12' } });
+  expect(screen.getByRole('link', { name: '#12 Ajoute la liaison' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: '#9 Ancienne branche' })).not.toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('1/2 résultat');
+
+  fireEvent.change(filter, { target: { value: 'merged' } });
+  expect(screen.getByText('Aucun résultat pour ces filtres.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Effacer les filtres' }));
+  expect(search).toHaveValue('');
+  expect(filter).toHaveValue('');
+  expect(screen.getByRole('link', { name: '#9 Ancienne branche' })).toBeInTheDocument();
+  expect(list).toHaveBeenCalledTimes(1);
+});
+
+const pullDetail: GithubPullDetail = {
+  body: 'Description de la pull request.',
+  checks: [{ name: 'Linux / tests', status: 'failure', url: 'https://github.com/Timo/worklogs/actions/runs/42' }],
+  reviews: [{ author: 'alice', state: 'approved', url: null, date: '2026-11-20T10:00:00Z' }],
+  files: [{ path: 'src/panneau.ts', status: 'modified', additions: 16, deletions: 7 }],
+  checksCount: 1, reviewsCount: 1, filesCount: 2,
+};
+
+test('les détails de PR se chargent à la demande puis affichent les vérifications, revues et fichiers', async () => {
+  vi.spyOn(api, 'githubList').mockResolvedValue(pulls);
+  const detail = vi.spyOn(api, 'githubPullDetail').mockResolvedValue(pullDetail);
+  render(panel());
+
+  const toggle = await screen.findByRole('button', { name: 'Détails de #12 Ajoute la liaison' });
+  expect(detail).not.toHaveBeenCalled();
+  fireEvent.click(toggle);
+  expect(detail).toHaveBeenCalledWith(linked.id, 12, expect.any(AbortSignal));
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(await screen.findByText('Description de la pull request.')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Linux / tests' })).toHaveAttribute('href', pullDetail.checks[0].url);
+  expect(within(screen.getByRole('region', { name: 'Revues' })).getByText('Approuvée')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'Fichiers modifiés' })).getByText('src/panneau.ts')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Voir les modifications sur GitHub' })).toHaveAttribute('href', pulls.items[0].url + '/files');
+
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('region', { name: 'Vérifications' })).not.toBeInTheDocument();
+  expect(detail.mock.calls[0][2]?.aborted).toBe(true);
+});
+
+test('une erreur de détail se réessaie et le changement de rubrique annule sa lecture', async () => {
+  vi.spyOn(api, 'githubList').mockImplementation(async (_id, section) =>
+    section === 'pulls' ? pulls : { repo: pulls.repo, section, items: [] });
+  const detail = vi.spyOn(api, 'githubPullDetail')
+    .mockRejectedValueOnce(new Error('GitHub : vérifications indisponibles.'))
+    .mockReturnValueOnce(new Promise(() => {}));
+  render(panel());
+  fireEvent.click(await screen.findByRole('button', { name: 'Détails de #12 Ajoute la liaison' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('vérifications indisponibles');
+  fireEvent.click(screen.getByRole('button', { name: 'Réessayer les détails' }));
+  expect(detail).toHaveBeenCalledTimes(2);
+  expect(detail.mock.calls[1][2]?.aborted).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+  expect(detail.mock.calls[1][2]?.aborted).toBe(true);
+  expect(await screen.findByText('Aucun élément dans cette rubrique.')).toBeInTheDocument();
+});
+
+test('copier le lien utilise l’adresse de l’élément et confirme la copie', async () => {
+  const user = userEvent.setup();
+  vi.spyOn(api, 'githubList').mockResolvedValue(pulls);
+  render(panel());
+
+  await user.click(await screen.findByRole('button', { name: 'Copier le lien de #12 Ajoute la liaison' }));
+  expect(await navigator.clipboard.readText()).toBe(pulls.items[0].url);
+  expect(await screen.findByText('Lien copié.')).toBeInTheDocument();
+});
+
+test('une erreur de rubrique se réessaie et le raccourci ouvre la rubrique sur GitHub', async () => {
+  const list = vi.spyOn(api, 'githubList')
+    .mockRejectedValueOnce(new Error('Lecture indisponible.'))
+    .mockResolvedValue(pulls);
+  render(panel());
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Lecture indisponible.');
+  expect(screen.getByRole('link', { name: 'Voir Pull requests sur GitHub' })).toHaveAttribute('href', 'https://github.com/Timo/worklogs/pulls');
+  fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+  expect(await screen.findByRole('link', { name: '#12 Ajoute la liaison' })).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(list).toHaveBeenCalledTimes(2);
 });

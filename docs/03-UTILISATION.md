@@ -640,6 +640,22 @@ créer, les renommer (Entrée valide, Échap annule), changer leur couleur, les 
 de sept projets, **Retrouver un projet** filtre la liste. Supprimer un projet ne supprime
 **rien** : les entrées et les tâches restent, simplement détachées.
 
+### Consulter GitHub
+
+Dans **Panneaux latéraux**, active **GitHub**, puis sélectionne un projet. Si besoin, relie le
+dépôt avec son nom `propriétaire/dépôt` ou son adresse GitHub. Le bouton **Compte GitHub**
+permet de choisir ou de connecter un compte GitHub CLI.
+
+Les cinq rubriques affichent les pull requests, les Actions, les issues, les commits et les
+versions. La recherche porte sur les éléments chargés dans la rubrique. Elle retrouve notamment
+un titre, un numéro, un auteur, une branche ou une étiquette. Le filtre **Tous les états** permet
+par exemple de ne voir que les PR fusionnées ou les Actions échouées.
+
+Une carte de PR montre ses branches, son état, l'état de la CI et la décision de revue quand
+GitHub les fournit. **Détails** affiche la description, les vérifications, les revues et les fichiers
+modifiés. Le titre ouvre l'élément sur GitHub. Le bouton de copie place son adresse dans le
+presse-papiers. **Tâche** suit une PR ou une issue ouverte dans le journal de travail.
+
 ## Procédures
 
 Le bouton **Procédures** de l'en-tête affiche une sidebar dédiée, à droite des
