@@ -1,5 +1,13 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Colonne GitHub : plus de seconde barre de défilement — 2026-11-27, v0.95.1 (§101)
+
+- Les libellés masqués des cartes (`.github-sr-only`, position absolue) se plaçaient sur le document,
+  faute d'ancêtre positionné, et l'allongeaient : une seconde barre faisait défiler toute l'application.
+  `.github-panel` porte désormais `position: relative`. Parcours navigateur : 30 PR, document sans
+  débordement, molette sur la seule colonne.
+- `./scripts/check.sh` vert, avec 2 269 tests dont un échec attendu.
+
 ## Activité et détail des PR dans la colonne GitHub — 2026-11-27, v0.95.0 (§101)
 
 - Cartes adaptées aux deux thèmes et à la largeur de la colonne. Recherche dans les cinq rubriques,
