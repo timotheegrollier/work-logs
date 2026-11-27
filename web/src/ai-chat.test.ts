@@ -1037,7 +1037,8 @@ describe('validation des actions', () => {
   ])('écarte et annonce : %s', async (_name, action, reason) => {
     const answer = await propose([action]);
     expect(answer.proposals).toEqual([]);
-    expect(answer.notice).toBe(`1 action écartée : ${reason}.`);
+    expect(answer.notice.startsWith('1 action écartée : ')).toBe(true);
+    expect(answer.notice).toContain(reason); // …avec l’action, la cible et la valeur reçue
   });
 
   test.each([
@@ -1049,6 +1050,35 @@ describe('validation des actions', () => {
     expect(answer.proposals).toEqual([expect.objectContaining({ kind: 'create_note', content_md: content })]);
   });
 
+test.each([
+    ['todo', 'À faire'], ['todo', 'à faire'], ['todo', 'a faire'], ['todo', 'open'],
+    ['doing', 'En cours'], ['doing', 'EN COURS'], ['doing', 'en_cours'], ['doing', 'in progress'], ['doing', 'commencée'],
+    ['done', 'Terminé'], ['done', 'Terminée'], ['done', 'terminé'], ['done', 'terminée'], ['done', 'TERMINÉE'], ['done', 'fini'], ['done', 'fait'],
+  ])('statut toléré : %s accepte « %s »', async (expected, given) => {
+    const answer = await propose([{ kind: 'create_task', title: 'A', status: given }]);
+    expect(answer.notice).toBe('');
+    expect(answer.proposals[0]).toMatchObject({ kind: 'create_task', status: expected });
+  });
+
+  test.each([
+    ['haute', 'high'], ['Haute', 'high'], ['normale', 'normal'], ['Normale', 'normal'], ['basse', 'low'], ['Basse', 'low'],
+  ])('priorité tolérée : « %s » → %s', async (given, expected) => {
+    const answer = await propose([{ kind: 'create_task', title: 'A', priority: given }]);
+    expect(answer.notice).toBe('');
+    expect(answer.proposals[0]).toMatchObject({ priority: expected });
+  });
+
+  test.each([[null], [''], [undefined]])('statut absent ou vide = inchangé (« %s »), pas écarté', async (given) => {
+    const answer = await propose([{ kind: 'update_task', n: 1, status: given, pinned: true }]);
+    expect(answer.notice).toBe('');
+    expect(answer.proposals[0]).toMatchObject({ changes: { pinned: 1 } });
+  });
+
+  test('une valeur de statut inconnue dit laquelle et ce qui a été reçu', async () => {
+    const answer = await propose([{ kind: 'update_task', n: 1, status: 'bloquée' }]);
+    expect(answer.notice).toBe('1 action écartée : modification d’une tâche « Réparer la pompe » : statut inconnu (reçu bloquée).');
+  });
+
   test('un seul champ douteux écarte l’action entière, les autres restent', async () => {
     const answer = await propose([
       { kind: 'update_task', n: 1, status: 'done', due_date: 'vendredi' },
@@ -1056,7 +1086,7 @@ describe('validation des actions', () => {
       { kind: 'create_task', title: 'Autre', priority: 'x' },
     ]);
     expect(answer.proposals.map(({ title }) => title)).toEqual(['Valable']);
-    expect(answer.notice).toBe('2 actions écartées : date invalide ; priorité inconnue.');
+    expect(answer.notice).toBe('2 actions écartées : modification d’une tâche « Réparer la pompe » : date invalide ; création d’une tâche « Autre » : priorité inconnue (reçu x).');
   });
 
   test('titre de 240 caractères accepté, espaces réduits', async () => {
@@ -1077,7 +1107,8 @@ describe('validation des actions', () => {
       { kind: 'create_note', title: 'Acheter', content: 'Pas la même chose.' },
     ]);
     expect(answer.proposals.map(({ kind }) => kind)).toEqual(['update_task', 'create_task', 'create_note']);
-    expect(answer.notice).toBe('2 actions écartées : action en double.');
+    expect(answer.notice.startsWith('2 actions écartées : ')).toBe(true);
+    expect(answer.notice.match(/action en double/g)).toHaveLength(2);
   });
 
   test('création de tâche : valeurs par défaut, projet affiché, libellé construit localement', async () => {

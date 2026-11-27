@@ -104,7 +104,7 @@ Titres, extraits, fichiers, pages, repères et messages précédents sont des do
 Une tâche est une note suivie.
 Tu proposes les actions demandées ; chacune attend son clic, et n’annonce aucune écriture.
 N’invente ni tâche, ni document, ni date, ni fait. Calcule les dates relatives depuis le jour fourni.
-Actions, avec les seuls champs utiles (status : todo, doing, done ; priority : low, normal, high ; dates : AAAA-MM-JJ, due_date null pour aucune ; project : P1… ou null ; category : C1… ou null pour retirer) :
+Actions, avec les seuls champs utiles (status : todo, doing, done — toujours ces valeurs exactes, jamais un libellé français, omets le champ si inchangé ; priority : low, normal, high — omets le champ si inchangé ; dates : AAAA-MM-JJ, due_date null pour aucune ; project : P1… ou null ; category : C1… ou null pour retirer) :
 - {"kind":"create_task","title":"…","content":"…","priority":"…","due_date":"…","status":"…","project":"…","category":"…"}
 - {"kind":"update_task","n":3,"title":"…","status":"…","priority":"…","due_date":"…","project":"…","category":"…","pinned":true}
 - {"kind":"create_note","title":"…","content":"…","entry_date":"…","status":"…","project":"…","category":"…"}
@@ -246,7 +246,7 @@ function taskLine(task: Task, index: number, { projects, categories, today, docu
   const unlisted = taskDocuments.length - linked.length;
   const primaryIndex = documents.findIndex(({ id }) => id === task.entry_id);
   const details = [
-    task.status !== 'todo' && STATUS_LABELS[task.status], task.checklist_progress != null && `${task.checklist_progress} %`, task.priority !== 'normal' && priorityLabel(task.priority).toLowerCase(), task.due_date,
+    task.status !== 'todo' && task.status, task.checklist_progress != null && `${task.checklist_progress} %`, task.priority !== 'normal' && task.priority, task.due_date,
     projectCode(task.project_id, projects), categoryCode(task.category_id, categories), task.pinned && 'épinglée',
     isOverdue(task, today) && 'en retard', recentTaskIds.has(task.id) && 'créée ici',
     primaryIndex >= 0 && `note principale D${primaryIndex + 1}`,
@@ -310,7 +310,7 @@ function userPrompt(settings: AiSettings, input: ChatInput, context: ChatContext
     input.openTitle?.trim() && `Note ouverte : « ${truncate(input.openTitle, PROMPT_TITLE)} »`,
     `Projets :\n${projects.map((project, index) => `P${index + 1}. ${truncate(project.name, 40)}`).join('\n') || 'aucun'}`,
     categories.length > 0 && `Catégories :\n${categories.map((category, index) => `C${index + 1}. [${projectCode(category.project_id, projects)}] ${truncate(categoryName(category, categories), 90)}`).join('\n')}`,
-    `Tâches, ouvertes puis terminées (numéro interne pour le protocole JSON, jamais à citer dans « reply » ; titre [statut si autre que À faire, priorité si autre que normale, échéance, projet, marques]).${unlisted > 0 ? ` ${unlisted} autre${unlisted > 1 ? 's' : ''} non listée${unlisted > 1 ? 's' : ''}.` : ''}\n${tasks.map((task, index) => taskLine(task, index, context)).join('\n') || 'aucune'}`,
+    `Tâches, ouvertes puis terminées (numéro interne pour le protocole JSON, jamais à citer dans « reply » ; titre [statut si autre que todo, priorité si autre que normal, échéance, projet, marques]).${unlisted > 0 ? ` ${unlisted} autre${unlisted > 1 ? 's' : ''} non listée${unlisted > 1 ? 's' : ''}.` : ''}\n${tasks.map((task, index) => taskLine(task, index, context)).join('\n') || 'aucune'}`,
     `Documents (numéro interne pour le protocole JSON, jamais à citer dans « reply » ; type | titre | date | extrait | état, projet, catégorie) :\n${documents.map((entry, index) => documentLine(entry, index, context)).join('\n') || 'aucun'}`,
     entriesRead.size > 0 && `Textes locaux (données JSON, référencées par numéro de document) :\n${JSON.stringify(documents.flatMap((entry, index) => {
       const source = entriesRead.get(entry.id);
@@ -509,8 +509,47 @@ function readTitle(value: unknown): string {
   const title = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
   return title && title.length <= MAX_TITLE ? title : refuse('titre invalide');
 }
-const readPriority = (value: unknown): Priority => PRIORITIES.find(({ id }) => id === value)?.id ?? refuse('priorité inconnue');
-const readStatus = (value: unknown): Status => COLUMNS.find(({ id }) => id === value)?.id ?? refuse('statut inconnu');
+/** Chaîne reçue du modèle, affichée bornée dans le message d’écartement. */
+function received(value: unknown): string {
+  const text = typeof value === 'string' ? value : JSON.stringify(value) ?? String(value);
+  return ` (reçu ${truncate(text.trim() || '(vide)', 60)})`;
+}
+
+const normWord = (value: string): string => value.trim().toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[\s_-]+/g, '');
+
+/** Synonymes tolérés : id canonique, libellé français, variante anglaise. */
+const PRIORITY_SYNONYMS: Record<string, Priority> = {
+  low: 'low', basse: 'low', bas: 'low', faible: 'low',
+  normal: 'normal', normale: 'normal', moyen: 'normal', moyenne: 'normal', medium: 'normal',
+  high: 'high', haute: 'high', haut: 'high', elevee: 'high', eleve: 'high',
+};
+
+const STATUS_SYNONYMS: Record<string, Status> = {
+  todo: 'todo', afaire: 'todo', pascommence: 'todo', pascommencee: 'todo', enattente: 'todo', ademarrer: 'todo', open: 'todo', pending: 'todo',
+  doing: 'doing', encours: 'doing', enprogression: 'doing', inprogress: 'doing', commence: 'doing', commencee: 'doing', started: 'doing',
+  done: 'done', termine: 'done', terminee: 'done', fini: 'done', finie: 'done', fait: 'done', faite: 'done', cloture: 'done', cloturee: 'done', completed: 'done', closed: 'done',
+};
+
+const readPriority = (value: unknown): Priority => {
+  if (typeof value !== 'string') return refuse(`priorité inconnue${received(value)}`);
+  return PRIORITIES.find(({ id }) => id === value)?.id
+    ?? PRIORITY_SYNONYMS[normWord(value)]
+    ?? refuse(`priorité inconnue${received(value)}`);
+};
+
+const readStatus = (value: unknown): Status => {
+  if (typeof value !== 'string' || !value.trim()) return refuse(`statut inconnu${received(value)}`);
+  const canonical = COLUMNS.find(({ id }) => id === value)?.id;
+  if (canonical) return canonical;
+  const known = STATUS_SYNONYMS[normWord(value)] ?? COLUMNS.find(({ label }) => normWord(label) === normWord(value))?.id;
+  if (known) return known;
+  return refuse(`statut inconnu${received(value)}`);
+};
+
+/** Valeur absente ou chaîne vide = ne rien changer. */
+const present = (value: unknown): boolean => value !== undefined && value !== '';
+/** `null` explicite = ne rien changer (ne peut pas effacer un statut). */
+const presentValue = (value: unknown): boolean => value !== undefined && value !== null && value !== '';
 const readDueDate = (value: unknown): string | null => (value === null ? null : validDueDate(value) ?? refuse('date invalide'));
 const readPinned = (value: unknown): 0 | 1 => (value === true || value === 1 ? 1 : value === false || value === 0 ? 0 : refuse('épinglage invalide'));
 const readEntryDate = (value: unknown): string => validDueDate(value) ?? refuse('date invalide');
@@ -717,8 +756,8 @@ function readProposal(raw: unknown, context: ChatContext, shownProject: string |
   if (action.kind === 'create_task') {
     const title = readTitle(action.title);
     const content_md = initialDraft(action.content, title, 'tâche');
-    const priority = action.priority === undefined ? 'normal' : readPriority(action.priority);
-    const status = action.status === undefined ? 'todo' : readStatus(action.status);
+    const priority = present(action.priority) ? readPriority(action.priority) : 'normal';
+    const status = presentValue(action.status) ? readStatus(action.status) : 'todo';
     const due_date = action.due_date === undefined ? null : readDueDate(action.due_date);
     const project_id = targetProject(shownProject);
     const category_id = newCategory(project_id);
@@ -751,7 +790,7 @@ function readProposal(raw: unknown, context: ChatContext, shownProject: string |
     const content_md = initialDraft(action.content, title, name);
     const project_id = targetProject(shownProject);
     const category_id = newCategory(project_id);
-    const status = action.status === undefined ? undefined : readStatus(action.status);
+    const status = presentValue(action.status) ? readStatus(action.status) : undefined;
     const entry_date = action.entry_date === undefined ? undefined : readEntryDate(action.entry_date);
     const preview = truncate(plainText(content_md), 120);
     const placement = [project_id && `projet ${projectName(project_id)}`, category_id && `catégorie ${categoryNameById(category_id)}`].filter(Boolean).join(', ');
@@ -774,7 +813,7 @@ function readProposal(raw: unknown, context: ChatContext, shownProject: string |
     };
     const wanted = {
       title: action.title === undefined || action.title === truncate(entry.title, PROMPT_TITLE) ? entry.title : readTitle(action.title),
-      status: action.status === undefined ? expected.status : readStatus(action.status),
+      status: presentValue(action.status) ? readStatus(action.status) : expected.status,
       entry_date: action.entry_date === undefined ? entry.entry_date : readEntryDate(action.entry_date),
       archived: action.archived === undefined ? entry.archived : typeof action.archived === 'boolean' ? Number(action.archived) as 0 | 1 : refuse('archivage invalide'),
       project_id,
@@ -854,8 +893,8 @@ function readProposal(raw: unknown, context: ChatContext, shownProject: string |
   const wanted = {
     // Le titre coupé du prompt recopié tel quel n'est pas un renommage.
     title: action.title === undefined || action.title === truncate(task.title, PROMPT_TITLE) ? task.title : readTitle(action.title),
-    status: action.status === undefined ? task.status : readStatus(action.status),
-    priority: action.priority === undefined ? task.priority : readPriority(action.priority),
+    status: presentValue(action.status) ? readStatus(action.status) : task.status,
+    priority: present(action.priority) ? readPriority(action.priority) : task.priority,
     due_date: action.due_date === undefined ? task.due_date : readDueDate(action.due_date),
     project_id,
     category_id: changedCategory(task, project_id),
@@ -950,6 +989,37 @@ function sanitizeReply(text: string, tasks: readonly Task[], documents: readonly
     index % 2 ? part : rewriteInternalRefs(rewriteInternalRefs(part, TASK_REF_KEYWORDS, tasks), DOCUMENT_REF_KEYWORDS, documents)).join('');
 }
 
+/** Action écartée : dire laquelle, sur quelle cible, et pourquoi. */
+const KIND_LABELS: Record<string, string> = {
+  create_task: 'création d’une tâche', update_task: 'modification d’une tâche',
+  create_note: 'création d’une note', create_procedure: 'création d’une procédure',
+  create_task_note: 'note d’une tâche', update_entry: 'modification d’un document',
+  create_shared_procedure: 'procédure partagée sur le partage',
+};
+
+function droppedTarget(action: Record<string, unknown>, kind: string, context: ChatContext): string {
+  const listed = <T,>(n: unknown, items: T[]): T | undefined => Number.isInteger(n) ? items[(n as number) - 1] : undefined;
+  if (kind === 'update_task' || kind === 'create_task_note') {
+    const task = listed(action.n, context.tasks);
+    if (task) return `« ${truncate(task.title.trim(), PROMPT_TITLE)} »`;
+  }
+  if (kind === 'update_entry') {
+    const entry = listed(action.n, context.documents);
+    if (entry) return `« ${truncate(entry.title.trim(), PROMPT_TITLE)} »`;
+  }
+  if (typeof action.title === 'string' && action.title.trim()) return `« ${truncate(action.title.trim(), PROMPT_TITLE)} »`;
+  if (Number.isInteger(action.n)) return `n=${action.n}`;
+  return '';
+}
+
+function describeDropped(action: unknown, context: ChatContext, reason: string): string {
+  const raw = (action && typeof action === 'object' ? action : {}) as Record<string, unknown>;
+  const kind = typeof raw.kind === 'string' ? raw.kind : '';
+  const what = KIND_LABELS[kind] ?? (kind || 'action inconnue');
+  const target = droppedTarget(raw, kind, context);
+  return `${what}${target ? ` ${target}` : ''} : ${reason}`;
+}
+
 const EMPTY_REPLY = 'Réponse vide de l’IA : reformule ta demande.';
 
 function readAnswer(raw: string, value: Record<string, unknown> | null, context: ChatContext, shownProject: string | null, conversationTitle?: string, question?: ChatQuestion): ChatAnswer {
@@ -984,7 +1054,7 @@ function readAnswer(raw: string, value: Record<string, unknown> | null, context:
       seen.add(key);
       proposals.push(proposal);
     } catch (cause) {
-      dropped.push((cause as Error).message);
+      dropped.push(describeDropped(action, context, (cause as Error).message));
     }
   }
   const tasks = numbered(value.show_tasks, context.tasks);
