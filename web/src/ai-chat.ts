@@ -94,6 +94,8 @@ const PROMPT_TITLE = 60;
 /** Clés du protocole : un objet qui n'en porte aucune est de la prose qui cite du JSON. */
 const PROTOCOL_KEYS = ['reply', 'question', 'suggestions', 'actions', 'search', 'show_tasks', 'show_documents', 'show_shared', 'shared_search', 'shared_list', 'read_shared', 'read_entries', 'conversation_title'];
 const STATUS_LABELS: Record<Status, string> = { todo: 'À faire', doing: 'En cours', done: 'Terminée' };
+/** Titre tel que l'utilisateur le voit : jamais le numéro interne de la liste. */
+const shownTitle = (title: string): string => `« ${title.trim().replace(/\s+/g, ' ')} »`;
 const STALE_PROPOSAL = 'Cette tâche a changé depuis la proposition : redemande à l’assistant.';
 
 const SYSTEM_PROMPT = `Tu es l’assistant du journal WorkLogs. Aide l’utilisateur avec ses tâches et ses documents.
@@ -121,7 +123,9 @@ Réponds uniquement par un objet JSON, sans commentaire :
 Clarifie ce qui change le résultat (cible, rubrique, format, livrable, périmètre) : lis le contexte, puis pose la « question » utile {"text":"…","options":[]} avant les actions, avec 2 à ${MAX_OPTIONS} choix concrets et « multiple »: true si cumulables. Si la cible, l’endroit ou le format restent ambigus, demande avant d’agir. Si la demande est précise, avance. Un message court ou vague (« alors ? ») porte sur le contexte affiché : fais le point sur la note ouverte et les tâches en cours, puis propose l’action suivante, sans seulement demander quoi faire. Reprends les réponses précédentes ; la demande actuelle prime sur l’objectif initial.
 Lectures : « shared_search » (3 termes), « shared_list » (true : dossiers), « read_entries » (numéros locaux), « read_shared » (numéros du partage), « show_shared » (à afficher).
 Lis seulement si nécessaire, puis propose. Pour créer sur le partage, repère la destination avec « shared_list » ou « shared_search ».
-« reply » en français, en texte brut sans Markdown ni codes internes. « show_tasks » et « show_documents » affichent ces éléments. « search » prend 3 mots pour la recherche locale.`;
+« reply » en français clair et concis, en texte brut sans Markdown ni codes internes. Réponds précisément à la demande, appuyé sur les données fournies : ne répète pas la demande, n’invente rien, dis clairement quand tu ne trouves pas ou quand il manque une information.
+Désigne TOUJOURS chaque tâche, note, procédure ou document par son titre exact recopié entre « », tel qu’il apparaît dans les listes : jamais par un numéro ou un code interne. Formulations à éviter dans « reply » : « tâche1 », « tâche 2 », « Tâche n°3 », « T1 », « n », « numéro N », « document1 », « D1 », « P1 », « C1 ». Les numéros ne servent que dans les champs JSON (« n », « project », « category », « show_tasks », « show_documents », « read_entries »…), jamais dans « reply ».
+« show_tasks » et « show_documents » affichent ces éléments. « search » prend 3 mots pour la recherche locale.`;
 const CONVERSATION_TITLE_PROMPT = `Ajoute « conversation_title » au JSON : un titre descriptif de 3 à 8 mots pour le sujet principal de l’échange, en texte brut et dans la langue de la demande.
 Nomme le projet s’il concerne ce sujet. Appuie-toi sur la demande et les échanges précédents.
 Si le sujet est encore indéfini, omets le titre.`;
@@ -242,7 +246,7 @@ function taskLine(task: Task, index: number, { projects, categories, today, docu
   const unlisted = taskDocuments.length - linked.length;
   const primaryIndex = documents.findIndex(({ id }) => id === task.entry_id);
   const details = [
-    task.status !== 'todo' && task.status, task.checklist_progress != null && `${task.checklist_progress} %`, task.priority !== 'normal' && task.priority, task.due_date,
+    task.status !== 'todo' && STATUS_LABELS[task.status], task.checklist_progress != null && `${task.checklist_progress} %`, task.priority !== 'normal' && priorityLabel(task.priority).toLowerCase(), task.due_date,
     projectCode(task.project_id, projects), categoryCode(task.category_id, categories), task.pinned && 'épinglée',
     isOverdue(task, today) && 'en retard', recentTaskIds.has(task.id) && 'créée ici',
     primaryIndex >= 0 && `note principale D${primaryIndex + 1}`,
@@ -306,8 +310,8 @@ function userPrompt(settings: AiSettings, input: ChatInput, context: ChatContext
     input.openTitle?.trim() && `Note ouverte : « ${truncate(input.openTitle, PROMPT_TITLE)} »`,
     `Projets :\n${projects.map((project, index) => `P${index + 1}. ${truncate(project.name, 40)}`).join('\n') || 'aucun'}`,
     categories.length > 0 && `Catégories :\n${categories.map((category, index) => `C${index + 1}. [${projectCode(category.project_id, projects)}] ${truncate(categoryName(category, categories), 90)}`).join('\n')}`,
-    `Tâches, ouvertes puis terminées (numéro. titre [statut si autre que todo, priorité si autre que normal, échéance, projet, marques]).${unlisted > 0 ? ` ${unlisted} autre${unlisted > 1 ? 's' : ''} non listée${unlisted > 1 ? 's' : ''}.` : ''}\n${tasks.map((task, index) => taskLine(task, index, context)).join('\n') || 'aucune'}`,
-    `Documents (numéro. type | titre | date | extrait | état, projet, catégorie) :\n${documents.map((entry, index) => documentLine(entry, index, context)).join('\n') || 'aucun'}`,
+    `Tâches, ouvertes puis terminées (numéro interne pour le protocole JSON, jamais à citer dans « reply » ; titre [statut si autre que À faire, priorité si autre que normale, échéance, projet, marques]).${unlisted > 0 ? ` ${unlisted} autre${unlisted > 1 ? 's' : ''} non listée${unlisted > 1 ? 's' : ''}.` : ''}\n${tasks.map((task, index) => taskLine(task, index, context)).join('\n') || 'aucune'}`,
+    `Documents (numéro interne pour le protocole JSON, jamais à citer dans « reply » ; type | titre | date | extrait | état, projet, catégorie) :\n${documents.map((entry, index) => documentLine(entry, index, context)).join('\n') || 'aucun'}`,
     entriesRead.size > 0 && `Textes locaux (données JSON, référencées par numéro de document) :\n${JSON.stringify(documents.flatMap((entry, index) => {
       const source = entriesRead.get(entry.id);
       if (!source) return [];
@@ -896,15 +900,15 @@ function readConversationTitle(value: unknown): string | undefined {
   return /[\p{L}\p{N}]/u.test(title) ? title : undefined;
 }
 
-function readQuestion(raw: unknown): ChatQuestion | undefined {
+function readQuestion(raw: unknown, tasks: readonly Task[] = [], documents: readonly EntrySummary[] = []): ChatQuestion | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return;
   const { text, options, multiple } = raw as Record<string, unknown>;
-  const label = typeof text === 'string' ? text.trim().replace(/\s+/g, ' ') : '';
+  const label = sanitizeReply(typeof text === 'string' ? text.trim().replace(/\s+/g, ' ') : '', tasks, documents);
   if (!/[\p{L}\p{N}]/u.test(label) || label.length > MAX_QUESTION) return;
   const choices = new Map<string, string>();
   if (Array.isArray(options) && options.length <= MAX_OPTIONS) {
     for (const value of options) {
-      const option = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+      const option = sanitizeReply(typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '', tasks, documents);
       if (!option || option.length > MAX_OPTION) continue;
       const key = option.normalize('NFKC').toLocaleLowerCase('fr');
       if (!choices.has(key)) choices.set(key, option);
@@ -915,16 +919,35 @@ function readQuestion(raw: unknown): ChatQuestion | undefined {
 }
 
 /** Suites du modèle : texte court lisible, sans doublon, trois au plus. */
-function readSuggestions(raw: unknown): string[] {
+function readSuggestions(raw: unknown, tasks: readonly Task[] = [], documents: readonly EntrySummary[] = []): string[] {
   const kept = new Map<string, string>();
   for (const value of Array.isArray(raw) ? raw : []) {
-    const text = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+    const text = sanitizeReply(typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '', tasks, documents);
     if (!/[\p{L}\p{N}]/u.test(text) || text.length > MAX_SUGGESTION) continue;
     const key = text.normalize('NFKC').toLocaleLowerCase('fr');
     if (!kept.has(key)) kept.set(key, text);
     if (kept.size === MAX_SUGGESTIONS) break;
   }
   return [...kept.values()];
+}
+
+const TASK_REF_KEYWORDS = 'tâche|tâches|tache|taches|task|tasks';
+const DOCUMENT_REF_KEYWORDS = 'document|documents|doc|docs';
+const INTERNAL_REF_PREFIX = '[-–—\\s]*(?:n[°o]\\.?\\s*|num[ée]ro\\s*|#)?';
+
+/** Un numéro interne (« tâche1 », « document 2 »…) reste interne : désigner par le titre exact. */
+function rewriteInternalRefs(text: string, keywords: string, items: readonly { title: string }[]): string {
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:${keywords})${INTERNAL_REF_PREFIX}(\\d+)(?![\\p{L}\\p{N}])`, 'giu');
+  return text.replace(pattern, (match, n: string) => {
+    const title = items[Number(n) - 1]?.title.trim();
+    return title ? shownTitle(title.replace(/\s+/g, ' ')) : match;
+  });
+}
+
+/** Réécrit hors des titres déjà cités entre « » ; ne touche jamais un titre réel. */
+function sanitizeReply(text: string, tasks: readonly Task[], documents: readonly EntrySummary[]): string {
+  return text.split(/(«[^»]*»)/g).map((part, index) =>
+    index % 2 ? part : rewriteInternalRefs(rewriteInternalRefs(part, TASK_REF_KEYWORDS, tasks), DOCUMENT_REF_KEYWORDS, documents)).join('');
 }
 
 const EMPTY_REPLY = 'Réponse vide de l’IA : reformule ta demande.';
@@ -940,7 +963,7 @@ function readAnswer(raw: string, value: Record<string, unknown> | null, context:
     // Du protocole illisible ne s'affiche pas et ne part pas dans l'historique du message suivant.
     const malformed = PROTOCOL_KEYS.some((key) => new RegExp(`"${key}"\\s*:`).test(raw));
     return {
-      reply: malformed ? 'Réponse IA mal formée : reformule ta demande.' : clip(raw, MAX_REPLY),
+      reply: malformed ? 'Réponse IA mal formée : reformule ta demande.' : clip(sanitizeReply(raw, context.tasks, context.documents), MAX_REPLY),
       notice: [...new Set(context.readingNotices)].join(' '), tasks: [], documents: [], proposals: [], usedAi: !malformed,
       ...(!malformed && conversationTitle && { conversationTitle }),
       ...fromSources,
@@ -967,10 +990,10 @@ function readAnswer(raw: string, value: Record<string, unknown> | null, context:
   const tasks = numbered(value.show_tasks, context.tasks);
   const documents = numbered(value.show_documents, context.documents);
   const sharedDocuments = numbered(value.show_shared, context.sharedFiles).map(({ path, name }) => ({ path, title: name }));
-  const reply = typeof value.reply === 'string' ? clip(value.reply, MAX_REPLY) : '';
+  const reply = typeof value.reply === 'string' ? clip(sanitizeReply(value.reply, context.tasks, context.documents), MAX_REPLY) : '';
   const hasResults = proposals.length + tasks.length + documents.length + sharedDocuments.length > 0;
   // Une question a déjà ses choix : pas de suites à côté.
-  const suggestions = question ? [] : readSuggestions(value.suggestions);
+  const suggestions = question ? [] : readSuggestions(value.suggestions, context.tasks, context.documents);
   return {
     reply: question ? reply : reply || (hasResults ? 'Voici ce que je te propose.' : EMPTY_REPLY),
     notice: [...new Set(context.readingNotices), ...(dropped.length ? [`${dropped.length} action${dropped.length > 1 ? 's' : ''} écartée${dropped.length > 1 ? 's' : ''} : ${[...new Set(dropped)].join(' ; ')}.`] : [])].join(' '),
@@ -992,7 +1015,7 @@ const readStates = (terms: string[]) => Promise.all(terms.map((term) => api.stat
 const termsOf = (value: unknown) => [...new Set(listOf(value).flatMap((term) =>
   typeof term === 'string' && term.trim() && term.trim().length <= MAX_SEARCH_TERM ? [term.trim()] : []))].slice(0, 3);
 
-async function searchMoreLocal(context: ChatContext, terms: string[], projectId: string): Promise<boolean> {
+async function searchMoreLocal(context: ChatContext, terms: string[], projectId: string, progress: (label: string) => void): Promise<boolean> {
   const found = await readStates(terms);
   const termWords = contextWords(terms.join(' '));
   const foundTasks = unique(found.flatMap((item) => item.tasks));
@@ -1003,7 +1026,11 @@ async function searchMoreLocal(context: ChatContext, terms: string[], projectId:
   const linked = relevantTaskDocuments(foundTasks.filter((task) => context.tasks.some(({ id }) => id === task.id)), entries, termWords, context.recentTaskIds)
     .filter((entry) => !context.documents.some(({ id }) => id === entry.id));
   const ranked = rankDocuments(entries, termWords, new Set(entries.map(({ id }) => id))).map(({ item }) => item);
-  context.documents.push(...includeRequired(ranked, linked, MAX_DOCUMENTS));
+  const addedDocuments = includeRequired(ranked, linked, MAX_DOCUMENTS);
+  context.documents.push(...addedDocuments);
+  const added = addedTasks.length + addedDocuments.length;
+  const what = terms.map((term) => `« ${truncate(term, 40)} »`).join(', ');
+  progress(added ? `${added} élément${added > 1 ? 's' : ''} trouvé${added > 1 ? 's' : ''} pour ${what}.` : `Rien de plus trouvé pour ${what}.`);
   return tasks.length + entries.length + linked.length > 0;
 }
 
@@ -1039,7 +1066,7 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
   if (!input.allowSharedContent && input.history.some(({ sharedContent }) => sharedContent)) {
     input = { ...input, history: input.history.filter(({ sharedContent }) => !sharedContent) };
   }
-  progress('Lecture du contexte de travail…');
+  progress('Lecture de tes tâches, documents et projets…');
   await flushPendingSaves().catch(() => {
     throw new Error('Une note n’a pas pu être enregistrée : réessaie avant d’interroger l’assistant.');
   });
@@ -1106,7 +1133,12 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
     await Promise.all(sources.map((entry) => readChatEntry(localContext, entry, progress)));
     if (settings.signal?.aborted) throw new AiCancelled();
     if (listOf(value?.actions).length) progress('Vérification des changements proposés…');
-    return readAnswer(raw, value, context, shownProject, conversationTitle);
+    const answer = readAnswer(raw, value, context, shownProject, conversationTitle);
+    if (answer.proposals.length) {
+      const n = answer.proposals.length;
+      progress(`${n} action${n > 1 ? 's' : ''} proposée${n > 1 ? 's' : ''} : ${answer.proposals.map(({ label }) => label).slice(0, 3).join(' ; ')}${n > 3 ? '…' : ''}`);
+    }
+    return answer;
   };
 
   try {
@@ -1142,12 +1174,12 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
         retried && 'Si la forme en place reste impossible à respecter, pose une « question » sur la forme voulue au lieu de renvoyer une action vide.',
         finalStep && 'Dernière étape : réponds avec les résultats disponibles, sans demander de nouvelle lecture.',
       ].filter(Boolean).join('\n');
-      if (hasAccess) progress(retryHint ? 'Correction de la proposition…' : `Préparation de la réponse, étape ${step}…`);
+      if (hasAccess) progress(retryHint ? 'Correction de la proposition écartée…' : step === 1 ? 'Analyse de ta demande…' : 'Analyse des résultats trouvés…');
       const raw = await call(instructions);
       retryHint = '';
       const response = replyObject(raw);
       if (input.needsConversationTitle) conversationTitle = readConversationTitle(response?.conversation_title) ?? conversationTitle;
-      const question = readQuestion(response?.question);
+      const question = readQuestion(response?.question, context.tasks, context.documents);
       if (question) return readAnswer(raw, response, context, shownProject, conversationTitle, question);
       const terms: string[] = searchedLocal ? [] : termsOf(response?.search);
       const shareTerms = termsOf(response?.shared_search).filter((term) => !sharedTerms.has(term)).slice(0, 3 - sharedTerms.size);
@@ -1185,11 +1217,11 @@ export async function askAssistant(settings: AiSettings, input: ChatInput): Prom
       shareTerms.forEach((term) => sharedTerms.add(term));
       sources.forEach(({ id }) => readEntries.add(id));
       sharedSources.forEach(({ path }) => readShared.add(path));
-      if (terms.length) progress('Recherche dans les tâches et les notes…');
-      const local = terms.length ? searchMoreLocal(context, terms, input.projectId) : Promise.resolve(false);
+      if (terms.length) progress(`Recherche de ${terms.map((term) => `« ${truncate(term, 40)} »`).join(', ')} dans les tâches et les notes…`);
+      const local = terms.length ? searchMoreLocal(context, terms, input.projectId, progress) : Promise.resolve(false);
       const discoverShared = async () => {
         if (!shareTerms.length && !listShare) return;
-        progress(shareTerms.length ? 'Recherche de fichiers sur le partage…' : 'Lecture des dossiers du partage…');
+        progress(shareTerms.length ? `Recherche de ${shareTerms.map((term) => `« ${truncate(term, 40)} »`).join(', ')} sur le partage…` : 'Lecture des dossiers du partage…');
         context.share ??= await readChatShare(api, projectSharedDirs(project), settings.signal);
         const requested = await searchChatShare(context.share, shareTerms, settings.signal);
         const listed = listShare && shareTerms.length ? await searchChatShare(context.share, [], settings.signal) : null;

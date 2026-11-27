@@ -1,5 +1,18 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Assistant IA : réponses pertinentes, titres exacts, étapes claires — 2026-11-27, v0.96.0
+
+- **Jamais « tâche1 » / « tâche2 »** : la consigne système (`web/src/ai-chat.ts`) impose de désigner
+  toujours chaque tâche/note/procédure/document par son **titre exact entre « »**, jamais par le numéro
+  interne du protocole (`n`, `tâche1`, `T1`, `D1`, `P1`, `C1`, `numéro N`…) ; ces numéros ne servent
+  que dans les champs JSON. En garde-fou, `sanitizeReply` réécrit en titre exact toute référence
+  « tâche N » / « document N » qui fuiterait dans `reply`, `question` (texte + choix) et `suggestions`.
+- **Prompt clarifié** : numéros explicitement marqués « internes », statuts/priorités en français,
+  règle qualité (réponse précise, appuyée sur les données, sans invention, dit quand il ne trouve pas).
+- **Étapes de l’assistant** (`activity` + `onProgress`) : contexte lu, termes recherchés, nombre de
+  résultats, lectures nommées, correction, puis `N action(s) proposée(s)` avec libellés.
+- Tests : `ai-chat.test.ts`, `e2e/ai-chat.spec.ts`. `./scripts/check.sh` vert.
+
 ## Colonne GitHub : plus de seconde barre de défilement — 2026-11-27, v0.95.1 (§101)
 
 - Les libellés masqués des cartes (`.github-sr-only`, position absolue) se plaçaient sur le document,

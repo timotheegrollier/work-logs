@@ -537,8 +537,9 @@ describe('lecture locale et classement', () => {
       history: Array.from({ length: 12 }, (_, index) => ({ role: index % 2 ? 'assistant' as const : 'user' as const, text: `h${index} ${'y'.repeat(1000)}` })),
     }, { ...settings, profile: 'P'.repeat(3000) });
     const prompt = user(calls[0]);
-    // Plafond relevé avec la règle de préservation du format d’écriture, puis l’initiative et les suites (§98).
-    expect(system(calls[0]).length + prompt.length - MAX_CHAT_MESSAGE).toBeLessThan(17_700);
+    // Plafond relevé avec la règle de préservation du format d’écriture, puis l’initiative et les suites (§98),
+    // puis la règle de désignation par titre exact et la clarté des étapes (jamais « tâche1 »).
+    expect(system(calls[0]).length + prompt.length - MAX_CHAT_MESSAGE).toBeLessThan(19_500);
     expect(lines(prompt, 'Projets')).toHaveLength(30);
     expect(titles(prompt)).toHaveLength(50);
     expect(titles(prompt).every((title) => title.length <= 60)).toBe(true);
@@ -637,6 +638,27 @@ describe('lecture locale et classement', () => {
 });
 
 describe('appels au modèle', () => {
+  test('« tâche1 », « tâche 2 »… sont réécrits en titre exact, jamais un numéro interne dans la réponse', async () => {
+    mockState({
+      tasks: [task('t1', { title: 'Réparer la pompe' }), task('t2', { title: 'Appeler le plombier' }), task('t3', { title: 'Commander les joints' })],
+      entries: [entry('e1', { title: 'Facture pompe' })],
+    });
+    stubAi(json({
+      reply: 'Voici tâche1 et tâche 2 ; la tâche n°1 est urgente. TÂCHE3 reste. task2 aussi. '
+        + 'Et la tâche numéro 3. Pour document1, je dis document 1. '
+        + 'La tâche 99 n’existe pas. Un titre « Appeler le plombier » déjà entre « » reste.',
+    }));
+    const { reply } = await ask({ text: 'et les autres ? facture' });
+    expect(reply).toContain('« Réparer la pompe »');
+    expect(reply).toContain('« Appeler le plombier »');
+    expect(reply).toContain('« Commander les joints »');
+    expect(reply).toContain('« Facture pompe »');
+    expect(reply).not.toMatch(/tâche\s*(n°\s*|numéro\s*|#)?(1|2|3)(?!\d)|tache\s*\d|task\s*\d|document\s*\d/iu);
+    expect(reply).toContain('La tâche 99 n’existe pas.'); // numéro hors liste : on ne remplace rien
+    expect(reply).not.toMatch(/«\s*«/u);
+    expect(reply).not.toMatch(/»\s*»/u);
+  });
+
   test('un seul appel pour un message, avec l’effort moyen de Gemini et 4 096 jetons', async () => {
     mockState({ tasks: [task('t1')] });
     const calls = stubAi(json({ reply: 'Une tâche.', show_tasks: [1, 1, 9, 'x'] }));
@@ -677,11 +699,13 @@ describe('appels au modèle', () => {
     expect(system(calls[0])).not.toContain('interdit');
     expect(system(calls[1])).toContain('« search » est interdit');
     expect(progress.mock.calls.map(([label]) => label)).toEqual([
-      'Lecture du contexte de travail…',
-      'Préparation de la réponse, étape 1…',
-      'Recherche dans les tâches et les notes…',
-      'Préparation de la réponse, étape 2…',
+      'Lecture de tes tâches, documents et projets…',
+      'Analyse de ta demande…',
+      'Recherche de « vanne », « fuite », « joint » dans les tâches et les notes…',
+      '2 éléments trouvés pour « vanne », « fuite », « joint ».',
+      'Analyse des résultats trouvés…',
       'Vérification des changements proposés…',
+      '1 action proposée : « Purger la vanne » : statut → En cours',
     ]);
     expect(answer.reply).toBe('Trouvé.');
     expect(answer.proposals).toEqual([expect.objectContaining({ kind: 'update_task', taskId: 'cherchee' })]);

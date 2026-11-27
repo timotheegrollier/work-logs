@@ -711,11 +711,12 @@ test('une note ouverte révisée depuis l’assistant affiche son nouveau texte 
     expect(prompts[1]).toContain('Détail après l’extrait.');
     await chat.getByText('Étapes de l’assistant', { exact: true }).click();
     await expect(chat.locator('.ai-chat-activity li')).toHaveText([
-      'Lecture du contexte de travail…',
-      'Préparation de la réponse, étape 1…',
+      'Lecture de tes tâches, documents et projets…',
+      'Analyse de ta demande…',
       'Lecture de « Vérification du filtre »…',
-      'Préparation de la réponse, étape 2…',
+      'Analyse des résultats trouvés…',
       'Vérification des changements proposés…',
+      /^1 action proposée : /,
     ]);
     await chat.getByText('Relire le texte proposé', { exact: true }).click();
     await expect(chat.locator('pre')).toContainText('Pièces contrôlées, intervention clôturée.');
