@@ -1,5 +1,14 @@
 # 🤝 WorkLogs — fiche de relève (LIRE EN PREMIER)
 
+## Activité et détail des PR dans la colonne GitHub — 2026-11-27, v0.95.0 (§101)
+
+- Cartes adaptées aux deux thèmes et à la largeur de la colonne. Recherche dans les cinq rubriques,
+  filtre d’état, copie des liens et accès aux listes complètes sur GitHub.
+- Les PR montrent état, branches, CI et décision de revue selon les données disponibles. Le détail
+  charge à la demande la description, les vérifications, les revues et les fichiers modifiés.
+- Recette locale complète verte, avec 2 268 tests dont un échec attendu. Lecture réelle via GitHub CLI
+  vérifiée sur le dépôt public `cli/cli`.
+
 ## Compte GitHub depuis l'application, colonne GitHub redimensionnable — 2026-11-26, v0.94.0 (§101)
 
 - **Compte GitHub sans terminal** : le bouton « Compte » de la colonne GitHub (et tout refus 404,
