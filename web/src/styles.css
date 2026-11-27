@@ -4791,6 +4791,8 @@ div.google-preserved {
 }
 /* Colonne GitHub : dépôt, rubriques et activité dans la même colonne redimensionnable. */
 .github-panel {
+  /* Ancre les .github-sr-only : sans ancêtre positionné, ils allongent tout le document. */
+  position: relative;
   container: github / inline-size;
   display: grid;
   grid-template-columns: minmax(0, 1fr);

@@ -122,3 +122,53 @@ test('GitHub : filtre une PR, consulte ses vérifications et suit sa note dans u
     await request.delete(`/api/projects/${id}`);
   }
 });
+
+test('GitHub : seule la colonne défile sur une longue liste de pull requests', async ({ page, request }) => {
+  const created = await request.post('/api/projects', { data: { name: projectName, github_repo: repo } });
+  expect(created.ok()).toBe(true);
+  const { id } = await created.json();
+
+  try {
+    await page.setViewportSize({ width: 1440, height: 770 });
+    await page.addInitScript(() => {
+      localStorage.setItem('worklogs-show-github', '1');
+      localStorage.setItem('worklogs-show-procedures', '0');
+    });
+    await page.route(`**/api/projects/${id}/github/pulls`, (route) => route.fulfill({ json: {
+      ...pullList,
+      items: Array.from({ length: 30 }, (_, index) => {
+        const number = index + 1;
+        return {
+          ...pullList.items[0],
+          id: String(number),
+          number,
+          title: `Déploiement ${number}`,
+          url: `https://github.com/${repo}/pull/${number}`,
+          comments: 2,
+        };
+      }),
+    } }));
+    await page.goto('/');
+    await page.getByRole('group', { name: 'Filtrer par projet' }).getByRole('button', { name: projectName }).click();
+
+    const sidebar = page.locator('#workspace-github');
+    const lastPull = sidebar.getByRole('link', { name: '#30 Déploiement 30' });
+    await expect(lastPull).toBeAttached();
+
+    expect(await sidebar.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+    // Les libellés masqués des compteurs et des branches suivent les cartes, même hors écran.
+    expect(await page.evaluate(() => {
+      const documentScroller = document.scrollingElement!;
+      return documentScroller.scrollHeight - documentScroller.clientHeight;
+    })).toBe(0);
+
+    await sidebar.hover();
+    await page.mouse.wheel(0, 300);
+    await expect.poll(() => sidebar.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await lastPull.scrollIntoViewIfNeeded();
+    await expect(lastPull).toBeInViewport();
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  } finally {
+    await request.delete(`/api/projects/${id}`);
+  }
+});
